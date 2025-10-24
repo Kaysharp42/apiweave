@@ -19,8 +19,12 @@ const MainHeader = () => {
   return (
     <header className="bg-white dark:bg-gray-800 px-4 py-3 border-b dark:border-gray-700 transition-colors">
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <span className="text-2xl">🕸️</span>
+        <div className="flex items-center space-x-3">
+          <img 
+            src="/public/apiweave.png" 
+            alt="APIWeave Logo" 
+            className="h-8 w-8 rounded-lg shadow-sm object-cover"
+          />
           <h1 className="text-xl font-bold text-cyan-900 dark:text-cyan-400">APIWeave</h1>
         </div>
         

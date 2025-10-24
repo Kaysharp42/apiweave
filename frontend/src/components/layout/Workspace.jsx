@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { Allotment } from 'allotment';
+import 'allotment/dist/style.css';
 import WorkflowCanvas from '../WorkflowCanvas';
+import VariablesPanel from '../VariablesPanel';
+import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
 
 const Workspace = () => {
   console.log('Workspace component rendered');
   const [tabs, setTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
+  const [showVariablesPanel, setShowVariablesPanel] = useState(true);
 
   useEffect(() => {
     const handleOpenWorkflow = (event) => {
@@ -75,13 +80,96 @@ const Workspace = () => {
       )}
 
       {/* Workspace Content */}
-      <div className="flex-1">
+      <div className="flex-1 overflow-hidden flex flex-col">
         {activeTab ? (
-          <WorkflowCanvas
-            key={activeTab.id}
-            workflowId={activeTab.id}
-            workflow={activeTab.workflow}
-          />
+          <>
+            {/* Main Layout */}
+            <div className="flex-1 overflow-hidden">
+              <Allotment>
+                {/* Left: Canvas */}
+                <Allotment.Pane>
+                  <WorkflowCanvas
+                    key={activeTab.id}
+                    workflowId={activeTab.id}
+                    workflow={activeTab.workflow}
+                  />
+                </Allotment.Pane>
+                
+                {/* Right: Variables & Settings Panel (Conditional) */}
+                {showVariablesPanel && (
+                  <Allotment.Pane preferredSize={300} minSize={200}>
+                    <div className="flex flex-col h-full bg-white dark:bg-gray-800 border-l dark:border-gray-700">
+                      {/* Variables Panel Header with Icon Toggle */}
+                      <div className="bg-slate-50 dark:bg-gray-900 border-b dark:border-gray-700 p-3 flex items-center gap-2">
+                        <button
+                          onClick={() => setShowVariablesPanel(false)}
+                          className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors flex-shrink-0"
+                          title="Collapse panel"
+                          aria-label="Collapse panel"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 20 20" focusable="false" aria-hidden="true" fill="currentColor" className="text-gray-600 dark:text-gray-300">
+                            <path d="M16 16V4h2v12h-2zM6 9l2.501-2.5-1.5-1.5-5 5 5 5 1.5-1.5-2.5-2.5h8V9H6z"></path>
+                          </svg>
+                        </button>
+                        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                          📦 Workflow Variables
+                        </h3>
+                      </div>
+                      
+                      {/* Split View: Variables and Settings */}
+                      <Allotment vertical>
+                        {/* Variables Panel Content */}
+                        <Allotment.Pane preferredSize="60%">
+                          <VariablesPanel
+                            variables={activeTab.workflow?.variables || {}}
+                            onVariableChange={(updatedVariables) => {
+                              // Update the tab's workflow variables
+                              setTabs(tabs.map(tab => 
+                                tab.id === activeTab.id 
+                                  ? { ...tab, workflow: { ...tab.workflow, variables: updatedVariables } }
+                                  : tab
+                              ));
+                            }}
+                          />
+                        </Allotment.Pane>
+                        
+                        {/* Settings Panel */}
+                        <Allotment.Pane preferredSize="40%">
+                          <WorkflowSettingsPanel
+                            settings={activeTab.workflow?.settings || {}}
+                            onSettingChange={(updatedSettings) => {
+                              // Update the tab's workflow settings
+                              setTabs(tabs.map(tab => 
+                                tab.id === activeTab.id 
+                                  ? { ...tab, workflow: { ...tab.workflow, settings: updatedSettings } }
+                                  : tab
+                              ));
+                            }}
+                          />
+                        </Allotment.Pane>
+                      </Allotment>
+                    </div>
+                  </Allotment.Pane>
+                )}
+              </Allotment>
+            </div>
+            
+            {/* Show Variables Button (when hidden - right side) */}
+            {!showVariablesPanel && (
+              <div className="absolute bottom-4 right-4 z-40">
+                <button
+                  onClick={() => setShowVariablesPanel(true)}
+                  className="p-2 bg-cyan-500 dark:bg-cyan-600 hover:bg-cyan-600 dark:hover:bg-cyan-700 text-white rounded-lg transition-colors shadow-lg hover:shadow-xl"
+                  title="Show Variables Panel"
+                  aria-label="Show Variables Panel"
+                >
+                  <svg width="20" height="20" viewBox="0 0 20 20" focusable="false" aria-hidden="true" fill="currentColor">
+                    <path d="M4 4v12h2V4H4zm14 5l-2.501 2.5 1.5 1.5 5-5-5-5-1.5 1.5 2.5 2.5H6v2h12z"></path>
+                  </svg>
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-gray-500 dark:text-gray-400">

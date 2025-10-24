@@ -16,6 +16,7 @@ import DelayNode from './nodes/DelayNode';
 import StartNode from './nodes/StartNode';
 import EndNode from './nodes/EndNode';
 import AddNodesPanel from './AddNodesPanel';
+import VariablesPanel from './VariablesPanel';
 import { AppContext } from '../App';
 
 const nodeTypes = {
@@ -47,9 +48,28 @@ const WorkflowCanvas = ({ workflowId, workflow }) => {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
+  const [workflowVariables, setWorkflowVariables] = useState({});
 
   // Auto-save timer reference
   const autoSaveTimerRef = useRef(null);
+
+  // Sync extractors from all nodes to workflow variables
+  useEffect(() => {
+    const allExtractors = {};
+    nodes.forEach(node => {
+      if (node.type === 'http-request' && node.data.config?.extractors) {
+        Object.assign(allExtractors, node.data.config.extractors);
+      }
+    });
+    
+    // Merge extractors with manually added variables (keep manually added ones, add extractors)
+    setWorkflowVariables(prev => ({
+      ...allExtractors,
+      ...Object.fromEntries(
+        Object.entries(prev).filter(([key]) => !Object.keys(allExtractors).includes(key))
+      )
+    }));
+  }, [nodes]);
 
   // Load workflow data when available
   React.useEffect(() => {
@@ -73,6 +93,11 @@ const WorkflowCanvas = ({ workflowId, workflow }) => {
       
       setNodes(loadedNodes);
       setEdges(loadedEdges);
+      
+      // Load workflow variables
+      if (workflow.variables) {
+        setWorkflowVariables(workflow.variables);
+      }
     }
   }, [workflow]);
 
@@ -173,6 +198,7 @@ const WorkflowCanvas = ({ workflowId, workflow }) => {
         target: edge.target,
         label: edge.label || null,
       })),
+      variables: workflowVariables,
     };
 
     try {
@@ -190,7 +216,7 @@ const WorkflowCanvas = ({ workflowId, workflow }) => {
     } catch (error) {
       console.error('Save error:', error);
     }
-  }, [nodes, edges, workflowId]);
+  }, [nodes, edges, workflowId, workflowVariables]);
 
   const [isRunning, setIsRunning] = useState(false);
   const [currentRunId, setCurrentRunId] = useState(null);

@@ -20,6 +20,8 @@ class WorkflowExecutor:
         self.workflow_id = workflow_id
         self.results = {}
         self.context = {}  # Stores variables and results from previous nodes
+        self.workflow_variables = {}  # Workflow-level variables that persist across nodes
+        self.continue_on_fail = False  # Workflow setting: whether to continue on API failure
         
     async def execute(self):
         """Execute the workflow"""
@@ -29,6 +31,13 @@ class WorkflowExecutor:
         workflow = await db.workflows.find_one({"workflowId": self.workflow_id})
         if not workflow:
             raise Exception(f"Workflow {self.workflow_id} not found")
+        
+        # Initialize workflow variables from the workflow definition
+        self.workflow_variables = workflow.get('variables', {}).copy() if workflow.get('variables') else {}
+        
+        # Load workflow settings
+        settings = workflow.get('settings', {})
+        self.continue_on_fail = settings.get('continueOnFail', False)
         
         # Update run status to running
         await db.runs.update_one(
@@ -79,7 +88,14 @@ class WorkflowExecutor:
         
         # Skip start node execution
         if node['type'] != 'start':
-            await self._execute_node(node, db)
+            try:
+                await self._execute_node(node, db)
+            except Exception as e:
+                # If continue_on_fail is False, re-raise the exception to stop the workflow
+                if not self.continue_on_fail:
+                    raise
+                # If continue_on_fail is True, log the error and continue
+                print(f"⚠️  Node {node_id} failed but continuing due to 'continueOnFail' setting: {str(e)}")
         
         # Find next nodes
         next_edges = [e for e in edges if e['source'] == node_id]
@@ -90,7 +106,14 @@ class WorkflowExecutor:
             
             # Skip end node
             if next_node and next_node['type'] != 'end':
-                await self._execute_from_node(next_node_id, nodes, edges, db)
+                try:
+                    await self._execute_from_node(next_node_id, nodes, edges, db)
+                except Exception as e:
+                    # If continue_on_fail is False, re-raise the exception to stop the workflow
+                    if not self.continue_on_fail:
+                        raise
+                    # If continue_on_fail is True, log the error and continue
+                    print(f"⚠️  Node {next_node_id} failed but continuing due to 'continueOnFail' setting: {str(e)}")
     
     async def _execute_node(self, node: Dict, db):
         """Execute a single node"""
@@ -145,8 +168,33 @@ class WorkflowExecutor:
         def replacer(match) -> str:
             var_path = match.group(1)
             # Handle prev.response.body.token, prev.response.cookies.session, etc.
+            # Also handle variables.token, variables.referenceToken, etc.
             try:
-                if var_path.startswith('prev.'):
+                if var_path.startswith('variables.'):
+                    # Access workflow variables
+                    path_parts = var_path.split('.')[1:]  # Remove 'variables'
+                    value = self.workflow_variables
+                    
+                    for part in path_parts:
+                        # Handle array indexing: data[0], items[1], etc.
+                        array_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$', part)
+                        if array_match:
+                            key = array_match.group(1)
+                            index = int(array_match.group(2))
+                            if isinstance(value, dict):
+                                value = value.get(key)
+                            if isinstance(value, list) and 0 <= index < len(value):
+                                value = value[index]
+                            else:
+                                return str(match.group(0))  # Return original if not found
+                        elif isinstance(value, dict):
+                            value = value.get(part)
+                        else:
+                            return str(match.group(0))  # Return original if not found
+                    
+                    return str(value) if value is not None else str(match.group(0))
+                
+                elif var_path.startswith('prev.'):
                     # Get the last executed node's result
                     if self.results:
                         prev_result = list(self.results.values())[-1]
@@ -196,6 +244,22 @@ class WorkflowExecutor:
             result[key.strip()] = self._substitute_variables(value.strip())
         
         return result
+    
+    def _extract_variables(self, extractors: Dict[str, str], response: Dict):
+        """Extract variables from HTTP response using JSONPath-like syntax"""
+        for var_name, var_path in extractors.items():
+            try:
+                # Navigate the response using dot notation
+                # e.g., "body.data[0].city" -> response['body']['data'][0]['city']
+                value = self._get_nested_value(response, var_path)
+                
+                if value is not None:
+                    self.workflow_variables[var_name] = value
+                    print(f"✅ Extracted variable: {var_name} = {value}")
+                else:
+                    print(f"⚠️  Extracted variable {var_name} is None from path: {var_path}")
+            except Exception as e:
+                print(f"❌ Error extracting variable {var_name} from {var_path}: {str(e)}")
     
     async def _execute_http_request(self, node: Dict) -> Dict[str, Any]:
         """Execute HTTP request node"""
@@ -296,6 +360,11 @@ class WorkflowExecutor:
                     "statusCode": status_code
                 }
                 
+                # Extract variables if configured
+                extractors = config.get('extractors', {})
+                if extractors:
+                    self._extract_variables(extractors, result)
+                
                 return result
     
     async def _execute_delay(self, node: Dict) -> Dict[str, Any]:
@@ -311,13 +380,228 @@ class WorkflowExecutor:
             "message": f"Delayed for {duration} seconds"
         }
     
+    def _get_nested_value(self, obj: Dict, path: str):
+        """Get a nested value from an object using dot notation
+        
+        Examples:
+            body.status -> obj['body']['status']
+            data[0].id -> obj['data'][0]['id']
+        """
+        if not obj or not path:
+            return None
+        
+        try:
+            parts = path.split('.')
+            value = obj
+            
+            for part in parts:
+                # Handle array indexing: data[0], items[1], etc.
+                array_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$', part)
+                if array_match:
+                    key = array_match.group(1)
+                    index = int(array_match.group(2))
+                    if isinstance(value, dict):
+                        value = value.get(key)
+                    if isinstance(value, list) and 0 <= index < len(value):
+                        value = value[index]
+                    else:
+                        return None
+                elif isinstance(value, dict):
+                    value = value.get(part)
+                else:
+                    return None
+                
+                if value is None:
+                    return None
+            
+            return value
+        except Exception:
+            return None
+    
+        """Extract values from response and store as workflow variables
+        
+        extractors format: {
+            "token": "response.body.token",
+            "userId": "response.body.user.id",
+            "sessionId": "response.cookies.session",
+            "contentType": "response.headers.content-type"
+        }
+        """
+        for var_name, var_path in extractors.items():
+            try:
+                # Navigate through the response to get the value
+                parts = var_path.split('.')
+                value = response
+                
+                for part in parts:
+                    # Handle array indexing: data[0], items[1], etc.
+                    array_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$', part)
+                    if array_match:
+                        key = array_match.group(1)
+                        index = int(array_match.group(2))
+                        if isinstance(value, dict):
+                            value = value.get(key)
+                        if isinstance(value, list) and 0 <= index < len(value):
+                            value = value[index]
+                        else:
+                            print(f"⚠️  Cannot extract {var_path}: index out of range")
+                            continue
+                    elif isinstance(value, dict):
+                        value = value.get(part)
+                    else:
+                        print(f"⚠️  Cannot extract {var_path}: {part} not found")
+                        break
+                
+                # Store the extracted value
+                if value is not None:
+                    self.workflow_variables[var_name] = value
+                    print(f"✅ Extracted variable: {var_name} = {value}")
+                else:
+                    print(f"⚠️  Extracted variable {var_name} is None")
+            except Exception as e:
+                print(f"❌ Error extracting variable {var_name} from {var_path}: {str(e)}")
+    
     async def _execute_assertion(self, node: Dict) -> Dict[str, Any]:
-        """Execute assertion node"""
-        # TODO: Implement assertion logic
+        """Execute assertion node - validates all assertions"""
+        assertions = node.get('config', {}).get('assertions', [])
+        
+        if not assertions:
+            return {
+                "status": "success",
+                "message": "No assertions configured",
+                "assertions": []
+            }
+        
+        failed_assertions = []
+        passed_assertions = []
+        
+        for idx, assertion in enumerate(assertions):
+            try:
+                result = self._evaluate_assertion(assertion)
+                if result['passed']:
+                    passed_assertions.append({
+                        "index": idx,
+                        "assertion": assertion,
+                        "message": result['message']
+                    })
+                else:
+                    failed_assertions.append({
+                        "index": idx,
+                        "assertion": assertion,
+                        "message": result['message']
+                    })
+            except Exception as e:
+                failed_assertions.append({
+                    "index": idx,
+                    "assertion": assertion,
+                    "message": f"Error evaluating assertion: {str(e)}"
+                })
+        
+        # If any assertion failed, the entire assertion node fails
+        if failed_assertions:
+            raise Exception(f"Assertion failed: {len(failed_assertions)}/{len(assertions)} assertions failed")
+        
         return {
             "status": "success",
-            "message": "Assertion passed"
+            "message": f"All {len(assertions)} assertions passed",
+            "assertions": passed_assertions
         }
+    
+    def _evaluate_assertion(self, assertion: Dict) -> Dict[str, Any]:
+        """Evaluate a single assertion"""
+        source = assertion.get('source', 'prev')
+        path = assertion.get('path', '')
+        operator = assertion.get('operator', 'equals')
+        expected_value = assertion.get('expectedValue', '')
+        
+        # Get the actual value based on source
+        if source == 'prev':
+            actual_value = self._get_nested_value(self.context, path)
+        elif source == 'variables':
+            actual_value = self.workflow_variables.get(path)
+        elif source == 'status':
+            # For status, use the last HTTP response status
+            last_result = list(self.results.values())[-1] if self.results else {}
+            actual_value = last_result.get('statusCode')
+        elif source == 'cookies':
+            # Get cookies from last HTTP response
+            last_result = list(self.results.values())[-1] if self.results else {}
+            cookies = last_result.get('cookies', {})
+            actual_value = cookies.get(path)
+        elif source == 'headers':
+            # Get headers from last HTTP response
+            last_result = list(self.results.values())[-1] if self.results else {}
+            headers = last_result.get('headers', {})
+            actual_value = headers.get(path)
+        else:
+            return {"passed": False, "message": f"Unknown source: {source}"}
+        
+        # Evaluate based on operator
+        try:
+            passed = self._compare_values(actual_value, operator, expected_value)
+            message = f"{source}.{path if source != 'status' else 'code'} {operator} {expected_value}: {actual_value}"
+            return {"passed": passed, "message": message}
+        except Exception as e:
+            return {"passed": False, "message": f"Comparison error: {str(e)}"}
+    
+    def _compare_values(self, actual, operator: str, expected: str) -> bool:
+        """Compare actual and expected values based on operator"""
+        if operator == 'exists':
+            return actual is not None
+        elif operator == 'notExists':
+            return actual is None
+        
+        # Convert expected to appropriate type
+        # Try to parse as number
+        try:
+            expected_num = float(expected) if '.' in str(expected) else int(expected)
+            actual_num = float(actual) if isinstance(actual, (int, float)) else float(str(actual))
+        except (ValueError, TypeError):
+            expected_num = None
+            actual_num = None
+        
+        actual_str = str(actual) if actual is not None else ''
+        expected_str = str(expected)
+        
+        if operator == 'equals':
+            # Try numeric comparison first
+            if expected_num is not None and actual_num is not None:
+                return actual_num == expected_num
+            return actual_str == expected_str
+        
+        elif operator == 'notEquals':
+            if expected_num is not None and actual_num is not None:
+                return actual_num != expected_num
+            return actual_str != expected_str
+        
+        elif operator == 'contains':
+            return expected_str in actual_str
+        
+        elif operator == 'notContains':
+            return expected_str not in actual_str
+        
+        elif operator == 'gt':
+            if expected_num is None or actual_num is None:
+                return False
+            return actual_num > expected_num
+        
+        elif operator == 'gte':
+            if expected_num is None or actual_num is None:
+                return False
+            return actual_num >= expected_num
+        
+        elif operator == 'lt':
+            if expected_num is None or actual_num is None:
+                return False
+            return actual_num < expected_num
+        
+        elif operator == 'lte':
+            if expected_num is None or actual_num is None:
+                return False
+            return actual_num <= expected_num
+        
+        else:
+            raise Exception(f"Unknown operator: {operator}")
     
     async def _update_node_status(self, db, node_id: str, status: str, result: Any):
         """Update node execution status in the run"""

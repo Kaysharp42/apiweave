@@ -2,6 +2,49 @@ import React, { memo, useState, useCallback } from 'react';
 import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
 
+// Extractor form component
+const ExtractorForm = ({ onAdd }) => {
+  const [varName, setVarName] = useState('');
+  const [varPath, setVarPath] = useState('response.body.');
+
+  const handleAdd = () => {
+    if (varName.trim() && varPath.trim()) {
+      onAdd(varName.trim(), varPath.trim());
+      setVarName('');
+      setVarPath('response.body.');
+    }
+  };
+
+  return (
+    <div className="space-y-1 p-1.5 bg-gray-50 dark:bg-gray-900/50 rounded border border-dashed border-gray-300 dark:border-gray-600">
+      <div>
+        <input
+          type="text"
+          placeholder="Variable name (e.g., token)"
+          className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          value={varName}
+          onChange={(e) => setVarName(e.target.value)}
+        />
+      </div>
+      <div>
+        <input
+          type="text"
+          placeholder="Path (e.g., response.body.token or response.cookies.sessionId)"
+          className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          value={varPath}
+          onChange={(e) => setVarPath(e.target.value)}
+        />
+      </div>
+      <button
+        onClick={handleAdd}
+        className="w-full px-2 py-1 bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 text-white text-[9px] font-semibold rounded nodrag transition-colors"
+      >
+        Add Extractor
+      </button>
+    </div>
+  );
+};
+
 const HTTPRequestNode = ({ id, data, selected }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const { setNodes } = useReactFlow();
@@ -181,14 +224,68 @@ const HTTPRequestNode = ({ id, data, selected }) => {
               />
             </div>
 
+            {/* Store Result As (Extract Variables) */}
+            <div className="border-t dark:border-gray-700 pt-2 mt-2">
+              <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
+                📦 Store Response Fields As Variables
+                <span className="text-gray-500 dark:text-gray-500 font-normal text-[9px] block mt-0.5">
+                  Extract values from response and save as workflow variables
+                </span>
+              </label>
+              
+              {/* Extractors List */}
+              <div className="space-y-1 mb-2">
+                {(data.config?.extractors && Object.entries(data.config.extractors).length > 0) ? (
+                  Object.entries(data.config.extractors).map(([varName, varPath]) => (
+                    <div key={varName} className="flex gap-1 items-center text-[9px]">
+                      <code className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-1.5 py-0.5 rounded flex-1">
+                        {varName}
+                      </code>
+                      <span className="text-gray-500 dark:text-gray-400">←</span>
+                      <code className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded flex-1 truncate">
+                        {varPath}
+                      </code>
+                      <button
+                        className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 nodrag"
+                        onClick={() => {
+                          const newExtractors = { ...data.config.extractors };
+                          delete newExtractors[varName];
+                          updateNodeData('extractors', newExtractors);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-[9px] text-gray-500 dark:text-gray-400 italic">No extractors configured</div>
+                )}
+              </div>
+
+              {/* Add Extractor Form */}
+              <ExtractorForm onAdd={(varName, varPath) => {
+                const newExtractors = data.config?.extractors || {};
+                newExtractors[varName] = varPath;
+                updateNodeData('extractors', newExtractors);
+              }} />
+            </div>
+
             {/* Variable Hint */}
             <div className="text-[9px] text-gray-500 dark:text-gray-400 p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded space-y-0.5">
-              <div><strong>💡 Access previous node data:</strong></div>
+              <div><strong>💡 Variable Reference:</strong></div>
               <div className="pl-2">
-                <div>• Body: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{prev.response.body.token}}`}</code></div>
-                <div>• Array: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{prev.response.body.data[0].city}}`}</code></div>
-                <div>• Header: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{prev.response.headers.content-type}}`}</code></div>
-                <div>• Cookie: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{prev.response.cookies.session}}`}</code></div>
+                <div><strong className="text-blue-700 dark:text-blue-300">From Previous Node:</strong></div>
+                <div className="pl-2">
+                  <div>• Body: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{prev.response.body.token}}`}</code></div>
+                  <div>• Array: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{prev.response.body.data[0].city}}`}</code></div>
+                  <div>• Header: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{prev.response.headers.content-type}}`}</code></div>
+                  <div>• Cookie: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{prev.response.cookies.session}}`}</code></div>
+                </div>
+                <div className="mt-1"><strong className="text-green-700 dark:text-green-300">From Workflow Variables:</strong></div>
+                <div className="pl-2">
+                  <div>• Token: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{variables.token}}`}</code></div>
+                  <div>• Any variable: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{variables.varName}}`}</code></div>
+                </div>
               </div>
             </div>
           </div>

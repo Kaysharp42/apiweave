@@ -1,15 +1,186 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useCallback } from 'react';
 import { Handle, Position } from 'reactflow';
+import { useReactFlow } from 'reactflow';
 
-const AssertionNode = ({ id, data, selected }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [jsonPath, setJsonPath] = useState('');
+// Assertion form component
+const AssertionForm = ({ onAdd }) => {
+  const [source, setSource] = useState('prev');
+  const [path, setPath] = useState('');
   const [operator, setOperator] = useState('equals');
   const [expectedValue, setExpectedValue] = useState('');
 
+  const handleAdd = () => {
+    console.log('Add assertion button clicked');
+    console.log('Current values:', { source, path, operator, expectedValue });
+    
+    // Validate based on source and operator
+    if (source === 'status') {
+      // Status doesn't need a path
+      console.log('Adding status assertion');
+      onAdd({
+        source: source.trim(),
+        path: '',
+        operator,
+        expectedValue: expectedValue.trim(),
+      });
+    } else if (['exists', 'notExists'].includes(operator)) {
+      // Exists/NotExists don't need expected value
+      if (path.trim()) {
+        console.log('Adding exists/notExists assertion');
+        onAdd({
+          source: source.trim(),
+          path: path.trim(),
+          operator,
+          expectedValue: '',
+        });
+      } else {
+        console.log('Path is required for this operator');
+      }
+    } else {
+      // All others need path and expected value
+      if (path.trim() && expectedValue.trim()) {
+        console.log('Adding standard assertion');
+        onAdd({
+          source: source.trim(),
+          path: path.trim(),
+          operator,
+          expectedValue: expectedValue.trim(),
+        });
+      } else {
+        console.log('Path and expectedValue are required');
+      }
+    }
+    
+    // Reset form
+    setPath('');
+    setExpectedValue('');
+    setSource('prev');
+    setOperator('equals');
+  };
+
+  return (
+    <div className="space-y-1.5 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
+      {/* Source Selection */}
+      <div>
+        <label className="block text-[9px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
+          Assert On
+        </label>
+        <select
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        >
+          <option value="prev">Previous Node Result (prev.*)</option>
+          <option value="variables">Workflow Variables (variables.*)</option>
+          <option value="status">HTTP Status Code</option>
+          <option value="cookies">Cookies</option>
+          <option value="headers">Response Headers</option>
+        </select>
+      </div>
+
+      {/* Path/Field Selection */}
+      {source !== 'status' && (
+        <div>
+          <label className="block text-[9px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
+            {source === 'prev' ? 'JSONPath (e.g., body.status)' : 
+             source === 'variables' ? 'Variable name' :
+             source === 'cookies' ? 'Cookie name' : 'Header name'}
+          </label>
+          <input
+            type="text"
+            placeholder={source === 'prev' ? 'body.status' : source === 'variables' ? 'tokenId' : 'Set-Cookie'}
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          />
+        </div>
+      )}
+
+      {/* Operator Selection */}
+      <div>
+        <label className="block text-[9px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
+          Operator
+        </label>
+        <select
+          value={operator}
+          onChange={(e) => setOperator(e.target.value)}
+          className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        >
+          <option value="equals">Equals (==)</option>
+          <option value="notEquals">Not Equals (!=)</option>
+          <option value="contains">Contains</option>
+          <option value="notContains">Does Not Contain</option>
+          <option value="gt">Greater Than (&gt;)</option>
+          <option value="gte">Greater Than or Equal (&gt;=)</option>
+          <option value="lt">Less Than (&lt;)</option>
+          <option value="lte">Less Than or Equal (&lt;=)</option>
+          <option value="exists">Exists</option>
+          <option value="notExists">Does Not Exist</option>
+        </select>
+      </div>
+
+      {/* Expected Value */}
+      {!['exists', 'notExists'].includes(operator) && (
+        <div>
+          <label className="block text-[9px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
+            Expected Value
+          </label>
+          <input
+            type="text"
+            placeholder="200"
+            value={expectedValue}
+            onChange={(e) => setExpectedValue(e.target.value)}
+            className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          />
+        </div>
+      )}
+
+      {/* Add Button */}
+      <button
+        onClick={handleAdd}
+        className="w-full px-2 py-1 bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 text-white text-[9px] font-semibold rounded nodrag transition-colors"
+      >
+        Add Assertion
+      </button>
+    </div>
+  );
+};
+
+const AssertionNode = ({ id, data, selected }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const { setNodes } = useReactFlow();
+
+  const updateNodeData = useCallback(
+    (key, value) => {
+      console.log(`Updating node ${id} - ${key}:`, value);
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === id
+            ? { ...node, data: { ...node.data, config: { ...node.data.config, [key]: value } } }
+            : node
+        )
+      );
+    },
+    [id, setNodes]
+  );
+
+  const handleAddAssertion = (assertion) => {
+    console.log('Adding assertion:', assertion);
+    const assertions = data.config?.assertions || [];
+    const updated = [...assertions, assertion];
+    console.log('Updated assertions:', updated);
+    updateNodeData('assertions', updated);
+  };
+
+  const handleDeleteAssertion = (index) => {
+    const assertions = data.config?.assertions || [];
+    const updated = assertions.filter((_, i) => i !== index);
+    updateNodeData('assertions', updated);
+  };
+
   return (
     <div
-      className={`rounded-md bg-white dark:bg-gray-800 border-2 shadow-lg min-w-[200px] ${
+      className={`rounded-md bg-white dark:bg-gray-800 border-2 shadow-lg min-w-[250px] ${
         selected ? 'border-cyan-600 dark:border-cyan-500' : 'border-slate-300 dark:border-gray-600'
       }`}
       style={{ fontSize: '12px' }}
@@ -19,7 +190,7 @@ const AssertionNode = ({ id, data, selected }) => {
       {/* Header */}
       <div className="px-2 py-1.5 border-b-2 border-slate-300 dark:border-gray-700 bg-green-50 dark:bg-green-900">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-green-800 dark:text-green-200">✓ Assertion</h3>
+          <h3 className="text-sm font-semibold text-green-800 dark:text-green-200">✓ Assertions</h3>
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag"
@@ -31,55 +202,59 @@ const AssertionNode = ({ id, data, selected }) => {
 
       {/* Content */}
       <div className="p-2 space-y-1.5">
-        <div className="text-[10px] text-gray-600 dark:text-gray-400">Assert on response data</div>
+        <div className="text-[9px] text-gray-600 dark:text-gray-400">
+          {data.config?.assertions?.length || 0} assertion(s)
+        </div>
 
         {isExpanded && (
-          <div className="space-y-1.5 pt-1 border-t dark:border-gray-700">
-            <div>
-              <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
-                JSONPath Expression
-              </label>
-              <input
-                type="text"
-                placeholder="$.status"
-                className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                value={jsonPath}
-                onChange={(e) => setJsonPath(e.target.value)}
-              />
-            </div>
+          <div className="space-y-2 pt-1 border-t dark:border-gray-700">
+            {/* Add Assertion Form */}
+            <AssertionForm onAdd={handleAddAssertion} />
 
-            <div>
-              <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">Operator</label>
-              <select 
-                className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-[10px] focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                value={operator}
-                onChange={(e) => setOperator(e.target.value)}
-              >
-                <option value="equals">Equals</option>
-                <option value="notEquals">Not Equals</option>
-                <option value="contains">Contains</option>
-                <option value="gt">Greater Than</option>
-                <option value="lt">Less Than</option>
-                <option value="exists">Exists</option>
-              </select>
-            </div>
+            {/* Assertions List */}
+            {data.config?.assertions && data.config.assertions.length > 0 ? (
+              <div className="space-y-1.5">
+                {data.config.assertions.map((assertion, index) => (
+                  <div
+                    key={index}
+                    className="p-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded space-y-0.5"
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <div className="flex-1 text-[8px]">
+                        <div className="text-green-700 dark:text-green-300 font-semibold">
+                          {assertion.source === 'prev' ? '{{prev.' : 
+                           assertion.source === 'variables' ? '{{variables.' :
+                           assertion.source === 'status' ? 'status' :
+                           assertion.source === 'cookies' ? 'Cookie: ' :
+                           'Header: '}
+                          {assertion.source !== 'status' && assertion.path}
+                          {(assertion.source === 'prev' || assertion.source === 'variables') && '}}'}
+                        </div>
+                        <div className="text-gray-600 dark:text-gray-400 mt-0.5">
+                          {assertion.operator} <code className="bg-gray-200 dark:bg-gray-600 px-0.5">{assertion.expectedValue}</code>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteAssertion(index)}
+                        className="px-1.5 py-0.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-[8px] rounded nodrag transition-colors flex-shrink-0"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[9px] text-gray-500 dark:text-gray-400 italic py-2">
+                No assertions yet. Add one above.
+              </div>
+            )}
 
-            <div>
-              <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
-                Expected Value
-              </label>
-              <input
-                type="text"
-                placeholder="200"
-                className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-[10px] focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                value={expectedValue}
-                onChange={(e) => setExpectedValue(e.target.value)}
-              />
+            {/* Info */}
+            <div className="text-[8px] text-gray-500 dark:text-gray-400 space-y-0.5 p-1 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+              <p><strong>ℹ️ Note:</strong> If ANY assertion fails, the workflow fails.</p>
+              <p>Use prev.* to reference previous node results.</p>
             </div>
-
-            <button className="nodrag w-full px-2 py-0.5 bg-green-600 dark:bg-green-700 text-white text-[10px] rounded hover:bg-green-700 dark:hover:bg-green-800">
-              + Add Assertion
-            </button>
           </div>
         )}
       </div>

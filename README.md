@@ -8,6 +8,7 @@ APIWeave is an open-source, visual, step-by-step API test workflow tool that all
 
 - 🎨 **Visual Workflow Builder** - Drag-and-drop canvas with React Flow
 - 🔗 **Request Chaining** - Use data from previous steps in subsequent requests
+- 📦 **Workflow Variables** - Extract and reuse tokens, IDs, session data across the workflow
 - ✅ **Assertions** - Status codes, JSONPath matches, schema validation
 - 📊 **CI-Friendly Reports** - JUnit XML and HTML reports
 - 🔐 **Secrets Management** - Never persist secrets in workflows
@@ -127,6 +128,8 @@ Check out the [workflows/](workflows/) directory for example test scenarios:
 ## Documentation
 
 - [Installation Guide](docs/INSTALLATION.md)
+- [Workflow Variables Guide](docs/WORKFLOW_VARIABLES_QUICKSTART.md) - Extract and reuse data across workflow
+- [Workflow Variables (Full Reference)](docs/WORKFLOW_VARIABLES.md) - Complete documentation
 - [Workflow Schema](docs/WORKFLOW_SCHEMA.md)
 - [GitLab CI Integration](docs/GITLAB_CI.md)
 - [API Reference](docs/API.md)
@@ -166,5 +169,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 - 🐛 [Issues](https://github.com/yourusername/apiweave/issues)
 
 ---
-
-Built with ❤️ by Ahmed KHIARI
