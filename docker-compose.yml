@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: apiweave-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: apiweave
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: apiweave-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DB_NAME=apiweave
+      - DEBUG=true
+    depends_on:
+      - mongodb
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/artifacts:/app/artifacts
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: apiweave-worker
+    command: python -m app.worker
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DB_NAME=apiweave
+    depends_on:
+      - mongodb
+      - backend
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/artifacts:/app/artifacts
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: apiweave-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+
+volumes:
+  mongodb_data:

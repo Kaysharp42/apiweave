@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Dark mode styles */
+.dark body {
+  background-color: #111827;
+  color: #e5e5e5;
+}
+
+/* React Flow dark mode */
+.dark .react-flow {
+  background-color: #111827;
+}
+
+.dark .react-flow__node {
+  background-color: #1f2937;
+  border-color: #374151;
+  color: #e5e5e5;
+}
+
+.dark .react-flow__edge-path {
+  stroke: #6b7280;
+}
+
+.dark .react-flow__edge-text {
+  fill: #e5e5e5;
+}
+
+.dark .react-flow__controls {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+.dark .react-flow__controls button {
+  background-color: #1f2937;
+  border-color: #374151;
+  color: #e5e5e5;
+}
+
+.dark .react-flow__controls button:hover {
+  background-color: #374151;
+}
+
+.dark .react-flow__controls button svg {
+  fill: #e5e5e5;
+}
+
+.dark .react-flow__minimap {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+.dark .react-flow__minimap-mask {
+  fill: rgba(0, 0, 0, 0.6);
+}
+
+.dark .react-flow__background {
+  background-color: #111827;
+}
+
+.dark .react-flow__attribution {
+  background-color: rgba(31, 41, 55, 0.9);
+  color: #9ca3af;
+}
+
+/* Selection box in dark mode */
+.dark .react-flow__selectionpane {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid #3b82f6;
+}
+
+/* Node handles in dark mode */
+.dark .react-flow__handle {
+  background-color: #6b7280;
+  border-color: #9ca3af;
+}
+
+.dark .react-flow__handle:hover {
+  background-color: #9ca3af;
+}
+
+/* Allotment (split pane) dark mode styles */
+.dark .split-view-view {
+  background-color: #1f2937;
+}
+
+.dark .sash {
+  background-color: #374151 !important;
+}
+
+.dark .sash:hover {
+  background-color: #4b5563 !important;
+}
+
+.dark .sash.vertical {
+  background-color: #374151 !important;
+}
+
+.dark .sash.horizontal {
+  background-color: #374151 !important;
+}
+
+/* Fix React Flow node wrapper - only remove the wrapper's default white background */
+.react-flow__node-default,
+.react-flow__node-input,
+.react-flow__node-output,
+.react-flow__node-http-request,
+.react-flow__node-assertion,
+.react-flow__node-delay,
+.react-flow__node-start,
+.react-flow__node-end {
+  background-color: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* In dark mode, just ensure the wrapper is transparent */
+.dark .react-flow__node-default,
+.dark .react-flow__node-input,
+.dark .react-flow__node-output,
+.dark .react-flow__node-http-request,
+.dark .react-flow__node-assertion,
+.dark .react-flow__node-delay,
+.dark .react-flow__node-start,
+.dark .react-flow__node-end {
+  background-color: transparent !important;
+}
+

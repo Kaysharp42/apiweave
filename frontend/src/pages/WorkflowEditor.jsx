@@ -1,0 +1,51 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import WorkflowCanvas from '../components/WorkflowCanvas';
+
+const WorkflowEditor = () => {
+  const { workflowId } = useParams();
+  const navigate = useNavigate();
+  const [workflow, setWorkflow] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchWorkflow = async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setWorkflow(data);
+        } else {
+          alert('Workflow not found');
+          navigate('/');
+        }
+      } catch (error) {
+        console.error('Error fetching workflow:', error);
+        alert('Error loading workflow');
+        navigate('/');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (workflowId) {
+      fetchWorkflow();
+    }
+  }, [workflowId, navigate]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-xl">Loading workflow...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen">
+      <WorkflowCanvas workflowId={workflowId} workflow={workflow} />
+    </div>
+  );
+};
+
+export default WorkflowEditor;
