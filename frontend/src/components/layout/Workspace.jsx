@@ -9,7 +9,7 @@ const Workspace = () => {
   console.log('Workspace component rendered');
   const [tabs, setTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
-  const [showVariablesPanel, setShowVariablesPanel] = useState(true);
+  const [showVariablesPanel, setShowVariablesPanel] = useState(false);
 
   useEffect(() => {
     const handleOpenWorkflow = (event) => {
@@ -92,6 +92,7 @@ const Workspace = () => {
                     key={activeTab.id}
                     workflowId={activeTab.id}
                     workflow={activeTab.workflow}
+                    isPanelOpen={showVariablesPanel}
                   />
                 </Allotment.Pane>
                 

@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback } from 'react';
+import React, { memo, useState, useCallback, useMemo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
 
@@ -48,6 +48,14 @@ const ExtractorForm = ({ onAdd }) => {
 const HTTPRequestNode = ({ id, data, selected }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const { setNodes } = useReactFlow();
+
+  // Memoize the stringified response to avoid re-stringifying on every render
+  const responseBodyString = useMemo(() => {
+    if (!data.executionResult?.body) return '';
+    return typeof data.executionResult.body === 'string' 
+      ? data.executionResult.body 
+      : JSON.stringify(data.executionResult.body, null, 2);
+  }, [data.executionResult?.body]);
 
   const updateNodeData = useCallback((field, value) => {
     setNodes((nds) =>
@@ -106,9 +114,13 @@ const HTTPRequestNode = ({ id, data, selected }) => {
           </div>
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag"
+            className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+            style={{ background: 'transparent', border: 'none', padding: '0', WebkitTapHighlightColor: 'transparent' }}
+            aria-expanded={isExpanded}
+            title={isExpanded ? 'Collapse' : 'Expand'}
           >
-            {isExpanded ? '▼' : '▶'}
+            {/* Force monochrome text glyph using variation selector */}
+            {isExpanded ? '\u25BC\uFE0E' : '\u25B6\uFE0E'}
           </button>
         </div>
       </div>
@@ -336,12 +348,11 @@ const HTTPRequestNode = ({ id, data, selected }) => {
               <div className="mt-1">
                 <div className="text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">Body</div>
                 <textarea
-                  className="w-full px-1.5 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-[10px] font-mono"
-                  rows={4}
-                  value={typeof data.executionResult.body === 'string' 
-                    ? data.executionResult.body 
-                    : JSON.stringify(data.executionResult.body, null, 2)}
+                  className="w-full px-1.5 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-[10px] font-mono nodrag overflow-y-auto"
+                  style={{ maxHeight: '150px', resize: 'none' }}
+                  value={responseBodyString}
                   readOnly
+                  onFocus={(e) => e.target.select()}
                 />
               </div>
             )}
@@ -359,4 +370,15 @@ const HTTPRequestNode = ({ id, data, selected }) => {
   );
 };
 
-export default memo(HTTPRequestNode);
+// Custom comparison for memo optimization - only re-render if essential props change
+const areEqual = (prevProps, nextProps) => {
+  return (
+    prevProps.id === nextProps.id &&
+    prevProps.selected === nextProps.selected &&
+    prevProps.data.label === nextProps.data.label &&
+    prevProps.data.executionStatus === nextProps.data.executionStatus &&
+    JSON.stringify(prevProps.data.config) === JSON.stringify(nextProps.data.config)
+  );
+};
+
+export default memo(HTTPRequestNode, areEqual);

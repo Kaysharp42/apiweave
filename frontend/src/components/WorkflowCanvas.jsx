@@ -17,7 +17,32 @@ import StartNode from './nodes/StartNode';
 import EndNode from './nodes/EndNode';
 import AddNodesPanel from './AddNodesPanel';
 import VariablesPanel from './VariablesPanel';
+import NodeModal from './NodeModal';
 import { AppContext } from '../App';
+
+// Optimization helpers - Only update nodes that actually changed
+const selectiveNodeUpdate = (currentNodes, nodeStatuses) => {
+  return currentNodes.map((node) => {
+    const nodeStatus = nodeStatuses[node.id];
+    if (!nodeStatus) return node;
+    
+    // Only create new node object if status changed
+    const oldStatus = node.data.executionStatus;
+    
+    if (oldStatus === nodeStatus.status) {
+      return node; // No change, return same reference
+    }
+    
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        executionStatus: nodeStatus?.status,
+        executionResult: nodeStatus?.result, // Keep full response
+      },
+    };
+  });
+};
 
 const nodeTypes = {
   'http-request': HTTPRequestNode,
@@ -36,7 +61,7 @@ const initialNodes = [
   },
 ];
 
-const WorkflowCanvas = ({ workflowId, workflow }) => {
+const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   console.log('WorkflowCanvas rendered with:', { workflowId, workflow });
   
   // Get global state from context
@@ -49,6 +74,7 @@ const WorkflowCanvas = ({ workflowId, workflow }) => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [workflowVariables, setWorkflowVariables] = useState({});
+  const [modalNode, setModalNode] = useState(null);
 
   // Auto-save timer reference
   const autoSaveTimerRef = useRef(null);
@@ -109,6 +135,19 @@ const WorkflowCanvas = ({ workflowId, workflow }) => {
   const onNodeClick = useCallback((event, node) => {
     setSelectedNode(node);
   }, []);
+
+  const onNodeDoubleClick = useCallback((event, node) => {
+    // Don't open modal for start/end nodes
+    if (node.type !== 'start' && node.type !== 'end') {
+      setModalNode(node);
+    }
+  }, []);
+
+  const handleModalSave = useCallback((updatedNode) => {
+    setNodes((nds) =>
+      nds.map((n) => (n.id === updatedNode.id ? updatedNode : n))
+    );
+  }, [setNodes]);
 
   const onDragOver = useCallback((event) => {
     event.preventDefault();
@@ -252,21 +291,9 @@ const WorkflowCanvas = ({ workflowId, workflow }) => {
               const runData = await statusResponse.json();
               console.log('Run status:', runData);
               
-              // Update node visuals based on status
+              // Update node visuals based on status - only update changed nodes
               if (runData.nodeStatuses) {
-                setNodes((nds) => 
-                  nds.map((node) => {
-                    const nodeStatus = runData.nodeStatuses[node.id];
-                    return {
-                      ...node,
-                      data: {
-                        ...node.data,
-                        executionStatus: nodeStatus?.status,
-                        executionResult: nodeStatus?.result,
-                      },
-                    };
-                  })
-                );
+                setNodes((nds) => selectiveNodeUpdate(nds, runData.nodeStatuses));
               }
               
               // Stop polling when run is complete
@@ -348,6 +375,7 @@ const WorkflowCanvas = ({ workflowId, workflow }) => {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onInit={setReactFlowInstance}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -392,25 +420,34 @@ const WorkflowCanvas = ({ workflowId, workflow }) => {
             onClick={() => saveWorkflow(false)}
             className="flex items-center gap-2 px-4 py-2 bg-cyan-900 text-white rounded-lg hover:bg-cyan-950 shadow-lg font-medium transition-colors dark:bg-cyan-800 dark:hover:bg-cyan-900"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
             </svg>
-            <span>Save</span>
+            <span className="leading-none self-center">Save</span>
           </button>
           <button
             onClick={runWorkflow}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800"
           >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
             </svg>
-            <span>Run</span>
+            <span className="leading-none self-center">Run</span>
           </button>
         </Panel>
       </ReactFlow>
 
       {/* Add Nodes Panel - OUTSIDE ReactFlow */}
-      <AddNodesPanel />
+      <AddNodesPanel isModalOpen={!!modalNode} isPanelOpen={isPanelOpen} />
+
+      {/* Node Modal */}
+      {modalNode && (
+        <NodeModal
+          node={modalNode}
+          onClose={() => setModalNode(null)}
+          onSave={handleModalSave}
+        />
+      )}
     </div>
   );
 };

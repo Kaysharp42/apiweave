@@ -1,8 +1,26 @@
-import React, { Fragment, useState } from 'react';
+import React, { Fragment, useState, useRef, useEffect } from 'react';
 
-const AddNodesPanel = () => {
+const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
   console.log('AddNodesPanel component rendered');
   const [isOpen, setIsOpen] = useState(false);
+  const panelRef = useRef(null);
+
+  // Close panel when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (panelRef.current && !panelRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
 
   const nodeTemplates = [
     {
@@ -39,8 +57,15 @@ const AddNodesPanel = () => {
 
   return (
     <div 
-      className="fixed bottom-24 right-4 z-[9999]"
-      style={{ position: 'fixed', bottom: '96px', right: '16px', zIndex: 9999 }}
+      ref={panelRef}
+      className={`fixed bottom-24 z-[9999] transition-all duration-200 ${isModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+      style={{ 
+        position: 'fixed', 
+        bottom: '96px', 
+        right: isPanelOpen ? 'calc(100% - calc(100vw - 300px) + 16px)' : '16px', 
+        zIndex: 9999,
+        transition: 'all 0.2s ease'
+      }}
     >
       {/* Toggle Button */}
       <button
@@ -48,15 +73,26 @@ const AddNodesPanel = () => {
           console.log('AddNodesPanel toggle clicked, isOpen:', isOpen);
           setIsOpen(!isOpen);
         }}
-        className="inline-flex items-center justify-center rounded-full border-2 border-cyan-900 bg-cyan-900 text-white hover:bg-cyan-950 focus:outline-none shadow-xl dark:border-cyan-800 dark:bg-cyan-800 dark:hover:bg-cyan-900"
+        disabled={isModalOpen}
+        className="flex items-center justify-center rounded-full border-2 border-cyan-900 bg-cyan-900 text-white hover:bg-cyan-950 focus:outline-none shadow-xl dark:border-cyan-800 dark:bg-cyan-800 dark:hover:bg-cyan-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         title="Add Nodes"
         style={{ 
           width: '48px',
           height: '48px',
-          fontSize: '24px'
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}
       >
-        {isOpen ? '×' : '+'}
+        {isOpen ? (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        ) : (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        )}
       </button>
 
       {/* Nodes Panel */}

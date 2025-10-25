@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const Sidebar = ({ selectedNav }) => {
+const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
   const [workflows, setWorkflows] = useState([]);
   const [environments, setEnvironments] = useState([
     { id: '1', name: 'Development', active: true },
@@ -72,18 +72,29 @@ const Sidebar = ({ selectedNav }) => {
     <div className="flex flex-col h-full bg-white dark:bg-gray-800">
       {/* Sidebar Header */}
       <div className="p-3 border-b border-gray-300 dark:border-gray-700">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200 flex-1 min-w-0">
             {selectedNav === 'workflows' ? 'Workflows' : 'Environments'}
           </h2>
-          {selectedNav === 'workflows' && (
+          <div className="flex items-center gap-2">
+            {selectedNav === 'workflows' && (
+              <button
+                onClick={createNewWorkflow}
+                className="px-3 py-1 text-xs bg-cyan-900 dark:bg-cyan-800 text-white rounded hover:bg-cyan-950 dark:hover:bg-cyan-900 flex-shrink-0"
+              >
+                + New
+              </button>
+            )}
             <button
-              onClick={createNewWorkflow}
-              className="px-3 py-1 text-xs bg-cyan-900 dark:bg-cyan-800 text-white rounded hover:bg-cyan-950 dark:hover:bg-cyan-900"
+              onClick={() => setIsCollapsed(true)}
+              className="p-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-cyan-900 dark:hover:text-cyan-400 rounded focus:outline-none flex-shrink-0"
+              title="Collapse sidebar"
             >
-              + New
+              <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
             </button>
-          )}
+          </div>
         </div>
       </div>
 
@@ -113,13 +124,13 @@ const Sidebar = ({ selectedNav }) => {
                           : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'
                       }`}
                     >
-                      <div className="font-medium">{workflow.name}</div>
+                      <div className="font-medium truncate">{workflow.name}</div>
                       {workflow.description && (
                         <div className="text-xs opacity-75 mt-1 truncate">
                           {workflow.description}
                         </div>
                       )}
-                      <div className="text-xs opacity-75 mt-1">
+                      <div className="text-xs opacity-75 mt-1 truncate">
                         {workflow.nodes?.length || 0} nodes
                       </div>
                     </button>
@@ -140,9 +151,13 @@ const Sidebar = ({ selectedNav }) => {
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span>{env.name}</span>
-                      {env.active && <span className="text-xs">✓</span>}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate">{env.name}</span>
+                      {env.active && (
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-label="Active">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
                     </div>
                   </button>
                 </li>

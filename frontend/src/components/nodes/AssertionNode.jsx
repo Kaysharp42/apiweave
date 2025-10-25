@@ -193,9 +193,15 @@ const AssertionNode = ({ id, data, selected }) => {
           <h3 className="text-sm font-semibold text-green-800 dark:text-green-200">✓ Assertions</h3>
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag"
+            className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+            style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+            aria-expanded={isExpanded}
+            title={isExpanded ? 'Collapse' : 'Expand'}
           >
-            {isExpanded ? '▼' : '▶'}
+            {/* Use variation selector-15 (U+FE0E) to force text glyph (monochrome) instead of emoji presentation */}
+            <span style={{ background: 'transparent', boxShadow: 'none', outline: 'none', backgroundColor: 'transparent', border: 'none', padding: 0 }}>
+              {isExpanded ? '\u25BC\uFE0E' : '\u25B6\uFE0E'}
+            </span>
           </button>
         </div>
       </div>
