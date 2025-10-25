@@ -18,6 +18,7 @@ import EndNode from './nodes/EndNode';
 import AddNodesPanel from './AddNodesPanel';
 import VariablesPanel from './VariablesPanel';
 import NodeModal from './NodeModal';
+import HistoryModal from './HistoryModal';
 import { AppContext } from '../App';
 
 // Optimization helpers - Only update nodes that actually changed
@@ -75,6 +76,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [workflowVariables, setWorkflowVariables] = useState({});
   const [modalNode, setModalNode] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   // Auto-save timer reference
   const autoSaveTimerRef = useRef(null);
@@ -316,6 +318,34 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
     }
   }, [workflowId, setNodes]);
 
+  const loadHistoricalRun = useCallback(async (run) => {
+    console.log('Loading historical run:', run);
+    
+    try {
+      // Fetch full run details including nodeStatuses
+      const response = await fetch(
+        `http://localhost:8000/api/workflows/${workflowId}/runs/${run.runId}`
+      );
+      
+      if (response.ok) {
+        const fullRunData = await response.json();
+        console.log('Full run data loaded:', fullRunData);
+        
+        // Update nodes with the historical run data
+        if (fullRunData.nodeStatuses) {
+          setNodes((nds) => selectiveNodeUpdate(nds, fullRunData.nodeStatuses));
+        }
+        
+        // Set the current run ID to the historical one
+        setCurrentRunId(fullRunData.runId);
+      } else {
+        console.error('Failed to load run details');
+      }
+    } catch (error) {
+      console.error('Error loading run details:', error);
+    }
+  }, [workflowId, setNodes]);
+
   // Load persisted auto-save setting for this workflow
   useEffect(() => {
     if (!workflowId) return;
@@ -426,13 +456,24 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
             <span className="leading-none self-center">Save</span>
           </button>
           <button
+            onClick={() => setShowHistory(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 shadow-lg font-medium transition-colors dark:bg-gray-600 dark:hover:bg-gray-700"
+            title="View run history"
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="leading-none self-center">History</span>
+          </button>
+          <button
             onClick={runWorkflow}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800"
+            disabled={isRunning}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
             </svg>
-            <span className="leading-none self-center">Run</span>
+            <span className="leading-none self-center">{isRunning ? 'Running...' : 'Run'}</span>
           </button>
         </Panel>
       </ReactFlow>
@@ -446,6 +487,15 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           node={modalNode}
           onClose={() => setModalNode(null)}
           onSave={handleModalSave}
+        />
+      )}
+
+      {/* History Modal */}
+      {showHistory && (
+        <HistoryModal
+          workflowId={workflowId}
+          onClose={() => setShowHistory(false)}
+          onSelectRun={loadHistoricalRun}
         />
       )}
     </div>

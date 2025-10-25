@@ -308,7 +308,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
           <div className="mt-2 pt-2 border-t dark:border-gray-700">
             <div className="text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-1">Response</div>
             {data.executionResult.statusCode && (
-              <div className="text-[10px] text-gray-600 dark:text-gray-400 flex items-center gap-2">
+              <div className="text-[10px] text-gray-600 dark:text-gray-400 flex items-center gap-2 flex-wrap">
                 <span>Status:</span>
                 <span className={`font-semibold px-1.5 py-0.5 rounded ${
                   data.executionResult.statusCode >= 200 && data.executionResult.statusCode < 300 
@@ -330,6 +330,16 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                     ? '⚠ Client Error'
                     : '✗ Server Error'}
                 </span>
+                {data.executionResult.duration !== undefined && (
+                  <>
+                    <span>•</span>
+                    <span className="font-semibold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+                      ⏱ {data.executionResult.duration >= 1000 
+                        ? `${(data.executionResult.duration / 1000).toFixed(2)}s` 
+                        : `${data.executionResult.duration}ms`}
+                    </span>
+                  </>
+                )}
               </div>
             )}
             {data.executionResult.cookies && Object.keys(data.executionResult.cookies).length > 0 && (

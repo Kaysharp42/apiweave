@@ -484,9 +484,18 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
           📤 Response
         </h3>
         {node.type === 'http-request' && statusCode && (
-          <span className={`text-xs font-semibold px-2 py-1 rounded ${statusColor}`}>
-            {statusCode}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-semibold px-2 py-1 rounded ${statusColor}`}>
+              {statusCode}
+            </span>
+            {output?.duration !== undefined && (
+              <span className="text-xs font-semibold px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+                ⏱ {output.duration >= 1000 
+                  ? `${(output.duration / 1000).toFixed(2)}s` 
+                  : `${output.duration}ms`}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -887,8 +896,6 @@ const DelayConfig = React.memo(({ initialConfig, workingDataRef }) => {
       {hint && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{hint}</p>}
     </div>
   );
-
-  const duration = config.duration || 1000;
 
   return (
     <div className="flex flex-col h-full">

@@ -5,6 +5,7 @@ import asyncio
 import aiohttp
 import re
 import json
+import time
 from datetime import datetime, UTC
 from typing import Dict, Any, List
 from urllib.parse import urlencode
@@ -22,6 +23,7 @@ class WorkflowExecutor:
         self.context = {}  # Stores variables and results from previous nodes
         self.workflow_variables = {}  # Workflow-level variables that persist across nodes
         self.continue_on_fail = False  # Workflow setting: whether to continue on API failure
+        self.start_time = None  # Track workflow execution start time
         
     async def execute(self):
         """Execute the workflow"""
@@ -38,6 +40,9 @@ class WorkflowExecutor:
         # Load workflow settings
         settings = workflow.get('settings', {})
         self.continue_on_fail = settings.get('continueOnFail', False)
+        
+        # Track start time for duration calculation
+        self.start_time = time.time()
         
         # Update run status to running
         await db.runs.update_one(
@@ -65,6 +70,10 @@ class WorkflowExecutor:
             # Execute from start node
             await self._execute_from_node(start_node['nodeId'], nodes, edges, db)
             
+            # Calculate total run duration
+            end_time = time.time()
+            duration_ms = round((end_time - self.start_time) * 1000, 2)
+            
             # Mark run as completed
             await db.runs.update_one(
                 {"runId": self.run_id},
@@ -72,6 +81,7 @@ class WorkflowExecutor:
                     "$set": {
                         "status": "completed",
                         "completedAt": datetime.now(UTC),
+                        "duration": duration_ms,
                         "results": list(self.results.values())
                     }
                 }
@@ -263,6 +273,8 @@ class WorkflowExecutor:
     
     async def _execute_http_request(self, node: Dict) -> Dict[str, Any]:
         """Execute HTTP request node"""
+        import time
+        
         config = node.get('config', {})
         method = config.get('method', 'GET')
         url = config.get('url', '')
@@ -303,6 +315,9 @@ class WorkflowExecutor:
         if body:
             body = self._substitute_variables(body)
         
+        # Start timing
+        start_time = time.time()
+        
         async with aiohttp.ClientSession() as session:
             async with session.request(
                 method=method,
@@ -313,6 +328,10 @@ class WorkflowExecutor:
             ) as response:
                 response_text = await response.text()
                 status_code = response.status
+                
+                # End timing
+                end_time = time.time()
+                duration_ms = round((end_time - start_time) * 1000, 2)  # Convert to milliseconds
                 
                 # Try to parse response as JSON
                 try:
@@ -348,6 +367,7 @@ class WorkflowExecutor:
                     "headers": dict(response.headers),
                     "body": response_body,  # Parsed JSON or raw text
                     "cookies": response_cookies,
+                    "duration": duration_ms,  # Request duration in milliseconds
                     "method": method,
                     "url": url
                 }
@@ -605,28 +625,88 @@ class WorkflowExecutor:
     
     async def _update_node_status(self, db, node_id: str, status: str, result: Any):
         """Update node execution status in the run"""
+        # Store full result in separate collection for detailed viewing
+        if result:
+            await db.node_results.update_one(
+                {"runId": self.run_id, "nodeId": node_id},
+                {
+                    "$set": {
+                        "runId": self.run_id,
+                        "nodeId": node_id,
+                        "status": status,
+                        "result": result,  # Full result stored here
+                        "timestamp": datetime.now(UTC).isoformat()
+                    }
+                },
+                upsert=True
+            )
+        
+        # Store lightweight summary in runs document
+        summary_result = self._create_result_summary(result)
+        
         await db.runs.update_one(
             {"runId": self.run_id},
             {
                 "$set": {
                     f"nodeStatuses.{node_id}": {
                         "status": status,
-                        "result": result,
+                        "result": summary_result,  # Lightweight summary
                         "timestamp": datetime.now(UTC).isoformat()
                     }
                 }
             }
         )
     
+    def _create_result_summary(self, result: Any, max_preview_size: int = 500) -> Any:
+        """Create a lightweight summary of result for runs document"""
+        if not result or not isinstance(result, dict):
+            return result
+        
+        summary = {
+            'status': result.get('status'),
+            'statusCode': result.get('statusCode'),
+            'method': result.get('method'),
+            'url': result.get('url'),
+            'duration': result.get('duration')  # Include duration in summary
+        }
+        
+        # Add small preview of body for quick viewing
+        if 'body' in result:
+            body = result['body']
+            body_str = json.dumps(body) if not isinstance(body, str) else body
+            
+            if len(body_str) > max_preview_size:
+                summary['bodyPreview'] = body_str[:max_preview_size] + '...'
+                summary['bodySize'] = len(body_str)
+            else:
+                summary['body'] = result['body']
+        
+        # Add counts instead of full headers/cookies
+        if 'headers' in result and isinstance(result['headers'], dict):
+            summary['headerCount'] = len(result['headers'])
+        
+        if 'cookies' in result and isinstance(result['cookies'], dict):
+            summary['cookieCount'] = len(result['cookies'])
+        
+        return summary
+    
     async def _fail_run(self, error: str):
         """Mark run as failed"""
         db = get_database()
+        
+        # Calculate duration if start_time is available
+        duration_ms = None
+        if self.start_time is not None:
+            end_time = time.time()
+            duration_ms = round((end_time - self.start_time) * 1000, 2)
+        
         await db.runs.update_one(
             {"runId": self.run_id},
             {
                 "$set": {
                     "status": "failed",
                     "completedAt": datetime.now(UTC),
+                    "duration": duration_ms,
                     "error": error
                 }
             }

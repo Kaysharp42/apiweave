@@ -168,9 +168,66 @@ async def run_workflow(workflow_id: str):
     }
 
 
+@router.get("/{workflow_id}/runs")
+async def get_workflow_runs(workflow_id: str, page: int = 1, limit: int = 10):
+    """Get runs for a workflow with pagination (lightweight list view)"""
+    db = get_database()
+    
+    # Verify workflow exists
+    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+    
+    # Calculate skip value for pagination
+    skip = (page - 1) * limit
+    
+    # Get total count
+    total_count = await db.runs.count_documents({"workflowId": workflow_id})
+    
+    # Get runs sorted by most recent first (createdAt descending)
+    # Only fetch essential fields for list view - exclude heavy nodeStatuses
+    projection = {
+        "_id": 0,
+        "runId": 1,
+        "workflowId": 1,
+        "status": 1,
+        "trigger": 1,
+        "createdAt": 1,
+        "startedAt": 1,
+        "completedAt": 1,
+        "duration": 1,
+        "error": 1
+    }
+    
+    cursor = db.runs.find(
+        {"workflowId": workflow_id},
+        projection
+    ).sort("createdAt", -1).skip(skip).limit(limit)
+    
+    runs = await cursor.to_list(length=limit)
+    
+    # Calculate pagination info
+    total_pages = (total_count + limit - 1) // limit  # Ceiling division
+    
+    return {
+        "runs": runs,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total_count,
+            "totalPages": total_pages,
+            "hasNext": page < total_pages,
+            "hasPrevious": page > 1
+        }
+    }
+
+
 @router.get("/{workflow_id}/runs/{run_id}")
 async def get_run_status(workflow_id: str, run_id: str):
-    """Get the status of a workflow run"""
+    """Get the status of a workflow run with full node results"""
     db = get_database()
     
     run = await db.runs.find_one({"runId": run_id, "workflowId": workflow_id})
@@ -182,5 +239,21 @@ async def get_run_status(workflow_id: str, run_id: str):
     
     # Remove MongoDB _id from response
     run.pop('_id', None)
+    
+    # Fetch full node results from separate collection
+    if run.get('nodeStatuses'):
+        node_results = {}
+        for node_id in run['nodeStatuses'].keys():
+            full_result = await db.node_results.find_one(
+                {"runId": run_id, "nodeId": node_id},
+                {"_id": 0}
+            )
+            if full_result:
+                # Replace summary with full result
+                run['nodeStatuses'][node_id] = {
+                    "status": full_result.get('status'),
+                    "result": full_result.get('result'),  # Full result with complete response
+                    "timestamp": full_result.get('timestamp')
+                }
     
     return run
