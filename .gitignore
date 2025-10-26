@@ -179,3 +179,4 @@ htmlcov/
 .coverage
 .pytest_cache/
 backend/tests/
+backend/tests/workflow.json
