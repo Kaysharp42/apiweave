@@ -1,10 +1,12 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { AppContext } from '../../App';
+import EnvironmentManager from '../EnvironmentManager';
 
 const MainHeader = () => {
   const context = useContext(AppContext);
   console.log('MainHeader context:', context);
   const { darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled } = context;
+  const [showEnvManager, setShowEnvManager] = useState(false);
 
   const handleDarkModeToggle = () => {
     console.log('Dark mode toggle clicked, current:', darkMode);
@@ -35,6 +37,18 @@ const MainHeader = () => {
           
           {/* Global Controls */}
           <div className="flex items-center gap-2">
+            {/* Manage Environments Button */}
+            <button
+              onClick={() => setShowEnvManager(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 bg-white border-gray-300 text-gray-700 hover:border-cyan-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:border-cyan-500 transition-all"
+              title="Manage Environments"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+              <span className="text-xs font-medium hidden sm:inline">Environments</span>
+            </button>
+
             {/* Autosave Toggle */}
             <button
               onClick={handleAutoSaveToggle}
@@ -75,6 +89,11 @@ const MainHeader = () => {
           </div>
         </div>
       </div>
+
+      {/* Environment Manager Modal */}
+      {showEnvManager && (
+        <EnvironmentManager onClose={() => setShowEnvManager(false)} />
+      )}
     </header>
   );
 };

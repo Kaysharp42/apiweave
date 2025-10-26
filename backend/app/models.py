@@ -130,3 +130,38 @@ class Run(BaseModel):
     completedAt: Optional[datetime] = None
     duration: Optional[int] = None  # milliseconds
     error: Optional[str] = None
+
+
+class PaginatedWorkflows(BaseModel):
+    """Paginated workflows response"""
+    workflows: List[Workflow]
+    total: int
+    skip: int
+    limit: int
+    hasMore: bool
+
+
+class EnvironmentCreate(BaseModel):
+    """Request model for creating an environment"""
+    name: str
+    description: Optional[str] = None
+    variables: Dict[str, Any] = Field(default_factory=dict)
+
+
+class EnvironmentUpdate(BaseModel):
+    """Request model for updating an environment"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    variables: Optional[Dict[str, Any]] = None
+    isActive: Optional[bool] = None
+
+
+class Environment(BaseModel):
+    """Environment model with variables"""
+    environmentId: str
+    name: str
+    description: Optional[str] = None
+    variables: Dict[str, Any] = Field(default_factory=dict)
+    isActive: bool = False
+    createdAt: datetime
+    updatedAt: datetime

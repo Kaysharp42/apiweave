@@ -1,31 +1,102 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import EnvironmentManager from '../EnvironmentManager';
 
 const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
   const [workflows, setWorkflows] = useState([]);
-  const [environments, setEnvironments] = useState([
-    { id: '1', name: 'Development', active: true },
-    { id: '2', name: 'Staging', active: false },
-    { id: '3', name: 'Production', active: false },
-  ]);
+  const [pagination, setPagination] = useState({
+    skip: 0,
+    limit: 20,
+    total: 0,
+    hasMore: false,
+  });
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [environments, setEnvironments] = useState([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
+  const [showEnvManager, setShowEnvManager] = useState(false);
+  const scrollContainerRef = useRef(null);
 
   useEffect(() => {
     if (selectedNav === 'workflows') {
-      fetchWorkflows();
+      // Reset and fetch initial workflows
+      setWorkflows([]);
+      setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
+      fetchWorkflows(0);
+    } else if (selectedNav === 'environments') {
+      fetchEnvironments();
     }
+    
+    // Listen for environment changes to refresh list
+    const handleEnvironmentsChanged = () => {
+      if (selectedNav === 'environments') {
+        fetchEnvironments();
+      }
+    };
+    window.addEventListener('environmentsChanged', handleEnvironmentsChanged);
+    
+    return () => {
+      window.removeEventListener('environmentsChanged', handleEnvironmentsChanged);
+    };
   }, [selectedNav]);
 
-  const fetchWorkflows = async () => {
+  const fetchEnvironments = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/workflows');
+      const response = await fetch('http://localhost:8000/api/environments');
       if (response.ok) {
         const data = await response.json();
-        setWorkflows(data);
+        setEnvironments(data);
+      }
+    } catch (error) {
+      console.error('Error fetching environments:', error);
+    }
+  };
+
+  const fetchWorkflows = async (skip = 0, append = false) => {
+    try {
+      setIsLoadingMore(true);
+      const response = await fetch(
+        `http://localhost:8000/api/workflows?skip=${skip}&limit=${pagination.limit}`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (append) {
+          setWorkflows((prev) => [...prev, ...data.workflows]);
+        } else {
+          setWorkflows(data.workflows);
+        }
+        setPagination({
+          skip: data.skip,
+          limit: data.limit,
+          total: data.total,
+          hasMore: data.hasMore,
+        });
       }
     } catch (error) {
       console.error('Error fetching workflows:', error);
+    } finally {
+      setIsLoadingMore(false);
     }
   };
+
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current || isLoadingMore || !pagination.hasMore) {
+      return;
+    }
+
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    // Trigger load more when scrolled to within 100px of bottom
+    if (scrollHeight - scrollTop - clientHeight < 100) {
+      const nextSkip = pagination.skip + pagination.limit;
+      fetchWorkflows(nextSkip, true);
+    }
+  }, [isLoadingMore, pagination]);
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (scrollContainer && selectedNav === 'workflows') {
+      scrollContainer.addEventListener('scroll', handleScroll);
+      return () => scrollContainer.removeEventListener('scroll', handleScroll);
+    }
+  }, [handleScroll, selectedNav]);
 
   const createNewWorkflow = async () => {
     const name = prompt('Workflow Name:');
@@ -53,7 +124,12 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
 
       if (response.ok) {
         const newWorkflow = await response.json();
+        // Add new workflow to the top of the list
         setWorkflows([newWorkflow, ...workflows]);
+        setPagination((prev) => ({
+          ...prev,
+          total: prev.total + 1,
+        }));
         setSelectedWorkflowId(newWorkflow.workflowId);
         // Trigger workspace to open this workflow
         window.dispatchEvent(new CustomEvent('openWorkflow', { detail: newWorkflow }));
@@ -85,6 +161,14 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
                 + New
               </button>
             )}
+            {selectedNav === 'environments' && (
+              <button
+                onClick={() => setShowEnvManager(true)}
+                className="px-3 py-1 text-xs bg-cyan-900 dark:bg-cyan-800 text-white rounded hover:bg-cyan-950 dark:hover:bg-cyan-900 flex-shrink-0"
+              >
+                + New
+              </button>
+            )}
             <button
               onClick={() => setIsCollapsed(true)}
               className="p-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-cyan-900 dark:hover:text-cyan-400 rounded focus:outline-none flex-shrink-0"
@@ -99,10 +183,10 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
       </div>
 
       {/* Sidebar Content */}
-      <div className="flex-1 overflow-auto">
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
         {selectedNav === 'workflows' ? (
           <div className="p-2">
-            {workflows.length === 0 ? (
+            {workflows.length === 0 && !isLoadingMore ? (
               <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
                 <p>No workflows yet</p>
                 <button
@@ -113,25 +197,80 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
                 </button>
               </div>
             ) : (
-              <ul className="space-y-1">
-                {workflows.map((workflow) => (
-                  <li key={workflow.workflowId}>
-                    <button
-                      onClick={() => handleWorkflowClick(workflow)}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
-                        selectedWorkflowId === workflow.workflowId
-                          ? 'bg-cyan-900 dark:bg-cyan-800 text-white'
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'
-                      }`}
-                    >
-                      <div className="font-medium truncate">{workflow.name}</div>
-                      {workflow.description && (
+              <>
+                <ul className="space-y-1">
+                  {workflows.map((workflow) => (
+                    <li key={workflow.workflowId}>
+                      <button
+                        onClick={() => handleWorkflowClick(workflow)}
+                        className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                          selectedWorkflowId === workflow.workflowId
+                            ? 'bg-cyan-900 dark:bg-cyan-800 text-white'
+                            : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'
+                        }`}
+                      >
+                        <div className="font-medium truncate">{workflow.name}</div>
+                        {workflow.description && (
+                          <div className="text-xs opacity-75 mt-1 truncate">
+                            {workflow.description}
+                          </div>
+                        )}
                         <div className="text-xs opacity-75 mt-1 truncate">
-                          {workflow.description}
+                          {workflow.nodes?.length || 0} nodes
                         </div>
-                      )}
-                      <div className="text-xs opacity-75 mt-1 truncate">
-                        {workflow.nodes?.length || 0} nodes
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {isLoadingMore && (
+                  <div className="text-center py-3 text-gray-500 dark:text-gray-400 text-xs">
+                    <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-900 dark:border-cyan-400"></div>
+                    <span className="ml-2">Loading more...</span>
+                  </div>
+                )}
+                {!pagination.hasMore && workflows.length > 0 && (
+                  <div className="text-center py-3 text-gray-500 dark:text-gray-400 text-xs">
+                    Showing all {pagination.total} workflow{pagination.total !== 1 ? 's' : ''}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="p-2">
+            {environments.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
+                <p>No environments yet</p>
+                <button
+                  onClick={() => setShowEnvManager(true)}
+                  className="mt-2 text-cyan-900 dark:text-cyan-400 hover:underline text-xs"
+                >
+                  Create your first environment
+                </button>
+              </div>
+            ) : (
+              <ul className="space-y-1">
+                {environments.map((env) => (
+                  <li key={env.environmentId}>
+                    <button
+                      onClick={() => setShowEnvManager(true)}
+                      className="w-full text-left px-3 py-2 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate">{env.name}</div>
+                          {env.description && (
+                            <div className="text-xs opacity-75 mt-1 truncate">
+                              {env.description}
+                            </div>
+                          )}
+                          <div className="text-xs opacity-75 mt-1 truncate">
+                            {Object.keys(env.variables).length} variables
+                          </div>
+                        </div>
+                        <svg className="w-4 h-4 flex-shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       </div>
                     </button>
                   </li>
@@ -139,33 +278,13 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
               </ul>
             )}
           </div>
-        ) : (
-          <div className="p-2">
-            <ul className="space-y-1">
-              {environments.map((env) => (
-                <li key={env.id}>
-                  <button
-                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
-                      env.active
-                        ? 'bg-cyan-900 dark:bg-cyan-800 text-white'
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate">{env.name}</span>
-                      {env.active && (
-                        <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-label="Active">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
         )}
       </div>
+      
+      {/* Environment Manager Modal */}
+      {showEnvManager && (
+        <EnvironmentManager onClose={() => setShowEnvManager(false)} />
+      )}
     </div>
   );
 };

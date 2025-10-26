@@ -56,6 +56,7 @@ class WorkflowExecutor:
         self.results = {}
         self.context = {}  # Stores variables and results from previous nodes
         self.workflow_variables = {}  # Workflow-level variables that persist across nodes
+        self.environment_variables = {}  # Environment variables from active environment
         self.continue_on_fail = False  # Workflow setting: whether to continue on API failure
         self.start_time = None  # Track workflow execution start time
         self.branch_results = {}  # Track merged branch results per merge node: {merge_node_id: [(node_id, result), ...]}
@@ -78,11 +79,28 @@ class WorkflowExecutor:
             self.logger.error(f"Workflow {self.workflow_id} not found")
             raise Exception(f"Workflow {self.workflow_id} not found")
         
+        run = await db.runs.find_one({"runId": self.run_id})
+        if not run:
+            self.logger.error(f"Run {self.run_id} not found")
+            raise Exception(f"Run {self.run_id} not found")
+        
         self.logger.info(f"Workflow loaded: {workflow.get('name', 'Unnamed')}")
         
         # Initialize workflow variables from the workflow definition
         self.workflow_variables = workflow.get('variables', {}).copy() if workflow.get('variables') else {}
         self.logger.debug(f"Initialized workflow variables: {self.workflow_variables}")
+        
+        # Load environment variables from the run's specified environment
+        environment_id = run.get('environmentId')
+        if environment_id:
+            environment = await db.environments.find_one({"environmentId": environment_id})
+            if environment:
+                self.environment_variables = environment.get('variables', {}).copy()
+                self.logger.info(f"Loaded environment: {environment.get('name')} (ID: {environment_id}) with {len(self.environment_variables)} variables")
+            else:
+                self.logger.warning(f"Environment {environment_id} not found, continuing without environment variables")
+        else:
+            self.logger.info("No environment specified for this run")
 
         
         # Load workflow settings
@@ -347,9 +365,33 @@ class WorkflowExecutor:
         def replacer(match) -> str:
             var_path = match.group(1)
             self.logger.debug(f"  Processing variable: {{{{var_path}}}}")
-            # Handle prev.response.body.token, prev[0].response.body.data, variables.token, etc.
+            # Handle prev.response.body.token, prev[0].response.body.data, variables.token, env.baseUrl, etc.
             try:
-                if var_path.startswith('variables.'):
+                if var_path.startswith('env.'):
+                    # Access environment variables
+                    path_parts = var_path.split('.')[1:]  # Remove 'env'
+                    value = self.environment_variables
+                    
+                    for part in path_parts:
+                        # Handle array indexing: data[0], items[1], etc.
+                        array_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$', part)
+                        if array_match:
+                            key = array_match.group(1)
+                            index = int(array_match.group(2))
+                            if isinstance(value, dict):
+                                value = value.get(key)
+                            if isinstance(value, list) and 0 <= index < len(value):
+                                value = value[index]
+                            else:
+                                return str(match.group(0))  # Return original if not found
+                        elif isinstance(value, dict):
+                            value = value.get(part)
+                        else:
+                            return str(match.group(0))  # Return original if not found
+                    
+                    return str(value) if value is not None else str(match.group(0))
+                
+                elif var_path.startswith('variables.'):
                     # Access workflow variables
                     path_parts = var_path.split('.')[1:]  # Remove 'variables'
                     value = self.workflow_variables

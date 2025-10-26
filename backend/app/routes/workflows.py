@@ -2,14 +2,14 @@
 Workflow API routes
 CRUD operations for workflows
 """
-from fastapi import APIRouter, HTTPException, status
-from typing import List
+from fastapi import APIRouter, HTTPException, status, Query
+from typing import List, Optional
 from datetime import datetime, UTC
 import uuid
 import json
 from bson import ObjectId
 
-from app.models import Workflow, WorkflowCreate, WorkflowUpdate
+from app.models import Workflow, WorkflowCreate, WorkflowUpdate, PaginatedWorkflows
 from app.database import get_database
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
@@ -42,19 +42,32 @@ async def create_workflow(workflow: WorkflowCreate):
     return Workflow(**workflow_doc)
 
 
-@router.get("", response_model=List[Workflow])
-async def list_workflows(skip: int = 0, limit: int = 100, tag: str = None):
-    """List all workflows"""
+@router.get("", response_model=PaginatedWorkflows)
+async def list_workflows(skip: int = 0, limit: int = 20, tag: Optional[str] = None):
+    """List workflows with pagination"""
     db = get_database()
     
     query = {}
     if tag:
         query["tags"] = tag
     
+    # Get total count
+    total = await db.workflows.count_documents(query)
+    
+    # Get workflows for current page
     cursor = db.workflows.find(query).skip(skip).limit(limit).sort("createdAt", -1)
     workflows = await cursor.to_list(length=limit)
     
-    return [Workflow(**workflow) for workflow in workflows]
+    # Calculate if there are more results
+    has_more = (skip + len(workflows)) < total
+    
+    return PaginatedWorkflows(
+        workflows=[Workflow(**workflow) for workflow in workflows],
+        total=total,
+        skip=skip,
+        limit=limit,
+        hasMore=has_more
+    )
 
 
 @router.get("/{workflow_id}", response_model=Workflow)
@@ -129,8 +142,8 @@ async def delete_workflow(workflow_id: str):
 
 
 @router.post("/{workflow_id}/run", status_code=status.HTTP_202_ACCEPTED)
-async def run_workflow(workflow_id: str):
-    """Trigger a workflow run"""
+async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(None)):
+    """Trigger a workflow run with optional environment"""
     db = get_database()
     
     # Verify workflow exists
@@ -141,12 +154,22 @@ async def run_workflow(workflow_id: str):
             detail=f"Workflow {workflow_id} not found"
         )
     
+    # Verify environment exists if provided
+    if environmentId:
+        environment = await db.environments.find_one({"environmentId": environmentId})
+        if not environment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Environment {environmentId} not found"
+            )
+    
     run_id = str(uuid.uuid4())
     now = datetime.now(UTC)
     
     run_doc = {
         "runId": run_id,
         "workflowId": workflow_id,
+        "environmentId": environmentId,  # Store which environment to use for this run
         "status": "pending",
         "trigger": "manual",
         "variables": workflow.get("variables", {}),
@@ -167,6 +190,7 @@ async def run_workflow(workflow_id: str):
         "message": "Workflow run triggered",
         "runId": run_id,
         "workflowId": workflow_id,
+        "environmentId": environmentId,
         "status": "pending"
     }
 

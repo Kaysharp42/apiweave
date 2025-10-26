@@ -22,6 +22,7 @@ import NodeModal from './NodeModal';
 import HistoryModal from './HistoryModal';
 import { AppContext } from '../App';
 import Toaster, { toast } from './Toaster';
+import ButtonSelect from './ButtonSelect';
 
 // Update node statuses - always update to ensure fresh data on each run
 const selectiveNodeUpdate = (currentNodes, nodeStatuses) => {
@@ -75,6 +76,24 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   const [workflowVariables, setWorkflowVariables] = useState({});
   const [modalNode, setModalNode] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [environments, setEnvironments] = useState([]);
+  
+  // Initialize selectedEnvironment from localStorage if available
+  const [selectedEnvironment, setSelectedEnvironment] = useState(() => {
+    const saved = localStorage.getItem(`selectedEnvironment_${workflowId}`);
+    console.log('🔧 Initializing selectedEnvironment:', { workflowId, saved });
+    return saved || null;
+  });
+  
+  // Save selectedEnvironment to localStorage when it changes
+  useEffect(() => {
+    console.log('💾 selectedEnvironment changed:', selectedEnvironment);
+    if (selectedEnvironment) {
+      localStorage.setItem(`selectedEnvironment_${workflowId}`, selectedEnvironment);
+    } else {
+      localStorage.removeItem(`selectedEnvironment_${workflowId}`);
+    }
+  }, [selectedEnvironment, workflowId]);
 
   // Auto-save timer reference
   const autoSaveTimerRef = useRef(null);
@@ -96,6 +115,34 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       )
     }));
   }, [nodes]);
+
+  // Fetch environments
+  useEffect(() => {
+    const fetchEnvironments = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/environments');
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Fetched environments:', data);
+          setEnvironments(data);
+        }
+      } catch (error) {
+        console.error('Error fetching environments:', error);
+      }
+    };
+    
+    fetchEnvironments();
+    
+    // Listen for environment changes
+    const handleEnvironmentsChanged = () => {
+      fetchEnvironments();
+    };
+    window.addEventListener('environmentsChanged', handleEnvironmentsChanged);
+    
+    return () => {
+      window.removeEventListener('environmentsChanged', handleEnvironmentsChanged);
+    };
+  }, []);
 
   // Detect parallel branches and update node data with branch counts
   useEffect(() => {
@@ -444,7 +491,20 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       })));
       
       // Start the run
-      const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}/run`, {
+      console.log('🚀 About to run workflow with:', {
+        selectedEnvironment,
+        type: typeof selectedEnvironment,
+        isTruthy: !!selectedEnvironment,
+        workflowId
+      });
+      
+      const url = selectedEnvironment 
+        ? `http://localhost:8000/api/workflows/${workflowId}/run?environmentId=${selectedEnvironment}`
+        : `http://localhost:8000/api/workflows/${workflowId}/run`;
+      
+      console.log('📡 Request URL:', url);
+        
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -638,6 +698,22 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
             </svg>
             <span className="leading-none self-center">History</span>
           </button>
+          
+          {/* Environment Selector */}
+          <div className="relative flex items-center">
+            <ButtonSelect
+              options={[{ value: '', label: 'No Environment' }, ...environments.map(e => ({ value: e.environmentId, label: e.name }))]}
+              value={selectedEnvironment || ''}
+              onChange={(val) => {
+                const processed = val || null;
+                console.log('🔄 ButtonSelect changed:', { raw: val, processed });
+                setSelectedEnvironment(processed);
+              }}
+              placeholder="No Environment"
+              buttonClass="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg font-medium leading-none shadow-lg transition-colors"
+            />
+          </div>
+          
           <button
             onClick={runWorkflow}
             disabled={isRunning}

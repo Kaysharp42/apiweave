@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from app.database import connect_db, close_db
 from app.config import settings
-from app.routes import workflows, runs
+from app.routes import workflows, runs, environments
 
 
 @asynccontextmanager
@@ -40,6 +40,7 @@ app.add_middleware(
 # Include routers
 app.include_router(workflows.router)
 app.include_router(runs.router)
+app.include_router(environments.router)
 
 
 @app.get("/")
