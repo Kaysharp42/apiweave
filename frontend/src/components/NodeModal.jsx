@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import AssertionEditor from './AssertionEditor';
 import { Allotment } from 'allotment';
 
 const NodeModal = ({ node, onClose, onSave }) => {
@@ -46,6 +47,7 @@ const NodeModal = ({ node, onClose, onSave }) => {
     'http-request': { icon: '🌐', name: 'HTTP Request' },
     'assertion': { icon: '✓', name: 'Assertion' },
     'delay': { icon: '⏱️', name: 'Delay' },
+    'merge': { icon: '🔀', name: 'Merge' },
     'start': { icon: '⬤', name: 'Start' },
     'end': { icon: '◉', name: 'End' }
   };
@@ -172,6 +174,12 @@ const NodeModal = ({ node, onClose, onSave }) => {
               )}
               {node.type === 'delay' && (
                 <DelayConfig 
+                  initialConfig={node.data.config || {}} 
+                  workingDataRef={workingDataRef}
+                />
+              )}
+              {node.type === 'merge' && (
+                <MergeConfig 
                   initialConfig={node.data.config || {}} 
                   workingDataRef={workingDataRef}
                 />
@@ -566,6 +574,7 @@ const AssertionFormModal = ({ onAdd }) => {
   const [path, setPath] = useState('');
   const [operator, setOperator] = useState('equals');
   const [expectedValue, setExpectedValue] = useState('');
+  const [errors, setErrors] = useState({ path: '', expectedValue: '' });
 
   const handleAdd = () => {
     console.log('Add assertion button clicked');
@@ -591,8 +600,10 @@ const AssertionFormModal = ({ onAdd }) => {
           operator,
           expectedValue: '',
         });
+        setErrors({ path: '', expectedValue: '' });
       } else {
         console.log('Path is required for this operator');
+        setErrors({ path: 'Path is required', expectedValue: '' });
         return;
       }
     } else {
@@ -605,8 +616,10 @@ const AssertionFormModal = ({ onAdd }) => {
           operator,
           expectedValue: expectedValue.trim(),
         });
+        setErrors({ path: '', expectedValue: '' });
       } else {
         console.log('Path and expectedValue are required');
+        setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Expected value is required' });
         return;
       }
     }
@@ -646,13 +659,16 @@ const AssertionFormModal = ({ onAdd }) => {
              source === 'variables' ? 'Variable name' :
              source === 'cookies' ? 'Cookie name' : 'Header name'}
           </label>
-          <input
-            type="text"
-            placeholder={source === 'prev' ? 'body.status' : source === 'variables' ? 'tokenId' : 'Set-Cookie'}
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-          />
+          <div>
+            <input
+              type="text"
+              placeholder={source === 'prev' ? 'body.status' : source === 'variables' ? 'tokenId' : 'Set-Cookie'}
+              value={path}
+              onChange={(e) => { setPath(e.target.value); setErrors({ ...errors, path: '' }); }}
+              className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${errors.path ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200'}`}
+            />
+            {errors.path && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.path}</div>}
+          </div>
         </div>
       )}
 
@@ -685,13 +701,16 @@ const AssertionFormModal = ({ onAdd }) => {
           <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
             Expected Value
           </label>
-          <input
-            type="text"
-            placeholder="200"
-            value={expectedValue}
-            onChange={(e) => setExpectedValue(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500"
-          />
+          <div>
+            <input
+              type="text"
+              placeholder="200"
+              value={expectedValue}
+              onChange={(e) => { setExpectedValue(e.target.value); setErrors({ ...errors, expectedValue: '' }); }}
+              className={`w-full px-3 py-2 border rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500 ${errors.expectedValue ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200'}`}
+            />
+            {errors.expectedValue && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.expectedValue}</div>}
+          </div>
         </div>
       )}
 
@@ -710,6 +729,9 @@ const AssertionFormModal = ({ onAdd }) => {
 const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const [activeTab, setActiveTab] = useState('parameters');
   const [assertions, setAssertions] = useState(initialConfig.assertions || []);
+  // Editing state for inline modification of existing assertions
+  const [editingIndex, setEditingIndex] = useState(-1);
+  const [editDraft, setEditDraft] = useState(null);
 
   const handleAddAssertion = (assertion) => {
     console.log('Adding assertion:', assertion);
@@ -797,34 +819,76 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
                     key={index}
                     className="p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg space-y-2"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 text-sm">
-                        <div className="text-green-700 dark:text-green-300 font-semibold font-mono">
-                          {assertion.source === 'prev' ? '{{prev.' : 
-                           assertion.source === 'variables' ? '{{variables.' :
-                           assertion.source === 'status' ? 'status' :
-                           assertion.source === 'cookies' ? 'Cookie: ' :
-                           'Header: '}
-                          {assertion.source !== 'status' && assertion.path}
-                          {(assertion.source === 'prev' || assertion.source === 'variables') && '}}'}
+                    {/* If this assertion is being edited show shared AssertionEditor */}
+                    {editingIndex === index ? (
+                      <AssertionEditor
+                        value={editDraft}
+                        onChange={(next) => setEditDraft(next)}
+                        onCancel={() => {
+                          setEditingIndex(-1);
+                          setEditDraft(null);
+                        }}
+                        onSave={() => {
+                          const updatedAssertion = { ...editDraft };
+                          const updated = assertions.map((a, i) => (i === index ? updatedAssertion : a));
+                          setAssertions(updated);
+                          // Update working data ref
+                          if (workingDataRef) {
+                            workingDataRef.current = {
+                              ...workingDataRef.current,
+                              config: {
+                                ...workingDataRef.current.config,
+                                assertions: updated
+                              }
+                            };
+                          }
+                          setEditingIndex(-1);
+                          setEditDraft(null);
+                        }}
+                      />
+                    ) : (
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 text-sm">
+                          <div className="text-green-700 dark:text-green-300 font-semibold font-mono">
+                            {assertion.source === 'prev' ? '{{prev.' : 
+                             assertion.source === 'variables' ? '{{variables.' :
+                             assertion.source === 'status' ? 'status' :
+                             assertion.source === 'cookies' ? 'Cookie: ' :
+                             'Header: '}
+                            {assertion.source !== 'status' && assertion.path}
+                            {(assertion.source === 'prev' || assertion.source === 'variables') && '}}'}
+                          </div>
+                          <div className="text-gray-600 dark:text-gray-400 mt-1 text-xs">
+                            <span className="font-medium">{assertion.operator}</span>
+                            {assertion.expectedValue && (
+                              <>
+                                {' '}<code className="bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded">{assertion.expectedValue}</code>
+                              </>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-gray-600 dark:text-gray-400 mt-1 text-xs">
-                          <span className="font-medium">{assertion.operator}</span>
-                          {assertion.expectedValue && (
-                            <>
-                              {' '}<code className="bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded">{assertion.expectedValue}</code>
-                            </>
-                          )}
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={() => {
+                              // Start editing: seed draft with current assertion
+                              setEditingIndex(index);
+                              setEditDraft({ ...assertion });
+                            }}
+                            className="px-3 py-1.5 bg-yellow-500 dark:bg-yellow-600 hover:bg-yellow-600 dark:hover:bg-yellow-700 text-white text-xs font-semibold rounded transition-colors flex-shrink-0"
+                            title="Edit assertion"
+                          >
+                            ✎ Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAssertion(index)}
+                            className="px-3 py-1.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-xs font-semibold rounded transition-colors flex-shrink-0"
+                            title="Delete assertion"
+                          >
+                            ✕ Delete
+                          </button>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteAssertion(index)}
-                        className="px-3 py-1.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-xs font-semibold rounded transition-colors flex-shrink-0"
-                        title="Delete assertion"
-                      >
-                        ✕ Delete
-                      </button>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -931,4 +995,251 @@ const DelayConfig = React.memo(({ initialConfig, workingDataRef }) => {
 });
 DelayConfig.displayName = 'DelayConfig';
 
+// Merge Configuration Component
+const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
+  const [activeTab, setActiveTab] = useState('parameters');
+  const [currentStrategy, setCurrentStrategy] = useState(initialConfig.mergeStrategy || 'all');
+  
+  const strategyRef = useRef(initialConfig.mergeStrategy || 'all');
+  const conditionsRef = useRef(initialConfig.conditions || []);
+
+  console.log('MergeConfig rendered - currentStrategy:', currentStrategy, 'activeTab:', activeTab);
+
+  const updateRef = () => {
+    const newConfig = {
+      mergeStrategy: strategyRef.current,
+      conditions: conditionsRef.current
+    };
+    if (workingDataRef) {
+      workingDataRef.current = { ...workingDataRef.current, config: newConfig };
+    }
+  };
+
+  const TabButton = ({ id, label }) => (
+    <button
+      onClick={() => setActiveTab(id)}
+      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+        activeTab === id
+          ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const FormField = ({ label, children, hint }) => (
+    <div className="mb-4">
+      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">
+        {label}
+      </label>
+      {children}
+      {hint && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 italic">{hint}</p>}
+    </div>
+  );
+
+  const strategyDescriptions = {
+    all: '⏳ Waits for ALL incoming branches to complete before continuing (AND logic)',
+    any: '⚡ Continues as soon as ANY branch completes (OR logic)',
+    first: '🏃 Uses the first branch that completes and ignores the rest',
+    conditional: '🎯 Merges only branches that match specified conditions (filters by status, response values, etc.)'
+  };
+
+  const addCondition = () => {
+    conditionsRef.current = [
+      ...conditionsRef.current,
+      { branchIndex: 0, field: 'statusCode', operator: 'equals', value: '200' }
+    ];
+    updateRef();
+  };
+
+  const removeCondition = (index) => {
+    conditionsRef.current = conditionsRef.current.filter((_, i) => i !== index);
+    updateRef();
+  };
+
+  const updateCondition = (index, updates) => {
+    conditionsRef.current = conditionsRef.current.map((cond, i) =>
+      i === index ? { ...cond, ...updates } : cond
+    );
+    updateRef();
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Tabs */}
+      <div className="flex-shrink-0 flex border-b border-gray-200 dark:border-gray-700 px-4">
+        <TabButton id="parameters" label="Merge Strategy" />
+        {currentStrategy === 'conditional' && (
+          <TabButton id="conditions" label="Conditions" />
+        )}
+      </div>
+
+      {/* Tab Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {activeTab === 'parameters' && (
+          <>
+            <FormField 
+              label="Wait Strategy" 
+              hint={strategyDescriptions[currentStrategy] || strategyDescriptions.all}
+            >
+              <select
+                value={currentStrategy}
+                onChange={(e) => {
+                  const newStrategy = e.target.value;
+                  console.log('Strategy changed to:', newStrategy);
+                  strategyRef.current = newStrategy;
+                  setCurrentStrategy(newStrategy);
+                  updateRef();
+                  // Switch to conditions tab if conditional selected
+                  if (newStrategy === 'conditional') {
+                    console.log('Switching to conditions tab');
+                    setActiveTab('conditions');
+                  }
+                }}
+                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              >
+                <option value="all">Wait for All (AND)</option>
+                <option value="any">Wait for Any (OR)</option>
+                <option value="first">First Completes</option>
+                <option value="conditional">Conditional Merge</option>
+              </select>
+            </FormField>
+
+            {/* Info Box */}
+            <div className="mt-6 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg">
+              <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-200 mb-2">
+                📝 How Merge Works
+              </h4>
+              <ul className="text-xs text-purple-800 dark:text-purple-300 space-y-1">
+                <li>• Multiple edges leading to this node create parallel branches</li>
+                <li>• Access branch results using: <code className="bg-white dark:bg-gray-800 px-1 py-0.5 rounded">{'{{prev[0].response}}'}</code></li>
+                <li>• Index [0], [1], [2]... corresponds to branch execution order</li>
+                <li>• Use <code className="bg-white dark:bg-gray-800 px-1 py-0.5 rounded">{'{{prev.response}}'}</code> for single predecessor (backward compatible)</li>
+                {currentStrategy === 'conditional' && (
+                  <li className="mt-2 pt-2 border-t border-purple-300 dark:border-purple-700">
+                    • <strong>Conditional:</strong> Define conditions to filter which branches to merge
+                  </li>
+                )}
+              </ul>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'conditions' && currentStrategy === 'conditional' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Merge Conditions
+              </h3>
+              <button
+                onClick={addCondition}
+                className="px-3 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
+              >
+                + Add Condition
+              </button>
+            </div>
+
+            {conditionsRef.current.length === 0 ? (
+              <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+                No conditions defined. All branches will be merged.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {conditionsRef.current.map((condition, index) => (
+                  <div
+                    key={index}
+                    className="p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                        Condition {index + 1}
+                      </span>
+                      <button
+                        onClick={() => removeCondition(index)}
+                        className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* Branch Index */}
+                      <div>
+                        <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Branch</label>
+                        <input
+                          type="number"
+                          defaultValue={condition.branchIndex}
+                          onChange={(e) => updateCondition(index, { branchIndex: parseInt(e.target.value) || 0 })}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          min="0"
+                        />
+                      </div>
+
+                      {/* Field */}
+                      <div>
+                        <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Field</label>
+                        <select
+                          defaultValue={condition.field}
+                          onChange={(e) => updateCondition(index, { field: e.target.value })}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        >
+                          <option value="statusCode">Status Code</option>
+                          <option value="response.body">Response Body</option>
+                          <option value="response.headers">Headers</option>
+                          <option value="status">Execution Status</option>
+                        </select>
+                      </div>
+
+                      {/* Operator */}
+                      <div>
+                        <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Operator</label>
+                        <select
+                          defaultValue={condition.operator}
+                          onChange={(e) => updateCondition(index, { operator: e.target.value })}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        >
+                          <option value="equals">Equals</option>
+                          <option value="notEquals">Not Equals</option>
+                          <option value="contains">Contains</option>
+                          <option value="gt">Greater Than</option>
+                          <option value="lt">Less Than</option>
+                          <option value="exists">Exists</option>
+                        </select>
+                      </div>
+
+                      {/* Value */}
+                      <div>
+                        <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Value</label>
+                        <input
+                          type="text"
+                          defaultValue={condition.value}
+                          onChange={(e) => updateCondition(index, { value: e.target.value })}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          placeholder="Expected value"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Hint */}
+            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+              <p className="text-xs text-blue-800 dark:text-blue-300">
+                💡 <strong>Tip:</strong> Conditions are evaluated as OR logic. Any branch matching any condition will be merged.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+MergeConfig.displayName = 'MergeConfig';
+
 export default NodeModal;
+

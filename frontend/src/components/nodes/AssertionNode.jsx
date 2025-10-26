@@ -1,6 +1,8 @@
 import React, { memo, useState, useCallback } from 'react';
 import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
+import AssertionEditor from '../AssertionEditor';
+import Tooltip from '../Tooltip';
 
 // Assertion form component
 const AssertionForm = ({ onAdd }) => {
@@ -8,11 +10,14 @@ const AssertionForm = ({ onAdd }) => {
   const [path, setPath] = useState('');
   const [operator, setOperator] = useState('equals');
   const [expectedValue, setExpectedValue] = useState('');
+  const [errors, setErrors] = useState({ path: '', expectedValue: '' });
 
   const handleAdd = () => {
     console.log('Add assertion button clicked');
     console.log('Current values:', { source, path, operator, expectedValue });
-    
+    // Reset errors
+    setErrors({ path: '', expectedValue: '' });
+
     // Validate based on source and operator
     if (source === 'status') {
       // Status doesn't need a path
@@ -23,6 +28,7 @@ const AssertionForm = ({ onAdd }) => {
         operator,
         expectedValue: expectedValue.trim(),
       });
+      setErrors({ path: '', expectedValue: '' });
     } else if (['exists', 'notExists'].includes(operator)) {
       // Exists/NotExists don't need expected value
       if (path.trim()) {
@@ -33,8 +39,11 @@ const AssertionForm = ({ onAdd }) => {
           operator,
           expectedValue: '',
         });
+        setErrors({ path: '', expectedValue: '' });
       } else {
         console.log('Path is required for this operator');
+        setErrors({ path: 'Path is required', expectedValue: '' });
+        return;
       }
     } else {
       // All others need path and expected value
@@ -46,11 +55,14 @@ const AssertionForm = ({ onAdd }) => {
           operator,
           expectedValue: expectedValue.trim(),
         });
+        setErrors({ path: '', expectedValue: '' });
       } else {
         console.log('Path and expectedValue are required');
+        setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Expected value required' });
+        return;
       }
     }
-    
+
     // Reset form
     setPath('');
     setExpectedValue('');
@@ -91,8 +103,12 @@ const AssertionForm = ({ onAdd }) => {
             placeholder={source === 'prev' ? 'body.status' : source === 'variables' ? 'tokenId' : 'Set-Cookie'}
             value={path}
             onChange={(e) => setPath(e.target.value)}
-            className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className={`nodrag w-full px-1.5 py-0.5 border rounded text-[9px] focus:outline-none focus:ring-2 ` +
+              (errors.path ? 'border-red-500 focus:ring-red-400 bg-red-50 dark:bg-red-900/20 text-red-900 dark:text-red-300' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 focus:ring-cyan-500')}
           />
+          {errors.path && (
+            <div className="text-[9px] text-red-600 dark:text-red-400 mt-1">{errors.path}</div>
+          )}
         </div>
       )}
 
@@ -130,8 +146,12 @@ const AssertionForm = ({ onAdd }) => {
             placeholder="200"
             value={expectedValue}
             onChange={(e) => setExpectedValue(e.target.value)}
-            className="nodrag w-full px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className={`nodrag w-full px-1.5 py-0.5 border rounded text-[9px] font-mono focus:outline-none focus:ring-2 ` +
+              (errors.expectedValue ? 'border-red-500 focus:ring-red-400 bg-red-50 dark:bg-red-900/20 text-red-900 dark:text-red-300' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 focus:ring-cyan-500')}
           />
+          {errors.expectedValue && (
+            <div className="text-[9px] text-red-600 dark:text-red-400 mt-1">{errors.expectedValue}</div>
+          )}
         </div>
       )}
 
@@ -149,6 +169,10 @@ const AssertionForm = ({ onAdd }) => {
 const AssertionNode = ({ id, data, selected }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const { setNodes } = useReactFlow();
+
+  // Inline editing state for assertions in the node UI
+  const [editingIndex, setEditingIndex] = useState(-1);
+  const [editDraft, setEditDraft] = useState(null);
 
   const updateNodeData = useCallback(
     (key, value) => {
@@ -182,7 +206,7 @@ const AssertionNode = ({ id, data, selected }) => {
     <div
       className={`rounded-md bg-white dark:bg-gray-800 border-2 shadow-lg min-w-[250px] ${
         selected ? 'border-cyan-600 dark:border-cyan-500' : 'border-slate-300 dark:border-gray-600'
-      }`}
+      } ${data?.invalid ? 'ring-2 ring-red-500 animate-pulse' : ''}`}
       style={{ fontSize: '12px' }}
     >
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-gray-400 dark:bg-gray-500" />
@@ -191,18 +215,19 @@ const AssertionNode = ({ id, data, selected }) => {
       <div className="px-2 py-1.5 border-b-2 border-slate-300 dark:border-gray-700 bg-green-50 dark:bg-green-900">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-green-800 dark:text-green-200">✓ Assertions</h3>
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
-            style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
-            aria-expanded={isExpanded}
-            title={isExpanded ? 'Collapse' : 'Expand'}
-          >
-            {/* Use variation selector-15 (U+FE0E) to force text glyph (monochrome) instead of emoji presentation */}
-            <span style={{ background: 'transparent', boxShadow: 'none', outline: 'none', backgroundColor: 'transparent', border: 'none', padding: 0 }}>
-              {isExpanded ? '\u25BC\uFE0E' : '\u25B6\uFE0E'}
-            </span>
-          </button>
+          <Tooltip text={isExpanded ? 'Collapse' : 'Expand'}>
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+              style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+              aria-expanded={isExpanded}
+            >
+              {/* Use variation selector-15 (U+FE0E) to force text glyph (monochrome) instead of emoji presentation */}
+              <span style={{ background: 'transparent', boxShadow: 'none', outline: 'none', backgroundColor: 'transparent', border: 'none', padding: 0 }}>
+                {isExpanded ? '\u25BC\uFE0E' : '\u25B6\uFE0E'}
+              </span>
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -225,28 +250,60 @@ const AssertionNode = ({ id, data, selected }) => {
                     key={index}
                     className="p-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded space-y-0.5"
                   >
-                    <div className="flex items-start justify-between gap-1">
-                      <div className="flex-1 text-[8px]">
-                        <div className="text-green-700 dark:text-green-300 font-semibold">
-                          {assertion.source === 'prev' ? '{{prev.' : 
-                           assertion.source === 'variables' ? '{{variables.' :
-                           assertion.source === 'status' ? 'status' :
-                           assertion.source === 'cookies' ? 'Cookie: ' :
-                           'Header: '}
-                          {assertion.source !== 'status' && assertion.path}
-                          {(assertion.source === 'prev' || assertion.source === 'variables') && '}}'}
+                    {/* If editing this assertion show inline form */}
+                    {editingIndex === index ? (
+                      <AssertionEditor
+                        value={editDraft}
+                        onChange={(next) => setEditDraft(next)}
+                        onCancel={() => {
+                          setEditingIndex(-1);
+                          setEditDraft(null);
+                        }}
+                        onSave={() => {
+                          const updatedAssertion = { ...editDraft };
+                          const current = data.config?.assertions || [];
+                          const updated = current.map((a, i) => (i === index ? updatedAssertion : a));
+                          updateNodeData('assertions', updated);
+                          setEditingIndex(-1);
+                          setEditDraft(null);
+                        }}
+                      />
+                    ) : (
+                      <div className="flex items-start justify-between gap-1">
+                        <div className="flex-1 text-[8px]">
+                          <div className="text-green-700 dark:text-green-300 font-semibold">
+                            {assertion.source === 'prev' ? '{{prev.' : 
+                             assertion.source === 'variables' ? '{{variables.' :
+                             assertion.source === 'status' ? 'status' :
+                             assertion.source === 'cookies' ? 'Cookie: ' :
+                             'Header: '}
+                            {assertion.source !== 'status' && assertion.path}
+                            {(assertion.source === 'prev' || assertion.source === 'variables') && '}}'}
+                          </div>
+                          <div className="text-gray-600 dark:text-gray-400 mt-0.5">
+                            {assertion.operator} <code className="bg-gray-200 dark:bg-gray-600 px-0.5">{assertion.expectedValue}</code>
+                          </div>
                         </div>
-                        <div className="text-gray-600 dark:text-gray-400 mt-0.5">
-                          {assertion.operator} <code className="bg-gray-200 dark:bg-gray-600 px-0.5">{assertion.expectedValue}</code>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => {
+                              // Seed draft and enter edit mode
+                              setEditingIndex(index);
+                              setEditDraft({ ...assertion });
+                            }}
+                            className="px-1.5 py-0.5 bg-yellow-500 dark:bg-yellow-600 hover:bg-yellow-600 dark:hover:bg-yellow-700 text-white text-[8px] rounded nodrag transition-colors"
+                          >
+                            ✎
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAssertion(index)}
+                            className="px-1.5 py-0.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-[8px] rounded nodrag transition-colors"
+                          >
+                            ✕
+                          </button>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteAssertion(index)}
-                        className="px-1.5 py-0.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-[8px] rounded nodrag transition-colors flex-shrink-0"
-                      >
-                        ✕
-                      </button>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>

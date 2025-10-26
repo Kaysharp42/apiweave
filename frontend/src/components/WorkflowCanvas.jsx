@@ -15,31 +15,28 @@ import AssertionNode from './nodes/AssertionNode';
 import DelayNode from './nodes/DelayNode';
 import StartNode from './nodes/StartNode';
 import EndNode from './nodes/EndNode';
+import MergeNode from './nodes/MergeNode';
 import AddNodesPanel from './AddNodesPanel';
 import VariablesPanel from './VariablesPanel';
 import NodeModal from './NodeModal';
 import HistoryModal from './HistoryModal';
 import { AppContext } from '../App';
+import Toaster, { toast } from './Toaster';
 
-// Optimization helpers - Only update nodes that actually changed
+// Update node statuses - always update to ensure fresh data on each run
 const selectiveNodeUpdate = (currentNodes, nodeStatuses) => {
   return currentNodes.map((node) => {
     const nodeStatus = nodeStatuses[node.id];
     if (!nodeStatus) return node;
     
-    // Only create new node object if status changed
-    const oldStatus = node.data.executionStatus;
-    
-    if (oldStatus === nodeStatus.status) {
-      return node; // No change, return same reference
-    }
-    
+    // Always update to ensure fresh results on each run
     return {
       ...node,
       data: {
         ...node.data,
         executionStatus: nodeStatus?.status,
-        executionResult: nodeStatus?.result, // Keep full response
+        executionResult: nodeStatus?.result, // Full response with fresh data
+        executionTimestamp: nodeStatus?.timestamp, // Track when result was generated
       },
     };
   });
@@ -51,6 +48,7 @@ const nodeTypes = {
   'delay': DelayNode,
   'start': StartNode,
   'end': EndNode,
+  'merge': MergeNode,
 };
 
 const initialNodes = [
@@ -99,6 +97,31 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
     }));
   }, [nodes]);
 
+  // Detect parallel branches and update node data with branch counts
+  useEffect(() => {
+    // Count outgoing edges per node
+    const branchCounts = {};
+    edges.forEach(edge => {
+      branchCounts[edge.source] = (branchCounts[edge.source] || 0) + 1;
+    });
+
+    // Count incoming edges per node (for merge detection)
+    const incomingCounts = {};
+    edges.forEach(edge => {
+      incomingCounts[edge.target] = (incomingCounts[edge.target] || 0) + 1;
+    });
+
+    // Update nodes with branch info
+    setNodes(nds => nds.map(node => ({
+      ...node,
+      data: {
+        ...node.data,
+        branchCount: branchCounts[node.id] || 0,
+        incomingBranchCount: incomingCounts[node.id] || 0,
+      }
+    })));
+  }, [edges]);
+
   // Load workflow data when available
   React.useEffect(() => {
     if (workflow && workflow.nodes && workflow.edges) {
@@ -130,8 +153,70 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   }, [workflow]);
 
   const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges]
+    (params) => {
+      setEdges((eds) => {
+        const newEdge = addEdge(params, eds)[eds.length];
+        
+        // Check if this creates parallel branches (multiple edges from same source)
+        const parallelEdges = eds.filter(e => e.source === params.source);
+        
+        if (parallelEdges.length > 0) {
+          // Get source node label for better edge labels
+          const sourceNode = nodes.find(n => n.id === params.source);
+          const sourceLabel = sourceNode?.data?.label || sourceNode?.id || 'Node';
+          
+          // Multiple edges from same node - mark as parallel branches
+          return eds.map(e => {
+            if (e.source === params.source) {
+              const branchIndex = parallelEdges.findIndex(pe => pe.id === e.id);
+              return {
+                ...e, 
+                animated: true, 
+                style: { 
+                  stroke: darkMode ? '#a78bfa' : '#8b5cf6', 
+                  strokeWidth: 2 
+                },
+                label: `Branch ${branchIndex}`,
+                labelStyle: { 
+                  fill: darkMode ? '#e9d5ff' : '#5b21b6', 
+                  fontWeight: 600,
+                  fontSize: 11
+                },
+                labelBgStyle: {
+                  fill: darkMode ? '#1f2937' : '#ffffff',
+                  fillOpacity: 0.95
+                },
+                labelBgPadding: [6, 4],
+                labelBgBorderRadius: 4
+              };
+            }
+            return e;
+          }).concat([{
+            ...newEdge,
+            animated: true,
+            style: { 
+              stroke: darkMode ? '#a78bfa' : '#8b5cf6', 
+              strokeWidth: 2 
+            },
+            label: `Branch ${parallelEdges.length}`,
+            labelStyle: { 
+              fill: darkMode ? '#e9d5ff' : '#5b21b6', 
+              fontWeight: 600,
+              fontSize: 11
+            },
+            labelBgStyle: {
+              fill: darkMode ? '#1f2937' : '#ffffff',
+              fillOpacity: 0.95
+            },
+            labelBgPadding: [6, 4],
+            labelBgBorderRadius: 4
+          }]);
+        }
+        
+        return addEdge(params, eds);
+      });
+    },
+    [setEdges, darkMode, nodes]
   );
 
   const onNodeClick = useCallback((event, node) => {
@@ -173,6 +258,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         return { assertions: [] };
       case 'delay':
         return { duration: 1000 };
+      case 'merge':
+        return { mergeStrategy: 'all', conditions: [] };
       default:
         return {};
     }
@@ -269,7 +356,71 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       return;
     }
 
+    // Pre-run validation: ensure nodes have valid configs (basic checks)
+    // Collect missing fields per node and mark invalid nodes so UI can highlight them
+    const invalidSummary = [];
+    nodes.forEach((n) => {
+      if (n.type === 'assertion') {
+        const assertions = n.data?.config?.assertions || [];
+        const missing = [];
+        assertions.forEach((a, idx) => {
+          if (a.source === 'status') return;
+          if (['exists', 'notExists'].includes(a.operator)) {
+            if (!a.path || !a.path.trim()) missing.push(`assertion[${idx}].path`);
+          } else {
+            if (!a.path || !a.path.trim()) missing.push(`assertion[${idx}].path`);
+            if (!a.expectedValue || !String(a.expectedValue).trim()) missing.push(`assertion[${idx}].expectedValue`);
+          }
+        });
+        if (missing.length > 0) {
+          invalidSummary.push({ nodeId: n.id, missing });
+        }
+      }
+    });
+
+    if (invalidSummary.length > 0) {
+      // Mark nodes as invalid so their components can show a red pulse/border
+      const invalidIds = new Set(invalidSummary.map((s) => s.nodeId));
+      setNodes((nds) => nds.map((node) => (invalidIds.has(node.id) ? { ...node, data: { ...node.data, invalid: true } } : node)));
+
+      // Center view on first invalid node if reactFlowInstance is available
+      if (reactFlowInstance && invalidSummary[0]) {
+        const firstId = invalidSummary[0].nodeId;
+        const target = nodes.find((n) => n.id === firstId);
+        if (target) {
+          try {
+            reactFlowInstance.setCenter(target.position.x, target.position.y, { zoom: 1.2 });
+          } catch (err) {
+            // ignore if positioning fails
+          }
+        }
+      }
+
+      // Build readable toast message including node ids and their missing fields
+      const details = invalidSummary.map((s) => `${s.nodeId}: ${s.missing.join(', ')}`).join(' | ');
+      toast(`Run blocked: invalid node config — ${details}`, { type: 'error', duration: 8000 });
+
+      // Clear invalid marks after a timeout so UI returns to normal
+      setTimeout(() => {
+        setNodes((nds) => nds.map((node) => (node.data && node.data.invalid ? { ...node, data: { ...node.data, invalid: false } } : node)));
+      }, 6000);
+
+      console.warn('Run blocked due to invalid node configuration', invalidSummary);
+      return;
+    }
+
     try {
+      // Clear old execution status from all nodes before starting new run
+      setNodes((nds) => nds.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          executionStatus: undefined,
+          executionResult: undefined,
+          executionTimestamp: undefined
+        }
+      })));
+      
       // Start the run
       const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}/run`, {
         method: 'POST',
@@ -477,6 +628,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           </button>
         </Panel>
       </ReactFlow>
+
+  {/* Toast container */}
+  <Toaster />
 
       {/* Add Nodes Panel - OUTSIDE ReactFlow */}
       <AddNodesPanel isModalOpen={!!modalNode} isPanelOpen={isPanelOpen} />

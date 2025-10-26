@@ -111,6 +111,12 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                 {data.executionStatus}
               </span>
             )}
+            {/* Branch count badge */}
+            {data.branchCount > 1 && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 font-semibold" title={`${data.branchCount} parallel branches`}>
+                🌳 {data.branchCount}x
+              </span>
+            )}
           </div>
           <button
             onClick={() => setIsExpanded(!isExpanded)}

@@ -167,6 +167,14 @@ const VariablesPanel = ({ variables, onVariableChange }) => {
           <li>Variables persist throughout workflow execution</li>
           <li>Great for storing tokens, IDs, and authentication data</li>
         </ul>
+        
+        <div className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-600"><strong>🌳 Parallel Branches:</strong></div>
+        <ul className="list-disc list-inside space-y-0.5 pl-1">
+          <li>Access specific branches: <code className="bg-gray-200 dark:bg-gray-700 px-1">{`{{prev[0].response}}`}</code></li>
+          <li>Branch indexes shown on Merge node after execution</li>
+          <li>Example: <code className="bg-gray-200 dark:bg-gray-700 px-1">{`{{prev[1].response.body.id}}`}</code></li>
+          <li>Single predecessor: <code className="bg-gray-200 dark:bg-gray-700 px-1">{`{{prev.response}}`}</code></li>
+        </ul>
       </div>
     </div>
   );

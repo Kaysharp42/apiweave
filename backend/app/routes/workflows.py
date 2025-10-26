@@ -6,9 +6,12 @@ from fastapi import APIRouter, HTTPException, status
 from typing import List
 from datetime import datetime, UTC
 import uuid
+import json
+from bson import ObjectId
 
 from app.models import Workflow, WorkflowCreate, WorkflowUpdate
 from app.database import get_database
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
@@ -242,18 +245,139 @@ async def get_run_status(workflow_id: str, run_id: str):
     
     # Fetch full node results from separate collection
     if run.get('nodeStatuses'):
-        node_results = {}
+        gridfs_bucket = AsyncIOMotorGridFSBucket(db)
+        
         for node_id in run['nodeStatuses'].keys():
             full_result = await db.node_results.find_one(
                 {"runId": run_id, "nodeId": node_id},
                 {"_id": 0}
             )
             if full_result:
-                # Replace summary with full result
-                run['nodeStatuses'][node_id] = {
-                    "status": full_result.get('status'),
-                    "result": full_result.get('result'),  # Full result with complete response
-                    "timestamp": full_result.get('timestamp')
-                }
+                result = full_result.get('result', {})
+                
+                # Check if result is stored in GridFS
+                if isinstance(result, dict) and result.get('stored_in_gridfs'):
+                    gridfs_file_id = result.get('gridfs_file_id')
+                    if gridfs_file_id:
+                        try:
+                            # Download the file from GridFS
+                            grid_out = await gridfs_bucket.open_download_stream(ObjectId(gridfs_file_id))
+                            file_data = await grid_out.read()
+                            
+                            # Parse JSON and replace with actual result
+                            actual_result = json.loads(file_data.decode('utf-8'))
+                            
+                            # Replace summary with full result (including GridFS metadata)
+                            run['nodeStatuses'][node_id] = {
+                                "status": full_result.get('status'),
+                                "result": actual_result,  # Full result from GridFS
+                                "timestamp": full_result.get('timestamp'),
+                                "metadata": {
+                                    "stored_in_gridfs": True,
+                                    "size_mb": result.get('size_mb')
+                                }
+                            }
+                        except Exception as e:
+                            # If GridFS fetch fails, keep the reference
+                            run['nodeStatuses'][node_id] = {
+                                "status": full_result.get('status'),
+                                "result": {"error": f"Failed to retrieve large result: {str(e)}"},
+                                "timestamp": full_result.get('timestamp')
+                            }
+                    else:
+                        # Missing file ID
+                        run['nodeStatuses'][node_id] = {
+                            "status": full_result.get('status'),
+                            "result": result,
+                            "timestamp": full_result.get('timestamp')
+                        }
+                else:
+                    # Regular result (not in GridFS)
+                    run['nodeStatuses'][node_id] = {
+                        "status": full_result.get('status'),
+                        "result": result,
+                        "timestamp": full_result.get('timestamp')
+                    }
     
     return run
+
+
+@router.get("/{workflow_id}/runs/{run_id}/nodes/{node_id}/result")
+async def get_node_result(workflow_id: str, run_id: str, node_id: str):
+    """
+    Get the full result for a specific node in a run.
+    Handles both regular results and GridFS-stored large results.
+    """
+    db = get_database()
+    
+    # Verify run exists
+    run = await db.runs.find_one({"runId": run_id, "workflowId": workflow_id})
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Run {run_id} not found"
+        )
+    
+    # Fetch node result
+    node_result = await db.node_results.find_one(
+        {"runId": run_id, "nodeId": node_id},
+        {"_id": 0}
+    )
+    
+    if not node_result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Result for node {node_id} not found"
+        )
+    
+    # Check if result is stored in GridFS
+    result = node_result.get('result', {})
+    if result.get('stored_in_gridfs'):
+        gridfs_file_id = result.get('gridfs_file_id')
+        if not gridfs_file_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="GridFS file ID missing"
+            )
+        
+        try:
+            # Initialize GridFS bucket
+            gridfs_bucket = AsyncIOMotorGridFSBucket(db)
+            
+            # Download the file from GridFS
+            grid_out = await gridfs_bucket.open_download_stream(ObjectId(gridfs_file_id))
+            file_data = await grid_out.read()
+            
+            # Parse JSON and return
+            full_result = json.loads(file_data.decode('utf-8'))
+            
+            return {
+                "nodeId": node_id,
+                "runId": run_id,
+                "status": node_result.get('status'),
+                "timestamp": node_result.get('timestamp'),
+                "result": full_result,
+                "metadata": {
+                    "stored_in_gridfs": True,
+                    "size_mb": result.get('size_mb'),
+                    "gridfs_file_id": gridfs_file_id
+                }
+            }
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to retrieve result from GridFS: {str(e)}"
+            )
+    
+    # Regular result (not in GridFS)
+    return {
+        "nodeId": node_id,
+        "runId": run_id,
+        "status": node_result.get('status'),
+        "timestamp": node_result.get('timestamp'),
+        "result": result,
+        "metadata": {
+            "stored_in_gridfs": False
+        }
+    }

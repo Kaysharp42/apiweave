@@ -37,6 +37,7 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
       category: 'Control Flow',
       nodes: [
         { type: 'delay', label: 'Delay', description: 'Add a delay before next step' },
+        { type: 'merge', label: 'Merge', description: 'Merge parallel branches' },
         { type: 'end', label: 'End', description: 'Mark the end of workflow' },
       ],
     },

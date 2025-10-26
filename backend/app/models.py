@@ -29,6 +29,17 @@ class DelayNode(BaseModel):
     duration: int  # milliseconds
 
 
+class MergeNode(BaseModel):
+    """Merge node configuration - combines parallel branches"""
+    mergeStrategy: Literal["all", "any", "first", "conditional"] = "all"
+    # all: Wait for all branches (AND)
+    # any: Continue when any branch completes (OR)
+    # first: Use first completed branch only
+    # conditional: Merge only branches matching conditions
+    conditions: List[Dict[str, Any]] = Field(default_factory=list)
+    # Each condition: {"branchIndex": 0, "field": "statusCode", "operator": "equals", "value": "200"}
+
+
 class ConditionNode(BaseModel):
     """Conditional branching node"""
     condition: str  # JSONPath or expression
@@ -39,7 +50,7 @@ class ConditionNode(BaseModel):
 class Node(BaseModel):
     """Workflow node"""
     nodeId: str
-    type: Literal["http-request", "assertion", "delay", "condition", "start", "end"]
+    type: Literal["http-request", "assertion", "delay", "merge", "condition", "start", "end"]
     label: str
     position: Dict[str, float] = Field(default_factory=dict)  # {x: float, y: float}
     config: Optional[Dict[str, Any]] = None  # Node-specific configuration

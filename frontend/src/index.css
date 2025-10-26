@@ -42,6 +42,23 @@ code {
   fill: #e5e5e5;
 }
 
+/* Edge label background - ensure readable in dark mode */
+.react-flow__edge-text rect,
+.react-flow__edge-textbg {
+  fill: rgba(255,255,255,0.95) !important;
+  stroke: rgba(0,0,0,0.05) !important;
+}
+
+.dark .react-flow__edge-text rect,
+.dark .react-flow__edge-textbg {
+  fill: rgba(31, 41, 55, 0.95) !important; /* #1f2937 with slight opacity */
+  stroke: rgba(255,255,255,0.04) !important;
+}
+
+.react-flow__edge-text {
+  font-weight: 600;
+}
+
 .dark .react-flow__controls {
   background-color: #1f2937;
   border-color: #374151;
