@@ -999,16 +999,20 @@ DelayConfig.displayName = 'DelayConfig';
 const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const [activeTab, setActiveTab] = useState('parameters');
   const [currentStrategy, setCurrentStrategy] = useState(initialConfig.mergeStrategy || 'all');
+  const [conditions, setConditions] = useState(initialConfig.conditions || []);
+  const [conditionLogic, setConditionLogic] = useState(initialConfig.conditionLogic || 'OR');
   
   const strategyRef = useRef(initialConfig.mergeStrategy || 'all');
   const conditionsRef = useRef(initialConfig.conditions || []);
+  const conditionLogicRef = useRef(initialConfig.conditionLogic || 'OR');
 
   console.log('MergeConfig rendered - currentStrategy:', currentStrategy, 'activeTab:', activeTab);
 
   const updateRef = () => {
     const newConfig = {
       mergeStrategy: strategyRef.current,
-      conditions: conditionsRef.current
+      conditions: conditionsRef.current,
+      conditionLogic: conditionLogicRef.current
     };
     if (workingDataRef) {
       workingDataRef.current = { ...workingDataRef.current, config: newConfig };
@@ -1046,22 +1050,28 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
   };
 
   const addCondition = () => {
-    conditionsRef.current = [
+    const newConditions = [
       ...conditionsRef.current,
       { branchIndex: 0, field: 'statusCode', operator: 'equals', value: '200' }
     ];
+    conditionsRef.current = newConditions;
+    setConditions(newConditions); // Trigger re-render
     updateRef();
   };
 
   const removeCondition = (index) => {
-    conditionsRef.current = conditionsRef.current.filter((_, i) => i !== index);
+    const newConditions = conditionsRef.current.filter((_, i) => i !== index);
+    conditionsRef.current = newConditions;
+    setConditions(newConditions); // Trigger re-render
     updateRef();
   };
 
   const updateCondition = (index, updates) => {
-    conditionsRef.current = conditionsRef.current.map((cond, i) =>
+    const newConditions = conditionsRef.current.map((cond, i) =>
       i === index ? { ...cond, ...updates } : cond
     );
+    conditionsRef.current = newConditions;
+    setConditions(newConditions); // Trigger re-render
     updateRef();
   };
 
@@ -1140,20 +1150,76 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
               </button>
             </div>
 
-            {conditionsRef.current.length === 0 ? (
+            {/* Condition Logic Selector */}
+            {conditions.length > 1 && (
+              <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg">
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Evaluation Logic:
+                </label>
+                <div className="flex gap-3">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      name="conditionLogic"
+                      value="OR"
+                      checked={conditionLogic === 'OR'}
+                      onChange={(e) => {
+                        const newLogic = e.target.value;
+                        conditionLogicRef.current = newLogic;
+                        setConditionLogic(newLogic);
+                        updateRef();
+                      }}
+                      className="mr-2"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      <strong>OR</strong> - Match ANY condition
+                    </span>
+                  </label>
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      name="conditionLogic"
+                      value="AND"
+                      checked={conditionLogic === 'AND'}
+                      onChange={(e) => {
+                        const newLogic = e.target.value;
+                        conditionLogicRef.current = newLogic;
+                        setConditionLogic(newLogic);
+                        updateRef();
+                      }}
+                      className="mr-2"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      <strong>AND</strong> - Match ALL conditions
+                    </span>
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  {conditionLogic === 'OR' 
+                    ? '✓ A branch is merged if it matches at least one condition' 
+                    : '✓ A branch is merged only if it matches all conditions'}
+                </p>
+              </div>
+            )}
+
+            {conditions.length === 0 ? (
               <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
-                No conditions defined. All branches will be merged.
+                No conditions defined. Click "+ Add Condition" to start.
               </div>
             ) : (
               <div className="space-y-3">
-                {conditionsRef.current.map((condition, index) => (
+                {conditions.map((condition, index) => (
                   <div
                     key={index}
                     className="p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                        Condition {index + 1}
+                        Condition {index + 1} {conditions.length > 1 && index < conditions.length - 1 && (
+                          <span className="ml-2 text-purple-600 dark:text-purple-400 font-bold">
+                            {conditionLogic}
+                          </span>
+                        )}
                       </span>
                       <button
                         onClick={() => removeCondition(index)}
@@ -1171,7 +1237,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                         <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Branch</label>
                         <input
                           type="number"
-                          defaultValue={condition.branchIndex}
+                          value={condition.branchIndex}
                           onChange={(e) => updateCondition(index, { branchIndex: parseInt(e.target.value) || 0 })}
                           className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                           min="0"
@@ -1180,24 +1246,29 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
 
                       {/* Field */}
                       <div>
-                        <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Field</label>
-                        <select
-                          defaultValue={condition.field}
+                        <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
+                          Field
+                          <span className="ml-1 text-[10px] text-purple-600 dark:text-purple-400">
+                            (supports variables)
+                          </span>
+                        </label>
+                        <input
+                          type="text"
+                          value={condition.field}
                           onChange={(e) => updateCondition(index, { field: e.target.value })}
-                          className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        >
-                          <option value="statusCode">Status Code</option>
-                          <option value="response.body">Response Body</option>
-                          <option value="response.headers">Headers</option>
-                          <option value="status">Execution Status</option>
-                        </select>
+                          className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono"
+                          placeholder="statusCode or {{prev[0].response.body.name}}"
+                        />
+                        <div className="mt-0.5 text-[9px] text-gray-500 dark:text-gray-400">
+                          Common: <code>statusCode</code>, <code>response.body</code>, <code>response.headers</code>
+                        </div>
                       </div>
 
                       {/* Operator */}
                       <div>
                         <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Operator</label>
                         <select
-                          defaultValue={condition.operator}
+                          value={condition.operator}
                           onChange={(e) => updateCondition(index, { operator: e.target.value })}
                           className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                         >
@@ -1212,15 +1283,27 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
 
                       {/* Value */}
                       <div>
-                        <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Value</label>
+                        <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
+                          Value
+                          <span className="ml-1 text-[10px] text-purple-600 dark:text-purple-400">
+                            (supports variables)
+                          </span>
+                        </label>
                         <input
                           type="text"
-                          defaultValue={condition.value}
+                          value={condition.value}
                           onChange={(e) => updateCondition(index, { value: e.target.value })}
-                          className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Expected value"
+                          className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono"
+                          placeholder="200 or {{prev[0].id}}"
                         />
                       </div>
+                    </div>
+                    
+                    {/* Variable hint for this condition */}
+                    <div className="mt-2 text-[10px] text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded p-1.5">
+                      💡 Examples: <code className="text-purple-600 dark:text-purple-400">200</code>, 
+                      <code className="ml-1 text-purple-600 dark:text-purple-400">{'{{prev[0].response.body.status}}'}</code>,
+                      <code className="ml-1 text-purple-600 dark:text-purple-400">{'{{variables.expectedCode}}'}</code>
                     </div>
                   </div>
                 ))}
@@ -1230,7 +1313,15 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
             {/* Hint */}
             <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
               <p className="text-xs text-blue-800 dark:text-blue-300">
-                💡 <strong>Tip:</strong> Conditions are evaluated as OR logic. Any branch matching any condition will be merged.
+                💡 <strong>How it works:</strong> {conditionLogic === 'OR' 
+                  ? 'Each branch is evaluated independently. If a branch matches ANY condition, it passes.' 
+                  : 'Each branch is evaluated independently. A branch passes ONLY if it matches ALL conditions.'}
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-400 mt-2 font-semibold">
+                ⚠️ <strong>Important:</strong> If ANY branch fails its conditions, the entire merge FAILS and the workflow stops (like an assertion).
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-400 mt-2">
+                🔧 <strong>Variable support:</strong> Use <code className="bg-white dark:bg-gray-800 px-1 rounded">{'{{prev[N].path}}'}</code> to reference other branch data or <code className="bg-white dark:bg-gray-800 px-1 rounded">{'{{variables.name}}'}</code> for workflow variables.
               </p>
             </div>
           </div>

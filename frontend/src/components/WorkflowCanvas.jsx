@@ -107,20 +107,42 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
 
     // Count incoming edges per node (for merge detection)
     const incomingCounts = {};
+    const incomingEdges = {}; // Store actual incoming edges for merge nodes
     edges.forEach(edge => {
       incomingCounts[edge.target] = (incomingCounts[edge.target] || 0) + 1;
+      if (!incomingEdges[edge.target]) {
+        incomingEdges[edge.target] = [];
+      }
+      incomingEdges[edge.target].push(edge);
     });
 
     // Update nodes with branch info
-    setNodes(nds => nds.map(node => ({
-      ...node,
-      data: {
-        ...node.data,
-        branchCount: branchCounts[node.id] || 0,
-        incomingBranchCount: incomingCounts[node.id] || 0,
+    setNodes(nds => nds.map(node => {
+      const nodeUpdate = {
+        ...node,
+        data: {
+          ...node.data,
+          branchCount: branchCounts[node.id] || 0,
+          incomingBranchCount: incomingCounts[node.id] || 0,
+        }
+      };
+      
+      // For merge nodes, add incoming branch details
+      if (node.type === 'merge' && incomingEdges[node.id]) {
+        nodeUpdate.data.incomingBranches = incomingEdges[node.id].map((edge, idx) => {
+          const sourceNode = nds.find(n => n.id === edge.source);
+          return {
+            index: idx,
+            nodeId: edge.source,
+            label: sourceNode?.data?.label || edge.source,
+            edgeLabel: edge.label || `Branch ${idx}`
+          };
+        });
       }
-    })));
-  }, [edges]);
+      
+      return nodeUpdate;
+    }));
+  }, [edges, setNodes]);
 
   // Load workflow data when available
   React.useEffect(() => {

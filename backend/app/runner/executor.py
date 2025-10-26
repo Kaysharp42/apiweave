@@ -63,6 +63,8 @@ class WorkflowExecutor:
         self.logger = setup_run_logger(run_id)  # Setup logger for this run
         self.merge_locks = {}  # Locks for merge nodes to prevent race conditions: {merge_node_id: asyncio.Lock}
         self.merge_completed = {}  # Track which merge nodes have completed: {merge_node_id: bool}
+        self.has_failures = False  # Track if any node has failed during execution
+        self.failed_nodes = []  # List of node IDs that failed
         
     async def execute(self):
         """Execute the workflow"""
@@ -120,22 +122,37 @@ class WorkflowExecutor:
             end_time = time.time()
             duration_ms = round((end_time - self.start_time) * 1000, 2)
             
+            # Determine final status based on failures
+            final_status = "failed" if self.has_failures else "completed"
+            
             # Mark run as completed (don't store results array - too large)
             try:
+                update_data = {
+                    "status": final_status,
+                    "completedAt": datetime.now(UTC),
+                    "duration": duration_ms
+                }
+                
+                # Add failed nodes info if there were failures
+                if self.has_failures:
+                    update_data["failedNodes"] = self.failed_nodes
+                    update_data["failureMessage"] = f"{len(self.failed_nodes)} node(s) failed during execution"
+                
                 await db.runs.update_one(
                     {"runId": self.run_id},
                     {
-                        "$set": {
-                            "status": "completed",
-                            "completedAt": datetime.now(UTC),
-                            "duration": duration_ms
-                            # Removed "results" field - fetch from node_results instead
-                        }
+                        "$set": update_data
                     }
                 )
+                
+                if self.has_failures:
+                    print(f"⚠️  Workflow completed with failures: {len(self.failed_nodes)} node(s) failed")
+                    for node_id in self.failed_nodes:
+                        print(f"   - {node_id}")
+                        
             except Exception as update_error:
                 print(f"⚠️  Failed to update run completion status: {str(update_error)}")
-                print(f"   Run completed successfully, but status update failed")
+                print(f"   Run completed, but status update failed")
                 # Don't fail the run just because status update failed
             
         except Exception as e:
@@ -178,6 +195,11 @@ class WorkflowExecutor:
             try:
                 await self._execute_node(node, edges, db)
             except Exception as e:
+                # Mark as failure
+                self.has_failures = True
+                if node_id not in self.failed_nodes:
+                    self.failed_nodes.append(node_id)
+                
                 # If continue_on_fail is False, re-raise the exception to stop the workflow
                 if not self.continue_on_fail:
                     raise
@@ -222,6 +244,9 @@ class WorkflowExecutor:
                 try:
                     await asyncio.gather(*tasks, return_exceptions=False)
                 except Exception as e:
+                    # Mark as failure
+                    self.has_failures = True
+                    
                     # If continue_on_fail is False, re-raise
                     if not self.continue_on_fail:
                         raise
@@ -238,6 +263,11 @@ class WorkflowExecutor:
                 try:
                     await self._execute_from_node(next_node_id, nodes, edges, db)
                 except Exception as e:
+                    # Mark as failure
+                    self.has_failures = True
+                    if next_node_id not in self.failed_nodes:
+                        self.failed_nodes.append(next_node_id)
+                    
                     # If continue_on_fail is False, re-raise the exception to stop the workflow
                     if not self.continue_on_fail:
                         raise
@@ -277,6 +307,11 @@ class WorkflowExecutor:
             # Map result status to execution status
             if execution_status in ["client_error", "server_error"]:
                 execution_status = "error"
+                # Mark as failure
+                self.has_failures = True
+                if node_id not in self.failed_nodes:
+                    self.failed_nodes.append(node_id)
+                print(f"⚠️  HTTP request failed: {node_id} returned status code {result.get('statusCode', 'unknown')}")
             elif execution_status == "redirect":
                 execution_status = "warning"
             elif execution_status == "success":
@@ -286,10 +321,14 @@ class WorkflowExecutor:
             
             # Update node status
             await self._update_node_status(db, node_id, execution_status, result)
+            
+            # Store result with node type for filtering later
+            result['type'] = node_type  # Add node type to result
             self.results[node_id] = result
             
-            # Don't fail the workflow for HTTP errors, just mark the node
-            # (user might expect 4xx/5xx responses in their tests)
+            # If HTTP request failed (4xx/5xx) and continueOnFail is False, raise exception to stop workflow
+            if execution_status == "error" and not self.continue_on_fail:
+                raise Exception(f"HTTP request failed with status code {result.get('statusCode', 'unknown')}")
             
         except Exception as e:
             error = {"error": str(e), "status": "error"}
@@ -391,7 +430,13 @@ class WorkflowExecutor:
                                 
                                 return str(value) if value is not None else str(match.group(0))
                             else:
-                                print(f"   ✗ Branch index {branch_index} out of range (only {len(self.current_branch_context)} branches)")
+                                error_msg = f"Branch index {branch_index} out of range (only {len(self.current_branch_context)} branch(es) available)"
+                                self.logger.error(f"   ❌ {error_msg}")
+                                print(f"   ❌ {error_msg}")
+                                print(f"   💡 TIP: Using 'any' or 'first' merge strategy? Not all branches may be available!")
+                                print(f"   💡 Available branches: {[nid for nid, _ in self.current_branch_context]}")
+                                # Return the placeholder unchanged - this will likely cause an API error
+                                # which is better than silently failing
                                 return str(match.group(0))
                         else:
                             # No branch context - use all results (backward compatible)
@@ -753,6 +798,47 @@ class WorkflowExecutor:
             "assertions": passed_assertions
         }
     
+    def _find_data_producing_ancestor(self, node_id: str, edges: List, nodes: Dict, visited = None) -> str:
+        """
+        Recursively find the nearest data-producing ancestor node.
+        Skips non-data nodes like delay, assertion, start, end, merge.
+        """
+        if visited is None:
+            visited = set()
+        
+        # Prevent infinite loops
+        if node_id in visited:
+            return node_id
+        visited.add(node_id)
+        
+        # Check if current node is in results (it has executed)
+        if node_id not in self.results:
+            return node_id
+        
+        result = self.results[node_id]
+        node_type = result.get('type', 'unknown')
+        
+        # Data-producing nodes: http-request
+        # Non-data nodes: delay, assertion, start, end, merge
+        DATA_PRODUCING_TYPES = ['http-request']
+        
+        if node_type in DATA_PRODUCING_TYPES:
+            return node_id
+        
+        # For non-data nodes, find their predecessor
+        incoming_edges = [e for e in edges if e['target'] == node_id]
+        if not incoming_edges:
+            return node_id
+        
+        # For nodes with single predecessor, recurse
+        if len(incoming_edges) == 1:
+            pred_id = incoming_edges[0]['source']
+            return self._find_data_producing_ancestor(pred_id, edges, nodes, visited)
+        
+        # For merge nodes with multiple predecessors, return the node itself
+        # (merge should be handled separately)
+        return node_id
+    
     async def _execute_merge(self, node: Dict, edges: List, db) -> Dict[str, Any]:
         """Execute merge node - combines results from multiple branches"""
         merge_strategy = node.get('config', {}).get('mergeStrategy', 'all')
@@ -773,30 +859,79 @@ class WorkflowExecutor:
         incoming_edges = [e for e in edges if e['target'] == node_id]
         predecessor_node_ids = [e['source'] for e in incoming_edges]
         
-        # Wait for all predecessors to complete BEFORE acquiring lock
-        # This prevents deadlock where first branch holds lock while waiting for second branch
-        missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
-        if missing_predecessors:
-            self.logger.info(f"⏳ Branch waiting for {len(missing_predecessors)} predecessors: {missing_predecessors}")
-            print(f"⏳ Branch waiting for {len(missing_predecessors)} predecessors before merge")
-            
-            # Wait for missing predecessors with timeout
-            max_wait = 30  # seconds
-            wait_interval = 0.1  # seconds
-            elapsed = 0
-            
-            while missing_predecessors and elapsed < max_wait:
-                await asyncio.sleep(wait_interval)
-                elapsed += wait_interval
-                missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
-            
+        # Strategy-based waiting logic
+        if merge_strategy == 'all':
+            # Wait for ALL predecessors to complete BEFORE acquiring lock
+            missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
             if missing_predecessors:
-                error_msg = f"Timeout waiting for predecessors: {missing_predecessors}"
-                self.logger.error(f"❌ {error_msg}")
-                raise Exception(error_msg)
+                self.logger.info(f"⏳ [ALL] Branch waiting for {len(missing_predecessors)} predecessors: {missing_predecessors}")
+                print(f"⏳ [ALL strategy] Branch waiting for {len(missing_predecessors)} predecessors before merge")
+                
+                max_wait = 30  # seconds
+                wait_interval = 0.1  # seconds
+                elapsed = 0
+                
+                while missing_predecessors and elapsed < max_wait:
+                    await asyncio.sleep(wait_interval)
+                    elapsed += wait_interval
+                    missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
+                
+                if missing_predecessors:
+                    error_msg = f"Timeout waiting for predecessors: {missing_predecessors}"
+                    self.logger.error(f"❌ {error_msg}")
+                    raise Exception(error_msg)
+                
+                self.logger.info(f"✓ All predecessors completed, proceeding to merge")
+                print(f"✓ All {len(predecessor_node_ids)} predecessors completed")
+        
+        elif merge_strategy in ['any', 'first']:
+            # For ANY/FIRST: Continue as soon as at least ONE predecessor completes
+            # No waiting needed - first branch to arrive triggers merge
+            completed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.results]
             
-            self.logger.info(f"✓ All predecessors completed, proceeding to merge")
-            print(f"✓ All {len(predecessor_node_ids)} predecessors completed")
+            if not completed_predecessors:
+                # This shouldn't happen as the current branch should have completed
+                self.logger.warning(f"⚠️  [ANY/FIRST] No predecessors completed yet")
+                print(f"⚠️  [ANY/FIRST strategy] No predecessors ready, waiting...")
+                
+                # Wait for at least one
+                max_wait = 30
+                wait_interval = 0.1
+                elapsed = 0
+                
+                while not completed_predecessors and elapsed < max_wait:
+                    await asyncio.sleep(wait_interval)
+                    elapsed += wait_interval
+                    completed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.results]
+                
+                if not completed_predecessors:
+                    error_msg = "Timeout waiting for any predecessor"
+                    self.logger.error(f"❌ {error_msg}")
+                    raise Exception(error_msg)
+            
+            self.logger.info(f"⚡ [{merge_strategy.upper()}] {len(completed_predecessors)}/{len(predecessor_node_ids)} predecessors completed, proceeding")
+            print(f"⚡ [{merge_strategy.upper()} strategy] Proceeding with {len(completed_predecessors)} completed branch(es)")
+        
+        elif merge_strategy == 'conditional':
+            # For CONDITIONAL: Wait for all like 'all' strategy
+            missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
+            if missing_predecessors:
+                self.logger.info(f"⏳ [CONDITIONAL] Waiting for {len(missing_predecessors)} predecessors")
+                print(f"⏳ [CONDITIONAL strategy] Waiting for all branches to evaluate conditions")
+                
+                max_wait = 30
+                wait_interval = 0.1
+                elapsed = 0
+                
+                while missing_predecessors and elapsed < max_wait:
+                    await asyncio.sleep(wait_interval)
+                    elapsed += wait_interval
+                    missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
+                
+                if missing_predecessors:
+                    error_msg = f"Timeout waiting for predecessors: {missing_predecessors}"
+                    self.logger.error(f"❌ {error_msg}")
+                    raise Exception(error_msg)
         
         # Now acquire lock to execute merge logic
         async with self.merge_locks[node_id]:
@@ -810,10 +945,46 @@ class WorkflowExecutor:
             print(f"🔀 Merge node {node_id} has {len(predecessor_node_ids)} predecessors: {predecessor_node_ids}")
             
             # Get only the predecessor results (not ALL results)
-            predecessor_results = []
+            # For each predecessor, find the nearest data-producing ancestor
+            all_predecessor_results = []
             for pred_id in predecessor_node_ids:
-                if pred_id in self.results:
-                    predecessor_results.append((pred_id, self.results[pred_id]))
+                # Find the actual data-producing node (skip delay, assertion, etc.)
+                data_node_id = self._find_data_producing_ancestor(pred_id, edges, {})
+                
+                if data_node_id in self.results:
+                    result = self.results[data_node_id]
+                    # Only include if it's a data-producing node
+                    if result.get('type') == 'http-request':
+                        all_predecessor_results.append((data_node_id, result))
+                        self.logger.info(f"   Branch from {pred_id} → data node: {data_node_id}")
+                        print(f"   Branch from {pred_id} → data node: {data_node_id}")
+                    else:
+                        self.logger.warning(f"   Branch from {pred_id} → no data node found (type: {result.get('type')})")
+                else:
+                    self.logger.warning(f"   Branch from {pred_id} → no data node found")
+            
+            # Apply strategy-specific filtering
+            if merge_strategy == 'first':
+                # FIRST: Use only the first completed branch (earliest by completion time)
+                if all_predecessor_results:
+                    # Find the branch with earliest completion
+                    first_branch = min(all_predecessor_results, 
+                                     key=lambda x: x[1].get('duration', 0) if x[1].get('duration') else float('inf'))
+                    predecessor_results = [first_branch]
+                    self.logger.info(f"🏃 [FIRST] Selected fastest branch: {first_branch[0]}")
+                    print(f"🏃 [FIRST strategy] Using fastest branch: {first_branch[0]}")
+                else:
+                    predecessor_results = []
+            
+            elif merge_strategy == 'any':
+                # ANY: Use all completed branches (may be subset if not all completed yet)
+                predecessor_results = all_predecessor_results
+                self.logger.info(f"⚡ [ANY] Using {len(predecessor_results)} completed branch(es)")
+                print(f"⚡ [ANY strategy] Using {len(predecessor_results)} completed branch(es)")
+            
+            else:
+                # ALL or CONDITIONAL: Use all branches
+                predecessor_results = all_predecessor_results
             
             branch_count = len(predecessor_results)
             
@@ -830,32 +1001,131 @@ class WorkflowExecutor:
             
             # For conditional merge, filter branches based on conditions
             if merge_strategy == 'conditional' and conditions:
+                condition_logic = node.get('config', {}).get('conditionLogic', 'OR')  # Default to OR for backward compatibility
                 merged_branches = []
+                failed_branches = []  # Track branches that failed conditions
                 
-                for condition in conditions:
-                    branch_index = condition.get('branchIndex', 0)
-                    field = condition.get('field', 'statusCode')
-                    operator = condition.get('operator', 'equals')
-                    expected_value = condition.get('value', '')
+                self.logger.info(f"🎯 Evaluating conditions with {condition_logic} logic")
+                print(f"🎯 Evaluating {len(conditions)} condition(s) with {condition_logic} logic")
+                
+                # Track which branches have conditions defined
+                branches_with_conditions = set(cond.get('branchIndex', 0) for cond in conditions)
+                
+                # Evaluate each branch against all conditions
+                for branch_idx, (pred_node_id, branch_result) in enumerate(predecessor_results):
+                    branch_matches = []
+                    has_conditions = False
+                    failed_condition_details = []
                     
-                    # Get the branch result using forward indexing
-                    if 0 <= branch_index < len(predecessor_results):
-                        pred_node_id, branch_result = predecessor_results[branch_index]  # FIXED: Forward indexing
+                    for cond_idx, condition in enumerate(conditions):
+                        branch_index = condition.get('branchIndex', 0)
+                        field = condition.get('field', 'statusCode')
+                        operator = condition.get('operator', 'equals')
+                        expected_value = condition.get('value', '')
                         
-                        # Extract the actual value from the branch result
-                        actual_value = self._get_nested_value(branch_result, field)
-                        
-                        # Evaluate the condition
-                        if self._compare_values(actual_value, operator, expected_value):
-                            merged_branches.append(branch_index)
-                            print(f"  ✓ Branch {branch_index} ({pred_node_id}) matched condition: {field} {operator} {expected_value}")
-                        else:
-                            print(f"  ✗ Branch {branch_index} ({pred_node_id}) did not match: {field} {operator} {expected_value} (got {actual_value})")
+                        # Only evaluate conditions for this specific branch
+                        if branch_index == branch_idx:
+                            has_conditions = True
+                            
+                            # Substitute variables in field (supports {{prev[N]...}} and {{variables...}})
+                            field = self._substitute_variables(str(field))
+                            
+                            # Substitute variables in expected value (supports {{prev[N]...}} and {{variables...}})
+                            expected_value = self._substitute_variables(str(expected_value))
+                            
+                            # Extract the actual value from the branch result
+                            actual_value = self._get_nested_value(branch_result, field)
+                            
+                            # Evaluate the condition
+                            matches = self._compare_values(actual_value, operator, expected_value)
+                            branch_matches.append(matches)
+                            
+                            if matches:
+                                self.logger.info(f"  ✓ Branch {branch_idx} ({pred_node_id}) matched condition {cond_idx + 1}: {field} {operator} {expected_value}")
+                                print(f"  ✓ Branch {branch_idx} ({pred_node_id}) matched: {field} {operator} {expected_value}")
+                            else:
+                                self.logger.info(f"  ✗ Branch {branch_idx} ({pred_node_id}) did NOT match condition {cond_idx + 1}: {field} {operator} {expected_value} (got {actual_value})")
+                                print(f"  ✗ Branch {branch_idx} ({pred_node_id}) did NOT match: {field} {operator} {expected_value} (got {actual_value})")
+                                failed_condition_details.append({
+                                    'field': field,
+                                    'operator': operator,
+                                    'expected': expected_value,
+                                    'actual': actual_value
+                                })
+                    
+                    # Decide if branch should be merged based on logic
+                    if has_conditions:
+                        # This branch has conditions - evaluate them
+                        if condition_logic == 'AND':
+                            # AND: All conditions for this branch must match
+                            if all(branch_matches):
+                                merged_branches.append(branch_idx)
+                                self.logger.info(f"  ✅ Branch {branch_idx} PASSED (matched ALL conditions)")
+                                print(f"  ✅ Branch {branch_idx} PASSED (matched ALL conditions)")
+                            else:
+                                failed_branches.append({
+                                    'index': branch_idx,
+                                    'nodeId': pred_node_id,
+                                    'logic': 'AND',
+                                    'failures': failed_condition_details
+                                })
+                                self.logger.info(f"  ❌ Branch {branch_idx} FAILED (did not match ALL conditions)")
+                                print(f"  ❌ Branch {branch_idx} FAILED (did not match ALL conditions)")
+                        else:  # OR
+                            # OR: At least one condition for this branch must match
+                            if any(branch_matches):
+                                merged_branches.append(branch_idx)
+                                self.logger.info(f"  ✅ Branch {branch_idx} PASSED (matched at least ONE condition)")
+                                print(f"  ✅ Branch {branch_idx} PASSED (matched at least ONE condition)")
+                            else:
+                                failed_branches.append({
+                                    'index': branch_idx,
+                                    'nodeId': pred_node_id,
+                                    'logic': 'OR',
+                                    'failures': failed_condition_details
+                                })
+                                self.logger.info(f"  ❌ Branch {branch_idx} FAILED (did not match ANY conditions)")
+                                print(f"  ❌ Branch {branch_idx} FAILED (did not match ANY conditions)")
+                    else:
+                        # This branch has NO conditions - include it by default
+                        merged_branches.append(branch_idx)
+                        self.logger.info(f"  ✅ Branch {branch_idx} PASSED (no conditions defined)")
+                        print(f"  ✅ Branch {branch_idx} PASSED (no conditions defined)")
                 
-                merged_count = len(set(merged_branches))  # Unique branches
-                print(f"🔀 Conditional merge: {merged_count}/{branch_count} branches matched conditions")
+                merged_count = len(merged_branches)
+                failed_count = len(failed_branches)
                 
-                # Store branch results for this merge node (for downstream nodes to use in prev[N])
+                # If ANY branch failed conditions, the merge FAILS (like an assertion)
+                if failed_count > 0:
+                    self.logger.error(f"❌ Conditional merge FAILED: {failed_count} branch(es) did not meet conditions")
+                    print(f"❌ Conditional merge FAILED: {failed_count}/{branch_count} branch(es) did not meet conditions")
+                    
+                    # Build detailed error message
+                    error_details = []
+                    for failure in failed_branches:
+                        error_details.append(f"Branch {failure['index']} ({failure['nodeId']})")
+                        for fail_cond in failure['failures']:
+                            error_details.append(f"  - {fail_cond['field']} {fail_cond['operator']} {fail_cond['expected']} (got {fail_cond['actual']})")
+                    
+                    error_message = f"Conditional merge failed: {failed_count} branch(es) did not match conditions:\n" + "\n".join(error_details)
+                    
+                    # Mark as completed but with error
+                    self.merge_completed[node_id] = True
+                    
+                    # Raise exception to fail the workflow (unless continueOnFail)
+                    raise Exception(error_message)
+                
+                print(f"✅ Conditional merge PASSED: All {branch_count} branches matched conditions using {condition_logic} logic")
+                
+                # Store ALL branch results (not filtered, since all passed)
+                self.branch_results[node_id] = predecessor_results
+                
+                # Mark merge as completed
+                self.merge_completed[node_id] = True
+                
+                print(f"✅ Conditional merge PASSED: All {branch_count} branches matched conditions using {condition_logic} logic")
+                
+                # Store ALL branch results (not filtered, since all passed)
                 self.branch_results[node_id] = predecessor_results
                 
                 # Mark merge as completed
@@ -863,11 +1133,13 @@ class WorkflowExecutor:
                 
                 return {
                     "status": "success",
-                    "message": f"Conditionally merged {merged_count} of {branch_count} branches",
+                    "message": f"All {branch_count} branches passed conditions using {condition_logic} logic",
                     "mergeStrategy": merge_strategy,
+                    "conditionLogic": condition_logic,
                     "branchCount": branch_count,
-                    "branches": branch_info,  # NEW: Include branch info for reference
-                    "mergedBranches": sorted(list(set(merged_branches))),
+                    "totalBranches": branch_count,
+                    "branches": branch_info,  # All branches included
+                    "passedBranches": list(range(branch_count)),
                     "conditionsEvaluated": len(conditions),
                     "mergedAt": datetime.now(UTC).isoformat()
                 }
@@ -880,7 +1152,13 @@ class WorkflowExecutor:
             # Mark merge as completed
             self.merge_completed[node_id] = True
             
-            return {
+            # Add warning if using ANY/FIRST with multiple predecessors
+            warning = None
+            if merge_strategy in ['any', 'first'] and len(predecessor_node_ids) > branch_count:
+                warning = f"⚠️ Using '{merge_strategy}' strategy: Only {branch_count} of {len(predecessor_node_ids)} branch(es) available. Downstream nodes using prev[N] may fail if N >= {branch_count}."
+                print(warning)
+            
+            result = {
                 "status": "success",
                 "message": f"Merged {branch_count} branches using '{merge_strategy}' strategy",
                 "mergeStrategy": merge_strategy,
@@ -888,6 +1166,11 @@ class WorkflowExecutor:
                 "branches": branch_info,  # NEW: Include branch info for reference
                 "mergedAt": datetime.now(UTC).isoformat()
             }
+            
+            if warning:
+                result["warning"] = warning
+            
+            return result
     
     def _evaluate_assertion(self, assertion: Dict) -> Dict[str, Any]:
         """Evaluate a single assertion"""

@@ -178,3 +178,4 @@ data/
 htmlcov/
 .coverage
 .pytest_cache/
+backend/tests/

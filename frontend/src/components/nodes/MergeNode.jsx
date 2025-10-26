@@ -129,9 +129,23 @@ const MergeNode = ({ data, selected }) => {
         {/* Result Info */}
         {result && (
           <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 p-2 bg-gray-50 dark:bg-gray-900 rounded">
-            <div className="font-medium mb-1">Merged Branches:</div>
-            {result.branchCount && (
-              <div>✓ {result.branchCount} branch(es) merged</div>
+            <div className="font-medium mb-1">
+              {result.mergeStrategy === 'conditional' ? 'Conditions Passed:' : 'Merged Branches:'}
+            </div>
+            {result.branchCount !== undefined && (
+              <div>✓ {result.branchCount} branch(es) {result.mergeStrategy === 'conditional' ? 'passed' : 'merged'}</div>
+            )}
+            
+            {/* Warning for ANY/FIRST strategies */}
+            {result.warning && (
+              <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded">
+                <div className="text-[10px] text-yellow-800 dark:text-yellow-200">
+                  ⚠️ <span className="font-semibold">Strategy Warning:</span>
+                </div>
+                <div className="text-[9px] text-yellow-700 dark:text-yellow-300 mt-1">
+                  {result.warning}
+                </div>
+              </div>
             )}
             
             {/* Branch Reference Helper - shows which prev[index] maps to which node */}
@@ -178,20 +192,46 @@ const MergeNode = ({ data, selected }) => {
         {data.incomingBranchCount > 1 && !result && (
           <div className="text-xs bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded p-2 mt-2">
             <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1 text-[10px]">
-              🌳 Branch Reference Guide
+              🌳 Branch → Variable Mapping:
             </div>
-            <div className="text-[9px] text-gray-600 dark:text-gray-400 space-y-0.5">
-              <div>This node merges {data.incomingBranchCount} branches</div>
-              <div className="text-gray-500 dark:text-gray-500 italic mt-1">
-                • Branch labels show: <code className="bg-purple-100 dark:bg-purple-900/50 px-1">Branch 0</code>, <code className="bg-purple-100 dark:bg-purple-900/50 px-1">Branch 1</code>, etc.
+            
+            {/* Show incoming branches if available */}
+            {data.incomingBranches && data.incomingBranches.length > 0 ? (
+              <div className="space-y-1">
+                {data.incomingBranches.map((branch) => (
+                  <div key={branch.index} className="text-[10px] bg-white dark:bg-gray-800 p-1.5 rounded border border-gray-200 dark:border-gray-700">
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      {branch.edgeLabel || `Branch ${branch.index}`}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-500 mx-1">→</span>
+                    <code className="text-purple-600 dark:text-purple-400 font-mono">
+                      prev[{branch.index}]
+                    </code>
+                    <span className="text-gray-500 dark:text-gray-500 mx-1">→</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      {branch.label}
+                    </span>
+                  </div>
+                ))}
+                <div className="text-[9px] text-gray-500 dark:text-gray-500 italic mt-1">
+                  Example: <code className="text-purple-600 dark:text-purple-400">{'{{prev[0].response.body.id}}'}</code>
+                </div>
               </div>
-              <div className="text-gray-500 dark:text-gray-500 italic">
-                • To use them: <code className="text-purple-600 dark:text-purple-400">{'{{prev[0]}}'}</code>, <code className="text-purple-600 dark:text-purple-400">{'{{prev[1]}}'}</code>, etc.
+            ) : (
+              // Fallback if incoming branches not available
+              <div className="text-[9px] text-gray-600 dark:text-gray-400 space-y-0.5">
+                <div>This node merges {data.incomingBranchCount} branches</div>
+                <div className="text-gray-500 dark:text-gray-500 italic mt-1">
+                  • Branch labels show: <code className="bg-purple-100 dark:bg-purple-900/50 px-1">Branch 0</code>, <code className="bg-purple-100 dark:bg-purple-900/50 px-1">Branch 1</code>, etc.
+                </div>
+                <div className="text-gray-500 dark:text-gray-500 italic">
+                  • To use them: <code className="text-purple-600 dark:text-purple-400">{'{{prev[0]}}'}</code>, <code className="text-purple-600 dark:text-purple-400">{'{{prev[1]}}'}</code>, etc.
+                </div>
+                <div className="text-gray-500 dark:text-gray-500 italic mt-1">
+                  After execution, you'll see which Branch number corresponds to which source node.
+                </div>
               </div>
-              <div className="text-gray-500 dark:text-gray-500 italic mt-1">
-                After execution, you'll see which Branch number corresponds to which source node.
-              </div>
-            </div>
+            )}
           </div>
         )}
       </div>
