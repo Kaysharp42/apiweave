@@ -1,6 +1,7 @@
 import React, { memo, useState, useCallback, useMemo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
+import { useWorkflow } from '../../contexts/WorkflowContext';
 
 // Extractor form component
 const ExtractorForm = ({ onAdd }) => {
@@ -48,6 +49,7 @@ const ExtractorForm = ({ onAdd }) => {
 const HTTPRequestNode = ({ id, data, selected }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const { setNodes } = useReactFlow();
+  const { variables } = useWorkflow(); // Get all workflow variables
 
   // Memoize the stringified response to avoid re-stringifying on every render
   const responseBodyString = useMemo(() => {
@@ -105,7 +107,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
       <div className="px-2 py-1.5 border-b-2 border-slate-300 dark:border-gray-700 bg-slate-50 dark:bg-gray-900">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">HTTP Request</h3>
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">{data.label || 'HTTP Request'}</h3>
             {data.executionStatus && (
               <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusBadgeStyle()}`}>
                 {data.executionStatus}
@@ -269,6 +271,14 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                           const newExtractors = { ...data.config.extractors };
                           delete newExtractors[varName];
                           updateNodeData('extractors', newExtractors);
+                          
+                          // Emit event to notify WorkflowCanvas of deleted extractor
+                          window.dispatchEvent(new CustomEvent('extractorDeleted', {
+                            detail: {
+                              varName: varName,
+                              nodeId: id
+                            }
+                          }));
                         }}
                       >
                         ✕
@@ -300,10 +310,17 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                   <div>• Cookie: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{prev.response.cookies.session}}`}</code></div>
                 </div>
                 <div className="mt-1"><strong className="text-green-700 dark:text-green-300">From Workflow Variables:</strong></div>
-                <div className="pl-2">
-                  <div>• Token: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{variables.token}}`}</code></div>
-                  <div>• Any variable: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`{{variables.varName}}`}</code></div>
-                </div>
+                {variables && Object.keys(variables).length > 0 ? (
+                  <div className="pl-2 space-y-0.5">
+                    {Object.keys(variables).map(varName => (
+                      <div key={varName}>
+                        • <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded">{`{{variables.${varName}}}`}</code>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="pl-2 text-gray-400 italic">No workflow variables yet</div>
+                )}
               </div>
             </div>
           </div>
@@ -393,7 +410,8 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.selected === nextProps.selected &&
     prevProps.data.label === nextProps.data.label &&
     prevProps.data.executionStatus === nextProps.data.executionStatus &&
-    JSON.stringify(prevProps.data.config) === JSON.stringify(nextProps.data.config)
+    JSON.stringify(prevProps.data.config) === JSON.stringify(nextProps.data.config) &&
+    JSON.stringify(prevProps.data.executionResult) === JSON.stringify(nextProps.data.executionResult)
   );
 };
 

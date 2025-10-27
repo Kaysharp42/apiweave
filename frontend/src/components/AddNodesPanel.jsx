@@ -52,8 +52,12 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
   const onDragStart = (event, node) => {
     console.log('Drag started for node:', node);
     event.dataTransfer.setData('application/reactflow', node.type);
+    // Also pass the method if it exists (for HTTP request nodes)
+    if (node.method) {
+      event.dataTransfer.setData('application/reactflow-method', node.method);
+    }
     event.dataTransfer.effectAllowed = 'move';
-    console.log('Data set:', node.type);
+    console.log('Data set - type:', node.type, 'method:', node.method);
   };
 
   return (

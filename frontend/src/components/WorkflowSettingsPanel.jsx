@@ -1,9 +1,11 @@
 import React from 'react';
+import { useWorkflow } from '../contexts/WorkflowContext';
 
-const WorkflowSettingsPanel = ({ settings = {}, onSettingChange }) => {
+const WorkflowSettingsPanel = () => {
+  const { settings, updateSettings } = useWorkflow();
+  
   const handleContinueOnFailChange = (value) => {
-    onSettingChange({
-      ...settings,
+    updateSettings({
       continueOnFail: value,
     });
   };

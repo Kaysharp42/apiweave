@@ -4,6 +4,7 @@ import 'allotment/dist/style.css';
 import WorkflowCanvas from '../WorkflowCanvas';
 import VariablesPanel from '../VariablesPanel';
 import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
+import { WorkflowProvider } from '../../contexts/WorkflowContext';
 
 const Workspace = () => {
   console.log('Workspace component rendered');
@@ -82,14 +83,17 @@ const Workspace = () => {
       {/* Workspace Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
         {activeTab ? (
-          <>
+          <WorkflowProvider 
+            key={activeTab.id} 
+            workflowId={activeTab.id} 
+            initialWorkflow={activeTab.workflow}
+          >
             {/* Main Layout */}
             <div className="flex-1 overflow-hidden">
               <Allotment>
                 {/* Left: Canvas */}
                 <Allotment.Pane>
                   <WorkflowCanvas
-                    key={activeTab.id}
                     workflowId={activeTab.id}
                     workflow={activeTab.workflow}
                     isPanelOpen={showVariablesPanel}
@@ -121,32 +125,12 @@ const Workspace = () => {
                       <Allotment vertical>
                         {/* Variables Panel Content */}
                         <Allotment.Pane preferredSize="60%">
-                          <VariablesPanel
-                            variables={activeTab.workflow?.variables || {}}
-                            onVariableChange={(updatedVariables) => {
-                              // Update the tab's workflow variables
-                              setTabs(tabs.map(tab => 
-                                tab.id === activeTab.id 
-                                  ? { ...tab, workflow: { ...tab.workflow, variables: updatedVariables } }
-                                  : tab
-                              ));
-                            }}
-                          />
+                          <VariablesPanel />
                         </Allotment.Pane>
                         
                         {/* Settings Panel */}
                         <Allotment.Pane preferredSize="40%">
-                          <WorkflowSettingsPanel
-                            settings={activeTab.workflow?.settings || {}}
-                            onSettingChange={(updatedSettings) => {
-                              // Update the tab's workflow settings
-                              setTabs(tabs.map(tab => 
-                                tab.id === activeTab.id 
-                                  ? { ...tab, workflow: { ...tab.workflow, settings: updatedSettings } }
-                                  : tab
-                              ));
-                            }}
-                          />
+                          <WorkflowSettingsPanel />
                         </Allotment.Pane>
                       </Allotment>
                     </div>
@@ -170,8 +154,7 @@ const Workspace = () => {
                 </button>
               </div>
             )}
-          </>
-        ) : (
+          </WorkflowProvider>        ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-gray-500 dark:text-gray-400">
               <p className="text-xl mb-2">Welcome to APIWeave</p>

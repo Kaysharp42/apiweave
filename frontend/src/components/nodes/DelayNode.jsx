@@ -36,7 +36,7 @@ const DelayNode = ({ id, data, selected }) => {
 
       {/* Header */}
       <div className="px-2 py-1.5 border-b-2 border-slate-300 dark:border-gray-700 bg-yellow-50 dark:bg-yellow-900">
-        <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">⏱️ Delay</h3>
+        <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">{data.label || '⏱️ Delay'}</h3>
       </div>
 
       {/* Content */}

@@ -257,18 +257,38 @@ class WorkflowExecutor:
                 if next_node and next_node['type'] != 'end':
                     tasks.append(self._execute_branch(next_node_id, nodes, edges, db))
             
-            # Execute all branches in parallel
+            # Execute all branches in parallel - allow independent failures
             if tasks:
-                try:
-                    await asyncio.gather(*tasks, return_exceptions=False)
-                except Exception as e:
-                    # Mark as failure
-                    self.has_failures = True
-                    
-                    # If continue_on_fail is False, re-raise
+                # Use return_exceptions=True to let branches fail independently
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Check results and identify failed branches
+                failed_branches = []
+                for i, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        failed_branches.append(i)
+                        branch_edge = next_edges[i]
+                        branch_node_id = branch_edge['target']
+                        self.logger.warning(f"⚠️  Branch {i} (starting at {branch_node_id}) failed: {str(result)}")
+                        print(f"⚠️  Branch {i} (starting at {branch_node_id}) failed: {str(result)}")
+                        
+                        # Mark as failure but don't stop other branches
+                        self.has_failures = True
+                        if branch_node_id not in self.failed_nodes:
+                            self.failed_nodes.append(branch_node_id)
+                
+                # Only raise exception if ALL branches failed and continueOnFail is False
+                if failed_branches and len(failed_branches) == len(tasks):
+                    error_msg = f"All {len(tasks)} branches failed"
+                    self.logger.error(error_msg)
+                    print(f"❌ {error_msg}")
                     if not self.continue_on_fail:
-                        raise
-                    print(f"⚠️  Branch execution failed but continuing: {str(e)}")
+                        raise Exception(error_msg)
+                elif failed_branches:
+                    success_count = len(tasks) - len(failed_branches)
+                    self.logger.info(f"✅ {success_count}/{len(tasks)} branches succeeded, {len(failed_branches)} failed")
+                    print(f"✅ {success_count}/{len(tasks)} branches succeeded, {len(failed_branches)} failed")
+
         
         else:
             # Single edge - sequential execution (original behavior)
@@ -903,8 +923,9 @@ class WorkflowExecutor:
         
         # Strategy-based waiting logic
         if merge_strategy == 'all':
-            # Wait for ALL predecessors to complete BEFORE acquiring lock
-            missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
+            # Wait for ALL predecessors to complete OR fail BEFORE acquiring lock
+            missing_predecessors = [pred_id for pred_id in predecessor_node_ids 
+                                   if pred_id not in self.results and pred_id not in self.failed_nodes]
             if missing_predecessors:
                 self.logger.info(f"⏳ [ALL] Branch waiting for {len(missing_predecessors)} predecessors: {missing_predecessors}")
                 print(f"⏳ [ALL strategy] Branch waiting for {len(missing_predecessors)} predecessors before merge")
@@ -916,27 +937,37 @@ class WorkflowExecutor:
                 while missing_predecessors and elapsed < max_wait:
                     await asyncio.sleep(wait_interval)
                     elapsed += wait_interval
-                    missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
+                    missing_predecessors = [pred_id for pred_id in predecessor_node_ids 
+                                          if pred_id not in self.results and pred_id not in self.failed_nodes]
                 
                 if missing_predecessors:
                     error_msg = f"Timeout waiting for predecessors: {missing_predecessors}"
                     self.logger.error(f"❌ {error_msg}")
                     raise Exception(error_msg)
                 
+                # Check if any required predecessors failed
+                failed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.failed_nodes]
+                if failed_predecessors:
+                    error_msg = f"Cannot merge: {len(failed_predecessors)} predecessor(s) failed: {failed_predecessors}"
+                    self.logger.error(f"❌ {error_msg}")
+                    print(f"❌ [ALL strategy] {error_msg}")
+                    raise Exception(error_msg)
+                
                 self.logger.info(f"✓ All predecessors completed, proceeding to merge")
                 print(f"✓ All {len(predecessor_node_ids)} predecessors completed")
         
         elif merge_strategy in ['any', 'first']:
-            # For ANY/FIRST: Continue as soon as at least ONE predecessor completes
-            # No waiting needed - first branch to arrive triggers merge
+            # For ANY/FIRST: Continue as soon as at least ONE predecessor completes successfully
+            # No waiting needed - first successful branch to arrive triggers merge
             completed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.results]
+            failed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.failed_nodes]
             
             if not completed_predecessors:
-                # This shouldn't happen as the current branch should have completed
-                self.logger.warning(f"⚠️  [ANY/FIRST] No predecessors completed yet")
-                print(f"⚠️  [ANY/FIRST strategy] No predecessors ready, waiting...")
+                # No successful predecessors yet
+                self.logger.warning(f"⚠️  [ANY/FIRST] No predecessors completed successfully yet ({len(failed_predecessors)} failed)")
+                print(f"⚠️  [ANY/FIRST strategy] No successful predecessors ready, waiting...")
                 
-                # Wait for at least one
+                # Wait for at least one successful completion
                 max_wait = 30
                 wait_interval = 0.1
                 elapsed = 0
@@ -945,14 +976,20 @@ class WorkflowExecutor:
                     await asyncio.sleep(wait_interval)
                     elapsed += wait_interval
                     completed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.results]
+                    failed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.failed_nodes]
+                    
+                    # If all branches have finished (success or failure), stop waiting
+                    if len(completed_predecessors) + len(failed_predecessors) == len(predecessor_node_ids):
+                        break
                 
                 if not completed_predecessors:
-                    error_msg = "Timeout waiting for any predecessor"
+                    error_msg = f"All {len(predecessor_node_ids)} branches failed or timed out"
                     self.logger.error(f"❌ {error_msg}")
+                    print(f"❌ [ANY/FIRST strategy] {error_msg}")
                     raise Exception(error_msg)
             
-            self.logger.info(f"⚡ [{merge_strategy.upper()}] {len(completed_predecessors)}/{len(predecessor_node_ids)} predecessors completed, proceeding")
-            print(f"⚡ [{merge_strategy.upper()} strategy] Proceeding with {len(completed_predecessors)} completed branch(es)")
+            self.logger.info(f"⚡ [{merge_strategy.upper()}] {len(completed_predecessors)}/{len(predecessor_node_ids)} predecessors completed ({len(failed_predecessors)} failed), proceeding")
+            print(f"⚡ [{merge_strategy.upper()} strategy] Proceeding with {len(completed_predecessors)} successful branch(es), {len(failed_predecessors)} failed")
         
         elif merge_strategy == 'conditional':
             # For CONDITIONAL: Wait for all like 'all' strategy
@@ -1223,23 +1260,47 @@ class WorkflowExecutor:
         
         # Get the actual value based on source
         if source == 'prev':
-            actual_value = self._get_nested_value(self.context, path)
+            # Get the last HTTP request result (skip non-data nodes like delay, assertion, merge)
+            last_result = None
+            for result in reversed(list(self.results.values())):
+                # Only consider HTTP request nodes
+                if result.get('type') == 'http-request':
+                    last_result = result
+                    break
+            
+            if not last_result:
+                self.logger.error(f"❌ Assertion: No previous HTTP request found for 'prev' source")
+                return {"passed": False, "message": "No previous HTTP request result found"}
+            
+            # Path should be relative to result (e.g., "body.data[0].code" not "response.body.data[0].code")
+            # Remove "response." prefix if present for backward compatibility
+            clean_path = path
+            if path.startswith('response.'):
+                clean_path = path[9:]  # Remove "response." prefix
+                self.logger.info(f"🔧 Assertion: Cleaned path '{path}' to '{clean_path}'")
+            
+            actual_value = self._get_nested_value(last_result, clean_path)
+            self.logger.debug(f"🔍 Assertion: source=prev, path={clean_path}, value={actual_value}")
         elif source == 'variables':
             actual_value = self.workflow_variables.get(path)
+            self.logger.debug(f"🔍 Assertion: source=variables, path={path}, value={actual_value}")
         elif source == 'status':
             # For status, use the last HTTP response status
             last_result = list(self.results.values())[-1] if self.results else {}
             actual_value = last_result.get('statusCode')
+            self.logger.debug(f"🔍 Assertion: source=status, value={actual_value}")
         elif source == 'cookies':
             # Get cookies from last HTTP response
             last_result = list(self.results.values())[-1] if self.results else {}
             cookies = last_result.get('cookies', {})
             actual_value = cookies.get(path)
+            self.logger.debug(f"🔍 Assertion: source=cookies, path={path}, value={actual_value}")
         elif source == 'headers':
             # Get headers from last HTTP response
             last_result = list(self.results.values())[-1] if self.results else {}
             headers = last_result.get('headers', {})
             actual_value = headers.get(path)
+            self.logger.debug(f"🔍 Assertion: source=headers, path={path}, value={actual_value}")
         else:
             return {"passed": False, "message": f"Unknown source: {source}"}
         
@@ -1247,6 +1308,7 @@ class WorkflowExecutor:
         try:
             passed = self._compare_values(actual_value, operator, expected_value)
             message = f"{source}.{path if source != 'status' else 'code'} {operator} {expected_value}: {actual_value}"
+            self.logger.info(f"{'✅' if passed else '❌'} Assertion: {message}")
             return {"passed": passed, "message": message}
         except Exception as e:
             return {"passed": False, "message": f"Comparison error: {str(e)}"}

@@ -214,7 +214,7 @@ const AssertionNode = ({ id, data, selected }) => {
       {/* Header */}
       <div className="px-2 py-1.5 border-b-2 border-slate-300 dark:border-gray-700 bg-green-50 dark:bg-green-900">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-green-800 dark:text-green-200">✓ Assertions</h3>
+          <h3 className="text-sm font-semibold text-green-800 dark:text-green-200">{data.label || '✓ Assertions'}</h3>
           <Tooltip text={isExpanded ? 'Collapse' : 'Expand'}>
             <button
               onClick={() => setIsExpanded(!isExpanded)}

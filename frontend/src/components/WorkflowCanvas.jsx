@@ -17,10 +17,10 @@ import StartNode from './nodes/StartNode';
 import EndNode from './nodes/EndNode';
 import MergeNode from './nodes/MergeNode';
 import AddNodesPanel from './AddNodesPanel';
-import VariablesPanel from './VariablesPanel';
 import NodeModal from './NodeModal';
 import HistoryModal from './HistoryModal';
 import { AppContext } from '../App';
+import { useWorkflow } from '../contexts/WorkflowContext';
 import Toaster, { toast } from './Toaster';
 import ButtonSelect from './ButtonSelect';
 
@@ -69,11 +69,19 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   console.log('WorkflowCanvas context:', context);
   const { darkMode, autoSaveEnabled } = context || { darkMode: false, autoSaveEnabled: true };
   
+  // Get workflow state from WorkflowContext (ONLY variables and settings)
+  const {
+    variables: workflowVariables,
+    registerExtractors,
+    deleteVariable: contextDeleteVariable,
+  } = useWorkflow();
+  
+  // Use ReactFlow's built-in hooks for nodes and edges (local to WorkflowCanvas)
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  
   const [selectedNode, setSelectedNode] = useState(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
-  const [workflowVariables, setWorkflowVariables] = useState({});
   const [modalNode, setModalNode] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [environments, setEnvironments] = useState([]);
@@ -98,23 +106,76 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   // Auto-save timer reference
   const autoSaveTimerRef = useRef(null);
 
-  // Sync extractors from all nodes to workflow variables
+  // Sync extractors from nodes to context - ALWAYS send current state
   useEffect(() => {
-    const allExtractors = {};
+    console.log('📤 Syncing extractors to context from nodes');
+    const extractorsFromNodes = {};
     nodes.forEach(node => {
-      if (node.type === 'http-request' && node.data.config?.extractors) {
-        Object.assign(allExtractors, node.data.config.extractors);
+      if (node.type === 'http-request' && node.data?.config?.extractors) {
+        Object.assign(extractorsFromNodes, node.data.config.extractors);
       }
     });
+    console.log('  Extractors found:', extractorsFromNodes);
+    registerExtractors(extractorsFromNodes);
+  }, [nodes, registerExtractors]);
+
+  // Listen for variable deletions from VariablesPanel and clean up extractors
+  useEffect(() => {
+    const handleVariableDelete = (event) => {
+      if (event.detail.workflowId === workflowId) {
+        const { deletedVars = [] } = event.detail;
+        
+        if (deletedVars.length > 0) {
+          console.log('🗑️ Cleaning up extractors for deleted variables:', deletedVars);
+          setNodes(currentNodes => currentNodes.map(node => {
+            if (node.type === 'http-request' && node.data?.config?.extractors) {
+              const updatedExtractors = { ...node.data.config.extractors };
+              let modified = false;
+              
+              deletedVars.forEach(varName => {
+                if (varName in updatedExtractors) {
+                  delete updatedExtractors[varName];
+                  modified = true;
+                  console.log(`    ✓ Removed extractor "${varName}" from node`);
+                }
+              });
+              
+              if (modified) {
+                return {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    config: {
+                      ...node.data.config,
+                      extractors: updatedExtractors
+                    }
+                  }
+                };
+              }
+            }
+            return node;
+          }));
+        }
+      }
+    };
     
-    // Merge extractors with manually added variables (keep manually added ones, add extractors)
-    setWorkflowVariables(prev => ({
-      ...allExtractors,
-      ...Object.fromEntries(
-        Object.entries(prev).filter(([key]) => !Object.keys(allExtractors).includes(key))
-      )
-    }));
-  }, [nodes]);
+    window.addEventListener('variableDeleted', handleVariableDelete);
+    return () => window.removeEventListener('variableDeleted', handleVariableDelete);
+  }, [workflowId, setNodes]);
+
+  // Listen for extractor deletions from nodes and remove from variables
+  useEffect(() => {
+    const handleExtractorDeleted = (event) => {
+      const { varName } = event.detail;
+      console.log('🗑️ Extractor deleted from node, removing from variables:', varName);
+      
+      // Simply delete from context - the extractor sync will handle keeping them in sync
+      // Actually, we don't need this - the registerExtractors will auto-update when node changes
+    };
+    
+    window.addEventListener('extractorDeleted', handleExtractorDeleted);
+    return () => window.removeEventListener('extractorDeleted', handleExtractorDeleted);
+  }, []);
 
   // Fetch environments
   useEffect(() => {
@@ -214,10 +275,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       setNodes(loadedNodes);
       setEdges(loadedEdges);
       
-      // Load workflow variables
-      if (workflow.variables) {
-        setWorkflowVariables(workflow.variables);
-      }
+      // Note: workflow.variables are loaded via WorkflowContext initialWorkflow prop
     }
   }, [workflow]);
 
@@ -339,7 +397,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       event.preventDefault();
 
       const type = event.dataTransfer.getData('application/reactflow');
-      console.log('Drop event triggered, type:', type);
+      const method = event.dataTransfer.getData('application/reactflow-method');
+      console.log('Drop event triggered, type:', type, 'method:', method);
       console.log('ReactFlow instance:', reactFlowInstance);
 
       if (!type) {
@@ -359,13 +418,21 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
 
       console.log('Drop position:', position);
 
+      const config = getDefaultConfig(type);
+      
+      // Override method if provided (for HTTP request nodes)
+      if (method && type === 'http-request') {
+        config.method = method;
+        console.log('Setting HTTP method to:', method);
+      }
+
       const newNode = {
         id: `${type}-${Date.now()}`,
         type,
         position,
         data: {
           label: type.replace('-', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
-          config: getDefaultConfig(type),
+          config,
         },
       };
 
@@ -498,11 +565,15 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         workflowId
       });
       
-      const url = selectedEnvironment 
-        ? `http://localhost:8000/api/workflows/${workflowId}/run?environmentId=${selectedEnvironment}`
+      // Ensure selectedEnvironment is either a valid ID or null (not empty string)
+      const envId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
+      
+      const url = envId
+        ? `http://localhost:8000/api/workflows/${workflowId}/run?environmentId=${envId}`
         : `http://localhost:8000/api/workflows/${workflowId}/run`;
       
       console.log('📡 Request URL:', url);
+      console.log('📡 Environment ID being sent:', envId);
         
       const response = await fetch(url, {
         method: 'POST',
@@ -600,7 +671,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
     }
   }, [autoSaveEnabled, workflowId]);
 
-  // Debounced auto-save when nodes or edges change
+  // Debounced auto-save when nodes, edges, or variables change
   useEffect(() => {
     if (!autoSaveEnabled) return;
     if (!workflowId) return;
@@ -608,6 +679,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
     autoSaveTimerRef.current = setTimeout(() => {
+      console.log('🔄 Auto-saving workflow...');
       saveWorkflow(true);
       autoSaveTimerRef.current = null;
     }, 700);
@@ -618,7 +690,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         autoSaveTimerRef.current = null;
       }
     };
-  }, [nodes, edges, autoSaveEnabled, workflowId, saveWorkflow]);
+  }, [nodes, edges, workflowVariables, autoSaveEnabled, workflowId, saveWorkflow]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -705,8 +777,13 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
               options={[{ value: '', label: 'No Environment' }, ...environments.map(e => ({ value: e.environmentId, label: e.name }))]}
               value={selectedEnvironment || ''}
               onChange={(val) => {
-                const processed = val || null;
-                console.log('🔄 ButtonSelect changed:', { raw: val, processed });
+                // Normalize: empty string or whitespace becomes null
+                const processed = (val && val.trim()) ? val.trim() : null;
+                console.log('🔄 Environment selection changed:', { 
+                  raw: val, 
+                  processed,
+                  willUseEnvironment: !!processed
+                });
                 setSelectedEnvironment(processed);
               }}
               placeholder="No Environment"

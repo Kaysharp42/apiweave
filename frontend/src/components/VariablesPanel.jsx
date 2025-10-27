@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { useWorkflow } from '../contexts/WorkflowContext';
 
-const VariablesPanel = ({ variables, onVariableChange }) => {
+const VariablesPanel = () => {
+  const { variables, updateVariable, updateVariables, workflowId } = useWorkflow();
+  
   const [showForm, setShowForm] = useState(false);
   const [newVarName, setNewVarName] = useState('');
   const [newVarValue, setNewVarValue] = useState('');
@@ -9,9 +12,7 @@ const VariablesPanel = ({ variables, onVariableChange }) => {
 
   const handleAdd = () => {
     if (newVarName.trim()) {
-      const updated = { ...variables };
-      updated[newVarName.trim()] = newVarValue;
-      onVariableChange(updated);
+      updateVariable(newVarName.trim(), newVarValue);
       setNewVarName('');
       setNewVarValue('');
       setShowForm(false);
@@ -19,15 +20,22 @@ const VariablesPanel = ({ variables, onVariableChange }) => {
   };
 
   const handleDelete = (varName) => {
+    // Delete from context
     const updated = { ...variables };
     delete updated[varName];
-    onVariableChange(updated);
+    updateVariables(updated);
+    
+    // Emit event for WorkflowCanvas to clean up extractors
+    window.dispatchEvent(new CustomEvent('variableDeleted', {
+      detail: {
+        workflowId,
+        deletedVars: [varName]
+      }
+    }));
   };
 
   const handleEdit = (varName, value) => {
-    const updated = { ...variables };
-    updated[varName] = value;
-    onVariableChange(updated);
+    updateVariable(varName, value);
     setEditingVar(null);
   };
 

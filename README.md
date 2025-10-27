@@ -2,7 +2,23 @@
 
 **Visual API Test Workflows Made Simple**
 
-APIWeave is an open-source, visual, step-by-step API test workflow tool that allows you to create test stories using a drag-and-drop canvas. Chain API requests, perform assertions, and generate CI-friendly reports (JUnit XML + HTML) without any AI/LLM dependencies.
+![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.0.0-blue)
+![Bugs Fixed](https://img.shields.io/badge/Bugs%20Fixed-11%2F11-success)
+
+APIWeave is an open-source, visual, step-by-step API test workflow tool that allows you to create test stories using a drag-and-drop canvas. Chain API requests, perform assertions, and generate CI-friendly reports (JUnit XML + HTML).
+
+## ✨ Latest Updates (2025-10-27)
+
+**All 11 critical bugs fixed!** 🎉
+
+- ✅ **Context API Integration** - Single source of truth for workflow state
+- ✅ **Independent Branch Failure** - Parallel branches can fail without stopping others
+- ✅ **Comprehensive Auto-Save** - All changes auto-saved with 700ms debouncing
+- ✅ **Dynamic Variable Display** - Real-time variable updates across all nodes
+- ✅ **Enhanced Error Handling** - Better logging and failure tracking
+
+See [BUG_TRACKER.md](progress/BUG_TRACKER.md) for complete details.
 
 ## Features
 
