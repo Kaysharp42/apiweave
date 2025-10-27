@@ -2,7 +2,7 @@
 
 **Visual API Test Workflows Made Simple**
 
-APIWeave is an open-source, visual, step-by-step API test workflow tool that allows you to create test stories using a drag-and-drop canvas. Chain API requests, perform assertions, and generate CI-friendly reports (JUnit XML + HTML) without any AI/LLM dependencies.
+APIWeave is an open-source, visual, step-by-step API test workflow tool that allows you to create test stories using a drag-and-drop canvas. Chain API requests, perform assertions, and generate CI-friendly reports (JUnit XML + HTML).
 
 ## Features
 
