@@ -378,10 +378,12 @@ const HTTPRequestNode = ({ id, data, selected }) => {
               </div>
             )}
             {data.executionResult.body && (
-              <div className="mt-1">
-                <div className="text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">Body</div>
+              <div className={`mt-1 ${data.executionStatus === 'error' ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded' : ''}`}>
+                <div className={`text-[10px] font-semibold mb-0.5 ${data.executionStatus === 'error' ? 'text-red-700 dark:text-red-300' : 'text-gray-700 dark:text-gray-300'}`}>
+                  Body{data.executionStatus === 'error' ? ' (Error Response)' : ''}
+                </div>
                 <textarea
-                  className="w-full px-1.5 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-[10px] font-mono nodrag overflow-y-auto"
+                  className={`w-full px-1.5 py-1 border text-[10px] font-mono nodrag overflow-y-auto ${data.executionStatus === 'error' ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200'}`}
                   style={{ maxHeight: '150px', resize: 'none' }}
                   value={responseBodyString}
                   readOnly

@@ -267,7 +267,9 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
       headers: headersRef.current,
       cookies: cookiesRef.current,
       body: bodyRef.current,
-      timeout: timeoutRef.current
+      timeout: timeoutRef.current,
+      // CRITICAL: Preserve extractors from original config
+      extractors: initialConfig.extractors || {}
     };
     if (workingDataRef) {
       workingDataRef.current = { ...workingDataRef.current, config: newConfig };

@@ -327,6 +327,7 @@ class WorkflowExecutor:
         # Update node status to running
         await self._update_node_status(db, node_id, "running", None)
         
+        execution_status = None  # Track if result was successfully stored
         try:
             if node_type == 'http-request':
                 result = await self._execute_http_request(node)
@@ -357,7 +358,7 @@ class WorkflowExecutor:
             else:
                 execution_status = "success"  # Default for other statuses
             
-            # Update node status
+            # Update node status with full result (MUST happen BEFORE raising exception)
             await self._update_node_status(db, node_id, execution_status, result)
             
             # Store result with node type for filtering later
@@ -365,10 +366,18 @@ class WorkflowExecutor:
             self.results[node_id] = result
             
             # If HTTP request failed (4xx/5xx) and continueOnFail is False, raise exception to stop workflow
+            # NOTE: Full result with response body is already stored in DB before raising
             if execution_status == "error" and not self.continue_on_fail:
                 raise Exception(f"HTTP request failed with status code {result.get('statusCode', 'unknown')}")
             
         except Exception as e:
+            # Only store error message if the result wasn't already successfully stored
+            # (i.e., this is a real error, not just a failed HTTP status code)
+            if node_type == 'http-request' and execution_status == "error":
+                # HTTP request error already stored above, just re-raise
+                raise
+            
+            # For other types of errors, store error message
             error = {"error": str(e), "status": "error"}
             await self._update_node_status(db, node_id, "error", error)
             raise
