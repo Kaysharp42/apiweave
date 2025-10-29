@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useWorkflow } from '../contexts/WorkflowContext';
+import { MdMergeType, MdEdit, MdDelete } from 'react-icons/md';
 
 const VariablesPanel = () => {
   const { variables, updateVariable, updateVariables, workflowId } = useWorkflow();
@@ -107,14 +108,16 @@ const VariablesPanel = () => {
                       setEditValue(typeof varValue === 'string' ? varValue : JSON.stringify(varValue));
                     }}
                     className="px-2 py-1 bg-blue-500 dark:bg-blue-600 hover:bg-blue-600 dark:hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                    title="Edit variable"
                   >
-                    ✏️
+                    <MdEdit className="w-3 h-3" />
                   </button>
                   <button
                     onClick={() => handleDelete(varName)}
                     className="px-2 py-1 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-xs rounded transition-colors"
+                    title="Delete variable"
                   >
-                    ✕
+                    <MdDelete className="w-3 h-3" />
                   </button>
                 </div>
 
@@ -176,7 +179,7 @@ const VariablesPanel = () => {
           <li>Great for storing tokens, IDs, and authentication data</li>
         </ul>
         
-        <div className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-600"><strong>🌳 Parallel Branches:</strong></div>
+        <div className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-600 flex items-center gap-2"><MdMergeType className="w-4 h-4" /><strong>Parallel Branches:</strong></div>
         <ul className="list-disc list-inside space-y-0.5 pl-1">
           <li>Access specific branches: <code className="bg-gray-200 dark:bg-gray-700 px-1">{`{{prev[0].response}}`}</code></li>
           <li>Branch indexes shown on Merge node after execution</li>

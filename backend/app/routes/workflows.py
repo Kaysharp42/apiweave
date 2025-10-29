@@ -66,6 +66,285 @@ def sanitize_secrets_in_dict(data: Dict[str, Any], secret_refs: List[str], path:
     return sanitized
 
 
+def parse_curl_to_workflow(curl_commands: str, sanitize: bool = True) -> Dict[str, Any]:
+    """
+    Convert curl command(s) to APIWeave workflow format
+    
+    Args:
+        curl_commands: Single curl command or multiple commands (one per line, or separated by &&)
+        sanitize: Whether to filter sensitive headers
+        
+    Returns:
+        Workflow dict ready for import
+    """
+    from urllib.parse import urlparse, parse_qs
+    import shlex
+    
+    def normalize_curl_command(cmd_text: str) -> str:
+        """
+        Normalize curl command by handling line continuations (backslashes)
+        and ensuring it's a single line
+        """
+        # Remove line continuations (backslash at end of line)
+        normalized = re.sub(r'\\\s*\n\s*', ' ', cmd_text)
+        return normalized.strip()
+    
+    # First, split multiple commands intelligently
+    # Look for lines that START with 'curl' to identify command boundaries
+    commands = []
+    current_cmd = []
+    
+    for line in curl_commands.split('\n'):
+        stripped = line.strip()
+        
+        # If line is empty, skip it
+        if not stripped:
+            continue
+        
+        # If line starts with 'curl', it's a new command
+        if stripped.startswith('curl'):
+            if current_cmd:
+                # Save previous command
+                full_cmd = '\n'.join(current_cmd)
+                normalized = normalize_curl_command(full_cmd)
+                if normalized:
+                    commands.append(normalized)
+            current_cmd = [line]
+        else:
+            # Continuation of current command
+            current_cmd.append(line)
+    
+    # Don't forget the last command
+    if current_cmd:
+        full_cmd = '\n'.join(current_cmd)
+        normalized = normalize_curl_command(full_cmd)
+        if normalized:
+            commands.append(normalized)
+    
+    if not commands:
+        raise ValueError("No valid curl commands found")
+    
+    nodes = []
+    edges = []
+    
+    # Create start node
+    start_node_id = str(uuid.uuid4())
+    nodes.append({
+        "nodeId": start_node_id,
+        "type": "start",
+        "label": "Start",
+        "position": {"x": 100, "y": 100},
+        "config": {}
+    })
+    
+    # Grid layout for curl commands
+    nodes_per_row = 8
+    x_spacing = 400
+    y_spacing = 200
+    start_x = 600
+    start_y = 100
+    
+    for idx, curl_cmd in enumerate(commands):
+        node_id = str(uuid.uuid4())
+        
+        try:
+            # Parse curl command
+            # Remove 'curl' prefix
+            if curl_cmd.startswith('curl '):
+                curl_cmd = curl_cmd[5:].strip()
+            
+            # Simple curl parser - handles most common cases
+            method = 'GET'
+            url = None
+            headers = {}
+            cookies = {}
+            body = None
+            
+            # Tokenize the command while respecting quotes
+            try:
+                tokens = shlex.split(curl_cmd)
+            except ValueError as e:
+                print(f"Shlex parsing failed for command {idx}, trying simple split: {e}")
+                # Fallback to manual parsing
+                tokens = []
+                in_quotes = False
+                current_token = []
+                for char in curl_cmd:
+                    if char == "'" or char == '"':
+                        in_quotes = not in_quotes
+                    elif char in (' ', '\t') and not in_quotes:
+                        if current_token:
+                            tokens.append(''.join(current_token))
+                            current_token = []
+                    else:
+                        current_token.append(char)
+                if current_token:
+                    tokens.append(''.join(current_token))
+            
+            i = 0
+            while i < len(tokens):
+                token = tokens[i]
+                
+                # Skip empty tokens
+                if not token:
+                    i += 1
+                    continue
+                
+                # Method flags
+                if token == '-X' or token == '--request':
+                    if i + 1 < len(tokens):
+                        method = tokens[i + 1].upper()
+                        i += 2
+                        continue
+                
+                # URL (first non-flag argument or after -url)
+                elif token == '-u' or token == '--url':
+                    if i + 1 < len(tokens):
+                        url = tokens[i + 1]
+                        i += 2
+                        continue
+                
+                # Headers
+                elif token == '-H' or token == '--header':
+                    if i + 1 < len(tokens):
+                        header_str = tokens[i + 1]
+                        if ':' in header_str:
+                            key, val = header_str.split(':', 1)
+                            key = key.strip()
+                            val = val.strip()
+                            if sanitize and detect_secrets_in_value(f"{key}:{val}"):
+                                headers[key] = "[FILTERED]"
+                            else:
+                                headers[key] = val
+                        i += 2
+                        continue
+                
+                # Cookies
+                elif token == '-b' or token == '--cookie':
+                    if i + 1 < len(tokens):
+                        cookie_str = tokens[i + 1]
+                        for cookie in cookie_str.split(';'):
+                            cookie = cookie.strip()
+                            if '=' in cookie:
+                                k, v = cookie.split('=', 1)
+                                cookies[k.strip()] = v.strip()
+                        i += 2
+                        continue
+                
+                # Data/Body
+                elif token == '-d' or token == '--data' or token == '--data-raw':
+                    if i + 1 < len(tokens):
+                        body = tokens[i + 1]
+                        if method == 'GET':
+                            method = 'POST'  # -d implies POST
+                        i += 2
+                        continue
+                
+                # If token doesn't start with -, it might be the URL
+                elif not token.startswith('-') and url is None:
+                    url = token
+                    i += 1
+                    continue
+                
+                i += 1
+            
+            # If no URL found, skip this command
+            if not url:
+                print(f"No URL found in command {idx}, skipping")
+                continue
+            
+            # Parse URL
+            parsed = urlparse(url)
+            host = parsed.netloc
+            path = parsed.path or "/"
+            query = parsed.query
+            
+            # Extract query params from URL
+            query_params = {}
+            if query:
+                parsed_qs_result = parse_qs(query, keep_blank_values=True)
+                for k, v_list in parsed_qs_result.items():
+                    query_params[k] = v_list[0] if v_list else ""
+            
+            # Build label
+            path_display = path if len(path) <= 40 else path[:37] + "..."
+            label = f"[{method}] {host}{path_display}"
+            
+            # Convert to string format
+            headers_str = "\n".join([f"{k}={v}" for k, v in headers.items()]) if headers else ""
+            query_params_str = "\n".join([f"{k}={v}" for k, v in query_params.items()]) if query_params else ""
+            cookies_str = "\n".join([f"{k}={v}" for k, v in cookies.items()]) if cookies else ""
+            
+            # Calculate position
+            row = idx // nodes_per_row
+            col = idx % nodes_per_row
+            x_position = start_x + col * x_spacing
+            y_position = start_y + row * y_spacing
+            
+            # Create node
+            node_config = {
+                "method": method,
+                "url": url,
+                "headers": headers_str,
+                "queryParams": query_params_str,
+                "cookies": cookies_str,
+                "body": body,
+                "timeout": 30,
+                "followRedirects": True,
+                "extractors": {},
+            }
+            
+            node = {
+                "nodeId": node_id,
+                "type": "http-request",
+                "label": label,
+                "position": {"x": x_position, "y": y_position},
+                "config": node_config
+            }
+            
+            nodes.append(node)
+        
+        except Exception as e:
+            # Log error but continue with other commands
+            print(f"Error parsing curl command {idx}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    # Create end node
+    total_rows = (len(nodes) + nodes_per_row - 1) // nodes_per_row
+    end_x = start_x + (nodes_per_row // 2) * x_spacing
+    end_y = start_y + total_rows * y_spacing + y_spacing
+    
+    end_node_id = str(uuid.uuid4())
+    nodes.append({
+        "nodeId": end_node_id,
+        "type": "end",
+        "label": "End",
+        "position": {"x": end_x, "y": end_y},
+        "config": {}
+    })
+    
+    # Connect start to end
+    edges.append({
+        "edgeId": str(uuid.uuid4()),
+        "source": start_node_id,
+        "target": end_node_id,
+        "label": None
+    })
+    
+    workflow = {
+        "name": f"Imported from curl - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
+        "description": f"Imported {len(nodes) - 2} HTTP requests from curl commands",
+        "nodes": nodes,
+        "edges": edges,
+        "variables": {},
+        "tags": ["curl-import"]
+    }
+    
+    return workflow
+
+
 def parse_har_to_workflow(har_data: Dict[str, Any], import_mode: str = "linear", sanitize: bool = True) -> Dict[str, Any]:
     """
     Convert HAR file to APIWeave workflow format
@@ -625,6 +904,9 @@ async def delete_workflow(workflow_id: str):
 @router.post("/{workflow_id}/run", status_code=status.HTTP_202_ACCEPTED)
 async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(None)):
     """Trigger a workflow run with optional environment"""
+    from app.runner.executor import WorkflowExecutor
+    import asyncio
+    
     db = get_database()
     
     # Verify workflow exists
@@ -665,7 +947,18 @@ async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(No
     
     await db.runs.insert_one(run_doc)
     
-    # TODO: Trigger actual workflow execution (via queue/worker)
+    # Trigger workflow execution as a background task
+    # This allows immediate response while execution happens in background
+    async def execute_workflow():
+        try:
+            executor = WorkflowExecutor(run_id, workflow_id)
+            await executor.execute()
+        except Exception as e:
+            # Error is already logged in executor
+            pass
+    
+    # Schedule the execution as a background task (non-blocking)
+    asyncio.create_task(execute_workflow())
     
     return {
         "message": "Workflow run triggered",
@@ -1538,5 +1831,189 @@ async def import_openapi_dry_run(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to preview OpenAPI file: {str(e)}"
+        )
+
+
+@router.post("/import/curl/dry-run")
+async def import_curl_dry_run(
+    sanitize: bool = Query(True),
+    curl_command: Optional[str] = Query(None)
+):
+    """
+    Preview curl command(s) import without persisting
+    Returns proposed workflow structure
+    Accepts curl command via query parameter or request body
+    """
+    try:
+        if not curl_command:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="curl command is required"
+            )
+        
+        # Convert curl to workflow (preview only)
+        try:
+            workflow_data = parse_curl_to_workflow(curl_command, sanitize)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        
+        # Return preview
+        return {
+            "message": "Curl preview generated successfully",
+            "workflow": {
+                "name": workflow_data["name"],
+                "description": workflow_data["description"],
+                "nodeCount": len(workflow_data["nodes"]),
+                "edgeCount": len(workflow_data["edges"])
+            },
+            "stats": {
+                "totalRequests": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
+                "importType": "curl"
+            },
+            "nodes": workflow_data["nodes"],
+            "edges": workflow_data["edges"]
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Curl dry-run error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to preview curl command: {str(e)}"
+        )
+
+
+
+@router.post("/import/curl")
+async def import_curl_file(
+    sanitize: bool = Query(True),
+    curl_command: Optional[str] = Query(None),
+    workflowId: Optional[str] = Query(None)
+):
+    """
+    Import curl command(s) and convert to workflow.
+    If workflowId is provided, append to that workflow. Otherwise, create new workflow.
+    """
+    db = get_database()
+    try:
+        if not curl_command:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="curl command is required"
+            )
+        # Convert curl to workflow nodes/edges
+        try:
+            workflow_data = parse_curl_to_workflow(curl_command, sanitize)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        if workflowId:
+            # Append to existing workflow
+            existing = await db.workflows.find_one({"workflowId": workflowId})
+            if not existing:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Workflow {workflowId} not found"
+                )
+            # Remove start/end nodes from imported data
+            imported_nodes = [n for n in workflow_data["nodes"] if n["type"] != "start" and n["type"] != "end"]
+            imported_edges = [e for e in workflow_data["edges"]]
+            # Re-ID nodes/edges to avoid collisions
+            node_id_map = {}
+            for node in imported_nodes:
+                old_id = node["nodeId"]
+                new_id = str(uuid.uuid4())
+                node_id_map[old_id] = new_id
+                node["nodeId"] = new_id
+            for edge in imported_edges:
+                if edge["source"] in node_id_map:
+                    edge["source"] = node_id_map[edge["source"]]
+                if edge["target"] in node_id_map:
+                    edge["target"] = node_id_map[edge["target"]]
+                edge["edgeId"] = str(uuid.uuid4())
+
+            # --- Offset imported nodes to avoid overlap ---
+            # Find max X and Y of existing nodes
+            existing_positions = [n.get("position", {}) for n in existing["nodes"] if n.get("position")]
+            if existing_positions:
+                max_x = max(pos.get("x", 0) for pos in existing_positions)
+                max_y = max(pos.get("y", 0) for pos in existing_positions)
+            else:
+                max_x = 0
+                max_y = 0
+            # Offset imported nodes: position them to the right of the rightmost node
+            # Add some padding (e.g., 100px) to avoid overlap
+            x_offset = max_x + 100 if existing_positions else 600
+            # Keep them roughly at the same Y level
+            y_offset = 0
+            for node in imported_nodes:
+                if "position" in node and isinstance(node["position"], dict):
+                    node["position"]["x"] = node["position"].get("x", 0) + x_offset
+                    node["position"]["y"] = node["position"].get("y", 0) + y_offset
+
+            # Append nodes/edges
+            updated_nodes = existing["nodes"] + imported_nodes
+            updated_edges = existing["edges"] + imported_edges
+            # Update DB
+            await db.workflows.update_one(
+                {"workflowId": workflowId},
+                {"$set": {
+                    "nodes": updated_nodes,
+                    "edges": updated_edges,
+                    "updatedAt": datetime.now(UTC)
+                }}
+            )
+            return {
+                "message": f"Curl commands imported and appended to workflow {workflowId}",
+                "workflowId": workflowId,
+                "stats": {
+                    "totalRequests": len(imported_nodes),
+                    "importType": "curl"
+                }
+            }
+        else:
+            # Create new workflow as before
+            new_workflow_id = str(uuid.uuid4())
+            now = datetime.now(UTC)
+            workflow_doc = {
+                "workflowId": new_workflow_id,
+                "name": workflow_data["name"],
+                "description": workflow_data["description"],
+                "nodes": workflow_data["nodes"],
+                "edges": workflow_data["edges"],
+                "variables": workflow_data.get("variables", {}),
+                "tags": workflow_data.get("tags", []),
+                "environmentId": None,
+                "createdAt": now,
+                "updatedAt": now,
+                "version": 1
+            }
+            await db.workflows.insert_one(workflow_doc)
+            return {
+                "message": "Curl commands imported successfully",
+                "workflowId": new_workflow_id,
+                "stats": {
+                    "totalRequests": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
+                    "importType": "curl"
+                }
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Curl import error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import curl command: {str(e)}"
         )
 

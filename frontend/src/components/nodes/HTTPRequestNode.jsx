@@ -2,6 +2,8 @@ import React, { memo, useState, useCallback, useMemo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
 import { useWorkflow } from '../../contexts/WorkflowContext';
+import { HiMiniDocumentDuplicate } from 'react-icons/hi2';
+import { MdContentCopy, MdExpandMore, MdExpandLess, MdAcUnit, MdDelete, MdExtension, MdAdd, MdCheckCircle, MdArrowForward, MdWarning, MdError } from 'react-icons/md';
 
 // Extractor form component
 const ExtractorForm = ({ onAdd }) => {
@@ -38,9 +40,10 @@ const ExtractorForm = ({ onAdd }) => {
       </div>
       <button
         onClick={handleAdd}
-        className="w-full px-2 py-1 bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 text-white text-[9px] font-semibold rounded nodrag transition-colors"
+        className="w-full px-2 py-1 bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 text-white text-[9px] font-semibold rounded nodrag transition-colors flex items-center justify-center gap-1"
       >
-        Add Extractor
+        <MdAdd className="w-3 h-3" />
+        <span>Add Extractor</span>
       </button>
     </div>
   );
@@ -48,6 +51,7 @@ const ExtractorForm = ({ onAdd }) => {
 
 const HTTPRequestNode = ({ id, data, selected }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const { setNodes } = useReactFlow();
   const { variables } = useWorkflow(); // Get all workflow variables
 
@@ -115,21 +119,66 @@ const HTTPRequestNode = ({ id, data, selected }) => {
             )}
             {/* Branch count badge */}
             {data.branchCount > 1 && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 font-semibold" title={`${data.branchCount} parallel branches`}>
-                🌳 {data.branchCount}x
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 font-semibold flex items-center gap-1" title={`${data.branchCount} parallel branches`}>
+                <MdAcUnit className="w-3 h-3" />
+                <span>{data.branchCount}x</span>
               </span>
             )}
           </div>
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
-            style={{ background: 'transparent', border: 'none', padding: '0', WebkitTapHighlightColor: 'transparent' }}
-            aria-expanded={isExpanded}
-            title={isExpanded ? 'Collapse' : 'Expand'}
-          >
-            {/* Force monochrome text glyph using variation selector */}
-            {isExpanded ? '\u25BC\uFE0E' : '\u25B6\uFE0E'}
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Three-dot menu */}
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMenu(!showMenu);
+                }}
+                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+                style={{ background: 'transparent', border: 'none', padding: '0 4px', WebkitTapHighlightColor: 'transparent' }}
+                title="More options"
+              >
+                ⋯
+              </button>
+              
+              {/* Dropdown menu */}
+              {showMenu && (
+                <div className="absolute right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded shadow-lg z-50 nodrag min-w-[130px]">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent('duplicateNode', { detail: { nodeId: id } }));
+                      setShowMenu(false);
+                    }}
+                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none flex items-center gap-2"
+                  >
+                    <HiMiniDocumentDuplicate className="w-4 h-4" />
+                    <span>Duplicate</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent('copyNode', { detail: { nodeId: id } }));
+                      setShowMenu(false);
+                    }}
+                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none border-t border-gray-300 dark:border-gray-600 flex items-center gap-2"
+                  >
+                    <MdContentCopy className="w-4 h-4" />
+                    <span>Copy</span>
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+              style={{ background: 'transparent', border: 'none', padding: '0', WebkitTapHighlightColor: 'transparent' }}
+              aria-expanded={isExpanded}
+              title={isExpanded ? 'Collapse' : 'Expand'}
+            >
+              {isExpanded ? <MdExpandLess className="w-4 h-4" /> : <MdExpandMore className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -246,9 +295,10 @@ const HTTPRequestNode = ({ id, data, selected }) => {
 
             {/* Store Result As (Extract Variables) */}
             <div className="border-t dark:border-gray-700 pt-2 mt-2">
-              <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
-                📦 Store Response Fields As Variables
-                <span className="text-gray-500 dark:text-gray-500 font-normal text-[9px] block mt-0.5">
+              <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5 flex items-center gap-1">
+                <MdExtension className="w-4 h-4" />
+                <span>Store Response Fields As Variables</span>
+                <span className="text-gray-500 dark:text-gray-500 font-normal text-[9px] block mt-0.5 ml-auto">
                   Extract values from response and save as workflow variables
                 </span>
               </label>
@@ -266,7 +316,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                         {varPath}
                       </code>
                       <button
-                        className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 nodrag"
+                        className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 nodrag flex-shrink-0"
                         onClick={() => {
                           const newExtractors = { ...data.config.extractors };
                           delete newExtractors[varName];
@@ -280,8 +330,9 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                             }
                           }));
                         }}
+                        title="Delete extractor"
                       >
-                        ✕
+                        <MdDelete className="w-3 h-3" />
                       </button>
                     </div>
                   ))
@@ -344,14 +395,27 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                 }`}>
                   {data.executionResult.statusCode}
                 </span>
-                <span className="text-[9px]">
+                <span className="text-[9px] flex items-center gap-1">
                   {data.executionResult.statusCode >= 200 && data.executionResult.statusCode < 300 
-                    ? '✓ Success' 
+                    ? <>
+                        <MdCheckCircle className="w-3 h-3" />
+                        Success
+                      </>
                     : data.executionResult.statusCode >= 300 && data.executionResult.statusCode < 400
-                    ? '↪ Redirect'
+                    ? <>
+                        <MdArrowForward className="w-3 h-3" />
+                        Redirect
+                      </>
                     : data.executionResult.statusCode >= 400 && data.executionResult.statusCode < 500
-                    ? '⚠ Client Error'
-                    : '✗ Server Error'}
+                    ? <>
+                        <MdWarning className="w-3 h-3" />
+                        Client Error
+                      </>
+                    : <>
+                        <MdError className="w-3 h-3" />
+                        Server Error
+                      </>
+                  }
                 </span>
                 {data.executionResult.duration !== undefined && (
                   <>

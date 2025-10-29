@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FileText, X, Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { MdCheckCircle } from 'react-icons/md';
 
 const OpenAPIImport = ({ onClose, onImportSuccess }) => {
   const [openapiFile, setOpenapiFile] = useState(null);
@@ -208,8 +209,9 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
               Choose File
             </label>
             {openapiFile && (
-              <p className="mt-2 text-sm text-green-600 dark:text-green-400">
-                ✓ {openapiFile.name}
+              <p className="mt-2 text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
+                <MdCheckCircle className="w-4 h-4" />
+                <span>{openapiFile.name}</span>
               </p>
             )}
           </div>

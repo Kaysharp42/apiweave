@@ -10,6 +10,7 @@ import MainFooter from './MainFooter';
 const MainLayout = () => {
   const [isNavBarCollapsed, setIsNavBarCollapsed] = useState(false);
   const [selectedNav, setSelectedNav] = useState('workflows');
+  const [currentWorkflowId, setCurrentWorkflowId] = useState(null);
 
   return (
     <>
@@ -38,6 +39,7 @@ const MainLayout = () => {
                     selectedNav={selectedNav} 
                     isCollapsed={isNavBarCollapsed}
                     setIsCollapsed={setIsNavBarCollapsed}
+                    currentWorkflowId={currentWorkflowId}
                   />
                 </div>
               )}
@@ -46,7 +48,7 @@ const MainLayout = () => {
 
           {/* Right: Workspace */}
           <Allotment.Pane>
-            <Workspace />
+            <Workspace onActiveTabChange={setCurrentWorkflowId} />
           </Allotment.Pane>
         </Allotment>
       </main>
@@ -58,3 +60,4 @@ const MainLayout = () => {
 };
 
 export default MainLayout;
+

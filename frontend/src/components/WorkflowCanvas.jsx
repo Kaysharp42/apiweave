@@ -89,17 +89,34 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   const [environmentChangeNotification, setEnvironmentChangeNotification] = useState(null);
   
   // Initialize selectedEnvironment from localStorage if available
+  // Also check global default if workflow-specific one doesn't exist
   const [selectedEnvironment, setSelectedEnvironment] = useState(() => {
-    const saved = localStorage.getItem(`selectedEnvironment_${workflowId}`);
-    console.log('🔧 Initializing selectedEnvironment:', { workflowId, saved });
-    return saved || null;
+    // First try workflow-specific setting
+    const workflowSpecific = localStorage.getItem(`selectedEnvironment_${workflowId}`);
+    if (workflowSpecific) {
+      console.log('🔧 Loaded workflow-specific environment:', { workflowId, environmentId: workflowSpecific });
+      return workflowSpecific;
+    }
+    
+    // Fall back to global default environment
+    const globalDefault = localStorage.getItem('defaultEnvironment');
+    if (globalDefault) {
+      console.log('🔧 Using global default environment:', { environmentId: globalDefault });
+      return globalDefault;
+    }
+    
+    console.log('🔧 No environment selected (initializing empty):', { workflowId });
+    return null;
   });
   
   // Save selectedEnvironment to localStorage when it changes
   useEffect(() => {
     console.log('💾 selectedEnvironment changed:', selectedEnvironment);
     if (selectedEnvironment) {
+      // Save workflow-specific setting
       localStorage.setItem(`selectedEnvironment_${workflowId}`, selectedEnvironment);
+      // Also save as global default so new workflows use it
+      localStorage.setItem('defaultEnvironment', selectedEnvironment);
     } else {
       localStorage.removeItem(`selectedEnvironment_${workflowId}`);
     }
@@ -107,6 +124,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
 
   // Auto-save timer reference
   const autoSaveTimerRef = useRef(null);
+  
+  // Track newly duplicated node IDs to prevent auto-selection
+  const newDuplicateNodeRef = useRef(null);
 
   // Sync extractors from nodes to context - ALWAYS send current state
   useEffect(() => {
@@ -206,6 +226,166 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       window.removeEventListener('environmentsChanged', handleEnvironmentsChanged);
     };
   }, []);
+
+  // Listen for workflow updates (e.g., from curl import append)
+  useEffect(() => {
+    const handleWorkflowUpdated = async (event) => {
+      const { workflowId: updatedWorkflowId } = event.detail;
+      if (updatedWorkflowId === workflowId) {
+        console.log('Workflow updated, reloading...');
+        // Reload the workflow from the server
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
+          if (response.ok) {
+            const data = await response.json();
+            // Update nodes and edges with new workflow data
+            const newNodes = (data.nodes || []).map(node => ({
+              id: node.nodeId,
+              type: node.type,
+              position: node.position,
+              data: {
+                config: node.config,
+                label: node.label,
+              },
+            }));
+            const newEdges = (data.edges || []).map(edge => ({
+              id: edge.edgeId,
+              source: edge.source,
+              target: edge.target,
+              label: edge.label,
+            }));
+            setNodes(newNodes);
+            setEdges(newEdges);
+            console.log('Workflow reloaded successfully');
+          }
+        } catch (err) {
+          console.error('Error reloading workflow:', err);
+        }
+      }
+    };
+    window.addEventListener('workflowUpdated', handleWorkflowUpdated);
+    return () => {
+      window.removeEventListener('workflowUpdated', handleWorkflowUpdated);
+    };
+  }, [workflowId, setNodes, setEdges]);
+
+  // Listen for duplicate and copy node events from nodes
+  useEffect(() => {
+    const handleDuplicateNode = (event) => {
+      const { nodeId } = event.detail;
+      const nodeToClone = nodes.find((n) => n.id === nodeId);
+      if (!nodeToClone) return;
+
+      const newNode = {
+        ...nodeToClone,
+        id: `${nodeToClone.id}-${Date.now()}`,
+        position: {
+          x: nodeToClone.position.x + 150,
+          y: nodeToClone.position.y + 150,
+        },
+        data: {
+          ...nodeToClone.data,
+          config: nodeToClone.data.config
+            ? JSON.parse(JSON.stringify(nodeToClone.data.config))
+            : {},
+        },
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+    };
+
+    const handleCopyNode = (event) => {
+      const { nodeId } = event.detail;
+      const nodeToClone = nodes.find((n) => n.id === nodeId);
+      if (!nodeToClone) return;
+
+      const cloneData = {
+        type: nodeToClone.type,
+        data: JSON.parse(JSON.stringify(nodeToClone.data)),
+      };
+      sessionStorage.setItem('copiedNode', JSON.stringify(cloneData));
+      console.log('Node copied to clipboard:', cloneData);
+    };
+
+    const handlePasteNode = () => {
+      const cloneData = sessionStorage.getItem('copiedNode');
+      if (!cloneData) {
+        toast('No node in clipboard', { type: 'error' });
+        return;
+      }
+
+      try {
+        const { type, data } = JSON.parse(cloneData);
+        
+        // Position new node relative to selected node, or use default
+        let newPosition = { x: 400, y: 300 };
+        if (selectedNode) {
+          // Position offset to the right and down from selected node
+          newPosition = {
+            x: selectedNode.position.x + 200,
+            y: selectedNode.position.y + 150,
+          };
+        } else if (nodes.length > 0) {
+          // Fallback: position offset from last node
+          const lastNode = nodes[nodes.length - 1];
+          newPosition = {
+            x: lastNode.position.x + 150,
+            y: lastNode.position.y + 150,
+          };
+        }
+
+        const newNode = {
+          id: `node-${Date.now()}`,
+          type,
+          position: newPosition,
+          data,
+        };
+
+        setNodes((nds) => [...nds, newNode]);
+        toast('Node pasted successfully', { type: 'success' });
+        console.log('Node pasted successfully');
+      } catch (err) {
+        toast('Error pasting node: ' + err.message, { type: 'error' });
+        console.error('Error pasting node:', err);
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      // Only handle keyboard shortcuts when a node is selected and we're not typing in an input
+      const isInputFocused = document.activeElement?.tagName === 'INPUT' || 
+                             document.activeElement?.tagName === 'TEXTAREA' ||
+                             document.activeElement?.contentEditable === 'true';
+
+      if (isInputFocused) return;
+
+      // Ctrl+C (or Cmd+C on Mac) for copy
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        if (selectedNode) {
+          e.preventDefault();
+          handleCopyNode({ detail: { nodeId: selectedNode.id } });
+          toast('Node copied to clipboard', { type: 'success' });
+        }
+      }
+
+      // Ctrl+V (or Cmd+V on Mac) for paste
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        handlePasteNode();
+      }
+    };
+
+    window.addEventListener('duplicateNode', handleDuplicateNode);
+    window.addEventListener('copyNode', handleCopyNode);
+    window.addEventListener('pasteNode', handlePasteNode);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('duplicateNode', handleDuplicateNode);
+      window.removeEventListener('copyNode', handleCopyNode);
+      window.removeEventListener('pasteNode', handlePasteNode);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [nodes, setNodes, selectedNode]);
 
   // Detect parallel branches and update node data with branch counts
   useEffect(() => {
@@ -348,6 +528,18 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
     [setEdges, darkMode, nodes]
   );
 
+  // Wrap onNodesChange to prevent new duplicate nodes from being auto-selected
+  const handleNodesChange = useCallback((changes) => {
+    // Filter out selection changes for newly duplicated nodes
+    const filteredChanges = changes.filter((change) => {
+      if (change.type === 'select' && newDuplicateNodeRef.current === change.id) {
+        return false; // Ignore selection of newly duplicated node
+      }
+      return true;
+    });
+    onNodesChange(filteredChanges);
+  }, [onNodesChange]);
+
   const onNodeClick = useCallback((event, node) => {
     setSelectedNode(node);
   }, []);
@@ -363,6 +555,97 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
     setNodes((nds) =>
       nds.map((n) => (n.id === updatedNode.id ? updatedNode : n))
     );
+  }, [setNodes]);
+
+  const handleDuplicateNode = useCallback((nodeId) => {
+    let newNodeId = null;
+    setNodes((nds) => {
+      const nodeToClone = nds.find((n) => n.id === nodeId);
+      if (!nodeToClone) return nds;
+
+      // Determine the parent node ID (either the node itself or its parent)
+      const parentNodeId = nodeToClone.data?.parentNodeId || nodeId;
+
+      // Count how many nodes have this parent (including the parent itself)
+      const siblingCount = nds.filter((n) => 
+        (n.data?.parentNodeId === parentNodeId) || n.id === parentNodeId
+      ).length;
+
+      // Create a new node with same config but different ID
+      // Deep copy the entire data object to avoid shared references
+      newNodeId = `${nodeId}-dup-${Date.now()}`;
+      const newNode = {
+        ...nodeToClone,
+        id: newNodeId,
+        position: {
+          x: nodeToClone.position.x + (siblingCount * 150), // Cascade horizontally
+          y: nodeToClone.position.y + (siblingCount * 150), // Cascade vertically
+        },
+        data: {
+          ...JSON.parse(JSON.stringify(nodeToClone.data)), // Deep copy entire data object
+          parentNodeId: parentNodeId, // Track the original node
+        },
+        selected: false, // Ensure new node is NOT selected
+      };
+
+      return [...nds, newNode];
+    });
+    
+    // Mark this node so onNodesChange can ignore selection events for it
+    if (newNodeId) {
+      newDuplicateNodeRef.current = newNodeId;
+      setTimeout(() => {
+        newDuplicateNodeRef.current = null;
+      }, 100);
+    }
+  }, []);
+
+  const handleCopyNode = useCallback((nodeId) => {
+    const nodeToClone = nodes.find((n) => n.id === nodeId);
+    if (!nodeToClone) return;
+
+    // Store in clipboard (use sessionStorage as clipboard API might have issues)
+    const cloneData = {
+      type: nodeToClone.type,
+      data: JSON.parse(JSON.stringify(nodeToClone.data)),
+    };
+    sessionStorage.setItem('copiedNode', JSON.stringify(cloneData));
+    console.log('Node copied to clipboard:', cloneData);
+  }, [nodes]);
+
+  const handlePasteNode = useCallback(() => {
+    const cloneData = sessionStorage.getItem('copiedNode');
+    if (!cloneData) {
+      console.warn('No node in clipboard');
+      return;
+    }
+
+    try {
+      const { type, data } = JSON.parse(cloneData);
+      setNodes((nds) => {
+        // Find a suitable position (offset from center or last node)
+        let newPosition = { x: 400, y: 300 };
+        if (nds.length > 0) {
+          const lastNode = nds[nds.length - 1];
+          newPosition = {
+            x: lastNode.position.x + 150,
+            y: lastNode.position.y + 150,
+          };
+        }
+
+        const newNode = {
+          id: `node-${Date.now()}`,
+          type,
+          position: newPosition,
+          data,
+        };
+
+        return [...nds, newNode];
+      });
+      console.log('Node pasted successfully');
+    } catch (err) {
+      console.error('Error pasting node:', err);
+    }
   }, [setNodes]);
 
   const onDragOver = useCallback((event) => {
@@ -567,15 +850,41 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         workflowId
       });
       
-      // Ensure selectedEnvironment is either a valid ID or null (not empty string)
-      const envId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
+      // Debug logging removed for production. Uncomment for debugging if needed.
+      // console.log('📋 Available environments:', environments.map(e => ({
+      //   id: e.environmentId,
+      //   name: e.name,
+      //   variableCount: Object.keys(e.variables || {}).length
+      // })));
       
-      const url = envId
-        ? `${API_BASE_URL}/api/workflows/${workflowId}/run?environmentId=${envId}`
-        : `${API_BASE_URL}/api/workflows/${workflowId}/run`;
+      // if (selectedEnvironment) {
+      //   const selectedEnv = environments.find(e => e.environmentId === selectedEnvironment);
+      //   console.log('📦 Selected environment details:', {
+      //     environmentId: selectedEnvironment,
+      //     name: selectedEnv?.name,
+      //     variableCount: Object.keys(selectedEnv?.variables || {}).length,
+      //     variables: selectedEnv?.variables
+      //   });
+      // } else {
+      //   console.log('⚠️ No environment selected');
+      // }
       
-      console.log('📡 Request URL:', url);
-      console.log('📡 Environment ID being sent:', envId);
+            // Ensure selectedEnvironment is either a valid ID or null (not empty string)
+            const envId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
+      
+            const url = envId
+              ? `${API_BASE_URL}/api/workflows/${workflowId}/run?environmentId=${envId}`
+              : `${API_BASE_URL}/api/workflows/${workflowId}/run`;
+      
+            // Debug logging removed for production. Uncomment for debugging if needed.
+            // console.log('📡 Request URL:', url);
+            // console.log('📡 Environment ID being sent:', envId);
+            // console.log('✅ Final state before fetch:', {
+            //   selectedEnvironmentState: selectedEnvironment,
+            //   envIdToSend: envId,
+            //   urlQuery: `environmentId=${envId}`,
+            //   urlFull: url
+            // });
         
       const response = await fetch(url, {
         method: 'POST',
@@ -584,9 +893,24 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       
       if (response.ok) {
         const result = await response.json();
-        console.log('Workflow run started:', result);
-        setCurrentRunId(result.runId);
-        setIsRunning(true);
+        // Debug logging removed for production. Uncomment for debugging if needed.
+        // console.log('✅ Workflow run created:', result);
+        // console.log('📋 Run Details:', {
+        //   runId: result.runId,
+        //   environmentId: result.environmentId,
+        //   status: result.status,
+        //   message: 'Check backend logs at: backend/logs/run_' + result.runId + '.log'
+        // });
+        
+        // if (result.environmentId) {
+        //   console.log('🌍 Environment will be used for variable substitution');
+        //   console.log('📝 Backend will replace {{env.*}} templates in HTTP requests');
+        // } else {
+        //   console.log('⚠️ No environment selected - workflow variables and defaults will be used');
+        // }
+        
+                setCurrentRunId(result.runId);
+                setIsRunning(true);
         
         // Start polling for status with adaptive intervals
         // Use fast polling (100ms) for the first 2 seconds, then switch to slow polling (1s)
@@ -601,20 +925,21 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
             
             if (statusResponse.ok) {
               const runData = await statusResponse.json();
-              console.log('Run status:', runData);
-              
-              // Update node visuals based on status - only update changed nodes
-              if (runData.nodeStatuses) {
-                setNodes((nds) => selectiveNodeUpdate(nds, runData.nodeStatuses));
-              }
-              
-              // Stop polling when run is complete
-              if (runData.status === 'completed' || runData.status === 'failed') {
-                clearInterval(pollIntervalRef.current);
-                setIsRunning(false);
-                console.log(`Workflow ${runData.status}!`);
-              }
-            }
+            // Debug logging removed for production. Uncomment for debugging if needed.
+            // console.log('Run status:', runData);
+            
+                          // Update node visuals based on status - only update changed nodes
+                          if (runData.nodeStatuses) {
+                            setNodes((nds) => selectiveNodeUpdate(nds, runData.nodeStatuses));
+                          }
+            
+                          // Stop polling when run is complete
+                          if (runData.status === 'completed' || runData.status === 'failed') {
+                            clearInterval(pollIntervalRef.current);
+                            setIsRunning(false);
+                            // console.log(`Workflow ${runData.status}!`);
+                          }
+                        }
           } catch (error) {
             console.error('Status poll error:', error);
           }
@@ -640,7 +965,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
     } catch (error) {
       console.error('Run error:', error);
     }
-  }, [workflowId, setNodes]);
+  }, [workflowId, setNodes, selectedEnvironment, environments]);
 
   const loadHistoricalRun = useCallback(async (run) => {
     console.log('Loading historical run:', run);
@@ -726,7 +1051,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
@@ -771,10 +1096,10 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       </ReactFlow>
 
       {/* Top Control Bar - Positioned absolutely within the canvas container */}
-      <div className="absolute top-4 right-4 z-50 flex gap-2 items-center pointer-events-auto flex-wrap justify-end max-w-xs">
+      <div className="absolute top-4 right-4 z-50 flex gap-2 items-center pointer-events-auto justify-end min-h-10">
         <button
           onClick={() => saveWorkflow(false)}
-          className="flex items-center gap-2 px-4 py-2 bg-cyan-900 text-white rounded-lg hover:bg-cyan-950 shadow-lg font-medium transition-colors dark:bg-cyan-800 dark:hover:bg-cyan-900"
+          className="flex items-center gap-2 px-4 py-2 bg-cyan-900 text-white rounded-lg hover:bg-cyan-950 shadow-lg font-medium transition-colors dark:bg-cyan-800 dark:hover:bg-cyan-900 whitespace-nowrap h-10"
         >
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -783,7 +1108,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         </button>
         <button
           onClick={() => setShowHistory(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 shadow-lg font-medium transition-colors dark:bg-gray-600 dark:hover:bg-gray-700"
+          className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 shadow-lg font-medium transition-colors dark:bg-gray-600 dark:hover:bg-gray-700 whitespace-nowrap h-10"
           title="View run history"
         >
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -793,8 +1118,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         </button>
         
         {/* Environment Selector */}
-        <div className="relative flex items-center">
+        <div className="flex items-center h-10">
           <ButtonSelect
+            key={`env-select-${workflowId}`}
             options={[{ value: '', label: 'No Environment' }, ...environments.map(e => ({ value: e.environmentId, label: e.name }))]}
             value={selectedEnvironment || ''}
             onChange={(val) => {
@@ -804,11 +1130,16 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
               const envName = selectedEnv ? selectedEnv.name : 'No Environment';
               
               console.log('🔄 Environment selection changed:', { 
+                previousEnvironment: selectedEnvironment,
+                newEnvironment: processed,
                 raw: val, 
                 processed,
                 willUseEnvironment: !!processed,
-                envName
+                envName,
+                environments: environments.map(e => ({ id: e.environmentId, name: e.name }))
               });
+              
+              // Update state - this triggers the useEffect that saves to localStorage
               setSelectedEnvironment(processed);
               
               // Show notification for 2 seconds
@@ -816,14 +1147,14 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
               setTimeout(() => setEnvironmentChangeNotification(null), 2000);
             }}
             placeholder="No Environment"
-            buttonClass="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg font-medium leading-none shadow-lg transition-colors"
+            buttonClass="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg font-medium leading-none shadow-lg transition-colors h-10 whitespace-nowrap"
           />
         </div>
         
         <button
           onClick={runWorkflow}
           disabled={isRunning}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap h-10"
         >
           <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />

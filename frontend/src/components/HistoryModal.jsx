@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import API_BASE_URL from '../utils/api';
+import { MdCheckCircle, MdError, MdRefresh, MdSchedule, MdRadioButtonUnchecked } from 'react-icons/md';
 
 const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
   const [runs, setRuns] = useState([]);
@@ -81,17 +82,18 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
   };
 
   const getStatusIcon = (status) => {
+    const iconProps = { className: 'w-3 h-3' };
     switch (status) {
       case 'completed':
-        return '✓';
+        return <MdCheckCircle {...iconProps} />;
       case 'failed':
-        return '✕';
+        return <MdError {...iconProps} />;
       case 'running':
-        return '↻';
+        return <MdRefresh {...iconProps} className="w-3 h-3 animate-spin" />;
       case 'pending':
-        return '⏳';
+        return <MdSchedule {...iconProps} />;
       default:
-        return '○';
+        return <MdRadioButtonUnchecked {...iconProps} />;
     }
   };
 

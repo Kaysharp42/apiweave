@@ -6,11 +6,18 @@ import VariablesPanel from '../VariablesPanel';
 import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
 import { WorkflowProvider } from '../../contexts/WorkflowContext';
 
-const Workspace = () => {
+const Workspace = ({ onActiveTabChange }) => {
   console.log('Workspace component rendered');
   const [tabs, setTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
   const [showVariablesPanel, setShowVariablesPanel] = useState(false);
+
+  // Notify parent when activeTabId changes
+  useEffect(() => {
+    if (onActiveTabChange) {
+      onActiveTabChange(activeTabId);
+    }
+  }, [activeTabId, onActiveTabChange]);
 
   useEffect(() => {
     const handleOpenWorkflow = (event) => {

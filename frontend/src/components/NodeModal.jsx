@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AssertionEditor from './AssertionEditor';
 import { Allotment } from 'allotment';
+import { MdCheckCircle, MdInfoOutline, MdWarning, MdEdit, MdDelete, MdPublic, MdTimer, MdMergeType, MdCircle } from 'react-icons/md';
+import { HiMiniCheckBadge, HiMiniStop } from 'react-icons/hi2';
 
 const NodeModal = ({ node, onClose, onSave }) => {
   // Use ref to store working data - NEVER update during editing
@@ -43,15 +45,35 @@ const NodeModal = ({ node, onClose, onSave }) => {
   };
 
   // Get node type info - memoize to prevent recreation
-  const nodeTypes = {
-    'http-request': { icon: '🌐', name: 'HTTP Request' },
-    'assertion': { icon: '✓', name: 'Assertion' },
-    'delay': { icon: '⏱️', name: 'Delay' },
-    'merge': { icon: '🔀', name: 'Merge' },
-    'start': { icon: '⬤', name: 'Start' },
-    'end': { icon: '◉', name: 'End' }
+  const getNodeIcon = (type) => {
+    const iconProps = { className: 'w-6 h-6' };
+    switch (type) {
+      case 'http-request':
+        return <MdPublic {...iconProps} />;
+      case 'assertion':
+        return <HiMiniCheckBadge {...iconProps} />;
+      case 'delay':
+        return <MdTimer {...iconProps} />;
+      case 'merge':
+        return <MdMergeType {...iconProps} />;
+      case 'start':
+        return <MdCircle {...iconProps} />;
+      case 'end':
+        return <HiMiniStop {...iconProps} />;
+      default:
+        return <MdCircle {...iconProps} />;
+    }
   };
-  const nodeInfo = nodeTypes[node.type] || { icon: '📦', name: 'Node' };
+
+  const nodeTypes = {
+    'http-request': { name: 'HTTP Request' },
+    'assertion': { name: 'Assertion' },
+    'delay': { name: 'Delay' },
+    'merge': { name: 'Merge' },
+    'start': { name: 'Start' },
+    'end': { name: 'End' }
+  };
+  const nodeInfo = nodeTypes[node.type] || { name: 'Node' };
 
   return (
     <div 
@@ -105,7 +127,9 @@ const NodeModal = ({ node, onClose, onSave }) => {
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <span className="text-3xl">{nodeInfo.icon}</span>
+              <div className="text-3xl text-gray-600 dark:text-gray-400">
+                {getNodeIcon(node.type)}
+              </div>
               <div>
                 <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
                   {nodeInfo.name}
@@ -798,7 +822,10 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
           <div className="space-y-4">
             {/* Info Banner */}
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
-              <p className="font-medium mb-1">ℹ️ Assertion Configuration</p>
+              <p className="font-medium mb-1 flex items-center gap-2">
+                <MdInfoOutline className="w-4 h-4" />
+                <span>Assertion Configuration</span>
+              </p>
               <p className="text-xs">
                 Assertions configured: <span className="font-bold">{assertions.length}</span>
               </p>
@@ -879,14 +906,14 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
                             className="px-3 py-1.5 bg-yellow-500 dark:bg-yellow-600 hover:bg-yellow-600 dark:hover:bg-yellow-700 text-white text-xs font-semibold rounded transition-colors flex-shrink-0"
                             title="Edit assertion"
                           >
-                            ✎ Edit
+                            <MdEdit className="w-4 h-4 inline" /> Edit
                           </button>
                           <button
                             onClick={() => handleDeleteAssertion(index)}
                             className="px-3 py-1.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-xs font-semibold rounded transition-colors flex-shrink-0"
                             title="Delete assertion"
                           >
-                            ✕ Delete
+                            <MdDelete className="w-4 h-4 inline" /> Delete
                           </button>
                         </div>
                       </div>
@@ -1196,10 +1223,13 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                     </span>
                   </label>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                  {conditionLogic === 'OR' 
-                    ? '✓ A branch is merged if it matches at least one condition' 
-                    : '✓ A branch is merged only if it matches all conditions'}
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 flex items-center gap-1">
+                  <MdCheckCircle className="w-4 h-4 text-green-600" />
+                  <span>
+                    {conditionLogic === 'OR' 
+                      ? 'A branch is merged if it matches at least one condition' 
+                      : 'A branch is merged only if it matches all conditions'}
+                  </span>
                 </p>
               </div>
             )}
@@ -1314,16 +1344,19 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
 
             {/* Hint */}
             <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
-              <p className="text-xs text-blue-800 dark:text-blue-300">
-                💡 <strong>How it works:</strong> {conditionLogic === 'OR' 
+              <p className="text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2">
+                <span>💡</span>
+                <span><strong>How it works:</strong> {conditionLogic === 'OR' 
                   ? 'Each branch is evaluated independently. If a branch matches ANY condition, it passes.' 
-                  : 'Each branch is evaluated independently. A branch passes ONLY if it matches ALL conditions.'}
+                  : 'Each branch is evaluated independently. A branch passes ONLY if it matches ALL conditions.'}</span>
               </p>
-              <p className="text-xs text-red-700 dark:text-red-400 mt-2 font-semibold">
-                ⚠️ <strong>Important:</strong> If ANY branch fails its conditions, the entire merge FAILS and the workflow stops (like an assertion).
+              <p className="text-xs text-red-700 dark:text-red-400 mt-2 font-semibold flex items-start gap-2">
+                <MdWarning className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span><strong>Important:</strong> If ANY branch fails its conditions, the entire merge FAILS and the workflow stops (like an assertion).</span>
               </p>
-              <p className="text-xs text-blue-700 dark:text-blue-400 mt-2">
-                🔧 <strong>Variable support:</strong> Use <code className="bg-white dark:bg-gray-800 px-1 rounded">{'{{prev[N].path}}'}</code> to reference other branch data or <code className="bg-white dark:bg-gray-800 px-1 rounded">{'{{variables.name}}'}</code> for workflow variables.
+              <p className="text-xs text-blue-700 dark:text-blue-400 mt-2 flex items-start gap-2">
+                <span>🔧</span>
+                <span><strong>Variable support:</strong> Use <code className="bg-white dark:bg-gray-800 px-1 rounded">{'{{prev[N].path}}'}</code> to reference other branch data or <code className="bg-white dark:bg-gray-800 px-1 rounded">{'{{variables.name}}'}</code> for workflow variables.</span>
               </p>
             </div>
           </div>

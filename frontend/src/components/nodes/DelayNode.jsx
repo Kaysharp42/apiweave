@@ -1,6 +1,8 @@
 import React, { memo, useCallback } from 'react';
 import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
+import { MdSchedule, MdAccessTime, MdContentCopy } from 'react-icons/md';
+import { HiMiniClock } from 'react-icons/hi2';
 
 const DelayNode = ({ id, data, selected }) => {
   const { setNodes } = useReactFlow();
@@ -36,7 +38,40 @@ const DelayNode = ({ id, data, selected }) => {
 
       {/* Header */}
       <div className="px-2 py-1.5 border-b-2 border-slate-300 dark:border-gray-700 bg-yellow-50 dark:bg-yellow-900">
-        <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">{data.label || '⏱️ Delay'}</h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <HiMiniClock className="w-5 h-5 text-yellow-700 dark:text-yellow-300" />
+            <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">{data.label || 'Delay'}</h3>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(
+                  new CustomEvent('duplicateNode', { detail: { nodeId: id } })
+                );
+              }}
+              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+              style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+              title="Duplicate node"
+            >
+              <MdContentCopy className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(
+                  new CustomEvent('copyNode', { detail: { nodeId: id } })
+                );
+              }}
+              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+              style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+              title="Copy node"
+            >
+              <MdAccessTime className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Content */}

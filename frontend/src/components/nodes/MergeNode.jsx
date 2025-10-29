@@ -1,5 +1,7 @@
 import React from 'react';
 import { Handle, Position } from 'reactflow';
+import { MdMergeType, MdCheckCircle, MdCheckBox, MdFilterAlt, MdWarning, MdSchedule, MdContentCopy, MdControlPointDuplicate } from 'react-icons/md';
+import { HiMiniArrowRight, HiMiniSparkles } from 'react-icons/hi2';
 
 /**
  * MergeNode - Merges multiple parallel branches
@@ -9,7 +11,7 @@ import { Handle, Position } from 'reactflow';
  * - first: Continue with first completed branch
  * - conditional: Merge only branches matching conditions
  */
-const MergeNode = ({ data, selected }) => {
+const MergeNode = ({ id, data, selected }) => {
   const { label, config = {}, executionStatus, executionResult } = data;
   const mergeStrategy = config.mergeStrategy || 'all';
   
@@ -84,7 +86,7 @@ const MergeNode = ({ data, selected }) => {
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-lg">🔀</span>
+            <MdMergeType className="text-lg w-5 h-5" />
             <div className="font-bold text-gray-700 dark:text-gray-200 text-sm">
               {label || 'Merge'}
             </div>
@@ -95,7 +97,35 @@ const MergeNode = ({ data, selected }) => {
               </span>
             )}
           </div>
-          {getStatusBadge()}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(
+                  new CustomEvent('duplicateNode', { detail: { nodeId: id } })
+                );
+              }}
+              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+              style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+              title="Duplicate node"
+            >
+              <MdControlPointDuplicate className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(
+                  new CustomEvent('copyNode', { detail: { nodeId: id } })
+                );
+              }}
+              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+              style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+              title="Copy node"
+            >
+              <MdContentCopy className="w-4 h-4" />
+            </button>
+            {getStatusBadge()}
+          </div>
         </div>
 
         {/* Strategy Configuration (Display Only - Edit in Modal) */}
@@ -119,28 +149,53 @@ const MergeNode = ({ data, selected }) => {
         </div>
 
         {/* Strategy Description */}
-        <div className="text-xs text-gray-500 dark:text-gray-500 italic">
-          {mergeStrategy === 'all' && '⏳ Waits for all branches'}
-          {mergeStrategy === 'any' && '⚡ Continues when any branch completes'}
-          {mergeStrategy === 'first' && '🏃 Uses first completed branch'}
-          {mergeStrategy === 'conditional' && '🎯 Merges branches matching conditions'}
+        <div className="text-xs text-gray-500 dark:text-gray-500 italic flex items-center gap-2">
+          {mergeStrategy === 'all' && (
+            <>
+              <MdSchedule className="w-4 h-4 flex-shrink-0" />
+              <span>Waits for all branches</span>
+            </>
+          )}
+          {mergeStrategy === 'any' && (
+            <>
+              <HiMiniSparkles className="w-4 h-4 flex-shrink-0" />
+              <span>Continues when any branch completes</span>
+            </>
+          )}
+          {mergeStrategy === 'first' && (
+            <>
+              <HiMiniArrowRight className="w-4 h-4 flex-shrink-0" />
+              <span>Uses first completed branch</span>
+            </>
+          )}
+          {mergeStrategy === 'conditional' && (
+            <>
+              <MdFilterAlt className="w-4 h-4 flex-shrink-0" />
+              <span>Merges branches matching conditions</span>
+            </>
+          )}
         </div>
 
         {/* Result Info */}
         {result && (
           <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 p-2 bg-gray-50 dark:bg-gray-900 rounded">
-            <div className="font-medium mb-1">
-              {result.mergeStrategy === 'conditional' ? 'Conditions Passed:' : 'Merged Branches:'}
+            <div className="font-medium mb-1 flex items-center gap-2">
+              <MdCheckCircle className="w-4 h-4 text-green-600" />
+              <span>{result.mergeStrategy === 'conditional' ? 'Conditions Passed:' : 'Merged Branches:'}</span>
             </div>
             {result.branchCount !== undefined && (
-              <div>✓ {result.branchCount} branch(es) {result.mergeStrategy === 'conditional' ? 'passed' : 'merged'}</div>
+              <div className="flex items-center gap-2">
+                <MdCheckBox className="w-4 h-4 text-blue-600" />
+                <span>{result.branchCount} branch(es) {result.mergeStrategy === 'conditional' ? 'passed' : 'merged'}</span>
+              </div>
             )}
             
             {/* Warning for ANY/FIRST strategies */}
             {result.warning && (
               <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded">
-                <div className="text-[10px] text-yellow-800 dark:text-yellow-200">
-                  ⚠️ <span className="font-semibold">Strategy Warning:</span>
+                <div className="text-[10px] text-yellow-800 dark:text-yellow-200 flex items-center gap-1">
+                  <MdWarning className="w-3 h-3 flex-shrink-0" />
+                  <span className="font-semibold">Strategy Warning:</span>
                 </div>
                 <div className="text-[9px] text-yellow-700 dark:text-yellow-300 mt-1">
                   {result.warning}
@@ -191,8 +246,9 @@ const MergeNode = ({ data, selected }) => {
         {/* Branch Reference Guide - Always show for user guidance (even before execution) */}
         {data.incomingBranchCount > 1 && !result && (
           <div className="text-xs bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded p-2 mt-2">
-            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1 text-[10px]">
-              🌳 Branch → Variable Mapping:
+            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1 text-[10px] flex items-center gap-1">
+              <MdMergeType className="w-3 h-3" />
+              <span>Branch → Variable Mapping:</span>
             </div>
             
             {/* Show incoming branches if available */}

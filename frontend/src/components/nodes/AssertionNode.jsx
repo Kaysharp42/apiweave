@@ -3,6 +3,8 @@ import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
 import AssertionEditor from '../AssertionEditor';
 import Tooltip from '../Tooltip';
+import { MdCheckCircle, MdError, MdExpandMore, MdExpandLess, MdInfoOutline, MdEdit, MdDelete, MdContentCopy } from 'react-icons/md';
+import { HiMiniCheckBadge } from 'react-icons/hi2';
 
 // Assertion form component
 const AssertionForm = ({ onAdd }) => {
@@ -214,20 +216,52 @@ const AssertionNode = ({ id, data, selected }) => {
       {/* Header */}
       <div className="px-2 py-1.5 border-b-2 border-slate-300 dark:border-gray-700 bg-green-50 dark:bg-green-900">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-green-800 dark:text-green-200">{data.label || '✓ Assertions'}</h3>
-          <Tooltip text={isExpanded ? 'Collapse' : 'Expand'}>
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
-              style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
-              aria-expanded={isExpanded}
-            >
-              {/* Use variation selector-15 (U+FE0E) to force text glyph (monochrome) instead of emoji presentation */}
-              <span style={{ background: 'transparent', boxShadow: 'none', outline: 'none', backgroundColor: 'transparent', border: 'none', padding: 0 }}>
-                {isExpanded ? '\u25BC\uFE0E' : '\u25B6\uFE0E'}
-              </span>
-            </button>
-          </Tooltip>
+          <div className="flex items-center gap-2">
+            <HiMiniCheckBadge className="w-5 h-5 text-green-700 dark:text-green-300" />
+            <h3 className="text-sm font-semibold text-green-800 dark:text-green-200">{data.label || 'Assertions'}</h3>
+          </div>
+          <div className="flex items-center gap-1">
+            <Tooltip text="Duplicate node">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.dispatchEvent(
+                    new CustomEvent('duplicateNode', { detail: { nodeId: id } })
+                  );
+                }}
+                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+                style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                title="Duplicate node"
+              >
+                <MdCheckCircle className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip text="Copy node">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.dispatchEvent(
+                    new CustomEvent('copyNode', { detail: { nodeId: id } })
+                  );
+                }}
+                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+                style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                title="Copy node"
+              >
+                <MdContentCopy className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip text={isExpanded ? 'Collapse' : 'Expand'}>
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+                style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                aria-expanded={isExpanded}
+              >
+                {isExpanded ? <MdExpandLess className="w-4 h-4" /> : <MdExpandMore className="w-4 h-4" />}
+              </button>
+            </Tooltip>
+          </div>
         </div>
       </div>
 
@@ -292,14 +326,16 @@ const AssertionNode = ({ id, data, selected }) => {
                               setEditDraft({ ...assertion });
                             }}
                             className="px-1.5 py-0.5 bg-yellow-500 dark:bg-yellow-600 hover:bg-yellow-600 dark:hover:bg-yellow-700 text-white text-[8px] rounded nodrag transition-colors"
+                            title="Edit assertion"
                           >
-                            ✎
+                            <MdEdit className="w-3 h-3" />
                           </button>
                           <button
                             onClick={() => handleDeleteAssertion(index)}
                             className="px-1.5 py-0.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-[8px] rounded nodrag transition-colors"
+                            title="Delete assertion"
                           >
-                            ✕
+                            <MdDelete className="w-3 h-3" />
                           </button>
                         </div>
                       </div>
@@ -315,7 +351,10 @@ const AssertionNode = ({ id, data, selected }) => {
 
             {/* Info */}
             <div className="text-[8px] text-gray-500 dark:text-gray-400 space-y-0.5 p-1 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
-              <p><strong>ℹ️ Note:</strong> If ANY assertion fails, the workflow fails.</p>
+              <p className="flex items-center gap-1">
+                <MdInfoOutline className="w-3 h-3 flex-shrink-0" />
+                <span><strong>Note:</strong> If ANY assertion fails, the workflow fails.</span>
+              </p>
               <p>Use prev.* to reference previous node results.</p>
             </div>
           </div>

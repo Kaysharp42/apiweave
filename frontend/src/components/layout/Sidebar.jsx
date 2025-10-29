@@ -3,10 +3,13 @@ import EnvironmentManager from '../EnvironmentManager';
 import WorkflowExportImport from '../WorkflowExportImport';
 import HARImport from '../HARImport';
 import OpenAPIImport from '../OpenAPIImport';
+import CurlImport from '../CurlImport';
 import { MoreVertical, Download } from 'lucide-react';
+import { MdSettings, MdFileUpload, MdFolder } from 'react-icons/md';
+import { HiMiniCommandLine } from 'react-icons/hi2';
 import API_BASE_URL from '../../utils/api';
 
-const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
+const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
   const [workflows, setWorkflows] = useState([]);
   const [pagination, setPagination] = useState({
     skip: 0,
@@ -22,6 +25,7 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
   const [showWorkflowImportExport, setShowWorkflowImportExport] = useState(false);
   const [showHARImport, setShowHARImport] = useState(false);
   const [showOpenAPIImport, setShowOpenAPIImport] = useState(false);
+  const [showCurlImport, setShowCurlImport] = useState(false);
   const [exportingWorkflowId, setExportingWorkflowId] = useState(null);
   const [exportingWorkflowName, setExportingWorkflowName] = useState(null);
   const scrollContainerRef = useRef(null);
@@ -211,6 +215,7 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
     setShowWorkflowImportExport(false);
     setShowHARImport(false);
     setShowOpenAPIImport(false);
+    setShowCurlImport(false);
     setShowImportMenu(false);
   };
 
@@ -276,7 +281,7 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3 first:rounded-t-md"
                         >
-                          <span className="text-base">📦</span>
+                          <MdFolder className="w-5 h-5" />
                           <span className="font-medium">Import APIWeave</span>
                         </button>
                         <div className="border-t border-gray-200 dark:border-gray-600" />
@@ -287,7 +292,7 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3"
                         >
-                          <span className="text-base">📋</span>
+                          <MdFileUpload className="w-5 h-5" />
                           <span className="font-medium">Import HAR File</span>
                         </button>
                         <div className="border-t border-gray-200 dark:border-gray-600" />
@@ -296,10 +301,21 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
                             setShowOpenAPIImport(true);
                             setShowImportMenu(false);
                           }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3"
+                        >
+                          <MdSettings className="w-5 h-5" />
+                          <span className="font-medium">Import OpenAPI</span>
+                        </button>
+                        <div className="border-t border-gray-200 dark:border-gray-600" />
+                        <button
+                          onClick={() => {
+                            setShowCurlImport(true);
+                            setShowImportMenu(false);
+                          }}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3 last:rounded-b-md"
                         >
-                          <span className="text-base">🔧</span>
-                          <span className="font-medium">Import OpenAPI</span>
+                          <HiMiniCommandLine className="w-5 h-5" />
+                          <span className="font-medium">Import curl</span>
                         </button>
                       </div>
                     </div>
@@ -470,8 +486,18 @@ const Sidebar = ({ selectedNav, isCollapsed, setIsCollapsed }) => {
           onImportSuccess={handleImportSuccess}
         />
       )}
+
+      {/* Curl Import Modal */}
+      {showCurlImport && (
+        <CurlImport
+          onClose={() => setShowCurlImport(false)}
+          onImportSuccess={handleImportSuccess}
+          currentWorkflowId={currentWorkflowId}
+        />
+      )}
     </div>
   );
 };
 
 export default Sidebar;
+

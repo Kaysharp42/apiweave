@@ -212,6 +212,9 @@ class WorkflowExecutor:
         if node['type'] != 'start':
             try:
                 await self._execute_node(node, edges, db)
+            except StopIteration:
+                # Always re-raise StopIteration (intentional stop from continue_on_fail=False)
+                raise
             except Exception as e:
                 # Mark as failure
                 self.has_failures = True
@@ -300,6 +303,9 @@ class WorkflowExecutor:
             if next_node and next_node['type'] != 'end':
                 try:
                     await self._execute_from_node(next_node_id, nodes, edges, db)
+                except StopIteration:
+                    # Always re-raise StopIteration (intentional stop from continue_on_fail=False)
+                    raise
                 except Exception as e:
                     # Mark as failure
                     self.has_failures = True
@@ -344,13 +350,16 @@ class WorkflowExecutor:
             execution_status = result.get("status", "success")
             
             # Map result status to execution status
-            if execution_status in ["client_error", "server_error"]:
+            if execution_status in ["client_error", "server_error", "error"]:
                 execution_status = "error"
                 # Mark as failure
                 self.has_failures = True
                 if node_id not in self.failed_nodes:
                     self.failed_nodes.append(node_id)
-                print(f"⚠️  HTTP request failed: {node_id} returned status code {result.get('statusCode', 'unknown')}")
+                if result.get('statusCode'):
+                    print(f"⚠️  HTTP request failed: {node_id} returned status code {result.get('statusCode')}")
+                else:
+                    print(f"⚠️  Node failed: {node_id} - {result.get('error', 'Unknown error')}")
             elif execution_status == "redirect":
                 execution_status = "warning"
             elif execution_status == "success":
@@ -365,22 +374,48 @@ class WorkflowExecutor:
             result['type'] = node_type  # Add node type to result
             self.results[node_id] = result
             
-            # If HTTP request failed (4xx/5xx) and continueOnFail is False, raise exception to stop workflow
-            # NOTE: Full result with response body is already stored in DB before raising
+            # Handle failures based on continue_on_fail setting
+            # If continue_on_fail is False, stop execution on any error
+            # If continue_on_fail is True, allow failures to continue (for merge node evaluation)
             if execution_status == "error" and not self.continue_on_fail:
-                raise Exception(f"HTTP request failed with status code {result.get('statusCode', 'unknown')}")
+                error_msg = result.get('error', f"Node {node_id} failed")
+                if result.get('statusCode'):
+                    error_msg = f"HTTP {result.get('statusCode')}: {result.get('url', 'unknown URL')}"
+                # Mark as failure before raising
+                self.has_failures = True
+                if node_id not in self.failed_nodes:
+                    self.failed_nodes.append(node_id)
+                # Log that we're stopping this branch
+                print(f"🛑 Stopping branch at {node_id} due to failure (continue_on_fail=False)")
+                self.logger.error(f"🛑 Stopping branch at {node_id}: {error_msg}")
+                # Raise a specific exception type that won't be caught by our error handler
+                raise StopIteration(error_msg)  # Use StopIteration to signal intentional stop
+
+
             
-        except Exception as e:
-            # Only store error message if the result wasn't already successfully stored
-            # (i.e., this is a real error, not just a failed HTTP status code)
-            if node_type == 'http-request' and execution_status == "error":
-                # HTTP request error already stored above, just re-raise
-                raise
-            
-            # For other types of errors, store error message
-            error = {"error": str(e), "status": "error"}
-            await self._update_node_status(db, node_id, "error", error)
+        except StopIteration:
+            # Re-raise StopIteration (intentional stop due to continue_on_fail=False)
             raise
+        except Exception as e:
+            # For errors that occur during node execution (not HTTP status code errors)
+            # store error message and re-raise
+            if node_type == 'http-request':
+                # HTTP requests return error results, shouldn't raise exceptions
+                # If we get here, it's an unexpected error
+                error = {"error": str(e), "status": "error"}
+                await self._update_node_status(db, node_id, "error", error)
+                self.results[node_id] = error
+                self.failed_nodes.append(node_id)
+                # Don't re-raise - allow execution to continue to downstream nodes
+                self.logger.error(f"❌ HTTP request {node_id} had unexpected error: {str(e)}")
+            else:
+                # For other types of errors, store error message and re-raise
+                error = {"error": str(e), "status": "error"}
+                await self._update_node_status(db, node_id, "error", error)
+                self.results[node_id] = error
+                self.failed_nodes.append(node_id)
+                raise
+
     
     def _substitute_variables(self, text: str) -> str:
         """Replace {{variable}} placeholders with actual values from context"""
@@ -660,74 +695,90 @@ class WorkflowExecutor:
         # Start timing
         start_time = time.time()
         
-        async with aiohttp.ClientSession() as session:
-            async with session.request(
-                method=method,
-                url=url,
-                headers=headers,
-                data=body if method != 'GET' else None,
-                timeout=aiohttp.ClientTimeout(total=timeout)
-            ) as response:
-                response_text = await response.text()
-                status_code = response.status
-                
-                # End timing
-                end_time = time.time()
-                duration_ms = round((end_time - start_time) * 1000, 2)  # Convert to milliseconds
-                
-                # Try to parse response as JSON
-                try:
-                    response_body = json.loads(response_text)
-                except:
-                    response_body = response_text
-                
-                # Extract cookies from response
-                response_cookies = {}
-                if 'Set-Cookie' in response.headers:
-                    cookie_header = response.headers.get('Set-Cookie', '')
-                    for cookie in cookie_header.split(';'):
-                        if '=' in cookie:
-                            k, v = cookie.split('=', 1)
-                            response_cookies[k.strip()] = v.strip()
-                
-                # Determine status based on HTTP status code
-                if status_code >= 200 and status_code < 300:
-                    status = "success"
-                elif status_code >= 300 and status_code < 400:
-                    status = "redirect"
-                elif status_code >= 400 and status_code < 500:
-                    status = "client_error"
-                elif status_code >= 500:
-                    status = "server_error"
-                else:
-                    status = "unknown"
-                
-                # Structure response for easy variable access
-                result = {
-                    "status": status,
-                    "statusCode": status_code,
-                    "headers": dict(response.headers),
-                    "body": response_body,  # Parsed JSON or raw text
-                    "cookies": response_cookies,
-                    "duration": duration_ms,  # Request duration in milliseconds
-                    "method": method,
-                    "url": url
-                }
-                
-                # Store in context with 'response' wrapper for easy access
-                result['response'] = {
-                    "body": response_body,
-                    "headers": dict(response.headers),
-                    "cookies": response_cookies,
-                    "statusCode": status_code
-                }
-                
-                # Extract variables if configured
-                extractors = config.get('extractors', {})
-                if extractors:
-                    self._extract_variables(extractors, result)
-                
-                return result
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    data=body if method != 'GET' else None,
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as response:
+                    response_text = await response.text()
+                    status_code = response.status
+                    
+                    # End timing
+                    end_time = time.time()
+                    duration_ms = round((end_time - start_time) * 1000, 2)  # Convert to milliseconds
+                    
+                    # Try to parse response as JSON
+                    try:
+                        response_body = json.loads(response_text)
+                    except:
+                        response_body = response_text
+                    
+                    # Extract cookies from response
+                    response_cookies = {}
+                    if 'Set-Cookie' in response.headers:
+                        cookie_header = response.headers.get('Set-Cookie', '')
+                        for cookie in cookie_header.split(';'):
+                            if '=' in cookie:
+                                k, v = cookie.split('=', 1)
+                                response_cookies[k.strip()] = v.strip()
+                    
+                    # Determine status based on HTTP status code
+                    if status_code >= 200 and status_code < 300:
+                        status = "success"
+                    elif status_code >= 300 and status_code < 400:
+                        status = "redirect"
+                    elif status_code >= 400 and status_code < 500:
+                        status = "client_error"
+                    elif status_code >= 500:
+                        status = "server_error"
+                    else:
+                        status = "unknown"
+                    
+                    # Structure response for easy variable access
+                    result = {
+                        "status": status,
+                        "statusCode": status_code,
+                        "headers": dict(response.headers),
+                        "body": response_body,  # Parsed JSON or raw text
+                        "cookies": response_cookies,
+                        "duration": duration_ms,  # Request duration in milliseconds
+                        "method": method,
+                        "url": url
+                    }
+                    
+                    # Store in context with 'response' wrapper for easy access
+                    result['response'] = {
+                        "body": response_body,
+                        "headers": dict(response.headers),
+                        "cookies": response_cookies,
+                        "statusCode": status_code
+                    }
+                    
+                    # Extract variables if configured
+                    extractors = config.get('extractors', {})
+                    if extractors:
+                        self._extract_variables(extractors, result)
+                    
+                    return result
+        except Exception as e:
+            # Network error or other request failure
+            # Return an error result that can be handled downstream
+            error_msg = str(e)
+            self.logger.error(f"HTTP request failed for {url}: {error_msg}")
+            print(f"❌ HTTP request error: {error_msg}")
+            
+            return {
+                "status": "error",
+                "error": error_msg,
+                "method": method,
+                "url": url,
+                "duration": round((time.time() - start_time) * 1000, 2)
+            }
+
     
     async def _execute_delay(self, node: Dict) -> Dict[str, Any]:
         """Execute delay node"""
@@ -1001,7 +1052,7 @@ class WorkflowExecutor:
             print(f"⚡ [{merge_strategy.upper()} strategy] Proceeding with {len(completed_predecessors)} successful branch(es), {len(failed_predecessors)} failed")
         
         elif merge_strategy == 'conditional':
-            # For CONDITIONAL: Wait for all like 'all' strategy
+            # For CONDITIONAL: Wait for all like 'all' strategy, but FAIL if any predecessor failed
             missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
             if missing_predecessors:
                 self.logger.info(f"⏳ [CONDITIONAL] Waiting for {len(missing_predecessors)} predecessors")
@@ -1020,6 +1071,14 @@ class WorkflowExecutor:
                     error_msg = f"Timeout waiting for predecessors: {missing_predecessors}"
                     self.logger.error(f"❌ {error_msg}")
                     raise Exception(error_msg)
+            
+            # Check if any predecessor FAILED - conditional merge should fail if ANY input failed
+            failed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.failed_nodes]
+            if failed_predecessors:
+                error_msg = f"Cannot merge: {len(failed_predecessors)} predecessor(s) failed: {failed_predecessors}"
+                self.logger.error(f"❌ {error_msg}")
+                print(f"❌ [CONDITIONAL strategy] {error_msg}")
+                raise Exception(error_msg)
         
         # Now acquire lock to execute merge logic
         async with self.merge_locks[node_id]:
@@ -1035,6 +1094,8 @@ class WorkflowExecutor:
             # Get only the predecessor results (not ALL results)
             # For each predecessor, find the nearest data-producing ancestor
             all_predecessor_results = []
+            failed_results = []  # Track which predecessors have error status
+            
             for pred_id in predecessor_node_ids:
                 # Find the actual data-producing node (skip delay, assertion, etc.)
                 data_node_id = self._find_data_producing_ancestor(pred_id, edges, {})
@@ -1043,13 +1104,28 @@ class WorkflowExecutor:
                     result = self.results[data_node_id]
                     # Only include if it's a data-producing node
                     if result.get('type') == 'http-request':
-                        all_predecessor_results.append((data_node_id, result))
-                        self.logger.info(f"   Branch from {pred_id} → data node: {data_node_id}")
-                        print(f"   Branch from {pred_id} → data node: {data_node_id}")
+                        # Check if this result has an error status
+                        if result.get('status') == 'error':
+                            failed_results.append((data_node_id, result))
+                            self.logger.warning(f"   Branch from {pred_id} → data node {data_node_id} FAILED (status: error)")
+                            print(f"   ❌ Branch from {pred_id} → data node {data_node_id} FAILED (error result)")
+                        else:
+                            all_predecessor_results.append((data_node_id, result))
+                            self.logger.info(f"   Branch from {pred_id} → data node: {data_node_id}")
+                            print(f"   ✓ Branch from {pred_id} → data node: {data_node_id}")
                     else:
                         self.logger.warning(f"   Branch from {pred_id} → no data node found (type: {result.get('type')})")
                 else:
                     self.logger.warning(f"   Branch from {pred_id} → no data node found")
+            
+            # For 'all' and 'conditional' strategies, reject if ANY branch failed
+            if merge_strategy in ['all', 'conditional'] and failed_results:
+                failed_node_ids = [nid for nid, _ in failed_results]
+                error_msg = f"Cannot merge: {len(failed_results)} branch(es) failed: {failed_node_ids}"
+                self.logger.error(f"❌ {error_msg}")
+                print(f"❌ [{merge_strategy.upper()} strategy] {error_msg}")
+                self.merge_completed[node_id] = True
+                raise Exception(error_msg)
             
             # Apply strategy-specific filtering
             if merge_strategy == 'first':

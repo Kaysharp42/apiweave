@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Download, Upload, FileText, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { MdWarning } from 'react-icons/md';
 
 const WorkflowExportImport = ({ workflowId, workflowName, onClose, onImportSuccess }) => {
   const [activeTab, setActiveTab] = useState('export');
@@ -369,8 +370,9 @@ const WorkflowExportImport = ({ workflowId, workflowName, onClose, onImportSucce
                           <p>Edges: {dryRunResult.stats.edges}</p>
                           <p>Variables: {dryRunResult.stats.variables}</p>
                           {dryRunResult.stats.secretReferences > 0 && (
-                            <p className="text-yellow-700 dark:text-yellow-400">
-                              ⚠️ {dryRunResult.stats.secretReferences} secret(s) need to be re-entered
+                            <p className="text-yellow-700 dark:text-yellow-400 flex items-center gap-2">
+                              <MdWarning className="w-4 h-4" />
+                              <span>{dryRunResult.stats.secretReferences} secret(s) need to be re-entered</span>
                             </p>
                           )}
                         </div>
@@ -409,8 +411,9 @@ const WorkflowExportImport = ({ workflowId, workflowName, onClose, onImportSucce
                         Workflow ID: {importResult.workflowId}
                       </p>
                       {importResult.secretReferences && importResult.secretReferences.length > 0 && (
-                        <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-2">
-                          ⚠️ Remember to re-enter {importResult.secretReferences.length} secret value(s)
+                        <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-2 flex items-center gap-2">
+                          <MdWarning className="w-4 h-4" />
+                          <span>Remember to re-enter {importResult.secretReferences.length} secret value(s)</span>
                         </p>
                       )}
                     </div>
