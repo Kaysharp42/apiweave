@@ -24,7 +24,7 @@ const AppNavBar = ({ selectedNav, setSelectedNav, isCollapsed, setIsCollapsed })
   ];
 
   return (
-    <nav className={`flex flex-col bg-white dark:bg-gray-800 border-r border-gray-300 dark:border-gray-700 transition-all duration-300 ${isCollapsed ? 'w-14' : 'w-24'}`}>
+    <nav className={`flex flex-col bg-white dark:bg-gray-800 border-r border-gray-300 dark:border-gray-700 transition-all duration-300 ${isCollapsed ? 'w-14' : 'w-16'}`}>
       {navItems.map((item) => (
         <button
           key={item.id}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import API_BASE_URL from '../utils/api';
 
 const WorkflowList = () => {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ const WorkflowList = () => {
 
   const fetchWorkflows = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/workflows');
+      const response = await fetch(`${API_BASE_URL}/api/workflows`);
       const data = await response.json();
       setWorkflows(data);
     } catch (error) {
@@ -32,7 +33,7 @@ const WorkflowList = () => {
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/workflows', {
+      const response = await fetch(`${API_BASE_URL}/api/workflows`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -73,7 +74,7 @@ const WorkflowList = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
         method: 'DELETE',
       });
 

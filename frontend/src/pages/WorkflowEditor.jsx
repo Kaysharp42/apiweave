@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import WorkflowCanvas from '../components/WorkflowCanvas';
+import API_BASE_URL from '../utils/api';
 
 const WorkflowEditor = () => {
   const { workflowId } = useParams();
@@ -11,7 +12,7 @@ const WorkflowEditor = () => {
   useEffect(() => {
     const fetchWorkflow = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}`);
+        const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
         if (response.ok) {
           const data = await response.json();
           setWorkflow(data);

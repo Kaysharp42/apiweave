@@ -23,6 +23,7 @@ import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import Toaster, { toast } from './Toaster';
 import ButtonSelect from './ButtonSelect';
+import API_BASE_URL from '../utils/api';
 
 // Update node statuses - always update to ensure fresh data on each run
 const selectiveNodeUpdate = (currentNodes, nodeStatuses) => {
@@ -85,6 +86,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   const [modalNode, setModalNode] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [environments, setEnvironments] = useState([]);
+  const [environmentChangeNotification, setEnvironmentChangeNotification] = useState(null);
   
   // Initialize selectedEnvironment from localStorage if available
   const [selectedEnvironment, setSelectedEnvironment] = useState(() => {
@@ -181,7 +183,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   useEffect(() => {
     const fetchEnvironments = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/environments');
+        const response = await fetch(`${API_BASE_URL}/api/environments`);
         if (response.ok) {
           const data = await response.json();
           console.log('Fetched environments:', data);
@@ -466,7 +468,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
     };
 
     try {
-      const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(workflow),
@@ -569,8 +571,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
       const envId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
       
       const url = envId
-        ? `http://localhost:8000/api/workflows/${workflowId}/run?environmentId=${envId}`
-        : `http://localhost:8000/api/workflows/${workflowId}/run`;
+        ? `${API_BASE_URL}/api/workflows/${workflowId}/run?environmentId=${envId}`
+        : `${API_BASE_URL}/api/workflows/${workflowId}/run`;
       
       console.log('📡 Request URL:', url);
       console.log('📡 Environment ID being sent:', envId);
@@ -586,11 +588,15 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         setCurrentRunId(result.runId);
         setIsRunning(true);
         
-        // Start polling for status
-        pollIntervalRef.current = setInterval(async () => {
+        // Start polling for status with adaptive intervals
+        // Use fast polling (100ms) for the first 2 seconds, then switch to slow polling (1s)
+        let pollAttempts = 0;
+        const maxInitialAttempts = 20; // 20 * 100ms = 2 seconds of fast polling
+        
+        const pollForStatus = async () => {
           try {
             const statusResponse = await fetch(
-              `http://localhost:8000/api/workflows/${workflowId}/runs/${result.runId}`
+              `${API_BASE_URL}/api/workflows/${workflowId}/runs/${result.runId}`
             );
             
             if (statusResponse.ok) {
@@ -612,7 +618,21 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           } catch (error) {
             console.error('Status poll error:', error);
           }
-        }, 1000); // Poll every second
+        };
+        
+        // Fast polling for first ~2 seconds (100ms), then switch to 1s interval
+        const fastPollInterval = setInterval(() => {
+          pollForStatus();
+          pollAttempts++;
+          
+          if (pollAttempts >= maxInitialAttempts) {
+            // Switch to slower 1 second interval after initial fast polling
+            clearInterval(fastPollInterval);
+            pollIntervalRef.current = setInterval(pollForStatus, 1000);
+          }
+        }, 100);
+        
+        pollIntervalRef.current = fastPollInterval;
       } else {
         const error = await response.text();
         console.error(`Failed to run workflow: ${error}`);
@@ -628,7 +648,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
     try {
       // Fetch full run details including nodeStatuses
       const response = await fetch(
-        `http://localhost:8000/api/workflows/${workflowId}/runs/${run.runId}`
+        `${API_BASE_URL}/api/workflows/${workflowId}/runs/${run.runId}`
       );
       
       if (response.ok) {
@@ -702,7 +722,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   }, []);
 
   return (
-    <div className="w-full h-screen relative bg-gray-50 dark:bg-gray-900 transition-colors">
+    <div className="w-full h-full relative bg-gray-50 dark:bg-gray-900 transition-colors">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -748,61 +768,69 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
             pannable 
           />
         </Panel>
-
-        {/* Top Control Bar */}
-        <Panel position="top-right" className="flex gap-2 items-center">
-          <button
-            onClick={() => saveWorkflow(false)}
-            className="flex items-center gap-2 px-4 py-2 bg-cyan-900 text-white rounded-lg hover:bg-cyan-950 shadow-lg font-medium transition-colors dark:bg-cyan-800 dark:hover:bg-cyan-900"
-          >
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-            </svg>
-            <span className="leading-none self-center">Save</span>
-          </button>
-          <button
-            onClick={() => setShowHistory(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 shadow-lg font-medium transition-colors dark:bg-gray-600 dark:hover:bg-gray-700"
-            title="View run history"
-          >
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="leading-none self-center">History</span>
-          </button>
-          
-          {/* Environment Selector */}
-          <div className="relative flex items-center">
-            <ButtonSelect
-              options={[{ value: '', label: 'No Environment' }, ...environments.map(e => ({ value: e.environmentId, label: e.name }))]}
-              value={selectedEnvironment || ''}
-              onChange={(val) => {
-                // Normalize: empty string or whitespace becomes null
-                const processed = (val && val.trim()) ? val.trim() : null;
-                console.log('🔄 Environment selection changed:', { 
-                  raw: val, 
-                  processed,
-                  willUseEnvironment: !!processed
-                });
-                setSelectedEnvironment(processed);
-              }}
-              placeholder="No Environment"
-              buttonClass="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg font-medium leading-none shadow-lg transition-colors"
-            />
-          </div>
-          
-          <button
-            onClick={runWorkflow}
-            disabled={isRunning}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-            </svg>
-            <span className="leading-none self-center">{isRunning ? 'Running...' : 'Run'}</span>
-          </button>
-        </Panel>
       </ReactFlow>
+
+      {/* Top Control Bar - Positioned absolutely within the canvas container */}
+      <div className="absolute top-4 right-4 z-50 flex gap-2 items-center pointer-events-auto flex-wrap justify-end max-w-xs">
+        <button
+          onClick={() => saveWorkflow(false)}
+          className="flex items-center gap-2 px-4 py-2 bg-cyan-900 text-white rounded-lg hover:bg-cyan-950 shadow-lg font-medium transition-colors dark:bg-cyan-800 dark:hover:bg-cyan-900"
+        >
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+          </svg>
+          <span className="leading-none self-center">Save</span>
+        </button>
+        <button
+          onClick={() => setShowHistory(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 shadow-lg font-medium transition-colors dark:bg-gray-600 dark:hover:bg-gray-700"
+          title="View run history"
+        >
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="leading-none self-center">History</span>
+        </button>
+        
+        {/* Environment Selector */}
+        <div className="relative flex items-center">
+          <ButtonSelect
+            options={[{ value: '', label: 'No Environment' }, ...environments.map(e => ({ value: e.environmentId, label: e.name }))]}
+            value={selectedEnvironment || ''}
+            onChange={(val) => {
+              // Normalize: empty string or whitespace becomes null
+              const processed = (val && val.trim()) ? val.trim() : null;
+              const selectedEnv = environments.find(e => e.environmentId === processed);
+              const envName = selectedEnv ? selectedEnv.name : 'No Environment';
+              
+              console.log('🔄 Environment selection changed:', { 
+                raw: val, 
+                processed,
+                willUseEnvironment: !!processed,
+                envName
+              });
+              setSelectedEnvironment(processed);
+              
+              // Show notification for 2 seconds
+              setEnvironmentChangeNotification(`✓ Environment changed to: ${envName}`);
+              setTimeout(() => setEnvironmentChangeNotification(null), 2000);
+            }}
+            placeholder="No Environment"
+            buttonClass="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg font-medium leading-none shadow-lg transition-colors"
+          />
+        </div>
+        
+        <button
+          onClick={runWorkflow}
+          disabled={isRunning}
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+          </svg>
+          <span className="leading-none self-center">{isRunning ? 'Running...' : 'Run'}</span>
+        </button>
+      </div>
 
   {/* Toast container */}
   <Toaster />
@@ -826,6 +854,13 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           onClose={() => setShowHistory(false)}
           onSelectRun={loadHistoricalRun}
         />
+      )}
+      
+      {/* Environment Change Notification */}
+      {environmentChangeNotification && (
+        <div className="fixed bottom-20 right-4 bg-green-500 dark:bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg animate-pulse z-40">
+          {environmentChangeNotification}
+        </div>
       )}
     </div>
   );

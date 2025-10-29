@@ -2,18 +2,499 @@
 Workflow API routes
 CRUD operations for workflows
 """
-from fastapi import APIRouter, HTTPException, status, Query
-from typing import List, Optional
+from fastapi import APIRouter, HTTPException, status, Query, UploadFile, File
+from fastapi.responses import JSONResponse
+from typing import List, Optional, Dict, Any
 from datetime import datetime, UTC
 import uuid
 import json
+import re
 from bson import ObjectId
 
 from app.models import Workflow, WorkflowCreate, WorkflowUpdate, PaginatedWorkflows
 from app.database import get_database
+from app.config import settings
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
+
+
+# Helper functions for export/import
+
+def detect_secrets_in_value(value: str) -> bool:
+    """Detect if a value might be a secret based on patterns"""
+    if not isinstance(value, str):
+        return False
+    
+    secret_patterns = [
+        r'bearer\s+[a-zA-Z0-9_\-\.]+',  # Bearer tokens
+        r'api[_-]?key',  # API keys
+        r'secret',  # Secret keywords
+        r'token',  # Token keywords
+        r'password',  # Password keywords
+        r'sk_live_',  # Stripe live keys
+        r'pk_live_',  # Stripe public keys
+    ]
+    
+    for pattern in secret_patterns:
+        if re.search(pattern, value, re.IGNORECASE):
+            return True
+    
+    return False
+
+
+def sanitize_secrets_in_dict(data: Dict[str, Any], secret_refs: List[str], path: str = "") -> Dict[str, Any]:
+    """
+    Recursively replace potential secret values with <SECRET> placeholder
+    and track their paths in secret_refs list
+    """
+    if not isinstance(data, dict):
+        return data
+    
+    sanitized = {}
+    for key, value in data.items():
+        current_path = f"{path}.{key}" if path else key
+        
+        if isinstance(value, dict):
+            sanitized[key] = sanitize_secrets_in_dict(value, secret_refs, current_path)
+        elif isinstance(value, str) and detect_secrets_in_value(value):
+            sanitized[key] = "<SECRET>"
+            secret_refs.append(current_path)
+        else:
+            sanitized[key] = value
+    
+    return sanitized
+
+
+def parse_har_to_workflow(har_data: Dict[str, Any], import_mode: str = "linear", sanitize: bool = True) -> Dict[str, Any]:
+    """
+    Convert HAR file to APIWeave workflow format
+    
+    Args:
+        har_data: Parsed HAR JSON
+        import_mode: "linear" (sequential) or "grouped" (parallel)
+        sanitize: Whether to filter sensitive headers
+        
+    Returns:
+        Workflow dict ready for import
+    """
+    entries = har_data.get("log", {}).get("entries", [])
+    
+    if not entries:
+        raise ValueError("HAR file contains no entries")
+    
+    nodes = []
+    edges = []
+
+    # Create start node
+    start_node_id = str(uuid.uuid4())
+    nodes.append({
+        "nodeId": start_node_id,
+        "type": "start",
+        "label": "Start",
+        "position": {"x": 100, "y": 100},
+        "config": {}
+    })
+
+    # Smart grid layout: arrange nodes in rows to prevent sprawling too far
+    nodes_per_row = 8
+    x_spacing = 400  # Horizontal spacing between nodes
+    y_spacing = 200  # Vertical spacing between rows
+    start_x = 600    # Starting X position (after Start node)
+    start_y = 100    # Starting Y position
+
+    for idx, entry in enumerate(entries):
+        request = entry.get("request", {})
+        response = entry.get("response", {})
+
+        node_id = str(uuid.uuid4())
+
+        # Extract method and URL
+        method = request.get("method", "GET")
+        url = request.get("url", "")
+
+        # Parse URL for host/path/query
+        from urllib.parse import urlparse, parse_qs, urlunparse
+        parsed = urlparse(url)
+        host = parsed.netloc
+        path = parsed.path or "/"
+        query = parsed.query
+        
+        # Extract query params - prioritize HAR queryString, fallback to URL parsing
+        query_params = {}
+        har_query_string = request.get("queryString", [])
+        if har_query_string:
+            # Use HAR queryString if available
+            for qp in har_query_string:
+                k = qp.get("name", "")
+                v = qp.get("value", "")
+                query_params[k] = v
+        elif query:
+            # Fallback: parse from URL query string
+            parsed_qs = parse_qs(query, keep_blank_values=True)
+            for k, v_list in parsed_qs.items():
+                query_params[k] = v_list[0] if v_list else ""
+        
+        # Build label: [METHOD] host/path (truncate long paths)
+        path_display = path if len(path) <= 40 else path[:37] + "..."
+        label = f"[{method}] {host}{path_display}"
+
+        # Extract headers (as key-value)
+        headers = {}
+        for header in request.get("headers", []):
+            header_name = header.get("name", "")
+            header_value = header.get("value", "")
+            if sanitize and detect_secrets_in_value(f"{header_name}:{header_value}"):
+                headers[header_name] = "[FILTERED]"
+            else:
+                headers[header_name] = header_value
+
+        # Extract cookies
+        cookies = {}
+        for ck in request.get("cookies", []):
+            k = ck.get("name", "")
+            v = ck.get("value", "")
+            cookies[k] = v
+
+        # Extract body
+        post_data = request.get("postData", {})
+        body = post_data.get("text", "") if post_data else None
+
+        # Create example response metadata
+        example_response = {
+            "statusCode": response.get("status", 0),
+            "statusText": response.get("statusText", ""),
+            "headers": {h.get("name", ""): h.get("value", "") for h in response.get("headers", [])},
+            "bodySize": response.get("bodySize", 0),
+            "isExample": True
+        }
+
+        # Convert objects to string format expected by frontend
+        # Format: key=value\nkey2=value2
+        headers_str = "\n".join([f"{k}={v}" for k, v in headers.items()]) if headers else ""
+        query_params_str = "\n".join([f"{k}={v}" for k, v in query_params.items()]) if query_params else ""
+        cookies_str = "\n".join([f"{k}={v}" for k, v in cookies.items()]) if cookies else ""
+
+        # Calculate grid position
+        row = idx // nodes_per_row
+        col = idx % nodes_per_row
+        x_position = start_x + col * x_spacing
+        y_position = start_y + row * y_spacing
+
+        # Create HTTP request node
+        node_config = {
+            "method": method,
+            "url": url,
+            "headers": headers_str,
+            "queryParams": query_params_str,
+            "cookies": cookies_str,
+            "body": body,
+            "timeout": 30,
+            "followRedirects": True,
+            "extractors": {},
+            "exampleResponse": example_response
+        }
+
+        node = {
+            "nodeId": node_id,
+            "type": "http-request",
+            "label": label,
+            "position": {"x": x_position, "y": y_position},
+            "config": node_config
+        }
+
+        nodes.append(node)
+        # No auto-linking between nodes
+
+    # Create end node positioned below the grid
+    total_rows = (len(entries) + nodes_per_row - 1) // nodes_per_row  # Ceiling division
+    end_x = start_x + (nodes_per_row // 2) * x_spacing  # Center horizontally
+    end_y = start_y + total_rows * y_spacing + y_spacing  # Below last row
+    
+    end_node_id = str(uuid.uuid4())
+    nodes.append({
+        "nodeId": end_node_id,
+        "type": "end",
+        "label": "End",
+        "position": {"x": end_x, "y": end_y},
+        "config": {}
+    })
+
+    # Only connect Start to End (no HTTP node edges)
+    edges.append({
+        "edgeId": str(uuid.uuid4()),
+        "source": start_node_id,
+        "target": end_node_id,
+        "label": None
+    })
+
+    workflow = {
+        "name": f"Imported from HAR - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
+        "description": f"Imported {len(entries)} HTTP requests from HAR file",
+        "nodes": nodes,
+        "edges": edges,
+        "variables": {},
+        "tags": ["har-import"]
+    }
+
+    return workflow
+
+
+def resolve_openapi_schema_ref(ref_path: str, openapi_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Resolve a $ref path in OpenAPI spec (e.g., #/components/schemas/MyDto)
+    
+    Args:
+        ref_path: Reference path starting with #/
+        openapi_data: Full OpenAPI spec
+        
+    Returns:
+        Resolved schema object or empty dict
+    """
+    if not ref_path.startswith("#/"):
+        return {}
+    
+    parts = ref_path[2:].split("/")  # Remove #/ and split
+    current = openapi_data
+    
+    for part in parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return {}
+    
+    return current if isinstance(current, dict) else {}
+
+
+def generate_example_from_schema(schema: Dict[str, Any], openapi_data: Dict[str, Any]) -> Any:
+    """
+    Generate example value from OpenAPI schema
+    
+    Args:
+        schema: OpenAPI schema object
+        openapi_data: Full spec for resolving references
+        
+    Returns:
+        Example value based on schema
+    """
+    # If schema has example, use it
+    if "example" in schema:
+        return schema["example"]
+    
+    # If schema is a reference, resolve it
+    if "$ref" in schema:
+        resolved = resolve_openapi_schema_ref(schema["$ref"], openapi_data)
+        return generate_example_from_schema(resolved, openapi_data)
+    
+    schema_type = schema.get("type", "object")
+    
+    if schema_type == "object":
+        properties = schema.get("properties", {})
+        result = {}
+        for prop_name, prop_schema in properties.items():
+            result[prop_name] = generate_example_from_schema(prop_schema, openapi_data)
+        return result
+    elif schema_type == "array":
+        items_schema = schema.get("items", {})
+        example_item = generate_example_from_schema(items_schema, openapi_data)
+        return [example_item] if example_item else []
+    elif schema_type == "string":
+        schema_format = schema.get("format", "")
+        if schema_format == "uuid":
+            return "00000000-0000-0000-0000-000000000000"
+        elif schema_format == "date":
+            return "2024-01-01"
+        elif schema_format == "date-time":
+            return "2024-01-01T00:00:00Z"
+        elif schema_format == "email":
+            return "user@example.com"
+        return schema.get("default", "string")
+    elif schema_type == "integer":
+        return schema.get("default", 0)
+    elif schema_type == "number":
+        return schema.get("default", 0.0)
+    elif schema_type == "boolean":
+        return schema.get("default", False)
+    
+    return None
+
+
+def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", tag_filter: Optional[List[str]] = None, sanitize: bool = True) -> Dict[str, Any]:
+    """
+    Convert OpenAPI/Swagger spec to APIWeave workflow format
+    
+    Args:
+        openapi_data: Parsed OpenAPI/Swagger JSON
+        base_url: Base URL to prepend to paths (from servers or user input)
+        tag_filter: Optional list of tags to filter endpoints (if None, import all)
+        sanitize: Whether to filter sensitive headers
+        
+    Returns:
+        Workflow dict ready for import
+    """
+    paths = openapi_data.get("paths", {})
+    
+    if not paths:
+        raise ValueError("OpenAPI spec contains no paths")
+    
+    # Get base URL from servers if not provided
+    if not base_url:
+        servers = openapi_data.get("servers", [])
+        if servers and servers[0].get("url"):
+            base_url = servers[0]["url"]
+        else:
+            base_url = ""
+    
+    nodes = []
+    edges = []
+    
+    # Create start node
+    start_node_id = str(uuid.uuid4())
+    nodes.append({
+        "nodeId": start_node_id,
+        "type": "start",
+        "label": "Start",
+        "position": {"x": 100, "y": 100},
+        "config": {}
+    })
+    
+    # Smart grid layout: arrange nodes in rows to prevent sprawling too far
+    # Strategy: Create a grid with ~8 nodes per row for balance
+    nodes_per_row = 8
+    x_spacing = 400  # Horizontal spacing between nodes
+    y_spacing = 200  # Vertical spacing between rows
+    start_x = 600    # Starting X position (after Start node)
+    start_y = 100    # Starting Y position
+    
+    idx = 0
+    for path, path_item in paths.items():
+        for method in ["get", "post", "put", "patch", "delete", "head", "options"]:
+            if method not in path_item:
+                continue
+            
+            operation = path_item[method]
+            
+            # Filter by tags if specified
+            operation_tags = operation.get("tags", [])
+            if tag_filter and not any(tag in tag_filter for tag in operation_tags):
+                continue
+            
+            node_id = str(uuid.uuid4())
+            
+            # Build full URL
+            full_url = f"{base_url}{path}" if base_url else path
+            
+            # Extract query parameters from parameters list
+            query_params = {}
+            path_params = {}
+            headers = {}
+            
+            for param in operation.get("parameters", []):
+                param_name = param.get("name", "")
+                param_in = param.get("in", "")
+                param_required = param.get("required", False)
+                param_schema = param.get("schema", {})
+                param_example = param_schema.get("example", "")
+                
+                if param_in == "query":
+                    query_params[param_name] = str(param_example) if param_example else ""
+                elif param_in == "path":
+                    path_params[param_name] = str(param_example) if param_example else f"{{{param_name}}}"
+                elif param_in == "header":
+                    if sanitize and detect_secrets_in_value(f"{param_name}:{param_example}"):
+                        headers[param_name] = "[FILTERED]"
+                    else:
+                        headers[param_name] = str(param_example) if param_example else ""
+            
+            # Extract request body
+            body = ""
+            request_body = operation.get("requestBody", {})
+            if request_body:
+                content = request_body.get("content", {})
+                # Try to get JSON content first
+                if "application/json" in content:
+                    schema = content["application/json"].get("schema", {})
+                    # Generate example from schema (handles $ref resolution)
+                    example_data = generate_example_from_schema(schema, openapi_data)
+                    if example_data:
+                        body = json.dumps(example_data, indent=2)
+                    headers["Content-Type"] = "application/json"
+            
+            # Convert to string format
+            headers_str = "\n".join([f"{k}={v}" for k, v in headers.items()]) if headers else ""
+            query_params_str = "\n".join([f"{k}={v}" for k, v in query_params.items()]) if query_params else ""
+            
+            # Build label: [METHOD] /path - operationId
+            operation_id = operation.get("operationId", "")
+            summary = operation.get("summary", "")
+            label_text = operation_id or summary or path
+            if len(label_text) > 40:
+                label_text = label_text[:37] + "..."
+            label = f"[{method.upper()}] {label_text}"
+            
+            # Calculate grid position
+            row = idx // nodes_per_row
+            col = idx % nodes_per_row
+            x_position = start_x + col * x_spacing
+            y_position = start_y + row * y_spacing
+            
+            # Create HTTP request node
+            node_config = {
+                "method": method.upper(),
+                "url": full_url,
+                "headers": headers_str,
+                "queryParams": query_params_str,
+                "cookies": "",
+                "body": body if body else None,
+                "timeout": 30,
+                "followRedirects": True,
+                "extractors": {}
+            }
+            
+            node = {
+                "nodeId": node_id,
+                "type": "http-request",
+                "label": label,
+                "position": {"x": x_position, "y": y_position},
+                "config": node_config
+            }
+            
+            nodes.append(node)
+            idx += 1
+    
+    # Create end node positioned below the grid
+    total_rows = (idx + nodes_per_row - 1) // nodes_per_row  # Ceiling division
+    end_x = start_x + (nodes_per_row // 2) * x_spacing  # Center horizontally
+    end_y = start_y + total_rows * y_spacing + y_spacing  # Below last row
+    
+    end_node_id = str(uuid.uuid4())
+    nodes.append({
+        "nodeId": end_node_id,
+        "type": "end",
+        "label": "End",
+        "position": {"x": end_x, "y": end_y},
+        "config": {}
+    })
+    
+    # Only connect Start to End
+    edges.append({
+        "edgeId": str(uuid.uuid4()),
+        "source": start_node_id,
+        "target": end_node_id,
+        "label": None
+    })
+    
+    api_title = openapi_data.get("info", {}).get("title", "API")
+    workflow = {
+        "name": f"Imported from OpenAPI - {api_title} - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
+        "description": f"Imported {idx} endpoints from OpenAPI specification",
+        "nodes": nodes,
+        "edges": edges,
+        "variables": {},
+        "tags": ["openapi-import"]
+    }
+    
+    return workflow
 
 
 @router.post("", response_model=Workflow, status_code=status.HTTP_201_CREATED)
@@ -405,3 +886,657 @@ async def get_node_result(workflow_id: str, run_id: str, node_id: str):
             "stored_in_gridfs": False
         }
     }
+
+
+@router.get("/{workflow_id}/export")
+async def export_workflow(workflow_id: str, include_environment: bool = Query(True)):
+    """
+    Export a complete workflow bundle as JSON
+    Includes workflow, referenced environment (without secrets), and metadata
+    Secrets are replaced with <SECRET> placeholders
+    """
+    db = get_database()
+    
+    try:
+        # Fetch workflow
+        workflow = await db.workflows.find_one({"workflowId": workflow_id})
+        if not workflow:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Workflow {workflow_id} not found"
+            )
+        
+        # Remove MongoDB _id
+        workflow.pop('_id', None)
+        
+        # Convert datetime objects to ISO strings
+        if workflow.get("createdAt"):
+            workflow["createdAt"] = workflow["createdAt"].isoformat()
+        if workflow.get("updatedAt"):
+            workflow["updatedAt"] = workflow["updatedAt"].isoformat()
+        
+        # Track secret references
+        secret_refs = []
+        
+        # Sanitize secrets in workflow variables
+        if workflow.get("variables"):
+            workflow["variables"] = sanitize_secrets_in_dict(workflow["variables"], secret_refs, "variables")
+        
+        # Sanitize secrets in node configs
+        for node in workflow.get("nodes", []):
+            if node.get("config"):
+                node["config"] = sanitize_secrets_in_dict(node["config"], secret_refs, f"nodes.{node['nodeId']}.config")
+        
+        # Build export bundle
+        export_bundle = {
+            "workflow": workflow,
+            "environments": [],
+            "secretReferences": secret_refs,
+            "metadata": {
+                "exportedAt": datetime.now(UTC).isoformat(),
+                "apiweaveVersion": settings.VERSION,
+                "sourceHost": None
+            }
+        }
+        
+        # Include environment if requested and workflow has one
+        if include_environment and workflow.get("environmentId"):
+            env_id = workflow["environmentId"]
+            environment = await db.environments.find_one({"environmentId": env_id})
+            
+            if environment:
+                environment.pop('_id', None)
+                
+                # Convert datetime objects to ISO strings
+                if environment.get("createdAt"):
+                    environment["createdAt"] = environment["createdAt"].isoformat()
+                if environment.get("updatedAt"):
+                    environment["updatedAt"] = environment["updatedAt"].isoformat()
+                
+                # Sanitize secrets in environment variables
+                if environment.get("variables"):
+                    environment["variables"] = sanitize_secrets_in_dict(
+                        environment["variables"], 
+                        secret_refs, 
+                        f"environments.{env_id}.variables"
+                    )
+                export_bundle["environments"].append(environment)
+        
+        return JSONResponse(content=export_bundle)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Export error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Export failed: {str(e)}"
+        )
+
+
+@router.post("/import")
+async def import_workflow(
+    bundle: Dict[str, Any],
+    environment_mapping: Optional[Dict[str, str]] = None,
+    create_missing_environments: bool = True,
+    sanitize: bool = False
+):
+    """
+    Import a workflow bundle
+    Validates structure, handles environment mapping, optionally creates missing environments
+    """
+    db = get_database()
+    
+    # Validate bundle structure
+    if "workflow" not in bundle:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid bundle: missing 'workflow' key"
+        )
+    
+    workflow_data = bundle["workflow"]
+    environments = bundle.get("environments", [])
+    
+    # Validate required workflow fields
+    required_fields = ["name", "nodes", "edges"]
+    for field in required_fields:
+        if field not in workflow_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid workflow: missing '{field}' field"
+            )
+    
+    # Handle environment mapping
+    old_env_id = workflow_data.get("environmentId")
+    new_env_id = None
+    
+    if old_env_id:
+        # Check if there's a mapping provided
+        if environment_mapping and old_env_id in environment_mapping:
+            new_env_id = environment_mapping[old_env_id]
+            
+            # Verify mapped environment exists
+            existing_env = await db.environments.find_one({"environmentId": new_env_id})
+            if not existing_env:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Mapped environment {new_env_id} not found"
+                )
+        elif create_missing_environments and environments:
+            # Try to find the environment in the bundle and create it
+            env_data = next((e for e in environments if e.get("environmentId") == old_env_id), None)
+            if env_data:
+                # Create new environment with new ID
+                new_env_id = str(uuid.uuid4())
+                now = datetime.now(UTC)
+                
+                env_doc = {
+                    "environmentId": new_env_id,
+                    "name": env_data.get("name", "Imported Environment"),
+                    "description": env_data.get("description"),
+                    "variables": env_data.get("variables", {}),
+                    "isActive": False,
+                    "createdAt": now,
+                    "updatedAt": now
+                }
+                
+                await db.environments.insert_one(env_doc)
+        else:
+            # No mapping and can't create - set to null
+            new_env_id = None
+    
+    # Create new workflow with new IDs
+    new_workflow_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    
+    # Optionally sanitize again (belt and suspenders)
+    if sanitize:
+        if workflow_data.get("variables"):
+            secret_refs = []
+            workflow_data["variables"] = sanitize_secrets_in_dict(workflow_data["variables"], secret_refs)
+        
+        for node in workflow_data.get("nodes", []):
+            if node.get("config"):
+                secret_refs = []
+                node["config"] = sanitize_secrets_in_dict(node["config"], secret_refs)
+    
+    workflow_doc = {
+        "workflowId": new_workflow_id,
+        "name": workflow_data["name"],
+        "description": workflow_data.get("description"),
+        "nodes": workflow_data["nodes"],
+        "edges": workflow_data["edges"],
+        "variables": workflow_data.get("variables", {}),
+        "tags": workflow_data.get("tags", []),
+        "environmentId": new_env_id,
+        "createdAt": now,
+        "updatedAt": now,
+        "version": 1
+    }
+    
+    await db.workflows.insert_one(workflow_doc)
+    
+    return {
+        "message": "Workflow imported successfully",
+        "workflowId": new_workflow_id,
+        "environmentId": new_env_id,
+        "secretReferences": bundle.get("secretReferences", [])
+    }
+
+
+@router.post("/import/dry-run")
+async def import_workflow_dry_run(bundle: Dict[str, Any]):
+    """
+    Validate a workflow bundle without persisting
+    Returns summary of what would be created/modified
+    """
+    db = get_database()
+    
+    # Validate bundle structure
+    errors = []
+    warnings = []
+    
+    if "workflow" not in bundle:
+        errors.append("Missing 'workflow' key in bundle")
+        return {"valid": False, "errors": errors, "warnings": warnings}
+    
+    workflow_data = bundle["workflow"]
+    
+    # Validate required workflow fields
+    required_fields = ["name", "nodes", "edges"]
+    for field in required_fields:
+        if field not in workflow_data:
+            errors.append(f"Missing required field: '{field}'")
+    
+    # Validate nodes
+    if "nodes" in workflow_data:
+        node_ids = set()
+        for idx, node in enumerate(workflow_data["nodes"]):
+            if "nodeId" not in node:
+                errors.append(f"Node at index {idx} missing 'nodeId'")
+            else:
+                if node["nodeId"] in node_ids:
+                    errors.append(f"Duplicate node ID: {node['nodeId']}")
+                node_ids.add(node["nodeId"])
+            
+            if "type" not in node:
+                errors.append(f"Node {node.get('nodeId', idx)} missing 'type'")
+    
+    # Validate edges
+    if "edges" in workflow_data and "nodes" in workflow_data:
+        node_ids = {node["nodeId"] for node in workflow_data["nodes"]}
+        for idx, edge in enumerate(workflow_data["edges"]):
+            if "source" not in edge or "target" not in edge:
+                errors.append(f"Edge at index {idx} missing 'source' or 'target'")
+            else:
+                if edge["source"] not in node_ids:
+                    errors.append(f"Edge references non-existent source node: {edge['source']}")
+                if edge["target"] not in node_ids:
+                    errors.append(f"Edge references non-existent target node: {edge['target']}")
+    
+    # Check for environment references
+    old_env_id = workflow_data.get("environmentId")
+    if old_env_id:
+        env_exists = await db.environments.find_one({"environmentId": old_env_id})
+        if not env_exists:
+            # Check if environment is in bundle
+            environments = bundle.get("environments", [])
+            env_in_bundle = any(e.get("environmentId") == old_env_id for e in environments)
+            
+            if env_in_bundle:
+                warnings.append(f"Environment {old_env_id} will be created from bundle")
+            else:
+                warnings.append(f"Environment {old_env_id} not found - workflow will be unattached")
+    
+    # Check for secret references
+    secret_refs = bundle.get("secretReferences", [])
+    if secret_refs:
+        warnings.append(f"Workflow contains {len(secret_refs)} secret references that must be re-entered")
+    
+    summary = {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "stats": {
+            "nodes": len(workflow_data.get("nodes", [])),
+            "edges": len(workflow_data.get("edges", [])),
+            "variables": len(workflow_data.get("variables", {})),
+            "secretReferences": len(secret_refs),
+            "environmentsIncluded": len(bundle.get("environments", []))
+        }
+    }
+    
+    return summary
+
+
+@router.post("/import/har")
+async def import_har_file(
+    file: Optional[UploadFile] = File(None),
+    import_mode: str = Query("linear"),
+    environment_id: Optional[str] = Query(None),
+    sanitize: bool = Query(True)
+):
+    """
+    Import a HAR file and convert to workflow
+    Accepts file upload via multipart/form-data
+    """
+    db = get_database()
+    
+    try:
+        # Parse HAR data
+        if not file:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="HAR file is required"
+            )
+        
+        contents = await file.read()
+        try:
+            har_data = json.loads(contents.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON in HAR file: {str(e)}"
+            )
+        
+        # Validate HAR structure
+        if "log" not in har_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid HAR file: missing 'log' key"
+            )
+        
+        # Convert HAR to workflow
+        try:
+            workflow_data = parse_har_to_workflow(har_data, import_mode, sanitize)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        
+        # Create workflow in database
+        new_workflow_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        
+        workflow_doc = {
+            "workflowId": new_workflow_id,
+            "name": workflow_data["name"],
+            "description": workflow_data["description"],
+            "nodes": workflow_data["nodes"],
+            "edges": workflow_data["edges"],
+            "variables": workflow_data.get("variables", {}),
+            "tags": workflow_data.get("tags", []),
+            "environmentId": environment_id,
+            "createdAt": now,
+            "updatedAt": now,
+            "version": 1
+        }
+        
+        await db.workflows.insert_one(workflow_doc)
+        
+        return {
+            "message": "HAR file imported successfully",
+            "workflowId": new_workflow_id,
+            "stats": {
+                "totalRequests": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
+                "importMode": import_mode
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"HAR import error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import HAR file: {str(e)}"
+        )
+
+
+@router.post("/import/har/dry-run")
+async def import_har_dry_run(
+    file: Optional[UploadFile] = File(None),
+    import_mode: str = Query("linear"),
+    sanitize: bool = Query(True)
+):
+    """
+    Preview HAR import without persisting
+    Returns proposed workflow structure
+    """
+    try:
+        # Parse HAR data
+        if not file:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="HAR file is required"
+            )
+        
+        contents = await file.read()
+        try:
+            har_data = json.loads(contents.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON in HAR file: {str(e)}"
+            )
+        
+        # Validate HAR structure
+        if "log" not in har_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid HAR file: missing 'log' key"
+            )
+        
+        # Convert HAR to workflow (preview only)
+        try:
+            workflow_data = parse_har_to_workflow(har_data, import_mode, sanitize)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        
+        # Return preview
+        return {
+            "message": "HAR preview generated successfully",
+            "workflow": {
+                "name": workflow_data["name"],
+                "description": workflow_data["description"],
+                "nodeCount": len(workflow_data["nodes"]),
+                "edgeCount": len(workflow_data["edges"])
+            },
+            "stats": {
+                "totalRequests": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
+                "importMode": import_mode,
+                "entries": len(har_data.get("log", {}).get("entries", []))
+            },
+            "nodes": workflow_data["nodes"],
+            "edges": workflow_data["edges"]
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"HAR dry-run error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to preview HAR file: {str(e)}"
+        )
+    
+    # Return preview
+    entries = har_data.get("log", {}).get("entries", [])
+    preview_entries = []
+    
+    for entry in entries[:10]:  # Show first 10 for preview
+        request = entry.get("request", {})
+        preview_entries.append({
+            "method": request.get("method", ""),
+            "url": request.get("url", ""),
+            "time": entry.get("time", 0)
+        })
+    
+    return {
+        "valid": True,
+        "workflow": workflow_data,
+        "preview": preview_entries,
+        "stats": {
+            "totalEntries": len(entries),
+            "nodes": len(workflow_data["nodes"]),
+            "edges": len(workflow_data["edges"]),
+            "importMode": import_mode
+        }
+    }
+
+
+@router.post("/import/openapi")
+async def import_openapi_file(
+    file: Optional[UploadFile] = File(None),
+    base_url: str = Query(""),
+    tag_filter: Optional[str] = Query(None),
+    sanitize: bool = Query(True)
+):
+    """
+    Import an OpenAPI/Swagger file and convert to workflow
+    Accepts file upload via multipart/form-data
+    """
+    db = get_database()
+    
+    try:
+        # Parse OpenAPI data
+        if not file:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OpenAPI file is required"
+            )
+        
+        contents = await file.read()
+        try:
+            openapi_data = json.loads(contents.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON in OpenAPI file: {str(e)}"
+            )
+        
+        # Validate OpenAPI structure
+        if "paths" not in openapi_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid OpenAPI file: missing 'paths' key"
+            )
+        
+        # Parse tag filter
+        tags = tag_filter.split(",") if tag_filter else None
+        
+        # Convert OpenAPI to workflow
+        try:
+            workflow_data = parse_openapi_to_workflow(openapi_data, base_url, tags, sanitize)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        
+        # Create workflow in database
+        new_workflow_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        
+        workflow_doc = {
+            "workflowId": new_workflow_id,
+            "name": workflow_data["name"],
+            "description": workflow_data["description"],
+            "nodes": workflow_data["nodes"],
+            "edges": workflow_data["edges"],
+            "variables": workflow_data.get("variables", {}),
+            "tags": workflow_data.get("tags", []),
+            "environmentId": None,
+            "createdAt": now,
+            "updatedAt": now,
+            "version": 1
+        }
+        
+        await db.workflows.insert_one(workflow_doc)
+        
+        return {
+            "message": "OpenAPI file imported successfully",
+            "workflowId": new_workflow_id,
+            "stats": {
+                "totalEndpoints": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
+                "apiTitle": openapi_data.get("info", {}).get("title", "API")
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"OpenAPI import error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import OpenAPI file: {str(e)}"
+        )
+
+
+@router.post("/import/openapi/dry-run")
+async def import_openapi_dry_run(
+    file: Optional[UploadFile] = File(None),
+    base_url: str = Query(""),
+    tag_filter: Optional[str] = Query(None),
+    sanitize: bool = Query(True)
+):
+    """
+    Preview OpenAPI import without persisting
+    Returns proposed workflow structure
+    """
+    try:
+        # Parse OpenAPI data
+        if not file:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OpenAPI file is required"
+            )
+        
+        contents = await file.read()
+        try:
+            openapi_data = json.loads(contents.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON in OpenAPI file: {str(e)}"
+            )
+        
+        # Validate OpenAPI structure
+        if "paths" not in openapi_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid OpenAPI file: missing 'paths' key"
+            )
+        
+        # Parse tag filter
+        tags = tag_filter.split(",") if tag_filter else None
+        
+        # Get available tags from spec
+        available_tags = []
+        spec_tags = openapi_data.get("tags", [])
+        for tag in spec_tags:
+            available_tags.append({
+                "name": tag.get("name", ""),
+                "description": tag.get("description", "")
+            })
+        
+        # Get available servers
+        available_servers = []
+        for server in openapi_data.get("servers", []):
+            available_servers.append({
+                "url": server.get("url", ""),
+                "description": server.get("description", "")
+            })
+        
+        # Convert OpenAPI to workflow (preview only)
+        try:
+            workflow_data = parse_openapi_to_workflow(openapi_data, base_url, tags, sanitize)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        
+        # Return preview
+        return {
+            "message": "OpenAPI preview generated successfully",
+            "workflow": {
+                "name": workflow_data["name"],
+                "description": workflow_data["description"],
+                "nodeCount": len(workflow_data["nodes"]),
+                "edgeCount": len(workflow_data["edges"])
+            },
+            "stats": {
+                "totalEndpoints": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
+                "apiTitle": openapi_data.get("info", {}).get("title", "API"),
+                "apiVersion": openapi_data.get("info", {}).get("version", "")
+            },
+            "nodes": workflow_data["nodes"],
+            "edges": workflow_data["edges"],
+            "availableTags": available_tags,
+            "availableServers": available_servers
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"OpenAPI dry-run error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to preview OpenAPI file: {str(e)}"
+        )
+

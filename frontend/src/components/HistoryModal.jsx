@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import API_BASE_URL from '../utils/api';
 
 const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
   const [runs, setRuns] = useState([]);
@@ -35,7 +36,7 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
   const fetchRunHistory = async (page = 1) => {
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}/runs?page=${page}&limit=10`);
+      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs?page=${page}&limit=10`);
       if (response.ok) {
         const data = await response.json();
         setRuns(data.runs);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import API_BASE_URL from '../utils/api';
 
 const EnvironmentManager = ({ onClose }) => {
   const [environments, setEnvironments] = useState([]);
@@ -18,7 +19,7 @@ const EnvironmentManager = ({ onClose }) => {
 
   const fetchEnvironments = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/environments');
+      const response = await fetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
         const data = await response.json();
         setEnvironments(data);
@@ -51,8 +52,8 @@ const EnvironmentManager = ({ onClose }) => {
   const handleSave = async () => {
     try {
       const url = selectedEnv
-        ? `http://localhost:8000/api/environments/${selectedEnv.environmentId}`
-        : 'http://localhost:8000/api/environments';
+        ? `${API_BASE_URL}/api/environments/${selectedEnv.environmentId}`
+        : `${API_BASE_URL}/api/environments`;
       
       const method = selectedEnv ? 'PUT' : 'POST';
       
@@ -80,7 +81,7 @@ const EnvironmentManager = ({ onClose }) => {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/api/environments/${envId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/environments/${envId}`, {
         method: 'DELETE'
       });
 
@@ -104,7 +105,7 @@ const EnvironmentManager = ({ onClose }) => {
 
   const handleDuplicate = async (envId) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/environments/${envId}/duplicate`, {
+      const response = await fetch(`${API_BASE_URL}/api/environments/${envId}/duplicate`, {
         method: 'POST'
       });
 

@@ -93,6 +93,7 @@ class Workflow(BaseModel):
     edges: List[Edge]
     variables: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
+    environmentId: Optional[str] = None  # NEW: Link to environment
     createdAt: datetime
     updatedAt: datetime
     version: int = 1

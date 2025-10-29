@@ -20,12 +20,12 @@ const MainLayout = () => {
         <Allotment>
           {/* Left: AppNavBar + Sidebar */}
           <Allotment.Pane
-            preferredSize={isNavBarCollapsed ? 60 : 360}
-            minSize={isNavBarCollapsed ? 60 : 320}
-            maxSize={isNavBarCollapsed ? 60 : 800}
-            snap={isNavBarCollapsed}
+            preferredSize={isNavBarCollapsed ? 60 : 260}
+            minSize={isNavBarCollapsed ? 60 : 260}
+            maxSize={isNavBarCollapsed ? 60 : 480}
+            snap={false}
           >
-            <div className="flex h-full text-xs bg-white dark:bg-gray-800">
+            <div className="flex h-full w-full text-xs bg-white dark:bg-gray-800">
               <AppNavBar
                 selectedNav={selectedNav}
                 setSelectedNav={setSelectedNav}
@@ -33,7 +33,7 @@ const MainLayout = () => {
                 setIsCollapsed={setIsNavBarCollapsed}
               />
               {!isNavBarCollapsed && (
-                <div className="flex-1 h-full border-l border-gray-300 dark:border-gray-700">
+                <div className="flex-1 h-full w-full border-l border-gray-300 dark:border-gray-700 overflow-hidden">
                   <Sidebar 
                     selectedNav={selectedNav} 
                     isCollapsed={isNavBarCollapsed}

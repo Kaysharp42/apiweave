@@ -180,3 +180,4 @@ htmlcov/
 .pytest_cache/
 backend/tests/
 backend/tests/workflow.json
+frontend/package-lock.json

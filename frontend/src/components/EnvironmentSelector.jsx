@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import API_BASE_URL from '../utils/api';
 
 const EnvironmentSelector = ({ onManageClick }) => {
   const [environments, setEnvironments] = useState([]);
@@ -30,7 +31,7 @@ const EnvironmentSelector = ({ onManageClick }) => {
 
   const fetchEnvironments = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/environments');
+      const response = await fetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
         const data = await response.json();
         setEnvironments(data);

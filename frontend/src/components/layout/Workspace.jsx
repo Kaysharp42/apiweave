@@ -81,7 +81,7 @@ const Workspace = () => {
       )}
 
       {/* Workspace Content */}
-      <div className="flex-1 overflow-hidden flex flex-col">
+      <div className="flex-1 overflow-hidden flex flex-col relative">
         {activeTab ? (
           <WorkflowProvider 
             key={activeTab.id} 
