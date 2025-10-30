@@ -82,6 +82,7 @@ const AssertionEditor = ({
           <option value="gte">Greater Than or Equal (&gt;=)</option>
           <option value="lt">Less Than (&lt;)</option>
           <option value="lte">Less Than or Equal (&lt;=)</option>
+          <option value="count">Count (array length)</option>
           <option value="exists">Exists</option>
           <option value="notExists">Does Not Exist</option>
         </select>

@@ -32,6 +32,21 @@ const selectiveNodeUpdate = (currentNodes, nodeStatuses) => {
     if (!nodeStatus) return node;
     
     // Always update to ensure fresh results on each run
+    // Extract assertion-specific info from result if it's an assertion node
+    let assertionStats = null;
+    if (node.data.type === 'assertion' && nodeStatus.result) {
+      const result = nodeStatus.result;
+      if (result.passedCount !== undefined || result.failedCount !== undefined) {
+        assertionStats = {
+          passedCount: result.passedCount || 0,
+          failedCount: result.failedCount || 0,
+          totalCount: result.totalCount || 0,
+          passed: result.passed || [],
+          failed: result.failed || []
+        };
+      }
+    }
+    
     return {
       ...node,
       data: {
@@ -39,6 +54,7 @@ const selectiveNodeUpdate = (currentNodes, nodeStatuses) => {
         executionStatus: nodeStatus?.status,
         executionResult: nodeStatus?.result, // Full response with fresh data
         executionTimestamp: nodeStatus?.timestamp, // Track when result was generated
+        assertionStats: assertionStats, // Extracted assertion statistics
       },
     };
   });

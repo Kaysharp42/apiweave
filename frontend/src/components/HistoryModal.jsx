@@ -239,8 +239,36 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
 
                       {/* Error message if failed */}
                       {run.status === 'failed' && run.error && (
-                        <div className="mt-2 text-xs text-red-600 dark:text-red-400 truncate">
-                          Error: {run.error}
+                        <div className="mt-2 text-xs">
+                          {/* Check if this looks like an assertion failure */}
+                          {run.error.includes('Assertion failed') ? (
+                            <div className="text-red-600 dark:text-red-400">
+                              <div className="font-semibold mb-1">
+                                {/* Extract the assertion count from error message */}
+                                {run.error.includes('/') && run.error.match(/(\d+)\/(\d+)/)?.[0] ? (
+                                  `Assertion: ${run.error.match(/(\d+)\/(\d+)/)[0]} failed`
+                                ) : (
+                                  'Assertion failed'
+                                )}
+                              </div>
+                              {/* Show first line or full error if truncated */}
+                              <div className="truncate">{run.error.split('\n')[0]}</div>
+                            </div>
+                          ) : run.error.includes('branches failed') ? (
+                            <div className="text-red-600 dark:text-red-400">
+                              <div className="font-semibold">{run.error}</div>
+                            </div>
+                          ) : (
+                            <div className="text-red-600 dark:text-red-400 truncate">
+                              Error: {run.error}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {/* Show branch failure count if available */}
+                      {run.status === 'failed' && run.failedNodes && run.failedNodes.length > 0 && (
+                        <div className="mt-1 text-xs text-orange-600 dark:text-orange-400">
+                          {run.failedNodes.length} node{run.failedNodes.length > 1 ? 's' : ''} failed
                         </div>
                       )}
                     </div>

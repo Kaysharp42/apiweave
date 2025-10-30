@@ -4,7 +4,7 @@ import { useReactFlow } from 'reactflow';
 import AssertionEditor from '../AssertionEditor';
 import Tooltip from '../Tooltip';
 import { MdCheckCircle, MdError, MdExpandMore, MdExpandLess, MdInfoOutline, MdEdit, MdDelete, MdContentCopy } from 'react-icons/md';
-import { HiMiniCheckBadge } from 'react-icons/hi2';
+import { HiMiniCheckBadge, HiMiniDocumentDuplicate } from 'react-icons/hi2';
 
 // Assertion form component
 const AssertionForm = ({ onAdd }) => {
@@ -45,6 +45,22 @@ const AssertionForm = ({ onAdd }) => {
       } else {
         console.log('Path is required for this operator');
         setErrors({ path: 'Path is required', expectedValue: '' });
+        return;
+      }
+    } else if (operator === 'count') {
+      // Count needs path and expected value
+      if (path.trim() && expectedValue.trim()) {
+        console.log('Adding count assertion');
+        onAdd({
+          source: source.trim(),
+          path: path.trim(),
+          operator,
+          expectedValue: expectedValue.trim(),
+        });
+        setErrors({ path: '', expectedValue: '' });
+      } else {
+        console.log('Path and expectedValue are required for count');
+        setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Count value required' });
         return;
       }
     } else {
@@ -132,6 +148,7 @@ const AssertionForm = ({ onAdd }) => {
           <option value="gte">Greater Than or Equal (&gt;=)</option>
           <option value="lt">Less Than (&lt;)</option>
           <option value="lte">Less Than or Equal (&lt;=)</option>
+          <option value="count">Count (array length)</option>
           <option value="exists">Exists</option>
           <option value="notExists">Does Not Exist</option>
         </select>
@@ -141,11 +158,11 @@ const AssertionForm = ({ onAdd }) => {
       {!['exists', 'notExists'].includes(operator) && (
         <div>
           <label className="block text-[9px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5">
-            Expected Value
+            {operator === 'count' ? 'Expected Count' : 'Expected Value'}
           </label>
           <input
             type="text"
-            placeholder="200"
+            placeholder={operator === 'count' ? '5' : '200'}
             value={expectedValue}
             onChange={(e) => setExpectedValue(e.target.value)}
             className={`nodrag w-full px-1.5 py-0.5 border rounded text-[9px] font-mono focus:outline-none focus:ring-2 ` +
@@ -175,6 +192,7 @@ const AssertionNode = ({ id, data, selected }) => {
   // Inline editing state for assertions in the node UI
   const [editingIndex, setEditingIndex] = useState(-1);
   const [editDraft, setEditDraft] = useState(null);
+  const [showMenu, setShowMenu] = useState(false);
 
   const updateNodeData = useCallback(
     (key, value) => {
@@ -214,53 +232,93 @@ const AssertionNode = ({ id, data, selected }) => {
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-gray-400 dark:bg-gray-500" />
 
       {/* Header */}
-      <div className="px-2 py-1.5 border-b-2 border-slate-300 dark:border-gray-700 bg-green-50 dark:bg-green-900">
+      <div className={`px-2 py-1.5 border-b-2 ${
+        data.executionStatus === 'error' 
+          ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900' 
+          : 'border-slate-300 dark:border-gray-700 bg-green-50 dark:bg-green-900'
+      }`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <HiMiniCheckBadge className="w-5 h-5 text-green-700 dark:text-green-300" />
-            <h3 className="text-sm font-semibold text-green-800 dark:text-green-200">{data.label || 'Assertions'}</h3>
+            {data.executionStatus === 'error' ? (
+              <MdError className="w-5 h-5 text-red-700 dark:text-red-300" />
+            ) : (
+              <HiMiniCheckBadge className="w-5 h-5 text-green-700 dark:text-green-300" />
+            )}
+            <div className="flex items-center gap-1">
+              <h3 className={`text-sm font-semibold ${
+                data.executionStatus === 'error'
+                  ? 'text-red-800 dark:text-red-200'
+                  : 'text-green-800 dark:text-green-200'
+              }`}>
+                {data.label || 'Assertions'}
+              </h3>
+              {/* Show assertion counts if available */}
+              {data.assertionStats && (
+                <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                  data.assertionStats.failedCount > 0
+                    ? 'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200'
+                    : 'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200'
+                }`}>
+                  {data.assertionStats.failedCount > 0
+                    ? `${data.assertionStats.failedCount}/${data.assertionStats.totalCount} failed`
+                    : `${data.assertionStats.passedCount}/${data.assertionStats.totalCount} passed`}
+                </span>
+              )}
+            </div>
           </div>
+          
           <div className="flex items-center gap-1">
-            <Tooltip text="Duplicate node">
+            {/* Three-dot menu */}
+            <div className="relative">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  window.dispatchEvent(
-                    new CustomEvent('duplicateNode', { detail: { nodeId: id } })
-                  );
+                  setShowMenu(!showMenu);
                 }}
                 className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
-                style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
-                title="Duplicate node"
+                style={{ background: 'transparent', border: 'none', padding: '0 4px', WebkitTapHighlightColor: 'transparent' }}
+                title="More options"
               >
-                <MdCheckCircle className="w-4 h-4" />
+                ⋯
               </button>
-            </Tooltip>
-            <Tooltip text="Copy node">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  window.dispatchEvent(
-                    new CustomEvent('copyNode', { detail: { nodeId: id } })
-                  );
-                }}
-                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
-                style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
-                title="Copy node"
-              >
-                <MdContentCopy className="w-4 h-4" />
-              </button>
-            </Tooltip>
-            <Tooltip text={isExpanded ? 'Collapse' : 'Expand'}>
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
-                style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
-                aria-expanded={isExpanded}
-              >
-                {isExpanded ? <MdExpandLess className="w-4 h-4" /> : <MdExpandMore className="w-4 h-4" />}
-              </button>
-            </Tooltip>
+              
+              {/* Dropdown menu */}
+              {showMenu && (
+                <div className="absolute right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded shadow-lg z-50 nodrag min-w-[130px]">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent('duplicateNode', { detail: { nodeId: id } }));
+                      setShowMenu(false);
+                    }}
+                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none flex items-center gap-2"
+                  >
+                    <HiMiniDocumentDuplicate className="w-4 h-4" />
+                    <span>Duplicate</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent('copyNode', { detail: { nodeId: id } }));
+                      setShowMenu(false);
+                    }}
+                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none border-t border-gray-300 dark:border-gray-600 flex items-center gap-2"
+                  >
+                    <MdContentCopy className="w-4 h-4" />
+                    <span>Copy</span>
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+              style={{ background: 'transparent', border: 'none', padding: '0', WebkitTapHighlightColor: 'transparent' }}
+              aria-expanded={isExpanded}
+            >
+              {isExpanded ? <MdExpandLess className="w-4 h-4" /> : <MdExpandMore className="w-4 h-4" />}
+            </button>
           </div>
         </div>
       </div>
@@ -270,6 +328,33 @@ const AssertionNode = ({ id, data, selected }) => {
         <div className="text-[9px] text-gray-600 dark:text-gray-400">
           {data.config?.assertions?.length || 0} assertion(s)
         </div>
+
+        {/* Execution Results Summary */}
+        {data.executionStatus && data.assertionStats && (
+          <div className={`mt-2 p-1.5 rounded text-[9px] ${
+            data.assertionStats.failedCount > 0
+              ? 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700'
+              : 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700'
+          }`}>
+            <div className={`font-semibold mb-1 ${
+              data.assertionStats.failedCount > 0
+                ? 'text-red-800 dark:text-red-200'
+                : 'text-green-800 dark:text-green-200'
+            }`}>
+              Last Run Results
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-green-700 dark:text-green-300">
+                ✅ {data.assertionStats.passedCount} passed
+              </div>
+              {data.assertionStats.failedCount > 0 && (
+                <div className="text-red-700 dark:text-red-300">
+                  ❌ {data.assertionStats.failedCount} failed
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {isExpanded && (
           <div className="space-y-2 pt-1 border-t dark:border-gray-700">
@@ -304,18 +389,44 @@ const AssertionNode = ({ id, data, selected }) => {
                       />
                     ) : (
                       <div className="flex items-start justify-between gap-1">
-                        <div className="flex-1 text-[8px]">
-                          <div className="text-green-700 dark:text-green-300 font-semibold">
-                            {assertion.source === 'prev' ? '{{prev.' : 
-                             assertion.source === 'variables' ? '{{variables.' :
-                             assertion.source === 'status' ? 'status' :
-                             assertion.source === 'cookies' ? 'Cookie: ' :
-                             'Header: '}
-                            {assertion.source !== 'status' && assertion.path}
-                            {(assertion.source === 'prev' || assertion.source === 'variables') && '}}'}
-                          </div>
-                          <div className="text-gray-600 dark:text-gray-400 mt-0.5">
-                            {assertion.operator} <code className="bg-gray-200 dark:bg-gray-600 px-0.5">{assertion.expectedValue}</code>
+                        <div className="flex-1">
+                          {/* Show execution result if available */}
+                          {data.assertionStats && data.assertionStats.passed && data.assertionStats.passed.length > index && (
+                            <div className="mb-1 text-[8px]">
+                              {data.assertionStats.passed.some(p => p.index === index) ? (
+                                <div className="text-green-700 dark:text-green-300 font-semibold">
+                                  ✅ Passed
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
+                          {data.assertionStats && data.assertionStats.failed && data.assertionStats.failed.length > 0 && (
+                            <div className="mb-1 text-[8px]">
+                              {data.assertionStats.failed.some(f => f.index === index) ? (
+                                <div>
+                                  <div className="text-red-700 dark:text-red-300 font-semibold">
+                                    ❌ Failed
+                                  </div>
+                                  <div className="text-red-600 dark:text-red-400 mt-0.5">
+                                    {data.assertionStats.failed.find(f => f.index === index)?.message}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
+                          <div className="text-[8px]">
+                            <div className="text-green-700 dark:text-green-300 font-semibold">
+                              {assertion.source === 'prev' ? '{{prev.' : 
+                               assertion.source === 'variables' ? '{{variables.' :
+                               assertion.source === 'status' ? 'status' :
+                               assertion.source === 'cookies' ? 'Cookie: ' :
+                               'Header: '}
+                              {assertion.source !== 'status' && assertion.path}
+                              {(assertion.source === 'prev' || assertion.source === 'variables') && '}}'}
+                            </div>
+                            <div className="text-gray-600 dark:text-gray-400 mt-0.5">
+                              {assertion.operator} <code className="bg-gray-200 dark:bg-gray-600 px-0.5">{assertion.expectedValue}</code>
+                            </div>
                           </div>
                         </div>
                         <div className="flex gap-1">

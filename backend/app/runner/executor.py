@@ -66,6 +66,7 @@ class WorkflowExecutor:
         self.merge_completed = {}  # Track which merge nodes have completed: {merge_node_id: bool}
         self.has_failures = False  # Track if any node has failed during execution
         self.failed_nodes = []  # List of node IDs that failed
+        self.first_error_message = None  # Store the first error message for the run
         
     async def execute(self):
         """Execute the workflow"""
@@ -155,6 +156,9 @@ class WorkflowExecutor:
                 if self.has_failures:
                     update_data["failedNodes"] = self.failed_nodes
                     update_data["failureMessage"] = f"{len(self.failed_nodes)} node(s) failed during execution"
+                    # Add error message from first failed node
+                    if self.first_error_message:
+                        update_data["error"] = self.first_error_message
                 
                 await db.runs.update_one(
                     {"runId": self.run_id},
@@ -221,6 +225,10 @@ class WorkflowExecutor:
                 if node_id not in self.failed_nodes:
                     self.failed_nodes.append(node_id)
                 
+                # Capture first error message
+                if not self.first_error_message:
+                    self.first_error_message = str(e)
+                
                 # If continue_on_fail is False, re-raise the exception to stop the workflow
                 if not self.continue_on_fail:
                     raise
@@ -279,6 +287,10 @@ class WorkflowExecutor:
                         self.has_failures = True
                         if branch_node_id not in self.failed_nodes:
                             self.failed_nodes.append(branch_node_id)
+                        
+                        # Capture first error message
+                        if not self.first_error_message:
+                            self.first_error_message = str(result)
                 
                 # Only raise exception if ALL branches failed and continueOnFail is False
                 if failed_branches and len(failed_branches) == len(tasks):
@@ -311,6 +323,10 @@ class WorkflowExecutor:
                     self.has_failures = True
                     if next_node_id not in self.failed_nodes:
                         self.failed_nodes.append(next_node_id)
+                    
+                    # Capture first error message
+                    if not self.first_error_message:
+                        self.first_error_message = str(e)
                     
                     # If continue_on_fail is False, re-raise the exception to stop the workflow
                     if not self.continue_on_fail:
@@ -912,12 +928,34 @@ class WorkflowExecutor:
         
         # If any assertion failed, the entire assertion node fails
         if failed_assertions:
+            # Build detailed error message with failed assertion details
+            failed_details = []
+            for fa in failed_assertions:
+                failed_details.append(f"Assertion {fa['index'] + 1}: {fa['message']}")
+            
+            error_msg = f"Assertion failed: {len(failed_assertions)}/{len(assertions)} assertions failed\n" + "\n".join(failed_details)
+            
+            # Create result with both passed and failed info before raising
+            result_with_details = {
+                "status": "failed",
+                "message": error_msg,
+                "passedCount": len(passed_assertions),
+                "failedCount": len(failed_assertions),
+                "totalCount": len(assertions),
+                "passed": passed_assertions,
+                "failed": failed_assertions
+            }
+            
+            # Store this in results temporarily so it can be accessed
             raise Exception(f"Assertion failed: {len(failed_assertions)}/{len(assertions)} assertions failed")
         
         return {
             "status": "success",
             "message": f"All {len(assertions)} assertions passed",
-            "assertions": passed_assertions
+            "assertions": passed_assertions,
+            "passedCount": len(passed_assertions),
+            "failedCount": 0,
+            "totalCount": len(assertions)
         }
     
     def _find_data_producing_ancestor(self, node_id: str, edges: List, nodes: Dict, visited = None) -> str:
@@ -1404,6 +1442,29 @@ class WorkflowExecutor:
             return actual is not None
         elif operator == 'notExists':
             return actual is None
+        
+        # Handle 'count' operator - get length of arrays/lists/dicts/strings
+        if operator == 'count':
+            try:
+                if isinstance(actual, (list, dict, str)):
+                    actual_count = len(actual)
+                else:
+                    # Try to convert to number if it's a single value
+                    actual_count = int(actual) if actual is not None else 0
+                
+                expected_count = int(expected) if expected else 0
+                return actual_count == expected_count
+            except (ValueError, TypeError):
+                return False
+        
+        # For other operators with count values, convert list to count first
+        # Check if we should use count (if actual is a list and operator expects numeric comparison)
+        is_list = isinstance(actual, (list, dict, str))
+        if is_list and operator in ['gt', 'gte', 'lt', 'lte', 'equals', 'notEquals']:
+            try:
+                actual = len(actual)
+            except:
+                pass
         
         # Convert expected to appropriate type
         # Try to parse as number

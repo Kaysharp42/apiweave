@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Handle, Position } from 'reactflow';
 import { MdMergeType, MdCheckCircle, MdCheckBox, MdFilterAlt, MdWarning, MdSchedule, MdContentCopy, MdControlPointDuplicate } from 'react-icons/md';
-import { HiMiniArrowRight, HiMiniSparkles } from 'react-icons/hi2';
+import { HiMiniArrowRight, HiMiniSparkles, HiMiniDocumentDuplicate } from 'react-icons/hi2';
 
 /**
  * MergeNode - Merges multiple parallel branches
@@ -14,6 +14,7 @@ import { HiMiniArrowRight, HiMiniSparkles } from 'react-icons/hi2';
 const MergeNode = ({ id, data, selected }) => {
   const { label, config = {}, executionStatus, executionResult } = data;
   const mergeStrategy = config.mergeStrategy || 'all';
+  const [showMenu, setShowMenu] = useState(false);
   
   // Use executionStatus for status, fallback to deprecated 'status' for backward compatibility
   const status = executionStatus || data.status || 'idle';
@@ -97,34 +98,50 @@ const MergeNode = ({ id, data, selected }) => {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                window.dispatchEvent(
-                  new CustomEvent('duplicateNode', { detail: { nodeId: id } })
-                );
-              }}
-              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
-              style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
-              title="Duplicate node"
-            >
-              <MdControlPointDuplicate className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                window.dispatchEvent(
-                  new CustomEvent('copyNode', { detail: { nodeId: id } })
-                );
-              }}
-              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
-              style={{ background: 'transparent', border: 'none', padding: 0, boxShadow: 'none', outline: 'none', WebkitTapHighlightColor: 'transparent' }}
-              title="Copy node"
-            >
-              <MdContentCopy className="w-4 h-4" />
-            </button>
+          <div className="flex items-center gap-2">
             {getStatusBadge()}
+            {/* Three-dot menu */}
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMenu(!showMenu);
+                }}
+                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
+                style={{ background: 'transparent', border: 'none', padding: '0 4px', WebkitTapHighlightColor: 'transparent' }}
+                title="More options"
+              >
+                ⋯
+              </button>
+              
+              {/* Dropdown menu */}
+              {showMenu && (
+                <div className="absolute right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded shadow-lg z-50 nodrag min-w-[130px]">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent('duplicateNode', { detail: { nodeId: id } }));
+                      setShowMenu(false);
+                    }}
+                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none flex items-center gap-2"
+                  >
+                    <HiMiniDocumentDuplicate className="w-4 h-4" />
+                    <span>Duplicate</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent('copyNode', { detail: { nodeId: id } }));
+                      setShowMenu(false);
+                    }}
+                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none border-t border-gray-300 dark:border-gray-600 flex items-center gap-2"
+                  >
+                    <MdContentCopy className="w-4 h-4" />
+                    <span>Copy</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

@@ -632,6 +632,22 @@ const AssertionFormModal = ({ onAdd }) => {
         setErrors({ path: 'Path is required', expectedValue: '' });
         return;
       }
+    } else if (operator === 'count') {
+      // Count operator needs path and expected value
+      if (path.trim() && expectedValue.trim()) {
+        console.log('Adding count assertion');
+        onAdd({
+          source: source.trim(),
+          path: path.trim(),
+          operator: 'count',
+          expectedValue: expectedValue.trim(),
+        });
+        setErrors({ path: '', expectedValue: '' });
+      } else {
+        console.log('Path and expectedValue are required for count operator');
+        setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Expected count is required' });
+        return;
+      }
     } else {
       // All others need path and expected value
       if (path.trim() && expectedValue.trim()) {
@@ -716,6 +732,7 @@ const AssertionFormModal = ({ onAdd }) => {
           <option value="gte">Greater Than or Equal (&gt;=)</option>
           <option value="lt">Less Than (&lt;)</option>
           <option value="lte">Less Than or Equal (&lt;=)</option>
+          <option value="count">Count (array length)</option>
           <option value="exists">Exists</option>
           <option value="notExists">Does Not Exist</option>
         </select>
@@ -725,12 +742,12 @@ const AssertionFormModal = ({ onAdd }) => {
       {!['exists', 'notExists'].includes(operator) && (
         <div>
           <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-            Expected Value
+            {operator === 'count' ? 'Expected Count' : 'Expected Value'}
           </label>
           <div>
             <input
               type="text"
-              placeholder="200"
+              placeholder={operator === 'count' ? '5' : '200'}
               value={expectedValue}
               onChange={(e) => { setExpectedValue(e.target.value); setErrors({ ...errors, expectedValue: '' }); }}
               className={`w-full px-3 py-2 border rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500 ${errors.expectedValue ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200'}`}
