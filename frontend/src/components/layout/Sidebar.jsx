@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import EnvironmentManager from '../EnvironmentManager';
+import CollectionManager from '../CollectionManager';
 import WorkflowExportImport from '../WorkflowExportImport';
 import HARImport from '../HARImport';
 import OpenAPIImport from '../OpenAPIImport';
@@ -18,9 +19,11 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
     hasMore: false,
   });
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [environments, setEnvironments] = useState([]);
+  const [collections, setCollections] = useState([]);
+  const [selectedCollection, setSelectedCollection] = useState(null);
+  const [selectedCollectionWorkflows, setSelectedCollectionWorkflows] = useState([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
-  const [showEnvManager, setShowEnvManager] = useState(false);
+  const [showCollectionManager, setShowCollectionManager] = useState(false);
   const [showImportMenu, setShowImportMenu] = useState(false);
   const [showWorkflowImportExport, setShowWorkflowImportExport] = useState(false);
   const [showHARImport, setShowHARImport] = useState(false);
@@ -28,6 +31,9 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
   const [showCurlImport, setShowCurlImport] = useState(false);
   const [exportingWorkflowId, setExportingWorkflowId] = useState(null);
   const [exportingWorkflowName, setExportingWorkflowName] = useState(null);
+  const [expandedCollections, setExpandedCollections] = useState(new Set());
+  const [draggedWorkflow, setDraggedWorkflow] = useState(null);
+  const [dragOverCol, setDragOverCol] = useState(null);
   const scrollContainerRef = useRef(null);
   const importMenuRef = useRef(null);
   const importMenuButtonRef = useRef(null);
@@ -39,20 +45,20 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
       setWorkflows([]);
       setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
       fetchWorkflows(0);
-    } else if (selectedNav === 'environments') {
-      fetchEnvironments();
+    } else if (selectedNav === 'collections') {
+      fetchCollections();
     }
     
-    // Listen for environment changes to refresh list
-    const handleEnvironmentsChanged = () => {
-      if (selectedNav === 'environments') {
-        fetchEnvironments();
+    // Listen for collections changes to refresh list
+    const handleCollectionsChanged = () => {
+      if (selectedNav === 'collections') {
+        fetchCollections();
       }
     };
-    window.addEventListener('environmentsChanged', handleEnvironmentsChanged);
+    window.addEventListener('collectionsChanged', handleCollectionsChanged);
     
     return () => {
-      window.removeEventListener('environmentsChanged', handleEnvironmentsChanged);
+      window.removeEventListener('collectionsChanged', handleCollectionsChanged);
     };
   }, [selectedNav]);
 
@@ -100,16 +106,34 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
     }
   }, [showImportMenu]);
 
-  const fetchEnvironments = async () => {
+  const fetchCollections = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/environments`);
+      const response = await fetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
         const data = await response.json();
-        setEnvironments(data);
+        setCollections(data);
       }
     } catch (error) {
-      console.error('Error fetching environments:', error);
+      console.error('Error fetching collections:', error);
     }
+  };
+
+  const fetchCollectionWorkflows = async (collectionId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/collections/${collectionId}/workflows`);
+      if (response.ok) {
+        const data = await response.json();
+        setSelectedCollectionWorkflows(data);
+      }
+    } catch (error) {
+      console.error('Error fetching collection workflows:', error);
+      setSelectedCollectionWorkflows([]);
+    }
+  };
+
+  const handleSelectCollection = (collection) => {
+    setSelectedCollection(collection);
+    fetchCollectionWorkflows(collection.collectionId);
   };
 
   const fetchWorkflows = async (skip = 0, append = false) => {
@@ -226,19 +250,148 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
     setShowImportMenu(false);
   };
 
+  const handleAssignToCollection = async (workflowId, collectionId) => {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/workflows/${workflowId}/collection?collection_id=${collectionId}`,
+        { method: 'PUT' }
+      );
+
+      if (response.ok) {
+        // Refresh workflows list
+        await fetchWorkflows(0);
+        // If viewing a collection, refresh its workflows too
+        if (selectedCollection) {
+          await fetchCollectionWorkflows(selectedCollection.collectionId);
+        }
+        window.dispatchEvent(new CustomEvent('collectionsChanged'));
+      }
+    } catch (error) {
+      console.error('Error assigning workflow to collection:', error);
+      alert('Failed to assign workflow to collection');
+    }
+  };
+
+  // Group workflows by environment
+  const groupedWorkflows = () => {
+    const unattached = [];
+    const byCollection = {};
+
+    workflows.forEach((workflow) => {
+      if (!workflow.collectionId) {
+        unattached.push(workflow);
+      } else {
+        if (!byCollection[workflow.collectionId]) {
+          byCollection[workflow.collectionId] = [];
+        }
+        byCollection[workflow.collectionId].push(workflow);
+      }
+    });
+
+    return { unattached, byCollection };
+  };
+
+  // Get collection name by ID
+  const getCollectionName = (colId) => {
+    const col = collections.find((c) => c.collectionId === colId);
+    return col?.name || 'Unknown Collection';
+  };
+
+  // Toggle collection expansion
+  const toggleCollection = (colId) => {
+    const newExpanded = new Set(expandedCollections);
+    if (newExpanded.has(colId)) {
+      newExpanded.delete(colId);
+    } else {
+      newExpanded.add(colId);
+    }
+    setExpandedCollections(newExpanded);
+  };
+
+  // Handle workflow drag start
+  const handleDragStart = (e, workflow) => {
+    setDraggedWorkflow(workflow);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  // Handle collection drag over
+  const handleDragOver = (e, colId) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverCol(colId);
+  };
+
+  // Handle collection drag leave
+  const handleDragLeave = () => {
+    setDragOverCol(null);
+  };
+
+  // Handle collection drop (assign workflow to collection)
+  const handleDropCollection = async (e, colId) => {
+    e.preventDefault();
+    setDragOverCol(null);
+
+    if (!draggedWorkflow) return;
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/workflows/${draggedWorkflow.workflowId}/collection?collection_id=${colId}`,
+        { method: 'PUT' }
+      );
+
+      if (response.ok) {
+        // Update local state
+        const updated = await response.json();
+        setWorkflows((prev) =>
+          prev.map((w) => (w.workflowId === updated.workflowId ? updated : w))
+        );
+        setDraggedWorkflow(null);
+      }
+    } catch (error) {
+      console.error('Error attaching workflow to collection:', error);
+    }
+  };
+
+  // Handle unattached drop (detach workflow from collection)
+  const handleDropUnattached = async (e) => {
+    e.preventDefault();
+    setDragOverCol(null);
+
+    if (!draggedWorkflow || !draggedWorkflow.collectionId) return;
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/workflows/${draggedWorkflow.workflowId}/collection`,
+        { method: 'PUT' }
+      );
+
+      if (response.ok) {
+        // Update local state
+        const updated = await response.json();
+        setWorkflows((prev) =>
+          prev.map((w) => (w.workflowId === updated.workflowId ? updated : w))
+        );
+        setDraggedWorkflow(null);
+      }
+    } catch (error) {
+      console.error('Error detaching workflow from environment:', error);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full w-full bg-white dark:bg-gray-800">
       {/* Sidebar Header */}
       <div className="p-3 border-b border-gray-300 dark:border-gray-700 flex-shrink-0">
         <div className="flex items-center gap-1">
           <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200 flex-1 min-w-0 truncate">
-            {selectedNav === 'workflows' ? 'Workflows' : 'Environments'}
+            {selectedNav === 'workflows' ? 'Workflows' : 'Collections'}
           </h2>
           <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
             {selectedNav === 'workflows' && (
               <>
                 <button
                   onClick={createNewWorkflow}
+                  onContextMenu={(e) => e.preventDefault()}
                   className="px-2 py-0.5 text-xs bg-cyan-900 dark:bg-cyan-800 text-white rounded hover:bg-cyan-950 dark:hover:bg-cyan-900 flex-shrink-0 whitespace-nowrap"
                 >
                   + New
@@ -248,6 +401,7 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
                   <button
                     ref={importMenuButtonRef}
                     onClick={() => setShowImportMenu(!showImportMenu)}
+                    onContextMenu={(e) => e.preventDefault()}
                     className="p-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-300 rounded flex-shrink-0 transition-colors"
                     title="Import or export workflows"
                   >
@@ -279,6 +433,7 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
                             setShowWorkflowImportExport(true);
                             setShowImportMenu(false);
                           }}
+                          onContextMenu={(e) => e.preventDefault()}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3 first:rounded-t-md"
                         >
                           <MdFolder className="w-5 h-5" />
@@ -290,6 +445,7 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
                             setShowHARImport(true);
                             setShowImportMenu(false);
                           }}
+                          onContextMenu={(e) => e.preventDefault()}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3"
                         >
                           <MdFileUpload className="w-5 h-5" />
@@ -301,6 +457,7 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
                             setShowOpenAPIImport(true);
                             setShowImportMenu(false);
                           }}
+                          onContextMenu={(e) => e.preventDefault()}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3"
                         >
                           <MdSettings className="w-5 h-5" />
@@ -312,6 +469,7 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
                             setShowCurlImport(true);
                             setShowImportMenu(false);
                           }}
+                          onContextMenu={(e) => e.preventDefault()}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3 last:rounded-b-md"
                         >
                           <HiMiniCommandLine className="w-5 h-5" />
@@ -323,9 +481,10 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
                 )}
               </>
             )}
-            {selectedNav === 'environments' && (
+            {selectedNav === 'collections' && (
               <button
-                onClick={() => setShowEnvManager(true)}
+                onClick={() => setShowCollectionManager(true)}
+                onContextMenu={(e) => e.preventDefault()}
                 className="px-2 py-0.5 text-xs bg-cyan-900 dark:bg-cyan-800 text-white rounded hover:bg-cyan-950 dark:hover:bg-cyan-900 flex-shrink-0 whitespace-nowrap"
               >
                 + New
@@ -333,6 +492,7 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
             )}
             <button
               onClick={() => setIsCollapsed(true)}
+              onContextMenu={(e) => e.preventDefault()}
               className="p-0.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-cyan-900 dark:hover:text-cyan-400 rounded focus:outline-none flex-shrink-0"
               title="Collapse sidebar"
             >
@@ -360,39 +520,44 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
               </div>
             ) : (
               <>
-                <ul className="space-y-1">
+                <div className="space-y-1">
+                  {/* All Workflows */}
                   {workflows.map((workflow) => (
-                    <li key={workflow.workflowId}>
-                      <div className="group relative">
-                        <button
-                          onClick={() => handleWorkflowClick(workflow)}
-                          className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
-                            selectedWorkflowId === workflow.workflowId
-                              ? 'bg-cyan-900 dark:bg-cyan-800 text-white'
-                              : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'
-                          }`}
-                        >
-                          <div className="font-medium truncate">{workflow.name}</div>
-                          <div className="text-xs opacity-75">
-                            {workflow.nodes?.length || 0} nodes
-                          </div>
-                        </button>
-                        {/* Export button - appears on hover */}
-                        <button
-                          onClick={() => handleExportWorkflow(workflow)}
-                          className={`absolute bottom-1 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
-                            selectedWorkflowId === workflow.workflowId
-                              ? 'text-white hover:bg-cyan-950 dark:hover:bg-cyan-700'
-                              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                          }`}
-                          title="Export workflow"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </li>
+                    <div
+                      key={workflow.workflowId}
+                      className={`group relative px-3 py-2 rounded text-sm transition-all ${
+                        selectedWorkflowId === workflow.workflowId
+                          ? 'bg-cyan-900 dark:bg-cyan-800 text-white'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'
+                      }`}
+                    >
+                      <button
+                        onClick={() => handleWorkflowClick(workflow)}
+                        onContextMenu={(e) => e.preventDefault()}
+                        className="w-full text-left"
+                      >
+                        <div className="font-medium truncate">{workflow.name}</div>
+                        <div className="text-xs opacity-75">
+                          {workflow.nodes?.length || 0} nodes
+                          {workflow.collectionId && ` • ${collections.find(c => c.collectionId === workflow.collectionId)?.name || 'Unknown'}`}
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => handleExportWorkflow(workflow)}
+                        onContextMenu={(e) => e.preventDefault()}
+                        className={`absolute bottom-1 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                          selectedWorkflowId === workflow.workflowId
+                            ? 'text-white hover:bg-cyan-950 dark:hover:bg-cyan-700'
+                            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                        title="Export workflow"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </div>
                   ))}
-                </ul>
+                </div>
+
                 {isLoadingMore && (
                   <div className="text-center py-3 text-gray-500 dark:text-gray-400 text-xs">
                     <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-900 dark:border-cyan-400"></div>
@@ -408,53 +573,160 @@ const Sidebar = ({ selectedNav, setIsCollapsed, currentWorkflowId }) => {
             )}
           </div>
         ) : (
-          <div className="p-2">
-            {environments.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
-                <p>No environments yet</p>
+          <div className="p-3">
+            {collections.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <div className="mb-4">
+                  <svg className="w-12 h-12 mx-auto opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V7M3 7a2 2 0 012-2h14a2 2 0 012 2m0 0V5a2 2 0 00-2-2H5a2 2 0 00-2 2v2" />
+                  </svg>
+                </div>
+                <p className="font-medium">No collections yet</p>
+                <p className="text-xs mt-1 mb-4">Create your first collection to organize workflows</p>
                 <button
-                  onClick={() => setShowEnvManager(true)}
-                  className="mt-2 text-cyan-900 dark:text-cyan-400 hover:underline text-xs"
+                  onClick={() => setShowCollectionManager(true)}
+                  onContextMenu={(e) => e.preventDefault()}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-900 dark:bg-cyan-800 text-white rounded-lg hover:bg-cyan-950 dark:hover:bg-cyan-900 text-sm font-medium transition-colors"
                 >
-                  Create your first environment
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Collection
                 </button>
               </div>
             ) : (
-              <ul className="space-y-1">
-                {environments.map((env) => (
-                  <li key={env.environmentId}>
-                    <button
-                      onClick={() => setShowEnvManager(true)}
-                      className="w-full text-left px-3 py-2 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 transition-colors"
+              <div className="space-y-3">
+                {collections.map((col) => {
+                  const colWorkflows = workflows.filter(w => w.collectionId === col.collectionId);
+                  const isExpanded = expandedCollections.has(col.collectionId);
+                  
+                  return (
+                    <div
+                      key={col.collectionId}
+                      className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-800"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{env.name}</div>
-                          {env.description && (
-                            <div className="text-xs opacity-75 mt-1 truncate">
-                              {env.description}
+                      {/* Collection Header */}
+                      <button
+                        onClick={() => {
+                          const newExpanded = new Set(expandedCollections);
+                          if (newExpanded.has(col.collectionId)) {
+                            newExpanded.delete(col.collectionId);
+                          } else {
+                            newExpanded.add(col.collectionId);
+                          }
+                          setExpandedCollections(newExpanded);
+                        }}
+                        onContextMenu={(e) => e.preventDefault()}
+                        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                      >
+                        {/* Collection Color Dot */}
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: col.color || '#3B82F6' }}
+                        />
+                        
+                        {/* Collection Info */}
+                        <div className="flex-1 min-w-0 text-left">
+                          <div className="font-semibold text-gray-800 dark:text-gray-200 text-sm truncate">
+                            {col.name}
+                          </div>
+                          {col.description && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                              {col.description}
                             </div>
                           )}
-                          <div className="text-xs opacity-75 mt-1 truncate">
-                            {Object.keys(env.variables).length} variables
-                          </div>
                         </div>
-                        <svg className="w-4 h-4 flex-shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                        
+                        {/* Count Badge */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="inline-flex items-center justify-center px-2 py-1 text-xs font-semibold text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded">
+                            {colWorkflows.length}
+                          </span>
+                          
+                          {/* Expand Arrow */}
+                          <svg
+                            className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform flex-shrink-0 ${
+                              isExpanded ? 'rotate-90' : ''
+                            }`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                      </button>
+
+                      {/* Collection Workflows */}
+                      {isExpanded && (
+                        <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
+                          {colWorkflows.length === 0 ? (
+                            <div className="px-4 py-6 text-center">
+                              <div className="text-gray-400 dark:text-gray-500 mb-2">
+                                <svg className="w-8 h-8 mx-auto opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">No workflows in this collection</p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Add workflows from the Settings panel</p>
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                              {colWorkflows.map((workflow) => (
+                                <div
+                                  key={workflow.workflowId}
+                                  className={`px-4 py-2 flex items-center gap-2 group hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
+                                    selectedWorkflowId === workflow.workflowId
+                                      ? 'bg-cyan-50 dark:bg-cyan-900/30 border-l-2 border-l-cyan-900 dark:border-l-cyan-400'
+                                      : ''
+                                  }`}
+                                >
+                                  {/* Workflow Icon */}
+                                  <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.3A4.5 4.5 0 1113.5 13H11V9.413l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z" />
+                                  </svg>
+
+                                  {/* Workflow Info */}
+                                  <button
+                                    onClick={() => handleWorkflowClick(workflow)}
+                                    onContextMenu={(e) => e.preventDefault()}
+                                    className="flex-1 text-left min-w-0"
+                                  >
+                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                                      {workflow.name}
+                                    </div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                                      {workflow.nodes?.length || 0} nodes
+                                    </div>
+                                  </button>
+
+                                  {/* Export Button */}
+                                  <button
+                                    onClick={() => handleExportWorkflow(workflow)}
+                                    onContextMenu={(e) => e.preventDefault()}
+                                    className="p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex-shrink-0"
+                                    title="Export workflow"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
       </div>
       
-      {/* Environment Manager Modal */}
-      {showEnvManager && (
-        <EnvironmentManager onClose={() => setShowEnvManager(false)} />
+      {/* Collection Manager Modal */}
+      {showCollectionManager && (
+        <CollectionManager onClose={() => setShowCollectionManager(false)} />
       )}
 
       {/* Workflow Export/Import Modal */}

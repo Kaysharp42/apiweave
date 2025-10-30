@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import API_BASE_URL from '../utils/api';
 
 /**
  * WorkflowContext - Single Source of Truth for Workflow State
@@ -29,10 +30,29 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
   // Core workflow state - ONLY VARIABLES AND SETTINGS
   const [variables, setVariables] = useState(initialWorkflow?.variables || {});
   const [settings, setSettings] = useState(initialWorkflow?.settings || {});
+  const [collections, setCollections] = useState([]);
+  const [isLoadingCollections, setIsLoadingCollections] = useState(false);
   
   // Track extractor-based variables using ref so we can distinguish them from manual variables
   // Using ref instead of state to avoid dependency issues in registerExtractors callback
   const extractorVariablesRef = useRef({});
+
+  // Fetch available collections - MUST be defined before useEffect that calls it
+  const fetchCollections = useCallback(async () => {
+    setIsLoadingCollections(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/collections`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Collections loaded:', data.length, 'items');
+        setCollections(data);
+      }
+    } catch (error) {
+      console.error('Error fetching collections:', error);
+    } finally {
+      setIsLoadingCollections(false);
+    }
+  }, []);
 
   // Sync state when workflow changes (e.g., switching tabs)
   useEffect(() => {
@@ -41,6 +61,20 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
     setSettings(initialWorkflow?.settings || {});
     extractorVariablesRef.current = {};
   }, [workflowId, initialWorkflow]);
+
+  // Fetch collections once when component mounts
+  useEffect(() => {
+    console.log('🔵 fetchCollections useEffect triggered');
+    fetchCollections();
+    
+    const handleCollectionsChanged = () => {
+      console.log('🔵 collectionsChanged event fired');
+      fetchCollections();
+    };
+    
+    window.addEventListener('collectionsChanged', handleCollectionsChanged);
+    return () => window.removeEventListener('collectionsChanged', handleCollectionsChanged);
+  }, [fetchCollections]);
 
   // Listen for variable updates from WorkflowCanvas (e.g., when extractors are deleted)
   useEffect(() => {
@@ -125,6 +159,8 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
     workflowId,
     variables,
     settings,
+    collections,
+    isLoadingCollections,
 
     // State setters
     setVariables,
@@ -136,6 +172,7 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
     updateVariables,
     updateSettings,
     registerExtractors,
+    fetchCollections,
   };
 
   return (

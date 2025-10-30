@@ -58,6 +58,7 @@ class WorkflowExecutor:
         self.context = {}  # Stores variables and results from previous nodes
         self.workflow_variables = {}  # Workflow-level variables that persist across nodes
         self.environment_variables = {}  # Environment variables from active environment
+        self.secrets = {}  # NEW: Secrets from active environment
         self.continue_on_fail = False  # Workflow setting: whether to continue on API failure
         self.start_time = None  # Track workflow execution start time
         self.branch_results = {}  # Track merged branch results per merge node: {merge_node_id: [(node_id, result), ...]}
@@ -98,7 +99,8 @@ class WorkflowExecutor:
             environment = await db.environments.find_one({"environmentId": environment_id})
             if environment:
                 self.environment_variables = environment.get('variables', {}).copy()
-                self.logger.info(f"Loaded environment: {environment.get('name')} (ID: {environment_id}) with {len(self.environment_variables)} variables")
+                self.secrets = environment.get('secrets', {}).copy()  # NEW: Load secrets
+                self.logger.info(f"Loaded environment: {environment.get('name')} (ID: {environment_id}) with {len(self.environment_variables)} variables and {len(self.secrets)} secrets")
             else:
                 self.logger.warning(f"Environment {environment_id} not found, continuing without environment variables")
         else:
@@ -434,6 +436,33 @@ class WorkflowExecutor:
                 raise
 
     
+    def _mask_result_secrets(self, obj: Any) -> Any:
+        """Recursively mask secrets in result objects for safe storage"""
+        if not self.secrets:
+            return obj
+        
+        if isinstance(obj, str):
+            return self._mask_secrets(obj)
+        elif isinstance(obj, dict):
+            return {k: self._mask_result_secrets(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._mask_result_secrets(item) for item in obj]
+        
+        return obj
+
+    def _mask_secrets(self, text: str) -> str:
+        """Mask secrets in text for logging"""
+        if not text or not isinstance(text, str):
+            return text
+        
+        masked_text = text
+        for secret_key in self.secrets:
+            secret_value = self.secrets[secret_key]
+            if secret_value and secret_value in masked_text:
+                masked_text = masked_text.replace(secret_value, "••••••••")
+        
+        return masked_text
+
     def _substitute_variables(self, text: str) -> str:
         """Replace {{variable}} placeholders with actual values from context"""
         if not text:
@@ -486,7 +515,32 @@ class WorkflowExecutor:
             
             # Handle prev.response.body.token, prev[0].response.body.data, variables.token, env.baseUrl, etc.
             try:
-                if var_path.startswith('env.'):
+                if var_path.startswith('secrets.'):
+                    # NEW: Access secrets from environment
+                    path_parts = var_path.split('.')[1:]  # Remove 'secrets'
+                    value = self.secrets
+                    
+                    for part in path_parts:
+                        # Handle array indexing: data[0], items[1], etc.
+                        array_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$', part)
+                        if array_match:
+                            key = array_match.group(1)
+                            index = int(array_match.group(2))
+                            if isinstance(value, dict):
+                                value = value.get(key)
+                            if isinstance(value, list) and 0 <= index < len(value):
+                                value = value[index]
+                            else:
+                                return str(match.group(0))  # Return original if not found
+                        elif isinstance(value, dict):
+                            value = value.get(part)
+                        else:
+                            return str(match.group(0))  # Return original if not found
+                    
+                    self.logger.debug(f"✓ Substituted secret: {{{{secrets.{'.' .join(path_parts)}}}}}")
+                    return str(value) if value is not None else str(match.group(0))
+                
+                elif var_path.startswith('env.'):
                     # Access environment variables
                     path_parts = var_path.split('.')[1:]  # Remove 'env'
                     value = self.environment_variables
@@ -746,6 +800,13 @@ class WorkflowExecutor:
         # Substitute variables in body
         if body:
             body = self._substitute_variables(body)
+            
+            # NEW: Warn if secrets are used in request body
+            if self.secrets:
+                for secret_key, secret_value in self.secrets.items():
+                    if secret_value and secret_value in body:
+                        self.logger.warning(f"⚠️ Secret '{secret_key}' is used in request body - this data may be logged or cached")
+        
         
         # Start timing
         start_time = time.time()
@@ -1562,6 +1623,10 @@ class WorkflowExecutor:
         # Store full result - use GridFS for large results
         if result:
             try:
+                # NEW: Mask secrets in result before storing
+                if self.secrets:
+                    result = self._mask_result_secrets(result)
+                
                 # Calculate result size
                 result_str = json.dumps(result)
                 size_bytes = len(result_str.encode('utf-8'))

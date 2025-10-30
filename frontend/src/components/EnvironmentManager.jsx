@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import API_BASE_URL from '../utils/api';
+import SecretsPanel from './SecretsPanel';
 
 const EnvironmentManager = ({ onClose }) => {
   const [environments, setEnvironments] = useState([]);
   const [selectedEnv, setSelectedEnv] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [showSecretsPanel, setShowSecretsPanel] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -140,6 +142,30 @@ const EnvironmentManager = ({ onClose }) => {
       ...formData,
       variables: updatedVars
     });
+  };
+
+  const handleSecretsChange = async (secrets) => {
+    try {
+      const url = `${API_BASE_URL}/api/environments/${selectedEnv.environmentId}`;
+      
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          secrets
+        })
+      });
+
+      if (response.ok) {
+        await fetchEnvironments();
+        setShowSecretsPanel(false);
+        // Notify other components that environments have changed
+        window.dispatchEvent(new CustomEvent('environmentsChanged'));
+      }
+    } catch (error) {
+      console.error('Error updating secrets:', error);
+    }
   };
 
   return (
@@ -287,6 +313,26 @@ const EnvironmentManager = ({ onClose }) => {
                   </p>
                 </div>
 
+                {/* Secrets Section */}
+                {selectedEnv && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Secrets ({Object.keys(selectedEnv.secrets || {}).length})
+                      </label>
+                      <button
+                        onClick={() => setShowSecretsPanel(true)}
+                        className="px-3 py-1 text-sm bg-purple-600 dark:bg-purple-700 text-white rounded hover:bg-purple-700 dark:hover:bg-purple-800"
+                      >
+                        Manage
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Secrets are sensitive values (API keys, tokens) that users provide when running workflows.
+                    </p>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex gap-2 pt-4">
                   <button
@@ -338,6 +384,26 @@ const EnvironmentManager = ({ onClose }) => {
                   </div>
                 </div>
 
+                {/* Secrets Section */}
+                {selectedEnv.secrets && Object.keys(selectedEnv.secrets).length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Secrets ({Object.keys(selectedEnv.secrets).length})
+                    </h4>
+                    <div className="space-y-1">
+                      {Object.entries(selectedEnv.secrets).map(([key]) => (
+                        <div key={key} className="flex items-center gap-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
+                          <span className="font-mono text-sm text-purple-700 dark:text-purple-300 flex-shrink-0">
+                            {key}
+                          </span>
+                          <span className="text-purple-500 dark:text-purple-400">→</span>
+                          <span className="text-purple-600 dark:text-purple-400">••••••••</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex gap-2 pt-4">
                   <button
@@ -346,6 +412,14 @@ const EnvironmentManager = ({ onClose }) => {
                   >
                     Edit
                   </button>
+                  {selectedEnv && (
+                    <button
+                      onClick={() => setShowSecretsPanel(true)}
+                      className="px-4 py-2 bg-purple-600 dark:bg-purple-700 text-white rounded hover:bg-purple-700 dark:hover:bg-purple-800"
+                    >
+                      Manage Secrets
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDuplicate(selectedEnv.environmentId)}
                     className="px-4 py-2 bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600"
@@ -368,6 +442,15 @@ const EnvironmentManager = ({ onClose }) => {
           </div>
         </div>
       </div>
+
+      {/* Secrets Panel Modal */}
+      {showSecretsPanel && selectedEnv && (
+        <SecretsPanel
+          environment={selectedEnv}
+          onSecretsChange={handleSecretsChange}
+          onClose={() => setShowSecretsPanel(false)}
+        />
+      )}
     </div>
   );
 };

@@ -93,7 +93,7 @@ class Workflow(BaseModel):
     edges: List[Edge]
     variables: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
-    environmentId: Optional[str] = None  # NEW: Link to environment
+    collectionId: Optional[str] = None  # NEW: Link to collection (replaces environmentId)
     createdAt: datetime
     updatedAt: datetime
     version: int = 1
@@ -147,6 +147,32 @@ class EnvironmentCreate(BaseModel):
     name: str
     description: Optional[str] = None
     variables: Dict[str, Any] = Field(default_factory=dict)
+    secrets: Dict[str, str] = Field(default_factory=dict)  # NEW: Secrets
+
+
+class CollectionCreate(BaseModel):
+    """Request model for creating a collection"""
+    name: str
+    description: Optional[str] = None
+    color: Optional[str] = None  # Hex color for UI display
+
+
+class CollectionUpdate(BaseModel):
+    """Request model for updating a collection"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+
+
+class Collection(BaseModel):
+    """Collection model - groups workflows together"""
+    collectionId: str
+    name: str
+    description: Optional[str] = None
+    color: Optional[str] = None  # e.g., #FF5733
+    workflowCount: int = 0
+    createdAt: datetime
+    updatedAt: datetime
 
 
 class EnvironmentUpdate(BaseModel):
@@ -154,15 +180,17 @@ class EnvironmentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     variables: Optional[Dict[str, Any]] = None
+    secrets: Optional[Dict[str, str]] = None  # NEW: Secrets
     isActive: Optional[bool] = None
 
 
 class Environment(BaseModel):
-    """Environment model with variables"""
+    """Environment model with variables and secrets"""
     environmentId: str
     name: str
     description: Optional[str] = None
     variables: Dict[str, Any] = Field(default_factory=dict)
+    secrets: Dict[str, str] = Field(default_factory=dict)  # NEW: Secrets for this environment
     isActive: bool = False
     createdAt: datetime
     updatedAt: datetime

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { MdContentCopy, MdInfo, MdExpandMore, MdExpandLess } from 'react-icons/md';
 import { HiMiniSparkles } from 'react-icons/hi2';
+import { BiText, BiHash, BiCalendar, BiTime, BiCode, BiLink } from 'react-icons/bi';
+import { HiMiniCheckCircle } from 'react-icons/hi2';
 
 const DynamicFunctionsHelper = () => {
   const [expandedCategory, setExpandedCategory] = useState('string');
@@ -124,11 +126,11 @@ const DynamicFunctionsHelper = () => {
   };
 
   const categoryIcons = {
-    string: '📝',
-    number: '🔢',
-    date: '📅',
-    time: '⏰',
-    identifier: '🆔'
+    string: BiText,
+    number: BiHash,
+    date: BiCalendar,
+    time: BiTime,
+    identifier: BiCode
   };
 
   const categoryTitles = {
@@ -168,7 +170,7 @@ const DynamicFunctionsHelper = () => {
               className="w-full flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <span className="text-lg">{categoryIcons[category]}</span>
+                <span className="text-lg">{React.createElement(categoryIcons[category], { className: 'w-5 h-5' })}</span>
                 <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">
                   {categoryTitles[category]}
                 </span>
@@ -248,18 +250,31 @@ const DynamicFunctionsHelper = () => {
       {/* Usage Tips */}
       <div className="border-t dark:border-gray-700 p-3 text-[10px] text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 space-y-1.5">
         <div className="font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1">
-          <span>💡</span> Quick Tips
+          <HiMiniSparkles className="w-3 h-3" />
+          Quick Tips
         </div>
         
         <ul className="space-y-1 pl-4">
-          <li>✓ Use in any field: URL, Headers, Body, Assertions</li>
-          <li>✓ Fresh value generated per workflow run</li>
-          <li>✓ Combine multiple functions: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{`user_{{randomNumber(4)}}@test.com`}</code></li>
-          <li>✓ Works in Workflow Variables too</li>
+          <li className="flex items-start gap-1">
+            <HiMiniCheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            Use in any field: URL, Headers, Body, Assertions
+          </li>
+          <li className="flex items-start gap-1">
+            <HiMiniCheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            Fresh value generated per workflow run
+          </li>
+          <li className="flex items-start gap-1">
+            <HiMiniCheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            Combine multiple functions: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded ml-1">{`user_{{randomNumber(4)}}@test.com`}</code>
+          </li>
+          <li className="flex items-start gap-1">
+            <HiMiniCheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            Works in Workflow Variables too
+          </li>
         </ul>
 
         <div className="pt-1.5 border-t border-gray-300 dark:border-gray-600 flex items-center gap-1">
-          <span>📅</span>
+          <BiCalendar className="w-3 h-3" />
           <span className="font-semibold text-gray-700 dark:text-gray-300">Date Format Codes</span>
         </div>
         <ul className="space-y-0.5 pl-4 text-[9px]">
@@ -269,7 +284,7 @@ const DynamicFunctionsHelper = () => {
         </ul>
 
         <div className="pt-1.5 border-t border-gray-300 dark:border-gray-600 flex items-center gap-1">
-          <span>🔗</span>
+          <BiLink className="w-3 h-3" />
           <span className="font-semibold text-gray-700 dark:text-gray-300">In Assertions</span>
         </div>
         <p className="text-[9px] pl-4">

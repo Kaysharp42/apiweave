@@ -26,6 +26,7 @@ async def create_environment(environment: EnvironmentCreate):
         "name": environment.name,
         "description": environment.description,
         "variables": environment.variables,
+        "secrets": environment.secrets,  # NEW: Store secrets
         "isActive": False,  # New environments are not active by default
         "createdAt": now,
         "updatedAt": now
@@ -98,6 +99,8 @@ async def update_environment(environment_id: str, update: EnvironmentUpdate):
         update_doc["description"] = update.description
     if update.variables is not None:
         update_doc["variables"] = update.variables
+    if update.secrets is not None:  # NEW: Handle secrets
+        update_doc["secrets"] = update.secrets
     if update.isActive is not None:
         update_doc["isActive"] = update.isActive
         

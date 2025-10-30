@@ -1890,6 +1890,109 @@ async def import_curl_dry_run(
 
 
 
+@router.put("/{workflow_id}/collection")
+async def attach_workflow_to_collection(workflow_id: str, collection_id: Optional[str] = Query(None)):
+    """
+    Attach or detach a workflow to/from a collection.
+    
+    If collection_id is null, workflow becomes unattached.
+    Multiple workflows can be attached to the same collection.
+    """
+    db = get_database()
+    
+    # Verify workflow exists
+    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+    
+    # If attaching, verify collection exists
+    if collection_id:
+        collection = await db.collections.find_one({"collectionId": collection_id})
+        if not collection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Collection {collection_id} not found"
+            )
+    
+    # Update workflow
+    await db.workflows.update_one(
+        {"workflowId": workflow_id},
+        {"$set": {
+            "collectionId": collection_id,
+            "updatedAt": datetime.now(UTC)
+        }}
+    )
+    
+    # Return updated workflow
+    updated = await db.workflows.find_one({"workflowId": workflow_id})
+    return Workflow(**updated)
+
+
+@router.get("/by-collection/{collection_id}")
+async def list_workflows_by_collection(collection_id: str):
+    """Get all workflows attached to a collection."""
+    db = get_database()
+    
+    cursor = db.workflows.find({"collectionId": collection_id}).sort("createdAt", -1)
+    workflows = await cursor.to_list(length=None)
+    return [Workflow(**w) for w in workflows]
+
+
+@router.get("/unattached")
+async def list_unattached_workflows():
+    """Get all workflows not attached to any collection."""
+    db = get_database()
+    
+    cursor = db.workflows.find({"collectionId": None}).sort("createdAt", -1)
+    workflows = await cursor.to_list(length=None)
+    return [Workflow(**w) for w in workflows]
+
+
+@router.post("/bulk-attach-collection")
+async def bulk_attach_workflows(
+    workflow_ids: List[str] = Query(...),
+    collection_id: Optional[str] = Query(None)
+):
+    """Attach multiple workflows to a collection."""
+    db = get_database()
+    
+    # Verify all workflows exist
+    for wid in workflow_ids:
+        workflow = await db.workflows.find_one({"workflowId": wid})
+        if not workflow:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Workflow {wid} not found"
+            )
+    
+    # If attaching, verify collection exists
+    if collection_id:
+        collection = await db.collections.find_one({"collectionId": collection_id})
+        if not collection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Collection {collection_id} not found"
+            )
+    
+    # Update all workflows
+    await db.workflows.update_many(
+        {"workflowId": {"$in": workflow_ids}},
+        {"$set": {
+            "collectionId": collection_id,
+            "updatedAt": datetime.now(UTC)
+        }}
+    )
+    
+    return {
+        "message": f"Updated {len(workflow_ids)} workflows",
+        "count": len(workflow_ids),
+        "collectionId": collection_id
+    }
+
+
 @router.post("/import/curl")
 async def import_curl_file(
     sanitize: bool = Query(True),

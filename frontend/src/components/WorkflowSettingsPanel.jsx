@@ -1,13 +1,47 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWorkflow } from '../contexts/WorkflowContext';
+import API_BASE_URL from '../utils/api';
+import { toast } from './Toaster';
 
 const WorkflowSettingsPanel = () => {
-  const { settings, updateSettings } = useWorkflow();
+  const { settings, updateSettings, workflowId, collections, isLoadingCollections } = useWorkflow();
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  
+  useEffect(() => {
+    console.log('WorkflowSettingsPanel - collections:', collections.length, collections);
+  }, [collections]);
   
   const handleContinueOnFailChange = (value) => {
     updateSettings({
       continueOnFail: value,
     });
+  };
+
+  const handleAssignToCollection = async (collectionId) => {
+    if (!workflowId) {
+      alert('Workflow ID not found');
+      return;
+    }
+
+    setAssignmentLoading(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/collections/${collectionId}/workflows/${workflowId}`,
+        { method: 'POST' }
+      );
+
+      if (response.ok) {
+        toast(`✅ Workflow added to "${collections.find(c => c.collectionId === collectionId)?.name || 'collection'}"`, 'success');
+        // Optionally refresh or show success message
+      } else {
+        toast('Failed to add workflow to collection', 'error');
+      }
+    } catch (error) {
+      console.error('Error assigning workflow to collection:', error);
+      toast('Error: ' + error.message, 'error');
+    } finally {
+      setAssignmentLoading(false);
+    }
   };
 
   return (
@@ -54,6 +88,64 @@ const WorkflowSettingsPanel = () => {
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Collection Assignment Section */}
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+            <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4z" />
+              <path d="M3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6z" />
+              <path d="M14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
+            </svg>
+            <span>Add to Collection</span>
+          </label>
+          
+          <div className="p-3 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded space-y-3">
+            {isLoadingCollections ? (
+              <div className="flex items-center justify-center py-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-900 dark:border-cyan-400"></div>
+                <span className="ml-2 text-xs text-gray-600 dark:text-gray-300">Loading collections...</span>
+              </div>
+            ) : collections && collections.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Select a collection:</p>
+                <div className="grid grid-cols-1 gap-2">
+                  {collections.map((collection) => (
+                    <button
+                      key={collection.collectionId}
+                      onClick={() => handleAssignToCollection(collection.collectionId)}
+                      disabled={assignmentLoading}
+                      className="w-full px-3 py-2 text-xs text-left rounded border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {collection.color && (
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: collection.color }}
+                        />
+                      )}
+                      <span className="flex-1 min-w-0">
+                        <span className="font-medium">{collection.name}</span>
+                        {collection.description && (
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400 block truncate">{collection.description}</span>
+                        )}
+                      </span>
+                      {assignmentLoading && (
+                        <svg className="w-3 h-3 animate-spin flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 dark:text-gray-400 py-2">
+                No collections available. Create one from the Collections tab.
+              </p>
+            )}
           </div>
         </div>
 
