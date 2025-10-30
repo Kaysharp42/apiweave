@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from app.database import get_database
+from app.runner.dynamic_functions import DynamicFunctions
 
 # Setup logging
 LOGS_DIR = Path(__file__).parent.parent.parent / "logs"
@@ -445,6 +446,44 @@ class WorkflowExecutor:
         def replacer(match) -> str:
             var_path = match.group(1)
             self.logger.debug(f"  Processing variable: {{{{var_path}}}}")
+            
+            # Check if it's a function call: functionName(params)
+            func_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$', var_path.strip())
+            if func_match:
+                func_name = func_match.group(1)
+                params = func_match.group(2).strip()
+                
+                func = DynamicFunctions.get_function(func_name)
+                if func:
+                    try:
+                        if params:
+                            # Parse parameters - handle string literals and numbers
+                            # Simple parameter parsing (can be enhanced for complex cases)
+                            param_list = []
+                            current_param = ""
+                            in_quotes = False
+                            for char in params:
+                                if char == '"' and (not current_param or current_param[-1] != '\\'):
+                                    in_quotes = not in_quotes
+                                elif char == ',' and not in_quotes:
+                                    param_list.append(current_param.strip().strip('"'))
+                                    current_param = ""
+                                    continue
+                                current_param += char
+                            if current_param:
+                                param_list.append(current_param.strip().strip('"'))
+                            
+                            result = func(*param_list) if param_list else func()
+                        else:
+                            result = func()
+                        
+                        self.logger.info(f"✅ Function call: {func_name}({params}) -> {result}")
+                        return str(result)
+                    except Exception as e:
+                        self.logger.warning(f"❌ Error calling {func_name}({params}): {e}")
+                        return str(match.group(0))  # Return original if function call fails
+                # If function not found, treat it as a variable
+            
             # Handle prev.response.body.token, prev[0].response.body.data, variables.token, env.baseUrl, etc.
             try:
                 if var_path.startswith('env.'):

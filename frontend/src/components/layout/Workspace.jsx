@@ -4,6 +4,7 @@ import 'allotment/dist/style.css';
 import WorkflowCanvas from '../WorkflowCanvas';
 import VariablesPanel from '../VariablesPanel';
 import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
+import DynamicFunctionsHelper from '../DynamicFunctionsHelper';
 import { WorkflowProvider } from '../../contexts/WorkflowContext';
 
 const Workspace = ({ onActiveTabChange }) => {
@@ -11,6 +12,7 @@ const Workspace = ({ onActiveTabChange }) => {
   const [tabs, setTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
   const [showVariablesPanel, setShowVariablesPanel] = useState(false);
+  const [activePanelTab, setActivePanelTab] = useState('variables'); // 'variables', 'dynamic', or 'settings'
 
   // Notify parent when activeTabId changes
   useEffect(() => {
@@ -111,35 +113,69 @@ const Workspace = ({ onActiveTabChange }) => {
                 {showVariablesPanel && (
                   <Allotment.Pane preferredSize={300} minSize={200}>
                     <div className="flex flex-col h-full bg-white dark:bg-gray-800 border-l dark:border-gray-700">
-                      {/* Variables Panel Header with Icon Toggle */}
-                      <div className="bg-slate-50 dark:bg-gray-900 border-b dark:border-gray-700 p-3 flex items-center gap-2">
-                        <button
-                          onClick={() => setShowVariablesPanel(false)}
-                          className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors flex-shrink-0"
-                          title="Collapse panel"
-                          aria-label="Collapse panel"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 20 20" focusable="false" aria-hidden="true" fill="currentColor" className="text-gray-600 dark:text-gray-300">
-                            <path d="M16 16V4h2v12h-2zM6 9l2.501-2.5-1.5-1.5-5 5 5 5 1.5-1.5-2.5-2.5h8V9H6z"></path>
-                          </svg>
-                        </button>
-                        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                          📦 Workflow Variables
-                        </h3>
+                      {/* Panel Header with Tabs */}
+                      <div className="bg-slate-50 dark:bg-gray-900 border-b dark:border-gray-700 flex flex-col">
+                        <div className="flex items-center justify-between px-3 py-2">
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => setActivePanelTab('variables')}
+                              className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                                activePanelTab === 'variables'
+                                  ? 'bg-cyan-500 dark:bg-cyan-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'
+                              }`}
+                              title="Workflow Variables"
+                            >
+                              📦 Variables
+                            </button>
+                            <button
+                              onClick={() => setActivePanelTab('dynamic')}
+                              className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                                activePanelTab === 'dynamic'
+                                  ? 'bg-cyan-500 dark:bg-cyan-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'
+                              }`}
+                              title="Dynamic Functions"
+                            >
+                              ✨ Functions
+                            </button>
+                            <button
+                              onClick={() => setActivePanelTab('settings')}
+                              className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                                activePanelTab === 'settings'
+                                  ? 'bg-cyan-500 dark:bg-cyan-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'
+                              }`}
+                              title="Workflow Settings"
+                            >
+                              ⚙️ Settings
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => setShowVariablesPanel(false)}
+                            className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors flex-shrink-0"
+                            title="Collapse panel"
+                            aria-label="Collapse panel"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 20 20" focusable="false" aria-hidden="true" fill="currentColor" className="text-gray-600 dark:text-gray-300">
+                              <path d="M16 16V4h2v12h-2zM6 9l2.501-2.5-1.5-1.5-5 5 5 5 1.5-1.5-2.5-2.5h8V9H6z"></path>
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                       
-                      {/* Split View: Variables and Settings */}
-                      <Allotment vertical>
-                        {/* Variables Panel Content */}
-                        <Allotment.Pane preferredSize="60%">
+                      {/* Panel Content based on active tab */}
+                      <div className="flex-1 overflow-hidden">
+                        {activePanelTab === 'variables' && (
                           <VariablesPanel />
-                        </Allotment.Pane>
-                        
-                        {/* Settings Panel */}
-                        <Allotment.Pane preferredSize="40%">
+                        )}
+                        {activePanelTab === 'dynamic' && (
+                          <DynamicFunctionsHelper />
+                        )}
+                        {activePanelTab === 'settings' && (
                           <WorkflowSettingsPanel />
-                        </Allotment.Pane>
-                      </Allotment>
+                        )}
+                      </div>
                     </div>
                   </Allotment.Pane>
                 )}
