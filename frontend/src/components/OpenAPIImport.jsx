@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FileText, X, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 import { MdCheckCircle } from 'react-icons/md';
+import { usePalette } from '../contexts/PaletteContext';
 
 const OpenAPIImport = ({ onClose, onImportSuccess }) => {
   const [openapiFile, setOpenapiFile] = useState(null);
@@ -12,6 +13,8 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
   const [error, setError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [groupTitle, setGroupTitle] = useState('');
+  const { addImportedGroup } = usePalette();
 
   const handleFileUpload = (file) => {
     if (!file) return;
@@ -101,40 +104,40 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
       setError('Please select an OpenAPI file');
       return;
     }
-
-    setError(null);
-    setIsLoading(true);
+    if (!preview || !preview.nodes) {
+      setError('Please run Preview first');
+      return;
+    }
 
     try {
-      const formData = new FormData();
-      formData.append('file', openapiFile);
+      const items = (preview.nodes || [])
+        .filter(n => n.type === 'http-request')
+        .map(n => ({
+          label: n.label,
+          method: n.config?.method || 'GET',
+          url: n.config?.url || '',
+          headers: n.config?.headers || '',
+          cookies: n.config?.cookies || '',
+          queryParams: n.config?.queryParams || '',
+          pathVariables: n.config?.pathVariables || '',
+          body: n.config?.body || '',
+          timeout: n.config?.timeout || 30,
+        }));
 
-      const params = new URLSearchParams();
-      if (baseUrl) params.append('base_url', baseUrl);
-      if (selectedTags.length > 0) params.append('tag_filter', selectedTags.join(','));
-      params.append('sanitize', sanitize);
+      // Determine title: user input > filename with count
+      const itemCount = items.length;
+      let finalTitle = groupTitle && groupTitle.trim() 
+        ? `${groupTitle.trim()} (${itemCount})`
+        : `@${openapiFile.name.replace(/\.(json|yaml|yml)$/i, '')} (${itemCount})`;
 
-      const response = await fetch(`/api/workflows/import/openapi?${params}`, {
-        method: 'POST',
-        body: formData,
+      addImportedGroup({
+        title: finalTitle,
+        items,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to import OpenAPI file');
-      }
-
-      const data = await response.json();
-      
-      // Notify parent and close
-      if (onImportSuccess) {
-        onImportSuccess(data.workflowId);
-      }
       onClose();
     } catch (err) {
       setError(err.message);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -297,6 +300,20 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
                   Sanitize sensitive headers (Authorization, API keys)
                 </label>
               </div>
+
+              {/* Group Title */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Palette Group Title (optional)
+                </label>
+                <input
+                  type="text"
+                  value={groupTitle}
+                  onChange={(e) => setGroupTitle(e.target.value)}
+                  placeholder={openapiFile?.name || 'My API Group'}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
             </div>
           )}
 
@@ -392,7 +409,7 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
               disabled={!preview || isLoading}
               className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Importing...' : 'Import'}
+              {isLoading ? 'Adding...' : 'Add to Nodes'}
             </button>
           </div>
         </div>

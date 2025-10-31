@@ -1,9 +1,11 @@
 import React, { Fragment, useState, useRef, useEffect } from 'react';
-import { MdClose, MdAdd } from 'react-icons/md';
+import { MdClose, MdAdd, MdExpandMore, MdExpandLess } from 'react-icons/md';
+import { usePalette } from '../contexts/PaletteContext';
 
 const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
   console.log('AddNodesPanel component rendered');
   const [isOpen, setIsOpen] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({});
   const panelRef = useRef(null);
 
   // Close panel when clicking outside
@@ -22,6 +24,8 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isOpen]);
+
+  const { importedGroups } = usePalette();
 
   const nodeTemplates = [
     {
@@ -50,12 +54,27 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
     },
   ];
 
+  const toggleSection = (sectionKey) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey]
+    }));
+  };
+
   const onDragStart = (event, node) => {
     console.log('Drag started for node:', node);
     event.dataTransfer.setData('application/reactflow', node.type);
     // Also pass the method if it exists (for HTTP request nodes)
     if (node.method) {
       event.dataTransfer.setData('application/reactflow-method', node.method);
+    }
+    // If this is a full template (from imported groups), pass full JSON template
+    if (node.template) {
+      try {
+        event.dataTransfer.setData('application/reactflow-node-template', JSON.stringify(node.template));
+      } catch (e) {
+        // ignore
+      }
     }
     event.dataTransfer.effectAllowed = 'move';
     console.log('Data set - type:', node.type, 'method:', node.method);
@@ -105,25 +124,33 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
               Add Nodes (Drag to Canvas)
             </h3>
 
-            <div className="mt-2 space-y-2">
-              {nodeTemplates.map((category, idx) => (
-                <div key={idx} className="border-b dark:border-gray-700 pb-2 last:border-b-0">
-                  <h4 className="font-semibold text-xs text-gray-700 dark:text-gray-300 mb-1.5 px-1">
-                    {category.category}
-                  </h4>
-                  <div className="space-y-1">
-                    {category.nodes.map((node, nodeIdx) => (
+            <div className="mt-2 space-y-0">
+              {/* HTTP Requests Section */}
+              <div className="border-t border-b dark:border-gray-700">
+                <button
+                  onClick={() => toggleSection('http-requests')}
+                  className="flex justify-between w-full px-4 py-2 text-sm font-medium text-left bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none"
+                >
+                  <span>HTTP Requests</span>
+                  {expandedSections['http-requests'] ? (
+                    <MdExpandLess className="w-5 h-5" />
+                  ) : (
+                    <MdExpandMore className="w-5 h-5" />
+                  )}
+                </button>
+                {expandedSections['http-requests'] && (
+                  <div className="px-4 pt-2 pb-4 text-sm border-l border-r dark:border-gray-600 space-y-1">
+                    {nodeTemplates.find(cat => cat.category === 'HTTP Requests')?.nodes.map((node, nodeIdx) => (
                       <div
                         key={nodeIdx}
                         draggable
                         onDragStart={(e) => {
                           onDragStart(e, node);
-                          // Auto-close panel when dragging starts
                           setTimeout(() => setIsOpen(false), 100);
                         }}
-                        className="p-2 border border-gray-200 dark:border-gray-600 rounded cursor-move hover:border-cyan-600 dark:hover:border-cyan-500 hover:bg-cyan-50 dark:hover:bg-gray-700 transition-colors"
+                        className="py-2 border-b dark:border-gray-600 cursor-move hover:bg-gray-50 dark:hover:bg-gray-800"
                       >
-                        <div className="font-semibold text-xs text-cyan-900 dark:text-cyan-400">
+                        <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
                           {node.method && (
                             <span className="inline-block px-1.5 py-0.5 mr-1.5 text-[10px] font-bold text-white bg-blue-600 dark:bg-blue-700 rounded">
                               {node.method}
@@ -131,12 +158,142 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
                           )}
                           {node.label}
                         </div>
-                        <div className="text-[10px] text-gray-600 dark:text-gray-400 mt-0.5">{node.description}</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{node.description}</div>
                       </div>
                     ))}
                   </div>
-                </div>
-              ))}
+                )}
+              </div>
+
+              {/* Control Flow Section */}
+              <div className="border-b dark:border-gray-700">
+                <button
+                  onClick={() => toggleSection('control-flow')}
+                  className="flex justify-between w-full px-4 py-2 text-sm font-medium text-left bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none"
+                >
+                  <span>Control Flow</span>
+                  {expandedSections['control-flow'] ? (
+                    <MdExpandLess className="w-5 h-5" />
+                  ) : (
+                    <MdExpandMore className="w-5 h-5" />
+                  )}
+                </button>
+                {expandedSections['control-flow'] && (
+                  <div className="px-4 pt-2 pb-4 text-sm border-l border-r dark:border-gray-600 space-y-1">
+                    {nodeTemplates.find(cat => cat.category === 'Control Flow')?.nodes.map((node, nodeIdx) => (
+                      <div
+                        key={nodeIdx}
+                        draggable
+                        onDragStart={(e) => {
+                          onDragStart(e, node);
+                          setTimeout(() => setIsOpen(false), 100);
+                        }}
+                        className="py-2 border-b dark:border-gray-600 cursor-move hover:bg-gray-50 dark:hover:bg-gray-800"
+                      >
+                        <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">{node.label}</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{node.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Validation Section */}
+              <div className="border-b dark:border-gray-700">
+                <button
+                  onClick={() => toggleSection('validation')}
+                  className="flex justify-between w-full px-4 py-2 text-sm font-medium text-left bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none"
+                >
+                  <span>Validation</span>
+                  {expandedSections['validation'] ? (
+                    <MdExpandLess className="w-5 h-5" />
+                  ) : (
+                    <MdExpandMore className="w-5 h-5" />
+                  )}
+                </button>
+                {expandedSections['validation'] && (
+                  <div className="px-4 pt-2 pb-4 text-sm border-l border-r dark:border-gray-600 space-y-1">
+                    {nodeTemplates.find(cat => cat.category === 'Validation')?.nodes.map((node, nodeIdx) => (
+                      <div
+                        key={nodeIdx}
+                        draggable
+                        onDragStart={(e) => {
+                          onDragStart(e, node);
+                          setTimeout(() => setIsOpen(false), 100);
+                        }}
+                        className="py-2 border-b dark:border-gray-600 cursor-move hover:bg-gray-50 dark:hover:bg-gray-800"
+                      >
+                        <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">{node.label}</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{node.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Imported Groups */}
+              {importedGroups.length > 0 && importedGroups.map((group, gIdx) => {
+                const sectionKey = `imported-${group.id}`;
+                const isExpanded = expandedSections[sectionKey];
+                return (
+                  <div key={`grp-${group.id}-${gIdx}`} className="border-b dark:border-gray-700">
+                    <button
+                      onClick={() => toggleSection(sectionKey)}
+                      className="flex justify-between w-full px-4 py-2 text-sm font-medium text-left bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none"
+                    >
+                      <span>{group.title}</span>
+                      {isExpanded ? (
+                        <MdExpandLess className="w-5 h-5" />
+                      ) : (
+                        <MdExpandMore className="w-5 h-5" />
+                      )}
+                    </button>
+                    {isExpanded && (
+                      <div className="px-4 pt-2 pb-4 text-sm border-l border-r dark:border-gray-600 space-y-1 max-h-60 overflow-y-auto">
+                        {(group.items || []).map((item, iIdx) => (
+                          <div
+                            key={`grp-item-${iIdx}`}
+                            draggable
+                            onDragStart={(e) => {
+                              onDragStart(e, {
+                                type: 'http-request',
+                                label: item.label || item.url || 'Request',
+                                method: item.method,
+                                template: {
+                                  type: 'http-request',
+                                  label: item.label || item.url || 'Request',
+                                  config: {
+                                    method: item.method || 'GET',
+                                    url: item.url || '',
+                                    queryParams: item.queryParams || '',
+                                    pathVariables: item.pathVariables || '',
+                                    headers: item.headers || '',
+                                    cookies: item.cookies || '',
+                                    body: item.body || '',
+                                    timeout: item.timeout || 30,
+                                  }
+                                }
+                              });
+                              setTimeout(() => setIsOpen(false), 100);
+                            }}
+                            className="py-2 border-b dark:border-gray-600 cursor-move hover:bg-gray-50 dark:hover:bg-gray-800"
+                          >
+                            <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                              {item.method && (
+                                <span className="inline-block px-1.5 py-0.5 mr-1.5 text-[10px] font-bold text-white bg-blue-600 dark:bg-blue-700 rounded">
+                                  {item.method}
+                                </span>
+                              )}
+                              {item.label || item.url || 'Request'}
+                            </div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 truncate">{item.url || ''}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

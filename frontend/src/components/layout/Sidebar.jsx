@@ -6,6 +6,7 @@ import { BsFillCollectionFill } from 'react-icons/bs';
 import { AiOutlineFileText, AiOutlineFolderOpen } from 'react-icons/ai';
 import { BiChevronDown, BiChevronRight } from 'react-icons/bi';
 import API_BASE_URL from '../../utils/api';
+import WorkflowExportImport from '../WorkflowExportImport';
 
 const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [workflows, setWorkflows] = useState([]);
@@ -196,7 +197,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const handleExportWorkflow = (workflow) => {
     setExportingWorkflowId(workflow.workflowId);
     setExportingWorkflowName(workflow.name);
-    // Show export modal logic here
+    // Opening modal handled by conditional render below
   };
 
   const handleCreateNew = () => {
@@ -419,6 +420,18 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
       {/* Collection Manager Modal */}
       {showCollectionManager && (
         <CollectionManager onClose={() => setShowCollectionManager(false)} />
+      )}
+
+      {/* Workflow Export / Import Modal */}
+      {exportingWorkflowId && (
+        <WorkflowExportImport
+          workflowId={exportingWorkflowId}
+          workflowName={exportingWorkflowName}
+          onClose={() => {
+            setExportingWorkflowId(null);
+            setExportingWorkflowName(null);
+          }}
+        />
       )}
     </div>
   );

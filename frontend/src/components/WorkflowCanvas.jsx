@@ -708,6 +708,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
 
       const type = event.dataTransfer.getData('application/reactflow');
       const method = event.dataTransfer.getData('application/reactflow-method');
+      const templateJson = event.dataTransfer.getData('application/reactflow-node-template');
       console.log('Drop event triggered, type:', type, 'method:', method);
       console.log('ReactFlow instance:', reactFlowInstance);
 
@@ -728,7 +729,19 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
 
       console.log('Drop position:', position);
 
-      const config = getDefaultConfig(type);
+      let config = getDefaultConfig(type);
+      let labelFromTemplate = null;
+      if (templateJson) {
+        try {
+          const parsed = JSON.parse(templateJson);
+          if (parsed && parsed.type === type && parsed.config) {
+            config = { ...config, ...parsed.config };
+            if (parsed.label) labelFromTemplate = parsed.label;
+          }
+        } catch (e) {
+          // ignore bad template
+        }
+      }
       
       // Override method if provided (for HTTP request nodes)
       if (method && type === 'http-request') {
@@ -741,7 +754,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         type,
         position,
         data: {
-          label: type.replace('-', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+          label: labelFromTemplate || type.replace('-', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
           config,
         },
       };

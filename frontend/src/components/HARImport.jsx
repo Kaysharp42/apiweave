@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, X, List, GitBranch } from 'lucide-react';
+import { usePalette } from '../contexts/PaletteContext';
 
 const HARImport = ({ onClose, onImportSuccess }) => {
   const [harFile, setHarFile] = useState(null);
@@ -10,6 +11,8 @@ const HARImport = ({ onClose, onImportSuccess }) => {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState(null);
   const [importResult, setImportResult] = useState(null);
+  const [groupTitle, setGroupTitle] = useState('');
+  const { addImportedGroup } = usePalette();
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
@@ -88,41 +91,38 @@ const HARImport = ({ onClose, onImportSuccess }) => {
       setError('Please select a HAR file first');
       return;
     }
-
-    setImporting(true);
-    setError(null);
-    setImportResult(null);
+    if (!dryRunResult || !Array.isArray(dryRunResult.preview)) {
+      setError('Please run Preview first');
+      return;
+    }
 
     try {
-      const formData = new FormData();
-      formData.append('file', harFile);
-      formData.append('import_mode', importMode);
-      formData.append('sanitize', sanitize);
+      const items = dryRunResult.preview.map((entry) => ({
+        label: `[${entry.method}] ${entry.url}`,
+        method: entry.method || 'GET',
+        url: entry.url || '',
+        headers: entry.headers || '',
+        cookies: '',
+        queryParams: '',
+        pathVariables: '',
+        body: entry.body || '',
+        timeout: 30,
+      }));
 
-      const response = await fetch('/api/workflows/import/har', {
-        method: 'POST',
-        body: formData,
+      // Determine title: user input > filename with count
+      const itemCount = items.length;
+      let finalTitle = groupTitle && groupTitle.trim() 
+        ? `${groupTitle.trim()} (${itemCount})`
+        : `@${harFile.name.replace(/\.(har|json)$/i, '')} (${itemCount})`;
+
+      addImportedGroup({
+        title: finalTitle,
+        items,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Import failed');
-      }
-
-      const result = await response.json();
-      setImportResult(result);
-
-      // Notify parent and close after delay
-      if (onImportSuccess) {
-        setTimeout(() => {
-          onImportSuccess(result.workflowId);
-        }, 1500);
-      }
+      onClose();
     } catch (err) {
-      console.error('Import error:', err);
       setError(err.message);
-    } finally {
-      setImporting(false);
     }
   };
 
@@ -314,23 +314,19 @@ const HARImport = ({ onClose, onImportSuccess }) => {
               </div>
             )}
 
-            {/* Import Result */}
-            {importResult && (
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                <div className="flex items-start">
-                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mr-2" />
-                  <div>
-                    <p className="font-medium text-green-800 dark:text-green-300">
-                      Import successful!
-                    </p>
-                    <p className="text-sm text-green-700 dark:text-green-400 mt-1">
-                      Created workflow with {importResult.stats?.totalRequests} HTTP request nodes
-                    </p>
-                    <p className="text-xs text-green-600 dark:text-green-500 mt-1">
-                      Workflow ID: {importResult.workflowId}
-                    </p>
-                  </div>
-                </div>
+            {/* Group Title */}
+            {harJson && (
+              <div className="mt-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Palette Group Title (optional)
+                </label>
+                <input
+                  type="text"
+                  value={groupTitle}
+                  onChange={(e) => setGroupTitle(e.target.value)}
+                  placeholder={harFile?.name || 'My HAR Group'}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
               </div>
             )}
 
@@ -356,20 +352,11 @@ const HARImport = ({ onClose, onImportSuccess }) => {
               </button>
               <button
                 onClick={handleImport}
-                disabled={importing || !harJson}
+                disabled={!harJson}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
-                {importing ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
-                    Importing...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4 mr-2" />
-                    Import as Workflow
-                  </>
-                )}
+                <Upload className="w-4 h-4 mr-2" />
+                Add to Nodes
               </button>
             </div>
           </div>

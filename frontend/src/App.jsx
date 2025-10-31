@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Home from './pages/Home'
+import { PaletteProvider } from './contexts/PaletteContext'
 
 // Create contexts for global state with default values
 export const AppContext = React.createContext({
@@ -62,11 +63,13 @@ function App() {
 
   return (
     <AppContext.Provider value={{ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }}>
-      <Router>
-        <Routes>
-          <Route path="/*" element={<Home />} />
-        </Routes>
-      </Router>
+      <PaletteProvider>
+        <Router>
+          <Routes>
+            <Route path="/*" element={<Home />} />
+          </Routes>
+        </Router>
+      </PaletteProvider>
     </AppContext.Provider>
   )
 }
