@@ -1,4 +1,5 @@
 import React, { Fragment, useState, useRef, useEffect } from 'react';
+import { MdClose, MdAdd } from 'react-icons/md';
 
 const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
   console.log('AddNodesPanel component rendered');
@@ -90,13 +91,9 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
         }}
       >
         {isOpen ? (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <MdClose className="w-6 h-6" />
         ) : (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+          <MdAdd className="w-6 h-6" />
         )}
       </button>
 

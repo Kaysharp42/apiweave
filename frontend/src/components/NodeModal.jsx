@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AssertionEditor from './AssertionEditor';
 import { Allotment } from 'allotment';
-import { MdCheckCircle, MdInfoOutline, MdWarning, MdEdit, MdDelete, MdPublic, MdTimer, MdMergeType, MdCircle } from 'react-icons/md';
+import { MdCheckCircle, MdInfoOutline, MdWarning, MdEdit, MdDelete, MdPublic, MdTimer, MdMergeType, MdCircle, MdClose, MdExpandMore, MdDescription } from 'react-icons/md';
 import { HiMiniCheckBadge, HiMiniStop } from 'react-icons/hi2';
 
 const NodeModal = ({ node, onClose, onSave }) => {
@@ -142,9 +142,7 @@ const NodeModal = ({ node, onClose, onSave }) => {
               className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors rounded-lg"
               title="Close"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <MdClose className="w-6 h-6" />
             </button>
           </div>
 
@@ -537,9 +535,7 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
       {!output && (
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
-            <svg className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+            <MdDescription className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
               Execute this node to view data
             </p>
@@ -1274,9 +1270,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                         onClick={() => removeCondition(index)}
                         className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                        <MdClose className="w-4 h-4" />
                       </button>
                     </div>
 

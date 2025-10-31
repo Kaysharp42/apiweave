@@ -6,7 +6,20 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      width: {
+        '8': '30px',
+        '15': '60px',
+        '25': '100px',
+        '50': '200px',
+      },
+      minWidth: {
+        '8': '30px',
+        '15': '60px',
+        '25': '100px',
+        '50': '200px',
+      },
+    },
   },
   plugins: [],
 }

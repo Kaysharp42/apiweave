@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
+import { MdStop } from 'react-icons/md';
 
 const EndNode = ({ data, selected }) => {
   return (
@@ -11,9 +12,7 @@ const EndNode = ({ data, selected }) => {
     >
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-gray-400 dark:bg-gray-500" />
       <div className="flex items-center justify-center gap-2">
-        <svg className="w-3.5 h-3.5 flex-shrink-0 self-center" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <rect x="5" y="5" width="10" height="10" rx="1" />
-        </svg>
+        <MdStop className="w-3.5 h-3.5 flex-shrink-0 self-center" />
         <div className="text-xs font-bold leading-none self-center">End</div>
       </div>
     </div>

@@ -32,6 +32,7 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
   const [settings, setSettings] = useState(initialWorkflow?.settings || {});
   const [collections, setCollections] = useState([]);
   const [isLoadingCollections, setIsLoadingCollections] = useState(false);
+  const [currentCollectionId, setCurrentCollectionId] = useState(initialWorkflow?.collectionId || null);
   
   // Track extractor-based variables using ref so we can distinguish them from manual variables
   // Using ref instead of state to avoid dependency issues in registerExtractors callback
@@ -59,6 +60,7 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
     console.log('🔄 WorkflowContext: Initializing with workflow:', workflowId);
     setVariables(initialWorkflow?.variables || {});
     setSettings(initialWorkflow?.settings || {});
+    setCurrentCollectionId(initialWorkflow?.collectionId || null);
     extractorVariablesRef.current = {};
   }, [workflowId, initialWorkflow]);
 
@@ -154,6 +156,18 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
     });
   }, []);
 
+  // Get current collection object
+  const currentCollection = currentCollectionId 
+    ? collections.find(c => c.collectionId === currentCollectionId) 
+    : null;
+
+  // Refresh both collections and trigger workflow refresh
+  const refreshCollectionsAndWorkflows = useCallback(() => {
+    fetchCollections();
+    // Trigger workflow refresh in sidebar
+    window.dispatchEvent(new CustomEvent('workflowsNeedRefresh'));
+  }, [fetchCollections]);
+
   const contextValue = {
     // State
     workflowId,
@@ -161,10 +175,13 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
     settings,
     collections,
     isLoadingCollections,
+    currentCollectionId,
+    currentCollection,
 
     // State setters
     setVariables,
     setSettings,
+    setCurrentCollectionId,
 
     // Helper methods
     updateVariable,
@@ -173,6 +190,7 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
     updateSettings,
     registerExtractors,
     fetchCollections,
+    refreshCollectionsAndWorkflows,
   };
 
   return (

@@ -9,6 +9,7 @@ import { WorkflowProvider } from '../../contexts/WorkflowContext';
 import { MdSettings, MdCode } from 'react-icons/md';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { BiPackage } from 'react-icons/bi';
+import { BsGearFill } from 'react-icons/bs';
 import API_BASE_URL from '../../utils/api';
 
 const Workspace = ({ onActiveTabChange }) => {
@@ -233,18 +234,16 @@ const Workspace = ({ onActiveTabChange }) => {
               </Allotment>
             </div>
             
-            {/* Show Variables Button (when hidden - right side) */}
+            {/* Show Panel Button (when hidden - positioned within canvas) */}
             {!showVariablesPanel && (
               <div className="absolute bottom-4 right-4 z-40">
                 <button
                   onClick={() => setShowVariablesPanel(true)}
-                  className="p-2 bg-cyan-500 dark:bg-cyan-600 hover:bg-cyan-600 dark:hover:bg-cyan-700 text-white rounded-lg transition-colors shadow-lg hover:shadow-xl"
-                  title="Show Variables Panel"
-                  aria-label="Show Variables Panel"
+                  className="p-3 bg-cyan-500 dark:bg-cyan-600 hover:bg-cyan-600 dark:hover:bg-cyan-700 text-white rounded-full transition-colors shadow-lg hover:shadow-xl"
+                  title="Show Panel (Variables, Functions, Settings)"
+                  aria-label="Show Panel"
                 >
-                  <svg width="20" height="20" viewBox="0 0 20 20" focusable="false" aria-hidden="true" fill="currentColor">
-                    <path d="M4 4v12h2V4H4zm14 5l-2.501 2.5 1.5 1.5 5-5-5-5-1.5 1.5 2.5 2.5H6v2h12z"></path>
-                  </svg>
+                  <BsGearFill className="w-5 h-5" />
                 </button>
               </div>
             )}

@@ -830,6 +830,32 @@ async def list_workflows(skip: int = 0, limit: int = 20, tag: Optional[str] = No
     )
 
 
+@router.get("/unattached", response_model=PaginatedWorkflows)
+async def list_unattached_workflows(skip: int = 0, limit: int = 20):
+    """Get all workflows not attached to any collection with pagination."""
+    db = get_database()
+    
+    query = {"collectionId": None}
+    
+    # Get total count
+    total = await db.workflows.count_documents(query)
+    
+    # Get workflows for current page
+    cursor = db.workflows.find(query).skip(skip).limit(limit).sort("createdAt", -1)
+    workflows = await cursor.to_list(length=limit)
+    
+    # Calculate if there are more results
+    has_more = (skip + len(workflows)) < total
+    
+    return PaginatedWorkflows(
+        workflows=[Workflow(**workflow) for workflow in workflows],
+        total=total,
+        skip=skip,
+        limit=limit,
+        hasMore=has_more
+    )
+
+
 @router.get("/{workflow_id}", response_model=Workflow)
 async def get_workflow(workflow_id: str):
     """Get a workflow by ID"""
@@ -1940,15 +1966,6 @@ async def list_workflows_by_collection(collection_id: str):
     workflows = await cursor.to_list(length=None)
     return [Workflow(**w) for w in workflows]
 
-
-@router.get("/unattached")
-async def list_unattached_workflows():
-    """Get all workflows not attached to any collection."""
-    db = get_database()
-    
-    cursor = db.workflows.find({"collectionId": None}).sort("createdAt", -1)
-    workflows = await cursor.to_list(length=None)
-    return [Workflow(**w) for w in workflows]
 
 
 @router.post("/bulk-attach-collection")

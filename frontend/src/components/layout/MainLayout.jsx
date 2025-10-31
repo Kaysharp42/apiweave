@@ -7,11 +7,13 @@ import Workspace from './Workspace';
 import MainHeader from './MainHeader';
 import MainFooter from './MainFooter';
 import SecretsPrompt from '../SecretsPrompt';
+import useNavigationStore from '../../stores/NavigationStore';
+import { AppNavBarStyles } from '../../constants/AppNavBar';
 import API_BASE_URL from '../../utils/api';
 
 const MainLayout = () => {
-  const [isNavBarCollapsed, setIsNavBarCollapsed] = useState(false);
-  const [selectedNav, setSelectedNav] = useState('workflows');
+  const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
+  const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
   const [currentWorkflowId, setCurrentWorkflowId] = useState(null);
   const [environmentWithSecrets, setEnvironmentWithSecrets] = useState(null);
   const [showSecretsPrompt, setShowSecretsPrompt] = useState(false);
@@ -64,24 +66,17 @@ const MainLayout = () => {
         <Allotment>
           {/* Left: AppNavBar + Sidebar */}
           <Allotment.Pane
-            preferredSize={isNavBarCollapsed ? 60 : 260}
-            minSize={isNavBarCollapsed ? 60 : 260}
-            maxSize={isNavBarCollapsed ? 60 : 480}
+            preferredSize={isNavBarCollapsed ? AppNavBarStyles.collapsedNavBarWidth.absolute : 450}
+            minSize={isNavBarCollapsed ? AppNavBarStyles.collapsedNavBarWidth.absolute : 450}
+            maxSize={isNavBarCollapsed ? AppNavBarStyles.collapsedNavBarWidth.absolute : 600}
             snap={false}
           >
-            <div className="flex h-full w-full text-xs bg-white dark:bg-gray-800">
-              <AppNavBar
-                selectedNav={selectedNav}
-                setSelectedNav={setSelectedNav}
-                isCollapsed={isNavBarCollapsed}
-                setIsCollapsed={setIsNavBarCollapsed}
-              />
+            <div className="flex h-full w-full text-xs">
+              <AppNavBar />
               {!isNavBarCollapsed && (
-                <div className="flex-1 h-full w-full border-l border-gray-300 dark:border-gray-700 overflow-hidden">
+                <div className="flex-1 h-full w-full overflow-hidden bg-white dark:bg-gray-800">
                   <Sidebar 
-                    selectedNav={selectedNav} 
-                    isCollapsed={isNavBarCollapsed}
-                    setIsCollapsed={setIsNavBarCollapsed}
+                    selectedNav={navigationSelectedValue} 
                     currentWorkflowId={currentWorkflowId}
                   />
                 </div>

@@ -16,6 +16,7 @@ import DelayNode from './nodes/DelayNode';
 import StartNode from './nodes/StartNode';
 import EndNode from './nodes/EndNode';
 import MergeNode from './nodes/MergeNode';
+import CustomEdge from './CustomEdge';
 import AddNodesPanel from './AddNodesPanel';
 import NodeModal from './NodeModal';
 import HistoryModal from './HistoryModal';
@@ -23,6 +24,7 @@ import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import Toaster, { toast } from './Toaster';
 import ButtonSelect from './ButtonSelect';
+import { MdSave, MdHistory, MdPlayArrow } from 'react-icons/md';
 import API_BASE_URL from '../utils/api';
 
 // Update node statuses - always update to ensure fresh data on each run
@@ -67,6 +69,10 @@ const nodeTypes = {
   'start': StartNode,
   'end': EndNode,
   'merge': MergeNode,
+};
+
+const edgeTypes = {
+  'custom': CustomEdge,
 };
 
 const initialNodes = [
@@ -269,6 +275,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
               source: edge.source,
               target: edge.target,
               label: edge.label,
+              type: 'custom',
             }));
             setNodes(newNodes);
             setEdges(newEdges);
@@ -468,6 +475,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         source: edge.source,
         target: edge.target,
         label: edge.label,
+        type: 'custom',
       }));
       
       setNodes(loadedNodes);
@@ -480,7 +488,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   const onConnect = useCallback(
     (params) => {
       setEdges((eds) => {
-        const newEdge = addEdge(params, eds)[eds.length];
+        const newEdge = addEdge({ ...params, type: 'custom' }, eds)[eds.length];
         
         // Check if this creates parallel branches (multiple edges from same source)
         const parallelEdges = eds.filter(e => e.source === params.source);
@@ -518,6 +526,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
             return e;
           }).concat([{
             ...newEdge,
+            type: 'custom',
             animated: true,
             style: { 
               stroke: darkMode ? '#a78bfa' : '#8b5cf6', 
@@ -538,7 +547,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           }]);
         }
         
-        return addEdge(params, eds);
+        return addEdge({ ...params, type: 'custom' }, eds);
       });
     },
     [setEdges, darkMode, nodes]
@@ -1076,6 +1085,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
         onDrop={onDrop}
         onDragOver={onDragOver}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        defaultEdgeOptions={{ type: 'custom' }}
         fitView
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Control"
@@ -1117,9 +1128,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           onClick={() => saveWorkflow(false)}
           className="flex items-center gap-2 px-4 py-2 bg-cyan-900 text-white rounded-lg hover:bg-cyan-950 shadow-lg font-medium transition-colors dark:bg-cyan-800 dark:hover:bg-cyan-900 whitespace-nowrap h-10"
         >
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-          </svg>
+          <MdSave className="w-4 h-4 flex-shrink-0" />
           <span className="leading-none self-center">Save</span>
         </button>
         <button
@@ -1127,9 +1136,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 shadow-lg font-medium transition-colors dark:bg-gray-600 dark:hover:bg-gray-700 whitespace-nowrap h-10"
           title="View run history"
         >
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <MdHistory className="w-4 h-4 flex-shrink-0" />
           <span className="leading-none self-center">History</span>
         </button>
         
@@ -1172,9 +1179,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           disabled={isRunning}
           className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap h-10"
         >
-          <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-          </svg>
+          <MdPlayArrow className="w-4 h-4 flex-shrink-0" />
           <span className="leading-none self-center">{isRunning ? 'Running...' : 'Run'}</span>
         </button>
       </div>

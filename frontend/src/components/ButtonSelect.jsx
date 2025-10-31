@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { MdKeyboardArrowDown } from 'react-icons/md';
 
 const ButtonSelect = ({ options = [], value = '', onChange = () => {}, placeholder = 'Select', buttonClass = '' }) => {
   const [open, setOpen] = useState(false);
@@ -26,9 +27,7 @@ const ButtonSelect = ({ options = [], value = '', onChange = () => {}, placehold
         aria-expanded={open}
       >
         <span className="truncate">{selected?.label || placeholder}</span>
-        <svg className="w-4 h-4 ml-2 flex-shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 8l4 4 4-4" />
-        </svg>
+        <MdKeyboardArrowDown className="w-4 h-4 ml-2 flex-shrink-0" />
       </button>
 
       {open && (

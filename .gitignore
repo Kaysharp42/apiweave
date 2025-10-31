@@ -181,3 +181,4 @@ htmlcov/
 backend/tests/
 backend/tests/workflow.json
 frontend/package-lock.json
+.github/copilot-instructions.md

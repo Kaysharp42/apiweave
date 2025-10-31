@@ -51,6 +51,7 @@ const ExtractorForm = ({ onAdd }) => {
 
 const HTTPRequestNode = ({ id, data, selected }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isResponseExpanded, setIsResponseExpanded] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const { setNodes } = useReactFlow();
   const { variables } = useWorkflow(); // Get all workflow variables
@@ -443,12 +444,19 @@ const HTTPRequestNode = ({ id, data, selected }) => {
             )}
             {data.executionResult.body && (
               <div className={`mt-1 ${data.executionStatus === 'error' ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded' : ''}`}>
-                <div className={`text-[10px] font-semibold mb-0.5 ${data.executionStatus === 'error' ? 'text-red-700 dark:text-red-300' : 'text-gray-700 dark:text-gray-300'}`}>
-                  Body{data.executionStatus === 'error' ? ' (Error Response)' : ''}
+                <div className={`text-[10px] font-semibold mb-0.5 flex items-center justify-between ${data.executionStatus === 'error' ? 'text-red-700 dark:text-red-300' : 'text-gray-700 dark:text-gray-300'}`}>
+                  <span>Body{data.executionStatus === 'error' ? ' (Error Response)' : ''}</span>
+                  <button
+                    onClick={() => setIsResponseExpanded(!isResponseExpanded)}
+                    className="p-0.5 hover:bg-gray-300 dark:hover:bg-gray-600 rounded transition-colors"
+                    title={isResponseExpanded ? 'Collapse' : 'Expand'}
+                  >
+                    {isResponseExpanded ? <MdExpandLess className="w-3 h-3" /> : <MdExpandMore className="w-3 h-3" />}
+                  </button>
                 </div>
                 <textarea
                   className={`w-full px-1.5 py-1 border text-[10px] font-mono nodrag overflow-y-auto ${data.executionStatus === 'error' ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200'}`}
-                  style={{ maxHeight: '150px', resize: 'none' }}
+                  style={{ maxHeight: isResponseExpanded ? '400px' : '150px', resize: 'vertical' }}
                   value={responseBodyString}
                   readOnly
                   onFocus={(e) => e.target.select()}
