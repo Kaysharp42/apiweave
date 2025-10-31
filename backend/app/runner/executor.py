@@ -1264,7 +1264,8 @@ class WorkflowExecutor:
             if node_id in self.merge_completed:
                 self.logger.info(f"⏭️  Merge node {node_id} completed by another branch")
                 print(f"⏭️  Merge node {node_id} completed by another branch")
-                return self.results[node_id]
+                # Return marker to prevent downstream execution from this branch
+                return { 'mergedByOther': True, 'result': self.results.get(node_id) }
             
             self.logger.info(f"🔀 Merge node {node_id} executing with {len(predecessor_node_ids)} predecessors")
             print(f"🔀 Merge node {node_id} has {len(predecessor_node_ids)} predecessors: {predecessor_node_ids}")
