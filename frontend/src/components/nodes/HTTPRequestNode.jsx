@@ -456,7 +456,11 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                 </div>
                 <textarea
                   className={`w-full px-1.5 py-1 border text-[10px] font-mono nodrag overflow-y-auto ${data.executionStatus === 'error' ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200'}`}
-                  style={{ maxHeight: isResponseExpanded ? '400px' : '150px', resize: 'vertical' }}
+                  style={{ 
+                    height: isResponseExpanded ? '600px' : '150px',
+                    resize: 'vertical',
+                    minHeight: '100px'
+                  }}
                   value={responseBodyString}
                   readOnly
                   onFocus={(e) => e.target.select()}
@@ -477,16 +481,4 @@ const HTTPRequestNode = ({ id, data, selected }) => {
   );
 };
 
-// Custom comparison for memo optimization - only re-render if essential props change
-const areEqual = (prevProps, nextProps) => {
-  return (
-    prevProps.id === nextProps.id &&
-    prevProps.selected === nextProps.selected &&
-    prevProps.data.label === nextProps.data.label &&
-    prevProps.data.executionStatus === nextProps.data.executionStatus &&
-    JSON.stringify(prevProps.data.config) === JSON.stringify(nextProps.data.config) &&
-    JSON.stringify(prevProps.data.executionResult) === JSON.stringify(nextProps.data.executionResult)
-  );
-};
-
-export default memo(HTTPRequestNode, areEqual);
+export default HTTPRequestNode;
