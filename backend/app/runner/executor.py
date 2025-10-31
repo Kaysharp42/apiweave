@@ -206,13 +206,25 @@ class WorkflowExecutor:
             for edge in incoming_edges:
                 pred_id = edge['source']
                 if pred_id in self.branch_results:
-                    # This node's predecessor is a merge node - use its branch results as context
-                    self.current_branch_context = self.branch_results[pred_id]
-                    branch_node_ids = [nid for nid, _ in self.current_branch_context]
-                    self.logger.info(f"📍 Setting branch context for {node_id}")
-                    self.logger.info(f"   Source: merge node {pred_id}")
-                    self.logger.info(f"   Branches: {branch_node_ids}")
-                    print(f"📍 Setting branch context for {node_id}: {len(self.current_branch_context)} branches from merge {pred_id}")
+                    # This node's predecessor is a merge node
+                    # IMPORTANT: Only set branch context if THIS node is branching (multiple outgoing edges)
+                    # If this node is linear (single outgoing edge), clear the context
+                    next_edges_from_node = [e for e in edges if e['source'] == node_id]
+                    
+                    if len(next_edges_from_node) > 1:
+                        # This node will branch - use the merge node's branch results as context
+                        self.current_branch_context = self.branch_results[pred_id]
+                        branch_node_ids = [nid for nid, _ in self.current_branch_context]
+                        self.logger.info(f"📍 Setting branch context for {node_id}")
+                        self.logger.info(f"   Source: merge node {pred_id}")
+                        self.logger.info(f"   Branches: {branch_node_ids}")
+                        print(f"📍 Setting branch context for {node_id}: {len(self.current_branch_context)} branches from merge {pred_id}")
+                    else:
+                        # This node is linear (single edge out) - clear branch context
+                        # The merge has been handled, now execute linearly
+                        self.current_branch_context = []
+                        self.logger.info(f"🔀 Clearing branch context for linear node {node_id} after merge {pred_id}")
+                        print(f"🔀 Clearing branch context after merge - executing {node_id} linearly")
                     break
         
         # Skip start node execution
