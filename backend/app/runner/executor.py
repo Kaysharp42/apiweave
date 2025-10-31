@@ -1425,14 +1425,6 @@ class WorkflowExecutor:
                 # Mark merge as completed
                 self.merge_completed[node_id] = True
                 
-                print(f"✅ Conditional merge PASSED: All {branch_count} branches matched conditions using {condition_logic} logic")
-                
-                # Store ALL branch results (not filtered, since all passed)
-                self.branch_results[node_id] = predecessor_results
-                
-                # Mark merge as completed
-                self.merge_completed[node_id] = True
-                
                 return {
                     "status": "success",
                     "message": f"All {branch_count} branches passed conditions using {condition_logic} logic",
