@@ -198,7 +198,7 @@ class WorkflowExecutor:
         self.logger.info(f"Executing node: {node_id} ({node.get('type', 'unknown')})")
         self.logger.info(f"{'='*60}")
         
-        # Set branch context before executing this node
+    # Set branch context before executing this node
         # If the previous node was a merge, use its merged branch results
         incoming_edges = [e for e in edges if e['target'] == node_id]
         if incoming_edges:
@@ -230,7 +230,11 @@ class WorkflowExecutor:
         # Skip start node execution
         if node['type'] != 'start':
             try:
-                await self._execute_node(node, edges, db)
+                node_exec_result = await self._execute_node(node, edges, db)
+                # If node execution returned a signal to not continue downstream, stop here
+                if isinstance(node_exec_result, dict) and node_exec_result.get('shouldContinue') is False:
+                    self.logger.info(f"➡️  Node {node_id} signalled to stop downstream execution")
+                    return
             except StopIteration:
                 # Always re-raise StopIteration (intentional stop from continue_on_fail=False)
                 raise
@@ -367,6 +371,15 @@ class WorkflowExecutor:
         execution_status = None  # Track if result was successfully stored
         try:
             if node_type == 'http-request':
+                # Diagnostic logging: capture branch context and branch_results at time of HTTP execution
+                try:
+                    self.logger.debug(f"[DIAG] Executing HTTP node {node_id}. current_branch_context size={len(self.current_branch_context)}")
+                    self.logger.debug(f"[DIAG] current_branch_context IDs={[nid for nid, _ in self.current_branch_context]}")
+                    self.logger.debug(f"[DIAG] branch_results keys={list(self.branch_results.keys())}")
+                    print(f"[DIAG] HTTP {node_id} - branch_context={len(self.current_branch_context)} keys={list(self.branch_results.keys())}")
+                except Exception:
+                    # Ensure diagnostics never break execution
+                    pass
                 result = await self._execute_http_request(node)
             elif node_type == 'delay':
                 result = await self._execute_delay(node)
@@ -398,9 +411,19 @@ class WorkflowExecutor:
             else:
                 execution_status = "success"  # Default for other statuses
             
+            # Special handling: if merge was already completed by another branch, skip downstream
+            if isinstance(result, dict) and result.get('mergedByOther'):
+                # Store a shallow record and do NOT continue downstream
+                result['type'] = node_type
+                # Mark as skipped status
+                execution_status = 'skipped'
+                await self._update_node_status(db, node_id, execution_status, result)
+                self.results[node_id] = result
+                return { 'shouldContinue': False }
+
             # Update node status with full result (MUST happen BEFORE raising exception)
             await self._update_node_status(db, node_id, execution_status, result)
-            
+
             # Store result with node type for filtering later
             result['type'] = node_type  # Add node type to result
             self.results[node_id] = result
@@ -439,6 +462,7 @@ class WorkflowExecutor:
                 self.failed_nodes.append(node_id)
                 # Don't re-raise - allow execution to continue to downstream nodes
                 self.logger.error(f"❌ HTTP request {node_id} had unexpected error: {str(e)}")
+                return { 'shouldContinue': True }
             else:
                 # For other types of errors, store error message and re-raise
                 error = {"error": str(e), "status": "error"}
@@ -446,6 +470,9 @@ class WorkflowExecutor:
                 self.results[node_id] = error
                 self.failed_nodes.append(node_id)
                 raise
+
+        # Normal completion -> allow downstream execution
+        return { 'shouldContinue': True }
 
     
     def _mask_result_secrets(self, obj: Any) -> Any:
@@ -1125,7 +1152,8 @@ class WorkflowExecutor:
         if node_id in self.merge_completed:
             self.logger.info(f"⏭️  Merge node {node_id} already completed, skipping")
             print(f"⏭️  Merge node {node_id} already completed by another branch")
-            return self.results[node_id]
+            # Return a marker that indicates merge was completed by another branch
+            return { 'mergedByOther': True, 'result': self.results.get(node_id) }
         
         # Find predecessor nodes (incoming edges to this merge node)
         incoming_edges = [e for e in edges if e['target'] == node_id]
@@ -1434,6 +1462,14 @@ class WorkflowExecutor:
                 # Store ALL branch results (not filtered, since all passed)
                 self.branch_results[node_id] = predecessor_results
                 
+                # Diagnostic log: show what branch_results contains for this merge
+                try:
+                    self.logger.debug(f"[DIAG] merge {node_id} stored branch_results keys={list(self.branch_results.keys())}")
+                    self.logger.debug(f"[DIAG] merge {node_id} branch_result_ids={[nid for nid, _ in predecessor_results]}")
+                    print(f"[DIAG] merge {node_id} -> stored branches: {[nid for nid, _ in predecessor_results]}")
+                except Exception:
+                    pass
+
                 # Mark merge as completed
                 self.merge_completed[node_id] = True
                 
