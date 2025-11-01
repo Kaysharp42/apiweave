@@ -51,7 +51,7 @@ class Node(BaseModel):
     """Workflow node"""
     nodeId: str
     type: Literal["http-request", "assertion", "delay", "merge", "condition", "start", "end"]
-    label: str
+    label: Optional[str] = None  # Optional: Display label for the node
     position: Dict[str, float] = Field(default_factory=dict)  # {x: float, y: float}
     config: Optional[Dict[str, Any]] = None  # Node-specific configuration
 
@@ -72,6 +72,8 @@ class WorkflowCreate(BaseModel):
     edges: List[Edge] = Field(default_factory=list)
     variables: Dict[str, Any] = Field(default_factory=dict)  # Environment variables
     tags: List[str] = Field(default_factory=list)
+    nodeTemplates: List[Dict[str, Any]] = Field(default_factory=list)  # Imported node templates for Add Nodes panel
+    collectionId: Optional[str] = None  # Optional: Link to collection
 
 
 class WorkflowUpdate(BaseModel):
@@ -82,6 +84,7 @@ class WorkflowUpdate(BaseModel):
     edges: Optional[List[Edge]] = None
     variables: Optional[Dict[str, Any]] = None
     tags: Optional[List[str]] = None
+    nodeTemplates: Optional[List[Dict[str, Any]]] = None  # Update node templates
 
 
 class Workflow(BaseModel):
@@ -94,6 +97,7 @@ class Workflow(BaseModel):
     variables: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     collectionId: Optional[str] = None  # NEW: Link to collection (replaces environmentId)
+    nodeTemplates: List[Dict[str, Any]] = Field(default_factory=list)  # Imported node templates
     createdAt: datetime
     updatedAt: datetime
     version: int = 1
@@ -194,3 +198,20 @@ class Environment(BaseModel):
     isActive: bool = False
     createdAt: datetime
     updatedAt: datetime
+
+
+class CollectionImportRequest(BaseModel):
+    """Request model for importing a collection bundle"""
+    bundle: Dict[str, Any]
+    createNewCollection: bool = True
+    newCollectionName: Optional[str] = None
+    targetCollectionId: Optional[str] = None
+    environmentMapping: Optional[Dict[str, str]] = None
+
+
+class CollectionImportDryRunRequest(BaseModel):
+    """Request model for validating a collection bundle"""
+    bundle: Dict[str, Any]
+    createNewCollection: bool = True
+    targetCollectionId: Optional[str] = None
+

@@ -1,8 +1,9 @@
 import React, { Fragment, useState, useRef, useEffect } from 'react';
 import { MdClose, MdAdd, MdExpandMore, MdExpandLess } from 'react-icons/md';
+import { BsGearFill } from 'react-icons/bs';
 import { usePalette } from '../contexts/PaletteContext';
 
-const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
+const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false, showVariablesPanel = false, onShowVariablesPanel = () => {} }) => {
   console.log('AddNodesPanel component rendered');
   const [isOpen, setIsOpen] = useState(false);
   const [expandedSections, setExpandedSections] = useState({});
@@ -83,31 +84,20 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
   return (
     <div 
       ref={panelRef}
-      className={`fixed bottom-24 z-[9999] transition-all duration-200 ${isModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+      className={`fixed bottom-16 right-2 z-[9999] transition-all duration-200 flex flex-col gap-3 ${isModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
       style={{ 
-        position: 'fixed', 
-        bottom: '96px', 
-        right: isPanelOpen ? 'calc(100% - calc(100vw - 300px) + 16px)' : '16px', 
-        zIndex: 9999,
         transition: 'all 0.2s ease'
       }}
     >
-      {/* Toggle Button */}
+      {/* Add Nodes Toggle Button */}
       <button
         onClick={() => {
           console.log('AddNodesPanel toggle clicked, isOpen:', isOpen);
           setIsOpen(!isOpen);
         }}
         disabled={isModalOpen}
-        className="flex items-center justify-center rounded-full border-2 border-cyan-900 bg-cyan-900 text-white hover:bg-cyan-950 focus:outline-none shadow-xl dark:border-cyan-800 dark:bg-cyan-800 dark:hover:bg-cyan-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+        className="flex items-center justify-center rounded-full border-2 border-cyan-900 bg-cyan-900 text-white hover:bg-cyan-950 focus:outline-none shadow-xl dark:border-cyan-800 dark:bg-cyan-800 dark:hover:bg-cyan-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all w-12 h-12"
         title="Add Nodes"
-        style={{ 
-          width: '48px',
-          height: '48px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
       >
         {isOpen ? (
           <MdClose className="w-6 h-6" />
@@ -115,6 +105,18 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
           <MdAdd className="w-6 h-6" />
         )}
       </button>
+
+      {/* Show Panel Button (when hidden) */}
+      {!showVariablesPanel && (
+        <button
+          onClick={() => onShowVariablesPanel(true)}
+          className="p-3 bg-cyan-500 dark:bg-cyan-600 hover:bg-cyan-600 dark:hover:bg-cyan-700 text-white rounded-full transition-colors shadow-lg hover:shadow-xl w-12 h-12 flex items-center justify-center"
+          title="Show Panel (Variables, Functions, Settings)"
+          aria-label="Show Panel"
+        >
+          <BsGearFill className="w-5 h-5" />
+        </button>
+      )}
 
       {/* Nodes Panel */}
       {isOpen && (
@@ -255,38 +257,66 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false }) => {
                             key={`grp-item-${iIdx}`}
                             draggable
                             onDragStart={(e) => {
-                              onDragStart(e, {
-                                type: 'http-request',
-                                label: item.label || item.url || 'Request',
-                                method: item.method,
-                                template: {
+                              // Handle workflow nodes differently
+                              if (item.method === 'WORKFLOW' && item.workflowId) {
+                                onDragStart(e, {
+                                  type: 'workflow',
+                                  label: item.label || 'Workflow',
+                                  workflowId: item.workflowId,
+                                  template: {
+                                    type: 'workflow',
+                                    label: item.label || 'Workflow',
+                                    config: {
+                                      workflowId: item.workflowId,
+                                      workflowName: item.label,
+                                    }
+                                  }
+                                });
+                              } else {
+                                // Handle regular HTTP request nodes
+                                onDragStart(e, {
                                   type: 'http-request',
                                   label: item.label || item.url || 'Request',
-                                  config: {
-                                    method: item.method || 'GET',
-                                    url: item.url || '',
-                                    queryParams: item.queryParams || '',
-                                    pathVariables: item.pathVariables || '',
-                                    headers: item.headers || '',
-                                    cookies: item.cookies || '',
-                                    body: item.body || '',
-                                    timeout: item.timeout || 30,
+                                  method: item.method,
+                                  template: {
+                                    type: 'http-request',
+                                    label: item.label || item.url || 'Request',
+                                    config: {
+                                      method: item.method || 'GET',
+                                      url: item.url || '',
+                                      queryParams: item.queryParams || '',
+                                      pathVariables: item.pathVariables || '',
+                                      headers: item.headers || '',
+                                      cookies: item.cookies || '',
+                                      body: item.body || '',
+                                      timeout: item.timeout || 30,
+                                    }
                                   }
-                                }
-                              });
+                                });
+                              }
                               setTimeout(() => setIsOpen(false), 100);
                             }}
                             className="py-2 border-b dark:border-gray-600 cursor-move hover:bg-gray-50 dark:hover:bg-gray-800"
                           >
                             <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
-                              {item.method && (
-                                <span className="inline-block px-1.5 py-0.5 mr-1.5 text-[10px] font-bold text-white bg-blue-600 dark:bg-blue-700 rounded">
-                                  {item.method}
+                              {item.method === 'WORKFLOW' ? (
+                                <span className="inline-block px-1.5 py-0.5 mr-1.5 text-[10px] font-bold text-white bg-purple-600 dark:bg-purple-700 rounded">
+                                  WF
                                 </span>
+                              ) : (
+                                item.method && (
+                                  <span className="inline-block px-1.5 py-0.5 mr-1.5 text-[10px] font-bold text-white bg-blue-600 dark:bg-blue-700 rounded">
+                                    {item.method}
+                                  </span>
+                                )
                               )}
                               {item.label || item.url || 'Request'}
                             </div>
-                            <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 truncate">{item.url || ''}</div>
+                            {item.method === 'WORKFLOW' ? (
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 truncate">Sub-workflow</div>
+                            ) : (
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 truncate">{item.url || ''}</div>
+                            )}
                           </div>
                         ))}
                       </div>

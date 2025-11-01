@@ -1,17 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MdUpload, MdSettings, MdAdd, MdFolderOpen, MdDownload } from 'react-icons/md';
 import { HiMiniCommandLine } from 'react-icons/hi2';
 import WorkflowExportImport from '../WorkflowExportImport';
 import HARImport from '../HARImport';
 import OpenAPIImport from '../OpenAPIImport';
 import CurlImport from '../CurlImport';
+import CollectionExportImport from '../CollectionExportImport';
 
-const SidebarHeader = ({ selectedNav, onCreateNew, onImport, isRefreshing }) => {
+const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
   const [showWorkflowImportExport, setShowWorkflowImportExport] = useState(false);
   const [showHARImport, setShowHARImport] = useState(false);
   const [showOpenAPIImport, setShowOpenAPIImport] = useState(false);
   const [showCurlImport, setShowCurlImport] = useState(false);
   const [showImportMenu, setShowImportMenu] = useState(false);
+  const [showCollectionImportExport, setShowCollectionImportExport] = useState(false);
+  const [collectionImportMode, setCollectionImportMode] = useState(null);
+  const importMenuRef = useRef(null);
+  const collectionImportMenuRef = useRef(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (importMenuRef.current && !importMenuRef.current.contains(event.target)) {
+        setShowImportMenu(false);
+      }
+      if (collectionImportMenuRef.current && !collectionImportMenuRef.current.contains(event.target)) {
+        // Menu will close via modal
+      }
+    };
+
+    if (showImportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showImportMenu]);
 
   const getHeaderTitle = () => {
     switch (selectedNav) {
@@ -40,7 +62,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, onImport, isRefreshing }) => 
               <MdAdd className="w-4 h-4" />
               <span>New</span>
             </button>
-            <div className="relative flex-1 min-w-0">
+            <div className="relative flex-1 min-w-0" ref={importMenuRef}>
               <button
                 onClick={() => setShowImportMenu(!showImportMenu)}
                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 rounded-r-md w-full justify-center"
@@ -107,14 +129,64 @@ const SidebarHeader = ({ selectedNav, onCreateNew, onImport, isRefreshing }) => 
               <MdAdd className="w-4 h-4" />
               <span>Create</span>
             </button>
-            <button
-              onClick={onImport}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 rounded-r-md flex-1 justify-center"
-              style={{ minWidth: 0 }}
-            >
-              <MdFolderOpen className="w-4 h-4" />
-              <span>Import</span>
-            </button>
+            <div className="relative flex-1 min-w-0" ref={importMenuRef}>
+              <button
+                onClick={() => setShowImportMenu(!showImportMenu)}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 rounded-r-md w-full justify-center"
+                style={{ minWidth: 0 }}
+              >
+                <MdUpload className="w-4 h-4" />
+                <span>Import</span>
+              </button>
+              {showImportMenu && (
+                <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg z-10 min-w-[140px]">
+                  <button
+                    onClick={() => {
+                      setCollectionImportMode('import-collection');
+                      setShowCollectionImportExport(true);
+                      setShowImportMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <MdFolderOpen className="w-4 h-4" />
+                    Collection
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCollectionImportMode('import-har');
+                      setShowCollectionImportExport(true);
+                      setShowImportMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <MdUpload className="w-4 h-4" />
+                    HAR File
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCollectionImportMode('import-openapi');
+                      setShowCollectionImportExport(true);
+                      setShowImportMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <MdUpload className="w-4 h-4" />
+                    OpenAPI
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCollectionImportMode('import-curl');
+                      setShowCollectionImportExport(true);
+                      setShowImportMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <HiMiniCommandLine className="w-4 h-4" />
+                    cURL
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         );
       default:
@@ -148,6 +220,10 @@ const SidebarHeader = ({ selectedNav, onCreateNew, onImport, isRefreshing }) => 
         <WorkflowExportImport
           onClose={() => setShowWorkflowImportExport(false)}
           mode="import"
+          onImportSuccess={() => {
+            setShowWorkflowImportExport(false);
+            window.dispatchEvent(new CustomEvent('workflowsNeedRefresh'));
+          }}
         />
       )}
       {showHARImport && (
@@ -158,6 +234,21 @@ const SidebarHeader = ({ selectedNav, onCreateNew, onImport, isRefreshing }) => 
       )}
       {showCurlImport && (
         <CurlImport onClose={() => setShowCurlImport(false)} />
+      )}
+      {showCollectionImportExport && (
+        <CollectionExportImport
+          mode={collectionImportMode}
+          isOpen={true}
+          onClose={() => {
+            setShowCollectionImportExport(false);
+            setCollectionImportMode(null);
+          }}
+          onImportSuccess={() => {
+            setShowCollectionImportExport(false);
+            setCollectionImportMode(null);
+            window.dispatchEvent(new CustomEvent('collectionsChanged'));
+          }}
+        />
       )}
     </>
   );

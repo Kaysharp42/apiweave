@@ -792,6 +792,8 @@ async def create_workflow(workflow: WorkflowCreate):
         "edges": [edge.model_dump() for edge in workflow.edges],
         "variables": workflow.variables,
         "tags": workflow.tags,
+        "nodeTemplates": workflow.nodeTemplates,
+        "collectionId": workflow.collectionId,  # Include collectionId if provided
         "createdAt": now,
         "updatedAt": now,
         "version": 1
@@ -898,6 +900,8 @@ async def update_workflow(workflow_id: str, update: WorkflowUpdate):
         update_doc["variables"] = update.variables
     if update.tags is not None:
         update_doc["tags"] = update.tags
+    if update.nodeTemplates is not None:
+        update_doc["nodeTemplates"] = update.nodeTemplates
     
     # Increment version
     update_doc["version"] = existing.get("version", 1) + 1
@@ -1495,11 +1499,14 @@ async def import_har_file(
     file: Optional[UploadFile] = File(None),
     import_mode: str = Query("linear"),
     environment_id: Optional[str] = Query(None),
-    sanitize: bool = Query(True)
+    sanitize: bool = Query(True),
+    parse_only: bool = Query(False)  # NEW: Just return nodes without creating workflow
 ):
     """
     Import a HAR file and convert to workflow
     Accepts file upload via multipart/form-data
+    
+    If parse_only=true, returns just the parsed nodes array without creating a workflow
     """
     db = get_database()
     
@@ -1536,7 +1543,18 @@ async def import_har_file(
                 detail=str(e)
             )
         
-        # Create workflow in database
+        # If parse_only mode, return just the HTTP request nodes (exclude start/end)
+        if parse_only:
+            http_nodes = [n for n in workflow_data["nodes"] if n["type"] == "http-request"]
+            return {
+                "nodes": http_nodes,
+                "stats": {
+                    "totalRequests": len(http_nodes),
+                    "importMode": import_mode
+                }
+            }
+        
+        # Otherwise, create full workflow in database
         new_workflow_id = str(uuid.uuid4())
         now = datetime.now(UTC)
         
@@ -1548,6 +1566,7 @@ async def import_har_file(
             "edges": workflow_data["edges"],
             "variables": workflow_data.get("variables", {}),
             "tags": workflow_data.get("tags", []),
+            "nodeTemplates": [],  # Initialize empty templates
             "environmentId": environment_id,
             "createdAt": now,
             "updatedAt": now,
@@ -1679,11 +1698,14 @@ async def import_openapi_file(
     file: Optional[UploadFile] = File(None),
     base_url: str = Query(""),
     tag_filter: Optional[str] = Query(None),
-    sanitize: bool = Query(True)
+    sanitize: bool = Query(True),
+    parse_only: bool = Query(False)  # NEW: Just return nodes without creating workflow
 ):
     """
     Import an OpenAPI/Swagger file and convert to workflow
     Accepts file upload via multipart/form-data
+    
+    If parse_only=true, returns just the parsed nodes array without creating a workflow
     """
     db = get_database()
     
@@ -1723,7 +1745,18 @@ async def import_openapi_file(
                 detail=str(e)
             )
         
-        # Create workflow in database
+        # If parse_only mode, return just the HTTP request nodes (exclude start/end)
+        if parse_only:
+            http_nodes = [n for n in workflow_data["nodes"] if n["type"] == "http-request"]
+            return {
+                "nodes": http_nodes,
+                "stats": {
+                    "totalEndpoints": len(http_nodes),
+                    "apiTitle": openapi_data.get("info", {}).get("title", "API")
+                }
+            }
+        
+        # Otherwise, create full workflow in database
         new_workflow_id = str(uuid.uuid4())
         now = datetime.now(UTC)
         
@@ -1735,6 +1768,7 @@ async def import_openapi_file(
             "edges": workflow_data["edges"],
             "variables": workflow_data.get("variables", {}),
             "tags": workflow_data.get("tags", []),
+            "nodeTemplates": [],  # Initialize empty templates
             "environmentId": None,
             "createdAt": now,
             "updatedAt": now,
@@ -2010,14 +2044,132 @@ async def bulk_attach_workflows(
     }
 
 
+# Node Templates Management Endpoints
+
+@router.get("/{workflow_id}/templates")
+async def get_workflow_templates(workflow_id: str):
+    """Get all node templates for a workflow"""
+    db = get_database()
+    
+    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+    
+    return {
+        "workflowId": workflow_id,
+        "templates": workflow.get("nodeTemplates", [])
+    }
+
+
+@router.post("/{workflow_id}/templates")
+async def add_workflow_templates(
+    workflow_id: str,
+    templates: List[Dict[str, Any]]
+):
+    """Add node templates to a workflow (appends to existing templates)"""
+    db = get_database()
+    
+    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+    
+    # Get existing templates
+    existing_templates = workflow.get("nodeTemplates", [])
+    
+    # Append new templates
+    updated_templates = existing_templates + templates
+    
+    # Update workflow
+    await db.workflows.update_one(
+        {"workflowId": workflow_id},
+        {"$set": {
+            "nodeTemplates": updated_templates,
+            "updatedAt": datetime.now(UTC)
+        }}
+    )
+    
+    return {
+        "message": f"Added {len(templates)} template(s) to workflow",
+        "workflowId": workflow_id,
+        "totalTemplates": len(updated_templates)
+    }
+
+
+@router.put("/{workflow_id}/templates")
+async def replace_workflow_templates(
+    workflow_id: str,
+    templates: List[Dict[str, Any]]
+):
+    """Replace all node templates for a workflow"""
+    db = get_database()
+    
+    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+    
+    # Replace templates
+    await db.workflows.update_one(
+        {"workflowId": workflow_id},
+        {"$set": {
+            "nodeTemplates": templates,
+            "updatedAt": datetime.now(UTC)
+        }}
+    )
+    
+    return {
+        "message": "Templates replaced successfully",
+        "workflowId": workflow_id,
+        "totalTemplates": len(templates)
+    }
+
+
+@router.delete("/{workflow_id}/templates")
+async def clear_workflow_templates(workflow_id: str):
+    """Clear all node templates for a workflow"""
+    db = get_database()
+    
+    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+    
+    # Clear templates
+    await db.workflows.update_one(
+        {"workflowId": workflow_id},
+        {"$set": {
+            "nodeTemplates": [],
+            "updatedAt": datetime.now(UTC)
+        }}
+    )
+    
+    return {
+        "message": "Templates cleared successfully",
+        "workflowId": workflow_id
+    }
+
+
 @router.post("/import/curl")
 async def import_curl_file(
     sanitize: bool = Query(True),
     curl_command: Optional[str] = Query(None),
-    workflowId: Optional[str] = Query(None)
+    workflowId: Optional[str] = Query(None),
+    parse_only: bool = Query(False)  # NEW: Just return nodes without creating workflow
 ):
     """
     Import curl command(s) and convert to workflow.
+    
+    If parse_only=true, returns just the parsed nodes array without creating/updating a workflow.
     If workflowId is provided, append to that workflow. Otherwise, create new workflow.
     """
     db = get_database()
@@ -2035,6 +2187,17 @@ async def import_curl_file(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(e)
             )
+
+        # If parse_only mode, return just the HTTP request nodes (exclude start/end)
+        if parse_only:
+            http_nodes = [n for n in workflow_data["nodes"] if n["type"] == "http-request"]
+            return {
+                "nodes": http_nodes,
+                "stats": {
+                    "totalRequests": len(http_nodes),
+                    "importType": "curl"
+                }
+            }
 
         if workflowId:
             # Append to existing workflow
@@ -2112,6 +2275,7 @@ async def import_curl_file(
                 "edges": workflow_data["edges"],
                 "variables": workflow_data.get("variables", {}),
                 "tags": workflow_data.get("tags", []),
+                "nodeTemplates": [],  # Initialize empty templates
                 "environmentId": None,
                 "createdAt": now,
                 "updatedAt": now,

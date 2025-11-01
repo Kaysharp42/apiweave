@@ -155,6 +155,8 @@ const Workspace = ({ onActiveTabChange }) => {
                     workflowId={activeTab.id}
                     workflow={activeTab.workflow}
                     isPanelOpen={showVariablesPanel}
+                    showVariablesPanel={showVariablesPanel}
+                    onShowVariablesPanel={setShowVariablesPanel}
                   />
                 </Allotment.Pane>
                 
@@ -234,19 +236,6 @@ const Workspace = ({ onActiveTabChange }) => {
               </Allotment>
             </div>
             
-            {/* Show Panel Button (when hidden - positioned within canvas) */}
-            {!showVariablesPanel && (
-              <div className="absolute bottom-4 right-4 z-40">
-                <button
-                  onClick={() => setShowVariablesPanel(true)}
-                  className="p-3 bg-cyan-500 dark:bg-cyan-600 hover:bg-cyan-600 dark:hover:bg-cyan-700 text-white rounded-full transition-colors shadow-lg hover:shadow-xl"
-                  title="Show Panel (Variables, Functions, Settings)"
-                  aria-label="Show Panel"
-                >
-                  <BsGearFill className="w-5 h-5" />
-                </button>
-              </div>
-            )}
           </WorkflowProvider>        ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-gray-500 dark:text-gray-400">

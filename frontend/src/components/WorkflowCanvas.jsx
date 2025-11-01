@@ -20,11 +20,13 @@ import CustomEdge from './CustomEdge';
 import AddNodesPanel from './AddNodesPanel';
 import NodeModal from './NodeModal';
 import HistoryModal from './HistoryModal';
+import ImportToNodesPanel from './ImportToNodesPanel';
 import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import Toaster, { toast } from './Toaster';
 import ButtonSelect from './ButtonSelect';
 import { MdSave, MdHistory, MdPlayArrow } from 'react-icons/md';
+import { Upload } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 
 // Update node statuses - always update to ensure fresh data on each run
@@ -84,7 +86,7 @@ const initialNodes = [
   },
 ];
 
-const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
+const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariablesPanel = false, onShowVariablesPanel = () => {} }) => {
   console.log('WorkflowCanvas rendered with:', { workflowId, workflow });
   
   // Get global state from context
@@ -107,6 +109,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [modalNode, setModalNode] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [environments, setEnvironments] = useState([]);
   const [environmentChangeNotification, setEnvironmentChangeNotification] = useState(null);
   
@@ -1153,6 +1156,15 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           <span className="leading-none self-center">History</span>
         </button>
         
+        <button
+          onClick={() => setShowImportToNodes(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 shadow-lg font-medium transition-colors dark:bg-amber-700 dark:hover:bg-amber-800 whitespace-nowrap h-10"
+          title="Import OpenAPI, HAR, or Curl to Add Nodes panel"
+        >
+          <Upload className="w-4 h-4 flex-shrink-0" />
+          <span className="leading-none self-center">Import</span>
+        </button>
+        
         {/* Environment Selector */}
         <div className="flex items-center h-10">
           <ButtonSelect
@@ -1201,7 +1213,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
   <Toaster />
 
       {/* Add Nodes Panel - OUTSIDE ReactFlow */}
-      <AddNodesPanel isModalOpen={!!modalNode} isPanelOpen={isPanelOpen} />
+      <AddNodesPanel isModalOpen={!!modalNode} isPanelOpen={isPanelOpen} showVariablesPanel={showVariablesPanel} onShowVariablesPanel={onShowVariablesPanel} />
 
       {/* Node Modal */}
       {modalNode && (
@@ -1218,6 +1230,15 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false }) => {
           workflowId={workflowId}
           onClose={() => setShowHistory(false)}
           onSelectRun={loadHistoricalRun}
+        />
+      )}
+
+      {/* Import to Nodes Panel */}
+      {showImportToNodes && (
+        <ImportToNodesPanel
+          isOpen={showImportToNodes}
+          onClose={() => setShowImportToNodes(false)}
+          workflowId={workflowId}
         />
       )}
       

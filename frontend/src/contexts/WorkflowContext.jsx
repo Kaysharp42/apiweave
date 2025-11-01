@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import API_BASE_URL from '../utils/api';
+import { usePalette } from './PaletteContext';
 
 /**
  * WorkflowContext - Single Source of Truth for Workflow State
@@ -34,6 +35,9 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
   const [isLoadingCollections, setIsLoadingCollections] = useState(false);
   const [currentCollectionId, setCurrentCollectionId] = useState(initialWorkflow?.collectionId || null);
   
+  // Get palette context to load templates
+  const { addImportedGroup, removeImportedGroup, clearImportedGroups } = usePalette();
+  
   // Track extractor-based variables using ref so we can distinguish them from manual variables
   // Using ref instead of state to avoid dependency issues in registerExtractors callback
   const extractorVariablesRef = useRef({});
@@ -63,6 +67,54 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
     setCurrentCollectionId(initialWorkflow?.collectionId || null);
     extractorVariablesRef.current = {};
   }, [workflowId, initialWorkflow]);
+
+  // Load node templates from workflow into Add Nodes panel
+  useEffect(() => {
+    // Generate unique IDs for this workflow's template groups
+    const templateGroupId = `workflow-templates-${workflowId}`;
+    const openApiGroupId = `openapi-${workflowId}`;
+    const harGroupId = `har-${workflowId}`;
+    const curlGroupId = `curl-${workflowId}`;
+    
+    // Remove previous workflow's templates when switching workflows
+    return () => {
+      console.log('🧹 Cleaning up templates for workflow:', workflowId);
+      removeImportedGroup(templateGroupId);
+      removeImportedGroup(openApiGroupId);
+      removeImportedGroup(harGroupId);
+      removeImportedGroup(curlGroupId);
+    };
+  }, [workflowId, removeImportedGroup]);
+
+  // Load templates after cleanup
+  useEffect(() => {
+    if (!initialWorkflow?.nodeTemplates || initialWorkflow.nodeTemplates.length === 0) {
+      console.log('📦 No node templates to load for workflow:', workflowId);
+      return;
+    }
+
+    console.log('📦 Loading', initialWorkflow.nodeTemplates.length, 'node templates for workflow:', workflowId);
+    
+    // Convert nodes to palette item format
+    const templateItems = initialWorkflow.nodeTemplates.map(node => ({
+      label: node.label || node.config?.url || 'Request',
+      url: node.config?.url || '',
+      method: node.config?.method || 'GET',
+      headers: node.config?.headers || '',
+      body: node.config?.body || '',
+      queryParams: node.config?.queryParams || '',
+      pathVariables: node.config?.pathVariables || '',
+      cookies: node.config?.cookies || '',
+      timeout: node.config?.timeout || 30,
+    }));
+
+    // Add templates to palette with workflow-specific ID
+    addImportedGroup({
+      title: 'Workflow Templates',
+      id: `workflow-templates-${workflowId}`,
+      items: templateItems,
+    });
+  }, [workflowId, initialWorkflow, addImportedGroup]);
 
   // Fetch collections once when component mounts
   useEffect(() => {

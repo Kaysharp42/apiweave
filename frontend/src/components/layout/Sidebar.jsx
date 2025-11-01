@@ -7,6 +7,7 @@ import { AiOutlineFileText, AiOutlineFolderOpen } from 'react-icons/ai';
 import { BiChevronDown, BiChevronRight } from 'react-icons/bi';
 import API_BASE_URL from '../../utils/api';
 import WorkflowExportImport from '../WorkflowExportImport';
+import CollectionExportImport from '../CollectionExportImport';
 
 const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [workflows, setWorkflows] = useState([]);
@@ -28,6 +29,8 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [expandedCollections, setExpandedCollections] = useState(new Set());
   const [draggedWorkflow, setDraggedWorkflow] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
+  const [exportingCollectionId, setExportingCollectionId] = useState(null);
+  const [exportingCollectionName, setExportingCollectionName] = useState(null);
   const scrollContainerRef = useRef(null);
 
   // Fetch workflows when needed
@@ -200,17 +203,16 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
     // Opening modal handled by conditional render below
   };
 
+  const handleExportCollection = (collection) => {
+    setExportingCollectionId(collection.collectionId);
+    setExportingCollectionName(collection.name);
+  };
+
   const handleCreateNew = () => {
     if (selectedNav === 'workflows') {
       createNewWorkflow();
     } else if (selectedNav === 'collections') {
       setShowCollectionManager(true);
-    }
-  };
-
-  const handleImport = () => {
-    if (selectedNav === 'collections') {
-      console.log('Import collection');
     }
   };
 
@@ -312,9 +314,9 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
             return (
               <div key={collection.collectionId} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                 {/* Collection Header */}
-                <button
+                <div
+                  className="w-full p-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left flex items-center justify-between group cursor-pointer"
                   onClick={() => toggleCollection(collection.collectionId)}
-                  className="w-full p-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left flex items-center justify-between"
                 >
                   <div className="flex items-center gap-2">
                     {/* Expand/Collapse Icon */}
@@ -331,7 +333,19 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                       </p>
                     </div>
                   </div>
-                </button>
+                  
+                  {/* Export Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExportCollection(collection);
+                    }}
+                    className="p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                    title="Export collection"
+                  >
+                    <MdDownload className="w-4 h-4" />
+                  </button>
+                </div>
 
                 {/* Collection Workflows */}
                 {isExpanded && (
@@ -407,7 +421,6 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
       <SidebarHeader 
         selectedNav={selectedNav}
         onCreateNew={handleCreateNew}
-        onImport={handleImport}
         isRefreshing={isRefreshing}
       />
 
@@ -431,6 +444,20 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
             setExportingWorkflowId(null);
             setExportingWorkflowName(null);
           }}
+        />
+      )}
+
+      {/* Collection Export Modal */}
+      {exportingCollectionId && (
+        <CollectionExportImport
+          collectionId={exportingCollectionId}
+          collectionName={exportingCollectionName}
+          isOpen={!!exportingCollectionId}
+          onClose={() => {
+            setExportingCollectionId(null);
+            setExportingCollectionName(null);
+          }}
+          mode="export"
         />
       )}
     </div>
