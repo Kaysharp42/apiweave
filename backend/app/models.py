@@ -1,10 +1,13 @@
 """
 Data models for APIWeave
 Pydantic models for workflows, nodes, edges, and runs
+Now using Beanie ODM for type-safe MongoDB operations
 """
+from beanie import Document
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Dict, Any, Optional, Literal, Annotated
 from datetime import datetime
+from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
 class HTTPRequestNode(BaseModel):
@@ -87,20 +90,31 @@ class WorkflowUpdate(BaseModel):
     nodeTemplates: Optional[List[Dict[str, Any]]] = None  # Update node templates
 
 
-class Workflow(BaseModel):
-    """Complete workflow model"""
-    workflowId: str
+class Workflow(Document):
+    """Complete workflow model - Beanie Document"""
+    workflowId: str  # Will be indexed via Settings
     name: str
     description: Optional[str] = None
-    nodes: List[Node]
-    edges: List[Edge]
+    nodes: List[Node] = Field(default_factory=list)
+    edges: List[Edge] = Field(default_factory=list)
     variables: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
-    collectionId: Optional[str] = None  # NEW: Link to collection (replaces environmentId)
-    nodeTemplates: List[Dict[str, Any]] = Field(default_factory=list)  # Imported node templates
+    collectionId: Optional[str] = None  # Link to collection
+    environmentId: Optional[str] = None  # Link to environment (default environment for workflow)
+    nodeTemplates: List[Dict[str, Any]] = Field(default_factory=list)
     createdAt: datetime
     updatedAt: datetime
     version: int = 1
+    
+    class Settings:
+        name = "workflows"  # MongoDB collection name
+        indexes = [
+            IndexModel([("workflowId", ASCENDING)], unique=True),
+            IndexModel([("createdAt", DESCENDING)]),
+            IndexModel([("collectionId", ASCENDING)]),
+            IndexModel([("environmentId", ASCENDING)]),
+            IndexModel([("tags", ASCENDING)])
+        ]
 
 
 class RunCreate(BaseModel):
@@ -121,10 +135,11 @@ class RunResult(BaseModel):
     assertions: Optional[List[Dict[str, Any]]] = None
 
 
-class Run(BaseModel):
-    """Workflow run/execution"""
+class Run(Document):
+    """Workflow run/execution - Beanie Document"""
     runId: str
     workflowId: str
+    environmentId: Optional[str] = None  # Environment to use for this run
     status: Literal["pending", "running", "completed", "failed", "cancelled"]
     trigger: Literal["manual", "webhook", "schedule"]
     variables: Dict[str, Any] = Field(default_factory=dict)
@@ -135,6 +150,19 @@ class Run(BaseModel):
     completedAt: Optional[datetime] = None
     duration: Optional[int] = None  # milliseconds
     error: Optional[str] = None
+    failedNodes: Optional[List[str]] = None  # List of node IDs that failed
+    failureMessage: Optional[str] = None  # Summary of failures
+    nodeStatuses: Dict[str, Any] = Field(default_factory=dict)  # Node execution statuses
+    
+    class Settings:
+        name = "runs"
+        indexes = [
+            IndexModel([("runId", ASCENDING)], unique=True),
+            IndexModel([("status", ASCENDING), ("createdAt", ASCENDING)]),
+            IndexModel([("workflowId", ASCENDING)]),
+            IndexModel([("environmentId", ASCENDING)]),
+            IndexModel([("createdAt", DESCENDING)])
+        ]
 
 
 class PaginatedWorkflows(BaseModel):
@@ -168,8 +196,8 @@ class CollectionUpdate(BaseModel):
     color: Optional[str] = None
 
 
-class Collection(BaseModel):
-    """Collection model - groups workflows together"""
+class Collection(Document):
+    """Collection model - groups workflows together - Beanie Document"""
     collectionId: str
     name: str
     description: Optional[str] = None
@@ -177,6 +205,13 @@ class Collection(BaseModel):
     workflowCount: int = 0
     createdAt: datetime
     updatedAt: datetime
+    
+    class Settings:
+        name = "collections"
+        indexes = [
+            IndexModel([("collectionId", ASCENDING)], unique=True),
+            IndexModel([("createdAt", DESCENDING)])
+        ]
 
 
 class EnvironmentUpdate(BaseModel):
@@ -188,16 +223,23 @@ class EnvironmentUpdate(BaseModel):
     isActive: Optional[bool] = None
 
 
-class Environment(BaseModel):
-    """Environment model with variables and secrets"""
+class Environment(Document):
+    """Environment model with variables and secrets - Beanie Document"""
     environmentId: str
     name: str
     description: Optional[str] = None
     variables: Dict[str, Any] = Field(default_factory=dict)
-    secrets: Dict[str, str] = Field(default_factory=dict)  # NEW: Secrets for this environment
+    secrets: Dict[str, str] = Field(default_factory=dict)  # Secrets for this environment
     isActive: bool = False
     createdAt: datetime
     updatedAt: datetime
+    
+    class Settings:
+        name = "environments"
+        indexes = [
+            IndexModel([("environmentId", ASCENDING)], unique=True),
+            IndexModel([("createdAt", DESCENDING)])
+        ]
 
 
 class CollectionImportRequest(BaseModel):

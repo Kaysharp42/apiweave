@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn[standard]>=0.24.0",
     "motor>=3.3.0",
     "pymongo>=4.5.0",
+    "beanie>=1.26.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "httpx>=0.25.0",
@@ -38,6 +39,9 @@ dev = [
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
 
 [tool.black]
 line-length = 100

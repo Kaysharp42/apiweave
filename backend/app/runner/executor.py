@@ -1,5 +1,6 @@
 """
 Workflow executor - runs workflows step by step
+Now using Beanie ODM with repository pattern for enhanced security
 """
 import asyncio
 import aiohttp
@@ -14,6 +15,7 @@ from urllib.parse import urlencode
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from app.database import get_database
+from app.repositories import WorkflowRepository, RunRepository, EnvironmentRepository
 from app.runner.dynamic_functions import DynamicFunctions
 
 # Setup logging
@@ -71,23 +73,27 @@ class WorkflowExecutor:
         self.first_error_message = None  # Store the first error message for the run
         
     async def execute(self):
-        """Execute the workflow"""
-        db = get_database()
+        """Execute the workflow using Beanie repositories (SQL injection safe)"""
+        db = get_database()  # Still needed for GridFS and node_results
         
         self.logger.info(f"Starting execution for workflow {self.workflow_id}")
         
-        # Get workflow and run
-        workflow = await db.workflows.find_one({"workflowId": self.workflow_id})
-        if not workflow:
+        # Get workflow and run using repositories (type-safe)
+        workflow_doc = await WorkflowRepository.get_by_id(self.workflow_id)
+        if not workflow_doc:
             self.logger.error(f"Workflow {self.workflow_id} not found")
             raise Exception(f"Workflow {self.workflow_id} not found")
         
-        run = await db.runs.find_one({"runId": self.run_id})
-        if not run:
+        run_doc = await RunRepository.get_by_id(self.run_id)
+        if not run_doc:
             self.logger.error(f"Run {self.run_id} not found")
             raise Exception(f"Run {self.run_id} not found")
         
-        self.logger.info(f"Workflow loaded: {workflow.get('name', 'Unnamed')}")
+        self.logger.info(f"Workflow loaded: {workflow_doc.name}")
+        
+        # Convert Beanie Documents to dicts for backward compatibility with existing execution logic
+        workflow = workflow_doc.model_dump(by_alias=True)
+        run = run_doc.model_dump(by_alias=True)
         
         # Initialize workflow variables from the workflow definition
         self.workflow_variables = workflow.get('variables', {}).copy() if workflow.get('variables') else {}
@@ -96,11 +102,13 @@ class WorkflowExecutor:
         # Load environment variables from the run's specified environment
         environment_id = run.get('environmentId')
         if environment_id:
-            environment = await db.environments.find_one({"environmentId": environment_id})
-            if environment:
-                self.environment_variables = environment.get('variables', {}).copy()
-                self.secrets = environment.get('secrets', {}).copy()  # NEW: Load secrets
-                self.logger.info(f"Loaded environment: {environment.get('name')} (ID: {environment_id}) with {len(self.environment_variables)} variables and {len(self.secrets)} secrets")
+            environment_doc = await EnvironmentRepository.get_by_id(environment_id)
+            if environment_doc:
+                # Access Document fields - ensure proper dict conversion
+                self.environment_variables = dict(environment_doc.variables) if environment_doc.variables else {}
+                self.secrets = dict(environment_doc.secrets) if environment_doc.secrets else {}
+                self.logger.info(f"Loaded environment: {environment_doc.name} (ID: {environment_id}) with {len(self.environment_variables)} variables and {len(self.secrets)} secrets")
+                self.logger.debug(f"Environment variables: {self.environment_variables}")
             else:
                 self.logger.warning(f"Environment {environment_id} not found, continuing without environment variables")
         else:
@@ -114,17 +122,8 @@ class WorkflowExecutor:
         # Track start time for duration calculation
         self.start_time = time.time()
         
-        # Update run status to running
-        await db.runs.update_one(
-            {"runId": self.run_id},
-            {
-                "$set": {
-                    "status": "running",
-                    "startedAt": datetime.now(UTC),
-                    "nodeStatuses": {}
-                }
-            }
-        )
+        # Update run status to running using repository
+        await RunRepository.update_status(self.run_id, "running")
         
         # Execute nodes in order (starting from 'start' node)
         nodes = {node['nodeId']: node for node in workflow['nodes']}
@@ -142,12 +141,12 @@ class WorkflowExecutor:
             
             # Calculate total run duration
             end_time = time.time()
-            duration_ms = round((end_time - self.start_time) * 1000, 2)
+            duration_ms = int(round((end_time - self.start_time) * 1000))  # Convert to int milliseconds
             
             # Determine final status based on failures
             final_status = "failed" if self.has_failures else "completed"
             
-            # Mark run as completed (don't store results array - too large)
+            # Mark run as completed using repository
             try:
                 update_data = {
                     "status": final_status,
@@ -163,12 +162,7 @@ class WorkflowExecutor:
                     if self.first_error_message:
                         update_data["error"] = self.first_error_message
                 
-                await db.runs.update_one(
-                    {"runId": self.run_id},
-                    {
-                        "$set": update_data
-                    }
-                )
+                await RunRepository.update_fields(self.run_id, **update_data)
                 
                 if self.has_failures:
                     print(f"⚠️  Workflow completed with failures: {len(self.failed_nodes)} node(s) failed")
@@ -584,6 +578,9 @@ class WorkflowExecutor:
                     path_parts = var_path.split('.')[1:]  # Remove 'env'
                     value = self.environment_variables
                     
+                    self.logger.debug(f"Looking up env variable: {var_path}")
+                    self.logger.debug(f"Available env vars: {list(self.environment_variables.keys())}")
+                    
                     for part in path_parts:
                         # Handle array indexing: data[0], items[1], etc.
                         array_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$', part)
@@ -595,13 +592,22 @@ class WorkflowExecutor:
                             if isinstance(value, list) and 0 <= index < len(value):
                                 value = value[index]
                             else:
+                                self.logger.warning(f"env.{'.'.join(path_parts)} not found (array access failed)")
                                 return str(match.group(0))  # Return original if not found
                         elif isinstance(value, dict):
                             value = value.get(part)
+                            if value is None:
+                                self.logger.warning(f"env.{'.'.join(path_parts)} not found (key '{part}' missing)")
                         else:
+                            self.logger.warning(f"env.{'.'.join(path_parts)} not found (not a dict)")
                             return str(match.group(0))  # Return original if not found
                     
-                    return str(value) if value is not None else str(match.group(0))
+                    if value is not None:
+                        self.logger.debug(f"✓ Substituted env variable: {{{{env.{'.'.join(path_parts)}}}}} -> {value}")
+                        return str(value)
+                    else:
+                        self.logger.warning(f"env.{'.'.join(path_parts)} is None")
+                        return str(match.group(0))
                 
                 elif var_path.startswith('variables.'):
                     # Access workflow variables
@@ -864,7 +870,7 @@ class WorkflowExecutor:
                     
                     # End timing
                     end_time = time.time()
-                    duration_ms = round((end_time - start_time) * 1000, 2)  # Convert to milliseconds
+                    duration_ms = int(round((end_time - start_time) * 1000))  # Convert to int milliseconds
                     
                     # Try to parse response as JSON
                     try:
@@ -931,7 +937,7 @@ class WorkflowExecutor:
                 "error": error_msg,
                 "method": method,
                 "url": url,
-                "duration": round((time.time() - start_time) * 1000, 2)
+                "duration": int(round((time.time() - start_time) * 1000))  # Convert to int milliseconds
             }
 
     
@@ -1775,23 +1781,17 @@ class WorkflowExecutor:
         return summary
     
     async def _fail_run(self, error: str):
-        """Mark run as failed"""
-        db = get_database()
-        
+        """Mark run as failed using repository"""
         # Calculate duration if start_time is available
         duration_ms = None
         if self.start_time is not None:
             end_time = time.time()
-            duration_ms = round((end_time - self.start_time) * 1000, 2)
+            duration_ms = int(round((end_time - self.start_time) * 1000))  # Convert to int milliseconds
         
-        await db.runs.update_one(
-            {"runId": self.run_id},
-            {
-                "$set": {
-                    "status": "failed",
-                    "completedAt": datetime.now(UTC),
-                    "duration": duration_ms,
-                    "error": error
-                }
-            }
+        await RunRepository.update_fields(
+            self.run_id,
+            status="failed",
+            completedAt=datetime.now(UTC),
+            duration=duration_ms,
+            error=error
         )

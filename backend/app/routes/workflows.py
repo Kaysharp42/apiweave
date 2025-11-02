@@ -1,6 +1,7 @@
 """
 Workflow API routes
 CRUD operations for workflows
+Now using Beanie ODM with repository pattern for enhanced security
 """
 from fastapi import APIRouter, HTTPException, status, Query, UploadFile, File
 from fastapi.responses import JSONResponse
@@ -14,6 +15,7 @@ from bson import ObjectId
 from app.models import Workflow, WorkflowCreate, WorkflowUpdate, PaginatedWorkflows
 from app.database import get_database
 from app.config import settings
+from app.repositories import WorkflowRepository, CollectionRepository, RunRepository, EnvironmentRepository
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -778,53 +780,23 @@ def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", 
 
 @router.post("", response_model=Workflow, status_code=status.HTTP_201_CREATED)
 async def create_workflow(workflow: WorkflowCreate):
-    """Create a new workflow"""
-    db = get_database()
-    
-    workflow_id = str(uuid.uuid4())
-    now = datetime.now(UTC)
-    
-    workflow_doc = {
-        "workflowId": workflow_id,
-        "name": workflow.name,
-        "description": workflow.description,
-        "nodes": [node.model_dump() for node in workflow.nodes],
-        "edges": [edge.model_dump() for edge in workflow.edges],
-        "variables": workflow.variables,
-        "tags": workflow.tags,
-        "nodeTemplates": workflow.nodeTemplates,
-        "collectionId": workflow.collectionId,  # Include collectionId if provided
-        "createdAt": now,
-        "updatedAt": now,
-        "version": 1
-    }
-    
-    await db.workflows.insert_one(workflow_doc)
-    
-    return Workflow(**workflow_doc)
+    """Create a new workflow using repository (SQL injection safe)"""
+    # Use repository for type-safe, injection-protected creation
+    created_workflow = await WorkflowRepository.create(workflow)
+    return created_workflow
 
 
 @router.get("", response_model=PaginatedWorkflows)
 async def list_workflows(skip: int = 0, limit: int = 20, tag: Optional[str] = None):
-    """List workflows with pagination"""
-    db = get_database()
-    
-    query = {}
-    if tag:
-        query["tags"] = tag
-    
-    # Get total count
-    total = await db.workflows.count_documents(query)
-    
-    # Get workflows for current page
-    cursor = db.workflows.find(query).skip(skip).limit(limit).sort("createdAt", -1)
-    workflows = await cursor.to_list(length=limit)
+    """List workflows with pagination (SQL injection safe)"""
+    # Use repository for type-safe, injection-protected queries
+    workflows, total = await WorkflowRepository.list_all(skip, limit, tag)
     
     # Calculate if there are more results
     has_more = (skip + len(workflows)) < total
     
     return PaginatedWorkflows(
-        workflows=[Workflow(**workflow) for workflow in workflows],
+        workflows=workflows,
         total=total,
         skip=skip,
         limit=limit,
@@ -834,23 +806,15 @@ async def list_workflows(skip: int = 0, limit: int = 20, tag: Optional[str] = No
 
 @router.get("/unattached", response_model=PaginatedWorkflows)
 async def list_unattached_workflows(skip: int = 0, limit: int = 20):
-    """Get all workflows not attached to any collection with pagination."""
-    db = get_database()
-    
-    query = {"collectionId": None}
-    
-    # Get total count
-    total = await db.workflows.count_documents(query)
-    
-    # Get workflows for current page
-    cursor = db.workflows.find(query).skip(skip).limit(limit).sort("createdAt", -1)
-    workflows = await cursor.to_list(length=limit)
+    """Get all workflows not attached to any collection (SQL injection safe)"""
+    # Use repository for type-safe queries
+    workflows, total = await WorkflowRepository.list_unattached(skip, limit)
     
     # Calculate if there are more results
     has_more = (skip + len(workflows)) < total
     
     return PaginatedWorkflows(
-        workflows=[Workflow(**workflow) for workflow in workflows],
+        workflows=workflows,
         total=total,
         skip=skip,
         limit=limit,
@@ -860,69 +824,40 @@ async def list_unattached_workflows(skip: int = 0, limit: int = 20):
 
 @router.get("/{workflow_id}", response_model=Workflow)
 async def get_workflow(workflow_id: str):
-    """Get a workflow by ID"""
-    db = get_database()
-    
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    """Get a workflow by ID (SQL injection safe)"""
+    # Use repository for type-safe query
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
     
-    return Workflow(**workflow)
+    return workflow
 
 
 @router.put("/{workflow_id}", response_model=Workflow)
 async def update_workflow(workflow_id: str, update: WorkflowUpdate):
-    """Update a workflow"""
-    db = get_database()
+    """Update a workflow (SQL injection safe)"""
+    # Use repository for type-safe update
+    updated_workflow = await WorkflowRepository.update(workflow_id, update)
     
-    # Check if workflow exists
-    existing = await db.workflows.find_one({"workflowId": workflow_id})
-    if not existing:
+    if not updated_workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
     
-    # Build update document
-    update_doc = {"updatedAt": datetime.now(UTC)}
-    if update.name is not None:
-        update_doc["name"] = update.name
-    if update.description is not None:
-        update_doc["description"] = update.description
-    if update.nodes is not None:
-        update_doc["nodes"] = [node.model_dump() for node in update.nodes]
-    if update.edges is not None:
-        update_doc["edges"] = [edge.model_dump() for edge in update.edges]
-    if update.variables is not None:
-        update_doc["variables"] = update.variables
-    if update.tags is not None:
-        update_doc["tags"] = update.tags
-    if update.nodeTemplates is not None:
-        update_doc["nodeTemplates"] = update.nodeTemplates
-    
-    # Increment version
-    update_doc["version"] = existing.get("version", 1) + 1
-    
-    await db.workflows.update_one(
-        {"workflowId": workflow_id},
-        {"$set": update_doc}
-    )
-    
-    # Fetch and return updated workflow
-    updated = await db.workflows.find_one({"workflowId": workflow_id})
-    return Workflow(**updated)
+    return updated_workflow
 
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_workflow(workflow_id: str):
-    """Delete a workflow"""
-    db = get_database()
+    """Delete a workflow (SQL injection safe)"""
+    # Use repository for type-safe deletion
+    deleted = await WorkflowRepository.delete(workflow_id)
     
-    result = await db.workflows.delete_one({"workflowId": workflow_id})
-    if result.deleted_count == 0:
+    if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
@@ -933,14 +868,13 @@ async def delete_workflow(workflow_id: str):
 
 @router.post("/{workflow_id}/run", status_code=status.HTTP_202_ACCEPTED)
 async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(None)):
-    """Trigger a workflow run with optional environment"""
+    """Trigger a workflow run with optional environment (SQL injection safe)"""
     from app.runner.executor import WorkflowExecutor
+    from app.repositories import EnvironmentRepository
     import asyncio
     
-    db = get_database()
-    
-    # Verify workflow exists
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    # Verify workflow exists using repository
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -949,7 +883,7 @@ async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(No
     
     # Verify environment exists if provided
     if environmentId:
-        environment = await db.environments.find_one({"environmentId": environmentId})
+        environment = await EnvironmentRepository.get_by_id(environmentId)
         if not environment:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -959,13 +893,21 @@ async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(No
     run_id = str(uuid.uuid4())
     now = datetime.now(UTC)
     
-    run_doc = {
+    # Create run using repository (type-safe)
+    from app.models import RunCreate
+    run_request = RunCreate(
+        workflowId=workflow_id,
+        variables=workflow.variables.copy() if workflow.variables else {}
+    )
+    
+    # Create run document with all required fields
+    run_doc_data = {
         "runId": run_id,
         "workflowId": workflow_id,
         "environmentId": environmentId,  # Store which environment to use for this run
         "status": "pending",
         "trigger": "manual",
-        "variables": workflow.get("variables", {}),
+        "variables": run_request.variables,
         "callbackUrl": None,
         "results": [],
         "createdAt": now,
@@ -975,7 +917,10 @@ async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(No
         "error": None
     }
     
-    await db.runs.insert_one(run_doc)
+    # Insert run directly using Beanie (repository create doesn't support custom runId)
+    from app.models import Run
+    run = Run(**run_doc_data)
+    await run.insert()
     
     # Trigger workflow execution as a background task
     # This allows immediate response while execution happens in background
@@ -1001,11 +946,9 @@ async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(No
 
 @router.get("/{workflow_id}/runs")
 async def get_workflow_runs(workflow_id: str, page: int = 1, limit: int = 10):
-    """Get runs for a workflow with pagination (lightweight list view)"""
-    db = get_database()
-    
-    # Verify workflow exists
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    """Get runs for a workflow with pagination (SQL injection safe)"""
+    # Verify workflow exists using repository
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1015,30 +958,24 @@ async def get_workflow_runs(workflow_id: str, page: int = 1, limit: int = 10):
     # Calculate skip value for pagination
     skip = (page - 1) * limit
     
-    # Get total count
-    total_count = await db.runs.count_documents({"workflowId": workflow_id})
+    # Get runs using repository with pagination
+    runs_list, total_count = await RunRepository.list_by_workflow(workflow_id, skip, limit)
     
-    # Get runs sorted by most recent first (createdAt descending)
-    # Only fetch essential fields for list view - exclude heavy nodeStatuses
-    projection = {
-        "_id": 0,
-        "runId": 1,
-        "workflowId": 1,
-        "status": 1,
-        "trigger": 1,
-        "createdAt": 1,
-        "startedAt": 1,
-        "completedAt": 1,
-        "duration": 1,
-        "error": 1
-    }
-    
-    cursor = db.runs.find(
-        {"workflowId": workflow_id},
-        projection
-    ).sort("createdAt", -1).skip(skip).limit(limit)
-    
-    runs = await cursor.to_list(length=limit)
+    # Convert Beanie Documents to dicts for response (excluding heavy nodeStatuses)
+    runs = []
+    for run in runs_list:
+        run_dict = {
+            "runId": run.runId,
+            "workflowId": run.workflowId,
+            "status": run.status,
+            "trigger": run.trigger,
+            "createdAt": run.createdAt,
+            "startedAt": run.startedAt,
+            "completedAt": run.completedAt,
+            "duration": run.duration,
+            "error": run.error
+        }
+        runs.append(run_dict)
     
     # Calculate pagination info
     total_pages = (total_count + limit - 1) // limit  # Ceiling division
@@ -1058,21 +995,22 @@ async def get_workflow_runs(workflow_id: str, page: int = 1, limit: int = 10):
 
 @router.get("/{workflow_id}/runs/{run_id}")
 async def get_run_status(workflow_id: str, run_id: str):
-    """Get the status of a workflow run with full node results"""
-    db = get_database()
-    
-    run = await db.runs.find_one({"runId": run_id, "workflowId": workflow_id})
-    if not run:
+    """Get the status of a workflow run with full node results (SQL injection safe)"""
+    # Get run using repository
+    run_doc = await RunRepository.get_by_id(run_id)
+    if not run_doc or run_doc.workflowId != workflow_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Run {run_id} not found"
         )
     
-    # Remove MongoDB _id from response
-    run.pop('_id', None)
+    # Convert to dict for processing
+    run = run_doc.model_dump(by_alias=True)
+    run.pop('_id', None)  # Remove MongoDB _id if present
     
-    # Fetch full node results from separate collection
+    # Fetch full node results from separate collection (still uses direct DB for GridFS)
     if run.get('nodeStatuses'):
+        db = get_database()
         gridfs_bucket = AsyncIOMotorGridFSBucket(db)
         
         for node_id in run['nodeStatuses'].keys():
@@ -1133,20 +1071,19 @@ async def get_run_status(workflow_id: str, run_id: str):
 @router.get("/{workflow_id}/runs/{run_id}/nodes/{node_id}/result")
 async def get_node_result(workflow_id: str, run_id: str, node_id: str):
     """
-    Get the full result for a specific node in a run.
+    Get the full result for a specific node in a run (SQL injection safe).
     Handles both regular results and GridFS-stored large results.
     """
-    db = get_database()
-    
-    # Verify run exists
-    run = await db.runs.find_one({"runId": run_id, "workflowId": workflow_id})
-    if not run:
+    # Verify run exists using repository
+    run = await RunRepository.get_by_id(run_id)
+    if not run or run.workflowId != workflow_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Run {run_id} not found"
         )
     
-    # Fetch node result
+    # Fetch node result from direct DB (GridFS collection not in Beanie yet)
+    db = get_database()
     node_result = await db.node_results.find_one(
         {"runId": run_id, "nodeId": node_id},
         {"_id": 0}
@@ -1218,19 +1155,17 @@ async def export_workflow(workflow_id: str, include_environment: bool = Query(Tr
     Includes workflow, referenced environment (without secrets), and metadata
     Secrets are replaced with <SECRET> placeholders
     """
-    db = get_database()
-    
     try:
-        # Fetch workflow
-        workflow = await db.workflows.find_one({"workflowId": workflow_id})
-        if not workflow:
+        # Fetch workflow using repository
+        workflow_doc = await WorkflowRepository.get_by_id(workflow_id)
+        if not workflow_doc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Workflow {workflow_id} not found"
             )
         
-        # Remove MongoDB _id
-        workflow.pop('_id', None)
+        # Convert Beanie Document to dict
+        workflow = workflow_doc.model_dump()
         
         # Convert datetime objects to ISO strings
         if workflow.get("createdAt"):
@@ -1265,10 +1200,11 @@ async def export_workflow(workflow_id: str, include_environment: bool = Query(Tr
         # Include environment if requested and workflow has one
         if include_environment and workflow.get("environmentId"):
             env_id = workflow["environmentId"]
-            environment = await db.environments.find_one({"environmentId": env_id})
+            environment_doc = await EnvironmentRepository.get_by_id(env_id)
             
-            if environment:
-                environment.pop('_id', None)
+            if environment_doc:
+                # Convert Beanie Document to dict
+                environment = environment_doc.model_dump()
                 
                 # Convert datetime objects to ISO strings
                 if environment.get("createdAt"):
@@ -1310,8 +1246,6 @@ async def import_workflow(
     Import a workflow bundle
     Validates structure, handles environment mapping, optionally creates missing environments
     """
-    db = get_database()
-    
     # Validate bundle structure
     if "workflow" not in bundle:
         raise HTTPException(
@@ -1340,8 +1274,8 @@ async def import_workflow(
         if environment_mapping and old_env_id in environment_mapping:
             new_env_id = environment_mapping[old_env_id]
             
-            # Verify mapped environment exists
-            existing_env = await db.environments.find_one({"environmentId": new_env_id})
+            # Verify mapped environment exists using repository
+            existing_env = await EnvironmentRepository.get_by_id(new_env_id)
             if not existing_env:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -1351,28 +1285,25 @@ async def import_workflow(
             # Try to find the environment in the bundle and create it
             env_data = next((e for e in environments if e.get("environmentId") == old_env_id), None)
             if env_data:
-                # Create new environment with new ID
+                # Create new environment with new ID using repository
                 new_env_id = str(uuid.uuid4())
-                now = datetime.now(UTC)
                 
-                env_doc = {
+                env_create = {
                     "environmentId": new_env_id,
                     "name": env_data.get("name", "Imported Environment"),
                     "description": env_data.get("description"),
                     "variables": env_data.get("variables", {}),
-                    "isActive": False,
-                    "createdAt": now,
-                    "updatedAt": now
+                    "secrets": {},  # Secrets not included in exports
+                    "isActive": False
                 }
                 
-                await db.environments.insert_one(env_doc)
+                await EnvironmentRepository.create(env_create)  # type: ignore
         else:
             # No mapping and can't create - set to null
             new_env_id = None
     
-    # Create new workflow with new IDs
+    # Create new workflow with new IDs using repository
     new_workflow_id = str(uuid.uuid4())
-    now = datetime.now(UTC)
     
     # Optionally sanitize again (belt and suspenders)
     if sanitize:
@@ -1385,7 +1316,7 @@ async def import_workflow(
                 secret_refs = []
                 node["config"] = sanitize_secrets_in_dict(node["config"], secret_refs)
     
-    workflow_doc = {
+    workflow_create = {
         "workflowId": new_workflow_id,
         "name": workflow_data["name"],
         "description": workflow_data.get("description"),
@@ -1393,13 +1324,12 @@ async def import_workflow(
         "edges": workflow_data["edges"],
         "variables": workflow_data.get("variables", {}),
         "tags": workflow_data.get("tags", []),
+        "collectionId": None,
         "environmentId": new_env_id,
-        "createdAt": now,
-        "updatedAt": now,
-        "version": 1
+        "nodeTemplates": workflow_data.get("nodeTemplates", [])
     }
     
-    await db.workflows.insert_one(workflow_doc)
+    await WorkflowRepository.create(workflow_create)  # type: ignore
     
     return {
         "message": "Workflow imported successfully",
@@ -1415,8 +1345,6 @@ async def import_workflow_dry_run(bundle: Dict[str, Any]):
     Validate a workflow bundle without persisting
     Returns summary of what would be created/modified
     """
-    db = get_database()
-    
     # Validate bundle structure
     errors = []
     warnings = []
@@ -1459,10 +1387,10 @@ async def import_workflow_dry_run(bundle: Dict[str, Any]):
                 if edge["target"] not in node_ids:
                     errors.append(f"Edge references non-existent target node: {edge['target']}")
     
-    # Check for environment references
+    # Check for environment references using repository
     old_env_id = workflow_data.get("environmentId")
     if old_env_id:
-        env_exists = await db.environments.find_one({"environmentId": old_env_id})
+        env_exists = await EnvironmentRepository.get_by_id(old_env_id)
         if not env_exists:
             # Check if environment is in bundle
             environments = bundle.get("environments", [])
@@ -1508,8 +1436,6 @@ async def import_har_file(
     
     If parse_only=true, returns just the parsed nodes array without creating a workflow
     """
-    db = get_database()
-    
     try:
         # Parse HAR data
         if not file:
@@ -1554,11 +1480,10 @@ async def import_har_file(
                 }
             }
         
-        # Otherwise, create full workflow in database
+        # Otherwise, create full workflow in database using repository
         new_workflow_id = str(uuid.uuid4())
-        now = datetime.now(UTC)
         
-        workflow_doc = {
+        workflow_create = {
             "workflowId": new_workflow_id,
             "name": workflow_data["name"],
             "description": workflow_data["description"],
@@ -1566,14 +1491,12 @@ async def import_har_file(
             "edges": workflow_data["edges"],
             "variables": workflow_data.get("variables", {}),
             "tags": workflow_data.get("tags", []),
+            "collectionId": None,
             "nodeTemplates": [],  # Initialize empty templates
-            "environmentId": environment_id,
-            "createdAt": now,
-            "updatedAt": now,
-            "version": 1
+            "environmentId": environment_id
         }
         
-        await db.workflows.insert_one(workflow_doc)
+        await WorkflowRepository.create(workflow_create)  # type: ignore
         
         return {
             "message": "HAR file imported successfully",
@@ -1707,8 +1630,6 @@ async def import_openapi_file(
     
     If parse_only=true, returns just the parsed nodes array without creating a workflow
     """
-    db = get_database()
-    
     try:
         # Parse OpenAPI data
         if not file:
@@ -1756,11 +1677,10 @@ async def import_openapi_file(
                 }
             }
         
-        # Otherwise, create full workflow in database
+        # Otherwise, create full workflow in database using repository
         new_workflow_id = str(uuid.uuid4())
-        now = datetime.now(UTC)
         
-        workflow_doc = {
+        workflow_create = {
             "workflowId": new_workflow_id,
             "name": workflow_data["name"],
             "description": workflow_data["description"],
@@ -1768,14 +1688,12 @@ async def import_openapi_file(
             "edges": workflow_data["edges"],
             "variables": workflow_data.get("variables", {}),
             "tags": workflow_data.get("tags", []),
+            "collectionId": None,
             "nodeTemplates": [],  # Initialize empty templates
-            "environmentId": None,
-            "createdAt": now,
-            "updatedAt": now,
-            "version": 1
+            "environmentId": None
         }
         
-        await db.workflows.insert_one(workflow_doc)
+        await WorkflowRepository.create(workflow_create)  # type: ignore
         
         return {
             "message": "OpenAPI file imported successfully",
@@ -1953,52 +1871,40 @@ async def import_curl_dry_run(
 @router.put("/{workflow_id}/collection")
 async def attach_workflow_to_collection(workflow_id: str, collection_id: Optional[str] = Query(None)):
     """
-    Attach or detach a workflow to/from a collection.
+    Attach or detach a workflow to/from a collection (SQL injection safe).
     
     If collection_id is null, workflow becomes unattached.
     Multiple workflows can be attached to the same collection.
     """
-    db = get_database()
-    
-    # Verify workflow exists
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    # Verify workflow exists using repository
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
     
-    # If attaching, verify collection exists
+    # If attaching, verify collection exists using repository
     if collection_id:
-        collection = await db.collections.find_one({"collectionId": collection_id})
+        collection = await CollectionRepository.get_by_id(collection_id)
         if not collection:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Collection {collection_id} not found"
             )
     
-    # Update workflow
-    await db.workflows.update_one(
-        {"workflowId": workflow_id},
-        {"$set": {
-            "collectionId": collection_id,
-            "updatedAt": datetime.now(UTC)
-        }}
-    )
+    # Update workflow using repository
+    updated_workflow = await WorkflowRepository.update_collection_assignment(workflow_id, collection_id)
     
-    # Return updated workflow
-    updated = await db.workflows.find_one({"workflowId": workflow_id})
-    return Workflow(**updated)
+    return updated_workflow
 
 
 @router.get("/by-collection/{collection_id}")
 async def list_workflows_by_collection(collection_id: str):
-    """Get all workflows attached to a collection."""
-    db = get_database()
-    
-    cursor = db.workflows.find({"collectionId": collection_id}).sort("createdAt", -1)
-    workflows = await cursor.to_list(length=None)
-    return [Workflow(**w) for w in workflows]
+    """Get all workflows attached to a collection (SQL injection safe)"""
+    # Use repository for type-safe query
+    workflows, _ = await WorkflowRepository.list_by_collection(collection_id, skip=0, limit=1000)
+    return workflows
 
 
 
@@ -2007,35 +1913,28 @@ async def bulk_attach_workflows(
     workflow_ids: List[str] = Query(...),
     collection_id: Optional[str] = Query(None)
 ):
-    """Attach multiple workflows to a collection."""
-    db = get_database()
-    
-    # Verify all workflows exist
+    """Attach multiple workflows to a collection (SQL injection safe)."""
+    # Verify all workflows exist using repository
     for wid in workflow_ids:
-        workflow = await db.workflows.find_one({"workflowId": wid})
+        workflow = await WorkflowRepository.get_by_id(wid)
         if not workflow:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Workflow {wid} not found"
             )
     
-    # If attaching, verify collection exists
+    # If attaching, verify collection exists using repository
     if collection_id:
-        collection = await db.collections.find_one({"collectionId": collection_id})
+        collection = await CollectionRepository.get_by_id(collection_id)
         if not collection:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Collection {collection_id} not found"
             )
     
-    # Update all workflows
-    await db.workflows.update_many(
-        {"workflowId": {"$in": workflow_ids}},
-        {"$set": {
-            "collectionId": collection_id,
-            "updatedAt": datetime.now(UTC)
-        }}
-    )
+    # Update all workflows using repository
+    for wid in workflow_ids:
+        await WorkflowRepository.update_collection_assignment(wid, collection_id)
     
     return {
         "message": f"Updated {len(workflow_ids)} workflows",
@@ -2048,10 +1947,9 @@ async def bulk_attach_workflows(
 
 @router.get("/{workflow_id}/templates")
 async def get_workflow_templates(workflow_id: str):
-    """Get all node templates for a workflow"""
-    db = get_database()
-    
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    """Get all node templates for a workflow (SQL injection safe)"""
+    # Use repository for type-safe query
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -2060,7 +1958,7 @@ async def get_workflow_templates(workflow_id: str):
     
     return {
         "workflowId": workflow_id,
-        "templates": workflow.get("nodeTemplates", [])
+        "templates": workflow.nodeTemplates
     }
 
 
@@ -2069,10 +1967,9 @@ async def add_workflow_templates(
     workflow_id: str,
     templates: List[Dict[str, Any]]
 ):
-    """Add node templates to a workflow (appends to existing templates)"""
-    db = get_database()
-    
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    """Add node templates to a workflow (appends to existing templates - SQL injection safe)"""
+    # Get workflow using repository
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -2080,19 +1977,15 @@ async def add_workflow_templates(
         )
     
     # Get existing templates
-    existing_templates = workflow.get("nodeTemplates", [])
+    existing_templates = workflow.nodeTemplates if workflow.nodeTemplates else []
     
     # Append new templates
     updated_templates = existing_templates + templates
     
-    # Update workflow
-    await db.workflows.update_one(
-        {"workflowId": workflow_id},
-        {"$set": {
-            "nodeTemplates": updated_templates,
-            "updatedAt": datetime.now(UTC)
-        }}
-    )
+    # Update workflow using Beanie
+    workflow.nodeTemplates = updated_templates
+    workflow.updatedAt = datetime.now(UTC)
+    await workflow.save()
     
     return {
         "message": f"Added {len(templates)} template(s) to workflow",
@@ -2106,24 +1999,19 @@ async def replace_workflow_templates(
     workflow_id: str,
     templates: List[Dict[str, Any]]
 ):
-    """Replace all node templates for a workflow"""
-    db = get_database()
-    
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    """Replace all node templates for a workflow (SQL injection safe)"""
+    # Get workflow using repository
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
     
-    # Replace templates
-    await db.workflows.update_one(
-        {"workflowId": workflow_id},
-        {"$set": {
-            "nodeTemplates": templates,
-            "updatedAt": datetime.now(UTC)
-        }}
-    )
+    # Replace templates using Beanie
+    workflow.nodeTemplates = templates
+    workflow.updatedAt = datetime.now(UTC)
+    await workflow.save()
     
     return {
         "message": "Templates replaced successfully",
@@ -2134,24 +2022,19 @@ async def replace_workflow_templates(
 
 @router.delete("/{workflow_id}/templates")
 async def clear_workflow_templates(workflow_id: str):
-    """Clear all node templates for a workflow"""
-    db = get_database()
-    
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    """Clear all node templates for a workflow (SQL injection safe)"""
+    # Get workflow using repository
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
     
-    # Clear templates
-    await db.workflows.update_one(
-        {"workflowId": workflow_id},
-        {"$set": {
-            "nodeTemplates": [],
-            "updatedAt": datetime.now(UTC)
-        }}
-    )
+    # Clear templates using Beanie
+    workflow.nodeTemplates = []
+    workflow.updatedAt = datetime.now(UTC)
+    await workflow.save()
     
     return {
         "message": "Templates cleared successfully",
@@ -2172,7 +2055,6 @@ async def import_curl_file(
     If parse_only=true, returns just the parsed nodes array without creating/updating a workflow.
     If workflowId is provided, append to that workflow. Otherwise, create new workflow.
     """
-    db = get_database()
     try:
         if not curl_command:
             raise HTTPException(
@@ -2200,8 +2082,8 @@ async def import_curl_file(
             }
 
         if workflowId:
-            # Append to existing workflow
-            existing = await db.workflows.find_one({"workflowId": workflowId})
+            # Append to existing workflow using repository
+            existing = await WorkflowRepository.get_by_id(workflowId)
             if not existing:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -2226,7 +2108,7 @@ async def import_curl_file(
 
             # --- Offset imported nodes to avoid overlap ---
             # Find max X and Y of existing nodes
-            existing_positions = [n.get("position", {}) for n in existing["nodes"] if n.get("position")]
+            existing_positions = [n.position for n in existing.nodes if n.position and len(n.position) > 0]
             if existing_positions:
                 max_x = max(pos.get("x", 0) for pos in existing_positions)
                 max_y = max(pos.get("y", 0) for pos in existing_positions)
@@ -2243,18 +2125,20 @@ async def import_curl_file(
                     node["position"]["x"] = node["position"].get("x", 0) + x_offset
                     node["position"]["y"] = node["position"].get("y", 0) + y_offset
 
-            # Append nodes/edges
-            updated_nodes = existing["nodes"] + imported_nodes
-            updated_edges = existing["edges"] + imported_edges
-            # Update DB
-            await db.workflows.update_one(
-                {"workflowId": workflowId},
-                {"$set": {
-                    "nodes": updated_nodes,
-                    "edges": updated_edges,
-                    "updatedAt": datetime.now(UTC)
-                }}
-            )
+            # Append nodes/edges - convert to model format first
+            # Convert Beanie Document nodes to dicts for manipulation
+            existing_nodes_dicts = [n.model_dump() if hasattr(n, 'model_dump') else n for n in existing.nodes]
+            existing_edges_dicts = [e.model_dump() if hasattr(e, 'model_dump') else e for e in existing.edges]
+            
+            updated_nodes_dicts = existing_nodes_dicts + imported_nodes
+            updated_edges_dicts = existing_edges_dicts + imported_edges
+            
+            # Update workflow using repository update method
+            await WorkflowRepository.update(workflowId, {  # type: ignore
+                "nodes": updated_nodes_dicts,
+                "edges": updated_edges_dicts
+            })
+            
             return {
                 "message": f"Curl commands imported and appended to workflow {workflowId}",
                 "workflowId": workflowId,
@@ -2264,10 +2148,9 @@ async def import_curl_file(
                 }
             }
         else:
-            # Create new workflow as before
+            # Create new workflow as before using repository
             new_workflow_id = str(uuid.uuid4())
-            now = datetime.now(UTC)
-            workflow_doc = {
+            workflow_create = {
                 "workflowId": new_workflow_id,
                 "name": workflow_data["name"],
                 "description": workflow_data["description"],
@@ -2275,13 +2158,11 @@ async def import_curl_file(
                 "edges": workflow_data["edges"],
                 "variables": workflow_data.get("variables", {}),
                 "tags": workflow_data.get("tags", []),
+                "collectionId": None,
                 "nodeTemplates": [],  # Initialize empty templates
-                "environmentId": None,
-                "createdAt": now,
-                "updatedAt": now,
-                "version": 1
+                "environmentId": None
             }
-            await db.workflows.insert_one(workflow_doc)
+            await WorkflowRepository.create(workflow_create)  # type: ignore
             return {
                 "message": "Curl commands imported successfully",
                 "workflowId": new_workflow_id,

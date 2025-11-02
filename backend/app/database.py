@@ -1,8 +1,10 @@
 """
-MongoDB database connection and utilities
+MongoDB database connection and utilities with Beanie ODM
 """
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from beanie import init_beanie
 from app.config import settings
+from app.models import Workflow, Run, Environment, Collection
 
 # Global database client
 client: AsyncIOMotorClient = None
@@ -10,16 +12,25 @@ db: AsyncIOMotorDatabase = None
 
 
 async def connect_db():
-    """Connect to MongoDB"""
+    """Connect to MongoDB and initialize Beanie ODM"""
     global client, db
     
     client = AsyncIOMotorClient(settings.MONGODB_URL)
     db = client[settings.MONGODB_DB_NAME]
     
-    print(f"✅ Connected to MongoDB: {settings.MONGODB_DB_NAME}")
+    # Initialize Beanie with Document models
+    await init_beanie(
+        database=db,
+        document_models=[
+            Workflow,
+            Run,
+            Environment,
+            Collection
+        ]
+    )
     
-    # Create indexes
-    await create_indexes()
+    print(f"✅ Connected to MongoDB: {settings.MONGODB_DB_NAME}")
+    print(f"✅ Initialized Beanie ODM with type-safe models")
 
 
 async def close_db():
@@ -31,22 +42,10 @@ async def close_db():
         print("❌ Closed MongoDB connection")
 
 
-async def create_indexes():
-    """Create database indexes"""
-    global db
-    
-    # Workflows collection
-    await db.workflows.create_index("workflowId", unique=True)
-    await db.workflows.create_index([("createdAt", -1)])
-    
-    # Runs collection
-    await db.runs.create_index("runId", unique=True)
-    await db.runs.create_index([("status", 1), ("createdAt", 1)])
-    await db.runs.create_index("workflowId")
-    
-    print("✅ Created database indexes")
-
-
 def get_database() -> AsyncIOMotorDatabase:
-    """Get database instance"""
+    """
+    Get database instance
+    Note: With Beanie, you typically don't need direct database access.
+    Use Document models and repositories instead for type safety.
+    """
     return db

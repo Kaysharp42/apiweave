@@ -1,6 +1,7 @@
 """
 Collections API routes
 CRUD operations for workflow collections
+Now using Beanie ODM with repository pattern
 """
 from fastapi import APIRouter, HTTPException, status, Query, UploadFile, File
 from typing import List, Optional, Dict, Any
@@ -10,215 +11,151 @@ import json
 import re
 
 from app.models import Collection, CollectionCreate, CollectionUpdate, CollectionImportRequest, CollectionImportDryRunRequest
-from app.database import get_database
+from app.repositories import CollectionRepository, WorkflowRepository, EnvironmentRepository
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
 
 @router.post("", response_model=Collection, status_code=status.HTTP_201_CREATED)
 async def create_collection(collection: CollectionCreate):
-    """Create a new collection"""
-    db = get_database()
-    
-    collection_id = str(uuid.uuid4())
-    now = datetime.now(UTC)
-    
-    collection_doc = {
-        "collectionId": collection_id,
-        "name": collection.name,
-        "description": collection.description,
-        "color": collection.color or "#3B82F6",  # Default blue
-        "workflowCount": 0,
-        "createdAt": now,
-        "updatedAt": now
-    }
-    
-    await db.collections.insert_one(collection_doc)
-    
-    return Collection(**collection_doc)
+    """Create a new collection (SQL injection safe)"""
+    created_collection = await CollectionRepository.create(collection)
+    return created_collection
 
 
 @router.get("", response_model=List[Collection])
 async def list_collections():
-    """List all collections"""
-    db = get_database()
+    """List all collections (SQL injection safe)"""
+    collections_list, _ = await CollectionRepository.list_all(skip=0, limit=1000)
     
-    cursor = db.collections.find({}).sort("createdAt", -1)
-    collections_list = await cursor.to_list(length=None)
-    
-    # Calculate workflow count for each collection
+    # Calculate workflow count for each collection using repository
     for col in collections_list:
-        count = await db.workflows.count_documents({"collectionId": col["collectionId"]})
-        col["workflowCount"] = count
+        count = await WorkflowRepository.count_by_collection(col.collectionId)
+        col.workflowCount = count
     
-    return [Collection(**col) for col in collections_list]
+    return collections_list
 
 
 @router.get("/{collection_id}", response_model=Collection)
 async def get_collection(collection_id: str):
-    """Get a collection by ID"""
-    db = get_database()
-    
-    collection = await db.collections.find_one({"collectionId": collection_id})
+    """Get a collection by ID (SQL injection safe)"""
+    collection = await CollectionRepository.get_by_id(collection_id)
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection {collection_id} not found"
         )
     
-    # Get workflow count
-    count = await db.workflows.count_documents({"collectionId": collection_id})
-    collection["workflowCount"] = count
+    # Get workflow count using repository
+    count = await WorkflowRepository.count_by_collection(collection_id)
+    collection.workflowCount = count
     
-    return Collection(**collection)
+    return collection
 
 
 @router.put("/{collection_id}", response_model=Collection)
 async def update_collection(collection_id: str, update: CollectionUpdate):
-    """Update a collection"""
-    db = get_database()
+    """Update a collection (SQL injection safe)"""
+    # Update using repository
+    updated_col = await CollectionRepository.update(collection_id, update)
     
-    # Check if collection exists
-    existing = await db.collections.find_one({"collectionId": collection_id})
-    if not existing:
+    if not updated_col:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection {collection_id} not found"
         )
     
-    # Build update document
-    update_doc = {"updatedAt": datetime.now(UTC)}
-    if update.name is not None:
-        update_doc["name"] = update.name
-    if update.description is not None:
-        update_doc["description"] = update.description
-    if update.color is not None:
-        update_doc["color"] = update.color
+    # Get workflow count using repository
+    count = await WorkflowRepository.count_by_collection(collection_id)
+    updated_col.workflowCount = count
     
-    # Update the collection
-    await db.collections.update_one(
-        {"collectionId": collection_id},
-        {"$set": update_doc}
-    )
-    
-    # Fetch and return updated collection
-    updated_col = await db.collections.find_one({"collectionId": collection_id})
-    
-    # Get workflow count
-    count = await db.workflows.count_documents({"collectionId": collection_id})
-    updated_col["workflowCount"] = count
-    
-    return Collection(**updated_col)
+    return updated_col
 
 
 @router.delete("/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_collection(collection_id: str):
-    """Delete a collection"""
-    db = get_database()
-    
+    """Delete a collection (SQL injection safe)"""
     # Check if collection exists
-    collection = await db.collections.find_one({"collectionId": collection_id})
+    collection = await CollectionRepository.get_by_id(collection_id)
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection {collection_id} not found"
         )
     
-    # Check if any workflows are in this collection
-    workflows_count = await db.workflows.count_documents({"collectionId": collection_id})
+    # Check if any workflows are in this collection using repository
+    workflows_count = await WorkflowRepository.count_by_collection(collection_id)
     if workflows_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot delete collection. {workflows_count} workflow(s) are still in it."
         )
     
-    # Delete the collection
-    await db.collections.delete_one({"collectionId": collection_id})
+    # Delete the collection using repository
+    deleted = await CollectionRepository.delete(collection_id)
+    return None
 
 
 @router.post("/{collection_id}/workflows/{workflow_id}", status_code=status.HTTP_200_OK)
 async def add_workflow_to_collection(collection_id: str, workflow_id: str):
-    """Add a workflow to a collection"""
-    db = get_database()
-    
-    # Verify collection exists
-    collection = await db.collections.find_one({"collectionId": collection_id})
+    """Add a workflow to a collection (SQL injection safe)"""
+    # Verify collection exists using repository
+    collection = await CollectionRepository.get_by_id(collection_id)
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection {collection_id} not found"
         )
     
-    # Verify workflow exists
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
-    if not workflow:
+    # Verify workflow exists and assign to collection using repository
+    updated = await WorkflowRepository.update_collection_assignment(workflow_id, collection_id)
+    if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
     
-    # Add workflow to collection
-    await db.workflows.update_one(
-        {"workflowId": workflow_id},
-        {"$set": {"collectionId": collection_id, "updatedAt": datetime.now(UTC)}}
-    )
-    
-    # Return updated workflow
-    updated = await db.workflows.find_one({"workflowId": workflow_id})
-    from app.models import Workflow
-    return Workflow(**updated)
+    return updated
 
 
 @router.delete("/{collection_id}/workflows/{workflow_id}", status_code=status.HTTP_200_OK)
 async def remove_workflow_from_collection(collection_id: str, workflow_id: str):
-    """Remove a workflow from a collection"""
-    db = get_database()
-    
-    # Verify workflow exists and is in this collection
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    """Remove a workflow from a collection (SQL injection safe)"""
+    # Verify workflow exists and is in this collection using repository
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
     
-    if workflow.get("collectionId") != collection_id:
+    if workflow.collectionId != collection_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Workflow is not in collection {collection_id}"
         )
     
-    # Remove from collection
-    await db.workflows.update_one(
-        {"workflowId": workflow_id},
-        {"$set": {"collectionId": None, "updatedAt": datetime.now(UTC)}}
-    )
+    # Remove from collection using repository
+    updated = await WorkflowRepository.update_collection_assignment(workflow_id, None)
     
-    # Return updated workflow
-    updated = await db.workflows.find_one({"workflowId": workflow_id})
-    from app.models import Workflow
-    return Workflow(**updated)
+    return updated
 
 
 @router.get("/{collection_id}/workflows", response_model=List)
 async def get_collection_workflows(collection_id: str):
-    """Get all workflows in a collection"""
-    db = get_database()
-    
-    # Verify collection exists
-    collection = await db.collections.find_one({"collectionId": collection_id})
+    """Get all workflows in a collection (SQL injection safe)"""
+    # Verify collection exists using repository
+    collection = await CollectionRepository.get_by_id(collection_id)
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection {collection_id} not found"
         )
     
-    workflows = await db.workflows.find(
-        {"collectionId": collection_id}
-    ).sort("createdAt", -1).to_list(None)
+    # Get workflows using repository
+    workflows = await WorkflowRepository.list_by_collection(collection_id)
     
-    from app.models import Workflow
-    return [Workflow(**w) for w in workflows]
+    return workflows
 
 
 # Helper functions for export/import
@@ -272,42 +209,41 @@ def sanitize_secrets_in_dict(data: Dict[str, Any], secret_refs: List[str], path:
 
 @router.get("/{collection_id}/export")
 async def export_collection(collection_id: str, include_environment: bool = Query(True)):
-    """Export a collection with all workflows and environments"""
-    db = get_database()
-    
-    # Verify collection exists
-    collection = await db.collections.find_one({"collectionId": collection_id})
+    """Export a collection with all workflows and environments (SQL injection safe)"""
+    # Verify collection exists using repository
+    collection = await CollectionRepository.get_by_id(collection_id)
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection {collection_id} not found"
         )
     
-    # Get all workflows in collection
-    workflows_cursor = db.workflows.find({"collectionId": collection_id})
-    workflows_list = await workflows_cursor.to_list(length=None)
+    # Get all workflows in collection using repository
+    workflows_list, _ = await WorkflowRepository.list_by_collection(collection_id, skip=0, limit=1000)
     
     # Get unique environment IDs from workflows
     environment_ids = set()
     for wf in workflows_list:
-        if wf.get("environmentId"):
-            environment_ids.add(wf["environmentId"])
+        if wf.environmentId:
+            environment_ids.add(wf.environmentId)
     
-    # Get environments if requested
+    # Get environments if requested using repository
     environments_list = []
     if include_environment and environment_ids:
         for env_id in environment_ids:
-            env = await db.environments.find_one({"environmentId": env_id})
+            env = await EnvironmentRepository.get_by_id(env_id)
             if env:
                 # Sanitize environment variables
                 secret_refs = []
                 sanitized_vars = sanitize_secrets_in_dict(
-                    env.get("variables", {}),
+                    env.variables if env.variables else {},
                     secret_refs,
                     f"environments.{env_id}.variables"
                 )
-                env["variables"] = sanitized_vars
-                environments_list.append(env)
+                # Convert to dict for export
+                env_dict = env.model_dump(by_alias=True)
+                env_dict["variables"] = sanitized_vars
+                environments_list.append(env_dict)
     
     # Build export bundle
     secret_refs = []
@@ -316,16 +252,19 @@ async def export_collection(collection_id: str, include_environment: bool = Quer
     for wf in workflows_list:
         wf_secret_refs = []
         
+        # Convert Beanie Document to dict for processing
+        wf_dict = wf.model_dump(by_alias=True)
+        
         # Sanitize workflow variables
         sanitized_vars = sanitize_secrets_in_dict(
-            wf.get("variables", {}),
+            wf_dict.get("variables", {}),
             wf_secret_refs,
             f"workflows.variables"
         )
         
         # Sanitize node configs
         sanitized_nodes = []
-        for node in wf.get("nodes", []):
+        for node in wf_dict.get("nodes", []):
             node_copy = dict(node)
             if "config" in node_copy and isinstance(node_copy["config"], dict):
                 node_secret_refs = []
@@ -340,26 +279,29 @@ async def export_collection(collection_id: str, include_environment: bool = Quer
             sanitized_nodes.append(node_copy)
         
         sanitized_wf = {
-            "workflowId": wf.get("workflowId"),
-            "name": wf.get("name"),
-            "description": wf.get("description", ""),
+            "workflowId": wf_dict.get("workflowId"),
+            "name": wf_dict.get("name"),
+            "description": wf_dict.get("description", ""),
             "nodes": sanitized_nodes,
-            "edges": wf.get("edges", []),
+            "edges": wf_dict.get("edges", []),
             "variables": sanitized_vars,
-            "tags": wf.get("tags", []),
-            "environmentId": wf.get("environmentId")
+            "tags": wf_dict.get("tags", []),
+            "environmentId": wf_dict.get("environmentId")
         }
         
         sanitized_workflows.append(sanitized_wf)
         secret_refs.extend(wf_secret_refs)
     
+    # Convert collection to dict
+    collection_dict = collection.model_dump(by_alias=True)
+    
     export_bundle = {
         "type": "awecollection",
         "version": "1.0",
         "collection": {
-            "name": collection.get("name"),
-            "description": collection.get("description", ""),
-            "color": collection.get("color", "#3B82F6")
+            "name": collection_dict.get("name"),
+            "description": collection_dict.get("description", ""),
+            "color": collection_dict.get("color", "#3B82F6")
         },
         "workflows": sanitized_workflows,
         "environments": [{
@@ -383,9 +325,7 @@ async def export_collection(collection_id: str, include_environment: bool = Quer
 async def import_collection_dry_run(
     request: CollectionImportDryRunRequest
 ):
-    """Validate collection import without persisting"""
-    db = get_database()
-    
+    """Validate collection import without persisting (SQL injection safe)"""
     bundle = request.bundle
     createNewCollection = request.createNewCollection
     targetCollectionId = request.targetCollectionId
@@ -411,9 +351,9 @@ async def import_collection_dry_run(
     if not collection.get("name"):
         errors.append("Collection name is required")
     
-    # If not creating new, verify target collection exists
+    # If not creating new, verify target collection exists using repository
     if not createNewCollection and targetCollectionId:
-        target = await db.collections.find_one({"collectionId": targetCollectionId})
+        target = await CollectionRepository.get_by_id(targetCollectionId)
         if not target:
             errors.append(f"Target collection {targetCollectionId} not found")
     
@@ -457,9 +397,7 @@ async def import_collection_dry_run(
 async def import_collection(
     request: CollectionImportRequest
 ):
-    """Import a collection bundle"""
-    db = get_database()
-    
+    """Import a collection bundle (SQL injection safe)"""
     bundle = request.bundle
     createNewCollection = request.createNewCollection
     newCollectionName = request.newCollectionName
@@ -484,25 +422,24 @@ async def import_collection(
         if not newCollectionName:
             newCollectionName = bundle["collection"].get("name", "Imported Collection")
         
-        new_collection_id = str(uuid.uuid4())
-        now = datetime.now(UTC)
-        
-        collection_doc = {
-            "collectionId": new_collection_id,
-            "name": newCollectionName,
-            "description": bundle["collection"].get("description", ""),
-            "color": bundle["collection"].get("color", "#3B82F6"),
-            "workflowCount": 0,
-            "createdAt": now,
-            "updatedAt": now
-        }
-        
-        await db.collections.insert_one(collection_doc)
-        collection_id = new_collection_id
+        # Use repository to create collection
+        from app.models import CollectionCreate
+        collection_create = CollectionCreate(
+            name=newCollectionName,
+            description=bundle["collection"].get("description", ""),
+            color=bundle["collection"].get("color", "#3B82F6")
+        )
+        new_collection = await CollectionRepository.create(collection_create)
+        collection_id = new_collection.collectionId
     else:
         collection_id = targetCollectionId
-        # Verify collection exists
-        col = await db.collections.find_one({"collectionId": collection_id})
+        if not collection_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Target collection ID is required when not creating new collection"
+            )
+        # Verify collection exists using repository
+        col = await CollectionRepository.get_by_id(collection_id)
         if not col:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -514,7 +451,7 @@ async def import_collection(
     if environmentMapping is None:
         environmentMapping = {}
     
-    # Create/map environments
+    # Create/map environments using repository
     for bundle_env in bundle.get("environments", []):
         bundle_env_id = bundle_env.get("environmentId")
         
@@ -522,20 +459,19 @@ async def import_collection(
         if bundle_env_id in environmentMapping:
             target_env_id = environmentMapping[bundle_env_id]
             if target_env_id == "create":
-                # Create new environment
-                new_env_id = str(uuid.uuid4())
-                env_doc = {
-                    "environmentId": new_env_id,
-                    "name": bundle_env.get("name", "Imported Environment"),
-                    "variables": bundle_env.get("variables", {}),
-                    "createdAt": datetime.now(UTC),
-                    "updatedAt": datetime.now(UTC)
-                }
-                await db.environments.insert_one(env_doc)
-                env_mapping[bundle_env_id] = new_env_id
+                # Create new environment using repository
+                from app.models import EnvironmentCreate
+                env_create = EnvironmentCreate(
+                    name=bundle_env.get("name", "Imported Environment"),
+                    description=None,
+                    variables=bundle_env.get("variables", {}),
+                    secrets={}
+                )
+                new_env = await EnvironmentRepository.create(env_create)
+                env_mapping[bundle_env_id] = new_env.environmentId
             else:
-                # Map to existing
-                existing_env = await db.environments.find_one({"environmentId": target_env_id})
+                # Map to existing - verify it exists
+                existing_env = await EnvironmentRepository.get_by_id(target_env_id)
                 if not existing_env:
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
@@ -544,46 +480,46 @@ async def import_collection(
                 env_mapping[bundle_env_id] = target_env_id
         else:
             # Auto-create if no mapping specified
-            new_env_id = str(uuid.uuid4())
-            env_doc = {
-                "environmentId": new_env_id,
-                "name": bundle_env.get("name", "Imported Environment"),
-                "variables": bundle_env.get("variables", {}),
-                "createdAt": datetime.now(UTC),
-                "updatedAt": datetime.now(UTC)
-            }
-            await db.environments.insert_one(env_doc)
-            env_mapping[bundle_env_id] = new_env_id
+            from app.models import EnvironmentCreate
+            env_create = EnvironmentCreate(
+                name=bundle_env.get("name", "Imported Environment"),
+                description=None,
+                variables=bundle_env.get("variables", {}),
+                secrets={}
+            )
+            new_env = await EnvironmentRepository.create(env_create)
+            env_mapping[bundle_env_id] = new_env.environmentId
     
-    # Import workflows
+    # Import workflows using repository
     workflow_ids = []
     now = datetime.now(UTC)
     
     for bundle_wf in bundle.get("workflows", []):
-        new_wf_id = str(uuid.uuid4())
-        
         # Map environment if present
         env_id_to_use = None
         if bundle_wf.get("environmentId") in env_mapping:
             env_id_to_use = env_mapping[bundle_wf.get("environmentId")]
         
-        workflow_doc = {
-            "workflowId": new_wf_id,
-            "name": bundle_wf.get("name"),
-            "description": bundle_wf.get("description", ""),
-            "nodes": bundle_wf.get("nodes", []),
-            "edges": bundle_wf.get("edges", []),
-            "variables": bundle_wf.get("variables", {}),
-            "tags": bundle_wf.get("tags", []),
-            "collectionId": collection_id,
-            "environmentId": env_id_to_use,
-            "createdAt": now,
-            "updatedAt": now,
-            "version": 1
-        }
+        # Create workflow using repository
+        from app.models import WorkflowCreate
+        workflow_create = WorkflowCreate(
+            name=bundle_wf.get("name"),
+            description=bundle_wf.get("description", ""),
+            nodes=bundle_wf.get("nodes", []),
+            edges=bundle_wf.get("edges", []),
+            variables=bundle_wf.get("variables", {}),
+            tags=bundle_wf.get("tags", []),
+            collectionId=collection_id,
+            nodeTemplates=[]
+        )
+        new_workflow = await WorkflowRepository.create(workflow_create)
         
-        await db.workflows.insert_one(workflow_doc)
-        workflow_ids.append(new_wf_id)
+        # Update workflow with environmentId if needed (not in WorkflowCreate)
+        if env_id_to_use:
+            new_workflow.environmentId = env_id_to_use
+            await new_workflow.save()
+        
+        workflow_ids.append(new_workflow.workflowId)
     
     # Dispatch event to refresh collections
     import subprocess
@@ -604,30 +540,22 @@ async def assign_workflow_to_collection(
     collection_id: str,
     workflow_id: str
 ):
-    """Assign an existing workflow to a collection"""
-    db = get_database()
-    
-    # Verify collection exists
-    collection = await db.collections.find_one({"collectionId": collection_id})
+    """Assign an existing workflow to a collection (SQL injection safe)"""
+    # Verify collection exists using repository
+    collection = await CollectionRepository.get_by_id(collection_id)
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection {collection_id} not found"
         )
     
-    # Verify workflow exists
-    workflow = await db.workflows.find_one({"workflowId": workflow_id})
+    # Verify workflow exists and assign using repository
+    workflow = await WorkflowRepository.update_collection_assignment(workflow_id, collection_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
-    
-    # Update workflow with collection ID
-    await db.workflows.update_one(
-        {"workflowId": workflow_id},
-        {"$set": {"collectionId": collection_id, "updatedAt": datetime.now(UTC)}}
-    )
     
     return {"success": True, "workflowId": workflow_id, "collectionId": collection_id}
 
