@@ -10,6 +10,16 @@ from datetime import datetime
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
+class FileUpload(BaseModel):
+    """File attachment for HTTP request node"""
+    name: str  # Unique identifier in node
+    type: Literal["path", "base64", "variable"]  # How file is referenced
+    value: str  # File path, base64 string, or variable reference
+    fieldName: str  # HTML form field name for multipart request
+    mimeType: str = "application/octet-stream"  # Content-Type header
+    description: Optional[str] = None  # Human-readable description
+
+
 class HTTPRequestNode(BaseModel):
     """HTTP Request node configuration"""
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
@@ -19,6 +29,7 @@ class HTTPRequestNode(BaseModel):
     timeout: int = 30
     followRedirects: bool = True
     extractors: Dict[str, str] = Field(default_factory=dict)  # JSONPath extractors
+    fileUploads: List[FileUpload] = Field(default_factory=list)  # NEW: File attachments
 
 
 class AssertionNode(BaseModel):

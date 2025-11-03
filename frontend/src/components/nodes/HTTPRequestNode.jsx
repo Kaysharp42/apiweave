@@ -2,6 +2,7 @@ import React, { memo, useState, useCallback, useMemo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
 import { useWorkflow } from '../../contexts/WorkflowContext';
+import FileUploadSection from '../FileUploadSection';
 import { HiMiniDocumentDuplicate } from 'react-icons/hi2';
 import { MdContentCopy, MdExpandMore, MdExpandLess, MdAcUnit, MdDelete, MdExtension, MdAdd, MdCheckCircle, MdArrowForward, MdWarning, MdError } from 'react-icons/md';
 
@@ -349,6 +350,13 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                 updateNodeData('extractors', newExtractors);
               }} />
             </div>
+
+            {/* File Upload Section */}
+            <FileUploadSection
+              fileUploads={data.config?.fileUploads || []}
+              onUpdate={(files) => updateNodeData('fileUploads', files)}
+              variables={variables}
+            />
 
             {/* Variable Hint */}
             <div className="text-[9px] text-gray-500 dark:text-gray-400 p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded space-y-0.5">

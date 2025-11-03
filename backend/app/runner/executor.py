@@ -4,6 +4,8 @@ Now using Beanie ODM with repository pattern for enhanced security
 """
 import asyncio
 import aiohttp
+import aiofiles
+import base64
 import re
 import json
 import time
@@ -801,7 +803,118 @@ class WorkflowExecutor:
                     print(f"⚠️  Extracted variable {var_name} is None from path: {var_path}")
             except Exception as e:
                 print(f"❌ Error extracting variable {var_name} from {var_path}: {str(e)}")
-    
+
+    async def _get_file_content(self, file_ref: Dict[str, str]) -> tuple[bytes, str, str]:
+        """
+        Get file content based on reference type and return (bytes, filename, mime_type)
+        
+        Supports three file reference types:
+        1. base64: Embedded base64 encoded file
+        2. path: File path on the server
+        3. variable: Workflow variable containing base64 or path
+        
+        Returns: (file_bytes, filename, mime_type)
+        """
+        ref_type = file_ref.get('type', '')
+        value = file_ref.get('value', '')
+        field_name = file_ref.get('fieldName', 'file')
+        mime_type = file_ref.get('mimeType', 'application/octet-stream')
+        
+        self.logger.debug(f"Resolving file upload: type={ref_type}, field={field_name}")
+        
+        try:
+            # Type 1: Base64 encoded file
+            if ref_type == 'base64':
+                # Handle data:image/png;base64,iVBORw0K... format
+                if value.startswith('data:'):
+                    parts = value.split(',', 1)
+                    if len(parts) == 2:
+                        value = parts[1]
+                        # Extract MIME type from data URI if available
+                        mime_match = parts[0].replace('data:', '')
+                        if mime_match and mime_match != 'base64':
+                            mime_type = mime_match
+                
+                file_bytes = base64.b64decode(value)
+                self.logger.info(f"✅ Resolved base64 file: {field_name} ({len(file_bytes)} bytes, MIME: {mime_type})")
+                return file_bytes, field_name, mime_type
+            
+            # Type 2: File path reference
+            elif ref_type == 'path':
+                # Substitute variables in path
+                resolved_path = self._substitute_variables(value)
+                
+                # Security: Prevent path traversal
+                if '..' in resolved_path:
+                    raise Exception(f"Path traversal attempt detected in: {resolved_path}")
+                
+                path_obj = Path(resolved_path)
+                if not path_obj.exists():
+                    raise Exception(f"File not found: {resolved_path}")
+                
+                if not path_obj.is_file():
+                    raise Exception(f"Path is not a file: {resolved_path}")
+                
+                # Read file asynchronously
+                async with aiofiles.open(path_obj, 'rb') as f:
+                    file_bytes = await f.read()
+                
+                # Check file size (50MB limit)
+                file_size_mb = len(file_bytes) / (1024 * 1024)
+                if file_size_mb > 50:
+                    raise Exception(f"File too large: {file_size_mb:.1f}MB (max 50MB)")
+                
+                self.logger.info(f"✅ Resolved file path: {resolved_path} ({len(file_bytes)} bytes, MIME: {mime_type})")
+                return file_bytes, field_name, mime_type
+            
+            # Type 3: Variable reference
+            elif ref_type == 'variable':
+                # Resolve variable (could contain base64 or path)
+                resolved_value = self._substitute_variables(value)
+                
+                if not resolved_value:
+                    raise Exception(f"Variable reference resolved to empty: {value}")
+                
+                # Check if it's a base64 data URI
+                if resolved_value.startswith('data:'):
+                    # Treat as base64
+                    parts = resolved_value.split(',', 1)
+                    if len(parts) == 2:
+                        base64_data = parts[1]
+                        file_bytes = base64.b64decode(base64_data)
+                        self.logger.info(f"✅ Resolved variable as base64: {value} ({len(file_bytes)} bytes)")
+                        return file_bytes, field_name, mime_type
+                
+                # Check if it's a file path
+                elif resolved_value.startswith('/') or resolved_value.startswith('\\') or ':' in resolved_value:
+                    # Treat as file path
+                    if '..' in resolved_value:
+                        raise Exception(f"Path traversal attempt detected in: {resolved_value}")
+                    
+                    path_obj = Path(resolved_value)
+                    if not path_obj.exists():
+                        raise Exception(f"File not found at variable path: {resolved_value}")
+                    
+                    async with aiofiles.open(path_obj, 'rb') as f:
+                        file_bytes = await f.read()
+                    
+                    self.logger.info(f"✅ Resolved variable as file path: {resolved_value} ({len(file_bytes)} bytes)")
+                    return file_bytes, field_name, mime_type
+                
+                # Assume it's raw base64
+                else:
+                    file_bytes = base64.b64decode(resolved_value)
+                    self.logger.info(f"✅ Resolved variable as raw base64: {value} ({len(file_bytes)} bytes)")
+                    return file_bytes, field_name, mime_type
+            
+            else:
+                raise Exception(f"Unknown file reference type: {ref_type}")
+        
+        except Exception as e:
+            error_msg = f"Failed to resolve file upload: {str(e)}"
+            self.logger.error(error_msg)
+            raise Exception(error_msg)
+
     async def _execute_http_request(self, node: Dict) -> Dict[str, Any]:
         """Execute HTTP request node"""
         import time
@@ -856,13 +969,55 @@ class WorkflowExecutor:
         # Start timing
         start_time = time.time()
         
+        # Handle file uploads
+        file_uploads = config.get('fileUploads', [])
+        has_files = len(file_uploads) > 0
+        
         try:
+            # Prepare request data
+            data = None
+            if has_files:
+                # Use multipart/form-data for file uploads
+                form_data = aiohttp.FormData()
+                
+                # Add regular form fields from body if it's JSON
+                if body:
+                    try:
+                        body_dict = json.loads(body)
+                        if isinstance(body_dict, dict):
+                            for key, value in body_dict.items():
+                                form_data.add_field(key, str(value))
+                    except:
+                        # If body is not JSON, use as single field
+                        form_data.add_field('data', body)
+                
+                # Add files
+                for file_ref in file_uploads:
+                    try:
+                        file_bytes, field_name, mime_type = await self._get_file_content(file_ref)
+                        form_data.add_field(
+                            field_name,
+                            file_bytes,
+                            filename=file_ref.get('name', field_name),
+                            content_type=mime_type
+                        )
+                        self.logger.info(f"✅ Added file to form: {field_name}")
+                    except Exception as e:
+                        self.logger.error(f"❌ Failed to add file: {str(e)}")
+                        raise
+                
+                data = form_data
+            else:
+                # Regular request without files
+                if body:
+                    data = body
+            
             async with aiohttp.ClientSession() as session:
                 async with session.request(
                     method=method,
                     url=url,
                     headers=headers,
-                    data=body if method != 'GET' else None,
+                    data=data if method != 'GET' else None,
                     timeout=aiohttp.ClientTimeout(total=timeout)
                 ) as response:
                     response_text = await response.text()
