@@ -182,6 +182,14 @@ class EnvironmentCreate(BaseModel):
     secrets: Dict[str, str] = Field(default_factory=dict)  # NEW: Secrets
 
 
+class WorkflowOrderItem(BaseModel):
+    """Defines execution order for workflows in a collection"""
+    workflowId: str
+    order: int  # 0, 1, 2, ...
+    enabled: bool = True
+    continueOnFail: bool = True  # Default: continue to show all results
+
+
 class CollectionCreate(BaseModel):
     """Request model for creating a collection"""
     name: str
@@ -203,6 +211,11 @@ class Collection(Document):
     description: Optional[str] = None
     color: Optional[str] = None  # e.g., #FF5733
     workflowCount: int = 0
+    
+    # NEW: Ordered execution configuration
+    workflowOrder: List[WorkflowOrderItem] = Field(default_factory=list)
+    continueOnFail: bool = True  # Default: show all results, don't stop at first failure
+    
     createdAt: datetime
     updatedAt: datetime
     
@@ -256,4 +269,151 @@ class CollectionImportDryRunRequest(BaseModel):
     bundle: Dict[str, Any]
     createNewCollection: bool = True
     targetCollectionId: Optional[str] = None
+
+
+# ============================================================================
+# CI/CD Webhook Models
+# ============================================================================
+
+class Webhook(Document):
+    """
+    Webhook for CI/CD integration
+    
+    Provides stable URL for workflow/collection execution
+    that remains valid even when resource is edited.
+    """
+    webhookId: str  # e.g., "wh-abc123xyz789"
+    
+    # Resource binding (workflow or collection)
+    resourceType: Literal["workflow", "collection"]
+    resourceId: str  # workflowId or collectionId
+    
+    # Environment binding
+    environmentId: str
+    
+    # Authentication (shown only once!)
+    token: str  # Webhook token for X-Webhook-Token header
+    hmacSecret: str  # HMAC secret for signature validation
+    
+    # Configuration
+    enabled: bool = True
+    description: Optional[str] = None
+    
+    # Metadata
+    createdAt: datetime
+    createdBy: Optional[str] = None  # userId
+    updatedAt: datetime
+    
+    # Usage tracking
+    lastUsed: Optional[datetime] = None
+    usageCount: int = 0
+    lastStatus: Optional[Literal["success", "failure", "validation_error"]] = None
+    
+    class Settings:
+        name = "webhooks"
+        indexes = [
+            IndexModel([("webhookId", ASCENDING)], unique=True),
+            IndexModel([("resourceType", ASCENDING), ("resourceId", ASCENDING)]),
+            IndexModel([("environmentId", ASCENDING)]),
+            IndexModel([("token", ASCENDING)], unique=True),
+            IndexModel([("createdAt", DESCENDING)])
+        ]
+
+
+class CollectionRun(Document):
+    """Aggregate results from collection execution"""
+    collectionRunId: str  # e.g., "col-run-abc123"
+    collectionId: str
+    collectionName: str
+    
+    # Execution status
+    status: Literal["pending", "running", "completed", "failed"]
+    startTime: datetime
+    endTime: Optional[datetime] = None
+    duration: Optional[int] = None  # milliseconds
+    
+    # Environment
+    environmentId: Optional[str] = None
+    
+    # Results summary
+    totalWorkflows: int
+    executedWorkflows: int = 0
+    passedWorkflows: int = 0
+    failedWorkflows: int = 0
+    
+    # Individual workflow results (in execution order)
+    workflowResults: List[Dict[str, Any]] = Field(default_factory=list)
+    # Format:
+    # {
+    #   "order": 1,
+    #   "workflowId": "wf-123",
+    #   "workflowName": "User Login",
+    #   "runId": "run-456",
+    #   "status": "completed",
+    #   "passed": true,
+    #   "duration": 1234,
+    #   "error": null
+    # }
+    
+    # Webhook tracking
+    webhookId: Optional[str] = None
+    triggeredBy: Optional[str] = None  # "webhook" or userId
+    
+    class Settings:
+        name = "collection_runs"
+        indexes = [
+            IndexModel([("collectionRunId", ASCENDING)], unique=True),
+            IndexModel([("collectionId", ASCENDING), ("startTime", DESCENDING)]),
+            IndexModel([("webhookId", ASCENDING)]),
+            IndexModel([("status", ASCENDING)])
+        ]
+
+
+class WebhookLog(Document):
+    """Track webhook execution history (auto-expires after 30 days)"""
+    logId: str  # e.g., "log-abc123"
+    webhookId: str
+    
+    # Execution details
+    timestamp: datetime
+    status: Literal["success", "failure", "validation_error"]
+    duration: int  # milliseconds
+    
+    # Request information
+    requestHeaders: Dict[str, str] = Field(default_factory=dict)
+    requestBody: Optional[str] = None
+    ipAddress: Optional[str] = None
+    
+    # Response information
+    responseStatus: int
+    responseBody: Optional[str] = None
+    errorMessage: Optional[str] = None
+    
+    # Run tracking
+    runId: Optional[str] = None  # For workflow runs
+    collectionRunId: Optional[str] = None  # For collection runs
+    
+    class Settings:
+        name = "webhook_logs"
+        indexes = [
+            IndexModel([("webhookId", ASCENDING), ("timestamp", DESCENDING)]),
+            IndexModel([("timestamp", ASCENDING)], expireAfterSeconds=2592000)  # 30 days TTL
+        ]
+
+
+# Request/Response models for Webhooks
+
+class WebhookCreate(BaseModel):
+    """Request model for creating a webhook"""
+    resourceType: Literal["workflow", "collection"]
+    resourceId: str  # workflowId or collectionId
+    environmentId: str
+    description: Optional[str] = None
+
+
+class WebhookUpdate(BaseModel):
+    """Request model for updating a webhook"""
+    environmentId: Optional[str] = None
+    enabled: Optional[bool] = None
+    description: Optional[str] = None
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import CollectionManager from '../CollectionManager';
+import WebhookManager from '../WebhookManager';
 import SidebarHeader from './SidebarHeader';
 import { MdDownload, MdFolder, MdInsertDriveFile, MdKeyboardArrowDown, MdKeyboardArrowRight, MdSettings } from 'react-icons/md';
 import { BsFillCollectionFill } from 'react-icons/bs';
@@ -416,6 +417,10 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
     </div>
   );
 
+  const renderWebhooksContent = () => (
+    <WebhookManager />
+  );
+
   return (
     <div className="flex flex-col h-full w-full">
       <SidebarHeader 
@@ -427,6 +432,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
       <div className="flex-1 overflow-hidden bg-white dark:bg-gray-800">
         {selectedNav === 'workflows' && renderWorkflowsContent()}
         {selectedNav === 'collections' && renderCollectionsContent()}
+        {selectedNav === 'webhooks' && renderWebhooksContent()}
         {selectedNav === 'settings' && renderSettingsContent()}
       </div>
 

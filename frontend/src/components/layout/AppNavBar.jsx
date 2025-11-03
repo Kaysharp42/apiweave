@@ -1,5 +1,5 @@
 import React from 'react';
-import { MdHome, MdSettings } from 'react-icons/md';
+import { MdHome, MdSettings, MdWebhook } from 'react-icons/md';
 import { BsFillCollectionFill } from 'react-icons/bs';
 import { MdChevronLeft, MdChevronRight } from 'react-icons/md';
 import { Transition } from '@headlessui/react';
@@ -24,6 +24,11 @@ const AppNavBar = () => {
       id: AppNavBarItems.collections.value, 
       label: AppNavBarItems.collections.displayValue, 
       icon: BsFillCollectionFill 
+    },
+    { 
+      id: 'webhooks', 
+      label: 'Webhooks', 
+      icon: MdWebhook 
     },
     { 
       id: AppNavBarItems.settings.value, 

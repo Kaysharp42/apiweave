@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "APIWeave"
     VERSION: str = "0.1.0"
     DEBUG: bool = False
+    BASE_URL: str  # Base URL for webhook URLs (loaded from .env)
     
     # MongoDB
     MONGODB_URL: str
