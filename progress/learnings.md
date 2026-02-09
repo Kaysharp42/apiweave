@@ -135,3 +135,28 @@ Sidebar.jsx contained four state variables (`selectedCollection`, `selectedColle
 
 ### 35. `scrollbarGutter: 'stable'` prevents layout shift during scroll
 When content grows long enough to need a scrollbar, the browser typically reduces the content width to make room for the scrollbar, causing a layout jump. CSS `scrollbar-gutter: stable` reserves the scrollbar space upfront so the layout doesn't shift when the scrollbar appears or disappears. Applied to the workflow list scroll container where the pagination loading state can toggle the scrollbar on/off.
+
+---
+
+## Phase 6: Tab System + Workspace Chrome (2026-02-09)
+
+### 36. Zustand `getState()` for fire-and-forget side effects avoids re-render subscriptions
+Inside `WorkflowCanvas.jsx` (a 1500+ line component), subscribing to `useTabStore()` via the hook would cause the canvas to re-render whenever *any* tab state changes — including other tabs' dirty flags, tab opens/closes, etc. Using `useTabStore.getState().markDirty(workflowId)` and `useTabStore.getState().markClean(workflowId)` as imperative calls avoids subscribing the component to the store entirely. The canvas never re-renders due to tab state changes; it simply fires the mutations. Only the TabBar component subscribes to the store and re-renders when tabs change.
+
+### 37. `ResizeObserver` is essential for scroll overflow detection in the TabBar
+The tab strip uses `overflow-x: auto` with left/right chevron buttons that appear conditionally. Detecting whether the content overflows requires checking `scrollWidth > clientWidth`. A `scroll` event listener alone is insufficient because overflow can appear/disappear when tabs are opened or closed (content change, not scroll). Attaching a `ResizeObserver` to the scroll container catches both content resizes and container resizes reliably. Combined with the `scroll` event listener (for user scrolling), this covers all overflow state transitions.
+
+### 38. Tab close activates the nearest neighbour, not the first tab
+The initial Workspace.jsx implementation always activated `tabs[0]` when the active tab was closed. This is disorienting for users — if you close the 5th of 8 tabs, you expect the 4th or 6th to activate, not the 1st. The TabStore implements right-neighbour-first activation: if a tab at index `i` is closed and `i < newTabs.length`, activate `newTabs[i]` (the tab that slid into position); otherwise activate the new last tab. This matches VS Code's and browser tab behavior.
+
+### 39. `Ctrl+Tab` in browsers is intercepted before JavaScript
+`Ctrl+Tab` is a native browser shortcut for switching between browser tabs. In most browsers, JavaScript's `keydown` handler cannot `preventDefault()` this combination — the browser consumes it first. The Ctrl+Tab / Ctrl+Shift+Tab shortcuts in the TabBar work correctly when the app runs inside Electron or a PWA (where browser chrome disappears), but in a regular browser tab they may be silently swallowed. This is a known limitation shared by VS Code Web, FlowTest, and other web-based IDEs. For browser contexts, alternative bindings (e.g., `Alt+1..9`) could supplement these.
+
+### 40. Bridging legacy window events into Zustand with a one-line listener
+Rather than rewriting all event-dispatching callers (Sidebar, SidebarHeader, CollectionManager, etc.) to call `useTabStore.getState().openTab()` directly, a single `window.addEventListener('openWorkflow', (e) => openTab(e.detail))` in Workspace.jsx bridges the legacy CustomEvent pattern into the Zustand store. This is the same dual-strategy used in Phase 5 for `workflowsNeedRefresh`. Migration to direct store calls can happen incrementally — callers are changed one-by-one while the bridge ensures nothing breaks.
+
+### 41. `scrollbar-none` Tailwind utility hides scrollbars without breaking scroll
+The tab strip needs horizontal scrolling for overflow but visible scrollbars look cluttered on a 36px-high tab bar. Tailwind's `scrollbar-none` utility (or the `scrollbar-hide` plugin class) hides the scrollbar visually while keeping scroll functionality intact via left/right chevron buttons and mouse wheel. This matches the tab bar behavior in VS Code and most IDE-style tab strips.
+
+### 42. CSS bundle grew minimally — design token adoption accelerates
+Post-Phase 6 build: 207.46KB CSS (29.07KB gzip), 825.86KB JS (222.67KB gzip). The small increase (~4KB CSS, ~3KB JS vs Phase 5) reflects only the new organisms/TabBar and molecules/WorkspaceEmptyState. Reusing design tokens (`bg-surface`, `text-primary`, `border-border-default`) consistently means new components add near-zero novel CSS — they reuse existing utility classes. The design system investment from Phase 1 compounds here.
