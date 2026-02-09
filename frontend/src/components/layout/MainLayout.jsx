@@ -57,26 +57,34 @@ const MainLayout = () => {
     return () => window.removeEventListener('environmentsChanged', handleEnvironmentsChanged);
   }, []);
 
+  // Collapsed: just the nav bar width. Expanded: nav bar + sidebar.
+  const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth.absolute;
+  const expandedPreferred = 450;
+  const expandedMin = 450;
+  const expandedMax = 600;
+
   return (
     <>
       <MainHeader />
-      <div className="h-px bg-gray-300 dark:bg-gray-700" />
-      
-      <main className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900">
+
+      {/* Horizontal divider below header */}
+      <div className="h-px w-full bg-border dark:bg-border-dark" />
+
+      <main className="flex-1 overflow-hidden bg-surface dark:bg-surface-dark">
         <Allotment>
           {/* Left: AppNavBar + Sidebar */}
           <Allotment.Pane
-            preferredSize={isNavBarCollapsed ? AppNavBarStyles.collapsedNavBarWidth.absolute : 450}
-            minSize={isNavBarCollapsed ? AppNavBarStyles.collapsedNavBarWidth.absolute : 450}
-            maxSize={isNavBarCollapsed ? AppNavBarStyles.collapsedNavBarWidth.absolute : 600}
+            preferredSize={isNavBarCollapsed ? collapsedWidth : expandedPreferred}
+            minSize={isNavBarCollapsed ? collapsedWidth : expandedMin}
+            maxSize={isNavBarCollapsed ? collapsedWidth : expandedMax}
             snap={false}
           >
             <div className="flex h-full w-full text-xs">
               <AppNavBar />
               {!isNavBarCollapsed && (
-                <div className="flex-1 h-full w-full overflow-hidden bg-white dark:bg-gray-800">
-                  <Sidebar 
-                    selectedNav={navigationSelectedValue} 
+                <div className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
+                  <Sidebar
+                    selectedNav={navigationSelectedValue}
                     currentWorkflowId={currentWorkflowId}
                   />
                 </div>
@@ -91,7 +99,9 @@ const MainLayout = () => {
         </Allotment>
       </main>
 
-      <div className="h-px bg-gray-300 dark:bg-gray-700" />
+      {/* Horizontal divider above footer */}
+      <div className="h-px w-full bg-border dark:bg-border-dark" />
+
       <MainFooter />
 
       {/* Secrets Prompt */}
