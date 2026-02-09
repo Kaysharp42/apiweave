@@ -1480,13 +1480,12 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       <AddNodesPanel isModalOpen={!!modalNode} isPanelOpen={isPanelOpen} showVariablesPanel={showVariablesPanel} onShowVariablesPanel={onShowVariablesPanel} />
 
       {/* Node Modal */}
-      {modalNode && (
-        <NodeModal
-          node={modalNode}
-          onClose={() => setModalNode(null)}
-          onSave={handleModalSave}
-        />
-      )}
+      <NodeModal
+        open={!!modalNode}
+        node={modalNode || { data: {}, type: 'start' }}
+        onClose={() => setModalNode(null)}
+        onSave={handleModalSave}
+      />
 
       {/* History Modal */}
       {showHistory && (

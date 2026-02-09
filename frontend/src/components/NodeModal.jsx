@@ -1,37 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AssertionEditor from './AssertionEditor';
-import { Allotment } from 'allotment';
-import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, ChevronDown, FileText, BadgeCheck, Square } from 'lucide-react';
+import { Dialog, Transition, TransitionChild } from '@headlessui/react';
+import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
 
-const NodeModal = ({ node, onClose, onSave }) => {
+const NodeModal = ({ open, node, onClose, onSave }) => {
   // Use ref to store working data - NEVER update during editing
   const workingDataRef = useRef({ ...node.data });
-  const [isAnimating, setIsAnimating] = useState(false);
-  const modalRef = useRef(null);
 
+  // Reset working data when node changes
   useEffect(() => {
-    setIsAnimating(true);
-  }, []);
-
-  // Close modal when clicking outside (on backdrop or canvas)
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      // Close if clicking on backdrop or outside modal
-      if (modalRef.current && !modalRef.current.contains(event.target)) {
-        handleClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
+    if (node) workingDataRef.current = { ...node.data };
+  }, [node?.id]);
 
   const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
+    onClose();
   };
 
   const handleSave = () => {
@@ -75,34 +57,35 @@ const NodeModal = ({ node, onClose, onSave }) => {
   const nodeInfo = nodeTypes[node.type] || { name: 'Node' };
 
   return (
-    <div 
-      className={`fixed inset-0 z-50 flex items-center justify-center transition-opacity duration-300 ${
-        isAnimating ? 'opacity-100' : 'opacity-0 pointer-events-none'
-      }`}
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)' }}
-    >
-      {/* Backdrop - click to close */}
-      <div 
-        className="absolute inset-0 cursor-pointer" 
-        onClick={handleClose}
-      />
+    <Transition show={open} as={React.Fragment}>
+      <Dialog onClose={handleClose} className="relative z-50">
+        <TransitionChild
+          enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
+          leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-surface-overlay" />
+        </TransitionChild>
+        <div className="fixed inset-0 flex items-center justify-center">
+          <TransitionChild
+            enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
+            leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
+          >
+            <Dialog.Panel>
       
       {/* Modal Container - Centered Popup */}
       <div 
-        ref={modalRef}
-        className="relative z-10 rounded-xl overflow-visible flex flex-row transition-transform duration-300 p-6"
+        className="relative z-10 rounded-xl overflow-visible flex flex-row p-6"
         style={{ 
           width: '90vw',
           maxWidth: '2000px',
           height: '85vh',
           maxHeight: '1400px',
-          transform: isAnimating ? 'scale(1)' : 'scale(0.95)',
           gap: '40px'
         }}
       >
         {/* Left Card - Configuration */}
         <div 
-          className="flex-1 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-xl overflow-hidden flex flex-col relative"
+          className="flex-1 bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised rounded-xl overflow-hidden flex flex-col relative"
           style={{
             boxShadow: '8px 8px 24px rgba(0, 0, 0, 0.2), 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
             transform: 'translateY(-20px)',
@@ -111,13 +94,13 @@ const NodeModal = ({ node, onClose, onSave }) => {
           }}
         >
           {/* Back shadow layers for card stack effect */}
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-xl" style={{
+          <div className="absolute inset-0 bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised rounded-xl" style={{
             transform: 'translateY(8px) translateX(8px)',
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
             zIndex: -2
           }} />
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 rounded-xl" style={{
-            transform: 'translateY(4px) translateX(4px)',
+          <div className="absolute inset-0 bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised rounded-xl" style={{
+            transform: 'translateY(4px) translateX(4px)'
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
             zIndex: -1
           }} />
@@ -138,7 +121,7 @@ const NodeModal = ({ node, onClose, onSave }) => {
             </div>
             <button
               onClick={handleClose}
-              className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-surface-raised dark:hover:bg-surface-dark-raised transition-colors rounded-lg"
+              className="btn btn-ghost btn-sm btn-square"
               title="Close"
             >
               <X className="w-6 h-6" />
@@ -217,18 +200,8 @@ const NodeModal = ({ node, onClose, onSave }) => {
 
           {/* Footer Actions */}
           <div className="flex-shrink-0 mt-6 flex gap-3 justify-end">
-            <button
-              onClick={handleClose}
-              className="px-4 py-2 text-sm border border-border dark:border-border-dark text-text-secondary dark:text-text-secondary-dark rounded-lg hover:bg-surface-raised dark:hover:bg-surface-dark-raised transition-colors font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-6 py-2 text-sm bg-primary text-white rounded-lg hover:brightness-110 transition-colors font-medium shadow-md hover:shadow-lg"
-            >
-              Save
-            </button>
+            <button onClick={handleClose} className="btn btn-ghost">Cancel</button>
+            <button onClick={handleSave} className="btn btn-primary shadow-md hover:shadow-lg">Save</button>
           </div>
           </div>
         </div>
@@ -263,7 +236,11 @@ const NodeModal = ({ node, onClose, onSave }) => {
           </div>
         </div>
       </div>
-    </div>
+            </Dialog.Panel>
+          </TransitionChild>
+        </div>
+      </Dialog>
+    </Transition>
   );
 };
 
