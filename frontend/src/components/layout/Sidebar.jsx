@@ -23,6 +23,7 @@ import CollectionExportImport from '../CollectionExportImport';
 import { Badge, Spinner } from '../atoms';
 import { EmptyState } from '../molecules';
 import useSidebarStore from '../../stores/SidebarStore';
+import useTabStore from '../../stores/TabStore';
 
 const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [workflows, setWorkflows] = useState([]);
@@ -234,9 +235,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
         const workflow = await response.json();
         fetchWorkflows(0);
         
-        window.dispatchEvent(new CustomEvent('openWorkflow', {
-          detail: workflow
-        }));
+        useTabStore.getState().openTab(workflow);
       }
     } catch (error) {
       console.error('Error creating workflow:', error);
@@ -246,9 +245,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const handleWorkflowClick = (workflow) => {
     setSelectedWorkflowId(workflow.workflowId);
     
-    window.dispatchEvent(new CustomEvent('openWorkflow', {
-      detail: workflow
-    }));
+    useTabStore.getState().openTab(workflow);
   };
 
   const handleExportWorkflow = (workflow) => {

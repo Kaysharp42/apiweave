@@ -5,6 +5,7 @@ import API_BASE_URL from '../utils/api';
 import { Modal, ConfirmDialog } from './molecules';
 import { Button, Input, TextArea, Badge } from './atoms';
 import SecretsPanel from './SecretsPanel';
+import useSidebarStore from '../stores/SidebarStore';
 
 const EnvironmentManager = ({ open, onClose }) => {
   const [environments, setEnvironments] = useState([]);
@@ -70,7 +71,7 @@ const EnvironmentManager = ({ open, onClose }) => {
         await fetchEnvironments();
         setIsEditing(false);
         setSelectedEnv(null);
-        window.dispatchEvent(new CustomEvent('environmentsChanged'));
+        useSidebarStore.getState().signalEnvironmentsRefresh();
       }
     } catch (error) {
       console.error('Error saving environment:', error);
@@ -92,7 +93,7 @@ const EnvironmentManager = ({ open, onClose }) => {
           setSelectedEnv(null);
           setIsEditing(false);
         }
-        window.dispatchEvent(new CustomEvent('environmentsChanged'));
+        useSidebarStore.getState().signalEnvironmentsRefresh();
       } else {
         const error = await response.json();
         toast.error(error.detail || 'Failed to delete environment');
@@ -114,7 +115,7 @@ const EnvironmentManager = ({ open, onClose }) => {
       if (response.ok) {
         toast.success('Environment duplicated');
         await fetchEnvironments();
-        window.dispatchEvent(new CustomEvent('environmentsChanged'));
+        useSidebarStore.getState().signalEnvironmentsRefresh();
       }
     } catch (error) {
       console.error('Error duplicating environment:', error);
@@ -152,7 +153,7 @@ const EnvironmentManager = ({ open, onClose }) => {
         toast.success('Secrets updated');
         await fetchEnvironments();
         setShowSecretsPanel(false);
-        window.dispatchEvent(new CustomEvent('environmentsChanged'));
+        useSidebarStore.getState().signalEnvironmentsRefresh();
       }
     } catch (error) {
       console.error('Error updating secrets:', error);

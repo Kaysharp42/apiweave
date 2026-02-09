@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Handle, Position } from 'reactflow';
 import { ChevronDown, ChevronUp, MoreHorizontal, Files, Copy } from 'lucide-react';
+import useCanvasStore from '../../../stores/CanvasStore';
 
 /**
  * BaseNode — Shared node shell for all ReactFlow nodes.
@@ -153,7 +154,7 @@ export default function BaseNode({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        window.dispatchEvent(new CustomEvent('duplicateNode', { detail: { nodeId } }));
+                        useCanvasStore.getState().duplicateNode(nodeId);
                         setMenuOpen(false);
                       }}
                       className="w-full text-left px-3 py-1.5 text-xs text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay flex items-center gap-2"
@@ -163,7 +164,7 @@ export default function BaseNode({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        window.dispatchEvent(new CustomEvent('copyNode', { detail: { nodeId } }));
+                        useCanvasStore.getState().copyNode(nodeId);
                         setMenuOpen(false);
                       }}
                       className="w-full text-left px-3 py-1.5 text-xs text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay flex items-center gap-2 border-t border-border dark:border-border-dark"

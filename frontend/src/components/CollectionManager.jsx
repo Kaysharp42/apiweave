@@ -4,6 +4,7 @@ import { Trash2, Plus, X, GripVertical, Eye, EyeOff, ArrowLeft, Pencil, ListOrde
 import API_BASE_URL from '../utils/api';
 import { Modal, ConfirmDialog } from './molecules';
 import { Button } from './atoms';
+import useSidebarStore from '../stores/SidebarStore';
 
 const CollectionManager = ({ open, onClose }) => {
   const [collections, setCollections] = useState([]);
@@ -91,7 +92,7 @@ const CollectionManager = ({ open, onClose }) => {
         setIsEditing(false);
         setSelectedCol(null);
         setError('');
-        window.dispatchEvent(new CustomEvent('collectionsChanged'));
+        useSidebarStore.getState().signalCollectionsRefresh();
       } else {
         const errorData = await response.json();
         setError(errorData.detail || 'Failed to save collection');
@@ -115,7 +116,7 @@ const CollectionManager = ({ open, onClose }) => {
           setSelectedCol(null);
           setIsEditing(false);
         }
-        window.dispatchEvent(new CustomEvent('collectionsChanged'));
+        useSidebarStore.getState().signalCollectionsRefresh();
       } else {
         const errorData = await response.json();
         toast.error(errorData.detail || 'Failed to delete collection');
@@ -175,7 +176,7 @@ const CollectionManager = ({ open, onClose }) => {
         setIsManagingWorkflows(false);
         setSelectedCol(null);
         setWorkflowOrder([]);
-        window.dispatchEvent(new CustomEvent('collectionsChanged'));
+        useSidebarStore.getState().signalCollectionsRefresh();
       } else {
         const errorData = await response.json();
         toast.error(errorData.detail || 'Failed to save workflow order');

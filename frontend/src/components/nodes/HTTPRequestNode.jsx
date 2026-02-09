@@ -328,7 +328,6 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                             const newExtractors = { ...data.config.extractors };
                             delete newExtractors[varName];
                             updateNodeData('extractors', newExtractors);
-                            window.dispatchEvent(new CustomEvent('extractorDeleted', { detail: { varName, nodeId: id } }));
                           }}
                           title="Delete extractor"
                         >

@@ -10,6 +10,7 @@ import { Settings, Sparkles, Package } from 'lucide-react';
 import { TabBar } from '../organisms';
 import { WorkspaceEmptyState } from '../molecules';
 import useTabStore from '../../stores/TabStore';
+import useSidebarStore from '../../stores/SidebarStore';
 import API_BASE_URL from '../../utils/api';
 
 const Workspace = ({ onActiveTabChange }) => {
@@ -45,13 +46,12 @@ const Workspace = ({ onActiveTabChange }) => {
       }
     };
     fetchEnvironments();
-
-    const handleEnvironmentsChanged = () => fetchEnvironments();
-    window.addEventListener('environmentsChanged', handleEnvironmentsChanged);
-    return () => window.removeEventListener('environmentsChanged', handleEnvironmentsChanged);
   }, []);
 
   // ---------- bridge legacy openWorkflow window event → TabStore ----------
+  // NOTE: All callers now use useTabStore.getState().openTab() directly.
+  // This listener is kept temporarily for safety — can be removed once
+  // verified that no remaining callers dispatch 'openWorkflow'.
   useEffect(() => {
     const handleOpenWorkflow = (event) => {
       const workflow = event.detail;
@@ -60,6 +60,29 @@ const Workspace = ({ onActiveTabChange }) => {
     window.addEventListener('openWorkflow', handleOpenWorkflow);
     return () => window.removeEventListener('openWorkflow', handleOpenWorkflow);
   }, [openTab]);
+
+  // ---------- React to environment version changes from SidebarStore ----------
+  const environmentVersion = useSidebarStore((s) => s.environmentVersion);
+  useEffect(() => {
+    if (environmentVersion > 0) {
+      const fetchEnvNames = async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/environments`);
+          if (response.ok) {
+            const envs = await response.json();
+            const namesMap = {};
+            envs.forEach((env) => {
+              namesMap[env.environmentId] = env.name;
+            });
+            setEnvironmentNames(namesMap);
+          }
+        } catch (error) {
+          console.error('Error fetching environments:', error);
+        }
+      };
+      fetchEnvNames();
+    }
+  }, [environmentVersion]);
 
   // ---------- keyboard shortcuts ----------
   const handleKeyDown = useCallback(
@@ -106,8 +129,8 @@ const Workspace = ({ onActiveTabChange }) => {
       if (response.ok) {
         const workflow = await response.json();
         openTab(workflow);
-        // Signal sidebar to refresh (legacy + Zustand)
-        window.dispatchEvent(new Event('workflowsNeedRefresh'));
+        // Signal sidebar to refresh via Zustand store
+        useSidebarStore.getState().signalWorkflowsRefresh();
       }
     } catch (error) {
       console.error('Error creating workflow:', error);

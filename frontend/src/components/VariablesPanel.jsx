@@ -3,7 +3,7 @@ import { useWorkflow } from '../contexts/WorkflowContext';
 import { GitMerge, Pencil, Trash2 } from 'lucide-react';
 
 const VariablesPanel = () => {
-  const { variables, updateVariable, updateVariables, workflowId } = useWorkflow();
+  const { variables, updateVariable, updateVariables, deleteVariablesWithCleanup } = useWorkflow();
   
   const [showForm, setShowForm] = useState(false);
   const [newVarName, setNewVarName] = useState('');
@@ -21,18 +21,8 @@ const VariablesPanel = () => {
   };
 
   const handleDelete = (varName) => {
-    // Delete from context
-    const updated = { ...variables };
-    delete updated[varName];
-    updateVariables(updated);
-    
-    // Emit event for WorkflowCanvas to clean up extractors
-    window.dispatchEvent(new CustomEvent('variableDeleted', {
-      detail: {
-        workflowId,
-        deletedVars: [varName]
-      }
-    }));
+    // Delete from context and notify WorkflowCanvas to clean up extractors
+    deleteVariablesWithCleanup([varName]);
   };
 
   const handleEdit = (varName, value) => {
