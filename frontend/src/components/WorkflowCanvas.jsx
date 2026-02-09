@@ -1516,17 +1516,12 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       )}
 
       {/* Secrets Prompt — shown when run is triggered and environment has unfilled secrets */}
-      {showSecretsPrompt && (() => {
-        const envId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
-        const selectedEnv = environments.find(e => e.environmentId === envId);
-        return selectedEnv ? (
-          <SecretsPrompt
-            environment={selectedEnv}
-            onClose={() => { setShowSecretsPrompt(false); pendingRunRef.current = false; }}
-            onSecretsProvided={handleSecretsProvided}
-          />
-        ) : null;
-      })()}
+      <SecretsPrompt
+        open={showSecretsPrompt && !!environments.find(e => e.environmentId === (selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null))}
+        environment={environments.find(e => e.environmentId === (selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null)) || {}}
+        onClose={() => { setShowSecretsPrompt(false); pendingRunRef.current = false; }}
+        onSecretsProvided={handleSecretsProvided}
+      />
       
       {/* Environment Change Notification */}
       {environmentChangeNotification && (

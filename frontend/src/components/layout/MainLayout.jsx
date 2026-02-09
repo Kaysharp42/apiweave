@@ -102,13 +102,12 @@ const MainLayout = () => {
       <MainFooter />
 
       {/* Secrets Prompt */}
-      {showSecretsPrompt && environmentWithSecrets && (
-        <SecretsPrompt
-          environment={environmentWithSecrets}
-          onClose={() => setShowSecretsPrompt(false)}
-          onSecretsProvided={() => setShowSecretsPrompt(false)}
-        />
-      )}
+      <SecretsPrompt
+        open={showSecretsPrompt && !!environmentWithSecrets}
+        environment={environmentWithSecrets || {}}
+        onClose={() => setShowSecretsPrompt(false)}
+        onSecretsProvided={() => setShowSecretsPrompt(false)}
+      />
     </>
   );
 };
