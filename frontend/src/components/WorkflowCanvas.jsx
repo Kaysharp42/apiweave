@@ -28,6 +28,7 @@ import { useWorkflow } from '../contexts/WorkflowContext';
 import { toast } from 'sonner';
 import ButtonSelect from './ButtonSelect';
 import { Save, History, Play, Code, Upload } from 'lucide-react';
+import useTabStore from '../stores/TabStore';
 import API_BASE_URL from '../utils/api';
 
 // Update node statuses - always update to ensure fresh data on each run
@@ -889,6 +890,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       
       if (response.ok) {
         console.log('Workflow saved successfully');
+        useTabStore.getState().markClean(workflowId);
       } else {
         console.error('Failed to save workflow');
       }
@@ -1316,6 +1318,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     if (!workflowId) return;
 
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+    // Mark tab as dirty immediately when changes are detected
+    useTabStore.getState().markDirty(workflowId);
 
     autoSaveTimerRef.current = setTimeout(() => {
       console.log('🔄 Auto-saving workflow...');
