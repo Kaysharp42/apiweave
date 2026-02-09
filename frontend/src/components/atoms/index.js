@@ -5,6 +5,7 @@ export { default as Input } from './Input';
 export { default as TextArea } from './TextArea';
 export { default as IconButton } from './IconButton';
 export { default as Divider } from './Divider';
+export { default as HorizontalDivider } from './HorizontalDivider';
 export { default as Tooltip } from './Tooltip';
 export { default as Toggle } from './Toggle';
 export { default as Spinner } from './Spinner';

@@ -9,6 +9,7 @@ import MainFooter from './MainFooter';
 import SecretsPrompt from '../SecretsPrompt';
 import useNavigationStore from '../../stores/NavigationStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
+import { HorizontalDivider } from '../atoms';
 import API_BASE_URL from '../../utils/api';
 
 const MainLayout = () => {
@@ -66,9 +67,7 @@ const MainLayout = () => {
   return (
     <>
       <MainHeader />
-
-      {/* Horizontal divider below header */}
-      <div className="h-px w-full bg-border dark:bg-border-dark" />
+      <HorizontalDivider />
 
       <main className="flex-1 overflow-hidden bg-surface dark:bg-surface-dark">
         <Allotment>
@@ -99,9 +98,7 @@ const MainLayout = () => {
         </Allotment>
       </main>
 
-      {/* Horizontal divider above footer */}
-      <div className="h-px w-full bg-border dark:bg-border-dark" />
-
+      <HorizontalDivider />
       <MainFooter />
 
       {/* Secrets Prompt */}
