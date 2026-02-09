@@ -1507,13 +1507,12 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       )}
 
       {/* JSON Workflow Editor */}
-      {showJsonEditor && (
-        <WorkflowJsonEditor
-          workflowJson={getWorkflowJson()}
-          onApply={handleJsonApply}
-          onClose={() => setShowJsonEditor(false)}
-        />
-      )}
+      <WorkflowJsonEditor
+        open={showJsonEditor}
+        workflowJson={getWorkflowJson()}
+        onApply={handleJsonApply}
+        onClose={() => setShowJsonEditor(false)}
+      />
 
       {/* Secrets Prompt — shown when run is triggered and environment has unfilled secrets */}
       <SecretsPrompt

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
+import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows
@@ -453,7 +454,7 @@ Create multiple edges from one node to fan out. Use a Merge node to rejoin.
  * current workflow (nodes, edges, variables, settings).  Users can read,
  * copy, edit, and apply changes.  Invalid JSON is rejected gracefully.
  */
-const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
+const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
   const [value, setValue] = useState('');
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -554,29 +555,41 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
   const lineCount = value.split('\n').length;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="relative w-[90vw] max-w-5xl h-[85vh] bg-white dark:bg-gray-900 rounded-xl shadow-2xl flex flex-col overflow-hidden border border-gray-200 dark:border-gray-700">
+    <Transition show={open} as={React.Fragment}>
+      <Dialog onClose={onClose} className="relative z-50">
+        <TransitionChild
+          enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
+          leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+        </TransitionChild>
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <TransitionChild
+            enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
+            leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
+          >
+            <Dialog.Panel className="w-[90vw] max-w-5xl h-[85vh] bg-surface dark:bg-surface-dark rounded-xl shadow-2xl flex flex-col overflow-hidden border border-border dark:border-border-dark">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
           <div className="flex items-center gap-3">
-            <h2 className="text-base font-bold text-gray-800 dark:text-gray-100">
+            <h2 className="text-base font-bold text-text-primary dark:text-text-primary-dark">
               Workflow Editor
             </h2>
             {isDirty && viewMode === 'json' && (
-              <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded">
+              <span className="text-xs font-medium text-warning bg-warning/10 px-2 py-0.5 rounded">
                 Unsaved changes
               </span>
             )}
           </div>
           <div className="flex items-center gap-2">
             {/* View mode tabs */}
-            <div className="flex items-center gap-1 mr-2 bg-gray-200 dark:bg-gray-700 rounded-md p-0.5">
+            <div className="flex items-center gap-1 mr-2 bg-surface-raised dark:bg-surface-dark-raised rounded-md p-0.5">
               <button
                 onClick={() => setViewMode('json')}
                 className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
                   viewMode === 'json'
-                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    ? 'bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark shadow-sm'
+                    : 'text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
                 }`}
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -586,8 +599,8 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
                 onClick={() => setViewMode('ai-prompt')}
                 className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
                   viewMode === 'ai-prompt'
-                    ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400'
+                    ? 'bg-surface dark:bg-surface-dark text-primary shadow-sm'
+                    : 'text-text-muted dark:text-text-muted-dark hover:text-primary'
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
@@ -597,7 +610,7 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
             
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors"
+              className="btn btn-ghost btn-sm gap-1.5"
               title={viewMode === 'json' ? 'Copy JSON to clipboard' : 'Copy AI prompt to clipboard'}
             >
               {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -607,7 +620,7 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
               <button
                 onClick={handleApply}
                 disabled={!isDirty}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-cyan-600 hover:bg-cyan-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="btn btn-primary btn-sm gap-1.5"
                 title="Apply changes (Ctrl+S)"
               >
                 Apply
@@ -615,7 +628,7 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
             )}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors"
+              className="btn btn-ghost btn-sm btn-square"
               title="Close (Esc)"
             >
               <X className="w-5 h-5" />
@@ -625,7 +638,7 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
 
         {/* Error bar */}
         {error && viewMode === 'json' && (
-          <div className="flex items-center gap-2 px-5 py-2 bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-medium">
+          <div className="flex items-center gap-2 px-5 py-2 bg-status-error/10 border-b border-status-error/30 text-status-error text-xs font-medium">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             {error}
           </div>
@@ -633,19 +646,19 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
 
         {/* Include workflow toggle (only in AI prompt mode) */}
         {viewMode === 'ai-prompt' && workflowJson?.nodes?.length > 0 && (
-          <div className="flex items-center gap-3 px-5 py-2 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20">
+          <div className="flex items-center gap-3 px-5 py-2 border-b border-border dark:border-border-dark bg-primary/5">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={includeWorkflow}
                 onChange={(e) => setIncludeWorkflow(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                className="checkbox checkbox-sm checkbox-primary"
               />
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+              <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">
                 Include current workflow JSON (for updating)
               </span>
             </label>
-            <span className="text-[10px] text-gray-400 dark:text-gray-500">
+            <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
               {includeWorkflow ? 'AI will see and modify existing nodes' : 'AI will create from scratch'}
             </span>
           </div>
@@ -656,10 +669,10 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
           <div className="flex-1 relative overflow-hidden">
             <div className="absolute inset-0 flex overflow-auto">
               {/* Line numbers */}
-              <div className="flex-shrink-0 py-3 px-2 bg-gray-100 dark:bg-gray-800 text-right select-none border-r border-gray-200 dark:border-gray-700 overflow-hidden"
+              <div className="flex-shrink-0 py-3 px-2 bg-surface-raised dark:bg-surface-dark-raised text-right select-none border-r border-border dark:border-border-dark overflow-hidden"
                    style={{ minWidth: 48 }}>
                 {Array.from({ length: lineCount }, (_, i) => (
-                  <div key={i} className="text-[11px] leading-[1.6] text-gray-400 dark:text-gray-600 font-mono pr-1">
+                    <div key={i} className="text-[11px] leading-[1.6] text-text-muted dark:text-text-muted-dark font-mono pr-1">
                     {i + 1}
                   </div>
                 ))}
@@ -670,21 +683,21 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
                 value={value}
                 onChange={handleChange}
                 spellCheck={false}
-                className="flex-1 p-3 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-mono text-[12px] leading-[1.6] resize-none outline-none border-none"
+                className="flex-1 p-3 bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark font-mono text-[12px] leading-[1.6] resize-none outline-none border-none"
                 style={{ tabSize: 2 }}
               />
             </div>
           </div>
         ) : (
           <div className="flex-1 overflow-auto" ref={promptRef}>
-            <pre className="p-5 text-[12px] leading-relaxed font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
+            <pre className="p-5 text-[12px] leading-relaxed font-mono text-text-primary dark:text-text-primary-dark whitespace-pre-wrap break-words">
               {buildAIPrompt(workflowJson, includeWorkflow)}
             </pre>
           </div>
         )}
 
         {/* Footer / hint */}
-        <div className="flex items-center justify-between px-5 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[10px] text-gray-500 dark:text-gray-400">
+        <div className="flex items-center justify-between px-5 py-2 border-t border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-[10px] text-text-muted dark:text-text-muted-dark">
           {viewMode === 'json' ? (
             <>
               <span>{lineCount} lines</span>
@@ -697,8 +710,11 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
             </>
           )}
         </div>
-      </div>
-    </div>
+            </Dialog.Panel>
+          </TransitionChild>
+        </div>
+      </Dialog>
+    </Transition>
   );
 };
 
