@@ -188,3 +188,34 @@ Defining `method-get`, `method-post`, `method-put`, `method-delete`, `method-pat
 
 ### 50. CSS bundle shrank slightly after node redesign
 Post-Phase 7 build: 213.60KB CSS (29.99KB gzip), 821.64KB JS (223.28KB gzip). The CSS is marginally larger than Phase 6 (+6KB raw, +0.9KB gzip) reflecting the new design token classes. But the JS bundle is actually smaller by ~4KB gzip — removing 6 copies of manual header/menu/expand logic from individual nodes in favor of the shared BaseNode wrapper reduced total component code. This validates the "extract shared shell" strategy.
+
+---
+
+## Phase 8: Modals & Panels Overhaul (2026-02-10)
+
+### 51. Modal molecule + `open` prop pattern eliminates conditional render bugs
+The old pattern `{showX && <Component />}` mounts/unmounts the component on every toggle, losing internal state and skipping Headless UI's enter/leave transitions. The new pattern always renders the component with `<Component open={showX} />`, and Headless UI Dialog's `Transition show={open}` handles visibility. This gives free focus trap, Escape-to-close, overlay click-to-close, and smooth enter/leave animations — replacing 25+ lines of manual click-outside/keydown/animation logic per modal.
+
+### 52. `deleteTarget` state pattern for confirm dialogs
+Replacing `if (!confirm(...)) return` with an accessible ConfirmDialog requires a two-step flow: (1) `setDeleteTarget(id)` stores the target ID, (2) `<ConfirmDialog open={!!deleteTarget} onConfirm={() => doDelete(deleteTarget)} />` shows the dialog. The `onConfirm` callback executes the actual delete, then clears `deleteTarget`. This is more lines of code but eliminates the browser's native, unstyleable, inconsistent-across-platforms confirm() dialog.
+
+### 53. Safe fallback for Dialog children when data is null
+NodeModal's caller previously used `{modalNode && <NodeModal node={modalNode} />}`. With the `open` prop pattern, the component is always rendered but the Dialog is hidden when `open=false`. However, the component body may still reference `node.data` during render. The fix: `node={modalNode || { data: {}, type: 'start' }}` provides a safe fallback so no null reference occurs during the hidden render cycle.
+
+### 54. DaisyUI `collapse collapse-arrow` replaces manual accordion logic
+Manual accordion implementations (expandedCategory state + ChevronDown/ChevronUp icon toggle + click handler) require ~15 lines per accordion section. DaisyUI's `collapse` component with `collapse-arrow` provides the same UX with built-in chevron animation, accessible toggle, and content transition — using only radio inputs for mutual exclusion. The DynamicFunctionsHelper refactor replaced 50+ lines of accordion logic with DaisyUI collapse classes.
+
+### 55. NodeModal shell-only refactor — risk-proportional scope
+NodeModal.jsx defines 6 components in one 1,382-line file (shell + HTTPRequestConfig + OutputPanel + AssertionFormModal + AssertionConfig + DelayConfig + MergeConfig). Refactoring the entire file risked breaking complex ref-based prop flows between sub-components. Instead, only the shell (lines 1–275) was upgraded: Dialog/Transition wrapper, removed manual click-outside/animation, applied design tokens. Internal sub-components were left unchanged. This delivered 80% of the accessibility improvement (focus trap, Escape key, overlay click) with 20% of the risk.
+
+### 56. Inline style object syntax errors are invisible until build time
+A missing comma in a JSX inline `style={{ ... }}` object is valid at the parser level in development (Vite's HMR may not catch it depending on where the error is), but fails during `vite build` when esbuild performs stricter parsing. Always run `npm run build` after editing style objects in large files. The NodeModal build fix was a single missing comma on line 103.
+
+### 57. Toast replaces alert() with zero caller changes needed
+`toast.error('message')` from sonner is a 1:1 drop-in for `alert('message')` — same synchronous call pattern, no return value needed. The only import addition is `import { toast } from 'sonner'`. For success cases (e.g., after delete), `toast.success()` adds a green notification that `alert()` couldn't distinguish. This made the alert→toast migration a pure find-and-replace operation across 3 files.
+
+### 58. SlidePanel molecule complements Modal for non-blocking content
+Modal is best for focused tasks (create, edit, confirm) that block the main content. SlidePanel is better for reference/helper content (Dynamic Functions, logs, variable inspector) that should remain visible alongside the canvas. The side prop (`left`/`right`) and the slide transition (vs Modal's scale/fade) reinforce the spatial metaphor: panels *slide in from the edge*, modals *appear in the center*.
+
+### 59. WebhookManager rewrite yielded the largest line reduction (784→224)
+The original WebhookManager had 4 manually-built overlay modals (each ~60 lines of backdrop + positioning + animation), 9 alert() calls, and 1 confirm() call. Replacing overlays with `<Modal>` (6 lines each), alerts with `toast.error/success` (1 line each), and confirm with `<ConfirmDialog>` (8 lines) collapsed the file by 71%. This was the best ROI refactor in Phase 8 — high visual impact, low risk since WebhookManager has no complex state dependencies.
