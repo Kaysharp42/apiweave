@@ -25,7 +25,7 @@ import WorkflowJsonEditor from './WorkflowJsonEditor';
 import SecretsPrompt from './SecretsPrompt';
 import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
-import Toaster, { toast } from './Toaster';
+import { toast } from 'sonner';
 import ButtonSelect from './ButtonSelect';
 import { Save, History, Play, Code, Upload } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
@@ -365,7 +365,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     const handlePasteNode = () => {
       const cloneData = sessionStorage.getItem('copiedNode');
       if (!cloneData) {
-        toast('No node in clipboard', { type: 'error' });
+        toast.error('No node in clipboard');
         return;
       }
 
@@ -397,10 +397,10 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         };
 
         setNodes((nds) => [...nds, newNode]);
-        toast('Node pasted successfully', { type: 'success' });
+        toast.success('Node pasted successfully');
         console.log('Node pasted successfully');
       } catch (err) {
-        toast('Error pasting node: ' + err.message, { type: 'error' });
+        toast.error('Error pasting node: ' + err.message);
         console.error('Error pasting node:', err);
       }
     };
@@ -418,7 +418,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         if (selectedNode) {
           e.preventDefault();
           handleCopyNode({ detail: { nodeId: selectedNode.id } });
-          toast('Node copied to clipboard', { type: 'success' });
+          toast.success('Node copied to clipboard');
         }
       }
 
@@ -1101,7 +1101,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
       // Build readable toast message including node ids and their missing fields
       const details = invalidSummary.map((s) => `${s.nodeId}: ${s.missing.join(', ')}`).join(' | ');
-      toast(`Run blocked: invalid node config — ${details}`, { type: 'error', duration: 8000 });
+      toast.error(`Run blocked: invalid node config — ${details}`, { duration: 8000 });
 
       // Clear invalid marks after a timeout so UI returns to normal
       setTimeout(() => {
@@ -1470,9 +1470,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           <span className="leading-none self-center">{isRunning ? 'Running...' : 'Run'}</span>
         </button>
       </div>
-
-  {/* Toast container */}
-  <Toaster />
 
       {/* Add Nodes Panel - OUTSIDE ReactFlow */}
       <AddNodesPanel isModalOpen={!!modalNode} isPanelOpen={isPanelOpen} showVariablesPanel={showVariablesPanel} onShowVariablesPanel={onShowVariablesPanel} />

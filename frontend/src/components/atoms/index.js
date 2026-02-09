@@ -8,6 +8,7 @@ export { default as Divider } from './Divider';
 export { default as Tooltip } from './Tooltip';
 export { default as Toggle } from './Toggle';
 export { default as Spinner } from './Spinner';
+export { default as Toast } from './Toast';
 
 // Flow atoms — ReactFlow primitives
 export { default as BaseNode } from './flow/BaseNode';

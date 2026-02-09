@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Home from './pages/Home'
 import { PaletteProvider } from './contexts/PaletteContext'
+import Toast from './components/atoms/Toast'
 
 // Create contexts for global state with default values
 export const AppContext = React.createContext({
@@ -68,6 +69,7 @@ function App() {
             <Route path="/*" element={<Home />} />
           </Routes>
         </Router>
+        <Toast />
       </PaletteProvider>
     </AppContext.Provider>
   )

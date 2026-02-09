@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import API_BASE_URL from '../utils/api';
-import { toast } from './Toaster';
+import { toast } from 'sonner';
 import { ToggleLeft, ToggleRight, Check, X, RefreshCw, Plus, Info, ChevronDown, LayoutGrid } from 'lucide-react';
 
 const WorkflowSettingsPanel = () => {
@@ -33,13 +33,13 @@ const WorkflowSettingsPanel = () => {
 
   const handleAssignToCollection = async (collectionId) => {
     if (!workflowId) {
-      toast('Workflow ID not found', 'error');
+      toast.error('Workflow ID not found');
       return;
     }
 
     const selectedCollection = collections.find(c => c.collectionId === collectionId);
     if (!selectedCollection) {
-      toast('Collection not found', 'error');
+      toast.error('Collection not found');
       return;
     }
 
@@ -55,7 +55,7 @@ const WorkflowSettingsPanel = () => {
         setCurrentCollectionId(selectedCollection.collectionId);
         
         // Show success notification with collection name and icon
-        toast(`Workflow added to "${selectedCollection.name}"`, 'success');
+        toast.success(`Workflow added to "${selectedCollection.name}"`);
         
         // Comprehensive refresh of collections and workflows
         if (refreshCollectionsAndWorkflows) {
@@ -64,11 +64,11 @@ const WorkflowSettingsPanel = () => {
         
       } else {
         const errorData = await response.json();
-        toast(errorData.message || 'Failed to add workflow to collection', 'error');
+        toast.error(errorData.message || 'Failed to add workflow to collection');
       }
     } catch (error) {
       console.error('Error assigning workflow to collection:', error);
-      toast(`Failed to add workflow to collection: ${error.message}`, 'error');
+      toast.error(`Failed to add workflow to collection: ${error.message}`);
     } finally {
       setAssignmentLoading(false);
     }
@@ -76,7 +76,7 @@ const WorkflowSettingsPanel = () => {
 
   const handleRemoveFromCollection = async () => {
     if (!workflowId || !currentCollection) {
-      toast('No collection assignment to remove', 'error');
+      toast.error('No collection assignment to remove');
       return;
     }
 
@@ -92,7 +92,7 @@ const WorkflowSettingsPanel = () => {
         setCurrentCollectionId(null);
         
         // Show success notification
-        toast(`Workflow removed from "${currentCollection.name}"`, 'success');
+        toast.success(`Workflow removed from "${currentCollection.name}"`);
         
         // Comprehensive refresh of collections and workflows
         if (refreshCollectionsAndWorkflows) {
@@ -101,11 +101,11 @@ const WorkflowSettingsPanel = () => {
         
       } else {
         const errorData = await response.json();
-        toast(errorData.message || 'Failed to remove workflow from collection', 'error');
+        toast.error(errorData.message || 'Failed to remove workflow from collection');
       }
     } catch (error) {
       console.error('Error removing workflow from collection:', error);
-      toast(`Failed to remove workflow from collection: ${error.message}`, 'error');
+      toast.error(`Failed to remove workflow from collection: ${error.message}`);
     } finally {
       setAssignmentLoading(false);
     }
