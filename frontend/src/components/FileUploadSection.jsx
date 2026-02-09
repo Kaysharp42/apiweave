@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Plus, Trash2, Image } from 'lucide-react';
+import { toast } from 'sonner';
 
 const FileUploadSection = ({ fileUploads = [], onUpdate, variables = {} }) => {
   const [showForm, setShowForm] = useState(false);
@@ -38,7 +39,7 @@ const FileUploadSection = ({ fileUploads = [], onUpdate, variables = {} }) => {
 
   const handleAddFile = () => {
     if (!formData.name.trim() || !formData.value.trim() || !formData.fieldName.trim()) {
-      alert('Please fill in name, value, and field name');
+      toast.error('Please fill in name, value, and field name');
       return;
     }
 

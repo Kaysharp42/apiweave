@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import WorkflowCanvas from '../components/WorkflowCanvas';
 import API_BASE_URL from '../utils/api';
 
@@ -17,12 +18,12 @@ const WorkflowEditor = () => {
           const data = await response.json();
           setWorkflow(data);
         } else {
-          alert('Workflow not found');
+          toast.error('Workflow not found');
           navigate('/');
         }
       } catch (error) {
         console.error('Error fetching workflow:', error);
-        alert('Error loading workflow');
+        toast.error('Error loading workflow');
         navigate('/');
       } finally {
         setLoading(false);

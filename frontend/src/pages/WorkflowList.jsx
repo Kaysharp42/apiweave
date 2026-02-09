@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../components/molecules';
 import API_BASE_URL from '../utils/api';
 
 const WorkflowList = () => {
@@ -9,6 +11,7 @@ const WorkflowList = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState('');
   const [newWorkflowDesc, setNewWorkflowDesc] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => {
     fetchWorkflows();
@@ -28,7 +31,7 @@ const WorkflowList = () => {
 
   const createWorkflow = async () => {
     if (!newWorkflowName.trim()) {
-      alert('Please enter a workflow name');
+      toast.error('Please enter a workflow name');
       return;
     }
 
@@ -60,19 +63,15 @@ const WorkflowList = () => {
         // Navigate to the new workflow editor
         navigate(`/workflows/${newWorkflow.workflowId}`);
       } else {
-        alert('Failed to create workflow');
+        toast.error('Failed to create workflow');
       }
     } catch (error) {
       console.error('Error creating workflow:', error);
-      alert('Error creating workflow');
+      toast.error('Error creating workflow');
     }
   };
 
   const deleteWorkflow = async (workflowId) => {
-    if (!confirm('Are you sure you want to delete this workflow?')) {
-      return;
-    }
-
     try {
       const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
         method: 'DELETE',
@@ -80,12 +79,15 @@ const WorkflowList = () => {
 
       if (response.ok) {
         fetchWorkflows();
+        toast.success('Workflow deleted');
       } else {
-        alert('Failed to delete workflow');
+        toast.error('Failed to delete workflow');
       }
     } catch (error) {
       console.error('Error deleting workflow:', error);
-      alert('Error deleting workflow');
+      toast.error('Error deleting workflow');
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -160,7 +162,7 @@ const WorkflowList = () => {
                 Edit
               </Link>
               <button
-                onClick={() => deleteWorkflow(workflow.workflowId)}
+                onClick={() => setDeleteTarget(workflow.workflowId)}
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800"
               >
                 Delete
@@ -176,6 +178,16 @@ const WorkflowList = () => {
           <p>Create your first workflow to get started!</p>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteWorkflow(deleteTarget)}
+        title="Delete Workflow"
+        message="Are you sure you want to delete this workflow? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+      />
     </div>
   );
 };
