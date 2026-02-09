@@ -49,8 +49,8 @@ const AppNavBar = () => {
     <nav
       className={`${navStyles} ${
         isNavBarCollapsed 
-          ? 'w-8 min-w-8'
-          : 'w-25 min-w-25'
+          ? 'w-nav-collapsed min-w-nav-collapsed'
+          : 'w-nav-expanded'
       }`}
       style={{
         width: isNavBarCollapsed 
