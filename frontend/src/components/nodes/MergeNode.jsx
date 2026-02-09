@@ -1,320 +1,171 @@
-import React, { useState } from 'react';
-import { Handle, Position } from 'reactflow';
-import { GitMerge, CheckCircle, SquareCheckBig, Filter, AlertTriangle, Clock, Copy, CopyPlus, ArrowRight, Sparkles, Files } from 'lucide-react';
+import React from 'react';
+import { GitMerge, CheckCircle, SquareCheckBig, Filter, AlertTriangle, Clock, ArrowRight, Sparkles } from 'lucide-react';
+import BaseNode from '../atoms/flow/BaseNode';
 
-/**
- * MergeNode - Merges multiple parallel branches
- * Strategies: 
- * - all: Wait for all incoming branches
- * - any: Continue when any branch completes
- * - first: Continue with first completed branch
- * - conditional: Merge only branches matching conditions
- */
+/* Reusable branch-mapping list */
+const BranchMapping = ({ branches }) => (
+  <div className="mt-1 space-y-1">
+    {branches.map((b) => (
+      <div key={b.index} className="text-[10px] bg-surface dark:bg-surface-dark-raised p-1.5 rounded border border-border dark:border-border-dark">
+        <span className="font-medium text-text-primary dark:text-text-primary-dark">
+          {b.edgeLabel || b.label || `Branch ${b.index}`}
+        </span>
+        <span className="text-text-muted dark:text-text-muted-dark mx-1">{'\u2192'}</span>
+        <code className="text-purple-600 dark:text-purple-400 font-mono">prev[{b.index}]</code>
+        {b.nodeId && (
+          <>
+            <span className="text-text-muted dark:text-text-muted-dark mx-1">{'\u2192'}</span>
+            <span className="font-medium text-text-primary dark:text-text-primary-dark">{b.nodeId}</span>
+          </>
+        )}
+        {b.statusCode && b.statusCode !== 'N/A' && (
+          <span className="ml-1 text-text-muted dark:text-text-muted-dark">({b.statusCode})</span>
+        )}
+      </div>
+    ))}
+    <div className="text-[9px] text-text-muted dark:text-text-muted-dark italic mt-1">
+      Example: <code className="text-purple-600 dark:text-purple-400">{'{{prev[0].response.body.id}}'}</code>
+    </div>
+  </div>
+);
+
+
 const MergeNode = ({ id, data, selected }) => {
   const { label, config = {}, executionStatus, executionResult } = data;
   const mergeStrategy = config.mergeStrategy || 'all';
-  const [showMenu, setShowMenu] = useState(false);
-  
-  // Use executionStatus for status, fallback to deprecated 'status' for backward compatibility
   const status = executionStatus || data.status || 'idle';
-  const result = executionResult || data.result; // executionResult is the correct property
-  
-  // Debug: Log result to see what we're getting
-  if (result) {
-    console.log('MergeNode result:', result);
-  }
+  const result = executionResult || data.result;
 
-  // Status-based styling
-  const getStatusColor = () => {
-    switch (status) {
-      case 'running':
-        return 'border-yellow-400 dark:border-yellow-500';
-      case 'success':
-        return 'border-green-500 dark:border-green-400';
-      case 'error':
-        return 'border-red-500 dark:border-red-400';
-      case 'warning':
-        return 'border-orange-500 dark:border-orange-400';
-      default:
-        return 'border-gray-300 dark:border-gray-600';
-    }
+  const strategyMeta = {
+    all:         { icon: <Clock className="w-3.5 h-3.5 flex-shrink-0" />, desc: 'Waits for all branches' },
+    any:         { icon: <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />, desc: 'Continues when any completes' },
+    first:       { icon: <ArrowRight className="w-3.5 h-3.5 flex-shrink-0" />, desc: 'Uses first completed branch' },
+    conditional: { icon: <Filter className="w-3.5 h-3.5 flex-shrink-0" />, desc: 'Merges matching conditions' },
   };
 
-  const getStatusBadge = () => {
-    if (status === 'idle') return null;
-    
-    const badges = {
-      running: { text: 'Running', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-      success: { text: 'Success', color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
-      error: { text: 'Error', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' },
-      warning: { text: 'Warning', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' },
-    };
-
-    const badge = badges[status];
-    if (!badge) return null;
-
-    return (
-      <span className={`px-2 py-1 text-xs font-semibold rounded ${badge.color}`}>
-        {badge.text}
-      </span>
-    );
-  };
-
-  const handleStrategyChange = (e) => {
-    // MergeNode config is updated through NodeModal only
-    // Prevent inline changes - user should double-click to open modal
-    e.preventDefault();
-    console.log('To change merge strategy, double-click the node to open configuration modal');
-  };
+  const { icon: stratIcon, desc: stratDesc } = strategyMeta[mergeStrategy] || strategyMeta.all;
 
   return (
-    <div
-      className={`px-4 py-3 shadow-md rounded-md bg-white dark:bg-gray-800 border-2 ${
-        selected ? 'border-cyan-400 dark:border-cyan-500' : getStatusColor()
-      } min-w-[200px] transition-all ${
-        status === 'running' ? 'animate-pulse' : ''
-      }`}
+    <BaseNode
+      title={label || 'Merge'}
+      icon={<GitMerge className="w-4 h-4 text-purple-600 dark:text-purple-400" />}
+      status={status}
+      selected={selected}
+      nodeId={id}
+      handleLeft={{ type: 'target', className: '!bg-purple-500 dark:!bg-purple-400 !w-2.5 !h-2.5' }}
+      handleRight={{ type: 'source', className: '!bg-purple-500 dark:!bg-purple-400 !w-2.5 !h-2.5' }}
+      collapsible={true}
+      defaultExpanded={false}
+      headerBg="bg-purple-50 dark:bg-purple-900/60"
+      headerTextClass="text-purple-800 dark:text-purple-200"
+      statusBadgeText={status !== 'idle' ? status.charAt(0).toUpperCase() + status.slice(1) : ''}
+      titleExtra={
+        data.incomingBranchCount > 1 && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-200 dark:bg-purple-800 text-purple-700 dark:text-purple-200 font-semibold" title={`Merging ${data.incomingBranchCount} branches`}>
+            ⬅ {data.incomingBranchCount}x
+          </span>
+        )
+      }
+      className={`min-w-[200px] ${status === 'running' ? 'animate-pulse' : ''}`}
     >
-      {/* Multiple input handles for merging branches */}
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className="w-3 h-3 !bg-purple-500 dark:!bg-purple-400" 
-      />
-
-      <div className="flex flex-col gap-2">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <GitMerge className="text-lg w-5 h-5" />
-            <div className="font-bold text-gray-700 dark:text-gray-200 text-sm">
-              {label || 'Merge'}
-            </div>
-            {/* Incoming branch count badge */}
-            {data.incomingBranchCount > 1 && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 font-semibold" title={`Merging ${data.incomingBranchCount} branches`}>
-                ⬅ {data.incomingBranchCount}x
-              </span>
-            )}
+      {({ isExpanded }) => (
+        <div className="p-2 space-y-2">
+          {/* Strategy summary — always visible */}
+          <div className="flex items-center gap-1.5 text-[10px] text-text-secondary dark:text-text-secondary-dark italic">
+            {stratIcon}
+            <span>{stratDesc}</span>
           </div>
-          <div className="flex items-center gap-2">
-            {getStatusBadge()}
-            {/* Three-dot menu */}
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowMenu(!showMenu);
-                }}
-                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 nodrag focus:outline-none focus:ring-0 active:bg-transparent select-none bg-transparent hover:bg-transparent"
-                style={{ background: 'transparent', border: 'none', padding: '0 4px', WebkitTapHighlightColor: 'transparent' }}
-                title="More options"
-              >
-                ⋯
-              </button>
-              
-              {/* Dropdown menu */}
-              {showMenu && (
-                <div className="absolute right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded shadow-lg z-50 nodrag min-w-[130px]">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      window.dispatchEvent(new CustomEvent('duplicateNode', { detail: { nodeId: id } }));
-                      setShowMenu(false);
-                    }}
-                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none flex items-center gap-2"
-                  >
-                    <Files className="w-4 h-4" />
-                    <span>Duplicate</span>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      window.dispatchEvent(new CustomEvent('copyNode', { detail: { nodeId: id } }));
-                      setShowMenu(false);
-                    }}
-                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none border-t border-gray-300 dark:border-gray-600 flex items-center gap-2"
-                  >
-                    <Copy className="w-4 h-4" />
-                    <span>Copy</span>
-                  </button>
+
+          {isExpanded && (
+            <div className="space-y-2">
+              {/* Strategy selector (disabled — edit in modal) */}
+              <div className="text-xs">
+                <label className="block mb-0.5 font-medium text-text-secondary dark:text-text-secondary-dark text-[10px]">
+                  Merge Strategy:
+                </label>
+                <select
+                  value={mergeStrategy}
+                  disabled
+                  title="Double-click node to change strategy"
+                  className="w-full px-1.5 py-0.5 text-xs border border-border dark:border-border-dark rounded
+                    bg-surface dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark
+                    cursor-not-allowed opacity-75"
+                >
+                  <option value="all">Wait for All (AND)</option>
+                  <option value="any">Wait for Any (OR)</option>
+                  <option value="first">First Completes</option>
+                  <option value="conditional">Conditional Merge</option>
+                </select>
+                <p className="text-[9px] text-text-muted dark:text-text-muted-dark mt-0.5 italic">
+                  💡 Double-click node to configure
+                </p>
+              </div>
+
+              {/* Result Info */}
+              {result && (
+                <div className="text-xs text-text-secondary dark:text-text-secondary-dark p-2
+                  bg-surface dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark">
+                  <div className="font-medium mb-1 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    <span>{result.mergeStrategy === 'conditional' ? 'Conditions Passed:' : 'Merged Branches:'}</span>
+                  </div>
+                  {result.branchCount !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <SquareCheckBig className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span>{result.branchCount} branch(es) {result.mergeStrategy === 'conditional' ? 'passed' : 'merged'}</span>
+                    </div>
+                  )}
+
+                  {/* Strategy warning */}
+                  {result.warning && (
+                    <div className="mt-2 p-1.5 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded">
+                      <div className="text-[10px] text-yellow-800 dark:text-yellow-200 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                        <span className="font-semibold">Strategy Warning:</span>
+                      </div>
+                      <div className="text-[9px] text-yellow-700 dark:text-yellow-300 mt-0.5">
+                        {result.warning}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Branch mapping */}
+                  {result.branches && result.branches.length > 0 && (
+                    <BranchMapping branches={result.branches} />
+                  )}
+
+                  {result.mergedAt && (
+                    <div className="text-text-muted dark:text-text-muted-dark text-[10px] mt-2">
+                      {new Date(result.mergedAt).toLocaleTimeString()}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Pre-execution branch guide */}
+              {data.incomingBranchCount > 1 && !result && (
+                <div className="text-xs bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded p-2">
+                  <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1 text-[10px] flex items-center gap-1">
+                    <GitMerge className="w-3 h-3" />
+                    <span>Branch → Variable Mapping:</span>
+                  </div>
+                  {data.incomingBranches?.length > 0 ? (
+                    <BranchMapping branches={data.incomingBranches} />
+                  ) : (
+                    <div className="text-[9px] text-text-secondary dark:text-text-secondary-dark space-y-0.5">
+                      <div>This node merges {data.incomingBranchCount} branches</div>
+                      <div className="text-text-muted dark:text-text-muted-dark italic mt-1">
+                        Use <code className="text-purple-600 dark:text-purple-400">{'{{prev[0]}}'}</code>, <code className="text-purple-600 dark:text-purple-400">{'{{prev[1]}}'}</code>, etc.
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          </div>
-        </div>
-
-        {/* Strategy Configuration (Display Only - Edit in Modal) */}
-        <div className="text-xs text-gray-600 dark:text-gray-400">
-          <label className="block mb-1 font-medium">Merge Strategy:</label>
-          <select
-            value={mergeStrategy}
-            onChange={handleStrategyChange}
-            disabled
-            title="Double-click node to change strategy"
-            className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 cursor-not-allowed"
-          >
-            <option value="all">Wait for All (AND)</option>
-            <option value="any">Wait for Any (OR)</option>
-            <option value="first">First Completes</option>
-            <option value="conditional">Conditional Merge</option>
-          </select>
-          <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-1 italic">
-            💡 Double-click node to configure
-          </p>
-        </div>
-
-        {/* Strategy Description */}
-        <div className="text-xs text-gray-500 dark:text-gray-500 italic flex items-center gap-2">
-          {mergeStrategy === 'all' && (
-            <>
-              <Clock className="w-4 h-4 flex-shrink-0" />
-              <span>Waits for all branches</span>
-            </>
-          )}
-          {mergeStrategy === 'any' && (
-            <>
-              <Sparkles className="w-4 h-4 flex-shrink-0" />
-              <span>Continues when any branch completes</span>
-            </>
-          )}
-          {mergeStrategy === 'first' && (
-            <>
-              <ArrowRight className="w-4 h-4 flex-shrink-0" />
-              <span>Uses first completed branch</span>
-            </>
-          )}
-          {mergeStrategy === 'conditional' && (
-            <>
-              <Filter className="w-4 h-4 flex-shrink-0" />
-              <span>Merges branches matching conditions</span>
-            </>
           )}
         </div>
-
-        {/* Result Info */}
-        {result && (
-          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 p-2 bg-gray-50 dark:bg-gray-900 rounded">
-            <div className="font-medium mb-1 flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-green-600" />
-              <span>{result.mergeStrategy === 'conditional' ? 'Conditions Passed:' : 'Merged Branches:'}</span>
-            </div>
-            {result.branchCount !== undefined && (
-              <div className="flex items-center gap-2">
-                <SquareCheckBig className="w-4 h-4 text-blue-600" />
-                <span>{result.branchCount} branch(es) {result.mergeStrategy === 'conditional' ? 'passed' : 'merged'}</span>
-              </div>
-            )}
-            
-            {/* Warning for ANY/FIRST strategies */}
-            {result.warning && (
-              <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded">
-                <div className="text-[10px] text-yellow-800 dark:text-yellow-200 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                  <span className="font-semibold">Strategy Warning:</span>
-                </div>
-                <div className="text-[9px] text-yellow-700 dark:text-yellow-300 mt-1">
-                  {result.warning}
-                </div>
-              </div>
-            )}
-            
-            {/* Branch Reference Helper - shows which prev[index] maps to which node */}
-            {result.branches && result.branches.length > 0 && (
-              <div className="mt-2 space-y-1">
-                <div className="text-[10px] font-semibold text-purple-600 dark:text-purple-400">
-                  Branch → Variable Mapping:
-                </div>
-                {result.branches.map((branch) => (
-                  <div key={branch.index} className="text-[10px] bg-white dark:bg-gray-800 p-1.5 rounded border border-gray-200 dark:border-gray-700">
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
-                      Branch {branch.index}
-                    </span>
-                    <span className="text-gray-500 dark:text-gray-500 mx-1">→</span>
-                    <code className="text-purple-600 dark:text-purple-400 font-mono">
-                      prev[{branch.index}]
-                    </code>
-                    <span className="text-gray-500 dark:text-gray-500 mx-1">→</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
-                      {branch.nodeId}
-                    </span>
-                    {branch.statusCode && branch.statusCode !== 'N/A' && (
-                      <span className="ml-1 text-gray-500">
-                        ({branch.statusCode})
-                      </span>
-                    )}
-                  </div>
-                ))}
-                <div className="text-[9px] text-gray-500 dark:text-gray-500 italic mt-1">
-                  Example: <code className="text-purple-600 dark:text-purple-400">{'{{prev[0].response.body.id}}'}</code>
-                </div>
-              </div>
-            )}
-            
-            {result.mergedAt && (
-              <div className="text-gray-500 dark:text-gray-500 text-[10px] mt-2">
-                {new Date(result.mergedAt).toLocaleTimeString()}
-              </div>
-            )}
-          </div>
-        )}
-        
-        {/* Branch Reference Guide - Always show for user guidance (even before execution) */}
-        {data.incomingBranchCount > 1 && !result && (
-          <div className="text-xs bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded p-2 mt-2">
-            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1 text-[10px] flex items-center gap-1">
-              <GitMerge className="w-3 h-3" />
-              <span>Branch → Variable Mapping:</span>
-            </div>
-            
-            {/* Show incoming branches if available */}
-            {data.incomingBranches && data.incomingBranches.length > 0 ? (
-              <div className="space-y-1">
-                {data.incomingBranches.map((branch) => (
-                  <div key={branch.index} className="text-[10px] bg-white dark:bg-gray-800 p-1.5 rounded border border-gray-200 dark:border-gray-700">
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
-                      {branch.edgeLabel || `Branch ${branch.index}`}
-                    </span>
-                    <span className="text-gray-500 dark:text-gray-500 mx-1">→</span>
-                    <code className="text-purple-600 dark:text-purple-400 font-mono">
-                      prev[{branch.index}]
-                    </code>
-                    <span className="text-gray-500 dark:text-gray-500 mx-1">→</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
-                      {branch.label}
-                    </span>
-                  </div>
-                ))}
-                <div className="text-[9px] text-gray-500 dark:text-gray-500 italic mt-1">
-                  Example: <code className="text-purple-600 dark:text-purple-400">{'{{prev[0].response.body.id}}'}</code>
-                </div>
-              </div>
-            ) : (
-              // Fallback if incoming branches not available
-              <div className="text-[9px] text-gray-600 dark:text-gray-400 space-y-0.5">
-                <div>This node merges {data.incomingBranchCount} branches</div>
-                <div className="text-gray-500 dark:text-gray-500 italic mt-1">
-                  • Branch labels show: <code className="bg-purple-100 dark:bg-purple-900/50 px-1">Branch 0</code>, <code className="bg-purple-100 dark:bg-purple-900/50 px-1">Branch 1</code>, etc.
-                </div>
-                <div className="text-gray-500 dark:text-gray-500 italic">
-                  • To use them: <code className="text-purple-600 dark:text-purple-400">{'{{prev[0]}}'}</code>, <code className="text-purple-600 dark:text-purple-400">{'{{prev[1]}}'}</code>, etc.
-                </div>
-                <div className="text-gray-500 dark:text-gray-500 italic mt-1">
-                  After execution, you'll see which Branch number corresponds to which source node.
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Output handle */}
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className="w-3 h-3 !bg-purple-500 dark:!bg-purple-400" 
-      />
-    </div>
+      )}
+    </BaseNode>
   );
 };
 
