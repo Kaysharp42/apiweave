@@ -1,10 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Settings, Plus, FolderOpen, Download, Terminal } from 'lucide-react';
+import {
+  Upload,
+  Plus,
+  FolderOpen,
+  Download,
+  Terminal,
+  ChevronRight,
+  User,
+} from 'lucide-react';
 import WorkflowExportImport from '../WorkflowExportImport';
 import HARImport from '../HARImport';
 import OpenAPIImport from '../OpenAPIImport';
 import CurlImport from '../CurlImport';
 import CollectionExportImport from '../CollectionExportImport';
+import { Spinner } from '../atoms';
+import { SearchInput } from '../molecules';
+import useSidebarStore from '../../stores/SidebarStore';
 
 const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
   const [showWorkflowImportExport, setShowWorkflowImportExport] = useState(false);
@@ -15,16 +26,15 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
   const [showCollectionImportExport, setShowCollectionImportExport] = useState(false);
   const [collectionImportMode, setCollectionImportMode] = useState(null);
   const importMenuRef = useRef(null);
-  const collectionImportMenuRef = useRef(null);
+
+  const searchQuery = useSidebarStore((s) => s.searchQuery);
+  const setSearchQuery = useSidebarStore((s) => s.setSearchQuery);
 
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (importMenuRef.current && !importMenuRef.current.contains(event.target)) {
         setShowImportMenu(false);
-      }
-      if (collectionImportMenuRef.current && !collectionImportMenuRef.current.contains(event.target)) {
-        // Menu will close via modal
       }
     };
 
@@ -34,206 +44,114 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
     }
   }, [showImportMenu]);
 
-  const getHeaderTitle = () => {
+  const getNavLabel = () => {
     switch (selectedNav) {
-      case 'workflows':
-        return 'Workflows';
-      case 'collections':
-        return 'Collections';
-
-      case 'settings':
-        return 'Settings';
-      default:
-        return 'APIWeave';
+      case 'workflows': return 'Workflows';
+      case 'collections': return 'Collections';
+      case 'webhooks': return 'Webhooks';
+      case 'settings': return 'Settings';
+      default: return 'APIWeave';
     }
   };
 
-  const getActionButtons = () => {
-    switch (selectedNav) {
-      case 'workflows':
-        return (
-          <div className="flex gap-0 w-full divide-x divide-gray-200 dark:divide-gray-700">
-            <button
-              onClick={onCreateNew}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors duration-200 rounded-l-md flex-1 justify-center"
-              style={{ minWidth: 0 }}
-            >
-              <Plus className="w-4 h-4" />
-              <span>New</span>
-            </button>
-            <div className="relative flex-1 min-w-0" ref={importMenuRef}>
-              <button
-                onClick={() => setShowImportMenu(!showImportMenu)}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 rounded-r-md w-full justify-center"
-                style={{ minWidth: 0 }}
-              >
-                <Upload className="w-4 h-4" />
-                <span>Import</span>
-              </button>
-              {showImportMenu && (
-                <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg z-10 min-w-[120px]">
-                  <button
-                    onClick={() => {
-                      setShowWorkflowImportExport(true);
-                      setShowImportMenu(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Download className="w-4 h-4" />
-                    Workflow
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowHARImport(true);
-                      setShowImportMenu(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Upload className="w-4 h-4" />
-                    HAR File
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowOpenAPIImport(true);
-                      setShowImportMenu(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Upload className="w-4 h-4" />
-                    OpenAPI
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowCurlImport(true);
-                      setShowImportMenu(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Terminal className="w-4 h-4" />
-                    cURL
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      case 'collections':
-        return (
-          <div className="flex gap-0 w-full divide-x divide-gray-200 dark:divide-gray-700">
-            <button
-              onClick={onCreateNew}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors duration-200 rounded-l-md flex-1 justify-center"
-              style={{ minWidth: 0 }}
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create</span>
-            </button>
-            <div className="relative flex-1 min-w-0" ref={importMenuRef}>
-              <button
-                onClick={() => setShowImportMenu(!showImportMenu)}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 rounded-r-md w-full justify-center"
-                style={{ minWidth: 0 }}
-              >
-                <Upload className="w-4 h-4" />
-                <span>Import</span>
-              </button>
-              {showImportMenu && (
-                <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg z-10 min-w-[140px]">
-                  <button
-                    onClick={() => {
-                      setCollectionImportMode('import-collection');
-                      setShowCollectionImportExport(true);
-                      setShowImportMenu(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    Collection
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCollectionImportMode('import-har');
-                      setShowCollectionImportExport(true);
-                      setShowImportMenu(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Upload className="w-4 h-4" />
-                    HAR File
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCollectionImportMode('import-openapi');
-                      setShowCollectionImportExport(true);
-                      setShowImportMenu(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Upload className="w-4 h-4" />
-                    OpenAPI
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCollectionImportMode('import-curl');
-                      setShowCollectionImportExport(true);
-                      setShowImportMenu(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Terminal className="w-4 h-4" />
-                    cURL
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
+  // --- Import menu items per nav ---
+  const workflowImportItems = [
+    { label: 'Workflow', icon: Download, action: () => { setShowWorkflowImportExport(true); setShowImportMenu(false); } },
+    { label: 'HAR File', icon: Upload, action: () => { setShowHARImport(true); setShowImportMenu(false); } },
+    { label: 'OpenAPI', icon: Upload, action: () => { setShowOpenAPIImport(true); setShowImportMenu(false); } },
+    { label: 'cURL', icon: Terminal, action: () => { setShowCurlImport(true); setShowImportMenu(false); } },
+  ];
+
+  const collectionImportItems = [
+    { label: 'Collection', icon: FolderOpen, action: () => { setCollectionImportMode('import-collection'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
+    { label: 'HAR File', icon: Upload, action: () => { setCollectionImportMode('import-har'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
+    { label: 'OpenAPI', icon: Upload, action: () => { setCollectionImportMode('import-openapi'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
+    { label: 'cURL', icon: Terminal, action: () => { setCollectionImportMode('import-curl'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
+  ];
+
+  const importItems = selectedNav === 'collections' ? collectionImportItems : workflowImportItems;
+  const showActions = selectedNav === 'workflows' || selectedNav === 'collections';
+  const showSearch = selectedNav === 'workflows' || selectedNav === 'collections';
 
   return (
     <>
-      <div className="flex flex-col border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        {/* Header Title */}
-        <div className="px-4 py-3">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-            {getHeaderTitle()}
-            {isRefreshing && (
-              <div className="w-4 h-4 border-2 border-gray-300 dark:border-gray-600 border-t-cyan-600 dark:border-t-cyan-400 rounded-full animate-spin"></div>
-            )}
-          </h2>
+      <div className="flex flex-col border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
+        {/* Breadcrumb header */}
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <div className="flex items-center gap-1 text-sm min-w-0">
+            <User className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+            <span className="text-text-secondary dark:text-text-secondary-dark truncate">My Workspace</span>
+            <ChevronRight className="w-3 h-3 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+            <span className="font-semibold text-text-primary dark:text-text-primary-dark truncate">
+              {getNavLabel()}
+            </span>
+            {isRefreshing && <Spinner size="xs" className="ml-1.5" />}
+          </div>
         </div>
 
-        {/* Action Buttons */}
-        {getActionButtons() && (
-          <div className="flex items-center gap-1 px-4 pb-3">
-            {getActionButtons()}
+        {/* Action buttons */}
+        {showActions && (
+          <div className="flex items-center gap-1 px-3 pb-2">
+            <button
+              onClick={onCreateNew}
+              className="btn btn-ghost btn-sm gap-1.5 text-primary dark:text-primary-light hover:bg-primary/10 dark:hover:bg-primary-light/10 flex-1"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{selectedNav === 'collections' ? 'Create' : 'New'}</span>
+            </button>
+
+            <div className="relative flex-1" ref={importMenuRef}>
+              <button
+                onClick={() => setShowImportMenu(!showImportMenu)}
+                className="btn btn-ghost btn-sm gap-1.5 text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay w-full"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Import</span>
+              </button>
+
+              {showImportMenu && (
+                <ul className="menu menu-sm bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg shadow-lg absolute top-full left-0 mt-1 z-20 min-w-[140px] p-1">
+                  {importItems.map(({ label, icon: Icon, action }) => (
+                    <li key={label}>
+                      <button onClick={action} className="flex items-center gap-2 text-sm">
+                        <Icon className="w-4 h-4" />
+                        {label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Search input */}
+        {showSearch && (
+          <div className="px-3 pb-2.5">
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder={`Filter ${getNavLabel().toLowerCase()}…`}
+              size="xs"
+            />
           </div>
         )}
       </div>
 
-      {/* Modals */}
+      {/* Modals — rendered outside the header layout */}
       {showWorkflowImportExport && (
         <WorkflowExportImport
           onClose={() => setShowWorkflowImportExport(false)}
           mode="import"
           onImportSuccess={() => {
             setShowWorkflowImportExport(false);
-            window.dispatchEvent(new CustomEvent('workflowsNeedRefresh'));
+            useSidebarStore.getState().signalWorkflowsRefresh();
           }}
         />
       )}
-      {showHARImport && (
-        <HARImport onClose={() => setShowHARImport(false)} />
-      )}
-      {showOpenAPIImport && (
-        <OpenAPIImport onClose={() => setShowOpenAPIImport(false)} />
-      )}
-      {showCurlImport && (
-        <CurlImport onClose={() => setShowCurlImport(false)} />
-      )}
+      {showHARImport && <HARImport onClose={() => setShowHARImport(false)} />}
+      {showOpenAPIImport && <OpenAPIImport onClose={() => setShowOpenAPIImport(false)} />}
+      {showCurlImport && <CurlImport onClose={() => setShowCurlImport(false)} />}
       {showCollectionImportExport && (
         <CollectionExportImport
           mode={collectionImportMode}
@@ -245,7 +163,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
           onImportSuccess={() => {
             setShowCollectionImportExport(false);
             setCollectionImportMode(null);
-            window.dispatchEvent(new CustomEvent('collectionsChanged'));
+            useSidebarStore.getState().signalCollectionsRefresh();
           }}
         />
       )}
