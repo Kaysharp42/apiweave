@@ -1,11 +1,28 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import CollectionManager from '../CollectionManager';
 import WebhookManager from '../WebhookManager';
 import SidebarHeader from './SidebarHeader';
-import { Download, Folder, File, ChevronDown, ChevronRight, Settings, LayoutGrid, FileText, FolderOpen } from 'lucide-react';
+import {
+  Download,
+  Folder,
+  File,
+  ChevronDown,
+  ChevronRight,
+  Settings,
+  LayoutGrid,
+  FileText,
+  FolderOpen,
+  Globe,
+  Layers,
+  Cog,
+  Webhook,
+} from 'lucide-react';
 import API_BASE_URL from '../../utils/api';
 import WorkflowExportImport from '../WorkflowExportImport';
 import CollectionExportImport from '../CollectionExportImport';
+import { Badge, Spinner } from '../atoms';
+import { EmptyState } from '../molecules';
+import useSidebarStore from '../../stores/SidebarStore';
 
 const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [workflows, setWorkflows] = useState([]);
@@ -18,19 +35,20 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [collections, setCollections] = useState([]);
-  const [selectedCollection, setSelectedCollection] = useState(null);
-  const [selectedCollectionWorkflows, setSelectedCollectionWorkflows] = useState([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
   const [showCollectionManager, setShowCollectionManager] = useState(false);
   const [exportingWorkflowId, setExportingWorkflowId] = useState(null);
   const [exportingWorkflowName, setExportingWorkflowName] = useState(null);
   const [expandedCollections, setExpandedCollections] = useState(new Set());
-  const [draggedWorkflow, setDraggedWorkflow] = useState(null);
-  const [dragOverCol, setDragOverCol] = useState(null);
   const [exportingCollectionId, setExportingCollectionId] = useState(null);
   const [exportingCollectionName, setExportingCollectionName] = useState(null);
   const [environments, setEnvironments] = useState([]);
   const scrollContainerRef = useRef(null);
+
+  // Zustand sidebar store subscriptions
+  const searchQuery = useSidebarStore((s) => s.searchQuery);
+  const workflowVersion = useSidebarStore((s) => s.workflowVersion);
+  const collectionVersion = useSidebarStore((s) => s.collectionVersion);
 
   // Fetch workflows when needed
   useEffect(() => {
@@ -40,52 +58,67 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
       fetchWorkflows(0);
     } else if (selectedNav === 'collections') {
       fetchCollections();
-      // Also fetch workflows to show in collections
-      fetchWorkflows(0, false, 1000); // Fetch more workflows for collections view
+      fetchWorkflows(0, false, 1000);
     }
-    
+
+    // Listen for legacy events (from components not yet migrated)
     const handleCollectionsChanged = () => {
-      // Set refreshing state for smooth transition
       setIsRefreshing(true);
-      
       setTimeout(() => {
         if (selectedNav === 'collections') {
           fetchCollections();
-          // Also refresh workflows to update collection assignments
           fetchWorkflows(0, false, 1000);
         } else if (selectedNav === 'workflows') {
-          // Refresh workflows list to reflect collection changes
           fetchWorkflows(0);
         }
-      }, 100); // Shorter delay for collections
+      }, 100);
     };
 
     const handleWorkflowsNeedRefresh = () => {
-      // Set refreshing state for smooth transition
       setIsRefreshing(true);
-      
-      // Small delay for smooth transition, then refresh
       setTimeout(() => {
-        // Reset pagination
         setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
-        
-        // Force refresh workflows regardless of current tab
         if (selectedNav === 'workflows') {
           fetchWorkflows(0);
         } else if (selectedNav === 'collections') {
           fetchWorkflows(0, false, 1000);
         }
-      }, 150); // Short delay for transition
+      }, 150);
     };
 
     window.addEventListener('collectionsChanged', handleCollectionsChanged);
     window.addEventListener('workflowsNeedRefresh', handleWorkflowsNeedRefresh);
-    
+
     return () => {
       window.removeEventListener('collectionsChanged', handleCollectionsChanged);
       window.removeEventListener('workflowsNeedRefresh', handleWorkflowsNeedRefresh);
     };
   }, [selectedNav]);
+
+  // React to Zustand store signals (replaces some window events)
+  useEffect(() => {
+    if (workflowVersion > 0) {
+      setIsRefreshing(true);
+      setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
+      if (selectedNav === 'workflows') {
+        fetchWorkflows(0);
+      } else if (selectedNav === 'collections') {
+        fetchWorkflows(0, false, 1000);
+      }
+    }
+  }, [workflowVersion]);
+
+  useEffect(() => {
+    if (collectionVersion > 0) {
+      setIsRefreshing(true);
+      if (selectedNav === 'collections') {
+        fetchCollections();
+        fetchWorkflows(0, false, 1000);
+      } else if (selectedNav === 'workflows') {
+        fetchWorkflows(0);
+      }
+    }
+  }, [collectionVersion]);
 
   // Fetch environments once for displaying badges
   useEffect(() => {
@@ -237,69 +270,116 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
     }
   };
 
+  // --- Filtered data ---
+  const filteredWorkflows = useMemo(() => {
+    if (!searchQuery) return workflows;
+    const q = searchQuery.toLowerCase();
+    return workflows.filter(
+      (wf) =>
+        wf.name?.toLowerCase().includes(q) ||
+        wf.description?.toLowerCase().includes(q),
+    );
+  }, [workflows, searchQuery]);
+
+  const filteredCollections = useMemo(() => {
+    if (!searchQuery) return collections;
+    const q = searchQuery.toLowerCase();
+    return collections.filter((c) => c.name?.toLowerCase().includes(q));
+  }, [collections, searchQuery]);
+
+  // --- Workflow item renderer (shared between workflows & collections views) ---
+  const WorkflowItem = ({ workflow, isActive }) => {
+    const envName = getWorkflowEnvName(workflow.workflowId);
+    return (
+      <li>
+        <button
+          onClick={() => handleWorkflowClick(workflow)}
+          className={[
+            'group flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-all duration-150 cursor-pointer',
+            isActive
+              ? 'bg-primary/10 dark:bg-primary-light/10 border-l-[3px] border-primary dark:border-primary-light'
+              : 'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay border-l-[3px] border-transparent',
+          ].join(' ')}
+        >
+          <FileText className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+          <div className="flex-1 min-w-0 text-left">
+            <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">
+              {workflow.name}
+            </div>
+            <div className="text-xs text-text-secondary dark:text-text-secondary-dark flex items-center gap-1.5 flex-wrap mt-0.5">
+              <Badge variant="ghost" size="xs">{workflow.nodes?.length || 0} nodes</Badge>
+              {workflow.collectionId && (
+                <Badge variant="info" size="xs">
+                  {collections.find(c => c.collectionId === workflow.collectionId)?.name || '…'}
+                </Badge>
+              )}
+              {envName && (
+                <Badge variant="secondary" size="xs">
+                  <Globe className="w-2.5 h-2.5 mr-0.5" />
+                  {envName}
+                </Badge>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleExportWorkflow(workflow); }}
+            className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark"
+            title="Export workflow"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
+        </button>
+      </li>
+    );
+  };
+
+  // --- Render: Workflows ---
   const renderWorkflowsContent = () => (
     <div className="h-full flex flex-col">
-      <div 
-        ref={scrollContainerRef} 
-        className={`flex-1 overflow-auto p-3 transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`} 
+      <div
+        ref={scrollContainerRef}
+        className={[
+          'flex-1 overflow-auto transition-opacity duration-300',
+          isRefreshing ? 'opacity-50' : 'opacity-100',
+        ].join(' ')}
         style={{ scrollbarGutter: 'stable' }}
       >
-        {workflows.length === 0 && !isLoadingMore ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400 text-sm">
-            <div className="mb-4">
-              <FileText className="w-12 h-12 mx-auto opacity-40" />
-            </div>
-            <p className="font-medium mb-1">No workflows yet</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Create your first workflow to get started</p>
-          </div>
+        {filteredWorkflows.length === 0 && !isLoadingMore ? (
+          <EmptyState
+            icon={<FileText className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+            title={searchQuery ? 'No matching workflows' : 'No workflows yet'}
+            description={
+              searchQuery
+                ? `No workflows match "${searchQuery}"`
+                : 'Create your first workflow to get started'
+            }
+            action={
+              !searchQuery && (
+                <button onClick={createNewWorkflow} className="btn btn-primary btn-sm gap-1.5">
+                  <FileText className="w-4 h-4" /> Create Workflow
+                </button>
+              )
+            }
+          />
         ) : (
           <>
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {workflows.map((workflow, index) => (
-                <div
+            <ul className="menu menu-sm w-full p-1.5 gap-0.5">
+              {filteredWorkflows.map((workflow) => (
+                <WorkflowItem
                   key={workflow.workflowId}
-                  className="group relative px-3 py-3 rounded-l-lg text-sm transition-all cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200"
-                  onClick={() => handleWorkflowClick(workflow)}
-                >
-                  <div className="font-medium truncate">{workflow.name}</div>
-                  <div className="text-xs opacity-75 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                    <span>{workflow.nodes?.length || 0} nodes</span>
-                    {workflow.collectionId && <span>• {collections.find(c => c.collectionId === workflow.collectionId)?.name || 'Unknown'}</span>}
-                    {(() => {
-                      const envName = getWorkflowEnvName(workflow.workflowId);
-                      return envName ? (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-medium leading-tight">
-                          🌐 {envName}
-                        </span>
-                      ) : null;
-                    })()}
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleExportWorkflow(workflow);
-                    }}
-                    className={`absolute top-2 right-2 p-1.5 rounded opacity-0 group-hover:opacity-100 transition-all ${
-                      selectedWorkflowId === workflow.workflowId
-                        ? 'text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-800'
-                        : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-600'
-                    }`}
-                    title="Export workflow"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-                </div>
+                  workflow={workflow}
+                  isActive={selectedWorkflowId === workflow.workflowId}
+                />
               ))}
-            </div>
+            </ul>
 
             {isLoadingMore && (
-              <div className="text-center py-4 text-gray-500 dark:text-gray-400 text-xs">
-                <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-600 dark:border-cyan-400 mr-2"></div>
-                Loading more...
+              <div className="flex items-center justify-center gap-2 py-4 text-text-secondary dark:text-text-secondary-dark text-xs">
+                <Spinner size="xs" /> Loading more…
               </div>
             )}
             {!pagination.hasMore && workflows.length > 0 && (
-              <div className="text-center py-3 text-gray-500 dark:text-gray-400 text-xs border-t border-gray-200 dark:border-gray-700 mt-3 pt-3">
+              <div className="text-center py-3 text-text-muted dark:text-text-muted-dark text-xs border-t border-border dark:border-border-dark mx-3 mt-1">
                 Showing all {pagination.total} workflow{pagination.total !== 1 ? 's' : ''}
               </div>
             )}
@@ -309,163 +389,139 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
     </div>
   );
 
+  // --- Collections toggle ---
   const toggleCollection = (collectionId) => {
-    setExpandedCollections(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(collectionId)) {
-        newSet.delete(collectionId);
-      } else {
-        newSet.add(collectionId);
-      }
-      return newSet;
+    setExpandedCollections((prev) => {
+      const next = new Set(prev);
+      next.has(collectionId) ? next.delete(collectionId) : next.add(collectionId);
+      return next;
     });
   };
 
+  // --- Render: Collections ---
   const renderCollectionsContent = () => (
-    <div className={`p-3 h-full overflow-auto transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
-      {collections.length === 0 ? (
-        <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-          <div className="mb-4">
-            <LayoutGrid className="w-12 h-12 mx-auto opacity-40" />
-          </div>
-          <p className="font-medium mb-1">No collections yet</p>
-          <p className="text-xs text-gray-400 dark:text-gray-500">Create collections to organize your workflows</p>
-        </div>
+    <div
+      className={[
+        'h-full overflow-auto p-1.5 transition-opacity duration-300',
+        isRefreshing ? 'opacity-50' : 'opacity-100',
+      ].join(' ')}
+    >
+      {filteredCollections.length === 0 ? (
+        <EmptyState
+          icon={<Layers className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+          title={searchQuery ? 'No matching collections' : 'No collections yet'}
+          description={
+            searchQuery
+              ? `No collections match "${searchQuery}"`
+              : 'Create collections to organize your workflows'
+          }
+          action={
+            !searchQuery && (
+              <button onClick={() => setShowCollectionManager(true)} className="btn btn-primary btn-sm gap-1.5">
+                <Layers className="w-4 h-4" /> Create Collection
+              </button>
+            )
+          }
+        />
       ) : (
-        <div className="space-y-2">
-          {collections.map((collection) => {
-            // Get workflows attached to this collection
+        <ul className="menu menu-sm w-full gap-1">
+          {filteredCollections.map((collection) => {
             const collectionWorkflows = Array.isArray(workflows)
-              ? workflows.filter(wf => wf.collectionId === collection.collectionId)
+              ? workflows.filter((wf) => wf.collectionId === collection.collectionId)
               : [];
             const isExpanded = expandedCollections.has(collection.collectionId);
-            
+
             return (
-              <div key={collection.collectionId} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                {/* Collection Header */}
+              <li key={collection.collectionId}>
+                {/* Collection header row */}
                 <div
-                  className="w-full p-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left flex items-center justify-between group cursor-pointer"
+                  className="group flex items-center justify-between gap-1.5 rounded-lg cursor-pointer hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
                   onClick={() => toggleCollection(collection.collectionId)}
                 >
-                  <div className="flex items-center gap-2">
-                    {/* Expand/Collapse Icon */}
-                    {isExpanded ? 
-                      <ChevronDown className="w-4 h-4 text-gray-500" /> : 
-                      <ChevronRight className="w-4 h-4 text-gray-500" />
-                    }
-                    {/* Collection Icon - Stacked Folders */}
-                    <LayoutGrid className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                    <div>
-                      <h3 className="font-medium text-gray-900 dark:text-gray-100">{collection.name}</h3>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
-                        {collectionWorkflows.length} workflow{collectionWorkflows.length !== 1 ? 's' : ''}
-                      </p>
-                    </div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isExpanded
+                      ? <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+                      : <ChevronRight className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />}
+                    <FolderOpen className="w-4 h-4 text-primary dark:text-primary-light flex-shrink-0" />
+                    <span className="font-medium text-text-primary dark:text-text-primary-dark truncate">
+                      {collection.name}
+                    </span>
+                    <Badge variant="ghost" size="xs">{collectionWorkflows.length}</Badge>
                   </div>
-                  
-                  {/* Export Button */}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleExportCollection(collection);
-                    }}
-                    className="p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                    onClick={(e) => { e.stopPropagation(); handleExportCollection(collection); }}
+                    className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark flex-shrink-0"
                     title="Export collection"
                   >
-                    <Download className="w-4 h-4" />
+                    <Download className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* Collection Workflows */}
+                {/* Nested workflows with indent guide */}
                 {isExpanded && (
-                  <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                  <ul className="relative ml-3 pl-3 mt-0.5 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border dark:before:bg-border-dark">
                     {collectionWorkflows.length === 0 ? (
-                      <div className="px-4 py-6 text-center">
-                        <div className="text-gray-400 dark:text-gray-500 mb-2">
-                          <FileText className="w-8 h-8 mx-auto opacity-40" />
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">No workflows in this collection</p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Add workflows from the Settings panel</p>
-                      </div>
+                      <li className="py-3 text-center">
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                          No workflows in this collection
+                        </span>
+                      </li>
                     ) : (
-                      <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {collectionWorkflows.map((workflow) => (
-                          <div
-                            key={workflow.workflowId}
-                            className="px-4 py-2 flex items-center gap-2 group hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer rounded-l-lg"
-                            onClick={() => handleWorkflowClick(workflow)}
-                          >
-                            {/* Workflow Icon */}
-                            <File className="w-4 h-4 text-gray-400 flex-shrink-0" />
-
-                            {/* Workflow Info */}
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                                {workflow.name}
-                              </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap">
-                                <span>{workflow.nodes?.length || 0} nodes</span>
-                                {(() => {
-                                  const envName = getWorkflowEnvName(workflow.workflowId);
-                                  return envName ? (
-                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-medium leading-tight">
-                                      🌐 {envName}
-                                    </span>
-                                  ) : null;
-                                })()}
-                              </div>
-                            </div>
-
-                            {/* Export Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleExportWorkflow(workflow);
-                              }}
-                              className="p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex-shrink-0"
-                              title="Export workflow"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                      collectionWorkflows.map((workflow) => (
+                        <WorkflowItem
+                          key={workflow.workflowId}
+                          workflow={workflow}
+                          isActive={selectedWorkflowId === workflow.workflowId}
+                        />
+                      ))
                     )}
-                  </div>
+                  </ul>
                 )}
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
     </div>
   );
 
+  // --- Render: Settings placeholder ---
   const renderSettingsContent = () => (
-    <div className="p-3">
-      <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-        <div className="mb-4">
-          <Settings className="w-12 h-12 mx-auto opacity-40" />
-        </div>
-        <p className="font-medium mb-1">Settings</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">Coming soon...</p>
-      </div>
+    <div className="h-full overflow-auto">
+      <ul className="menu menu-sm w-full p-2 gap-1">
+        {[
+          { icon: Cog, label: 'General', desc: 'App behavior & defaults' },
+          { icon: Globe, label: 'Editor', desc: 'Canvas & node defaults' },
+          { icon: Layers, label: 'Theme', desc: 'Colors & appearance' },
+        ].map(({ icon: Icon, label, desc }) => (
+          <li key={label}>
+            <button className="flex items-center gap-3 w-full rounded-lg opacity-60 cursor-not-allowed" disabled>
+              <Icon className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
+              <div className="text-left">
+                <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">{label}</div>
+                <div className="text-xs text-text-secondary dark:text-text-secondary-dark">{desc}</div>
+              </div>
+              <Badge variant="warning" size="xs" className="ml-auto">Soon</Badge>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 
-  const renderWebhooksContent = () => (
-    <WebhookManager />
-  );
+  // --- Render: Webhooks ---
+  const renderWebhooksContent = () => <WebhookManager />;
 
+  // ============================================================
   return (
-    <div className="flex flex-col h-full w-full">
-      <SidebarHeader 
+    <div className="flex flex-col h-full w-full bg-surface-raised dark:bg-surface-dark-raised">
+      <SidebarHeader
         selectedNav={selectedNav}
         onCreateNew={handleCreateNew}
         isRefreshing={isRefreshing}
       />
 
-      <div className="flex-1 overflow-hidden bg-white dark:bg-gray-800">
+      <div className="flex-1 overflow-hidden">
         {selectedNav === 'workflows' && renderWorkflowsContent()}
         {selectedNav === 'collections' && renderCollectionsContent()}
         {selectedNav === 'webhooks' && renderWebhooksContent()}
