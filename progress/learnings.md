@@ -219,3 +219,34 @@ Modal is best for focused tasks (create, edit, confirm) that block the main cont
 
 ### 59. WebhookManager rewrite yielded the largest line reduction (784→224)
 The original WebhookManager had 4 manually-built overlay modals (each ~60 lines of backdrop + positioning + animation), 9 alert() calls, and 1 confirm() call. Replacing overlays with `<Modal>` (6 lines each), alerts with `toast.error/success` (1 line each), and confirm with `<ConfirmDialog>` (8 lines) collapsed the file by 71%. This was the best ROI refactor in Phase 8 — high visual impact, low risk since WebhookManager has no complex state dependencies.
+
+---
+
+## Phase 9: State Management Migration — Events to Zustand (2026-02-08)
+
+### 60. SidebarStore already covered WorkflowListStore + EnvironmentStore scope
+The todo planned three separate stores (WorkflowListStore, EnvironmentStore, CanvasStore). In practice, Phase 5's SidebarStore already held `workflows[]`, `collections[]`, `environments[]`, `fetchWorkflows()`, `fetchCollections()`, `fetchEnvironments()`, and version counters for workflows/collections. Adding a single `environmentVersion` counter + `signalEnvironmentsRefresh()` to SidebarStore was sufficient — no need for separate WorkflowListStore or EnvironmentStore. Avoid creating stores that duplicate existing state.
+
+### 61. VariableStore was unnecessary — WorkflowContext is the correct scope
+The todo planned a global `VariableStore` for `variables{}`, `extractors[]`, and deletion callbacks. However, variables are **per-workflow**, not global. WorkflowContext already owns this state with the correct lifecycle (mounted/unmounted per tab). The `variableDeleted` event was replaced with a ref-based callback pattern (`onVariablesDeletedRef`) inside WorkflowContext, keeping the communication within the same provider boundary. Global stores for per-instance state cause stale-data bugs.
+
+### 62. Ref-based callback pattern for intra-provider communication
+When two sibling components inside the same Context provider need to communicate (VariablesPanel → WorkflowCanvas, both inside WorkflowProvider), a `useRef` callback on the context is cleaner than either window events or a dedicated store. The provider exposes `onVariablesDeletedRef`; WorkflowCanvas sets it to its cleanup function; VariablesPanel calls `deleteVariablesWithCleanup()` which invokes the ref. This avoids re-renders from state changes while keeping the coupling explicit.
+
+### 63. Dead event listeners reveal architectural drift
+Two events had no matching dispatchers (`variablesToUpdate`) or were documented as no-ops (`extractorDeleted`'s listener comment said "we don't need this"). Both sides existed in the codebase without anyone noticing the disconnect. Lesson: when migrating events to stores, grep for both `dispatchEvent` AND `addEventListener` for each event name — mismatches indicate dead code.
+
+### 64. Zustand `version` counter pattern for cross-component refresh signals
+Instead of passing callback props or using events, a Zustand store can hold a version counter (e.g., `environmentVersion: 0`). Any modifier calls `signalEnvironmentsRefresh()` which increments the counter. Any consumer subscribes via `useSidebarStore((s) => s.environmentVersion)` and re-fetches when it changes. The guard `if (version > 0)` skips the initial mount. This is simpler than `useEffect` with callbacks and avoids the stale-closure pitfalls of window events.
+
+### 65. `selectiveNodeUpdate` prevents unnecessary re-renders during polling
+When adaptive polling returns node statuses every 100ms, naively calling `setNodes(...)` on every poll causes 10 re-renders/second even when nothing changed. The `selectiveNodeUpdate` function compares `executionStatus` and `executionResult` before creating a new node object — unchanged nodes keep their reference identity, so React skips their subtree. This was critical for keeping the canvas responsive during fast polling.
+
+### 66. Hook extraction from a 1541-line component requires careful dependency analysis
+WorkflowCanvas had deeply interleaved state: `runWorkflow` read `nodes`, `selectedEnvironment`, `environments`; polling read `setNodes`; auto-save read `nodes`, `edges`, `workflowVariables`, `saveWorkflow`. Each extracted hook needed a clear interface of inputs. The key insight: hooks that only *write* state (like `useAutoSave`) are easier to extract than hooks that both read and write shared state (like `useWorkflowPolling` which reads `nodes` for validation AND writes `setNodes` for status updates). Plan the interface boundaries before extracting.
+
+### 67. Dynamic imports fail Vite's Rollup resolution for uninstalled packages
+Using `const { toast } = await import('react-hot-toast')` inside a hook caused a build error even though the import was dynamic — Rollup still resolves the module at build time. The project uses `sonner`, not `react-hot-toast`. Fix: use a static import at the top of the hook file. Dynamic imports don't bypass missing-module errors in production builds.
+
+### 68. Backup files (.backup.jsx) pollute grep results and should be gitignored
+`Sidebar.backup.jsx` and `SidebarHeader.backup.jsx` still contained old `dispatchEvent`/`CustomEvent` patterns, creating false positives during the verification grep. Backup files should either be deleted or added to `.gitignore` to prevent confusion during code audits.
