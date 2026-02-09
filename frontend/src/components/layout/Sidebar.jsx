@@ -529,9 +529,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
       </div>
 
       {/* Collection Manager Modal */}
-      {showCollectionManager && (
-        <CollectionManager onClose={() => setShowCollectionManager(false)} />
-      )}
+      <CollectionManager open={showCollectionManager} onClose={() => setShowCollectionManager(false)} />
 
       {/* Workflow Export / Import Modal */}
       {exportingWorkflowId && (
