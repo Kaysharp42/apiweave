@@ -48,18 +48,7 @@ const Workspace = ({ onActiveTabChange }) => {
     fetchEnvironments();
   }, []);
 
-  // ---------- bridge legacy openWorkflow window event → TabStore ----------
-  // NOTE: All callers now use useTabStore.getState().openTab() directly.
-  // This listener is kept temporarily for safety — can be removed once
-  // verified that no remaining callers dispatch 'openWorkflow'.
-  useEffect(() => {
-    const handleOpenWorkflow = (event) => {
-      const workflow = event.detail;
-      if (workflow) openTab(workflow);
-    };
-    window.addEventListener('openWorkflow', handleOpenWorkflow);
-    return () => window.removeEventListener('openWorkflow', handleOpenWorkflow);
-  }, [openTab]);
+  // (openWorkflow bridge removed — all callers now use useTabStore.openTab() directly)
 
   // ---------- React to environment version changes from SidebarStore ----------
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);

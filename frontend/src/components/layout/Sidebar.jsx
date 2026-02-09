@@ -51,7 +51,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const workflowVersion = useSidebarStore((s) => s.workflowVersion);
   const collectionVersion = useSidebarStore((s) => s.collectionVersion);
 
-  // Fetch workflows when needed
+  // Fetch workflows/collections on initial navigation
   useEffect(() => {
     if (selectedNav === 'workflows') {
       setWorkflows([]);
@@ -61,39 +61,6 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
       fetchCollections();
       fetchWorkflows(0, false, 1000);
     }
-
-    // Listen for legacy events (from components not yet migrated)
-    const handleCollectionsChanged = () => {
-      setIsRefreshing(true);
-      setTimeout(() => {
-        if (selectedNav === 'collections') {
-          fetchCollections();
-          fetchWorkflows(0, false, 1000);
-        } else if (selectedNav === 'workflows') {
-          fetchWorkflows(0);
-        }
-      }, 100);
-    };
-
-    const handleWorkflowsNeedRefresh = () => {
-      setIsRefreshing(true);
-      setTimeout(() => {
-        setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
-        if (selectedNav === 'workflows') {
-          fetchWorkflows(0);
-        } else if (selectedNav === 'collections') {
-          fetchWorkflows(0, false, 1000);
-        }
-      }, 150);
-    };
-
-    window.addEventListener('collectionsChanged', handleCollectionsChanged);
-    window.addEventListener('workflowsNeedRefresh', handleWorkflowsNeedRefresh);
-
-    return () => {
-      window.removeEventListener('collectionsChanged', handleCollectionsChanged);
-      window.removeEventListener('workflowsNeedRefresh', handleWorkflowsNeedRefresh);
-    };
   }, [selectedNav]);
 
   // React to Zustand store signals (replaces some window events)

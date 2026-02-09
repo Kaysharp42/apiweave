@@ -29,6 +29,8 @@ import { toast } from 'sonner';
 import ButtonSelect from './ButtonSelect';
 import { Save, History, Play, Code, Upload } from 'lucide-react';
 import useTabStore from '../stores/TabStore';
+import useCanvasStore from '../stores/CanvasStore';
+import useSidebarStore from '../stores/SidebarStore';
 import API_BASE_URL from '../utils/api';
 
 // Update node statuses - always update to ensure fresh data on each run
@@ -102,6 +104,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     registerExtractors,
     deleteVariable: contextDeleteVariable,
     updateVariable,
+    onVariablesDeletedRef,
   } = useWorkflow();
   
   // Use ReactFlow's built-in hooks for nodes and edges (local to WorkflowCanvas)
@@ -172,104 +175,74 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     registerExtractors(extractorsFromNodes);
   }, [nodes, registerExtractors]);
 
-  // Listen for variable deletions from VariablesPanel and clean up extractors
+  // Handle variable deletions from VariablesPanel — clean up extractors in nodes
+  // This replaces the old `window.addEventListener('variableDeleted', ...)` pattern.
+  // WorkflowContext exposes a ref that we set here; VariablesPanel calls
+  // `deleteVariablesWithCleanup()` which invokes this callback.
   useEffect(() => {
-    const handleVariableDelete = (event) => {
-      if (event.detail.workflowId === workflowId) {
-        const { deletedVars = [] } = event.detail;
-        
-        if (deletedVars.length > 0) {
-          console.log('🗑️ Cleaning up extractors for deleted variables:', deletedVars);
-          setNodes(currentNodes => currentNodes.map(node => {
-            if (node.type === 'http-request' && node.data?.config?.extractors) {
-              const updatedExtractors = { ...node.data.config.extractors };
-              let modified = false;
-              
-              deletedVars.forEach(varName => {
-                if (varName in updatedExtractors) {
-                  delete updatedExtractors[varName];
-                  modified = true;
-                  console.log(`    ✓ Removed extractor "${varName}" from node`);
-                }
-              });
-              
-              if (modified) {
-                return {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    config: {
-                      ...node.data.config,
-                      extractors: updatedExtractors
-                    }
-                  }
-                };
-              }
+    onVariablesDeletedRef.current = (deletedVars) => {
+      if (!deletedVars || deletedVars.length === 0) return;
+      console.log('🗑️ Cleaning up extractors for deleted variables:', deletedVars);
+      setNodes(currentNodes => currentNodes.map(node => {
+        if (node.type === 'http-request' && node.data?.config?.extractors) {
+          const updatedExtractors = { ...node.data.config.extractors };
+          let modified = false;
+          deletedVars.forEach(varName => {
+            if (varName in updatedExtractors) {
+              delete updatedExtractors[varName];
+              modified = true;
+              console.log(`    ✓ Removed extractor "${varName}" from node`);
             }
-            return node;
-          }));
+          });
+          if (modified) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                config: { ...node.data.config, extractors: updatedExtractors }
+              }
+            };
+          }
         }
-      }
+        return node;
+      }));
     };
-    
-    window.addEventListener('variableDeleted', handleVariableDelete);
-    return () => window.removeEventListener('variableDeleted', handleVariableDelete);
-  }, [workflowId, setNodes]);
-
-  // Listen for extractor deletions from nodes and remove from variables
-  useEffect(() => {
-    const handleExtractorDeleted = (event) => {
-      const { varName } = event.detail;
-      console.log('🗑️ Extractor deleted from node, removing from variables:', varName);
-      
-      // Simply delete from context - the extractor sync will handle keeping them in sync
-      // Actually, we don't need this - the registerExtractors will auto-update when node changes
-    };
-    
-    window.addEventListener('extractorDeleted', handleExtractorDeleted);
-    return () => window.removeEventListener('extractorDeleted', handleExtractorDeleted);
-  }, []);
+    return () => { onVariablesDeletedRef.current = null; };
+  }, [setNodes, onVariablesDeletedRef]);
 
   // Fetch environments
-  useEffect(() => {
-    const fetchEnvironments = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/environments`);
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Fetched environments:', data);
-          setEnvironments(data);
-        }
-      } catch (error) {
-        console.error('Error fetching environments:', error);
+  const fetchEnvironments = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/environments`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Fetched environments:', data);
+        setEnvironments(data);
       }
-    };
-    
-    fetchEnvironments();
-    
-    // Listen for environment changes
-    const handleEnvironmentsChanged = () => {
-      fetchEnvironments();
-    };
-    window.addEventListener('environmentsChanged', handleEnvironmentsChanged);
-    
-    return () => {
-      window.removeEventListener('environmentsChanged', handleEnvironmentsChanged);
-    };
+    } catch (error) {
+      console.error('Error fetching environments:', error);
+    }
   }, []);
 
-  // Listen for workflow updates (e.g., from curl import append)
+  useEffect(() => { fetchEnvironments(); }, [fetchEnvironments]);
+
+  // React to environment version changes from SidebarStore
+  const environmentVersion = useSidebarStore((s) => s.environmentVersion);
   useEffect(() => {
-    const handleWorkflowUpdated = async (event) => {
-      const { workflowId: updatedWorkflowId } = event.detail;
-      if (updatedWorkflowId === workflowId) {
-        console.log('Workflow updated, reloading...');
-        // Reload the workflow from the server
+    if (environmentVersion > 0) fetchEnvironments();
+  }, [environmentVersion, fetchEnvironments]);
+
+  // React to workflow reload signals from CanvasStore (e.g., from CurlImport append)
+  const reloadVersion = useCanvasStore((s) => s.reloadVersion);
+  const reloadWorkflowId = useCanvasStore((s) => s.reloadWorkflowId);
+  useEffect(() => {
+    if (reloadVersion > 0 && reloadWorkflowId === workflowId) {
+      console.log('Workflow updated externally, reloading...');
+      (async () => {
         try {
           const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
           if (response.ok) {
             const data = await response.json();
-            // Update nodes and edges with new workflow data
             const newNodes = (data.nodes || []).map(node => ({
               id: node.nodeId,
               type: node.type,
@@ -317,131 +290,94 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         } catch (err) {
           console.error('Error reloading workflow:', err);
         }
-      }
-    };
-    window.addEventListener('workflowUpdated', handleWorkflowUpdated);
-    return () => {
-      window.removeEventListener('workflowUpdated', handleWorkflowUpdated);
-    };
-  }, [workflowId, setNodes, setEdges]);
+      })();
+    }
+  }, [reloadVersion, reloadWorkflowId, workflowId, setNodes, setEdges, darkMode]);
 
-  // Listen for duplicate and copy node events from nodes
+  // ---------- Node actions via CanvasStore (replaces window events) ----------
+  // React to pendingAction from CanvasStore (BaseNode menu triggers these)
+  const pendingAction = useCanvasStore((s) => s.pendingAction);
   useEffect(() => {
-    const handleDuplicateNode = (event) => {
-      const { nodeId } = event.detail;
+    if (!pendingAction) return;
+    const { type, nodeId } = pendingAction;
+
+    if (type === 'duplicate' && nodeId) {
       const nodeToClone = nodes.find((n) => n.id === nodeId);
-      if (!nodeToClone) return;
-
-      const newNode = {
-        ...nodeToClone,
-        id: `${nodeToClone.id}-${Date.now()}`,
-        position: {
-          x: nodeToClone.position.x + 150,
-          y: nodeToClone.position.y + 150,
-        },
-        data: {
-          ...nodeToClone.data,
-          config: nodeToClone.data.config
-            ? JSON.parse(JSON.stringify(nodeToClone.data.config))
-            : {},
-        },
-      };
-
-      setNodes((nds) => [...nds, newNode]);
-    };
-
-    const handleCopyNode = (event) => {
-      const { nodeId } = event.detail;
+      if (nodeToClone) {
+        const newNode = {
+          ...nodeToClone,
+          id: `${nodeToClone.id}-${Date.now()}`,
+          position: {
+            x: nodeToClone.position.x + 150,
+            y: nodeToClone.position.y + 150,
+          },
+          data: {
+            ...nodeToClone.data,
+            config: nodeToClone.data.config
+              ? JSON.parse(JSON.stringify(nodeToClone.data.config))
+              : {},
+          },
+        };
+        setNodes((nds) => [...nds, newNode]);
+      }
+    } else if (type === 'copy' && nodeId) {
       const nodeToClone = nodes.find((n) => n.id === nodeId);
-      if (!nodeToClone) return;
-
-      const cloneData = {
-        type: nodeToClone.type,
-        data: JSON.parse(JSON.stringify(nodeToClone.data)),
-      };
-      sessionStorage.setItem('copiedNode', JSON.stringify(cloneData));
-      console.log('Node copied to clipboard:', cloneData);
-    };
-
-    const handlePasteNode = () => {
+      if (nodeToClone) {
+        const cloneData = {
+          type: nodeToClone.type,
+          data: JSON.parse(JSON.stringify(nodeToClone.data)),
+        };
+        useCanvasStore.getState().setClipboardNode(cloneData);
+        console.log('Node copied to clipboard:', cloneData);
+      }
+    } else if (type === 'paste') {
       const cloneData = sessionStorage.getItem('copiedNode');
       if (!cloneData) {
         toast.error('No node in clipboard');
-        return;
-      }
-
-      try {
-        const { type, data } = JSON.parse(cloneData);
-        
-        // Position new node relative to selected node, or use default
-        let newPosition = { x: 400, y: 300 };
-        if (selectedNode) {
-          // Position offset to the right and down from selected node
-          newPosition = {
-            x: selectedNode.position.x + 200,
-            y: selectedNode.position.y + 150,
-          };
-        } else if (nodes.length > 0) {
-          // Fallback: position offset from last node
-          const lastNode = nodes[nodes.length - 1];
-          newPosition = {
-            x: lastNode.position.x + 150,
-            y: lastNode.position.y + 150,
-          };
+      } else {
+        try {
+          const { type: nodeType, data } = JSON.parse(cloneData);
+          let newPosition = { x: 400, y: 300 };
+          if (selectedNode) {
+            newPosition = { x: selectedNode.position.x + 200, y: selectedNode.position.y + 150 };
+          } else if (nodes.length > 0) {
+            const lastNode = nodes[nodes.length - 1];
+            newPosition = { x: lastNode.position.x + 150, y: lastNode.position.y + 150 };
+          }
+          setNodes((nds) => [...nds, { id: `node-${Date.now()}`, type: nodeType, position: newPosition, data }]);
+          toast.success('Node pasted successfully');
+        } catch (err) {
+          toast.error('Error pasting node: ' + err.message);
         }
-
-        const newNode = {
-          id: `node-${Date.now()}`,
-          type,
-          position: newPosition,
-          data,
-        };
-
-        setNodes((nds) => [...nds, newNode]);
-        toast.success('Node pasted successfully');
-        console.log('Node pasted successfully');
-      } catch (err) {
-        toast.error('Error pasting node: ' + err.message);
-        console.error('Error pasting node:', err);
       }
-    };
+    }
+    useCanvasStore.getState().clearPendingAction();
+  }, [pendingAction, nodes, setNodes, selectedNode]);
 
+  // ---------- Keyboard shortcuts (Ctrl+C / Ctrl+V) ----------
+  useEffect(() => {
     const handleKeyDown = (e) => {
-      // Only handle keyboard shortcuts when a node is selected and we're not typing in an input
       const isInputFocused = document.activeElement?.tagName === 'INPUT' || 
                              document.activeElement?.tagName === 'TEXTAREA' ||
                              document.activeElement?.contentEditable === 'true';
-
       if (isInputFocused) return;
 
-      // Ctrl+C (or Cmd+C on Mac) for copy
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         if (selectedNode) {
           e.preventDefault();
-          handleCopyNode({ detail: { nodeId: selectedNode.id } });
+          useCanvasStore.getState().copyNode(selectedNode.id);
           toast.success('Node copied to clipboard');
         }
       }
-
-      // Ctrl+V (or Cmd+V on Mac) for paste
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         e.preventDefault();
-        handlePasteNode();
+        useCanvasStore.getState().pasteNode();
       }
     };
 
-    window.addEventListener('duplicateNode', handleDuplicateNode);
-    window.addEventListener('copyNode', handleCopyNode);
-    window.addEventListener('pasteNode', handlePasteNode);
     window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('duplicateNode', handleDuplicateNode);
-      window.removeEventListener('copyNode', handleCopyNode);
-      window.removeEventListener('pasteNode', handlePasteNode);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [nodes, setNodes, selectedNode]);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNode]);
 
   // Detect parallel branches and update node data with branch counts
   useEffect(() => {
