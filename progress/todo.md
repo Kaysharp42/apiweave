@@ -239,29 +239,29 @@ Add a proper tab management system and polish the workspace area.
 
 ### Checklist
 
-- [ ] Create `organisms/TabBar.jsx`:
-  - [ ] DaisyUI `tabs tabs-boxed` or custom styled tabs
-  - [ ] Tab shows: workflow name + unsaved indicator (*) + close button (×)
-  - [ ] Active tab: `bg-primary text-white`, inactive: `bg-surface` with hover state
-  - [ ] Middle-click to close tab
-  - [ ] Tab overflow: scroll with left/right chevron buttons
-  - [ ] **Tab context menu** (right-click): Close, Close Others, Close All
-- [ ] Create `TabStore.js` (Zustand):
-  - [ ] `tabs[]` — open tab list with `{ id, workflowId, name, isDirty }`
-  - [ ] `activeTabId` — currently focused tab
-  - [ ] `openTab(workflow)`, `closeTab(id)`, `setActive(id)`, `markDirty(id)`, `markClean(id)`
-  - [ ] `closeOthers(id)`, `closeAll()`
-- [ ] Wire tab bar into `Workspace.jsx`:
-  - [ ] Tab bar above the canvas
-  - [ ] Switching tabs loads the corresponding workflow
-  - [ ] Closing last tab shows workspace empty state
-- [ ] Create `molecules/WorkspaceEmptyState.jsx`:
-  - [ ] Large centered content: "Welcome to APIWeave"
-  - [ ] Quick actions: "New Workflow", "Import Workflow", "Open Collection"
-  - [ ] Keyboard shortcuts hint
-- [ ] Add `Ctrl+W` keyboard shortcut to close active tab
-- [ ] Add `Ctrl+Tab` / `Ctrl+Shift+Tab` to cycle tabs
-- [ ] Track unsaved changes: asterisk (*) in tab name when workflow has pending auto-save
+- [x] Create `organisms/TabBar.jsx`:
+  - [x] DaisyUI `tabs tabs-boxed` or custom styled tabs
+  - [x] Tab shows: workflow name + unsaved indicator (*) + close button (×)
+  - [x] Active tab: `bg-primary text-white`, inactive: `bg-surface` with hover state
+  - [x] Middle-click to close tab
+  - [x] Tab overflow: scroll with left/right chevron buttons
+  - [x] **Tab context menu** (right-click): Close, Close Others, Close All
+- [x] Create `TabStore.js` (Zustand):
+  - [x] `tabs[]` — open tab list with `{ id, workflowId, name, isDirty }`
+  - [x] `activeTabId` — currently focused tab
+  - [x] `openTab(workflow)`, `closeTab(id)`, `setActive(id)`, `markDirty(id)`, `markClean(id)`
+  - [x] `closeOthers(id)`, `closeAll()`
+- [x] Wire tab bar into `Workspace.jsx`:
+  - [x] Tab bar above the canvas
+  - [x] Switching tabs loads the corresponding workflow
+  - [x] Closing last tab shows workspace empty state
+- [x] Create `molecules/WorkspaceEmptyState.jsx`:
+  - [x] Large centered content: "Welcome to APIWeave"
+  - [x] Quick actions: "New Workflow", "Import Workflow", "Open Collection"
+  - [x] Keyboard shortcuts hint
+- [x] Add `Ctrl+W` keyboard shortcut to close active tab
+- [x] Add `Ctrl+Tab` / `Ctrl+Shift+Tab` to cycle tabs
+- [x] Track unsaved changes: asterisk (*) in tab name when workflow has pending auto-save
 
 ### Testing & Commit
 ```
