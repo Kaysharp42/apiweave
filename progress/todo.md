@@ -283,42 +283,42 @@ Restyle every node using the shared BaseNode wrapper.
 
 ### Checklist
 
-- [ ] **BaseNode wrapper** (`atoms/flow/BaseNode.jsx`) — finalize:
-  - [ ] `rounded-lg border-2 shadow-sm bg-surface-raised`
-  - [ ] Title bar: icon (per node type) + editable label + status dot + collapse toggle
-  - [ ] Content area: `p-3` with consistent spacing
-  - [ ] Selected state: `ring-2 ring-primary` 
-  - [ ] Running state: pulsing border animation
-  - [ ] Error state: `border-status-error` with subtle red glow
-  - [ ] Success state: `border-status-success`
-  - [ ] Dark mode: proper token-based colors
-- [ ] **StartNode.jsx** redesign:
-  - [ ] Pill/circle shape with play icon, green gradient
-  - [ ] Single right handle
-- [ ] **EndNode.jsx** redesign:
-  - [ ] Pill/circle shape with stop icon, red gradient
-  - [ ] Single left handle
-- [ ] **HTTPRequestNode.jsx** redesign (most complex):
-  - [ ] Use BaseNode wrapper
-  - [ ] Method badge (GET=green, POST=blue, PUT=orange, DELETE=red, PATCH=purple)
-  - [ ] Compact URL display with truncation
-  - [ ] Expand/collapse for details (headers count, body indicator, extractor count)
-  - [ ] Inline mini response preview (status code + time) when executed
-  - [ ] Limit visible node width to `max-w-80` for canvas cleanliness
-- [ ] **AssertionNode.jsx** redesign:
-  - [ ] Use BaseNode wrapper
-  - [ ] Two output handles: Pass (green, right-top) + Fail (red, right-bottom) — keep existing dual-output
-  - [ ] Compact assertion summary display
-  - [ ] Pass/fail status clearly visible
-- [ ] **DelayNode.jsx** redesign:
-  - [ ] Use BaseNode wrapper with clock icon
-  - [ ] Clean duration display (e.g., "500ms")
-- [ ] **MergeNode.jsx** redesign:
-  - [ ] Use BaseNode wrapper with merge icon
-  - [ ] Multiple left handles, single right handle
-- [ ] **Custom edges**: Restyle to match — smooth step paths (like FlowTest), delete button at midpoint, animated edges during execution
-- [ ] Update `AddNodesPanel.jsx` drag preview to match new node style
-- [ ] Update `NodeModal.jsx` to use design system atoms (Button, Input, etc.) for the full edit experience
+- [x] **BaseNode wrapper** (`atoms/flow/BaseNode.jsx`) — finalize:
+  - [x] `rounded-lg border-2 shadow-sm bg-surface-raised`
+  - [x] Title bar: icon (per node type) + editable label + status dot + collapse toggle
+  - [x] Content area: `p-3` with consistent spacing
+  - [x] Selected state: `ring-2 ring-primary` 
+  - [x] Running state: pulsing border animation
+  - [x] Error state: `border-status-error` with subtle red glow
+  - [x] Success state: `border-status-success`
+  - [x] Dark mode: proper token-based colors
+- [x] **StartNode.jsx** redesign:
+  - [x] Pill/circle shape with play icon, green gradient
+  - [x] Single right handle
+- [x] **EndNode.jsx** redesign:
+  - [x] Pill/circle shape with stop icon, red gradient
+  - [x] Single left handle
+- [x] **HTTPRequestNode.jsx** redesign (most complex):
+  - [x] Use BaseNode wrapper
+  - [x] Method badge (GET=green, POST=blue, PUT=orange, DELETE=red, PATCH=purple)
+  - [x] Compact URL display with truncation
+  - [x] Expand/collapse for details (headers count, body indicator, extractor count)
+  - [x] Inline mini response preview (status code + time) when executed
+  - [x] Limit visible node width to `max-w-80` for canvas cleanliness
+- [x] **AssertionNode.jsx** redesign:
+  - [x] Use BaseNode wrapper
+  - [x] Two output handles: Pass (green, right-top) + Fail (red, right-bottom) — keep existing dual-output
+  - [x] Compact assertion summary display
+  - [x] Pass/fail status clearly visible
+- [x] **DelayNode.jsx** redesign:
+  - [x] Use BaseNode wrapper with clock icon
+  - [x] Clean duration display (e.g., "500ms")
+- [x] **MergeNode.jsx** redesign:
+  - [x] Use BaseNode wrapper with merge icon
+  - [x] Multiple left handles, single right handle
+- [x] **Custom edges**: Restyle to match — smooth step paths (like FlowTest), delete button at midpoint, animated edges during execution
+- [x] Update `AddNodesPanel.jsx` drag preview to match new node style
+- [x] Update `NodeModal.jsx` to use design system atoms (Button, Input, etc.) for the full edit experience
 
 ### Testing & Commit
 ```

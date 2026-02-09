@@ -160,3 +160,31 @@ The tab strip needs horizontal scrolling for overflow but visible scrollbars loo
 
 ### 42. CSS bundle grew minimally — design token adoption accelerates
 Post-Phase 6 build: 207.46KB CSS (29.07KB gzip), 825.86KB JS (222.67KB gzip). The small increase (~4KB CSS, ~3KB JS vs Phase 5) reflects only the new organisms/TabBar and molecules/WorkspaceEmptyState. Reusing design tokens (`bg-surface`, `text-primary`, `border-border-default`) consistently means new components add near-zero novel CSS — they reuse existing utility classes. The design system investment from Phase 1 compounds here.
+
+---
+
+## Phase 7: Node Redesign — BaseNode + All Node Types (2026-02-10)
+
+### 43. BaseNode render-prop pattern for collapse state
+Rather than requiring each node to manage its own `isExpanded` state, BaseNode owns the state and passes it to children via a render-prop: `{({ isExpanded }) => (...)}`. This eliminates six separate `useState(false)` declarations across node components and guarantees consistent collapse behavior (animation, toggle button position, icon). The pattern: `children` can be either a React element or a function receiving `{ isExpanded, setIsExpanded }`.
+
+### 44. BaseNode `extraHandles` prop for non-standard handle arrangements
+Most nodes use a simple left-target + right-source handle pair (provided by `handleLeft`/`handleRight` props). But AssertionNode needs dual pass/fail handles at 35%/65% on the right side, and MergeNode uses purple-colored handles. The `extraHandles` prop accepts arbitrary ReactFlow `<Handle>` elements rendered inside the BaseNode's relative container, giving full positioning control while keeping BaseNode's API clean.
+
+### 45. File truncation strategy for large component rewrites
+When rewriting a node component, `replace_string_in_file` only replaces the matched text block — if you match just the imports, the old component body remains below the new code, producing two `export default` statements. The reliable strategy: (1) write the new component body to a temp file, (2) use PowerShell to keep the first N lines of the original (imports + sub-components), (3) concatenate and write back, (4) delete the temp file. This avoids partial replacement bugs entirely.
+
+### 46. PowerShell here-strings preserve JS template literals
+JavaScript template literals (`` `${var}` ``) contain `$` and backtick characters — both have special meaning in PowerShell. However, PowerShell's single-quoted here-string (`@'...'@`) treats all content literally: no variable expansion, no escape processing. This makes them safe for writing JSX files that contain template literals. The only constraint: the closing `'@` must be at the start of a line with no leading whitespace.
+
+### 47. Design token migration strategy: batch PowerShell string replacement
+For large files like NodeModal.jsx (1381 lines, 50+ hardcoded color references), individual `replace_string_in_file` calls are impractical. Instead, read the file as a single string, chain `.Replace()` calls for each pattern pair (`'bg-white dark:bg-gray-800'` → `'bg-surface dark:bg-surface-dark'`), and write back. This processes all replacements in one pass with zero risk of partial matches since `.Replace()` is literal (not regex). Applied 20+ replacement patterns to NodeModal in a single operation.
+
+### 48. `getSmoothStepPath` vs `getBezierPath` for edge routing
+ReactFlow offers both bezier (curved) and smooth-step (right-angle with rounded corners) edge path generators. FlowTest uses smooth-step paths which look cleaner on structured workflows where nodes are roughly grid-aligned. The `borderRadius` parameter (set to 12px) controls how rounded the right-angle corners are. Smooth-step paths also align better with the rectangular node shapes from the redesign.
+
+### 49. Method color tokens create visual consistency across components
+Defining `method-get`, `method-post`, `method-put`, `method-delete`, `method-patch` in `tailwind.config.js` means the same colors appear in HTTPRequestNode badges, AddNodesPanel drag items, and NodeModal method selectors — without duplicating hex values. Adding a new method (e.g., OPTIONS) requires only one config entry; all components pick it up via the token class.
+
+### 50. CSS bundle shrank slightly after node redesign
+Post-Phase 7 build: 213.60KB CSS (29.99KB gzip), 821.64KB JS (223.28KB gzip). The CSS is marginally larger than Phase 6 (+6KB raw, +0.9KB gzip) reflecting the new design token classes. But the JS bundle is actually smaller by ~4KB gzip — removing 6 copies of manual header/menu/expand logic from individual nodes in favor of the shared BaseNode wrapper reduced total component code. This validates the "extract shared shell" strategy.
