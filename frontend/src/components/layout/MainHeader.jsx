@@ -74,9 +74,7 @@ const MainHeader = () => {
       </div>
 
       {/* Environment Manager Modal */}
-      {showEnvManager && (
-        <EnvironmentManager onClose={() => setShowEnvManager(false)} />
-      )}
+      <EnvironmentManager open={showEnvManager} onClose={() => setShowEnvManager(false)} />
     </header>
   );
 };
