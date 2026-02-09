@@ -385,13 +385,12 @@ const EnvironmentManager = ({ open, onClose }) => {
       />
 
       {/* Secrets Panel Modal */}
-      {showSecretsPanel && selectedEnv && (
-        <SecretsPanel
-          environment={selectedEnv}
-          onSecretsChange={handleSecretsChange}
-          onClose={() => setShowSecretsPanel(false)}
-        />
-      )}
+      <SecretsPanel
+        open={showSecretsPanel && !!selectedEnv}
+        environment={selectedEnv || {}}
+        onSecretsChange={handleSecretsChange}
+        onClose={() => setShowSecretsPanel(false)}
+      />
     </>
   );
 };
