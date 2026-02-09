@@ -28,10 +28,10 @@ Establish the visual foundation that every subsequent phase builds on.
 
 ### Checklist
 
-- [ ] Install DaisyUI (`npm install daisyui`)
-- [ ] Add DaisyUI to `tailwind.config.js` plugins
-- [ ] Configure DaisyUI with custom light + dark themes (cyan-900 primary)
-- [ ] Define custom color tokens in Tailwind `extend.colors`:
+- [x] Install DaisyUI (`npm install daisyui`)
+- [x] Add DaisyUI to `tailwind.config.js` plugins
+- [x] Configure DaisyUI with custom light + dark themes (cyan-900 primary)
+- [x] Define custom color tokens in Tailwind `extend.colors`:
   - `primary` → cyan-900 (#164e63)
   - `primary-light` → cyan-700
   - `surface` → slate-50 (light) / gray-900 (dark)
@@ -45,13 +45,13 @@ Establish the visual foundation that every subsequent phase builds on.
   - `status-error` → red-600
   - `status-warning` → amber-500
   - `status-running` → yellow-500
-- [ ] Import Google Fonts (Open Sans + Montserrat) in `index.html`
-- [ ] Add `fontFamily` to Tailwind config: `sans: ['Open Sans']`, `display: ['Montserrat']`
-- [ ] Create `src/styles/base.css` with CSS custom properties for DaisyUI theme overrides
-- [ ] Update `index.css` to import base styles and remove hardcoded ReactFlow overrides (migrate to token-based)
-- [ ] Remove old ad-hoc `width` hacks from Tailwind config (`'8': '30px'` etc.), replace with semantic names (`nav-collapsed`, `nav-expanded`)
-- [ ] Verify dark mode toggle still works with DaisyUI themes
-- [ ] Document the design tokens in a `DESIGN_SYSTEM.md` file
+- [x] Import Google Fonts (Open Sans + Montserrat) in `index.html`
+- [x] Add `fontFamily` to Tailwind config: `sans: ['Open Sans']`, `display: ['Montserrat']`
+- [x] Create `src/styles/base.css` with CSS custom properties for DaisyUI theme overrides
+- [x] Update `index.css` to import base styles and remove hardcoded ReactFlow overrides (migrate to token-based)
+- [x] Remove old ad-hoc `width` hacks from Tailwind config (`'8': '30px'` etc.), replace with semantic names (`nav-collapsed`, `nav-expanded`)
+- [x] Verify dark mode toggle still works with DaisyUI themes
+- [x] Document the design tokens in a `DESIGN_SYSTEM.md` file
 
 ### Testing & Commit
 ```
