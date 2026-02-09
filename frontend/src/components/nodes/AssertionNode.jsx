@@ -464,7 +464,7 @@ const AssertionNode = ({ id, data, selected }) => {
             <div className="text-[8px] text-gray-500 dark:text-gray-400 space-y-0.5 p-1 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
               <p className="flex items-center gap-1">
                 <MdInfoOutline className="w-3 h-3 flex-shrink-0" />
-                <span><strong>Note:</strong> If ANY assertion fails, the workflow fails.</span>
+                <span><strong>Pass/Fail:</strong> Connect the green ✓ handle for all-pass, red ✗ for any-fail.</span>
               </p>
               <p>Use prev.* to reference previous node results.</p>
             </div>
@@ -472,7 +472,35 @@ const AssertionNode = ({ id, data, selected }) => {
         )}
       </div>
 
-      <Handle type="source" position={Position.Right} className="w-2 h-2 bg-gray-400 dark:bg-gray-500" />
+      {/* Dual output handles: Pass (top-right, green) and Fail (bottom-right, red) */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="pass"
+        className="!bg-green-500 dark:!bg-green-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
+        style={{ top: '35%' }}
+        title="Pass — all assertions passed"
+      />
+      <div
+        className="absolute text-[7px] font-bold text-green-600 dark:text-green-400 pointer-events-none select-none"
+        style={{ right: 12, top: 'calc(35% - 5px)' }}
+      >
+        ✓
+      </div>
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="fail"
+        className="!bg-red-500 dark:!bg-red-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
+        style={{ top: '65%' }}
+        title="Fail — one or more assertions failed"
+      />
+      <div
+        className="absolute text-[7px] font-bold text-red-600 dark:text-red-400 pointer-events-none select-none"
+        style={{ right: 12, top: 'calc(65% - 5px)' }}
+      >
+        ✗
+      </div>
     </div>
   );
 };

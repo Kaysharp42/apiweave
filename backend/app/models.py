@@ -75,7 +75,9 @@ class Edge(BaseModel):
     edgeId: str
     source: str  # source nodeId
     target: str  # target nodeId
-    label: Optional[str] = None  # For conditional edges: "true", "false"
+    sourceHandle: Optional[str] = None  # Handle ID on source node (e.g., "pass", "fail" for assertion)
+    targetHandle: Optional[str] = None  # Handle ID on target node
+    label: Optional[str] = None  # For conditional edges: "Pass", "Fail", "Branch N"
 
 
 class WorkflowCreate(BaseModel):

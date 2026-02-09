@@ -2,22 +2,28 @@
 Webhook management API endpoints
 Handles CRUD operations for CI/CD webhooks
 """
-from fastapi import APIRouter, HTTPException, status
-from typing import List
+from fastapi import APIRouter, HTTPException, status, Depends, Header, Request
+from typing import List, Optional
 from datetime import datetime, UTC
 import secrets
 import uuid
+import asyncio
+import json
+import hashlib
+import hmac as hmac_lib
 
 from app.models import (
     Webhook,
     WebhookCreate,
     WebhookUpdate,
-    WebhookLog
+    WebhookLog,
+    RunCreate,
+    Run
 )
-from app.repositories.webhook_repository import WebhookRepository
-from app.repositories.workflow_repository import WorkflowRepository
-from app.repositories.collection_repository import CollectionRepository
+from app.repositories import WebhookRepository, WorkflowRepository, CollectionRepository, RunRepository
 from app.config import settings
+from app.runner.executor import WorkflowExecutor
+from app.database import get_database
 
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
@@ -381,3 +387,366 @@ async def get_webhook_logs(
             for log in logs
         ]
     }
+
+
+# ============================================================================
+# WEBHOOK EXECUTION ENDPOINTS
+# ============================================================================
+
+async def verify_webhook_signature(webhook: Webhook, payload: bytes, signature: Optional[str]) -> bool:
+    """Verify HMAC-SHA256 signature for webhook"""
+    if not signature or not webhook.hmacSecret:
+        return False
+    
+    expected_signature = hmac_lib.new(
+        webhook.hmacSecret.encode(),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac_lib.compare_digest(signature, expected_signature)
+
+
+@router.post("/workflows/{webhook_id}/execute", status_code=202)
+async def execute_workflow_webhook(
+    webhook_id: str,
+    request: Request,
+    x_webhook_token: Optional[str] = Header(None),
+    x_webhook_signature: Optional[str] = Header(None)
+):
+    """
+    Execute a workflow triggered by webhook
+    
+    Args:
+        webhook_id: Webhook ID
+        x_webhook_token: Bearer token for authentication (required)
+        x_webhook_signature: HMAC-SHA256 signature (optional, for enhanced security)
+        
+    Returns:
+        202 Accepted with run ID and poll URL
+    """
+    db = get_database()
+    
+    # Get webhook
+    webhook = await WebhookRepository.get_by_id(webhook_id)
+    if not webhook:
+        # Log failed attempt
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=404,
+            errorMessage="Webhook not found"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webhook not found"
+        )
+    
+    # Verify token (REQUIRED)
+    if not x_webhook_token or x_webhook_token != webhook.token:
+        # Log failed auth attempt
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=401,
+            errorMessage="Invalid or missing webhook token"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing webhook token"
+        )
+    
+    if not webhook.enabled:
+        # Log disabled webhook attempt
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=403,
+            errorMessage="Webhook is disabled"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Webhook is disabled"
+        )
+    
+    # Get request body
+    body = await request.body()
+    
+    # Verify HMAC signature if provided (optional additional security)
+    if x_webhook_signature:
+        if not await verify_webhook_signature(webhook, body, x_webhook_signature):
+            await WebhookLog(
+                logId=f"log-{uuid.uuid4().hex[:12]}",
+                webhookId=webhook_id,
+                timestamp=datetime.now(UTC),
+                status="validation_error",
+                duration=0,
+                httpMethod="POST",
+                responseStatus=401,
+                errorMessage="Invalid HMAC signature"
+            ).insert()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature"
+            )
+    
+    # Parse payload
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=400,
+            errorMessage="Invalid JSON payload"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload"
+        )
+    
+    # Get workflow
+    workflow = await WorkflowRepository.get_by_id(webhook.resourceId)
+    if not workflow:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=404,
+            errorMessage="Workflow not found"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workflow not found"
+        )
+    
+    # Create run with environment ID from webhook
+    from app.models import Run
+    run = Run(
+        runId=f"run-{uuid.uuid4().hex[:12]}",
+        workflowId=webhook.resourceId,
+        environmentId=webhook.environmentId,  # CRITICAL: Pass environment from webhook
+        status="pending",
+        trigger="webhook",
+        variables=payload if isinstance(payload, dict) else {},
+        results=[],
+        createdAt=datetime.now(UTC)
+    )
+    await run.insert()
+    
+    # Log successful webhook execution start
+    await WebhookLog(
+        logId=f"log-{uuid.uuid4().hex[:12]}",
+        webhookId=webhook_id,
+        timestamp=datetime.now(UTC),
+        status="success",
+        duration=0,
+        httpMethod="POST",
+        responseStatus=202,
+        runId=run.runId,
+        requestBody=json.dumps(payload) if len(json.dumps(payload)) < 10000 else '{"_truncated": true}'
+    ).insert()
+    
+    # Start execution in background
+    executor = WorkflowExecutor(run.runId, webhook.resourceId)
+    
+    # Execute workflow asynchronously (don't wait)
+    asyncio.create_task(executor.execute())
+    
+    # Update webhook usage count and last used
+    webhook.usageCount = (webhook.usageCount or 0) + 1
+    webhook.lastUsed = datetime.now(UTC)
+    await WebhookRepository.update(webhook_id, {
+        "usageCount": webhook.usageCount,
+        "lastUsed": webhook.lastUsed
+    })
+    
+    # Return 202 Accepted
+    return {
+        "status": "accepted",
+        "runId": run.runId,
+        "workflowId": webhook.resourceId,
+        "pollUrl": f"{settings.BASE_URL}/api/runs/{run.runId}",
+        "resultsUrl": f"{settings.BASE_URL}/api/runs/{run.runId}/results"
+    }
+
+
+@router.post("/collections/{webhook_id}/execute", status_code=202)
+async def execute_collection_webhook(
+    webhook_id: str,
+    request: Request,
+    x_webhook_token: Optional[str] = Header(None),
+    x_webhook_signature: Optional[str] = Header(None)
+):
+    """
+    Execute a collection (test suite) triggered by webhook
+    
+    Args:
+        webhook_id: Webhook ID
+        x_webhook_token: Bearer token for authentication (required)
+        x_webhook_signature: HMAC-SHA256 signature (optional, for enhanced security)
+        
+    Returns:
+        202 Accepted with collection run ID and poll URL
+    """
+    db = get_database()
+    
+    # Get webhook
+    webhook = await WebhookRepository.get_by_id(webhook_id)
+    if not webhook:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=404,
+            errorMessage="Webhook not found"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webhook not found"
+        )
+    
+    # Verify token (REQUIRED)
+    if not x_webhook_token or x_webhook_token != webhook.token:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=401,
+            errorMessage="Invalid or missing webhook token"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing webhook token"
+        )
+    
+    if not webhook.enabled:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=403,
+            errorMessage="Webhook is disabled"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Webhook is disabled"
+        )
+    
+    # Get request body
+    body = await request.body()
+    
+    # Verify HMAC signature if provided
+    if x_webhook_signature:
+        if not await verify_webhook_signature(webhook, body, x_webhook_signature):
+            await WebhookLog(
+                logId=f"log-{uuid.uuid4().hex[:12]}",
+                webhookId=webhook_id,
+                timestamp=datetime.now(UTC),
+                status="validation_error",
+                duration=0,
+                httpMethod="POST",
+                responseStatus=401,
+                errorMessage="Invalid HMAC signature"
+            ).insert()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature"
+            )
+    
+    # Parse payload
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=400,
+            errorMessage="Invalid JSON payload"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload"
+        )
+    
+    # Get collection
+    collection = await CollectionRepository.get_by_id(webhook.resourceId)
+    if not collection:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=404,
+            errorMessage="Collection not found"
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Collection not found"
+        )
+    
+    # TODO: Implement collection execution
+    # For now, return placeholder response
+    collection_run_id = f"crun-{uuid.uuid4().hex[:12]}"
+    
+    # Log successful webhook execution
+    await WebhookLog(
+        logId=f"log-{uuid.uuid4().hex[:12]}",
+        webhookId=webhook_id,
+        timestamp=datetime.now(UTC),
+        status="success",
+        duration=0,
+        httpMethod="POST",
+        responseStatus=202,
+        requestBody=json.dumps(payload) if len(json.dumps(payload)) < 10000 else '{"_truncated": true}'
+    ).insert()
+    
+    # Update webhook usage
+    webhook.usageCount = (webhook.usageCount or 0) + 1
+    webhook.lastUsed = datetime.now(UTC)
+    await WebhookRepository.update(webhook_id, {
+        "usageCount": webhook.usageCount,
+        "lastUsed": webhook.lastUsed
+    })
+    
+    return {
+        "status": "accepted",
+        "collectionRunId": collection_run_id,
+        "collectionId": webhook.resourceId,
+        "message": "Collection execution not yet implemented"
+    }
+

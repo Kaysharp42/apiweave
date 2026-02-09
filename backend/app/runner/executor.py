@@ -55,14 +55,15 @@ def setup_run_logger(run_id: str):
 class WorkflowExecutor:
     """Executes workflows node by node"""
     
-    def __init__(self, run_id: str, workflow_id: str):
+    def __init__(self, run_id: str, workflow_id: str, runtime_secrets: Dict[str, str] = None):
         self.run_id = run_id
         self.workflow_id = workflow_id
+        self.runtime_secrets = runtime_secrets or {}  # Secret values provided at run time (never persisted)
         self.results = {}
         self.context = {}  # Stores variables and results from previous nodes
         self.workflow_variables = {}  # Workflow-level variables that persist across nodes
         self.environment_variables = {}  # Environment variables from active environment
-        self.secrets = {}  # NEW: Secrets from active environment
+        self.secrets = {}  # Secrets from active environment (may be overridden by runtime_secrets)
         self.continue_on_fail = False  # Workflow setting: whether to continue on API failure
         self.start_time = None  # Track workflow execution start time
         self.branch_results = {}  # Track merged branch results per merge node: {merge_node_id: [(node_id, result), ...]}
@@ -116,6 +117,12 @@ class WorkflowExecutor:
         else:
             self.logger.info("No environment specified for this run")
 
+        # Merge runtime secrets (from the client) over database placeholders.
+        # Runtime values take precedence so that actual secret values are used
+        # during execution while the database only stores descriptions.
+        if self.runtime_secrets:
+            self.secrets.update(self.runtime_secrets)
+            self.logger.info(f"Applied {len(self.runtime_secrets)} runtime secret(s)")
         
         # Load workflow settings
         settings = workflow.get('settings', {})
@@ -255,6 +262,45 @@ class WorkflowExecutor:
         
         if not next_edges:
             return  # No more nodes to execute
+        
+        # Assertion node routing: filter edges by assertionOutcome → sourceHandle
+        if node['type'] == 'assertion' and node_id in self.results:
+            assertion_result = self.results[node_id]
+            outcome = assertion_result.get('assertionOutcome', 'pass')  # 'pass' or 'fail'
+            
+            # Separate edges with sourceHandle from legacy edges (no sourceHandle)
+            handle_edges = [e for e in next_edges if e.get('sourceHandle') in ('pass', 'fail')]
+            legacy_edges = [e for e in next_edges if not e.get('sourceHandle')]
+            
+            if handle_edges:
+                # New dual-output mode: route to matching handle only
+                matching = [e for e in handle_edges if e.get('sourceHandle') == outcome]
+                if matching:
+                    next_edges = matching
+                    self.logger.info(f"🔀 Assertion {node_id} outcome='{outcome}' → routing to {len(matching)} edge(s)")
+                    print(f"🔀 Assertion {node_id} outcome='{outcome}' → routing to {len(matching)} edge(s)")
+                else:
+                    # No matching handle edge — no downstream path for this outcome
+                    self.logger.info(f"🔀 Assertion {node_id} outcome='{outcome}' — no '{outcome}' edge connected, stopping branch")
+                    print(f"🔀 Assertion {node_id} outcome='{outcome}' — no '{outcome}' edge connected")
+                    # If assertions failed and there's no fail path, still mark as failure
+                    if outcome == 'fail':
+                        self.has_failures = True
+                        if node_id not in self.failed_nodes:
+                            self.failed_nodes.append(node_id)
+                    return
+            elif legacy_edges:
+                # Backward compatibility: old assertion nodes with single handle
+                # Fail = raise exception (original behavior)
+                if outcome == 'fail':
+                    error_msg = assertion_result.get('message', 'Assertion failed')
+                    self.has_failures = True
+                    if node_id not in self.failed_nodes:
+                        self.failed_nodes.append(node_id)
+                    if not self.continue_on_fail:
+                        raise Exception(error_msg)
+                    print(f"⚠️  Assertion {node_id} failed (legacy mode) but continuing: {error_msg}")
+                next_edges = legacy_edges
         
         # If multiple edges (branching), execute in parallel
         if len(next_edges) > 1:
@@ -402,6 +448,12 @@ class WorkflowExecutor:
                     print(f"⚠️  Node failed: {node_id} - {result.get('error', 'Unknown error')}")
             elif execution_status == "redirect":
                 execution_status = "warning"
+            elif execution_status == "failed" and node_type == 'assertion':
+                # Assertion failure — keep "error" UI status but do NOT raise.
+                # The routing logic in _execute_from_node will handle pass/fail branching.
+                execution_status = "error"
+                self.logger.info(f"⚠️  Assertion {node_id} has failures — routing will decide path")
+                print(f"⚠️  Assertion {node_id} has failures — routing will decide path")
             elif execution_status == "success":
                 execution_status = "success"
             else:
@@ -427,7 +479,8 @@ class WorkflowExecutor:
             # Handle failures based on continue_on_fail setting
             # If continue_on_fail is False, stop execution on any error
             # If continue_on_fail is True, allow failures to continue (for merge node evaluation)
-            if execution_status == "error" and not self.continue_on_fail:
+            # Assertion nodes are exempt — their pass/fail routing is handled in _execute_from_node
+            if execution_status == "error" and node_type != 'assertion' and not self.continue_on_fail:
                 error_msg = result.get('error', f"Node {node_id} failed")
                 if result.get('statusCode'):
                     error_msg = f"HTTP {result.get('statusCode')}: {result.get('url', 'unknown URL')}"
@@ -1191,14 +1244,23 @@ class WorkflowExecutor:
                 print(f"❌ Error extracting variable {var_name} from {var_path}: {str(e)}")
     
     async def _execute_assertion(self, node: Dict) -> Dict[str, Any]:
-        """Execute assertion node - validates all assertions"""
+        """Execute assertion node - validates all assertions.
+        
+        Returns a result dict with 'assertionOutcome' = 'pass' or 'fail'.
+        Does NOT raise on failure — the executor routes to the appropriate
+        downstream edge based on the outcome and the edge's sourceHandle.
+        """
         assertions = node.get('config', {}).get('assertions', [])
         
         if not assertions:
             return {
                 "status": "success",
+                "assertionOutcome": "pass",
                 "message": "No assertions configured",
-                "assertions": []
+                "assertions": [],
+                "passedCount": 0,
+                "failedCount": 0,
+                "totalCount": 0,
             }
         
         failed_assertions = []
@@ -1226,36 +1288,34 @@ class WorkflowExecutor:
                     "message": f"Error evaluating assertion: {str(e)}"
                 })
         
-        # If any assertion failed, the entire assertion node fails
+        outcome = "fail" if failed_assertions else "pass"
+        
         if failed_assertions:
-            # Build detailed error message with failed assertion details
             failed_details = []
             for fa in failed_assertions:
                 failed_details.append(f"Assertion {fa['index'] + 1}: {fa['message']}")
             
-            error_msg = f"Assertion failed: {len(failed_assertions)}/{len(assertions)} assertions failed\n" + "\n".join(failed_details)
+            message = f"Assertion failed: {len(failed_assertions)}/{len(assertions)} assertions failed\n" + "\n".join(failed_details)
             
-            # Create result with both passed and failed info before raising
-            result_with_details = {
+            return {
                 "status": "failed",
-                "message": error_msg,
+                "assertionOutcome": outcome,
+                "message": message,
                 "passedCount": len(passed_assertions),
                 "failedCount": len(failed_assertions),
                 "totalCount": len(assertions),
                 "passed": passed_assertions,
-                "failed": failed_assertions
+                "failed": failed_assertions,
             }
-            
-            # Store this in results temporarily so it can be accessed
-            raise Exception(f"Assertion failed: {len(failed_assertions)}/{len(assertions)} assertions failed")
         
         return {
             "status": "success",
+            "assertionOutcome": outcome,
             "message": f"All {len(assertions)} assertions passed",
             "assertions": passed_assertions,
             "passedCount": len(passed_assertions),
             "failedCount": 0,
-            "totalCount": len(assertions)
+            "totalCount": len(assertions),
         }
     
     def _find_data_producing_ancestor(self, node_id: str, edges: List, nodes: Dict, visited = None) -> str:

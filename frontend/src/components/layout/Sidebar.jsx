@@ -32,6 +32,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [dragOverCol, setDragOverCol] = useState(null);
   const [exportingCollectionId, setExportingCollectionId] = useState(null);
   const [exportingCollectionName, setExportingCollectionName] = useState(null);
+  const [environments, setEnvironments] = useState([]);
   const scrollContainerRef = useRef(null);
 
   // Fetch workflows when needed
@@ -88,6 +89,28 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
       window.removeEventListener('workflowsNeedRefresh', handleWorkflowsNeedRefresh);
     };
   }, [selectedNav]);
+
+  // Fetch environments once for displaying badges
+  useEffect(() => {
+    const loadEnvs = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/environments`);
+        if (res.ok) {
+          const data = await res.json();
+          setEnvironments(data);
+        }
+      } catch { /* silent */ }
+    };
+    loadEnvs();
+  }, []);
+
+  // Helper: get the assigned environment name for a workflow from localStorage
+  const getWorkflowEnvName = (workflowId) => {
+    const envId = localStorage.getItem(`selectedEnvironment_${workflowId}`);
+    if (!envId) return null;
+    const env = environments.find(e => e.environmentId === envId);
+    return env ? env.name : null;
+  };
 
   const fetchWorkflows = async (skip = 0, append = false, limit = 20) => {
     try {
@@ -242,9 +265,17 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                   onClick={() => handleWorkflowClick(workflow)}
                 >
                   <div className="font-medium truncate">{workflow.name}</div>
-                  <div className="text-xs opacity-75 mt-0.5">
-                    {workflow.nodes?.length || 0} nodes
-                    {workflow.collectionId && ` • ${collections.find(c => c.collectionId === workflow.collectionId)?.name || 'Unknown'}`}
+                  <div className="text-xs opacity-75 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <span>{workflow.nodes?.length || 0} nodes</span>
+                    {workflow.collectionId && <span>• {collections.find(c => c.collectionId === workflow.collectionId)?.name || 'Unknown'}</span>}
+                    {(() => {
+                      const envName = getWorkflowEnvName(workflow.workflowId);
+                      return envName ? (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-medium leading-tight">
+                          🌐 {envName}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                   <button
                     onClick={(e) => {
@@ -375,8 +406,16 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                               <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
                                 {workflow.name}
                               </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {workflow.nodes?.length || 0} nodes
+                              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap">
+                                <span>{workflow.nodes?.length || 0} nodes</span>
+                                {(() => {
+                                  const envName = getWorkflowEnvName(workflow.workflowId);
+                                  return envName ? (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-medium leading-tight">
+                                      🌐 {envName}
+                                    </span>
+                                  ) : null;
+                                })()}
                               </div>
                             </div>
 

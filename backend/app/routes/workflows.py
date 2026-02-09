@@ -867,11 +867,25 @@ async def delete_workflow(workflow_id: str):
 
 
 @router.post("/{workflow_id}/run", status_code=status.HTTP_202_ACCEPTED)
-async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(None)):
-    """Trigger a workflow run with optional environment (SQL injection safe)"""
+async def run_workflow(
+    workflow_id: str,
+    environmentId: Optional[str] = Query(None),
+    body: Optional[Dict[str, Any]] = None,
+):
+    """Trigger a workflow run with optional environment and runtime secrets.
+    
+    Body (optional JSON):
+        { "secrets": { "API_KEY": "actual-value", ... } }
+    
+    Runtime secrets override the placeholder descriptions stored in the
+    environment document so that real values are substituted at execution
+    time without ever being persisted to the database.
+    """
     from app.runner.executor import WorkflowExecutor
     from app.repositories import EnvironmentRepository
     import asyncio
+    
+    runtime_secrets = (body or {}).get('secrets', {}) if body else {}
     
     # Verify workflow exists using repository
     workflow = await WorkflowRepository.get_by_id(workflow_id)
@@ -926,7 +940,7 @@ async def run_workflow(workflow_id: str, environmentId: Optional[str] = Query(No
     # This allows immediate response while execution happens in background
     async def execute_workflow():
         try:
-            executor = WorkflowExecutor(run_id, workflow_id)
+            executor = WorkflowExecutor(run_id, workflow_id, runtime_secrets=runtime_secrets)
             await executor.execute()
         except Exception as e:
             # Error is already logged in executor

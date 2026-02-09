@@ -94,3 +94,105 @@ async def cancel_run(run_id: str):
     await RunRepository.update_status(run_id, "cancelled")
     
     return None
+
+
+@router.get("/{run_id}/results")
+async def get_run_results(run_id: str):
+    """
+    Get human-readable test results for a workflow run
+    Designed for testers and CI/CD reporting
+    """
+    run = await RunRepository.get_by_id(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Run {run_id} not found"
+        )
+    
+    # Get workflow details
+    workflow = await WorkflowRepository.get_by_id(run.workflowId)
+    workflow_name = workflow.name if workflow else "Unknown Workflow"
+    
+    # Fetch actual node results from node_results collection
+    db = get_database()
+    node_results_cursor = db.node_results.find({"runId": run_id})
+    node_results_data = await node_results_cursor.to_list(length=None)
+    
+    # Calculate summary
+    total_nodes = len(node_results_data)
+    passed_nodes = sum(1 for r in node_results_data if r.get("status") == "success")
+    failed_nodes = sum(1 for r in node_results_data if r.get("status") == "error")
+    skipped_nodes = sum(1 for r in node_results_data if r.get("status") == "skipped")
+    
+    # Determine overall status
+    overall_status = run.status
+    if run.status == "completed":
+        overall_status = "✅ PASSED" if failed_nodes == 0 else "❌ FAILED"
+    elif run.status == "running":
+        overall_status = "⏳ RUNNING"
+    elif run.status == "pending":
+        overall_status = "⏸️ PENDING"
+    elif run.status == "failed":
+        overall_status = "❌ FAILED"
+    elif run.status == "cancelled":
+        overall_status = "🚫 CANCELLED"
+    
+    # Format node results
+    formatted_results = []
+    for result in node_results_data:
+        status_map = {
+            "success": "passed",
+            "error": "failed",
+            "skipped": "skipped"
+        }
+        node_status = status_map.get(result.get("status", ""), "unknown")
+        
+        node_result = {
+            "nodeId": result.get("nodeId"),
+            "nodeType": result.get("nodeType"),
+            "status": node_status.upper(),
+            "statusIcon": {
+                "passed": "✅",
+                "failed": "❌",
+                "skipped": "⏭️"
+            }.get(node_status, "❓"),
+            "duration": f"{result.get('duration', 0)}ms",
+            "durationSeconds": round(result.get("duration", 0) / 1000, 2),
+            "error": result.get("error"),
+            "request": result.get("request"),
+            "response": result.get("response"),
+            "assertions": result.get("assertions", [])
+        }
+        formatted_results.append(node_result)
+    
+    # Build human-readable response
+    return {
+        "runId": run.runId,
+        "workflowId": run.workflowId,
+        "workflowName": workflow_name,
+        "status": overall_status,
+        "trigger": run.trigger,
+        "summary": {
+            "totalNodes": total_nodes,
+            "passed": passed_nodes,
+            "failed": failed_nodes,
+            "skipped": skipped_nodes,
+            "successRate": f"{round((passed_nodes / total_nodes * 100) if total_nodes > 0 else 0, 1)}%"
+        },
+        "timing": {
+            "createdAt": run.createdAt.isoformat() if run.createdAt else None,
+            "startedAt": run.startedAt.isoformat() if run.startedAt else None,
+            "completedAt": run.completedAt.isoformat() if run.completedAt else None,
+            "duration": f"{run.duration}ms" if run.duration else None,
+            "durationSeconds": round(run.duration / 1000, 2) if run.duration else None
+        },
+        "environment": {
+            "environmentId": run.environmentId
+        } if run.environmentId else None,
+        "variables": run.variables or {},
+        "error": run.error,
+        "failedNodes": run.failedNodes or [],
+        "failureMessage": run.failureMessage,
+        "nodeResults": formatted_results,
+        "callbackUrl": run.callbackUrl
+    }

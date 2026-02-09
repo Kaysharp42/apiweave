@@ -21,11 +21,13 @@ import AddNodesPanel from './AddNodesPanel';
 import NodeModal from './NodeModal';
 import HistoryModal from './HistoryModal';
 import ImportToNodesPanel from './ImportToNodesPanel';
+import WorkflowJsonEditor from './WorkflowJsonEditor';
+import SecretsPrompt from './SecretsPrompt';
 import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import Toaster, { toast } from './Toaster';
 import ButtonSelect from './ButtonSelect';
-import { MdSave, MdHistory, MdPlayArrow } from 'react-icons/md';
+import { MdSave, MdHistory, MdPlayArrow, MdCode } from 'react-icons/md';
 import { Upload } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 
@@ -38,7 +40,7 @@ const selectiveNodeUpdate = (currentNodes, nodeStatuses) => {
     // Always update to ensure fresh results on each run
     // Extract assertion-specific info from result if it's an assertion node
     let assertionStats = null;
-    if (node.data.type === 'assertion' && nodeStatus.result) {
+    if (node.type === 'assertion' && nodeStatus.result) {
       const result = nodeStatus.result;
       if (result.passedCount !== undefined || result.failedCount !== undefined) {
         assertionStats = {
@@ -99,6 +101,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     variables: workflowVariables,
     registerExtractors,
     deleteVariable: contextDeleteVariable,
+    updateVariable,
   } = useWorkflow();
   
   // Use ReactFlow's built-in hooks for nodes and edges (local to WorkflowCanvas)
@@ -110,6 +113,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   const [modalNode, setModalNode] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
+  const [showJsonEditor, setShowJsonEditor] = useState(false);
+  const [showSecretsPrompt, setShowSecretsPrompt] = useState(false);
+  const pendingRunRef = useRef(false);  // Flag to auto-run after secrets are provided
   const [environments, setEnvironments] = useState([]);
   const [environmentChangeNotification, setEnvironmentChangeNotification] = useState(null);
   
@@ -277,8 +283,32 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
               id: edge.edgeId,
               source: edge.source,
               target: edge.target,
+              sourceHandle: edge.sourceHandle || null,
+              targetHandle: edge.targetHandle || null,
               label: edge.label,
               type: 'custom',
+              ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
+                animated: true,
+                style: {
+                  stroke: edge.sourceHandle === 'pass'
+                    ? (darkMode ? '#4ade80' : '#16a34a')
+                    : (darkMode ? '#f87171' : '#dc2626'),
+                  strokeWidth: 2,
+                },
+                labelStyle: {
+                  fill: edge.sourceHandle === 'pass'
+                    ? (darkMode ? '#4ade80' : '#16a34a')
+                    : (darkMode ? '#f87171' : '#dc2626'),
+                  fontWeight: 700,
+                  fontSize: 11,
+                },
+                labelBgStyle: {
+                  fill: darkMode ? '#1f2937' : '#ffffff',
+                  fillOpacity: 0.95,
+                },
+                labelBgPadding: [6, 4],
+                labelBgBorderRadius: 4,
+              } : {}),
             }));
             setNodes(newNodes);
             setEdges(newEdges);
@@ -477,8 +507,33 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         id: edge.edgeId,
         source: edge.source,
         target: edge.target,
+        sourceHandle: edge.sourceHandle || null,
+        targetHandle: edge.targetHandle || null,
         label: edge.label,
         type: 'custom',
+        // Restore assertion edge styling on load
+        ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
+          animated: true,
+          style: {
+            stroke: edge.sourceHandle === 'pass'
+              ? (darkMode ? '#4ade80' : '#16a34a')
+              : (darkMode ? '#f87171' : '#dc2626'),
+            strokeWidth: 2,
+          },
+          labelStyle: {
+            fill: edge.sourceHandle === 'pass'
+              ? (darkMode ? '#4ade80' : '#16a34a')
+              : (darkMode ? '#f87171' : '#dc2626'),
+            fontWeight: 700,
+            fontSize: 11,
+          },
+          labelBgStyle: {
+            fill: darkMode ? '#1f2937' : '#ffffff',
+            fillOpacity: 0.95,
+          },
+          labelBgPadding: [6, 4],
+          labelBgBorderRadius: 4,
+        } : {}),
       }));
       
       setNodes(loadedNodes);
@@ -491,6 +546,39 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   const onConnect = useCallback(
     (params) => {
       setEdges((eds) => {
+        // Detect if source is an assertion node — auto-label Pass/Fail edges
+        const sourceNode = nodes.find(n => n.id === params.source);
+        const isAssertionSource = sourceNode?.type === 'assertion';
+        
+        if (isAssertionSource && params.sourceHandle) {
+          const isPass = params.sourceHandle === 'pass';
+          const label = isPass ? 'Pass' : 'Fail';
+          const color = isPass
+            ? (darkMode ? '#4ade80' : '#16a34a')
+            : (darkMode ? '#f87171' : '#dc2626');
+          
+          const newEdge = {
+            id: `reactflow__edge-${params.source}${params.sourceHandle || ''}-${params.target}${params.targetHandle || ''}`,
+            ...params,
+            type: 'custom',
+            animated: true,
+            label,
+            style: { stroke: color, strokeWidth: 2 },
+            labelStyle: {
+              fill: color,
+              fontWeight: 700,
+              fontSize: 11,
+            },
+            labelBgStyle: {
+              fill: darkMode ? '#1f2937' : '#ffffff',
+              fillOpacity: 0.95,
+            },
+            labelBgPadding: [6, 4],
+            labelBgBorderRadius: 4,
+          };
+          return [...eds, newEdge];
+        }
+        
         const newEdge = addEdge({ ...params, type: 'custom' }, eds)[eds.length];
         
         // Check if this creates parallel branches (multiple edges from same source)
@@ -786,6 +874,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         edgeId: edge.id,
         source: edge.source,
         target: edge.target,
+        sourceHandle: edge.sourceHandle || null,
+        targetHandle: edge.targetHandle || null,
         label: edge.label || null,
       })),
       variables: workflowVariables,
@@ -808,6 +898,119 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     }
   }, [nodes, edges, workflowId, workflowVariables]);
 
+  // Build the JSON object shown in the JSON editor
+  const getWorkflowJson = useCallback(() => {
+    return {
+      nodes: nodes.map(node => ({
+        nodeId: node.id,
+        type: node.type,
+        label: node.data.label,
+        position: node.position,
+        config: node.data.config || {},
+      })),
+      edges: edges.map(edge => ({
+        edgeId: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle || null,
+        targetHandle: edge.targetHandle || null,
+        label: edge.label || null,
+      })),
+      variables: workflowVariables,
+    };
+  }, [nodes, edges, workflowVariables]);
+
+  // Apply changes from the JSON editor back to the canvas
+  const handleJsonApply = useCallback(async (parsed) => {
+    // Rebuild ReactFlow nodes from the JSON
+    const newNodes = (parsed.nodes || []).map(node => ({
+      id: node.nodeId,
+      type: node.type,
+      position: node.position,
+      data: {
+        label: node.label,
+        config: node.config || {},
+      },
+    }));
+
+    const newEdges = (parsed.edges || []).map(edge => ({
+      id: edge.edgeId,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle || null,
+      targetHandle: edge.targetHandle || null,
+      label: edge.label,
+      type: 'custom',
+      // Restore assertion edge styling
+      ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
+        animated: true,
+        style: {
+          stroke: edge.sourceHandle === 'pass'
+            ? (darkMode ? '#4ade80' : '#16a34a')
+            : (darkMode ? '#f87171' : '#dc2626'),
+          strokeWidth: 2,
+        },
+        labelStyle: {
+          fill: edge.sourceHandle === 'pass'
+            ? (darkMode ? '#4ade80' : '#16a34a')
+            : (darkMode ? '#f87171' : '#dc2626'),
+          fontWeight: 700,
+          fontSize: 11,
+        },
+        labelBgStyle: {
+          fill: darkMode ? '#1f2937' : '#ffffff',
+          fillOpacity: 0.95,
+        },
+        labelBgPadding: [6, 4],
+        labelBgBorderRadius: 4,
+      } : {}),
+    }));
+
+    // Save to backend FIRST — only update canvas if save succeeds
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodes: parsed.nodes,
+          edges: parsed.edges,
+          variables: parsed.variables || workflowVariables,
+        }),
+      });
+      if (response.ok) {
+        // Save succeeded — apply to canvas and close editor
+        setNodes(newNodes);
+        setEdges(newEdges);
+
+        if (parsed.variables && typeof parsed.variables === 'object') {
+          Object.entries(parsed.variables).forEach(([k, v]) => updateVariable(k, v));
+        }
+
+        setShowJsonEditor(false);
+        toast.success('Workflow updated from JSON editor');
+      } else {
+        // Parse validation errors from the backend
+        try {
+          const errBody = await response.json();
+          if (errBody.detail && Array.isArray(errBody.detail)) {
+            const messages = errBody.detail.map(d => {
+              const loc = d.loc ? d.loc.slice(1).join(' → ') : '';
+              return `${loc}: ${d.msg}`;
+            });
+            toast.error(messages.join('\n'));
+          } else {
+            toast.error(errBody.detail || `Save failed (${response.status})`);
+          }
+        } catch {
+          toast.error(`Save failed with status ${response.status}`);
+        }
+      }
+    } catch (err) {
+      console.error('JSON editor save error:', err);
+      toast.error('Network error — see console');
+    }
+  }, [setNodes, setEdges, workflowId, workflowVariables, darkMode, updateVariable]);
+
   const [isRunning, setIsRunning] = useState(false);
   const [currentRunId, setCurrentRunId] = useState(null);
   const pollIntervalRef = useRef(null);
@@ -816,6 +1019,45 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     if (!workflowId) {
       console.warn('Please save the workflow first');
       return;
+    }
+
+    // Check if the selected environment has secrets that need values
+    const envId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
+    if (envId) {
+      const selectedEnv = environments.find(e => e.environmentId === envId);
+      const envSecrets = selectedEnv?.secrets || {};
+      const secretKeys = Object.keys(envSecrets);
+      
+      if (secretKeys.length > 0) {
+        // Check if all secrets are filled in sessionStorage
+        const missingSecrets = secretKeys.filter(k => !sessionStorage.getItem(`secret_${k}`)?.trim());
+        
+        if (missingSecrets.length > 0) {
+          // Show secrets prompt — after user fills them, the prompt will call onSecretsProvided
+          // which triggers executeRunWithSecrets
+          pendingRunRef.current = true;
+          setShowSecretsPrompt(true);
+          return;
+        }
+      }
+    }
+    
+    // All secrets satisfied (or no secrets needed) — run directly
+    executeRunWithSecrets();
+  }, [workflowId, selectedEnvironment, environments]);
+
+  // Gather sessionStorage secrets for the selected environment and fire the run
+  const executeRunWithSecrets = useCallback(async () => {
+    // Collect runtime secrets from sessionStorage
+    const envId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
+    let runtimeSecrets = {};
+    if (envId) {
+      const selectedEnv = environments.find(e => e.environmentId === envId);
+      const envSecrets = selectedEnv?.secrets || {};
+      Object.keys(envSecrets).forEach(key => {
+        const val = sessionStorage.getItem(`secret_${key}`);
+        if (val) runtimeSecrets[key] = val;
+      });
     }
 
     // Pre-run validation: ensure nodes have valid configs (basic checks)
@@ -911,10 +1153,10 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       // }
       
             // Ensure selectedEnvironment is either a valid ID or null (not empty string)
-            const envId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
+            const runEnvId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
       
-            const url = envId
-              ? `${API_BASE_URL}/api/workflows/${workflowId}/run?environmentId=${envId}`
+            const url = runEnvId
+              ? `${API_BASE_URL}/api/workflows/${workflowId}/run?environmentId=${runEnvId}`
               : `${API_BASE_URL}/api/workflows/${workflowId}/run`;
       
             // Debug logging removed for production. Uncomment for debugging if needed.
@@ -930,6 +1172,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: Object.keys(runtimeSecrets).length > 0
+          ? JSON.stringify({ secrets: runtimeSecrets })
+          : undefined,
       });
       
       if (response.ok) {
@@ -1007,6 +1252,15 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       console.error('Run error:', error);
     }
   }, [workflowId, setNodes, selectedEnvironment, environments]);
+
+  // Handle secrets provided from SecretsPrompt — continue the pending run
+  const handleSecretsProvided = useCallback((secrets) => {
+    setShowSecretsPrompt(false);
+    if (pendingRunRef.current) {
+      pendingRunRef.current = false;
+      executeRunWithSecrets();
+    }
+  }, [executeRunWithSecrets]);
 
   const loadHistoricalRun = useCallback(async (run) => {
     console.log('Loading historical run:', run);
@@ -1157,6 +1411,15 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         </button>
         
         <button
+          onClick={() => setShowJsonEditor(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg font-medium transition-colors dark:bg-indigo-700 dark:hover:bg-indigo-800 whitespace-nowrap h-10"
+          title="View and edit raw workflow JSON"
+        >
+          <MdCode className="w-4 h-4 flex-shrink-0" />
+          <span className="leading-none self-center">JSON</span>
+        </button>
+        
+        <button
           onClick={() => setShowImportToNodes(true)}
           className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 shadow-lg font-medium transition-colors dark:bg-amber-700 dark:hover:bg-amber-800 whitespace-nowrap h-10"
           title="Import OpenAPI, HAR, or Curl to Add Nodes panel"
@@ -1241,6 +1504,28 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           workflowId={workflowId}
         />
       )}
+
+      {/* JSON Workflow Editor */}
+      {showJsonEditor && (
+        <WorkflowJsonEditor
+          workflowJson={getWorkflowJson()}
+          onApply={handleJsonApply}
+          onClose={() => setShowJsonEditor(false)}
+        />
+      )}
+
+      {/* Secrets Prompt — shown when run is triggered and environment has unfilled secrets */}
+      {showSecretsPrompt && (() => {
+        const envId = selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null;
+        const selectedEnv = environments.find(e => e.environmentId === envId);
+        return selectedEnv ? (
+          <SecretsPrompt
+            environment={selectedEnv}
+            onClose={() => { setShowSecretsPrompt(false); pendingRunRef.current = false; }}
+            onSecretsProvided={handleSecretsProvided}
+          />
+        ) : null;
+      })()}
       
       {/* Environment Change Notification */}
       {environmentChangeNotification && (
