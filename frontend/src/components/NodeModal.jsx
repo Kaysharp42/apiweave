@@ -100,7 +100,7 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
             zIndex: -2
           }} />
           <div className="absolute inset-0 bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised rounded-xl" style={{
-            transform: 'translateY(4px) translateX(4px)'
+            transform: 'translateY(4px) translateX(4px)',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
             zIndex: -1
           }} />
