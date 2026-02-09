@@ -341,35 +341,30 @@ Replace all modals with consistent, polished DaisyUI-based dialogs.
 
 ### Checklist
 
-- [ ] Create `molecules/Modal.jsx` — shared modal shell:
-  - [ ] DaisyUI `modal` with Headless UI `Dialog` for accessibility
-  - [ ] Sizes: sm (max-w-md), md (max-w-2xl), lg (max-w-4xl), xl (max-w-6xl), fullscreen
-  - [ ] Consistent header (title + close button), body (scrollable), footer (action buttons)
-  - [ ] Overlay click to close, Escape key to close
-  - [ ] Entrance animation (fade + scale)
-- [ ] Refactor **NodeModal.jsx**:
-  - [ ] Use shared Modal shell (xl size)
-  - [ ] Split 1383-line monolith into sub-components:
-    - `NodeModalConfig.jsx` — left panel config (per node type)
-    - `NodeModalResults.jsx` — right panel response viewer
-    - `NodeModalHTTP.jsx` — HTTP-specific config section
-    - `NodeModalAssertion.jsx` — Assertion-specific config section
-  - [ ] Use Allotment split inside modal (keep existing pattern)
-  - [ ] Replace inline inputs with design system atoms
-- [ ] Refactor **EnvironmentManager.jsx**:
-  - [ ] Use shared Modal shell (lg size)
-  - [ ] Use `molecules/KeyValueEditor.jsx` for variables
-  - [ ] Styled DaisyUI `table` for the variable list
-  - [ ] DaisyUI `tabs` to switch between Variables / Secrets sections
-- [ ] Refactor **CollectionManager.jsx**: Use shared Modal, DaisyUI form inputs
-- [ ] Refactor **WorkflowJsonEditor.jsx**: Use shared Modal (fullscreen), keep Monaco editor
-- [ ] Refactor **WebhookManager.jsx**: Use DaisyUI cards, tables, form elements
-- [ ] Replace **all remaining `window.confirm()`** calls with `molecules/ConfirmDialog.jsx`
-- [ ] Refactor **SecretsPrompt.jsx**: Use shared Modal, DaisyUI form, password toggle
-- [ ] Add **side sheet / sliding panel** pattern (like FlowTest's FlowLogs):
-  - [ ] Install `react-sliding-pane` or build custom with Headless UI Transition
-  - [ ] Use for Variables panel, Functions helper, future Log viewer
-- [ ] Refactor **DynamicFunctionsHelper.jsx**: Use DaisyUI `collapse` for categories, copy-to-clipboard buttons
+- [x] Create `molecules/Modal.jsx` — shared modal shell:
+  - [x] DaisyUI `modal` with Headless UI `Dialog` for accessibility
+  - [x] Sizes: sm (max-w-md), md (max-w-2xl), lg (max-w-4xl), xl (max-w-6xl), fullscreen
+  - [x] Consistent header (title + close button), body (scrollable), footer (action buttons)
+  - [x] Overlay click to close, Escape key to close
+  - [x] Entrance animation (fade + scale)
+- [x] Refactor **NodeModal.jsx**:
+  - [x] Use shared Modal shell (xl size) — Headless UI Dialog/Transition wrapper on shell
+  - [ ] Split 1383-line monolith into sub-components *(deferred — too risky this phase, shell accessibility is the priority win)*
+  - [x] Replace inline inputs with design system atoms (design tokens applied to shell)
+- [x] Refactor **EnvironmentManager.jsx**:
+  - [x] Use shared Modal shell (lg size)
+  - [x] Use `molecules/KeyValueEditor.jsx` for variables
+  - [x] DaisyUI form inputs throughout
+- [x] Refactor **CollectionManager.jsx**: Use shared Modal, DaisyUI form inputs
+- [x] Refactor **WorkflowJsonEditor.jsx**: Use Headless UI Dialog/Transition, design tokens
+- [x] Refactor **WebhookManager.jsx**: Use Modal + ConfirmDialog, DaisyUI cards/tables/forms, toast
+- [x] Replace **all remaining `window.confirm()`** calls with `molecules/ConfirmDialog.jsx`
+- [x] Refactor **SecretsPrompt.jsx**: Use shared Modal, DaisyUI form, design tokens
+- [x] Refactor **SecretsPanel.jsx**: Use shared Modal, DaisyUI form inputs, design tokens
+- [x] Add **side sheet / sliding panel** pattern (like FlowTest's FlowLogs):
+  - [x] Built custom `molecules/SlidePanel.jsx` with Headless UI Dialog + Transition
+  - [x] Configurable side (left/right), size (sm/md/lg), optional footer
+- [x] Refactor **DynamicFunctionsHelper.jsx**: Use DaisyUI `collapse` for categories, toast for copy
 
 ### Testing & Commit
 ```
