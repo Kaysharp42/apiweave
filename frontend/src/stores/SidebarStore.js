@@ -28,6 +28,7 @@ const useSidebarStore = create((set, get) => ({
   // --- Refresh version counter (subscribers react to changes) ---
   workflowVersion: 0,
   collectionVersion: 0,
+  environmentVersion: 0,
 
   // --- Actions ---
 
@@ -47,6 +48,14 @@ const useSidebarStore = create((set, get) => ({
    */
   signalCollectionsRefresh: () =>
     set((s) => ({ collectionVersion: s.collectionVersion + 1 })),
+
+  /**
+   * Trigger an environments refresh. Components that display environment
+   * data (EnvironmentSelector, Workspace, WorkflowCanvas) subscribe to
+   * `environmentVersion` and re-fetch accordingly.
+   */
+  signalEnvironmentsRefresh: () =>
+    set((s) => ({ environmentVersion: s.environmentVersion + 1 })),
 
   /** Fetch workflows from API. */
   fetchWorkflows: async (skip = 0, append = false, limit = 20, endpoint = 'unattached') => {
