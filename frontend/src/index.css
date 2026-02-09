@@ -1,9 +1,9 @@
+/* Design system base styles (tokens, fonts, scrollbars) — must be first @import */
+@import './styles/base.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Design system base styles (tokens, fonts, scrollbars) */
-@import './styles/base.css';
 
 /* ──────────────────────────────────────────────
    React Flow — Token-Based Dark Mode Overrides

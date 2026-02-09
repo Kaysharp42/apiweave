@@ -35,16 +35,15 @@ function App() {
     }
   });
 
-  // Apply dark mode to document
+  // Apply dark mode to document (Tailwind class + DaisyUI data-theme)
   useEffect(() => {
-    console.log('Dark mode changed to:', darkMode);
     try {
       if (darkMode) {
         document.documentElement.classList.add('dark');
-        console.log('Added dark class to html');
+        document.documentElement.setAttribute('data-theme', 'apiweave-dark');
       } else {
         document.documentElement.classList.remove('dark');
-        console.log('Removed dark class from html');
+        document.documentElement.setAttribute('data-theme', 'apiweave');
       }
       localStorage.setItem('darkMode', darkMode ? 'true' : 'false');
     } catch (err) {
