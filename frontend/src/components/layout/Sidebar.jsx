@@ -2,10 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import CollectionManager from '../CollectionManager';
 import WebhookManager from '../WebhookManager';
 import SidebarHeader from './SidebarHeader';
-import { MdDownload, MdFolder, MdInsertDriveFile, MdKeyboardArrowDown, MdKeyboardArrowRight, MdSettings } from 'react-icons/md';
-import { BsFillCollectionFill } from 'react-icons/bs';
-import { AiOutlineFileText, AiOutlineFolderOpen } from 'react-icons/ai';
-import { BiChevronDown, BiChevronRight } from 'react-icons/bi';
+import { Download, Folder, File, ChevronDown, ChevronRight, Settings, LayoutGrid, FileText, FolderOpen } from 'lucide-react';
 import API_BASE_URL from '../../utils/api';
 import WorkflowExportImport from '../WorkflowExportImport';
 import CollectionExportImport from '../CollectionExportImport';
@@ -250,7 +247,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
         {workflows.length === 0 && !isLoadingMore ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400 text-sm">
             <div className="mb-4">
-              <AiOutlineFileText className="w-12 h-12 mx-auto opacity-40" />
+              <FileText className="w-12 h-12 mx-auto opacity-40" />
             </div>
             <p className="font-medium mb-1">No workflows yet</p>
             <p className="text-xs text-gray-400 dark:text-gray-500">Create your first workflow to get started</p>
@@ -289,7 +286,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                     }`}
                     title="Export workflow"
                   >
-                    <MdDownload className="w-4 h-4" />
+                    <Download className="w-4 h-4" />
                   </button>
                 </div>
               ))}
@@ -329,7 +326,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
       {collections.length === 0 ? (
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           <div className="mb-4">
-            <BsFillCollectionFill className="w-12 h-12 mx-auto opacity-40" />
+            <LayoutGrid className="w-12 h-12 mx-auto opacity-40" />
           </div>
           <p className="font-medium mb-1">No collections yet</p>
           <p className="text-xs text-gray-400 dark:text-gray-500">Create collections to organize your workflows</p>
@@ -353,11 +350,11 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                   <div className="flex items-center gap-2">
                     {/* Expand/Collapse Icon */}
                     {isExpanded ? 
-                      <MdKeyboardArrowDown className="w-4 h-4 text-gray-500" /> : 
-                      <MdKeyboardArrowRight className="w-4 h-4 text-gray-500" />
+                      <ChevronDown className="w-4 h-4 text-gray-500" /> : 
+                      <ChevronRight className="w-4 h-4 text-gray-500" />
                     }
                     {/* Collection Icon - Stacked Folders */}
-                    <BsFillCollectionFill className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                    <LayoutGrid className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     <div>
                       <h3 className="font-medium text-gray-900 dark:text-gray-100">{collection.name}</h3>
                       <p className="text-xs text-gray-600 dark:text-gray-400">
@@ -375,7 +372,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                     className="p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
                     title="Export collection"
                   >
-                    <MdDownload className="w-4 h-4" />
+                    <Download className="w-4 h-4" />
                   </button>
                 </div>
 
@@ -385,7 +382,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                     {collectionWorkflows.length === 0 ? (
                       <div className="px-4 py-6 text-center">
                         <div className="text-gray-400 dark:text-gray-500 mb-2">
-                          <AiOutlineFileText className="w-8 h-8 mx-auto opacity-40" />
+                          <FileText className="w-8 h-8 mx-auto opacity-40" />
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">No workflows in this collection</p>
                         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Add workflows from the Settings panel</p>
@@ -399,7 +396,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                             onClick={() => handleWorkflowClick(workflow)}
                           >
                             {/* Workflow Icon */}
-                            <MdInsertDriveFile className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            <File className="w-4 h-4 text-gray-400 flex-shrink-0" />
 
                             {/* Workflow Info */}
                             <div className="flex-1 min-w-0">
@@ -428,7 +425,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                               className="p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex-shrink-0"
                               title="Export workflow"
                             >
-                              <MdDownload className="w-4 h-4" />
+                              <Download className="w-4 h-4" />
                             </button>
                           </div>
                         ))}
@@ -448,7 +445,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
     <div className="p-3">
       <div className="text-center py-12 text-gray-500 dark:text-gray-400">
         <div className="mb-4">
-          <MdSettings className="w-12 h-12 mx-auto opacity-40" />
+          <Settings className="w-12 h-12 mx-auto opacity-40" />
         </div>
         <p className="font-medium mb-1">Settings</p>
         <p className="text-xs text-gray-400 dark:text-gray-500">Coming soon...</p>

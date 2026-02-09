@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MdUpload, MdSettings, MdAdd, MdFolderOpen, MdDownload } from 'react-icons/md';
-import { HiMiniCommandLine } from 'react-icons/hi2';
+import { Upload, Settings, Plus, FolderOpen, Download, Terminal } from 'lucide-react';
 import WorkflowExportImport from '../WorkflowExportImport';
 import HARImport from '../HARImport';
 import OpenAPIImport from '../OpenAPIImport';
@@ -59,7 +58,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
               className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors duration-200 rounded-l-md flex-1 justify-center"
               style={{ minWidth: 0 }}
             >
-              <MdAdd className="w-4 h-4" />
+              <Plus className="w-4 h-4" />
               <span>New</span>
             </button>
             <div className="relative flex-1 min-w-0" ref={importMenuRef}>
@@ -68,7 +67,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 rounded-r-md w-full justify-center"
                 style={{ minWidth: 0 }}
               >
-                <MdUpload className="w-4 h-4" />
+                <Upload className="w-4 h-4" />
                 <span>Import</span>
               </button>
               {showImportMenu && (
@@ -80,7 +79,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
-                    <MdDownload className="w-4 h-4" />
+                    <Download className="w-4 h-4" />
                     Workflow
                   </button>
                   <button
@@ -90,7 +89,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
-                    <MdUpload className="w-4 h-4" />
+                    <Upload className="w-4 h-4" />
                     HAR File
                   </button>
                   <button
@@ -100,7 +99,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
-                    <MdUpload className="w-4 h-4" />
+                    <Upload className="w-4 h-4" />
                     OpenAPI
                   </button>
                   <button
@@ -110,7 +109,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
-                    <HiMiniCommandLine className="w-4 h-4" />
+                    <Terminal className="w-4 h-4" />
                     cURL
                   </button>
                 </div>
@@ -126,7 +125,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
               className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors duration-200 rounded-l-md flex-1 justify-center"
               style={{ minWidth: 0 }}
             >
-              <MdAdd className="w-4 h-4" />
+              <Plus className="w-4 h-4" />
               <span>Create</span>
             </button>
             <div className="relative flex-1 min-w-0" ref={importMenuRef}>
@@ -135,7 +134,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 rounded-r-md w-full justify-center"
                 style={{ minWidth: 0 }}
               >
-                <MdUpload className="w-4 h-4" />
+                <Upload className="w-4 h-4" />
                 <span>Import</span>
               </button>
               {showImportMenu && (
@@ -148,7 +147,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
-                    <MdFolderOpen className="w-4 h-4" />
+                    <FolderOpen className="w-4 h-4" />
                     Collection
                   </button>
                   <button
@@ -159,7 +158,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
-                    <MdUpload className="w-4 h-4" />
+                    <Upload className="w-4 h-4" />
                     HAR File
                   </button>
                   <button
@@ -170,7 +169,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
-                    <MdUpload className="w-4 h-4" />
+                    <Upload className="w-4 h-4" />
                     OpenAPI
                   </button>
                   <button
@@ -181,7 +180,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
-                    <HiMiniCommandLine className="w-4 h-4" />
+                    <Terminal className="w-4 h-4" />
                     cURL
                   </button>
                 </div>

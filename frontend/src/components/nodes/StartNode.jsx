@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
-import { MdPlayArrow } from 'react-icons/md';
+import { Play } from 'lucide-react';
 
 const StartNode = ({ data, selected }) => {
   return (
@@ -11,7 +11,7 @@ const StartNode = ({ data, selected }) => {
       style={{ fontSize: '11px' }}
     >
       <div className="flex items-center justify-center gap-2">
-        <MdPlayArrow className="w-3.5 h-3.5 flex-shrink-0 self-center" />
+        <Play className="w-3.5 h-3.5 flex-shrink-0 self-center" />
         <div className="text-xs font-bold leading-none self-center">Start</div>
       </div>
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-gray-400 dark:bg-gray-500" />

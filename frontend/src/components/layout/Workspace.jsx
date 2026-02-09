@@ -6,10 +6,7 @@ import VariablesPanel from '../VariablesPanel';
 import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
 import DynamicFunctionsHelper from '../DynamicFunctionsHelper';
 import { WorkflowProvider } from '../../contexts/WorkflowContext';
-import { MdSettings, MdCode } from 'react-icons/md';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { BiPackage } from 'react-icons/bi';
-import { BsGearFill } from 'react-icons/bs';
+import { Settings, Code, Sparkles, Package } from 'lucide-react';
 import API_BASE_URL from '../../utils/api';
 
 const Workspace = ({ onActiveTabChange }) => {
@@ -177,7 +174,7 @@ const Workspace = ({ onActiveTabChange }) => {
                               }`}
                               title="Workflow Variables"
                             >
-                              <BiPackage className="w-4 h-4" />
+                              <Package className="w-4 h-4" />
                               Variables
                             </button>
                             <button
@@ -189,7 +186,7 @@ const Workspace = ({ onActiveTabChange }) => {
                               }`}
                               title="Dynamic Functions"
                             >
-                              <HiMiniSparkles className="w-4 h-4" />
+                              <Sparkles className="w-4 h-4" />
                               Functions
                             </button>
                             <button
@@ -201,7 +198,7 @@ const Workspace = ({ onActiveTabChange }) => {
                               }`}
                               title="Workflow Settings"
                             >
-                              <MdSettings className="w-4 h-4" />
+                              <Settings className="w-4 h-4" />
                               Settings
                             </button>
                           </div>

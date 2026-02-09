@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import API_BASE_URL from '../utils/api';
-import { MdCheckCircle, MdError, MdRefresh, MdSchedule, MdRadioButtonUnchecked, MdHistory, MdClose, MdAssignment, MdNavigateBefore, MdNavigateNext, MdFirstPage, MdLastPage, MdAccessTime, MdFlashOn } from 'react-icons/md';
+import { CheckCircle, XCircle, RefreshCw, Clock, Circle, History, X, ClipboardList, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Timer, Zap } from 'lucide-react';
 
 const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
   const [runs, setRuns] = useState([]);
@@ -85,15 +85,15 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
     const iconProps = { className: 'w-3 h-3' };
     switch (status) {
       case 'completed':
-        return <MdCheckCircle {...iconProps} />;
+        return <CheckCircle {...iconProps} />;
       case 'failed':
-        return <MdError {...iconProps} />;
+        return <XCircle {...iconProps} />;
       case 'running':
-        return <MdRefresh {...iconProps} className="w-3 h-3 animate-spin" />;
+        return <RefreshCw {...iconProps} className="w-3 h-3 animate-spin" />;
       case 'pending':
-        return <MdSchedule {...iconProps} />;
+        return <Clock {...iconProps} />;
       default:
-        return <MdRadioButtonUnchecked {...iconProps} />;
+        return <Circle {...iconProps} />;
     }
   };
 
@@ -147,7 +147,7 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-cyan-600 dark:bg-cyan-700 rounded-lg">
-                <MdHistory className="w-5 h-5 text-white" />
+                <History className="w-5 h-5 text-white" />
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
@@ -168,7 +168,7 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
               className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors rounded-lg"
               title="Close"
             >
-              <MdClose className="w-5 h-5" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -186,7 +186,7 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
             </div>
           ) : runs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-6">
-              <MdAssignment className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+              <ClipboardList className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">No runs yet</p>
               <p className="text-xs text-gray-500 dark:text-gray-500 text-center">
                 Click the Run button to execute this workflow
@@ -216,12 +216,12 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
                       {/* Run Details */}
                       <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
                         <div className="flex items-center gap-1">
-                          <MdAccessTime className="w-3.5 h-3.5" />
+                          <Timer className="w-3.5 h-3.5" />
                           <span>{formatDuration(run.duration)}</span>
                         </div>
                         {run.trigger && (
                           <div className="flex items-center gap-1">
-                            <MdFlashOn className="w-3.5 h-3.5" />
+                            <Zap className="w-3.5 h-3.5" />
                             <span className="capitalize">{run.trigger}</span>
                           </div>
                         )}
@@ -265,7 +265,7 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
 
                     {/* Chevron */}
                     <div className="flex-shrink-0 text-gray-400 dark:text-gray-500">
-                      <MdNavigateNext className="w-5 h-5" />
+                      <ChevronRight className="w-5 h-5" />
                     </div>
                   </div>
                 </button>
@@ -284,7 +284,7 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
                 disabled={!pagination.hasPrevious || loading}
                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <MdNavigateBefore className="w-4 h-4" />
+                <ChevronLeft className="w-4 h-4" />
                 Previous
               </button>
               
@@ -300,7 +300,7 @@ const HistoryModal = ({ workflowId, onClose, onSelectRun }) => {
                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Next
-                <MdNavigateNext className="w-4 h-4" />
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           )}

@@ -3,8 +3,7 @@ import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
 import AssertionEditor from '../AssertionEditor';
 import Tooltip from '../Tooltip';
-import { MdCheckCircle, MdError, MdExpandMore, MdExpandLess, MdInfoOutline, MdEdit, MdDelete, MdContentCopy } from 'react-icons/md';
-import { HiMiniCheckBadge, HiMiniDocumentDuplicate } from 'react-icons/hi2';
+import { CheckCircle, XCircle, ChevronDown, ChevronUp, Info, Pencil, Trash2, Copy, BadgeCheck, Files } from 'lucide-react';
 
 // Assertion form component
 const AssertionForm = ({ onAdd }) => {
@@ -240,9 +239,9 @@ const AssertionNode = ({ id, data, selected }) => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {data.executionStatus === 'error' ? (
-              <MdError className="w-5 h-5 text-red-700 dark:text-red-300" />
+              <XCircle className="w-5 h-5 text-red-700 dark:text-red-300" />
             ) : (
-              <HiMiniCheckBadge className="w-5 h-5 text-green-700 dark:text-green-300" />
+              <BadgeCheck className="w-5 h-5 text-green-700 dark:text-green-300" />
             )}
             <div className="flex items-center gap-1">
               <h3 className={`text-sm font-semibold ${
@@ -293,7 +292,7 @@ const AssertionNode = ({ id, data, selected }) => {
                     }}
                     className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none flex items-center gap-2"
                   >
-                    <HiMiniDocumentDuplicate className="w-4 h-4" />
+                    <Files className="w-4 h-4" />
                     <span>Duplicate</span>
                   </button>
                   <button
@@ -304,7 +303,7 @@ const AssertionNode = ({ id, data, selected }) => {
                     }}
                     className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none border-t border-gray-300 dark:border-gray-600 flex items-center gap-2"
                   >
-                    <MdContentCopy className="w-4 h-4" />
+                    <Copy className="w-4 h-4" />
                     <span>Copy</span>
                   </button>
                 </div>
@@ -317,7 +316,7 @@ const AssertionNode = ({ id, data, selected }) => {
               style={{ background: 'transparent', border: 'none', padding: '0', WebkitTapHighlightColor: 'transparent' }}
               aria-expanded={isExpanded}
             >
-              {isExpanded ? <MdExpandLess className="w-4 h-4" /> : <MdExpandMore className="w-4 h-4" />}
+              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
           </div>
         </div>
@@ -439,14 +438,14 @@ const AssertionNode = ({ id, data, selected }) => {
                             className="px-1.5 py-0.5 bg-yellow-500 dark:bg-yellow-600 hover:bg-yellow-600 dark:hover:bg-yellow-700 text-white text-[8px] rounded nodrag transition-colors"
                             title="Edit assertion"
                           >
-                            <MdEdit className="w-3 h-3" />
+                            <Pencil className="w-3 h-3" />
                           </button>
                           <button
                             onClick={() => handleDeleteAssertion(index)}
                             className="px-1.5 py-0.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-[8px] rounded nodrag transition-colors"
                             title="Delete assertion"
                           >
-                            <MdDelete className="w-3 h-3" />
+                            <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
                       </div>
@@ -463,7 +462,7 @@ const AssertionNode = ({ id, data, selected }) => {
             {/* Info */}
             <div className="text-[8px] text-gray-500 dark:text-gray-400 space-y-0.5 p-1 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
               <p className="flex items-center gap-1">
-                <MdInfoOutline className="w-3 h-3 flex-shrink-0" />
+                <Info className="w-3 h-3 flex-shrink-0" />
                 <span><strong>Pass/Fail:</strong> Connect the green ✓ handle for all-pass, red ✗ for any-fail.</span>
               </p>
               <p>Use prev.* to reference previous node results.</p>

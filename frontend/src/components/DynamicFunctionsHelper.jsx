@@ -1,8 +1,5 @@
 import React, { useState } from 'react';
-import { MdContentCopy, MdInfo, MdExpandMore, MdExpandLess } from 'react-icons/md';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { BiText, BiHash, BiCalendar, BiTime, BiCode, BiLink } from 'react-icons/bi';
-import { HiMiniCheckCircle } from 'react-icons/hi2';
+import { Copy, Info, ChevronDown, ChevronUp, Sparkles, CheckCircle, Type, Hash, Calendar, Clock, Code, Link } from 'lucide-react';
 
 const DynamicFunctionsHelper = () => {
   const [expandedCategory, setExpandedCategory] = useState('string');
@@ -126,11 +123,11 @@ const DynamicFunctionsHelper = () => {
   };
 
   const categoryIcons = {
-    string: BiText,
-    number: BiHash,
-    date: BiCalendar,
-    time: BiTime,
-    identifier: BiCode
+    string: Type,
+    number: Hash,
+    date: Calendar,
+    time: Clock,
+    identifier: Code
   };
 
   const categoryTitles = {
@@ -152,7 +149,7 @@ const DynamicFunctionsHelper = () => {
       {/* Header */}
       <div className="sticky top-0 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 border-b dark:border-gray-700 p-3 z-10">
         <div className="flex items-center gap-2">
-          <HiMiniSparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+          <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
           <h2 className="font-bold text-sm text-gray-800 dark:text-gray-200">Dynamic Functions</h2>
         </div>
         <p className="text-[10px] text-gray-600 dark:text-gray-400 mt-1">
@@ -179,9 +176,9 @@ const DynamicFunctionsHelper = () => {
                 </span>
               </div>
               {expandedCategory === category ? (
-                <MdExpandLess className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                <ChevronUp className="w-4 h-4 text-gray-600 dark:text-gray-400" />
               ) : (
-                <MdExpandMore className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-gray-600 dark:text-gray-400" />
               )}
             </button>
 
@@ -206,7 +203,7 @@ const DynamicFunctionsHelper = () => {
                         }`}
                         title="Copy to clipboard"
                       >
-                        <MdContentCopy className="w-3 h-3" />
+                        <Copy className="w-3 h-3" />
                         {copiedFunc === func.example ? 'Copied!' : 'Copy'}
                       </button>
                     </div>
@@ -235,7 +232,7 @@ const DynamicFunctionsHelper = () => {
                     {/* Default Value */}
                     {func.default !== 'N/A' && (
                       <div className="text-[9px] text-gray-500 dark:text-gray-500 flex items-start gap-1">
-                        <MdInfo className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                        <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
                         <span>Default: {func.default}</span>
                       </div>
                     )}
@@ -250,31 +247,31 @@ const DynamicFunctionsHelper = () => {
       {/* Usage Tips */}
       <div className="border-t dark:border-gray-700 p-3 text-[10px] text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 space-y-1.5">
         <div className="font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1">
-          <HiMiniSparkles className="w-3 h-3" />
+          <Sparkles className="w-3 h-3" />
           Quick Tips
         </div>
         
         <ul className="space-y-1 pl-4">
           <li className="flex items-start gap-1">
-            <HiMiniCheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
             Use in any field: URL, Headers, Body, Assertions
           </li>
           <li className="flex items-start gap-1">
-            <HiMiniCheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
             Fresh value generated per workflow run
           </li>
           <li className="flex items-start gap-1">
-            <HiMiniCheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
             Combine multiple functions: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded ml-1">{`user_{{randomNumber(4)}}@test.com`}</code>
           </li>
           <li className="flex items-start gap-1">
-            <HiMiniCheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
             Works in Workflow Variables too
           </li>
         </ul>
 
         <div className="pt-1.5 border-t border-gray-300 dark:border-gray-600 flex items-center gap-1">
-          <BiCalendar className="w-3 h-3" />
+          <Calendar className="w-3 h-3" />
           <span className="font-semibold text-gray-700 dark:text-gray-300">Date Format Codes</span>
         </div>
         <ul className="space-y-0.5 pl-4 text-[9px]">
@@ -284,7 +281,7 @@ const DynamicFunctionsHelper = () => {
         </ul>
 
         <div className="pt-1.5 border-t border-gray-300 dark:border-gray-600 flex items-center gap-1">
-          <BiLink className="w-3 h-3" />
+          <Link className="w-3 h-3" />
           <span className="font-semibold text-gray-700 dark:text-gray-300">In Assertions</span>
         </div>
         <p className="text-[9px] pl-4">

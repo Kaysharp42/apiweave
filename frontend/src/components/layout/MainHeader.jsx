@@ -1,7 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { AppContext } from '../../App';
 import EnvironmentManager from '../EnvironmentManager';
-import { MdRefresh, MdDarkMode, MdLightMode, MdFolder } from 'react-icons/md';
+import { RefreshCw, Moon, Sun, Folder } from 'lucide-react';
 
 const MainHeader = () => {
   const context = useContext(AppContext);
@@ -44,7 +44,7 @@ const MainHeader = () => {
               className="flex items-center gap-2 px-3 py-1.5 rounded-l-lg border-2 bg-white border-gray-300 text-gray-700 hover:border-cyan-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:border-cyan-500 transition-all"
               title="Manage Environments"
             >
-              <MdFolder className="w-4 h-4" />
+              <Folder className="w-4 h-4" />
               <span className="text-xs font-medium hidden sm:inline">Environments</span>
             </button>
 
@@ -58,7 +58,7 @@ const MainHeader = () => {
               }`}
               title={autoSaveEnabled ? 'Auto-save enabled (Global)' : 'Auto-save disabled (Global)'}
             >
-              <MdRefresh className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4" />
               <span className="text-xs font-medium hidden sm:inline">Auto-save</span>
             </button>
 
@@ -73,9 +73,9 @@ const MainHeader = () => {
               title={darkMode ? 'Switch to Light mode' : 'Switch to Dark mode'}
             >
               {darkMode ? (
-                <MdDarkMode className="w-4 h-4" />
+                <Moon className="w-4 h-4" />
               ) : (
-                <MdLightMode className="w-4 h-4" />
+                <Sun className="w-4 h-4" />
               )}
               <span className="text-xs font-medium hidden sm:inline">{darkMode ? 'Dark' : 'Light'}</span>
             </button>

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Handle, Position } from 'reactflow';
-import { MdMergeType, MdCheckCircle, MdCheckBox, MdFilterAlt, MdWarning, MdSchedule, MdContentCopy, MdControlPointDuplicate } from 'react-icons/md';
-import { HiMiniArrowRight, HiMiniSparkles, HiMiniDocumentDuplicate } from 'react-icons/hi2';
+import { GitMerge, CheckCircle, SquareCheckBig, Filter, AlertTriangle, Clock, Copy, CopyPlus, ArrowRight, Sparkles, Files } from 'lucide-react';
 
 /**
  * MergeNode - Merges multiple parallel branches
@@ -87,7 +86,7 @@ const MergeNode = ({ id, data, selected }) => {
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <MdMergeType className="text-lg w-5 h-5" />
+            <GitMerge className="text-lg w-5 h-5" />
             <div className="font-bold text-gray-700 dark:text-gray-200 text-sm">
               {label || 'Merge'}
             </div>
@@ -125,7 +124,7 @@ const MergeNode = ({ id, data, selected }) => {
                     }}
                     className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none flex items-center gap-2"
                   >
-                    <HiMiniDocumentDuplicate className="w-4 h-4" />
+                    <Files className="w-4 h-4" />
                     <span>Duplicate</span>
                   </button>
                   <button
@@ -136,7 +135,7 @@ const MergeNode = ({ id, data, selected }) => {
                     }}
                     className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none border-t border-gray-300 dark:border-gray-600 flex items-center gap-2"
                   >
-                    <MdContentCopy className="w-4 h-4" />
+                    <Copy className="w-4 h-4" />
                     <span>Copy</span>
                   </button>
                 </div>
@@ -169,25 +168,25 @@ const MergeNode = ({ id, data, selected }) => {
         <div className="text-xs text-gray-500 dark:text-gray-500 italic flex items-center gap-2">
           {mergeStrategy === 'all' && (
             <>
-              <MdSchedule className="w-4 h-4 flex-shrink-0" />
+              <Clock className="w-4 h-4 flex-shrink-0" />
               <span>Waits for all branches</span>
             </>
           )}
           {mergeStrategy === 'any' && (
             <>
-              <HiMiniSparkles className="w-4 h-4 flex-shrink-0" />
+              <Sparkles className="w-4 h-4 flex-shrink-0" />
               <span>Continues when any branch completes</span>
             </>
           )}
           {mergeStrategy === 'first' && (
             <>
-              <HiMiniArrowRight className="w-4 h-4 flex-shrink-0" />
+              <ArrowRight className="w-4 h-4 flex-shrink-0" />
               <span>Uses first completed branch</span>
             </>
           )}
           {mergeStrategy === 'conditional' && (
             <>
-              <MdFilterAlt className="w-4 h-4 flex-shrink-0" />
+              <Filter className="w-4 h-4 flex-shrink-0" />
               <span>Merges branches matching conditions</span>
             </>
           )}
@@ -197,12 +196,12 @@ const MergeNode = ({ id, data, selected }) => {
         {result && (
           <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 p-2 bg-gray-50 dark:bg-gray-900 rounded">
             <div className="font-medium mb-1 flex items-center gap-2">
-              <MdCheckCircle className="w-4 h-4 text-green-600" />
+              <CheckCircle className="w-4 h-4 text-green-600" />
               <span>{result.mergeStrategy === 'conditional' ? 'Conditions Passed:' : 'Merged Branches:'}</span>
             </div>
             {result.branchCount !== undefined && (
               <div className="flex items-center gap-2">
-                <MdCheckBox className="w-4 h-4 text-blue-600" />
+                <SquareCheckBig className="w-4 h-4 text-blue-600" />
                 <span>{result.branchCount} branch(es) {result.mergeStrategy === 'conditional' ? 'passed' : 'merged'}</span>
               </div>
             )}
@@ -211,7 +210,7 @@ const MergeNode = ({ id, data, selected }) => {
             {result.warning && (
               <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded">
                 <div className="text-[10px] text-yellow-800 dark:text-yellow-200 flex items-center gap-1">
-                  <MdWarning className="w-3 h-3 flex-shrink-0" />
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
                   <span className="font-semibold">Strategy Warning:</span>
                 </div>
                 <div className="text-[9px] text-yellow-700 dark:text-yellow-300 mt-1">
@@ -264,7 +263,7 @@ const MergeNode = ({ id, data, selected }) => {
         {data.incomingBranchCount > 1 && !result && (
           <div className="text-xs bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded p-2 mt-2">
             <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1 text-[10px] flex items-center gap-1">
-              <MdMergeType className="w-3 h-3" />
+              <GitMerge className="w-3 h-3" />
               <span>Branch → Variable Mapping:</span>
             </div>
             

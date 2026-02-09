@@ -1,7 +1,5 @@
 import React from 'react';
-import { MdHome, MdSettings, MdWebhook } from 'react-icons/md';
-import { BsFillCollectionFill } from 'react-icons/bs';
-import { MdChevronLeft, MdChevronRight } from 'react-icons/md';
+import { Home, Settings, Webhook, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Transition } from '@headlessui/react';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
@@ -18,22 +16,22 @@ const AppNavBar = () => {
     { 
       id: AppNavBarItems.workflows.value, 
       label: AppNavBarItems.workflows.displayValue, 
-      icon: MdHome 
+      icon: Home 
     },
     { 
       id: AppNavBarItems.collections.value, 
       label: AppNavBarItems.collections.displayValue, 
-      icon: BsFillCollectionFill 
+      icon: LayoutGrid 
     },
     { 
       id: 'webhooks', 
       label: 'Webhooks', 
-      icon: MdWebhook 
+      icon: Webhook 
     },
     { 
       id: AppNavBarItems.settings.value, 
       label: AppNavBarItems.settings.displayValue, 
-      icon: MdSettings 
+      icon: Settings 
     },
   ];
 
@@ -105,10 +103,10 @@ const AppNavBar = () => {
       >
         {isNavBarCollapsed ? (
           <Tippy content="Expand Navigation" placement="right">
-            <MdChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4" />
           </Tippy>
         ) : (
-          <MdChevronLeft className="w-4 h-4" />
+          <ChevronLeft className="w-4 h-4" />
         )}
       </button>
     </nav>

@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import API_BASE_URL from '../utils/api';
 import { toast } from './Toaster';
-import { MdToggleOn, MdToggleOff, MdCheck, MdClose, MdRefresh, MdAdd, MdInfo, MdKeyboardArrowDown } from 'react-icons/md';
-import { BsFillCollectionFill } from 'react-icons/bs';
+import { ToggleLeft, ToggleRight, Check, X, RefreshCw, Plus, Info, ChevronDown, LayoutGrid } from 'lucide-react';
 
 const WorkflowSettingsPanel = () => {
   const { 
@@ -118,7 +117,7 @@ const WorkflowSettingsPanel = () => {
         {/* Continue on Fail Option */}
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-            <MdToggleOn className="w-4 h-4 flex-shrink-0" />
+            <ToggleRight className="w-4 h-4 flex-shrink-0" />
             <span>Execution Settings</span>
           </label>
           
@@ -138,12 +137,12 @@ const WorkflowSettingsPanel = () => {
                 <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
                   {settings.continueOnFail ? (
                     <span className="flex items-center gap-1">
-                      <MdCheck className="w-3 h-3 text-green-600 dark:text-green-400 flex-shrink-0" />
+                      <Check className="w-3 h-3 text-green-600 dark:text-green-400 flex-shrink-0" />
                       Workflow continues even if an API fails
                     </span>
                   ) : (
                     <span className="flex items-center gap-1">
-                      <MdClose className="w-3 h-3 text-red-600 dark:text-red-400 flex-shrink-0" />
+                      <X className="w-3 h-3 text-red-600 dark:text-red-400 flex-shrink-0" />
                       Workflow stops at the first API failure
                     </span>
                   )}
@@ -156,7 +155,7 @@ const WorkflowSettingsPanel = () => {
         {/* Collection Assignment Section */}
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-            <BsFillCollectionFill className="w-4 h-4 flex-shrink-0" />
+            <LayoutGrid className="w-4 h-4 flex-shrink-0" />
             <span>Collections</span>
           </label>
           
@@ -194,9 +193,9 @@ const WorkflowSettingsPanel = () => {
                   title="Remove from collection"
                 >
                   {assignmentLoading ? (
-                    <MdRefresh className="w-3 h-3 animate-spin" />
+                    <RefreshCw className="w-3 h-3 animate-spin" />
                   ) : (
-                    <MdClose className="w-3 h-3" />
+                    <X className="w-3 h-3" />
                   )}
                   <span>Remove</span>
                 </button>
@@ -210,10 +209,10 @@ const WorkflowSettingsPanel = () => {
                   className="w-full flex items-center justify-between px-4 py-3 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
                 >
                   <div className="flex items-center gap-2">
-                    <MdAdd className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200" />
+                    <Plus className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200" />
                     <span className="text-gray-700 dark:text-gray-200">Add to Collection</span>
                   </div>
-                  <MdKeyboardArrowDown 
+                  <ChevronDown 
                     className={`w-4 h-4 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${
                       showCollectionDropdown ? 'rotate-180' : ''
                     }`} 
@@ -250,7 +249,7 @@ const WorkflowSettingsPanel = () => {
                             )}
                           </div>
                           {assignmentLoading && (
-                            <MdRefresh className="w-4 h-4 animate-spin text-cyan-600 dark:text-cyan-400 flex-shrink-0" />
+                            <RefreshCw className="w-4 h-4 animate-spin text-cyan-600 dark:text-cyan-400 flex-shrink-0" />
                           )}
                         </button>
                       ))}
@@ -261,7 +260,7 @@ const WorkflowSettingsPanel = () => {
             ) : (
               <div className="flex items-center justify-center py-3 px-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded text-center">
                 <div className="text-sm text-gray-500 dark:text-gray-400">
-                  <MdInfo className="w-4 h-4 mx-auto mb-1 opacity-60" />
+                  <Info className="w-4 h-4 mx-auto mb-1 opacity-60" />
                   No collections available
                 </div>
               </div>
@@ -280,7 +279,7 @@ const WorkflowSettingsPanel = () => {
         {/* Info Section */}
         <div className="p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-[10px] text-blue-700 dark:text-blue-300 space-y-1">
           <p className="flex items-center gap-1">
-            <MdInfo className="w-3 h-3 flex-shrink-0" />
+            <Info className="w-3 h-3 flex-shrink-0" />
             <strong>About Continue on Fail:</strong>
           </p>
           <ul className="list-disc list-inside space-y-0.5 pl-1">

@@ -27,8 +27,7 @@ import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import Toaster, { toast } from './Toaster';
 import ButtonSelect from './ButtonSelect';
-import { MdSave, MdHistory, MdPlayArrow, MdCode } from 'react-icons/md';
-import { Upload } from 'lucide-react';
+import { Save, History, Play, Code, Upload } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 
 // Update node statuses - always update to ensure fresh data on each run
@@ -1398,7 +1397,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           onClick={() => saveWorkflow(false)}
           className="flex items-center gap-2 px-4 py-2 bg-cyan-900 text-white rounded-lg hover:bg-cyan-950 shadow-lg font-medium transition-colors dark:bg-cyan-800 dark:hover:bg-cyan-900 whitespace-nowrap h-10"
         >
-          <MdSave className="w-4 h-4 flex-shrink-0" />
+          <Save className="w-4 h-4 flex-shrink-0" />
           <span className="leading-none self-center">Save</span>
         </button>
         <button
@@ -1406,7 +1405,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 shadow-lg font-medium transition-colors dark:bg-gray-600 dark:hover:bg-gray-700 whitespace-nowrap h-10"
           title="View run history"
         >
-          <MdHistory className="w-4 h-4 flex-shrink-0" />
+          <History className="w-4 h-4 flex-shrink-0" />
           <span className="leading-none self-center">History</span>
         </button>
         
@@ -1415,7 +1414,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg font-medium transition-colors dark:bg-indigo-700 dark:hover:bg-indigo-800 whitespace-nowrap h-10"
           title="View and edit raw workflow JSON"
         >
-          <MdCode className="w-4 h-4 flex-shrink-0" />
+          <Code className="w-4 h-4 flex-shrink-0" />
           <span className="leading-none self-center">JSON</span>
         </button>
         
@@ -1467,7 +1466,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           disabled={isRunning}
           className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap h-10"
         >
-          <MdPlayArrow className="w-4 h-4 flex-shrink-0" />
+          <Play className="w-4 h-4 flex-shrink-0" />
           <span className="leading-none self-center">{isRunning ? 'Running...' : 'Run'}</span>
         </button>
       </div>

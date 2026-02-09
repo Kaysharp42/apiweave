@@ -1,6 +1,5 @@
 import React, { Fragment, useState, useRef, useEffect } from 'react';
-import { MdClose, MdAdd, MdExpandMore, MdExpandLess } from 'react-icons/md';
-import { BsGearFill } from 'react-icons/bs';
+import { X, Plus, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
 
 const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false, showVariablesPanel = false, onShowVariablesPanel = () => {} }) => {
@@ -100,9 +99,9 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false, showVariables
         title="Add Nodes"
       >
         {isOpen ? (
-          <MdClose className="w-6 h-6" />
+          <X className="w-6 h-6" />
         ) : (
-          <MdAdd className="w-6 h-6" />
+          <Plus className="w-6 h-6" />
         )}
       </button>
 
@@ -114,7 +113,7 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false, showVariables
           title="Show Panel (Variables, Functions, Settings)"
           aria-label="Show Panel"
         >
-          <BsGearFill className="w-5 h-5" />
+          <Settings className="w-5 h-5" />
         </button>
       )}
 
@@ -135,9 +134,9 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false, showVariables
                 >
                   <span>HTTP Requests</span>
                   {expandedSections['http-requests'] ? (
-                    <MdExpandLess className="w-5 h-5" />
+                    <ChevronUp className="w-5 h-5" />
                   ) : (
-                    <MdExpandMore className="w-5 h-5" />
+                    <ChevronDown className="w-5 h-5" />
                   )}
                 </button>
                 {expandedSections['http-requests'] && (
@@ -175,9 +174,9 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false, showVariables
                 >
                   <span>Control Flow</span>
                   {expandedSections['control-flow'] ? (
-                    <MdExpandLess className="w-5 h-5" />
+                    <ChevronUp className="w-5 h-5" />
                   ) : (
-                    <MdExpandMore className="w-5 h-5" />
+                    <ChevronDown className="w-5 h-5" />
                   )}
                 </button>
                 {expandedSections['control-flow'] && (
@@ -208,9 +207,9 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false, showVariables
                 >
                   <span>Validation</span>
                   {expandedSections['validation'] ? (
-                    <MdExpandLess className="w-5 h-5" />
+                    <ChevronUp className="w-5 h-5" />
                   ) : (
-                    <MdExpandMore className="w-5 h-5" />
+                    <ChevronDown className="w-5 h-5" />
                   )}
                 </button>
                 {expandedSections['validation'] && (
@@ -245,9 +244,9 @@ const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false, showVariables
                     >
                       <span>{group.title}</span>
                       {isExpanded ? (
-                        <MdExpandLess className="w-5 h-5" />
+                        <ChevronUp className="w-5 h-5" />
                       ) : (
-                        <MdExpandMore className="w-5 h-5" />
+                        <ChevronDown className="w-5 h-5" />
                       )}
                     </button>
                     {isExpanded && (

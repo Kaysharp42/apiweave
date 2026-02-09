@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MdContentCopy, MdDelete, MdEdit, MdRefresh, MdVisibility, MdVisibilityOff } from 'react-icons/md';
-import { BiLinkExternal } from 'react-icons/bi';
+import { Copy, Trash2, Pencil, RefreshCw, Eye, EyeOff, ExternalLink } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 
 const WebhookManager = () => {
@@ -420,7 +419,7 @@ const WebhookManager = () => {
                     {copySuccess[`url-${webhook.webhookId}`] ? (
                       <span className="text-green-600 text-xs">✓</span>
                     ) : (
-                      <MdContentCopy size={14} />
+                      <Copy size={14} />
                     )}
                   </button>
                 </div>
@@ -438,14 +437,14 @@ const WebhookManager = () => {
                   onClick={() => initiateRegenerate(webhook)}
                   className="text-xs px-2 py-1 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded transition-colors"
                 >
-                  <MdRefresh className="inline mr-1" size={12} />
+                  <RefreshCw className="inline mr-1" size={12} />
                   Regenerate
                 </button>
                 <button
                   onClick={() => deleteWebhook(webhook.webhookId)}
                   className="text-xs px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                 >
-                  <MdDelete className="inline mr-1" size={12} />
+                  <Trash2 className="inline mr-1" size={12} />
                   Delete
                 </button>
               </div>
@@ -740,7 +739,7 @@ const WebhookManager = () => {
             <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-full">
-                  <MdRefresh className="text-orange-600 dark:text-orange-400" size={24} />
+                  <RefreshCw className="text-orange-600 dark:text-orange-400" size={24} />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Regenerate Credentials?
@@ -769,7 +768,7 @@ const WebhookManager = () => {
                   onClick={confirmRegenerate}
                   className="flex-1 px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors flex items-center justify-center gap-2"
                 >
-                  <MdRefresh size={18} />
+                  <RefreshCw size={18} />
                   Regenerate
                 </button>
               </div>

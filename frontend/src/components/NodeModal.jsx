@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AssertionEditor from './AssertionEditor';
 import { Allotment } from 'allotment';
-import { MdCheckCircle, MdInfoOutline, MdWarning, MdEdit, MdDelete, MdPublic, MdTimer, MdMergeType, MdCircle, MdClose, MdExpandMore, MdDescription } from 'react-icons/md';
-import { HiMiniCheckBadge, HiMiniStop } from 'react-icons/hi2';
+import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, ChevronDown, FileText, BadgeCheck, Square } from 'lucide-react';
 
 const NodeModal = ({ node, onClose, onSave }) => {
   // Use ref to store working data - NEVER update during editing
@@ -49,19 +48,19 @@ const NodeModal = ({ node, onClose, onSave }) => {
     const iconProps = { className: 'w-6 h-6' };
     switch (type) {
       case 'http-request':
-        return <MdPublic {...iconProps} />;
+        return <Globe {...iconProps} />;
       case 'assertion':
-        return <HiMiniCheckBadge {...iconProps} />;
+        return <BadgeCheck {...iconProps} />;
       case 'delay':
-        return <MdTimer {...iconProps} />;
+        return <Timer {...iconProps} />;
       case 'merge':
-        return <MdMergeType {...iconProps} />;
+        return <GitMerge {...iconProps} />;
       case 'start':
-        return <MdCircle {...iconProps} />;
+        return <Circle {...iconProps} />;
       case 'end':
-        return <HiMiniStop {...iconProps} />;
+        return <Square {...iconProps} />;
       default:
-        return <MdCircle {...iconProps} />;
+        return <Circle {...iconProps} />;
     }
   };
 
@@ -142,7 +141,7 @@ const NodeModal = ({ node, onClose, onSave }) => {
               className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors rounded-lg"
               title="Close"
             >
-              <MdClose className="w-6 h-6" />
+              <X className="w-6 h-6" />
             </button>
           </div>
 
@@ -535,7 +534,7 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
       {!output && (
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
-            <MdDescription className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+            <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
               Execute this node to view data
             </p>
@@ -836,7 +835,7 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
             {/* Info Banner */}
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
               <p className="font-medium mb-1 flex items-center gap-2">
-                <MdInfoOutline className="w-4 h-4" />
+                <Info className="w-4 h-4" />
                 <span>Assertion Configuration</span>
               </p>
               <p className="text-xs">
@@ -919,14 +918,14 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
                             className="px-3 py-1.5 bg-yellow-500 dark:bg-yellow-600 hover:bg-yellow-600 dark:hover:bg-yellow-700 text-white text-xs font-semibold rounded transition-colors flex-shrink-0"
                             title="Edit assertion"
                           >
-                            <MdEdit className="w-4 h-4 inline" /> Edit
+                            <Pencil className="w-4 h-4 inline" /> Edit
                           </button>
                           <button
                             onClick={() => handleDeleteAssertion(index)}
                             className="px-3 py-1.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-xs font-semibold rounded transition-colors flex-shrink-0"
                             title="Delete assertion"
                           >
-                            <MdDelete className="w-4 h-4 inline" /> Delete
+                            <Trash2 className="w-4 h-4 inline" /> Delete
                           </button>
                         </div>
                       </div>
@@ -1237,7 +1236,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                   </label>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 flex items-center gap-1">
-                  <MdCheckCircle className="w-4 h-4 text-green-600" />
+                  <CheckCircle className="w-4 h-4 text-green-600" />
                   <span>
                     {conditionLogic === 'OR' 
                       ? 'A branch is merged if it matches at least one condition' 
@@ -1270,7 +1269,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                         onClick={() => removeCondition(index)}
                         className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                       >
-                        <MdClose className="w-4 h-4" />
+                        <X className="w-4 h-4" />
                       </button>
                     </div>
 
@@ -1362,7 +1361,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                   : 'Each branch is evaluated independently. A branch passes ONLY if it matches ALL conditions.'}</span>
               </p>
               <p className="text-xs text-red-700 dark:text-red-400 mt-2 font-semibold flex items-start gap-2">
-                <MdWarning className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <span><strong>Important:</strong> If ANY branch fails its conditions, the entire merge FAILS and the workflow stops (like an assertion).</span>
               </p>
               <p className="text-xs text-blue-700 dark:text-blue-400 mt-2 flex items-start gap-2">

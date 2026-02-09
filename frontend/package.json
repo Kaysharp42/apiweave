@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",
-    "@heroicons/react": "^2.2.0",
     "@monaco-editor/react": "^4.6.0",
     "@tippyjs/react": "^4.2.6",
     "allotment": "^1.20.4",
@@ -21,7 +20,6 @@
     "lucide-react": "^0.548.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-icons": "^5.5.0",
     "react-router-dom": "^6.20.0",
     "reactflow": "^11.10.0",
     "zustand": "^5.0.8"

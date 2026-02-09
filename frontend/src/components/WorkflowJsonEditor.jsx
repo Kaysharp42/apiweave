@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { MdClose, MdContentCopy, MdCheck, MdWarning, MdAutoAwesome, MdEdit } from 'react-icons/md';
+import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
 
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows
@@ -579,7 +579,7 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
                     : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                <MdEdit className="w-3.5 h-3.5" />
+                <Pencil className="w-3.5 h-3.5" />
                 Edit JSON
               </button>
               <button
@@ -590,7 +590,7 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
                     : 'text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400'
                 }`}
               >
-                <MdAutoAwesome className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5" />
                 AI Prompt
               </button>
             </div>
@@ -600,7 +600,7 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors"
               title={viewMode === 'json' ? 'Copy JSON to clipboard' : 'Copy AI prompt to clipboard'}
             >
-              {copied ? <MdCheck className="w-3.5 h-3.5 text-green-500" /> : <MdContentCopy className="w-3.5 h-3.5" />}
+              {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? 'Copied!' : 'Copy'}
             </button>
             {viewMode === 'json' && (
@@ -618,7 +618,7 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
               className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors"
               title="Close (Esc)"
             >
-              <MdClose className="w-5 h-5" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -626,7 +626,7 @@ const WorkflowJsonEditor = ({ workflowJson, onApply, onClose }) => {
         {/* Error bar */}
         {error && viewMode === 'json' && (
           <div className="flex items-center gap-2 px-5 py-2 bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-medium">
-            <MdWarning className="w-4 h-4 flex-shrink-0" />
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             {error}
           </div>
         )}

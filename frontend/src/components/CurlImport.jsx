@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, X, Copy, Trash2 } from 'lucide-react';
-import { MdCheckCircle } from 'react-icons/md';
 import API_BASE_URL from '../utils/api';
 
 const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
@@ -310,7 +309,7 @@ curl -X POST "https://api.example.com/users" \\
                 <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 flex items-center gap-1">
                   {selectedWorkflowId ? (
                     <>
-                      <MdCheckCircle className="w-4 h-4 text-green-600" />
+                      <CheckCircle className="w-4 h-4 text-green-600" />
                       <span>Will append to selected workflow</span>
                     </>
                   ) : (

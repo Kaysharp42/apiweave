@@ -6,9 +6,7 @@ import WorkflowExportImport from '../WorkflowExportImport';
 import HARImport from '../HARImport';
 import OpenAPIImport from '../OpenAPIImport';
 import CurlImport from '../CurlImport';
-import { MoreVertical, Download } from 'lucide-react';
-import { MdSettings, MdFileUpload, MdFolder } from 'react-icons/md';
-import { HiMiniCommandLine } from 'react-icons/hi2';
+import { MoreVertical, Download, Settings, Upload, Folder, Terminal } from 'lucide-react';
 import API_BASE_URL from '../../utils/api';
 
 const Sidebar = ({ selectedNav, currentWorkflowId }) => {
@@ -531,7 +529,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                           onContextMenu={(e) => e.preventDefault()}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3 first:rounded-t-md"
                         >
-                          <MdFolder className="w-5 h-5" />
+                          <Folder className="w-5 h-5" />
                           <span className="font-medium">Import APIWeave</span>
                         </button>
                         <div className="border-t border-gray-200 dark:border-gray-600" />
@@ -543,7 +541,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                           onContextMenu={(e) => e.preventDefault()}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3"
                         >
-                          <MdFileUpload className="w-5 h-5" />
+                          <Upload className="w-5 h-5" />
                           <span className="font-medium">Import HAR File</span>
                         </button>
                         <div className="border-t border-gray-200 dark:border-gray-600" />
@@ -555,7 +553,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                           onContextMenu={(e) => e.preventDefault()}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3"
                         >
-                          <MdSettings className="w-5 h-5" />
+                          <Settings className="w-5 h-5" />
                           <span className="font-medium">Import OpenAPI</span>
                         </button>
                         <div className="border-t border-gray-200 dark:border-gray-600" />
@@ -567,7 +565,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
                           onContextMenu={(e) => e.preventDefault()}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center gap-3 last:rounded-b-md"
                         >
-                          <HiMiniCommandLine className="w-5 h-5" />
+                          <Terminal className="w-5 h-5" />
                           <span className="font-medium">Import curl</span>
                         </button>
                       </div>

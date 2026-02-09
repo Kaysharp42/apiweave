@@ -3,8 +3,7 @@ import { Handle, Position } from 'reactflow';
 import { useReactFlow } from 'reactflow';
 import { useWorkflow } from '../../contexts/WorkflowContext';
 import FileUploadSection from '../FileUploadSection';
-import { HiMiniDocumentDuplicate } from 'react-icons/hi2';
-import { MdContentCopy, MdExpandMore, MdExpandLess, MdAcUnit, MdDelete, MdExtension, MdAdd, MdCheckCircle, MdArrowForward, MdWarning, MdError } from 'react-icons/md';
+import { Files, Copy, ChevronDown, ChevronUp, Snowflake, Trash2, Puzzle, Plus, CheckCircle, ArrowRight, AlertTriangle, XCircle } from 'lucide-react';
 
 // Extractor form component
 const ExtractorForm = ({ onAdd }) => {
@@ -43,7 +42,7 @@ const ExtractorForm = ({ onAdd }) => {
         onClick={handleAdd}
         className="w-full px-2 py-1 bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 text-white text-[9px] font-semibold rounded nodrag transition-colors flex items-center justify-center gap-1"
       >
-        <MdAdd className="w-3 h-3" />
+        <Plus className="w-3 h-3" />
         <span>Add Extractor</span>
       </button>
     </div>
@@ -122,7 +121,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
             {/* Branch count badge */}
             {data.branchCount > 1 && (
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 font-semibold flex items-center gap-1" title={`${data.branchCount} parallel branches`}>
-                <MdAcUnit className="w-3 h-3" />
+                <Snowflake className="w-3 h-3" />
                 <span>{data.branchCount}x</span>
               </span>
             )}
@@ -153,7 +152,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                     }}
                     className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none flex items-center gap-2"
                   >
-                    <HiMiniDocumentDuplicate className="w-4 h-4" />
+                    <Files className="w-4 h-4" />
                     <span>Duplicate</span>
                   </button>
                   <button
@@ -164,7 +163,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                     }}
                     className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none border-t border-gray-300 dark:border-gray-600 flex items-center gap-2"
                   >
-                    <MdContentCopy className="w-4 h-4" />
+                    <Copy className="w-4 h-4" />
                     <span>Copy</span>
                   </button>
                 </div>
@@ -178,7 +177,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
               aria-expanded={isExpanded}
               title={isExpanded ? 'Collapse' : 'Expand'}
             >
-              {isExpanded ? <MdExpandLess className="w-4 h-4" /> : <MdExpandMore className="w-4 h-4" />}
+              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
           </div>
         </div>
@@ -298,7 +297,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
             {/* Store Result As (Extract Variables) */}
             <div className="border-t dark:border-gray-700 pt-2 mt-2">
               <label className="block text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-0.5 flex items-center gap-1">
-                <MdExtension className="w-4 h-4" />
+                <Puzzle className="w-4 h-4" />
                 <span>Store Response Fields As Variables</span>
                 <span className="text-gray-500 dark:text-gray-500 font-normal text-[9px] block mt-0.5 ml-auto">
                   Extract values from response and save as workflow variables
@@ -334,7 +333,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                         }}
                         title="Delete extractor"
                       >
-                        <MdDelete className="w-3 h-3" />
+                        <Trash2 className="w-3 h-3" />
                       </button>
                     </div>
                   ))
@@ -407,21 +406,21 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                 <span className="text-[9px] flex items-center gap-1">
                   {data.executionResult.statusCode >= 200 && data.executionResult.statusCode < 300 
                     ? <>
-                        <MdCheckCircle className="w-3 h-3" />
+                        <CheckCircle className="w-3 h-3" />
                         Success
                       </>
                     : data.executionResult.statusCode >= 300 && data.executionResult.statusCode < 400
                     ? <>
-                        <MdArrowForward className="w-3 h-3" />
+                        <ArrowRight className="w-3 h-3" />
                         Redirect
                       </>
                     : data.executionResult.statusCode >= 400 && data.executionResult.statusCode < 500
                     ? <>
-                        <MdWarning className="w-3 h-3" />
+                        <AlertTriangle className="w-3 h-3" />
                         Client Error
                       </>
                     : <>
-                        <MdError className="w-3 h-3" />
+                        <XCircle className="w-3 h-3" />
                         Server Error
                       </>
                   }
@@ -459,7 +458,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                     className="p-0.5 hover:bg-gray-300 dark:hover:bg-gray-600 rounded transition-colors"
                     title={isResponseExpanded ? 'Collapse' : 'Expand'}
                   >
-                    {isResponseExpanded ? <MdExpandLess className="w-3 h-3" /> : <MdExpandMore className="w-3 h-3" />}
+                    {isResponseExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                   </button>
                 </div>
                 <textarea

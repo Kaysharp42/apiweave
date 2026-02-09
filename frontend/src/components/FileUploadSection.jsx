@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { MdAdd, MdDelete, MdImage } from 'react-icons/md';
+import { Plus, Trash2, Image } from 'lucide-react';
 
 const FileUploadSection = ({ fileUploads = [], onUpdate, variables = {} }) => {
   const [showForm, setShowForm] = useState(false);
@@ -92,7 +92,7 @@ const FileUploadSection = ({ fileUploads = [], onUpdate, variables = {} }) => {
                 )}
                 {file.type === 'base64' && file.value.startsWith('data:image') && (
                   <div className="mt-0.5 text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                    <MdImage className="w-3 h-3" />
+                    <Image className="w-3 h-3" />
                     Image preview available
                   </div>
                 )}
@@ -102,7 +102,7 @@ const FileUploadSection = ({ fileUploads = [], onUpdate, variables = {} }) => {
                 onClick={() => handleRemoveFile(idx)}
                 title="Delete file"
               >
-                <MdDelete className="w-3 h-3" />
+                <Trash2 className="w-3 h-3" />
               </button>
             </div>
           ))
@@ -117,7 +117,7 @@ const FileUploadSection = ({ fileUploads = [], onUpdate, variables = {} }) => {
           className="w-full px-2 py-1 bg-blue-500 dark:bg-blue-600 hover:bg-blue-600 dark:hover:bg-blue-700 text-white text-[9px] font-semibold rounded nodrag transition-colors flex items-center justify-center gap-1"
           onClick={() => setShowForm(true)}
         >
-          <MdAdd className="w-3 h-3" />
+          <Plus className="w-3 h-3" />
           <span>Add File</span>
         </button>
       ) : (
