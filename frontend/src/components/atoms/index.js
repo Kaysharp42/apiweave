@@ -9,6 +9,7 @@ export { default as HorizontalDivider } from './HorizontalDivider';
 export { default as Tooltip } from './Tooltip';
 export { default as Toggle } from './Toggle';
 export { default as Spinner } from './Spinner';
+export { default as Skeleton } from './Skeleton';
 export { default as Toast } from './Toast';
 
 // Flow atoms — ReactFlow primitives

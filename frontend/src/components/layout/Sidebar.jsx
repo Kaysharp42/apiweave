@@ -20,7 +20,7 @@ import {
 import API_BASE_URL from '../../utils/api';
 import WorkflowExportImport from '../WorkflowExportImport';
 import CollectionExportImport from '../CollectionExportImport';
-import { Badge, Spinner } from '../atoms';
+import { Badge, Spinner, Skeleton } from '../atoms';
 import { EmptyState } from '../molecules';
 import useSidebarStore from '../../stores/SidebarStore';
 import useTabStore from '../../stores/TabStore';
@@ -308,7 +308,18 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
         ].join(' ')}
         style={{ scrollbarGutter: 'stable' }}
       >
-        {filteredWorkflows.length === 0 && !isLoadingMore ? (
+        {filteredWorkflows.length === 0 && isRefreshing ? (
+          /* Skeleton loading state */
+          <div className="p-3 space-y-3" aria-label="Loading workflows">
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Skeleton variant="circle" width={24} height={24} />
+                <Skeleton variant="text" className="flex-1" height={14} />
+                <Skeleton variant="text" width={32} height={14} />
+              </div>
+            ))}
+          </div>
+        ) : filteredWorkflows.length === 0 && !isLoadingMore ? (
           <EmptyState
             icon={<FileText className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
             title={searchQuery ? 'No matching workflows' : 'No workflows yet'}
@@ -478,7 +489,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
 
   // ============================================================
   return (
-    <div className="flex flex-col h-full w-full bg-surface-raised dark:bg-surface-dark-raised">
+    <div className="flex flex-col h-full w-full bg-surface-raised dark:bg-surface-dark-raised" role="complementary" aria-label="Sidebar">
       <SidebarHeader
         selectedNav={selectedNav}
         onCreateNew={handleCreateNew}

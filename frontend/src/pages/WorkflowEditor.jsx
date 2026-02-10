@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import WorkflowCanvas from '../components/WorkflowCanvas';
+import { Spinner } from '../components/atoms';
 import API_BASE_URL from '../utils/api';
 
 const WorkflowEditor = () => {
@@ -37,8 +38,9 @@ const WorkflowEditor = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-xl">Loading workflow...</div>
+      <div className="flex flex-col items-center justify-center h-screen gap-3 bg-surface dark:bg-surface-dark" aria-label="Loading workflow">
+        <Spinner size="lg" />
+        <span className="text-sm text-text-secondary dark:text-text-secondary-dark">Loading workflow…</span>
       </div>
     );
   }

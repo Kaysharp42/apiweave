@@ -49,6 +49,7 @@ const AppNavBar = () => {
           ? AppNavBarStyles.collapsedNavBarWidth.absolute + 'px'
           : AppNavBarStyles.expandedNavBarWidth.absolute + 'px',
       }}
+      aria-label="Main navigation"
     >
       {/* Navigation Items */}
       <div className="flex-1 pt-1">

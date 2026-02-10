@@ -800,7 +800,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   });
 
   return (
-    <div className="w-full h-full relative bg-gray-50 dark:bg-gray-900 transition-colors">
+    <div className="w-full h-full relative bg-surface dark:bg-surface-dark transition-colors" role="main" aria-label="Workflow canvas">
       <ReactFlow
         nodes={nodes}
         edges={edges}
