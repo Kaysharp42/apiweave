@@ -52,10 +52,16 @@ export default function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCol
       {/* Keyboard hints */}
       <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-text-muted dark:text-text-muted-dark">
         <span>
+          <kbd className="kbd kbd-xs">Ctrl</kbd> + <kbd className="kbd kbd-xs">N</kbd> New workflow
+        </span>
+        <span>
           <kbd className="kbd kbd-xs">Ctrl</kbd> + <kbd className="kbd kbd-xs">Tab</kbd> Cycle tabs
         </span>
         <span>
           <kbd className="kbd kbd-xs">Ctrl</kbd> + <kbd className="kbd kbd-xs">W</kbd> Close tab
+        </span>
+        <span>
+          <kbd className="kbd kbd-xs">?</kbd> All shortcuts
         </span>
       </div>
     </div>

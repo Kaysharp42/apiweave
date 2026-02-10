@@ -7,10 +7,12 @@ import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
 import DynamicFunctionsHelper from '../DynamicFunctionsHelper';
 import { WorkflowProvider } from '../../contexts/WorkflowContext';
 import { Settings, Sparkles, Package } from 'lucide-react';
-import { TabBar } from '../organisms';
+import { TabBar, KeyboardShortcutsHelp } from '../organisms';
 import { WorkspaceEmptyState } from '../molecules';
 import useTabStore from '../../stores/TabStore';
 import useSidebarStore from '../../stores/SidebarStore';
+import useNavigationStore from '../../stores/NavigationStore';
+import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import API_BASE_URL from '../../utils/api';
 
 const Workspace = ({ onActiveTabChange }) => {
@@ -18,6 +20,7 @@ const Workspace = ({ onActiveTabChange }) => {
   const [showVariablesPanel, setShowVariablesPanel] = useState(false);
   const [activePanelTab, setActivePanelTab] = useState('variables');
   const [environmentNames, setEnvironmentNames] = useState({});
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -73,32 +76,16 @@ const Workspace = ({ onActiveTabChange }) => {
     }
   }, [environmentVersion]);
 
-  // ---------- keyboard shortcuts ----------
-  const handleKeyDown = useCallback(
-    (e) => {
-      // Ctrl+W — close active tab
-      if (e.ctrlKey && e.key === 'w') {
-        e.preventDefault();
-        if (activeTabId) closeTab(activeTabId);
-      }
-      // Ctrl+Tab — next tab
-      if (e.ctrlKey && e.key === 'Tab' && !e.shiftKey) {
-        e.preventDefault();
-        activateNextTab();
-      }
-      // Ctrl+Shift+Tab — previous tab
-      if (e.ctrlKey && e.key === 'Tab' && e.shiftKey) {
-        e.preventDefault();
-        activatePrevTab();
-      }
-    },
-    [activeTabId, closeTab, activateNextTab, activatePrevTab],
-  );
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  // ---------- keyboard shortcuts via mousetrap ----------
+  useKeyboardShortcuts({
+    onNewWorkflow: handleNewWorkflow,
+    onCloseTab: () => { if (activeTabId) closeTab(activeTabId); },
+    onNextTab: activateNextTab,
+    onPrevTab: activatePrevTab,
+    onToggleSidebar: () => useNavigationStore.getState().toggleNavBarCollapse(),
+    onShowShortcutsHelp: () => setShowShortcutsHelp(true),
+    // onSave, onRun, onToggleJsonEditor, onToggleEnvironmentManager are handled by WorkflowCanvas
+  });
 
   // ---------- empty-state handler: create new workflow ----------
   const handleNewWorkflow = useCallback(async () => {
@@ -221,6 +208,7 @@ const Workspace = ({ onActiveTabChange }) => {
           <WorkspaceEmptyState onNewWorkflow={handleNewWorkflow} />
         )}
       </div>
+      <KeyboardShortcutsHelp open={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
     </div>
   );
 };
