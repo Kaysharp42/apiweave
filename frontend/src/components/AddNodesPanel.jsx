@@ -1,5 +1,6 @@
-import React, { Fragment, useState, useRef, useEffect } from 'react';
-import { X, Plus, ChevronDown, ChevronUp, Settings } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Popover, Transition } from '@headlessui/react';
+import { X, Plus, Settings, Search, Globe, GitBranch, CheckCircle, Package } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
 
 /** Per-method badge colours matching the node redesign */
@@ -11,333 +12,259 @@ const methodBadge = {
   PATCH:  'bg-method-patch',
 };
 
-const AddNodesPanel = ({ isModalOpen = false, isPanelOpen = false, showVariablesPanel = false, onShowVariablesPanel = () => {} }) => {
-  console.log('AddNodesPanel component rendered');
-  const [isOpen, setIsOpen] = useState(false);
-  const [expandedSections, setExpandedSections] = useState({});
-  const panelRef = useRef(null);
+const sectionIcons = {
+  'HTTP Requests': Globe,
+  'Control Flow': GitBranch,
+  'Validation': CheckCircle,
+};
 
-  // Close panel when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (panelRef.current && !panelRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
+const nodeTemplates = [
+  {
+    category: 'HTTP Requests',
+    nodes: [
+      { type: 'http-request', label: 'GET Request', description: 'Make a GET request', method: 'GET' },
+      { type: 'http-request', label: 'POST Request', description: 'Make a POST request', method: 'POST' },
+      { type: 'http-request', label: 'PUT Request', description: 'Make a PUT request', method: 'PUT' },
+      { type: 'http-request', label: 'DELETE Request', description: 'Make a DELETE request', method: 'DELETE' },
+      { type: 'http-request', label: 'PATCH Request', description: 'Make a PATCH request', method: 'PATCH' },
+    ],
+  },
+  {
+    category: 'Control Flow',
+    nodes: [
+      { type: 'delay', label: 'Delay', description: 'Add a delay before next step' },
+      { type: 'merge', label: 'Merge', description: 'Merge parallel branches' },
+      { type: 'end', label: 'End', description: 'Mark the end of workflow' },
+    ],
+  },
+  {
+    category: 'Validation',
+    nodes: [
+      { type: 'assertion', label: 'Assertion', description: 'Assert on conditional expressions' },
+    ],
+  },
+];
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen]);
-
+const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShowVariablesPanel = () => {} }) => {
+  const [searchQuery, setSearchQuery] = useState('');
   const { importedGroups } = usePalette();
 
-  const nodeTemplates = [
-    {
-      category: 'HTTP Requests',
-      nodes: [
-        { type: 'http-request', label: 'GET Request', description: 'Make a GET request', method: 'GET' },
-        { type: 'http-request', label: 'POST Request', description: 'Make a POST request', method: 'POST' },
-        { type: 'http-request', label: 'PUT Request', description: 'Make a PUT request', method: 'PUT' },
-        { type: 'http-request', label: 'DELETE Request', description: 'Make a DELETE request', method: 'DELETE' },
-        { type: 'http-request', label: 'PATCH Request', description: 'Make a PATCH request', method: 'PATCH' },
-      ],
-    },
-    {
-      category: 'Control Flow',
-      nodes: [
-        { type: 'delay', label: 'Delay', description: 'Add a delay before next step' },
-        { type: 'merge', label: 'Merge', description: 'Merge parallel branches' },
-        { type: 'end', label: 'End', description: 'Mark the end of workflow' },
-      ],
-    },
-    {
-      category: 'Validation',
-      nodes: [
-        { type: 'assertion', label: 'Assertion', description: 'Assert on conditional expressions' },
-      ],
-    },
-  ];
-
-  const toggleSection = (sectionKey) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [sectionKey]: !prev[sectionKey]
+  /* ---- Flatten all nodes for search filtering ---- */
+  const allSections = useMemo(() => {
+    const sections = nodeTemplates.map((cat) => ({
+      key: cat.category,
+      title: cat.category,
+      icon: sectionIcons[cat.category] || Package,
+      nodes: cat.nodes,
     }));
-  };
+
+    importedGroups.forEach((group) => {
+      sections.push({
+        key: `imported-${group.id}`,
+        title: group.title,
+        icon: Package,
+        nodes: (group.items || []).map((item) =>
+          item.method === 'WORKFLOW'
+            ? {
+                type: 'workflow',
+                label: item.label || 'Workflow',
+                description: 'Sub-workflow',
+                method: 'WORKFLOW',
+                workflowId: item.workflowId,
+                template: {
+                  type: 'workflow',
+                  label: item.label || 'Workflow',
+                  config: { workflowId: item.workflowId, workflowName: item.label },
+                },
+              }
+            : {
+                type: 'http-request',
+                label: item.label || item.url || 'Request',
+                description: item.url || '',
+                method: item.method || 'GET',
+                template: {
+                  type: 'http-request',
+                  label: item.label || item.url || 'Request',
+                  config: {
+                    method: item.method || 'GET',
+                    url: item.url || '',
+                    queryParams: item.queryParams || '',
+                    pathVariables: item.pathVariables || '',
+                    headers: item.headers || '',
+                    cookies: item.cookies || '',
+                    body: item.body || '',
+                    timeout: item.timeout || 30,
+                  },
+                },
+              }
+        ),
+      });
+    });
+
+    return sections;
+  }, [importedGroups]);
+
+  /* ---- Filter by search ---- */
+  const filteredSections = useMemo(() => {
+    if (!searchQuery.trim()) return allSections;
+    const q = searchQuery.toLowerCase();
+    return allSections
+      .map((sec) => ({
+        ...sec,
+        nodes: sec.nodes.filter(
+          (n) =>
+            n.label.toLowerCase().includes(q) ||
+            (n.method && n.method.toLowerCase().includes(q)) ||
+            (n.description && n.description.toLowerCase().includes(q))
+        ),
+      }))
+      .filter((sec) => sec.nodes.length > 0);
+  }, [allSections, searchQuery]);
 
   const onDragStart = (event, node) => {
-    console.log('Drag started for node:', node);
     event.dataTransfer.setData('application/reactflow', node.type);
-    // Also pass the method if it exists (for HTTP request nodes)
-    if (node.method) {
+    if (node.method && node.method !== 'WORKFLOW') {
       event.dataTransfer.setData('application/reactflow-method', node.method);
     }
-    // If this is a full template (from imported groups), pass full JSON template
     if (node.template) {
       try {
         event.dataTransfer.setData('application/reactflow-node-template', JSON.stringify(node.template));
-      } catch (e) {
-        // ignore
-      }
+      } catch (_) {}
     }
     event.dataTransfer.effectAllowed = 'move';
-    console.log('Data set - type:', node.type, 'method:', node.method);
   };
 
   return (
-    <div 
-      ref={panelRef}
-      className={`fixed bottom-16 right-2 z-[9999] transition-all duration-200 flex flex-col gap-3 ${isModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-      style={{ 
-        transition: 'all 0.2s ease'
-      }}
+    <div
+      className={`fixed bottom-16 right-3 z-[9999] flex flex-col gap-2.5 ${
+        isModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+      } transition-opacity duration-200`}
     >
-      {/* Add Nodes Toggle Button */}
-      <button
-        onClick={() => {
-          console.log('AddNodesPanel toggle clicked, isOpen:', isOpen);
-          setIsOpen(!isOpen);
-        }}
-        disabled={isModalOpen}
-        className="flex items-center justify-center rounded-full border-2 border-primary bg-primary text-white hover:brightness-110 focus:outline-none shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all w-12 h-12"
-        title="Add Nodes"
-      >
-        {isOpen ? (
-          <X className="w-6 h-6" />
-        ) : (
-          <Plus className="w-6 h-6" />
-        )}
-      </button>
-
-      {/* Show Panel Button (when hidden) */}
+      {/* Show panel button */}
       {!showVariablesPanel && (
         <button
           onClick={() => onShowVariablesPanel(true)}
-          className="p-3 bg-primary hover:brightness-110 text-white rounded-full transition-colors shadow-lg hover:shadow-xl w-12 h-12 flex items-center justify-center"
+          className="flex items-center justify-center w-11 h-11 rounded-full bg-primary text-white shadow-lg hover:brightness-110 transition-all"
           title="Show Panel (Variables, Functions, Settings)"
-          aria-label="Show Panel"
+          aria-label="Show panel"
         >
           <Settings className="w-5 h-5" />
         </button>
       )}
 
-      {/* Nodes Panel */}
-      {isOpen && (
-        <div className="absolute bottom-full mb-2 right-0 w-72 max-h-[60vh] overflow-y-auto transform rounded-lg bg-surface dark:bg-surface-dark shadow-2xl border border-border dark:border-border-dark z-[101]">
-          <div className="p-3">
-            <h3 className="py-1.5 text-sm font-bold text-center border-b border-border dark:border-border-dark text-primary">
-              Add Nodes (Drag to Canvas)
-            </h3>
+      {/* Headless UI Popover — opens upward from FAB */}
+      <Popover className="relative">
+        {({ open, close }) => (
+          <>
+            <Popover.Button
+              disabled={isModalOpen}
+              className="flex items-center justify-center w-11 h-11 rounded-full border-2 border-primary bg-primary text-white shadow-xl hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              aria-label={open ? 'Close node palette' : 'Add nodes'}
+            >
+              {open ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+            </Popover.Button>
 
-            <div className="mt-2 space-y-0">
-              {/* HTTP Requests Section */}
-              <div className="border-t border-b border-border dark:border-border-dark">
-                <button
-                  onClick={() => toggleSection('http-requests')}
-                  className="flex justify-between w-full px-4 py-2 text-sm font-medium text-left text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised hover:bg-surface dark:hover:bg-surface-dark focus:outline-none"
-                >
-                  <span>HTTP Requests</span>
-                  {expandedSections['http-requests'] ? (
-                    <ChevronUp className="w-5 h-5" />
+            <Transition
+              enter="transition duration-150 ease-out"
+              enterFrom="opacity-0 translate-y-2 scale-95"
+              enterTo="opacity-100 translate-y-0 scale-100"
+              leave="transition duration-100 ease-in"
+              leaveFrom="opacity-100 translate-y-0 scale-100"
+              leaveTo="opacity-0 translate-y-2 scale-95"
+            >
+              <Popover.Panel className="absolute bottom-full mb-2 right-0 w-72 max-h-[60vh] flex flex-col rounded-xl bg-surface-raised dark:bg-surface-dark-raised shadow-2xl border border-border-default dark:border-border-default-dark overflow-hidden">
+                {/* Header + Search */}
+                <div className="p-3 border-b border-border-default dark:border-border-default-dark">
+                  <h3 className="text-sm font-bold text-primary dark:text-primary-dark mb-2">
+                    Add Nodes
+                    <span className="ml-1 text-text-muted dark:text-text-muted-dark font-normal text-xs">— drag to canvas</span>
+                  </h3>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Filter nodes…"
+                      className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-border-default dark:border-border-default-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-primary-dark"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* Sections */}
+                <div className="flex-1 overflow-y-auto">
+                  {filteredSections.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-text-muted dark:text-text-muted-dark">
+                      No nodes match "{searchQuery}"
+                    </div>
                   ) : (
-                    <ChevronDown className="w-5 h-5" />
-                  )}
-                </button>
-                {expandedSections['http-requests'] && (
-                  <div className="px-4 pt-2 pb-4 text-sm border-l border-r border-border dark:border-border-dark space-y-1">
-                    {nodeTemplates.find(cat => cat.category === 'HTTP Requests')?.nodes.map((node, nodeIdx) => (
-                      <div
-                        key={nodeIdx}
-                        draggable
-                        onDragStart={(e) => {
+                    filteredSections.map((section) => (
+                      <NodeSection
+                        key={section.key}
+                        title={section.title}
+                        icon={section.icon}
+                        nodes={section.nodes}
+                        onDragStart={(e, node) => {
                           onDragStart(e, node);
-                          setTimeout(() => setIsOpen(false), 100);
+                          setTimeout(() => close(), 100);
                         }}
-                        className="py-2 border-b border-border dark:border-border-dark cursor-move hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
-                      >
-                        <div className="font-semibold text-sm text-text-primary dark:text-text-primary-dark">
-                          {node.method && (
-                            <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-[10px] font-bold text-white rounded ${methodBadge[node.method] || 'bg-primary'}`}>
-                              {node.method}
-                            </span>
-                          )}
-                          {node.label}
-                        </div>
-                        <div className="text-xs text-text-secondary dark:text-text-secondary-dark mt-0.5">{node.description}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Control Flow Section */}
-              <div className="border-b border-border dark:border-border-dark">
-                <button
-                  onClick={() => toggleSection('control-flow')}
-                  className="flex justify-between w-full px-4 py-2 text-sm font-medium text-left text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised hover:bg-surface dark:hover:bg-surface-dark focus:outline-none"
-                >
-                  <span>Control Flow</span>
-                  {expandedSections['control-flow'] ? (
-                    <ChevronUp className="w-5 h-5" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5" />
+                        defaultOpen={!searchQuery}
+                      />
+                    ))
                   )}
-                </button>
-                {expandedSections['control-flow'] && (
-                  <div className="px-4 pt-2 pb-4 text-sm border-l border-r border-border dark:border-border-dark space-y-1">
-                    {nodeTemplates.find(cat => cat.category === 'Control Flow')?.nodes.map((node, nodeIdx) => (
-                      <div
-                        key={nodeIdx}
-                        draggable
-                        onDragStart={(e) => {
-                          onDragStart(e, node);
-                          setTimeout(() => setIsOpen(false), 100);
-                        }}
-                        className="py-2 border-b border-border dark:border-border-dark cursor-move hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
-                      >
-                        <div className="font-semibold text-sm text-text-primary dark:text-text-primary-dark">{node.label}</div>
-                        <div className="text-xs text-text-secondary dark:text-text-secondary-dark mt-0.5">{node.description}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Validation Section */}
-              <div className="border-b border-border dark:border-border-dark">
-                <button
-                  onClick={() => toggleSection('validation')}
-                  className="flex justify-between w-full px-4 py-2 text-sm font-medium text-left text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised hover:bg-surface dark:hover:bg-surface-dark focus:outline-none"
-                >
-                  <span>Validation</span>
-                  {expandedSections['validation'] ? (
-                    <ChevronUp className="w-5 h-5" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5" />
-                  )}
-                </button>
-                {expandedSections['validation'] && (
-                  <div className="px-4 pt-2 pb-4 text-sm border-l border-r border-border dark:border-border-dark space-y-1">
-                    {nodeTemplates.find(cat => cat.category === 'Validation')?.nodes.map((node, nodeIdx) => (
-                      <div
-                        key={nodeIdx}
-                        draggable
-                        onDragStart={(e) => {
-                          onDragStart(e, node);
-                          setTimeout(() => setIsOpen(false), 100);
-                        }}
-                        className="py-2 border-b border-border dark:border-border-dark cursor-move hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
-                      >
-                        <div className="font-semibold text-sm text-text-primary dark:text-text-primary-dark">{node.label}</div>
-                        <div className="text-xs text-text-secondary dark:text-text-secondary-dark mt-0.5">{node.description}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Imported Groups */}
-              {importedGroups.length > 0 && importedGroups.map((group, gIdx) => {
-                const sectionKey = `imported-${group.id}`;
-                const isExpanded = expandedSections[sectionKey];
-                return (
-                  <div key={`grp-${group.id}-${gIdx}`} className="border-b border-border dark:border-border-dark">
-                    <button
-                      onClick={() => toggleSection(sectionKey)}
-                      className="flex justify-between w-full px-4 py-2 text-sm font-medium text-left text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised hover:bg-surface dark:hover:bg-surface-dark focus:outline-none"
-                    >
-                      <span>{group.title}</span>
-                      {isExpanded ? (
-                        <ChevronUp className="w-5 h-5" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5" />
-                      )}
-                    </button>
-                    {isExpanded && (
-                      <div className="px-4 pt-2 pb-4 text-sm border-l border-r border-border dark:border-border-dark space-y-1 max-h-60 overflow-y-auto">
-                        {(group.items || []).map((item, iIdx) => (
-                          <div
-                            key={`grp-item-${iIdx}`}
-                            draggable
-                            onDragStart={(e) => {
-                              // Handle workflow nodes differently
-                              if (item.method === 'WORKFLOW' && item.workflowId) {
-                                onDragStart(e, {
-                                  type: 'workflow',
-                                  label: item.label || 'Workflow',
-                                  workflowId: item.workflowId,
-                                  template: {
-                                    type: 'workflow',
-                                    label: item.label || 'Workflow',
-                                    config: {
-                                      workflowId: item.workflowId,
-                                      workflowName: item.label,
-                                    }
-                                  }
-                                });
-                              } else {
-                                // Handle regular HTTP request nodes
-                                onDragStart(e, {
-                                  type: 'http-request',
-                                  label: item.label || item.url || 'Request',
-                                  method: item.method,
-                                  template: {
-                                    type: 'http-request',
-                                    label: item.label || item.url || 'Request',
-                                    config: {
-                                      method: item.method || 'GET',
-                                      url: item.url || '',
-                                      queryParams: item.queryParams || '',
-                                      pathVariables: item.pathVariables || '',
-                                      headers: item.headers || '',
-                                      cookies: item.cookies || '',
-                                      body: item.body || '',
-                                      timeout: item.timeout || 30,
-                                    }
-                                  }
-                                });
-                              }
-                              setTimeout(() => setIsOpen(false), 100);
-                            }}
-                            className="py-2 border-b border-border dark:border-border-dark cursor-move hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
-                          >
-                            <div className="font-semibold text-sm text-text-primary dark:text-text-primary-dark">
-                              {item.method === 'WORKFLOW' ? (
-                                  <span className="inline-block px-1.5 py-0.5 mr-1.5 text-[10px] font-bold text-white bg-purple-600 rounded">
-                                  WF
-                                </span>
-                              ) : (
-                                item.method && (
-                                  <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-[10px] font-bold text-white rounded ${methodBadge[item.method] || 'bg-primary'}`}>
-                                    {item.method}
-                                  </span>
-                                )
-                              )}
-                              {item.label || item.url || 'Request'}
-                            </div>
-                            {item.method === 'WORKFLOW' ? (
-                              <div className="text-xs text-text-secondary dark:text-text-secondary-dark mt-0.5 truncate">Sub-workflow</div>
-                            ) : (
-                              <div className="text-xs text-text-secondary dark:text-text-secondary-dark mt-0.5 truncate">{item.url || ''}</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+                </div>
+              </Popover.Panel>
+            </Transition>
+          </>
+        )}
+      </Popover>
     </div>
   );
 };
+
+/** Collapsible section using DaisyUI collapse */
+function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }) {
+  return (
+    <div className="collapse collapse-arrow rounded-none border-b border-border-default dark:border-border-default-dark last:border-b-0">
+      <input type="checkbox" defaultChecked={defaultOpen} />
+      <div className="collapse-title text-sm font-medium py-2 min-h-0 flex items-center gap-2 text-text-primary dark:text-text-primary-dark">
+        <Icon className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />
+        <span>{title}</span>
+        <span className="badge badge-xs badge-ghost ml-auto">{nodes.length}</span>
+      </div>
+      <div className="collapse-content px-2 pb-1">
+        <div className="space-y-0.5">
+          {nodes.map((node, idx) => (
+            <div
+              key={idx}
+              draggable
+              onDragStart={(e) => onDragStart(e, node)}
+              className="group flex flex-col gap-0.5 px-2.5 py-1.5 rounded-md cursor-grab hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay active:cursor-grabbing transition-colors"
+              title={`Drag ${node.label} to canvas`}
+            >
+              <div className="flex items-center gap-1.5 text-sm text-text-primary dark:text-text-primary-dark">
+                {node.method && node.method !== 'WORKFLOW' && (
+                  <span className={`inline-block px-1.5 py-px text-[10px] font-bold text-white rounded ${methodBadge[node.method] || 'bg-primary'}`}>
+                    {node.method}
+                  </span>
+                )}
+                {node.method === 'WORKFLOW' && (
+                  <span className="inline-block px-1.5 py-px text-[10px] font-bold text-white bg-purple-600 rounded">
+                    WF
+                  </span>
+                )}
+                <span className="font-medium truncate">{node.label}</span>
+              </div>
+              {node.description && (
+                <span className="text-xs text-text-muted dark:text-text-muted-dark truncate">{node.description}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default AddNodesPanel;
