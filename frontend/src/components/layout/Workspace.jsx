@@ -76,17 +76,6 @@ const Workspace = ({ onActiveTabChange }) => {
     }
   }, [environmentVersion]);
 
-  // ---------- keyboard shortcuts via mousetrap ----------
-  useKeyboardShortcuts({
-    onNewWorkflow: handleNewWorkflow,
-    onCloseTab: () => { if (activeTabId) closeTab(activeTabId); },
-    onNextTab: activateNextTab,
-    onPrevTab: activatePrevTab,
-    onToggleSidebar: () => useNavigationStore.getState().toggleNavBarCollapse(),
-    onShowShortcutsHelp: () => setShowShortcutsHelp(true),
-    // onSave, onRun, onToggleJsonEditor, onToggleEnvironmentManager are handled by WorkflowCanvas
-  });
-
   // ---------- empty-state handler: create new workflow ----------
   const handleNewWorkflow = useCallback(async () => {
     const name = prompt('Workflow Name:');
@@ -112,6 +101,17 @@ const Workspace = ({ onActiveTabChange }) => {
       console.error('Error creating workflow:', error);
     }
   }, [openTab]);
+
+  // ---------- keyboard shortcuts via mousetrap ----------
+  useKeyboardShortcuts({
+    onNewWorkflow: handleNewWorkflow,
+    onCloseTab: () => { if (activeTabId) closeTab(activeTabId); },
+    onNextTab: activateNextTab,
+    onPrevTab: activatePrevTab,
+    onToggleSidebar: () => useNavigationStore.getState().toggleNavBarCollapse(),
+    onShowShortcutsHelp: () => setShowShortcutsHelp(true),
+    // onSave, onRun, onToggleJsonEditor, onToggleEnvironmentManager are handled by WorkflowCanvas
+  });
 
   return (
     <div className="flex flex-col h-full bg-surface dark:bg-surface-dark">
