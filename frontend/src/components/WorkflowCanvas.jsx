@@ -26,8 +26,7 @@ import SecretsPrompt from './SecretsPrompt';
 import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { toast } from 'sonner';
-import ButtonSelect from './ButtonSelect';
-import { Save, History, Play, Code, Upload } from 'lucide-react';
+import { CanvasToolbar } from './organisms';
 import useTabStore from '../stores/TabStore';
 import useCanvasStore from '../stores/CanvasStore';
 import useSidebarStore from '../stores/SidebarStore';
@@ -86,7 +85,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [environments, setEnvironments] = useState([]);
-  const [environmentChangeNotification, setEnvironmentChangeNotification] = useState(null);
   
   // Initialize selectedEnvironment from localStorage if available
   // Also check global default if workflow-specific one doesn't exist
@@ -825,13 +823,17 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           variant="dots" 
           gap={12} 
           size={1} 
-          className="dark:bg-gray-900"
           color={darkMode ? "#444" : "#aaa"}
         />
-        <Controls className="border-cyan-900 shadow-md dark:border-gray-700" />
         
-        {/* Top-left MiniMap */}
-        <Panel position="top-left">
+        {/* Zoom controls — bottom-left */}
+        <Controls 
+          position="bottom-left"
+          className="border border-border-default dark:border-border-default-dark shadow-md rounded-lg"
+        />
+        
+        {/* MiniMap — bottom-left above controls */}
+        <Panel position="bottom-left" style={{ bottom: 60, left: 10 }}>
           <MiniMap 
             nodeColor={(n) => {
               if (n.type === 'start') return '#06b6d4';
@@ -843,8 +845,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
               backgroundColor: darkMode ? '#1f2937' : 'white',
               border: darkMode ? '2px solid #374151' : '2px solid #0e7490',
               borderRadius: '8px',
-              width: 200,
-              height: 150
+              width: 180,
+              height: 120,
             }}
             zoomable 
             pannable 
@@ -852,85 +854,25 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         </Panel>
       </ReactFlow>
 
-      {/* Top Control Bar - Positioned absolutely within the canvas container */}
-      <div className="absolute top-4 right-4 z-50 flex gap-2 items-center pointer-events-auto justify-end min-h-10">
-        <button
-          onClick={() => saveWorkflow(false)}
-          className="flex items-center gap-2 px-4 py-2 bg-cyan-900 text-white rounded-lg hover:bg-cyan-950 shadow-lg font-medium transition-colors dark:bg-cyan-800 dark:hover:bg-cyan-900 whitespace-nowrap h-10"
-        >
-          <Save className="w-4 h-4 flex-shrink-0" />
-          <span className="leading-none self-center">Save</span>
-        </button>
-        <button
-          onClick={() => setShowHistory(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 shadow-lg font-medium transition-colors dark:bg-gray-600 dark:hover:bg-gray-700 whitespace-nowrap h-10"
-          title="View run history"
-        >
-          <History className="w-4 h-4 flex-shrink-0" />
-          <span className="leading-none self-center">History</span>
-        </button>
-        
-        <button
-          onClick={() => setShowJsonEditor(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg font-medium transition-colors dark:bg-indigo-700 dark:hover:bg-indigo-800 whitespace-nowrap h-10"
-          title="View and edit raw workflow JSON"
-        >
-          <Code className="w-4 h-4 flex-shrink-0" />
-          <span className="leading-none self-center">JSON</span>
-        </button>
-        
-        <button
-          onClick={() => setShowImportToNodes(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 shadow-lg font-medium transition-colors dark:bg-amber-700 dark:hover:bg-amber-800 whitespace-nowrap h-10"
-          title="Import OpenAPI, HAR, or Curl to Add Nodes panel"
-        >
-          <Upload className="w-4 h-4 flex-shrink-0" />
-          <span className="leading-none self-center">Import</span>
-        </button>
-        
-        {/* Environment Selector */}
-        <div className="flex items-center h-10">
-          <ButtonSelect
-            key={`env-select-${workflowId}`}
-            options={[{ value: '', label: 'No Environment' }, ...environments.map(e => ({ value: e.environmentId, label: e.name }))]}
-            value={selectedEnvironment || ''}
-            onChange={(val) => {
-              // Normalize: empty string or whitespace becomes null
-              const processed = (val && val.trim()) ? val.trim() : null;
-              const selectedEnv = environments.find(e => e.environmentId === processed);
-              const envName = selectedEnv ? selectedEnv.name : 'No Environment';
-              
-              console.log('🔄 Environment selection changed:', { 
-                previousEnvironment: selectedEnvironment,
-                newEnvironment: processed,
-                raw: val, 
-                processed,
-                willUseEnvironment: !!processed,
-                envName,
-                environments: environments.map(e => ({ id: e.environmentId, name: e.name }))
-              });
-              
-              // Update state - this triggers the useEffect that saves to localStorage
-              setSelectedEnvironment(processed);
-              
-              // Show notification for 2 seconds
-              setEnvironmentChangeNotification(`✓ Environment changed to: ${envName}`);
-              setTimeout(() => setEnvironmentChangeNotification(null), 2000);
-            }}
-            placeholder="No Environment"
-            buttonClass="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg font-medium leading-none shadow-lg transition-colors h-10 whitespace-nowrap"
-          />
-        </div>
-        
-        <button
-          onClick={runWorkflow}
-          disabled={isRunning}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-medium transition-colors dark:bg-green-700 dark:hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap h-10"
-        >
-          <Play className="w-4 h-4 flex-shrink-0" />
-          <span className="leading-none self-center">{isRunning ? 'Running...' : 'Run'}</span>
-        </button>
-      </div>
+      {/* Canvas Toolbar */}
+      <CanvasToolbar
+        onSave={() => saveWorkflow(false)}
+        onHistory={() => setShowHistory(true)}
+        onJsonEditor={() => setShowJsonEditor(true)}
+        onImport={() => setShowImportToNodes(true)}
+        onRun={runWorkflow}
+        isRunning={isRunning}
+        environments={environments}
+        selectedEnvironment={selectedEnvironment}
+        onEnvironmentChange={(val) => {
+          const processed = (val && val.trim()) ? val.trim() : null;
+          const selectedEnv = environments.find(e => e.environmentId === processed);
+          const envName = selectedEnv ? selectedEnv.name : 'No Environment';
+          setSelectedEnvironment(processed);
+          toast.success(`Environment: ${envName}`);
+        }}
+        workflowId={workflowId}
+      />
 
       {/* Add Nodes Panel - OUTSIDE ReactFlow */}
       <AddNodesPanel isModalOpen={!!modalNode} isPanelOpen={isPanelOpen} showVariablesPanel={showVariablesPanel} onShowVariablesPanel={onShowVariablesPanel} />
@@ -977,12 +919,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         onSecretsProvided={handleSecretsProvided}
       />
       
-      {/* Environment Change Notification */}
-      {environmentChangeNotification && (
-        <div className="fixed bottom-20 right-4 bg-green-500 dark:bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg animate-pulse z-40">
-          {environmentChangeNotification}
-        </div>
-      )}
     </div>
   );
 };
