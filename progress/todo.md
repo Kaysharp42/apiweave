@@ -437,55 +437,56 @@ Final polish pass — toolbar redesign, keyboard shortcuts, accessibility, anima
 
 ### Checklist
 
-- [ ] **Canvas Toolbar** redesign:
-  - [ ] Floating toolbar bar (horizontal, centered-top or top-right)
-  - [ ] DaisyUI `btn-group` for: Run ▶ | Save | History | JSON | Import
-  - [ ] Environment selector integrated in toolbar (DaisyUI select)
-  - [ ] Execution status in toolbar: spinner during run, checkmark on success, X on failure
-  - [ ] Zoom controls moved to bottom-left (like FlowTest)
-  - [ ] MiniMap toggle button
-- [ ] **Add Nodes Panel** redesign:
-  - [ ] Use Headless UI Popover opening upward from FAB (like FlowTest)
-  - [ ] Search/filter input at top
-  - [ ] DaisyUI `collapse` sections: HTTP Requests, Control Flow, Validation, Imported
-  - [ ] Drag-and-drop with visual preview
-- [ ] **Keyboard shortcuts**:
-  - [ ] `Ctrl+N` — New workflow
-  - [ ] `Ctrl+S` — Save (with visual feedback even though auto-save is on)
-  - [ ] `Ctrl+R` / `F5` — Run workflow
-  - [ ] `Ctrl+W` — Close active tab
-  - [ ] `Ctrl+Tab` / `Ctrl+Shift+Tab` — Cycle tabs
-  - [ ] `Ctrl+E` — Toggle environment manager
-  - [ ] `Ctrl+J` — Toggle JSON editor
-  - [ ] `Ctrl+B` — Toggle sidebar collapse
-  - [ ] `Delete` / `Backspace` — Delete selected nodes
-  - [ ] `?` — Show keyboard shortcuts help panel
-  - [ ] Install `mousetrap` for keybinding: `npm install mousetrap`
-- [ ] Create **Keyboard Shortcuts Help** panel (DaisyUI modal, triggered by `?`)
-- [ ] **Loading states**:
-  - [ ] DaisyUI `skeleton` components for sidebar items while fetching
-  - [ ] Skeleton for workflow canvas while loading
-  - [ ] Pulse animation on Run button during execution
-- [ ] **Transitions & Animations**:
-  - [ ] Sidebar collapse: smooth width transition
-  - [ ] Modal enter/exit: scale + fade (Headless UI Transition)
-  - [ ] Toast enter: slide from right
-  - [ ] Tab switch: subtle opacity transition
-  - [ ] Node drag: drop shadow on pickup
-- [ ] **Accessibility (a11y)**:
-  - [ ] All interactive elements have proper `aria-label`
-  - [ ] Modal focus trapping (Headless UI Dialog provides this)
-  - [ ] Color contrast check: ensure all text on design tokens passes WCAG AA
-  - [ ] Keyboard navigation: tab through toolbar, sidebar, modals
-  - [ ] Screen reader text for status indicators
-- [ ] **Final cleanup**:
-  - [ ] Remove unused components (`WorkflowList.jsx` page if unused)
-  - [ ] Remove orphaned CSS classes
-  - [ ] Consistent file naming: all components PascalCase, all utils camelCase
-  - [ ] Update all `import` paths to use barrel files (`atoms/index.js`, etc.)
-  - [ ] Run Prettier across entire frontend: `npm run format`
-- [ ] Update `README.md` with new screenshots
-- [ ] Update `DESIGN_SYSTEM.md` with final component inventory
+- [x] **Canvas Toolbar** redesign:
+  - [x] Floating toolbar bar (horizontal, centered-top or top-right)
+  - [x] DaisyUI `btn-group` for: Run ▶ | Save | History | JSON | Import
+  - [x] Environment selector integrated in toolbar (DaisyUI select)
+  - [x] Execution status in toolbar: spinner during run, checkmark on success, X on failure
+  - [x] Zoom controls moved to bottom-left (like FlowTest)
+  - [x] MiniMap toggle button
+- [x] **Add Nodes Panel** redesign:
+  - [x] Use Headless UI Popover opening upward from FAB (like FlowTest)
+  - [x] Search/filter input at top
+  - [x] DaisyUI `collapse` sections: HTTP Requests, Control Flow, Validation, Imported
+  - [x] Drag-and-drop with visual preview
+- [x] **Keyboard shortcuts**:
+  - [x] `Ctrl+N` — New workflow
+  - [x] `Ctrl+S` — Save (with visual feedback even though auto-save is on)
+  - [x] `Ctrl+R` / `F5` — Run workflow
+  - [x] `Ctrl+W` — Close active tab
+  - [x] `Ctrl+Tab` / `Ctrl+Shift+Tab` — Cycle tabs
+  - [x] `Ctrl+E` — Toggle environment manager
+  - [x] `Ctrl+J` — Toggle JSON editor
+  - [x] `Ctrl+B` — Toggle sidebar collapse
+  - [ ] `Delete` / `Backspace` — Delete selected nodes *(handled natively by ReactFlow)*
+  - [x] `?` — Show keyboard shortcuts help panel
+  - [x] Install `mousetrap` for keybinding: `npm install mousetrap`
+- [x] Create **Keyboard Shortcuts Help** panel (DaisyUI modal, triggered by `?`)
+- [x] **Loading states**:
+  - [x] DaisyUI `skeleton` components for sidebar items while fetching
+  - [x] Skeleton for workflow canvas while loading *(WorkflowEditor uses Spinner atom)*
+  - [x] Pulse animation on Run button during execution
+- [x] **Transitions & Animations**:
+  - [x] Sidebar collapse: smooth width transition *(Allotment handles this)*
+  - [x] Modal enter/exit: scale + fade (Headless UI Transition)
+  - [x] Toast enter: slide from right *(Sonner default)*
+  - [ ] Tab switch: subtle opacity transition *(deferred — low impact)*
+  - [ ] Node drag: drop shadow on pickup *(deferred — low impact)*
+- [x] **Accessibility (a11y)**:
+  - [x] All interactive elements have proper `aria-label`
+  - [x] Modal focus trapping (Headless UI Dialog provides this)
+  - [ ] Color contrast check: ensure all text on design tokens passes WCAG AA *(needs manual audit)*
+  - [x] Keyboard navigation: tab through toolbar, sidebar, modals
+  - [ ] Screen reader text for status indicators *(deferred)*
+- [x] **Final cleanup**:
+  - [x] Remove unused components (`WorkflowList.jsx`, `Sidebar.backup.jsx`, `SidebarHeader.backup.jsx`)
+  - [ ] Remove orphaned CSS classes *(deferred — needs tooling)*
+  - [x] Consistent file naming: all components PascalCase, all utils camelCase
+  - [x] Update all `import` paths to use barrel files (`atoms/index.js`, etc.)
+  - [ ] Run Prettier across entire frontend: `npm run format` *(no prettier config set up)*
+  - [x] Strip debug `console.log` statements from WorkflowCanvas (15 removed)
+- [ ] Update `README.md` with new screenshots *(needs running app for screenshots)*
+- [x] Update `DESIGN_SYSTEM.md` with final component inventory
 
 ### Testing & Commit
 ```

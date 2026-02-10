@@ -160,6 +160,35 @@ These properties automatically switch values between light and dark themes.
 
 ---
 
+## Component Inventory (Phase 10)
+
+### Atoms
+| Component | File | Purpose |
+|-----------|------|---------|
+| `Skeleton` | `atoms/Skeleton.jsx` | DaisyUI skeleton loading placeholder. Supports `variant` (text/circle/rect), `width`, `height`, `count`, `className`. |
+| `Spinner` | `atoms/Spinner.jsx` | DaisyUI loading spinner with configurable `size` (xs–lg) and optional `label`. |
+
+### Organisms
+| Component | File | Purpose |
+|-----------|------|---------|
+| `CanvasToolbar` | `organisms/CanvasToolbar.jsx` | Floating horizontal toolbar for the workflow canvas. Contains zoom, run, environment selector, import, variables, history, and JSON editor buttons. Uses DaisyUI `btn-group` with design tokens. |
+| `KeyboardShortcutsHelp` | `organisms/KeyboardShortcutsHelp.jsx` | Modal displaying all keyboard shortcuts grouped by category (General, Tabs, Panels, Canvas). Uses DaisyUI `kbd` elements. |
+
+### Hooks
+| Hook | File | Purpose |
+|------|------|---------|
+| `useKeyboardShortcuts` | `hooks/useKeyboardShortcuts.js` | Global keyboard shortcut bindings via Mousetrap. Binds Ctrl+N/S/R/W/E/J/B and `?`. Uses ref pattern to keep callbacks fresh without rebinding. |
+
+### Accessibility Enhancements
+- `role="toolbar"` on `CanvasToolbar`
+- `role="main" aria-label="Workflow canvas"` on `WorkflowCanvas`
+- `role="complementary" aria-label="Sidebar"` on `Sidebar`
+- `aria-label="Main navigation"` on `AppNavBar` nav element
+- `aria-hidden="true"` on decorative `Skeleton` elements
+- All interactive buttons have explicit `title` attributes
+
+---
+
 ## File Structure
 
 ```
@@ -168,8 +197,19 @@ frontend/
 ├── index.html               — Google Fonts import
 ├── src/
 │   ├── index.css            — Tailwind directives + ReactFlow dark mode overrides
-│   └── styles/
-│       └── base.css         — CSS custom properties, global resets, scrollbar styling
+│   ├── styles/
+│   │   └── base.css         — CSS custom properties, global resets, scrollbar styling
+│   └── components/
+│       ├── atoms/
+│       │   ├── Skeleton.jsx — Loading placeholder
+│       │   ├── Spinner.jsx  — Loading spinner
+│       │   └── index.js     — Barrel exports
+│       ├── organisms/
+│       │   ├── CanvasToolbar.jsx         — Canvas floating toolbar
+│       │   ├── KeyboardShortcutsHelp.jsx — Shortcut help modal
+│       │   └── index.js                  — Barrel exports
+│       └── hooks/
+│           └── useKeyboardShortcuts.js   — Global shortcut bindings
 ```
 
 ---
@@ -182,3 +222,6 @@ frontend/
 4. **Use CSS custom properties** (`var(--aw-*)`) only when raw CSS is needed (e.g., inline styles, ReactFlow edge colors)
 5. **Dark mode**: Always use Tailwind `dark:` prefix — never hardcode colors for dark mode in components
 6. **Fonts**: Use `font-sans` (default), `font-display` (headings), `font-mono` (code) — never inline font-family
+7. **Keyboard shortcuts**: Bind via `useKeyboardShortcuts` hook — never use raw `addEventListener('keydown')` in components
+8. **Loading states**: Use `Skeleton` atom for content placeholders, `Spinner` atom for action-in-progress indicators
+9. **Console logging**: Strip all `console.log` from production paths. Guard necessary debug output behind `import.meta.env.DEV`

@@ -250,3 +250,34 @@ Using `const { toast } = await import('react-hot-toast')` inside a hook caused a
 
 ### 68. Backup files (.backup.jsx) pollute grep results and should be gitignored
 `Sidebar.backup.jsx` and `SidebarHeader.backup.jsx` still contained old `dispatchEvent`/`CustomEvent` patterns, creating false positives during the verification grep. Backup files should either be deleted or added to `.gitignore` to prevent confusion during code audits.
+
+---
+
+## Phase 10: Canvas Toolbar, Keyboard Shortcuts, Polish & Accessibility
+
+### 69. Mousetrap ref pattern prevents shortcut rebinding on every render
+Using `Mousetrap.bind()` inside `useEffect` with callback dependencies causes re-binding on every render. The fix: store callbacks in a `useRef` object, bind once to wrappers that read `callbacks.current[name]?.()`, and update the ref in a separate `useEffect`. This splits binding (once) from callback updates (every render), avoiding event listener leaks.
+
+### 70. Headless UI Popover is superior to manual click-outside for floating panels
+The AddNodesPanel used an `isPanelOpen` prop with manual toggle logic. Replacing it with `@headlessui/react`'s `Popover` + `Transition` gives: automatic focus trapping, click-outside dismiss, escape key handling, accessible `aria-expanded`, and animated enter/leave transitions. No custom event handlers needed. The trade-off is Popover is opinionated about positioning — use `PopoverPanel` with manual CSS when anchor positioning doesn't suffice.
+
+### 71. DaisyUI `collapse collapse-arrow` replaces custom accordion logic
+Node palette sections used custom open/close state management. DaisyUI's `<details>` + `collapse` class gives the same UX with zero JavaScript — the browser handles open/close natively via `<summary>`. Add `collapse-arrow` for the chevron icon. Pair with `collapse-title` and `collapse-content` for proper padding.
+
+### 72. Skeleton atom with `count` prop generates list placeholders in one call
+Rather than manually repeating skeleton elements, a `count` prop on the `Skeleton` atom generates N rows with a single `<Skeleton count={6} />`. Combined with `aria-hidden="true"`, this keeps loading states accessible while reducing template noise.
+
+### 73. `role` and `aria-label` should target landmark elements, not wrappers
+Adding `role="complementary" aria-label="Sidebar"` to the sidebar's root div (not an inner wrapper) ensures screen readers see it as a page landmark. Same for `role="main"` on the canvas and `role="toolbar"` on the toolbar. Misplacing these on inner divs makes them invisible to landmark navigation.
+
+### 74. Console.log cleanup reduces bundle size measurably
+Removing 15 `console.log` statements from WorkflowCanvas.jsx dropped the JS bundle from 908.90 KB to 908.04 KB — almost 1 KB of debug string literals. Across 53+ statements in the full codebase, the savings compound. Rule: never commit render-path `console.log`. Guard necessary debug output behind `import.meta.env.DEV`.
+
+### 75. Orphaned pages survive unnoticed when routing changes bypass imports
+`WorkflowList.jsx` (318 lines) was completely orphaned after tab-based navigation replaced the old route. No import, no route, no reference — yet it sat in `pages/` for weeks. Lesson: after any routing refactor, grep for every file in `pages/` and verify an import chain from `App.jsx` reaches each one.
+
+### 76. ToolbarButton sub-component consolidates repeated button markup
+The canvas toolbar had 8+ buttons with identical structure (icon + optional label + tooltip + onClick). Extracting a `ToolbarButton` sub-component inside the organism file eliminated ~120 lines of repetition and enforced consistent sizing, spacing, and hover states. Keep utility sub-components co-located in the same file when they're only used by one parent.
+
+### 77. Bundle size impact of Headless UI Popover + Mousetrap
+Adding `@headlessui/react` Popover (already a dependency — tree-shaken) and `mousetrap` (6.5 KB minified) increased the JS bundle from 845 KB → 908 KB over Phase 10. Most of the increase came from Headless UI's Popover internals. Acceptable for the accessibility and UX gains, but worth monitoring — dynamic imports could reclaim this if needed.
