@@ -254,10 +254,21 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   // --- Workflow item renderer (shared between workflows & collections views) ---
   const WorkflowItem = ({ workflow, isActive }) => {
     const envName = getWorkflowEnvName(workflow.workflowId);
+    const handleActivate = () => handleWorkflowClick(workflow);
+    const handleKeyDown = (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handleActivate();
+      }
+    };
     return (
       <li>
-        <button
-          onClick={() => handleWorkflowClick(workflow)}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-current={isActive ? 'page' : undefined}
+          onClick={handleActivate}
+          onKeyDown={handleKeyDown}
           className={[
             'group flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-all duration-150 cursor-pointer',
             isActive
@@ -292,7 +303,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
           >
             <Download className="w-3.5 h-3.5" />
           </button>
-        </button>
+        </div>
       </li>
     );
   };
