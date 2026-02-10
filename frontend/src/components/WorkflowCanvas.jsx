@@ -58,11 +58,8 @@ const initialNodes = [
 ];
 
 const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariablesPanel = false, onShowVariablesPanel = () => {} }) => {
-  console.log('WorkflowCanvas rendered with:', { workflowId, workflow });
-  
   // Get global state from context
   const context = useContext(AppContext);
-  console.log('WorkflowCanvas context:', context);
   const { darkMode, autoSaveEnabled } = context || { darkMode: false, autoSaveEnabled: true };
   
   // Get workflow state from WorkflowContext (ONLY variables and settings)
@@ -92,24 +89,20 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     // First try workflow-specific setting
     const workflowSpecific = localStorage.getItem(`selectedEnvironment_${workflowId}`);
     if (workflowSpecific) {
-      console.log('🔧 Loaded workflow-specific environment:', { workflowId, environmentId: workflowSpecific });
       return workflowSpecific;
     }
     
     // Fall back to global default environment
     const globalDefault = localStorage.getItem('defaultEnvironment');
     if (globalDefault) {
-      console.log('🔧 Using global default environment:', { environmentId: globalDefault });
       return globalDefault;
     }
     
-    console.log('🔧 No environment selected (initializing empty):', { workflowId });
     return null;
   });
   
   // Save selectedEnvironment to localStorage when it changes
   useEffect(() => {
-    console.log('💾 selectedEnvironment changed:', selectedEnvironment);
     if (selectedEnvironment) {
       // Save workflow-specific setting
       localStorage.setItem(`selectedEnvironment_${workflowId}`, selectedEnvironment);
@@ -126,14 +119,12 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
   // Sync extractors from nodes to context - ALWAYS send current state
   useEffect(() => {
-    console.log('📤 Syncing extractors to context from nodes');
     const extractorsFromNodes = {};
     nodes.forEach(node => {
       if (node.type === 'http-request' && node.data?.config?.extractors) {
         Object.assign(extractorsFromNodes, node.data.config.extractors);
       }
     });
-    console.log('  Extractors found:', extractorsFromNodes);
     registerExtractors(extractorsFromNodes);
   }, [nodes, registerExtractors]);
 
@@ -144,7 +135,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   useEffect(() => {
     onVariablesDeletedRef.current = (deletedVars) => {
       if (!deletedVars || deletedVars.length === 0) return;
-      console.log('🗑️ Cleaning up extractors for deleted variables:', deletedVars);
       setNodes(currentNodes => currentNodes.map(node => {
         if (node.type === 'http-request' && node.data?.config?.extractors) {
           const updatedExtractors = { ...node.data.config.extractors };
@@ -153,7 +143,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
             if (varName in updatedExtractors) {
               delete updatedExtractors[varName];
               modified = true;
-              console.log(`    ✓ Removed extractor "${varName}" from node`);
+
             }
           });
           if (modified) {
@@ -178,7 +168,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       const response = await fetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
         const data = await response.json();
-        console.log('Fetched environments:', data);
         setEnvironments(data);
       }
     } catch (error) {
@@ -199,7 +188,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   const reloadWorkflowId = useCanvasStore((s) => s.reloadWorkflowId);
   useEffect(() => {
     if (reloadVersion > 0 && reloadWorkflowId === workflowId) {
-      console.log('Workflow updated externally, reloading...');
+
       (async () => {
         try {
           const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
@@ -247,7 +236,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
             }));
             setNodes(newNodes);
             setEdges(newEdges);
-            console.log('Workflow reloaded successfully');
+
           }
         } catch (err) {
           console.error('Error reloading workflow:', err);
@@ -290,7 +279,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           data: JSON.parse(JSON.stringify(nodeToClone.data)),
         };
         useCanvasStore.getState().setClipboardNode(cloneData);
-        console.log('Node copied to clipboard:', cloneData);
       }
     } else if (type === 'paste') {
       const cloneData = sessionStorage.getItem('copiedNode');
@@ -647,7 +635,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       });
       
       if (response.ok) {
-        console.log('Workflow saved successfully');
         useTabStore.getState().markClean(workflowId);
       } else {
         console.error('Failed to save workflow');
