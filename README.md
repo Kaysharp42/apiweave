@@ -20,6 +20,13 @@ APIWeave is an open-source, visual, step-by-step API test workflow tool that all
 
 See [BUG_TRACKER.md](progress/BUG_TRACKER.md) for complete details.
 
+### Swagger Environment Sync (2026-02-11)
+
+- Added manual `Refresh` action next to environment selection in the canvas toolbar.
+- Kept manual refresh and automatic environment refresh on the same pipeline for deterministic results.
+- Preserved `swaggerDocUrl` through environment duplicate and collection export/import flows.
+- Scoped "Check API" warnings to schema-linked HTTP nodes with stable drift detection metadata.
+
 ## Features
 
 - 🎨 **Visual Workflow Builder** - Drag-and-drop canvas with React Flow
