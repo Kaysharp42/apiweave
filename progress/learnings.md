@@ -390,3 +390,12 @@ In compact node headers, relying on click-only interaction feels slow, but hover
 
 ### 111. Swagger source URLs need hard wrapping in tiny overlays
 Swagger doc URLs can be long and unbroken. In a small popover, using `break-all` on the source link prevents overflow and keeps the panel usable on narrow screens without horizontal scrolling.
+
+### 112. Manual and automatic Swagger sync should call the same refresh function
+Duplicating "auto-refresh on environment change" logic and "manual refresh button" logic risks behavior drift (different warning logic, different template mapping, different cleanup behavior). Extracting one shared refresh callback and using it from both pathways guarantees consistent results and reduces regression risk.
+
+### 113. Request-id refs are a lightweight way to prevent stale async refreshes
+When users switch environments while a Swagger fetch is still in flight, the older response can arrive last and overwrite newer state. Incrementing a `requestId` ref per refresh call and only applying results when IDs match prevents stale updates without needing complex cancellation wiring.
+
+### 114. Manual refresh UX should report endpoint count, not just success/failure
+A toast like "Swagger refreshed: N endpoints" gives users immediate confidence that the refresh actually loaded data. For failure cases, surfacing the exact reason (missing environment, missing Swagger URL, fetch failure) removes guesswork and makes troubleshooting much faster.
