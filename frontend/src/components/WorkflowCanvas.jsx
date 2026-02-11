@@ -801,7 +801,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        defaultEdgeOptions={{ type: 'custom' }}
+        defaultEdgeOptions={{ type: 'custom', animated: true }}
         fitView
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Control"
@@ -819,8 +819,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           className="border border-border-default dark:border-border-default-dark shadow-md rounded-lg"
         />
         
-        {/* MiniMap — bottom-left above controls */}
-        <Panel position="bottom-left" style={{ bottom: 60, left: 10 }}>
+        {/* MiniMap — bottom-right */}
+        <Panel position="bottom-right" style={{ bottom: 10, right: 10 }}>
           <MiniMap 
             nodeColor={(n) => {
               if (n.type === 'start') return '#06b6d4';
