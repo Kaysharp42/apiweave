@@ -25,6 +25,7 @@ import WorkflowJsonEditor from './WorkflowJsonEditor';
 import SecretsPrompt from './SecretsPrompt';
 import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
+import { usePalette } from '../contexts/PaletteContext';
 import { toast } from 'sonner';
 import { CanvasToolbar } from './organisms';
 import useTabStore from '../stores/TabStore';
@@ -76,6 +77,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     updateVariable,
     onVariablesDeletedRef,
   } = useWorkflow();
+  const { addImportedGroup, removeImportedGroup } = usePalette();
   
   // Use ReactFlow's built-in hooks for nodes and edges (local to WorkflowCanvas)
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -115,6 +117,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [environments, setEnvironments] = useState([]);
+  const swaggerRefreshSignatureRef = useRef('');
+  const envSwaggerGroupId = `env-openapi-${workflowId}`;
   
   // Initialize selectedEnvironment from localStorage if available
   // Also check global default if workflow-specific one doesn't exist
@@ -123,6 +127,11 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     const workflowSpecific = localStorage.getItem(`selectedEnvironment_${workflowId}`);
     if (workflowSpecific) {
       return workflowSpecific;
+    }
+
+    // Fall back to workflow-level default environment from backend
+    if (workflow?.environmentId) {
+      return workflow.environmentId;
     }
     
     // Fall back to global default environment
@@ -215,6 +224,223 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   useEffect(() => {
     if (environmentVersion > 0) fetchEnvironments();
   }, [environmentVersion, fetchEnvironments]);
+
+  // Ensure environment Swagger group is cleaned up when workflow unmounts/switches
+  useEffect(() => {
+    return () => {
+      removeImportedGroup(envSwaggerGroupId);
+    };
+  }, [envSwaggerGroupId, removeImportedGroup]);
+
+  // Auto-refresh Add Nodes from selected environment Swagger/OpenAPI URL
+  useEffect(() => {
+    const selectedEnvId = selectedEnvironment && selectedEnvironment.trim()
+      ? selectedEnvironment.trim()
+      : null;
+    const selectedEnvObject = selectedEnvId
+      ? environments.find((env) => env.environmentId === selectedEnvId)
+      : null;
+    const swaggerDocUrl = selectedEnvObject?.swaggerDocUrl?.trim() || '';
+
+    const signature = `${workflowId}::${selectedEnvId || ''}::${swaggerDocUrl}`;
+    if (swaggerRefreshSignatureRef.current === signature) {
+      return;
+    }
+    swaggerRefreshSignatureRef.current = signature;
+
+    const clearSwaggerWarningOnCanvas = () => {
+      setNodes((currentNodes) => {
+        let didChange = false;
+        const nextNodes = currentNodes.map((node) => {
+          if (node.type !== 'http-request' || !node.data?.schemaRefreshWarning) {
+            return node;
+          }
+          const { schemaRefreshWarning, ...restData } = node.data;
+          didChange = true;
+          return {
+            ...node,
+            data: restData,
+          };
+        });
+        return didChange ? nextNodes : currentNodes;
+      });
+    };
+
+    if (!swaggerDocUrl) {
+      removeImportedGroup(envSwaggerGroupId);
+      clearSwaggerWarningOnCanvas();
+      return;
+    }
+
+    let isCancelled = false;
+
+    const refreshSwaggerTemplates = async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/workflows/import/openapi/url?swagger_url=${encodeURIComponent(swaggerDocUrl)}&sanitize=true`
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail || 'Failed to load Swagger/OpenAPI URL');
+        }
+
+        const result = await response.json();
+        const apiNodes = result.nodes || [];
+
+        if (isCancelled) {
+          return;
+        }
+
+        const items = apiNodes.map((node) => ({
+          label: node.label || node.config?.url || 'Request',
+          url: node.config?.url || '',
+          method: node.config?.method || 'GET',
+          headers: node.config?.headers || '',
+          body: node.config?.body || '',
+          queryParams: node.config?.queryParams || '',
+          pathVariables: node.config?.pathVariables || '',
+          cookies: node.config?.cookies || '',
+          timeout: node.config?.timeout || 30,
+          openapiMeta: node.config?.openapiMeta || null,
+        }));
+
+        addImportedGroup({
+          title: `Swagger: ${selectedEnvObject?.name || 'Environment'}`,
+          id: envSwaggerGroupId,
+          items,
+        });
+
+        const latestFingerprintSet = new Set();
+        const latestMethodPathSet = new Set();
+        const latestMethodsByPath = new Map();
+        const latestByOperationId = new Map();
+
+        apiNodes.forEach((apiNode) => {
+          const meta = apiNode?.config?.openapiMeta;
+          if (!meta || meta.source !== 'openapi') return;
+
+          const method = (meta.method || '').toUpperCase();
+          const path = meta.path || '';
+          const fingerprint = meta.fingerprint || '';
+          const operationId = (meta.operationId || '').trim();
+
+          if (fingerprint) latestFingerprintSet.add(fingerprint);
+          if (method && path) latestMethodPathSet.add(`${method}|${path}`);
+
+          if (path && method) {
+            if (!latestMethodsByPath.has(path)) {
+              latestMethodsByPath.set(path, new Set());
+            }
+            latestMethodsByPath.get(path).add(method);
+          }
+
+          if (operationId) {
+            latestByOperationId.set(operationId, meta);
+          }
+        });
+
+        setNodes((currentNodes) => {
+          let didChange = false;
+          const nextNodes = currentNodes.map((node) => {
+            if (node.type !== 'http-request') {
+              return node;
+            }
+
+            const existingWarning = node.data?.schemaRefreshWarning;
+            const nodeMeta = node.data?.config?.openapiMeta;
+
+            if (!nodeMeta || nodeMeta.source !== 'openapi') {
+              if (!existingWarning) {
+                return node;
+              }
+              didChange = true;
+              const { schemaRefreshWarning, ...restData } = node.data;
+              return { ...node, data: restData };
+            }
+
+            const metaMethod = (nodeMeta.method || '').toUpperCase();
+            const metaPath = nodeMeta.path || '';
+            const metaFingerprint = nodeMeta.fingerprint || '';
+            const metaOperationId = (nodeMeta.operationId || '').trim();
+            const methodPathKey = metaMethod && metaPath ? `${metaMethod}|${metaPath}` : '';
+
+            let warningText = null;
+
+            if (metaFingerprint && latestFingerprintSet.has(metaFingerprint)) {
+              warningText = null;
+            } else if (methodPathKey && latestMethodPathSet.has(methodPathKey)) {
+              warningText = null;
+            } else if (metaOperationId && latestByOperationId.has(metaOperationId)) {
+              const latestMeta = latestByOperationId.get(metaOperationId);
+              warningText = `Endpoint changed in Swagger docs (${metaMethod} ${metaPath} -> ${latestMeta.method} ${latestMeta.path}).`;
+            } else if (metaPath && latestMethodsByPath.has(metaPath)) {
+              const availableMethods = Array.from(latestMethodsByPath.get(metaPath)).join(', ');
+              warningText = `Method mismatch for ${metaPath}. Available method(s): ${availableMethods}.`;
+            } else {
+              warningText = `Endpoint no longer found in Swagger docs (${metaMethod} ${metaPath}).`;
+            }
+
+            if (!warningText) {
+              if (!existingWarning) {
+                return node;
+              }
+              didChange = true;
+              const { schemaRefreshWarning, ...restData } = node.data;
+              return {
+                ...node,
+                data: restData,
+              };
+            }
+
+            const warningPayload = {
+              text: warningText,
+              sourceUrl: swaggerDocUrl,
+              refreshedAt: new Date().toISOString(),
+              endpointFingerprint: metaFingerprint || null,
+            };
+
+            if (
+              existingWarning &&
+              existingWarning.text === warningPayload.text &&
+              existingWarning.sourceUrl === warningPayload.sourceUrl
+            ) {
+              return node;
+            }
+
+            didChange = true;
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                schemaRefreshWarning: warningPayload,
+              },
+            };
+          });
+          return didChange ? nextNodes : currentNodes;
+        });
+      } catch (error) {
+        if (!isCancelled) {
+          removeImportedGroup(envSwaggerGroupId);
+          toast.error(error.message || 'Failed to refresh nodes from environment Swagger URL');
+        }
+      }
+    };
+
+    refreshSwaggerTemplates();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    workflowId,
+    selectedEnvironment,
+    environments,
+    envSwaggerGroupId,
+    addImportedGroup,
+    removeImportedGroup,
+    setNodes,
+  ]);
 
   // React to workflow reload signals from CanvasStore (e.g., from CurlImport append)
   const reloadVersion = useCanvasStore((s) => s.reloadVersion);
