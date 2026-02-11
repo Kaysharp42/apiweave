@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Copy, Trash2, RefreshCw, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal, ConfirmDialog } from './molecules';
+import Button from './atoms/Button';
 import API_BASE_URL from '../utils/api';
 
 const WebhookManager = () => {
@@ -196,9 +197,9 @@ const WebhookManager = () => {
       <div className="p-4 border-b border-border dark:border-border-dark">
         <div className="flex items-center justify-between mb-1">
           <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">Webhooks</h2>
-          <button onClick={() => setShowCreateModal(true)} className="btn btn-primary btn-sm gap-1">
+          <Button onClick={() => setShowCreateModal(true)} variant="primary" size="sm">
             <Plus className="w-4 h-4" /> Create
-          </button>
+          </Button>
         </div>
         <p className="text-xs text-text-muted dark:text-text-muted-dark">Manage CI/CD webhooks for workflows and collections</p>
       </div>
@@ -241,21 +242,21 @@ const WebhookManager = () => {
               <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">Webhook URL:</span>
               <div className="flex items-center gap-2 mt-1">
                 <input type="text" readOnly value={wh.url} className="input input-bordered input-sm flex-1 font-mono text-xs" />
-                <button onClick={() => copyToClipboard(wh.url, `url-${wh.webhookId}`)} className="btn btn-ghost btn-xs" title="Copy URL">
+                <Button onClick={() => copyToClipboard(wh.url, `url-${wh.webhookId}`)} variant="ghost" size="xs" title="Copy URL">
                   {copySuccess[`url-${wh.webhookId}`] ? <Check className="w-3.5 h-3.5 text-status-success" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
+                </Button>
               </div>
             </div>
 
             {/* Actions */}
             <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-border-dark">
-              <button onClick={() => viewLogs(wh)} className="btn btn-ghost btn-xs">View Logs</button>
-              <button onClick={() => { setWebhookToRegenerate(wh); setShowRegenerateModal(true); }} className="btn btn-ghost btn-xs text-warning gap-1">
+              <Button onClick={() => viewLogs(wh)} variant="ghost" size="xs">View Logs</Button>
+              <Button onClick={() => { setWebhookToRegenerate(wh); setShowRegenerateModal(true); }} variant="ghost" size="xs" intent="warning">
                 <RefreshCw className="w-3 h-3" /> Regenerate
-              </button>
-              <button onClick={() => setDeleteTarget(wh.webhookId)} className="btn btn-ghost btn-xs text-status-error gap-1">
+              </Button>
+              <Button onClick={() => setDeleteTarget(wh.webhookId)} variant="ghost" size="xs" intent="error">
                 <Trash2 className="w-3 h-3" /> Delete
-              </button>
+              </Button>
             </div>
           </div>
         ))}
@@ -265,7 +266,7 @@ const WebhookManager = () => {
 
       {/* Create Webhook */}
       <Modal open={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Webhook" size="sm"
-        footer={<div className="flex gap-3 w-full"><button onClick={() => setShowCreateModal(false)} className="btn btn-ghost flex-1">Cancel</button><button onClick={createWebhook} className="btn btn-primary flex-1">Create</button></div>}>
+        footer={<div className="flex gap-3 w-full"><Button onClick={() => setShowCreateModal(false)} variant="ghost" fullWidth>Cancel</Button><Button onClick={createWebhook} variant="primary" fullWidth>Create</Button></div>}>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Resource Type</label>
@@ -299,7 +300,7 @@ const WebhookManager = () => {
 
       {/* Credentials Modal */}
       <Modal open={showCredentialsModal && !!webhookCredentials} onClose={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} title="Webhook Credentials" size="md"
-        footer={<button onClick={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} className="btn btn-primary w-full">I've Saved the Credentials</button>}>
+        footer={<Button onClick={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} variant="primary" fullWidth>I've Saved the Credentials</Button>}>
         <div className="space-y-4">
           <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
             <p className="text-sm text-text-primary dark:text-text-primary-dark">\u26a0\ufe0f <strong>Important:</strong> Copy these credentials now. They will not be shown again!</p>
@@ -312,9 +313,9 @@ const WebhookManager = () => {
                 <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">{labels[field]}</label>
                 <div className="flex items-center gap-2">
                   <input type="text" readOnly value={webhookCredentials[field]} className="input input-bordered flex-1 font-mono text-sm" />
-                  <button onClick={() => copyToClipboard(webhookCredentials[field], key)} className="btn btn-primary btn-sm">
+                  <Button onClick={() => copyToClipboard(webhookCredentials[field], key)} variant="primary" size="sm">
                     {copySuccess[key] ? <Check className="w-4 h-4" /> : 'Copy'}
-                  </button>
+                  </Button>
                 </div>
               </div>
             );
