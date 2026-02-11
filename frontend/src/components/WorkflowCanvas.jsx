@@ -786,6 +786,29 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     saveWorkflow,
   });
 
+  // --- Memoized MiniMap callbacks to prevent infinite re-renders ---
+  const getNodeColor = useCallback((n) => {
+    // Execution status colors take precedence
+    if (n.data?.executionStatus === 'running') return darkMode ? '#3b82f6' : '#2563eb';
+    if (n.data?.executionStatus === 'success') return darkMode ? '#22c55e' : '#16a34a';
+    if (n.data?.executionStatus === 'error') return darkMode ? '#ef4444' : '#dc2626';
+    
+    // Node type colors
+    if (n.type === 'start') return darkMode ? '#06b6d4' : '#0891b2';
+    if (n.type === 'end') return darkMode ? '#f87171' : '#dc2626';
+    if (n.type === 'httpRequest') return darkMode ? '#818cf8' : '#6366f1';
+    if (n.type === 'assertion') return darkMode ? '#4ade80' : '#22c55e';
+    if (n.type === 'delay') return darkMode ? '#fbbf24' : '#f59e0b';
+    if (n.type === 'merge') return darkMode ? '#a78bfa' : '#8b5cf6';
+    
+    return darkMode ? '#64748b' : '#94a3b8';
+  }, [darkMode]);
+
+  const getNodeStrokeColor = useCallback((n) => {
+    if (n.data?.executionStatus === 'error') return darkMode ? '#dc2626' : '#b91c1c';
+    return darkMode ? '#374151' : '#cbd5e1';
+  }, [darkMode]);
+
   return (
     <div className="w-full h-full relative bg-surface dark:bg-surface-dark transition-colors" role="main" aria-label="Workflow canvas">
       <ReactFlow
@@ -822,26 +845,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         {/* MiniMap — bottom-right */}
         <Panel position="bottom-right" style={{ bottom: 10, right: 10 }}>
           <MiniMap 
-            nodeColor={(n) => {
-              // Execution status colors take precedence
-              if (n.data?.executionStatus === 'running') return darkMode ? '#3b82f6' : '#2563eb';
-              if (n.data?.executionStatus === 'success') return darkMode ? '#22c55e' : '#16a34a';
-              if (n.data?.executionStatus === 'error') return darkMode ? '#ef4444' : '#dc2626';
-              
-              // Node type colors
-              if (n.type === 'start') return darkMode ? '#06b6d4' : '#0891b2';
-              if (n.type === 'end') return darkMode ? '#f87171' : '#dc2626';
-              if (n.type === 'httpRequest') return darkMode ? '#818cf8' : '#6366f1';
-              if (n.type === 'assertion') return darkMode ? '#4ade80' : '#22c55e';
-              if (n.type === 'delay') return darkMode ? '#fbbf24' : '#f59e0b';
-              if (n.type === 'merge') return darkMode ? '#a78bfa' : '#8b5cf6';
-              
-              return darkMode ? '#64748b' : '#94a3b8';
-            }}
-            nodeStrokeColor={(n) => {
-              if (n.data?.executionStatus === 'error') return darkMode ? '#dc2626' : '#b91c1c';
-              return darkMode ? '#374151' : '#cbd5e1';
-            }}
+            nodeColor={getNodeColor}
+            nodeStrokeColor={getNodeStrokeColor}
             nodeStrokeWidth={2}
             maskColor={darkMode ? "rgba(0, 0, 0, 0.6)" : "rgba(0, 0, 0, 0.05)"}
             style={{ 
