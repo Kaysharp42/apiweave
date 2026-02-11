@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import AssertionEditor from './AssertionEditor';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
+import Button from './atoms/Button';
 
 const NodeModal = ({ open, node, onClose, onSave }) => {
   // Use ref to store working data - NEVER update during editing
@@ -119,13 +120,15 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
                 <p className="text-xs text-text-muted dark:text-text-muted-dark">Configure node</p>
               </div>
             </div>
-            <button
+            <Button
               onClick={handleClose}
-              className="btn btn-ghost btn-sm btn-square"
+              variant="ghost"
+              size="sm"
+              className="!p-2 !min-w-0"
               title="Close"
             >
               <X className="w-6 h-6" />
-            </button>
+            </Button>
           </div>
 
           {/* Node Name Card */}
@@ -200,8 +203,8 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
 
           {/* Footer Actions */}
           <div className="flex-shrink-0 mt-6 flex gap-3 justify-end">
-            <button onClick={handleClose} className="btn btn-ghost">Cancel</button>
-            <button onClick={handleSave} className="btn btn-primary shadow-md hover:shadow-lg">Save</button>
+            <Button onClick={handleClose} variant="ghost">Cancel</Button>
+            <Button onClick={handleSave} variant="primary">Save</Button>
           </div>
           </div>
         </div>
