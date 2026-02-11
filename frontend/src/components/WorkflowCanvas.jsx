@@ -117,7 +117,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [environments, setEnvironments] = useState([]);
+  const [isSwaggerRefreshing, setIsSwaggerRefreshing] = useState(false);
   const swaggerRefreshSignatureRef = useRef('');
+  const swaggerRefreshRequestIdRef = useRef(0);
   const envSwaggerGroupId = `env-openapi-${workflowId}`;
   
   // Initialize selectedEnvironment from localStorage if available
@@ -225,15 +227,25 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     if (environmentVersion > 0) fetchEnvironments();
   }, [environmentVersion, fetchEnvironments]);
 
-  // Ensure environment Swagger group is cleaned up when workflow unmounts/switches
-  useEffect(() => {
-    return () => {
-      removeImportedGroup(envSwaggerGroupId);
-    };
-  }, [envSwaggerGroupId, removeImportedGroup]);
+  const clearSwaggerWarningOnCanvas = useCallback(() => {
+    setNodes((currentNodes) => {
+      let didChange = false;
+      const nextNodes = currentNodes.map((node) => {
+        if (node.type !== 'http-request' || !node.data?.schemaRefreshWarning) {
+          return node;
+        }
+        const { schemaRefreshWarning, ...restData } = node.data;
+        didChange = true;
+        return {
+          ...node,
+          data: restData,
+        };
+      });
+      return didChange ? nextNodes : currentNodes;
+    });
+  }, [setNodes]);
 
-  // Auto-refresh Add Nodes from selected environment Swagger/OpenAPI URL
-  useEffect(() => {
+  const refreshSwaggerTemplates = useCallback(async ({ force = false, showSuccessToast = false } = {}) => {
     const selectedEnvId = selectedEnvironment && selectedEnvironment.trim()
       ? selectedEnvironment.trim()
       : null;
@@ -243,195 +255,200 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     const swaggerDocUrl = selectedEnvObject?.swaggerDocUrl?.trim() || '';
 
     const signature = `${workflowId}::${selectedEnvId || ''}::${swaggerDocUrl}`;
-    if (swaggerRefreshSignatureRef.current === signature) {
-      return;
+    if (!force && swaggerRefreshSignatureRef.current === signature) {
+      return { skipped: true, reason: 'unchanged-signature' };
     }
     swaggerRefreshSignatureRef.current = signature;
 
-    const clearSwaggerWarningOnCanvas = () => {
-      setNodes((currentNodes) => {
-        let didChange = false;
-        const nextNodes = currentNodes.map((node) => {
-          if (node.type !== 'http-request' || !node.data?.schemaRefreshWarning) {
-            return node;
-          }
-          const { schemaRefreshWarning, ...restData } = node.data;
-          didChange = true;
-          return {
-            ...node,
-            data: restData,
-          };
-        });
-        return didChange ? nextNodes : currentNodes;
-      });
-    };
+    if (!selectedEnvId) {
+      removeImportedGroup(envSwaggerGroupId);
+      clearSwaggerWarningOnCanvas();
+      if (showSuccessToast) {
+        toast.error('Select an environment before refreshing Swagger.');
+      }
+      return { skipped: true, reason: 'missing-environment' };
+    }
 
     if (!swaggerDocUrl) {
       removeImportedGroup(envSwaggerGroupId);
       clearSwaggerWarningOnCanvas();
-      return;
+      if (showSuccessToast) {
+        toast.error(`Environment "${selectedEnvObject?.name || 'Selected'}" has no Swagger/OpenAPI URL.`);
+      }
+      return { skipped: true, reason: 'missing-swagger-url' };
     }
 
-    let isCancelled = false;
+    const requestId = swaggerRefreshRequestIdRef.current + 1;
+    swaggerRefreshRequestIdRef.current = requestId;
+    setIsSwaggerRefreshing(true);
 
-    const refreshSwaggerTemplates = async () => {
-      try {
-        const response = await fetch(
-          `${API_BASE_URL}/api/workflows/import/openapi/url?swagger_url=${encodeURIComponent(swaggerDocUrl)}&sanitize=true`
-        );
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/workflows/import/openapi/url?swagger_url=${encodeURIComponent(swaggerDocUrl)}&sanitize=true`
+      );
 
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.detail || 'Failed to load Swagger/OpenAPI URL');
+      if (!response.ok) {
+        let detail = 'Failed to load Swagger/OpenAPI URL';
+        try {
+          const errorBody = await response.json();
+          detail = errorBody.detail || detail;
+        } catch (_) {
+          // Keep default error detail if response body is not JSON
+        }
+        throw new Error(detail);
+      }
+
+      const result = await response.json();
+      if (requestId !== swaggerRefreshRequestIdRef.current) {
+        return { skipped: true, reason: 'superseded' };
+      }
+
+      const apiNodes = result.nodes || [];
+      const items = apiNodes.map((node) => ({
+        label: node.label || node.config?.url || 'Request',
+        url: node.config?.url || '',
+        method: node.config?.method || 'GET',
+        headers: node.config?.headers || '',
+        body: node.config?.body || '',
+        queryParams: node.config?.queryParams || '',
+        pathVariables: node.config?.pathVariables || '',
+        cookies: node.config?.cookies || '',
+        timeout: node.config?.timeout || 30,
+        openapiMeta: node.config?.openapiMeta || null,
+      }));
+
+      addImportedGroup({
+        title: `Swagger: ${selectedEnvObject?.name || 'Environment'}`,
+        id: envSwaggerGroupId,
+        items,
+      });
+
+      const latestFingerprintSet = new Set();
+      const latestMethodPathSet = new Set();
+      const latestMethodsByPath = new Map();
+      const latestByOperationId = new Map();
+
+      apiNodes.forEach((apiNode) => {
+        const meta = apiNode?.config?.openapiMeta;
+        if (!meta || meta.source !== 'openapi') return;
+
+        const method = (meta.method || '').toUpperCase();
+        const path = meta.path || '';
+        const fingerprint = meta.fingerprint || '';
+        const operationId = (meta.operationId || '').trim();
+
+        if (fingerprint) latestFingerprintSet.add(fingerprint);
+        if (method && path) latestMethodPathSet.add(`${method}|${path}`);
+
+        if (path && method) {
+          if (!latestMethodsByPath.has(path)) {
+            latestMethodsByPath.set(path, new Set());
+          }
+          latestMethodsByPath.get(path).add(method);
         }
 
-        const result = await response.json();
-        const apiNodes = result.nodes || [];
-
-        if (isCancelled) {
-          return;
+        if (operationId) {
+          latestByOperationId.set(operationId, meta);
         }
+      });
 
-        const items = apiNodes.map((node) => ({
-          label: node.label || node.config?.url || 'Request',
-          url: node.config?.url || '',
-          method: node.config?.method || 'GET',
-          headers: node.config?.headers || '',
-          body: node.config?.body || '',
-          queryParams: node.config?.queryParams || '',
-          pathVariables: node.config?.pathVariables || '',
-          cookies: node.config?.cookies || '',
-          timeout: node.config?.timeout || 30,
-          openapiMeta: node.config?.openapiMeta || null,
-        }));
-
-        addImportedGroup({
-          title: `Swagger: ${selectedEnvObject?.name || 'Environment'}`,
-          id: envSwaggerGroupId,
-          items,
-        });
-
-        const latestFingerprintSet = new Set();
-        const latestMethodPathSet = new Set();
-        const latestMethodsByPath = new Map();
-        const latestByOperationId = new Map();
-
-        apiNodes.forEach((apiNode) => {
-          const meta = apiNode?.config?.openapiMeta;
-          if (!meta || meta.source !== 'openapi') return;
-
-          const method = (meta.method || '').toUpperCase();
-          const path = meta.path || '';
-          const fingerprint = meta.fingerprint || '';
-          const operationId = (meta.operationId || '').trim();
-
-          if (fingerprint) latestFingerprintSet.add(fingerprint);
-          if (method && path) latestMethodPathSet.add(`${method}|${path}`);
-
-          if (path && method) {
-            if (!latestMethodsByPath.has(path)) {
-              latestMethodsByPath.set(path, new Set());
-            }
-            latestMethodsByPath.get(path).add(method);
+      setNodes((currentNodes) => {
+        let didChange = false;
+        const nextNodes = currentNodes.map((node) => {
+          if (node.type !== 'http-request') {
+            return node;
           }
 
-          if (operationId) {
-            latestByOperationId.set(operationId, meta);
-          }
-        });
+          const existingWarning = node.data?.schemaRefreshWarning;
+          const nodeMeta = node.data?.config?.openapiMeta;
 
-        setNodes((currentNodes) => {
-          let didChange = false;
-          const nextNodes = currentNodes.map((node) => {
-            if (node.type !== 'http-request') {
+          if (!nodeMeta || nodeMeta.source !== 'openapi') {
+            if (!existingWarning) {
               return node;
             }
-
-            const existingWarning = node.data?.schemaRefreshWarning;
-            const nodeMeta = node.data?.config?.openapiMeta;
-
-            if (!nodeMeta || nodeMeta.source !== 'openapi') {
-              if (!existingWarning) {
-                return node;
-              }
-              didChange = true;
-              const { schemaRefreshWarning, ...restData } = node.data;
-              return { ...node, data: restData };
-            }
-
-            const metaMethod = (nodeMeta.method || '').toUpperCase();
-            const metaPath = nodeMeta.path || '';
-            const metaFingerprint = nodeMeta.fingerprint || '';
-            const metaOperationId = (nodeMeta.operationId || '').trim();
-            const methodPathKey = metaMethod && metaPath ? `${metaMethod}|${metaPath}` : '';
-
-            let warningText = null;
-
-            if (metaFingerprint && latestFingerprintSet.has(metaFingerprint)) {
-              warningText = null;
-            } else if (methodPathKey && latestMethodPathSet.has(methodPathKey)) {
-              warningText = null;
-            } else if (metaOperationId && latestByOperationId.has(metaOperationId)) {
-              const latestMeta = latestByOperationId.get(metaOperationId);
-              warningText = `Endpoint changed in Swagger docs (${metaMethod} ${metaPath} -> ${latestMeta.method} ${latestMeta.path}).`;
-            } else if (metaPath && latestMethodsByPath.has(metaPath)) {
-              const availableMethods = Array.from(latestMethodsByPath.get(metaPath)).join(', ');
-              warningText = `Method mismatch for ${metaPath}. Available method(s): ${availableMethods}.`;
-            } else {
-              warningText = `Endpoint no longer found in Swagger docs (${metaMethod} ${metaPath}).`;
-            }
-
-            if (!warningText) {
-              if (!existingWarning) {
-                return node;
-              }
-              didChange = true;
-              const { schemaRefreshWarning, ...restData } = node.data;
-              return {
-                ...node,
-                data: restData,
-              };
-            }
-
-            const warningPayload = {
-              text: warningText,
-              sourceUrl: swaggerDocUrl,
-              refreshedAt: new Date().toISOString(),
-              endpointFingerprint: metaFingerprint || null,
-            };
-
-            if (
-              existingWarning &&
-              existingWarning.text === warningPayload.text &&
-              existingWarning.sourceUrl === warningPayload.sourceUrl
-            ) {
-              return node;
-            }
-
             didChange = true;
+            const { schemaRefreshWarning, ...restData } = node.data;
+            return { ...node, data: restData };
+          }
+
+          const metaMethod = (nodeMeta.method || '').toUpperCase();
+          const metaPath = nodeMeta.path || '';
+          const metaFingerprint = nodeMeta.fingerprint || '';
+          const metaOperationId = (nodeMeta.operationId || '').trim();
+          const methodPathKey = metaMethod && metaPath ? `${metaMethod}|${metaPath}` : '';
+
+          let warningText = null;
+
+          if (metaFingerprint && latestFingerprintSet.has(metaFingerprint)) {
+            warningText = null;
+          } else if (methodPathKey && latestMethodPathSet.has(methodPathKey)) {
+            warningText = null;
+          } else if (metaOperationId && latestByOperationId.has(metaOperationId)) {
+            const latestMeta = latestByOperationId.get(metaOperationId);
+            warningText = `Endpoint changed in Swagger docs (${metaMethod} ${metaPath} -> ${latestMeta.method} ${latestMeta.path}).`;
+          } else if (metaPath && latestMethodsByPath.has(metaPath)) {
+            const availableMethods = Array.from(latestMethodsByPath.get(metaPath)).join(', ');
+            warningText = `Method mismatch for ${metaPath}. Available method(s): ${availableMethods}.`;
+          } else {
+            warningText = `Endpoint no longer found in Swagger docs (${metaMethod} ${metaPath}).`;
+          }
+
+          if (!warningText) {
+            if (!existingWarning) {
+              return node;
+            }
+            didChange = true;
+            const { schemaRefreshWarning, ...restData } = node.data;
             return {
               ...node,
-              data: {
-                ...node.data,
-                schemaRefreshWarning: warningPayload,
-              },
+              data: restData,
             };
-          });
-          return didChange ? nextNodes : currentNodes;
+          }
+
+          const warningPayload = {
+            text: warningText,
+            sourceUrl: swaggerDocUrl,
+            refreshedAt: new Date().toISOString(),
+            endpointFingerprint: metaFingerprint || null,
+          };
+
+          if (
+            existingWarning &&
+            existingWarning.text === warningPayload.text &&
+            existingWarning.sourceUrl === warningPayload.sourceUrl
+          ) {
+            return node;
+          }
+
+          didChange = true;
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              schemaRefreshWarning: warningPayload,
+            },
+          };
         });
-      } catch (error) {
-        if (!isCancelled) {
-          removeImportedGroup(envSwaggerGroupId);
-          toast.error(error.message || 'Failed to refresh nodes from environment Swagger URL');
-        }
+        return didChange ? nextNodes : currentNodes;
+      });
+
+      if (showSuccessToast) {
+        const endpointCount = items.length;
+        toast.success(`Swagger refreshed: ${endpointCount} endpoint${endpointCount === 1 ? '' : 's'}.`);
       }
-    };
 
-    refreshSwaggerTemplates();
-
-    return () => {
-      isCancelled = true;
-    };
+      return { endpointCount: items.length };
+    } catch (error) {
+      if (requestId === swaggerRefreshRequestIdRef.current) {
+        removeImportedGroup(envSwaggerGroupId);
+      }
+      toast.error(error.message || 'Failed to refresh nodes from environment Swagger URL');
+      return { error: error.message || 'Failed to refresh nodes from environment Swagger URL' };
+    } finally {
+      if (requestId === swaggerRefreshRequestIdRef.current) {
+        setIsSwaggerRefreshing(false);
+      }
+    }
   }, [
     workflowId,
     selectedEnvironment,
@@ -440,7 +457,25 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     addImportedGroup,
     removeImportedGroup,
     setNodes,
+    clearSwaggerWarningOnCanvas,
   ]);
+
+  // Ensure environment Swagger group is cleaned up when workflow unmounts/switches
+  useEffect(() => {
+    return () => {
+      swaggerRefreshRequestIdRef.current += 1;
+      removeImportedGroup(envSwaggerGroupId);
+    };
+  }, [envSwaggerGroupId, removeImportedGroup]);
+
+  // Auto-refresh Add Nodes from selected environment Swagger/OpenAPI URL
+  useEffect(() => {
+    refreshSwaggerTemplates();
+  }, [refreshSwaggerTemplates]);
+
+  const handleManualSwaggerRefresh = useCallback(() => {
+    refreshSwaggerTemplates({ force: true, showSuccessToast: true });
+  }, [refreshSwaggerTemplates]);
 
   // React to workflow reload signals from CanvasStore (e.g., from CurlImport append)
   const reloadVersion = useCanvasStore((s) => s.reloadVersion);
@@ -1211,6 +1246,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         isRunning={isRunning}
         environments={environments}
         selectedEnvironment={selectedEnvironment}
+        onRefreshSwagger={handleManualSwaggerRefresh}
+        isSwaggerRefreshing={isSwaggerRefreshing}
         onEnvironmentChange={(val) => {
           const processed = (val && val.trim()) ? val.trim() : null;
           const selectedEnv = environments.find(e => e.environmentId === processed);

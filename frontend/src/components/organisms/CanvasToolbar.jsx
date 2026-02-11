@@ -1,6 +1,5 @@
 import React from 'react';
-import { Save, History, Play, Code, Upload, Loader2 } from 'lucide-react';
-import { Badge } from '../atoms';
+import { Save, History, Play, Code, Upload, Loader2, RefreshCw } from 'lucide-react';
 import ButtonSelect from '../ButtonSelect';
 
 /**
@@ -19,6 +18,8 @@ export default function CanvasToolbar({
   environments = [],
   selectedEnvironment,
   onEnvironmentChange,
+  onRefreshSwagger,
+  isSwaggerRefreshing = false,
   workflowId,
 }) {
   return (
@@ -50,6 +51,22 @@ export default function CanvasToolbar({
         placeholder="No Environment"
         buttonClass="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay text-text-primary dark:text-text-primary-dark border border-border-default dark:border-border-default-dark hover:bg-border-default dark:hover:bg-border-default-dark transition-colors h-8 whitespace-nowrap"
       />
+
+      <button
+        onClick={onRefreshSwagger}
+        disabled={!onRefreshSwagger || isSwaggerRefreshing}
+        className={[
+          'flex items-center gap-1 px-2 py-1.5 text-sm font-medium rounded-lg transition-colors h-8 whitespace-nowrap',
+          !onRefreshSwagger || isSwaggerRefreshing
+            ? 'text-text-muted dark:text-text-muted-dark bg-surface dark:bg-surface-dark cursor-not-allowed'
+            : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark',
+        ].join(' ')}
+        title="Refresh Swagger templates now"
+        aria-label={isSwaggerRefreshing ? 'Refreshing Swagger templates' : 'Refresh Swagger templates'}
+      >
+        <RefreshCw className={`w-4 h-4 flex-shrink-0 ${isSwaggerRefreshing ? 'animate-spin' : ''}`} />
+        <span className="hidden lg:inline">{isSwaggerRefreshing ? 'Refreshing' : 'Refresh'}</span>
+      </button>
 
       {/* Separator */}
       <div className="w-px h-6 bg-border-default dark:bg-border-default-dark mx-0.5" aria-hidden="true" />
