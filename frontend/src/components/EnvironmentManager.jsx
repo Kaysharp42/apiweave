@@ -181,7 +181,7 @@ const EnvironmentManager = ({ open, onClose }) => {
                         ? 'border-primary bg-primary/5 dark:border-primary dark:bg-primary/10'
                         : 'border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
                     }`}
-                    onClick={() => !isEditing && handleEdit(env)}
+                    onClick={() => handleEdit(env)}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">

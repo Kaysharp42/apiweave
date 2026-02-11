@@ -170,7 +170,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
   return (
     <BaseNode
       title={data.label || 'HTTP Request'}
-      icon={<span className={`inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-bold rounded ${methodBadge} leading-none`}>{method}</span>}
+      icon={<span className={`inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-bold rounded mr-2 ${methodBadge} leading-none`}>{method}</span>}
       status={data.executionStatus || 'idle'}
       statusBadgeText={data.executionStatus && data.executionStatus !== 'idle' ? data.executionStatus : ''}
       selected={selected}

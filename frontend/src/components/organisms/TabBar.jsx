@@ -71,12 +71,12 @@ export default function TabBar() {
   if (tabs.length === 0) return null;
 
   return (
-    <div className="relative flex items-stretch bg-surface-raised dark:bg-surface-dark-raised border-b border-border-default dark:border-border-default-dark select-none min-h-[36px]">
+    <div className="relative flex items-stretch bg-surface-raised dark:bg-surface-dark-raised border-b border-border dark:border-border-dark select-none min-h-[36px]">
       {/* Left scroll chevron */}
       {canScrollLeft && (
         <button
           onClick={() => scroll(-1)}
-          className="sticky left-0 z-10 flex items-center px-1 bg-surface-raised dark:bg-surface-dark-raised border-r border-border-default dark:border-border-default-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+          className="sticky left-0 z-10 flex items-center px-1 bg-surface-raised dark:bg-surface-dark-raised border-r border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
           aria-label="Scroll tabs left"
         >
           <ChevronLeft className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
@@ -98,9 +98,9 @@ export default function TabBar() {
               onContextMenu={(e) => handleContextMenu(e, tab.id)}
               className={[
                 'group relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors',
-                'border-r border-border-default dark:border-border-default-dark',
+                'border-r border-border dark:border-border-dark',
                 isActive
-                  ? 'bg-surface dark:bg-surface-dark text-primary dark:text-primary-dark font-medium'
+                  ? 'bg-surface dark:bg-surface-dark text-primary dark:text-[#22d3ee] font-medium'
                   : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
               ]
                 .filter(Boolean)
@@ -109,7 +109,7 @@ export default function TabBar() {
             >
               {/* Active indicator — bottom accent bar */}
               {isActive && (
-                <span className="absolute bottom-0 inset-x-0 h-0.5 bg-primary dark:bg-primary-dark" />
+                <span className="absolute bottom-0 inset-x-0 h-0.5 bg-primary dark:bg-[#22d3ee]" />
               )}
 
               {/* Tab name + dirty dot */}
@@ -146,7 +146,7 @@ export default function TabBar() {
       {canScrollRight && (
         <button
           onClick={() => scroll(1)}
-          className="sticky right-0 z-10 flex items-center px-1 bg-surface-raised dark:bg-surface-dark-raised border-l border-border-default dark:border-border-default-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+          className="sticky right-0 z-10 flex items-center px-1 bg-surface-raised dark:bg-surface-dark-raised border-l border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
           aria-label="Scroll tabs right"
         >
           <ChevronRight className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
@@ -156,22 +156,22 @@ export default function TabBar() {
       {/* Context menu */}
       {contextMenu && (
         <div
-          className="fixed z-50 min-w-[160px] rounded-lg border border-border-default dark:border-border-default-dark bg-surface-raised dark:bg-surface-dark-raised shadow-lg py-1 text-sm"
+          className="fixed z-50 min-w-[160px] rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-lg py-1 text-sm"
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
           <button
-            className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+            className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
             onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}
           >
             Close
           </button>
           <button
-            className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+            className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
             onClick={() => { closeOthers(contextMenu.tabId); setContextMenu(null); }}
           >
             Close Others
           </button>
-          <div className="my-1 border-t border-border-default dark:border-border-default-dark" />
+          <div className="my-1 border-t border-border dark:border-border-dark" />
           <button
             className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors text-status-error"
             onClick={() => { closeAll(); setContextMenu(null); }}

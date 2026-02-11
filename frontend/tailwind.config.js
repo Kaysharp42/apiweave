@@ -41,6 +41,8 @@ export default {
         border: {
           DEFAULT: '#cbd5e1',   // slate-300 (light borders)
           dark: '#374151',      // gray-700 (dark borders)
+          default: '#cbd5e1',   // alias for DEFAULT (used as border-border-default)
+          'default-dark': '#374151', // alias for dark borders (used as border-border-default-dark)
         },
         'text-primary': {
           DEFAULT: '#111827',   // gray-900 (light text)

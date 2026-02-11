@@ -159,3 +159,31 @@ code, pre, .font-mono,
   outline-offset: 2px;
   border-radius: var(--aw-radius-md);
 }
+
+/* ──────────────────────────────────────────────
+   DaisyUI Form Controls — Dark Mode Overrides
+   ────────────────────────────────────────────── */
+.dark .input,
+.dark .textarea,
+.dark .select {
+  background-color: var(--aw-surface-raised);
+  border-color: var(--aw-border);
+  color: var(--aw-text-primary);
+}
+
+.dark .input::placeholder,
+.dark .textarea::placeholder {
+  color: var(--aw-text-muted);
+}
+
+.dark .input:focus,
+.dark .textarea:focus,
+.dark .select:focus {
+  border-color: var(--aw-primary);
+  outline-color: var(--aw-primary);
+}
+
+/* DaisyUI buttons — dark mode text fix */
+.dark .btn {
+  color: inherit;
+}

@@ -45,7 +45,7 @@ export default function Button({
     <button
       type={type}
       className={[
-        'btn',
+        'btn gap-1.5',
         variantClass,
         sizeClass,
         fullWidth && 'btn-block',

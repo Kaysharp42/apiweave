@@ -21,7 +21,7 @@ import API_BASE_URL from '../../utils/api';
 import WorkflowExportImport from '../WorkflowExportImport';
 import CollectionExportImport from '../CollectionExportImport';
 import { Badge, Spinner, Skeleton } from '../atoms';
-import { EmptyState } from '../molecules';
+import { EmptyState, PromptDialog } from '../molecules';
 import useSidebarStore from '../../stores/SidebarStore';
 import useTabStore from '../../stores/TabStore';
 
@@ -44,6 +44,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [exportingCollectionId, setExportingCollectionId] = useState(null);
   const [exportingCollectionName, setExportingCollectionName] = useState(null);
   const [environments, setEnvironments] = useState([]);
+  const [showNewWorkflowPrompt, setShowNewWorkflowPrompt] = useState(false);
   const scrollContainerRef = useRef(null);
 
   // Zustand sidebar store subscriptions
@@ -177,10 +178,11 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
     }
   }, [handleScroll, selectedNav]);
 
-  const createNewWorkflow = async () => {
-    const name = prompt('Workflow Name:');
-    if (!name) return;
+  const createNewWorkflow = () => {
+    setShowNewWorkflowPrompt(true);
+  };
 
+  const handleCreateWorkflow = async (name) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/workflows`, {
         method: 'POST',
@@ -542,6 +544,17 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
           mode="export"
         />
       )}
+
+      {/* New Workflow Prompt */}
+      <PromptDialog
+        open={showNewWorkflowPrompt}
+        onClose={() => setShowNewWorkflowPrompt(false)}
+        onSubmit={handleCreateWorkflow}
+        title="New Workflow"
+        message="Enter a name for your workflow."
+        placeholder="My Workflow"
+        submitLabel="Create"
+      />
     </div>
   );
 };

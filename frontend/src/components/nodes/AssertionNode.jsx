@@ -252,33 +252,36 @@ const AssertionNode = ({ id, data, selected }) => {
       }
       extraHandles={
         <>
+          {/* Pass handle — positioned at upper-right */}
           <Handle
             type="source"
             position={Position.Right}
             id="pass"
-            className="!bg-green-500 dark:!bg-green-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800 !rounded-sm"
-            style={{ top: '35%' }}
+            className="!bg-green-500 dark:!bg-green-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
+            style={{ top: 'auto', bottom: 40 }}
             title="Pass — all assertions passed"
           />
           <div
-            className="absolute text-[7px] font-bold text-green-600 dark:text-green-400 pointer-events-none select-none"
-            style={{ right: 12, top: 'calc(35% - 5px)' }}
+            className="absolute text-[9px] font-semibold text-green-600 dark:text-green-400 pointer-events-none select-none text-right"
+            style={{ right: 14, bottom: 36, lineHeight: '1' }}
           >
-            ✓
+            Pass
           </div>
+
+          {/* Fail handle — positioned at lower-right */}
           <Handle
             type="source"
             position={Position.Right}
             id="fail"
-            className="!bg-red-500 dark:!bg-red-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800 !rounded-sm"
-            style={{ top: '65%' }}
+            className="!bg-red-500 dark:!bg-red-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
+            style={{ top: 'auto', bottom: 0 }}
             title="Fail — one or more assertions failed"
           />
           <div
-            className="absolute text-[7px] font-bold text-red-600 dark:text-red-400 pointer-events-none select-none"
-            style={{ right: 12, top: 'calc(65% - 5px)' }}
+            className="absolute text-[9px] font-semibold text-red-600 dark:text-red-400 pointer-events-none select-none text-right"
+            style={{ right: 14, bottom: -4, lineHeight: '1' }}
           >
-            ✗
+            Fail
           </div>
         </>
       }

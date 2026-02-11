@@ -37,7 +37,7 @@ export default function Input({
       <input
         id={id}
         className={[
-          'input input-bordered w-full',
+          'input input-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
           sizeClass,
           error && 'input-error',
           className,

@@ -8,7 +8,7 @@ import DynamicFunctionsHelper from '../DynamicFunctionsHelper';
 import { WorkflowProvider } from '../../contexts/WorkflowContext';
 import { Settings, Sparkles, Package } from 'lucide-react';
 import { TabBar, KeyboardShortcutsHelp } from '../organisms';
-import { WorkspaceEmptyState } from '../molecules';
+import { WorkspaceEmptyState, PromptDialog } from '../molecules';
 import useTabStore from '../../stores/TabStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import useNavigationStore from '../../stores/NavigationStore';
@@ -21,6 +21,7 @@ const Workspace = ({ onActiveTabChange }) => {
   const [activePanelTab, setActivePanelTab] = useState('variables');
   const [environmentNames, setEnvironmentNames] = useState({});
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [showNewWorkflowPrompt, setShowNewWorkflowPrompt] = useState(false);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -77,9 +78,11 @@ const Workspace = ({ onActiveTabChange }) => {
   }, [environmentVersion]);
 
   // ---------- empty-state handler: create new workflow ----------
-  const handleNewWorkflow = useCallback(async () => {
-    const name = prompt('Workflow Name:');
-    if (!name) return;
+  const handleNewWorkflow = useCallback(() => {
+    setShowNewWorkflowPrompt(true);
+  }, []);
+
+  const handleCreateWorkflow = useCallback(async (name) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/workflows`, {
         method: 'POST',
@@ -209,6 +212,15 @@ const Workspace = ({ onActiveTabChange }) => {
         )}
       </div>
       <KeyboardShortcutsHelp open={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
+      <PromptDialog
+        open={showNewWorkflowPrompt}
+        onClose={() => setShowNewWorkflowPrompt(false)}
+        onSubmit={handleCreateWorkflow}
+        title="New Workflow"
+        message="Enter a name for your workflow."
+        placeholder="My Workflow"
+        submitLabel="Create"
+      />
     </div>
   );
 };
