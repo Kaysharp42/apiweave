@@ -37,7 +37,7 @@ function getDefaultConfig(type) {
  * @param {Function}    params.setNodes
  * @returns {{ onDrop: Function, onDragOver: Function }}
  */
-export default function useCanvasDrop({ reactFlowInstance, setNodes }) {
+export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }) {
   const onDragOver = useCallback((event) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -55,12 +55,13 @@ export default function useCanvasDrop({ reactFlowInstance, setNodes }) {
         console.error('No type data in drop event');
         return;
       }
-      if (!reactFlowInstance) {
+      const instance = reactFlowInstanceRef?.current;
+      if (!instance) {
         console.error('ReactFlow instance not initialized');
         return;
       }
 
-      const position = reactFlowInstance.screenToFlowPosition({
+      const position = instance.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
@@ -100,7 +101,7 @@ export default function useCanvasDrop({ reactFlowInstance, setNodes }) {
 
       setNodes((nds) => [...nds, newNode]);
     },
-    [reactFlowInstance, setNodes],
+    [reactFlowInstanceRef, setNodes],
   );
 
   return { onDrop, onDragOver };

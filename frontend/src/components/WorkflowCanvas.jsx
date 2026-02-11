@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect, useContext } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useContext, useMemo } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -62,6 +62,12 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   const context = useContext(AppContext);
   const { darkMode, autoSaveEnabled } = context || { darkMode: false, autoSaveEnabled: true };
   
+  // Use ref to track darkMode for MiniMap callbacks (prevents infinite re-renders)
+  const darkModeRef = useRef(darkMode);
+  useEffect(() => {
+    darkModeRef.current = darkMode;
+  }, [darkMode]);
+  
   // Get workflow state from WorkflowContext (ONLY variables and settings)
   const {
     variables: workflowVariables,
@@ -74,9 +80,36 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   // Use ReactFlow's built-in hooks for nodes and edges (local to WorkflowCanvas)
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // Keep refs for frequently changing values to stabilize ReactFlow handlers
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  const edgesRef = useRef(edges);
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
+  const onNodesChangeRef = useRef(onNodesChange);
+  useEffect(() => {
+    onNodesChangeRef.current = onNodesChange;
+  }, [onNodesChange]);
+
+  const onEdgesChangeRef = useRef(onEdgesChange);
+  useEffect(() => {
+    onEdgesChangeRef.current = onEdgesChange;
+  }, [onEdgesChange]);
+
+  const workflowVariablesRef = useRef(workflowVariables);
+  useEffect(() => {
+    workflowVariablesRef.current = workflowVariables;
+  }, [workflowVariables]);
   
   const [selectedNode, setSelectedNode] = useState(null);
-  const [reactFlowInstance, setReactFlowInstance] = useState(null);
+  const [isDraggingNode, setIsDraggingNode] = useState(false);
+  const reactFlowInstanceRef = useRef(null);
   const [modalNode, setModalNode] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
@@ -348,32 +381,71 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       incomingEdges[edge.target].push(edge);
     });
 
-    // Update nodes with branch info
-    setNodes(nds => nds.map(node => {
-      const nodeUpdate = {
-        ...node,
-        data: {
-          ...node.data,
-          branchCount: branchCounts[node.id] || 0,
-          incomingBranchCount: incomingCounts[node.id] || 0,
+    const branchesEqual = (left, right) => {
+      if (left === right) return true;
+      if (!left || !right) return false;
+      if (left.length !== right.length) return false;
+      for (let i = 0; i < left.length; i += 1) {
+        const l = left[i];
+        const r = right[i];
+        if (
+          l.index !== r.index ||
+          l.nodeId !== r.nodeId ||
+          l.label !== r.label ||
+          l.edgeLabel !== r.edgeLabel
+        ) {
+          return false;
         }
-      };
-      
-      // For merge nodes, add incoming branch details
-      if (node.type === 'merge' && incomingEdges[node.id]) {
-        nodeUpdate.data.incomingBranches = incomingEdges[node.id].map((edge, idx) => {
-          const sourceNode = nds.find(n => n.id === edge.source);
-          return {
-            index: idx,
-            nodeId: edge.source,
-            label: sourceNode?.data?.label || edge.source,
-            edgeLabel: edge.label || `Branch ${idx}`
-          };
-        });
       }
-      
-      return nodeUpdate;
-    }));
+      return true;
+    };
+
+    // Update nodes with branch info
+    setNodes(nds => {
+      let didChange = false;
+      const nextNodes = nds.map(node => {
+        const nextBranchCount = branchCounts[node.id] || 0;
+        const nextIncomingBranchCount = incomingCounts[node.id] || 0;
+        const prevData = node.data || {};
+
+        let nextIncomingBranches = prevData.incomingBranches;
+        let incomingBranchesChanged = false;
+
+        if (node.type === 'merge' && incomingEdges[node.id]) {
+          nextIncomingBranches = incomingEdges[node.id].map((edge, idx) => {
+            const sourceNode = nds.find(n => n.id === edge.source);
+            return {
+              index: idx,
+              nodeId: edge.source,
+              label: sourceNode?.data?.label || edge.source,
+              edgeLabel: edge.label || `Branch ${idx}`
+            };
+          });
+          incomingBranchesChanged = !branchesEqual(prevData.incomingBranches, nextIncomingBranches);
+        }
+
+        const baseChanged =
+          prevData.branchCount !== nextBranchCount ||
+          prevData.incomingBranchCount !== nextIncomingBranchCount;
+
+        if (!baseChanged && !incomingBranchesChanged) {
+          return node;
+        }
+
+        didChange = true;
+        return {
+          ...node,
+          data: {
+            ...prevData,
+            branchCount: nextBranchCount,
+            incomingBranchCount: nextIncomingBranchCount,
+            ...(incomingBranchesChanged ? { incomingBranches: nextIncomingBranches } : {})
+          }
+        };
+      });
+
+      return didChange ? nextNodes : nds;
+    });
   }, [edges, setNodes]);
 
   // Load workflow data when available
@@ -432,16 +504,19 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   const onConnect = useCallback(
     (params) => {
       setEdges((eds) => {
+        const currentNodes = nodesRef.current;
+        const isDark = darkModeRef.current;
+
         // Detect if source is an assertion node — auto-label Pass/Fail edges
-        const sourceNode = nodes.find(n => n.id === params.source);
+        const sourceNode = currentNodes.find(n => n.id === params.source);
         const isAssertionSource = sourceNode?.type === 'assertion';
         
         if (isAssertionSource && params.sourceHandle) {
           const isPass = params.sourceHandle === 'pass';
           const label = isPass ? 'Pass' : 'Fail';
           const color = isPass
-            ? (darkMode ? '#4ade80' : '#16a34a')
-            : (darkMode ? '#f87171' : '#dc2626');
+            ? (isDark ? '#4ade80' : '#16a34a')
+            : (isDark ? '#f87171' : '#dc2626');
           
           const newEdge = {
             id: `reactflow__edge-${params.source}${params.sourceHandle || ''}-${params.target}${params.targetHandle || ''}`,
@@ -456,7 +531,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
               fontSize: 11,
             },
             labelBgStyle: {
-              fill: darkMode ? '#1f2937' : '#ffffff',
+              fill: isDark ? '#1f2937' : '#ffffff',
               fillOpacity: 0.95,
             },
             labelBgPadding: [6, 4],
@@ -472,7 +547,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         
         if (parallelEdges.length > 0) {
           // Get source node label for better edge labels
-          const sourceNode = nodes.find(n => n.id === params.source);
+          const sourceNode = currentNodes.find(n => n.id === params.source);
           const sourceLabel = sourceNode?.data?.label || sourceNode?.id || 'Node';
           
           // Multiple edges from same node - mark as parallel branches
@@ -483,17 +558,17 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
                 ...e, 
                 animated: true, 
                 style: { 
-                  stroke: darkMode ? '#a78bfa' : '#8b5cf6', 
+                  stroke: isDark ? '#a78bfa' : '#8b5cf6', 
                   strokeWidth: 2 
                 },
                 label: `Branch ${branchIndex}`,
                 labelStyle: { 
-                  fill: darkMode ? '#e9d5ff' : '#5b21b6', 
+                  fill: isDark ? '#e9d5ff' : '#5b21b6', 
                   fontWeight: 600,
                   fontSize: 11
                 },
                 labelBgStyle: {
-                  fill: darkMode ? '#1f2937' : '#ffffff',
+                  fill: isDark ? '#1f2937' : '#ffffff',
                   fillOpacity: 0.95
                 },
                 labelBgPadding: [6, 4],
@@ -506,17 +581,17 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
             type: 'custom',
             animated: true,
             style: { 
-              stroke: darkMode ? '#a78bfa' : '#8b5cf6', 
+              stroke: isDark ? '#a78bfa' : '#8b5cf6', 
               strokeWidth: 2 
             },
             label: `Branch ${parallelEdges.length}`,
             labelStyle: { 
-              fill: darkMode ? '#e9d5ff' : '#5b21b6', 
+              fill: isDark ? '#e9d5ff' : '#5b21b6', 
               fontWeight: 600,
               fontSize: 11
             },
             labelBgStyle: {
-              fill: darkMode ? '#1f2937' : '#ffffff',
+              fill: isDark ? '#1f2937' : '#ffffff',
               fillOpacity: 0.95
             },
             labelBgPadding: [6, 4],
@@ -527,7 +602,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         return addEdge({ ...params, type: 'custom' }, eds);
       });
     },
-    [setEdges, darkMode, nodes]
+    [setEdges]
   );
 
   // Wrap onNodesChange to prevent new duplicate nodes from being auto-selected
@@ -539,11 +614,23 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       }
       return true;
     });
-    onNodesChange(filteredChanges);
-  }, [onNodesChange]);
+    onNodesChangeRef.current(filteredChanges);
+  }, []);
+
+  const handleEdgesChange = useCallback((changes) => {
+    onEdgesChangeRef.current(changes);
+  }, []);
 
   const onNodeClick = useCallback((event, node) => {
     setSelectedNode(node);
+  }, []);
+
+  const onNodeDragStart = useCallback(() => {
+    setIsDraggingNode(true);
+  }, []);
+
+  const onNodeDragStop = useCallback(() => {
+    setIsDraggingNode(false);
   }, []);
 
   const onNodeDoubleClick = useCallback((event, node) => {
@@ -604,19 +691,19 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
 
   // --- Drag-and-drop via extracted hook ---
-  const { onDrop, onDragOver } = useCanvasDrop({ reactFlowInstance, setNodes });
+  const { onDrop, onDragOver } = useCanvasDrop({ reactFlowInstanceRef, setNodes });
 
   // Save workflow; when `silent` is true do not show alerts (used for autosave)
   const saveWorkflow = useCallback(async (silent = false) => {
     const workflow = {
-      nodes: nodes.map(node => ({
+      nodes: nodesRef.current.map(node => ({
         nodeId: node.id,
         type: node.type,
         label: node.data.label,
         position: node.position,
         config: node.data.config || {},
       })),
-      edges: edges.map(edge => ({
+      edges: edgesRef.current.map(edge => ({
         edgeId: edge.id,
         source: edge.source,
         target: edge.target,
@@ -624,7 +711,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         targetHandle: edge.targetHandle || null,
         label: edge.label || null,
       })),
-      variables: workflowVariables,
+      variables: workflowVariablesRef.current,
     };
 
     try {
@@ -642,19 +729,19 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     } catch (error) {
       console.error('Save error:', error);
     }
-  }, [nodes, edges, workflowId, workflowVariables]);
+  }, [workflowId]);
 
   // Build the JSON object shown in the JSON editor
   const getWorkflowJson = useCallback(() => {
     return {
-      nodes: nodes.map(node => ({
+      nodes: nodesRef.current.map(node => ({
         nodeId: node.id,
         type: node.type,
         label: node.data.label,
         position: node.position,
         config: node.data.config || {},
       })),
-      edges: edges.map(edge => ({
+      edges: edgesRef.current.map(edge => ({
         edgeId: edge.id,
         source: edge.source,
         target: edge.target,
@@ -662,9 +749,11 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         targetHandle: edge.targetHandle || null,
         label: edge.label || null,
       })),
-      variables: workflowVariables,
+      variables: workflowVariablesRef.current,
     };
-  }, [nodes, edges, workflowVariables]);
+  }, []);
+
+  const workflowJsonMemo = useMemo(() => getWorkflowJson(), [getWorkflowJson]);
 
   // Apply changes from the JSON editor back to the canvas
   const handleJsonApply = useCallback(async (parsed) => {
@@ -773,13 +862,13 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     setNodes,
     selectedEnvironment,
     environments,
-    reactFlowInstance,
+    reactFlowInstanceRef,
   });
 
   // --- Debounced auto-save via extracted hook ---
   useAutoSave({
     workflowId,
-    autoSaveEnabled,
+    autoSaveEnabled: autoSaveEnabled && !isDraggingNode,
     nodes,
     edges,
     workflowVariables,
@@ -788,43 +877,73 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
   // --- Memoized MiniMap callbacks to prevent infinite re-renders ---
   const getNodeColor = useCallback((n) => {
+    const isDark = darkModeRef.current;
     // Execution status colors take precedence
-    if (n.data?.executionStatus === 'running') return darkMode ? '#3b82f6' : '#2563eb';
-    if (n.data?.executionStatus === 'success') return darkMode ? '#22c55e' : '#16a34a';
-    if (n.data?.executionStatus === 'error') return darkMode ? '#ef4444' : '#dc2626';
-    
+    if (n.data?.executionStatus === 'running') return isDark ? '#3b82f6' : '#2563eb';
+    if (n.data?.executionStatus === 'success') return isDark ? '#22c55e' : '#16a34a';
+    if (n.data?.executionStatus === 'error') return isDark ? '#ef4444' : '#dc2626';
+
     // Node type colors
-    if (n.type === 'start') return darkMode ? '#06b6d4' : '#0891b2';
-    if (n.type === 'end') return darkMode ? '#f87171' : '#dc2626';
-    if (n.type === 'httpRequest') return darkMode ? '#818cf8' : '#6366f1';
-    if (n.type === 'assertion') return darkMode ? '#4ade80' : '#22c55e';
-    if (n.type === 'delay') return darkMode ? '#fbbf24' : '#f59e0b';
-    if (n.type === 'merge') return darkMode ? '#a78bfa' : '#8b5cf6';
-    
-    return darkMode ? '#64748b' : '#94a3b8';
-  }, [darkMode]);
+    if (n.type === 'start') return isDark ? '#06b6d4' : '#0891b2';
+    if (n.type === 'end') return isDark ? '#f87171' : '#dc2626';
+    if (n.type === 'httpRequest') return isDark ? '#818cf8' : '#6366f1';
+    if (n.type === 'assertion') return isDark ? '#4ade80' : '#22c55e';
+    if (n.type === 'delay') return isDark ? '#fbbf24' : '#f59e0b';
+    if (n.type === 'merge') return isDark ? '#a78bfa' : '#8b5cf6';
+
+    return isDark ? '#64748b' : '#94a3b8';
+  }, []);
 
   const getNodeStrokeColor = useCallback((n) => {
-    if (n.data?.executionStatus === 'error') return darkMode ? '#dc2626' : '#b91c1c';
-    return darkMode ? '#374151' : '#cbd5e1';
-  }, [darkMode]);
+    const isDark = darkModeRef.current;
+    if (n.data?.executionStatus === 'error') return isDark ? '#dc2626' : '#b91c1c';
+    return isDark ? '#374151' : '#cbd5e1';
+  }, []);
+
+  const miniMapStyle = useMemo(() => ({
+    backgroundColor: darkMode ? '#1f2937' : 'white',
+    border: darkMode ? '2px solid #374151' : '2px solid #0e7490',
+    borderRadius: '8px',
+    width: 220,
+    height: 150,
+  }), [darkMode]);
+
+  const miniMapMaskColor = useMemo(
+    () => (darkMode ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.05)'),
+    [darkMode],
+  );
+
+  const defaultEdgeOptions = useMemo(
+    () => ({ type: 'custom', animated: true }),
+    [],
+  );
+
+  const reactFlowStyle = useMemo(
+    () => ({ width: '100%', height: '100%' }),
+    [],
+  );
 
   return (
-    <div className="w-full h-full relative bg-surface dark:bg-surface-dark transition-colors" role="main" aria-label="Workflow canvas">
+    <div className="w-full h-full min-h-0 relative bg-surface dark:bg-surface-dark transition-colors" role="main" aria-label="Workflow canvas">
       <ReactFlow
+        style={reactFlowStyle}
         nodes={nodes}
         edges={edges}
         onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
+        onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
-        onInit={setReactFlowInstance}
+        onInit={(instance) => {
+          reactFlowInstanceRef.current = instance;
+        }}
         onDrop={onDrop}
         onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        defaultEdgeOptions={{ type: 'custom', animated: true }}
+        defaultEdgeOptions={defaultEdgeOptions}
         fitView
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Control"
@@ -844,20 +963,14 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         
         {/* MiniMap — bottom-right */}
         <Panel position="bottom-right" style={{ bottom: 10, right: 10 }}>
-          <MiniMap 
+          <MiniMap
             nodeColor={getNodeColor}
             nodeStrokeColor={getNodeStrokeColor}
             nodeStrokeWidth={2}
-            maskColor={darkMode ? "rgba(0, 0, 0, 0.6)" : "rgba(0, 0, 0, 0.05)"}
-            style={{ 
-              backgroundColor: darkMode ? '#1f2937' : 'white',
-              border: darkMode ? '2px solid #374151' : '2px solid #0e7490',
-              borderRadius: '8px',
-              width: 220,
-              height: 150,
-            }}
-            zoomable 
-            pannable 
+            maskColor={miniMapMaskColor}
+            style={miniMapStyle}
+            zoomable
+            pannable
           />
         </Panel>
       </ReactFlow>
@@ -914,7 +1027,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       {/* JSON Workflow Editor */}
       <WorkflowJsonEditor
         open={showJsonEditor}
-        workflowJson={getWorkflowJson()}
+        workflowJson={showJsonEditor ? workflowJsonMemo : null}
         onApply={handleJsonApply}
         onClose={() => setShowJsonEditor(false)}
       />

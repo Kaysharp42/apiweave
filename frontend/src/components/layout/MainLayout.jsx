@@ -91,7 +91,7 @@ const MainLayout = () => {
       <MainHeader />
       <HorizontalDivider />
 
-      <main className="flex-1 overflow-hidden bg-surface dark:bg-surface-dark">
+      <main className="flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
         <Allotment>
           {/* Left: AppNavBar + Sidebar */}
           <Allotment.Pane

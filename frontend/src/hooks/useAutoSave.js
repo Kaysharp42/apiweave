@@ -25,9 +25,17 @@ export default function useAutoSave({
   saveWorkflow,
 }) {
   const timerRef = useRef(null);
+  const lastSnapshotRef = useRef({ nodes: null, edges: null, vars: null });
 
   useEffect(() => {
     if (!autoSaveEnabled || !workflowId) return;
+
+    const lastSnapshot = lastSnapshotRef.current;
+    if (lastSnapshot.nodes === nodes && lastSnapshot.edges === edges && lastSnapshot.vars === workflowVariables) {
+      return;
+    }
+
+    lastSnapshotRef.current = { nodes, edges, vars: workflowVariables };
 
     if (timerRef.current) clearTimeout(timerRef.current);
 

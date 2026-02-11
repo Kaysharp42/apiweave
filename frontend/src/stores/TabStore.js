@@ -82,15 +82,23 @@ const useTabStore = create((set, get) => ({
 
   /** Mark a tab as having unsaved (dirty) changes. */
   markDirty: (id) =>
-    set((s) => ({
-      tabs: s.tabs.map((t) => (t.id === id ? { ...t, isDirty: true } : t)),
-    })),
+    set((s) => {
+      const target = s.tabs.find((t) => t.id === id);
+      if (!target || target.isDirty) return s;
+      return {
+        tabs: s.tabs.map((t) => (t.id === id ? { ...t, isDirty: true } : t)),
+      };
+    }),
 
   /** Mark a tab as saved (clean). */
   markClean: (id) =>
-    set((s) => ({
-      tabs: s.tabs.map((t) => (t.id === id ? { ...t, isDirty: false } : t)),
-    })),
+    set((s) => {
+      const target = s.tabs.find((t) => t.id === id);
+      if (!target || !target.isDirty) return s;
+      return {
+        tabs: s.tabs.map((t) => (t.id === id ? { ...t, isDirty: false } : t)),
+      };
+    }),
 
   /** Update a tab's display name (e.g. after rename). */
   renameTab: (id, name) =>

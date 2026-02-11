@@ -469,15 +469,16 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
 
   // Seed editor with pretty-printed JSON on open
   useEffect(() => {
+    if (!open || !workflowJson) return;
     try {
       const pretty = JSON.stringify(workflowJson, null, 2);
-      setValue(pretty);
+      setValue((prev) => (prev === pretty ? prev : pretty));
       setError(null);
       setIsDirty(false);
     } catch {
       setValue('{}');
     }
-  }, [workflowJson]);
+  }, [open, workflowJson]);
 
   // Focus textarea on mount
   useEffect(() => {

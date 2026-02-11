@@ -3,6 +3,17 @@ import API_BASE_URL from '../utils/api';
 import { usePalette } from './PaletteContext';
 import useSidebarStore from '../stores/SidebarStore';
 
+const shallowEqual = (left, right) => {
+  if (left === right) return true;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (const key of leftKeys) {
+    if (left[key] !== right[key]) return false;
+  }
+  return true;
+};
+
 /**
  * WorkflowContext - Single Source of Truth for Workflow State
  * 
@@ -192,6 +203,10 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
   const registerExtractors = useCallback((extractors) => {
     // Get previous extractor variable names
     const prevExtractorVarNames = Object.keys(extractorVariablesRef.current);
+
+    if (shallowEqual(extractorVariablesRef.current, extractors)) {
+      return;
+    }
     
     // Update the ref with new extractors
     extractorVariablesRef.current = extractors;
@@ -219,6 +234,9 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
         merged: Object.keys(merged)
       });
       
+      if (shallowEqual(prev, merged)) {
+        return prev;
+      }
       return merged;
     });
   }, []);

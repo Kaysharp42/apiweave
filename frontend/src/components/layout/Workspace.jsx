@@ -117,12 +117,12 @@ const Workspace = ({ onActiveTabChange }) => {
   });
 
   return (
-    <div className="flex flex-col h-full bg-surface dark:bg-surface-dark">
+    <div className="flex flex-col h-full min-h-0 bg-surface dark:bg-surface-dark">
       {/* Tab Bar */}
       <TabBar />
 
       {/* Workspace Content */}
-      <div className="flex-1 overflow-hidden flex flex-col relative">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
         {activeTab ? (
           <WorkflowProvider
             key={activeTab.id}
@@ -141,16 +141,18 @@ const Workspace = ({ onActiveTabChange }) => {
 
             {/* Main Layout */}
             <div className="flex-1 overflow-hidden">
-              <Allotment>
+              <Allotment className="h-full">
                 {/* Left: Canvas */}
                 <Allotment.Pane>
-                  <WorkflowCanvas
-                    workflowId={activeTab.id}
-                    workflow={activeTab.workflow}
-                    isPanelOpen={showVariablesPanel}
-                    showVariablesPanel={showVariablesPanel}
-                    onShowVariablesPanel={setShowVariablesPanel}
-                  />
+                  <div className="h-full w-full">
+                    <WorkflowCanvas
+                      workflowId={activeTab.id}
+                      workflow={activeTab.workflow}
+                      isPanelOpen={showVariablesPanel}
+                      showVariablesPanel={showVariablesPanel}
+                      onShowVariablesPanel={setShowVariablesPanel}
+                    />
+                  </div>
                 </Allotment.Pane>
 
                 {/* Right: Variables & Settings Panel (Conditional) */}

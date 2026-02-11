@@ -55,7 +55,7 @@ export default function useWorkflowPolling({
   setNodes,
   selectedEnvironment,
   environments,
-  reactFlowInstance,
+  reactFlowInstanceRef,
 }) {
   const [isRunning, setIsRunning] = useState(false);
   const [currentRunId, setCurrentRunId] = useState(null);
@@ -116,12 +116,13 @@ export default function useWorkflowPolling({
         ),
       );
 
-      if (reactFlowInstance && invalidSummary[0]) {
+      const instance = reactFlowInstanceRef?.current;
+      if (instance && invalidSummary[0]) {
         const firstId = invalidSummary[0].nodeId;
         const target = nodes.find((n) => n.id === firstId);
         if (target) {
           try {
-            reactFlowInstance.setCenter(target.position.x, target.position.y, {
+            instance.setCenter(target.position.x, target.position.y, {
               zoom: 1.2,
             });
           } catch {
@@ -243,7 +244,7 @@ export default function useWorkflowPolling({
     selectedEnvironment,
     environments,
     nodes,
-    reactFlowInstance,
+    reactFlowInstanceRef,
   ]);
 
   // ---- Public: check secrets first, then run ----
