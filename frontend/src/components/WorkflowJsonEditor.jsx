@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
+import Button from './atoms/Button';
 
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows
@@ -608,31 +609,35 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
               </button>
             </div>
             
-            <button
+            <Button
               onClick={handleCopy}
-              className="btn btn-ghost btn-sm gap-1.5"
+              variant="ghost"
+              size="sm"
               title={viewMode === 'json' ? 'Copy JSON to clipboard' : 'Copy AI prompt to clipboard'}
             >
               {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? 'Copied!' : 'Copy'}
-            </button>
+            </Button>
             {viewMode === 'json' && (
-              <button
+              <Button
                 onClick={handleApply}
                 disabled={!isDirty}
-                className="btn btn-primary btn-sm gap-1.5"
+                variant="primary"
+                size="sm"
                 title="Apply changes (Ctrl+S)"
               >
                 Apply
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               onClick={onClose}
-              className="btn btn-ghost btn-sm btn-square"
+              variant="ghost"
+              size="sm"
+              className="!p-2 !min-w-0"
               title="Close (Esc)"
             >
               <X className="w-5 h-5" />
-            </button>
+            </Button>
           </div>
         </div>
 
