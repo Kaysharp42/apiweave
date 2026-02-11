@@ -106,19 +106,24 @@ git commit -m "feat: add manual swagger refresh action in canvas toolbar"
 
 ## Phase 4 - Final regression and cleanup
 
-Status: **Not done**
+Status: **Done**
 
-- [ ] Not done - Verify environment create/edit/duplicate keeps Swagger URL correctly.
-- [ ] Not done - Verify warning behavior across workflow reload, tab switch, and environment switch.
-- [ ] Not done - Verify collection import/export keeps `swaggerDocUrl`.
-- [ ] Not done - Update docs/changelog notes for new behavior.
+- [x] Done - Verify environment create/edit/duplicate keeps Swagger URL correctly.
+- [x] Done - Verify warning behavior across workflow reload, tab switch, and environment switch.
+- [x] Done - Verify collection import/export keeps `swaggerDocUrl`.
+- [x] Done - Update docs/changelog notes for new behavior.
 
 ### Phase 4 test and commit (required before merge)
 
-- [ ] Not done - Backend compile checks pass.
-- [ ] Not done - Frontend build passes.
-- [ ] Not done - Manual end-to-end QA pass complete.
-- [ ] Not done - Commit Phase 4 only.
+- [x] Done - Backend compile checks pass.
+- [x] Done - Frontend build passes.
+- [x] Done - Manual end-to-end QA pass complete.
+- [x] Done - Commit Phase 4 only.
+
+Execution log (Phase 4):
+
+- [x] Done - `325b0e3` docs/changelog notes for Swagger environment sync behavior.
+- [x] Done - `304598d` phase 4 regression learnings added.
 
 Suggested commands:
 
@@ -133,6 +138,6 @@ git commit -m "chore: finalize swagger env sync regressions and docs"
 
 ## Completion Gate
 
-- [ ] Not done - Every phase has tests executed.
-- [ ] Not done - Every phase has its own commit.
-- [ ] Not done - No open regressions in environment sync, node warnings, or toolbar actions.
+- [x] Done - Every phase has tests executed.
+- [x] Done - Every phase has its own commit.
+- [x] Done - No open regressions in environment sync, node warnings, or toolbar actions.
