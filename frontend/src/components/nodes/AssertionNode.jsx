@@ -418,12 +418,19 @@ const AssertionNode = ({ id, data, selected }) => {
               )}
 
               {/* Info */}
-              <div className="text-[8px] text-text-muted dark:text-text-muted-dark space-y-0.5 p-1 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+              <div className="text-[9px] text-text-muted dark:text-text-muted-dark space-y-1 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
                 <p className="flex items-center gap-1">
                   <Info className="w-3 h-3 flex-shrink-0" />
                   <span><strong>Pass/Fail:</strong> Connect the green ✓ handle for all-pass, red ✗ for any-fail.</span>
                 </p>
-                <p>Use prev.* to reference previous node results.</p>
+                <p>
+                  Use <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">prev.*</code> to reference previous node results, 
+                  or <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">variables.*</code> for workflow variables.
+                </p>
+                <p className="text-[8px]">
+                  <strong>JSONPath examples:</strong> <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">body.data[0].id</code>, 
+                  <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">response.user.email</code>
+                </p>
               </div>
             </div>
           )}
