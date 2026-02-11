@@ -281,3 +281,103 @@ The canvas toolbar had 8+ buttons with identical structure (icon + optional labe
 
 ### 77. Bundle size impact of Headless UI Popover + Mousetrap
 Adding `@headlessui/react` Popover (already a dependency — tree-shaken) and `mousetrap` (6.5 KB minified) increased the JS bundle from 845 KB → 908 KB over Phase 10. Most of the increase came from Headless UI's Popover internals. Acceptable for the accessibility and UX gains, but worth monitoring — dynamic imports could reclaim this if needed.
+---
+
+## Phase 11: UI/UX Refinement — Round 2 (2026-02-11)
+
+### 78. Method badge spacing: `mr-2` on the badge itself complements parent `gap-2`
+The BaseNode component wraps icons in a flexbox container with `gap-2`, but for inline badge elements (like the HTTP method badge), this gap alone doesn't provide enough visual breathing room next to the title text. Adding `mr-2` directly to the badge span gives better control over the spacing. This pattern applies whenever a decorative inline element (badge, pill, icon) renders next to text — the parent's flex gap handles structural spacing, while the element's right margin handles visual polish.
+
+### 79. Single-property CSS changes are low-risk and ideal for incremental polish
+Adding a single utility class (`mr-2`) to an existing element is extremely low-risk compared to multi-property refactors. The change is visually isolated, easily testable, and unlikely to cascade unintended side effects. When tackling UI polish tasks, prioritize these atomic changes — they accumulate into significant improvements without the debugging overhead of architectural changes.
+
+### 80. Button redesign: FlowTest's shadow-on-hover pattern requires discrete variant classes
+The FlowTest button system uses filled primary buttons with shadows (`bg-primary shadow-sm hover:shadow-md`), outlined secondary buttons with light tint backgrounds (`bg-primary/5 border border-primary`), and ghost buttons with minimal styling (`hover:bg-surface-overlay`). Attempting to compose these with DaisyUI's `btn btn-primary` classes creates conflicts — DaisyUI applies its own background, border, and shadow utilities that override the custom ones. The solution: completely remove DaisyUI button classes (`btn`, `btn-primary`, etc.) and use pure Tailwind composition with explicit class strings per variant.
+
+### 81. Intent prop separates semantic meaning from visual style
+The Button component's `intent` prop (`'default' | 'success' | 'error' | 'warning' | 'info'`) allows semantic labeling of buttons independent of their variant (`'primary' | 'secondary' | 'ghost'`). For example, a delete button can be `variant="ghost" intent="error"` (minimal red text) or `variant="primary" intent="error"` (filled red with white text). This two-axis pattern scales better than mapping each semantic action to a fixed visual style.
+
+### 82. Lucide-react's Loader2 provides a clean loading spinner
+Instead of DaisyUI's `<span className="loading loading-spinner loading-sm" />`, lucide-react's `<Loader2 className="w-4 h-4 animate-spin" />` gives a consistent icon-style spinner that matches the rest of the icon library. The `animate-spin` utility from Tailwind handles the rotation. This eliminates the need for DaisyUI's loading component classes entirely.
+
+### 83. Button component consolidation reduces line count without removing features
+Migrating 8 files (NodeModal, WorkflowJsonEditor, WebhookManager, SecretsPrompt, SecretsPanel, etc.) from raw DaisyUI button elements to the new Button component eliminated ~80 lines of repetitive className strings while adding features (intent prop, consistent shadow effects, unified loading states). The Button component itself is only 110 lines, so the net line reduction is significant.
+
+### 84. fullWidth prop replaces flex-1 for button expansion in flex containers
+Modal footers previously used `<button className="btn btn-ghost flex-1">` to make buttons expand equally in the flex container. The new Button component's `fullWidth` prop (`fullWidth && 'w-full'`) achieves the same result with clearer intent — the button spans its container width regardless of whether the container uses flexbox or grid.
+
+### 85. Inline style overrides for square buttons: `!p-2 !min-w-0`
+Close buttons (X icons) need to be square, not rectangular. DaisyUI's `btn-square` class achieved this. With custom Button component, the equivalent is `className="!p-2 !min-w-0"` — the `!` prefix forces the padding override over the size variant's defaults. The `min-w-0` removes the implicit minimum width that text buttons need, allowing the icon-only button to shrink to its content size.
+
+### 86. Ghost button intent colors apply to text, not background
+For ghost buttons, the intent prop changes the text color (`text-warning`, `text-status-error`) but keeps the background transparent/minimal. This differs from primary buttons where intent changes the background fill. The asymmetry is intentional: ghost buttons are low-emphasis and rely on color to convey meaning, while primary buttons use both color and weight.
+
+### 87. Build success confirms zero breaking changes from button migration
+The complete button redesign (10+ file changes) built successfully on first attempt with zero errors, confirming that the Button component API (`variant`, `intent`, `size`, `onClick`, `disabled`, `children`) was a complete drop-in replacement for the previous raw button patterns. This validates the upfront API design — spending time on the Button component interface before migrating callers paid off.
+
+### 88. Tailwind `group-hover:` requires parent-child relationship, not siblings
+The initial attempt to add hover labels to assertion node handles applied the `group` class directly to the `<Handle>` component and `group-hover:opacity-100` to the label div. This failed because Tailwind's `group-hover:` modifier only works when hovering over an ancestor with the `group` class — not a sibling. The label div was a sibling to the Handle, so the hover never triggered. Solution: wrap both the Handle and label in a container div with `className="group"`, making the label a child of the group container.
+
+### 89. ReactFlow Handle positioning with transforms requires container coordination
+Moving the assertion node handles from bottom-aligned (`bottom: 40`, `bottom: 0`) to vertically centered (`top: '50%', transform: 'translateY(-20px)'`) required careful positioning of both the Handle itself and its hover label. The solution: apply the transform to a wrapper div (`style={{ top: '50%', right: 0, transform: 'translateY(-20px)' }}`), then position the Handle relatively within that container (`style={{ position: 'relative' }}`). This keeps the Handle at the correct vertical position while allowing the label to be absolutely positioned relative to the Handle.
+
+### 90. Hover transitions should use `transition-opacity` for smooth fade-in
+The assertion handle labels fade from invisible (`opacity-0`) to visible (`group-hover:opacity-100`) on hover. Adding `transition-opacity` to the label's className creates a smooth CSS transition instead of an instant snap. Without this, the label would appear jarringly on hover. The default Tailwind transition duration (150ms) feels responsive without being sluggish.
+
+### 91. Inline styles with `whiteSpace: 'nowrap'` prevent label text wrapping
+The "Pass" and "Fail" labels are short single words, but if a future label is longer (e.g., "Validation Passed"), it could wrap to multiple lines and break the layout. Adding `whiteSpace: 'nowrap'` to the label's inline style ensures the text always renders on a single line, maintaining the compact design. This is a defensive pattern for any absolutely positioned UI label.
+
+### 92. Code tag styling for inline technical terms requires explicit color contrast
+When technical terms like `prev.*` and `variables.*` are embedded in paragraph text, they need explicit styling to stand out — simply using `<code>` without color styling doesn't provide enough visual distinction. The blue color scheme (`bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200`) was specifically chosen because blue conventionally signals "code" or "technical information" in developer tools, and provides strong contrast against the tips section's light blue background (`bg-blue-50 dark:bg-blue-900/20`). The padding (`px-1.5 py-0.5`) is slightly increased from typical inline code (which often uses `px-1`) to create more breathing room around the text, making it easier to read at the small font size (`text-[9px]`).
+
+### 93. Inline examples in tips sections reduce cognitive load
+Adding JSONPath examples like `body.data[0].id` and `response.user.email` directly in the tips section eliminates the need for users to context-switch to documentation or remember syntax patterns. These concrete examples are more immediately actionable than abstract descriptions like "use dot notation for nested fields." The examples were chosen to demonstrate two common patterns: array indexing (`[0]`) and nested object access (`.user.email`), covering the majority of use cases users will encounter when writing assertions.
+
+### 94. Font size hierarchy: base text vs code snippets
+The tips section uses `text-[9px]` for base paragraph text but the same `text-[9px]` for code snippets. Normally, inline code is slightly larger than surrounding text for readability (e.g., `text-sm` base with `text-base` code). However, at very small font sizes (8-9px), making code larger can feel disproportionate. The solution was to keep code the same size as body text but use background color, padding, and font-family (`font-mono`) to create visual distinction. The result feels balanced without the code overwhelming the text at this compact scale.
+
+### 95. ReactFlow defaultEdgeOptions propagates properties to all new edges
+ReactFlow's `defaultEdgeOptions` prop is applied to every edge created through the `onConnect` handler, unless the handler explicitly overrides those properties. Adding `animated: true` to `defaultEdgeOptions={{ type: 'custom', animated: true }}` ensures all edges have the flowing animation effect by default, without needing to set it individually in the connection handler. This pattern is cleaner than checking each edge creation point and manually adding the animated property. Note that existing edges in the database won't have this property until they're reconnected or the workflow is re-saved.
+
+### 96. ReactFlow Panel positioning is relative to the ReactFlow container, not the viewport
+The `<Panel>` component from ReactFlow positions its content relative to the ReactFlow container boundaries, not the browser viewport. When positioning with `position="bottom-left"` and `style={{ bottom: 60, left: 10 }}`, these coordinates are relative to the ReactFlow container's edges. If the ReactFlow container is nested within an Allotment pane (as in MainLayout), the coordinates are still relative to that pane's content area, not absolute to the window. This means a `left: 10` position should naturally avoid the sidebar since the ReactFlow container is in the right pane of the split layout.
+
+### 97. MiniMap placement: bottom-right avoids UI overlap in split-pane layouts
+In a two-pane layout (sidebar left, canvas right), placing the minimap at `bottom-left` can cause visual conflicts if the split pane divider is narrow or if future sidebar changes extend its rendering area. Moving the minimap to `bottom-right` with `position="bottom-right"` and `style={{ bottom: 10, right: 10 }}` ensures it's always visible in the canvas area with no risk of overlap from left-side UI elements (sidebar, controls, etc.). This position also feels more natural in Western UIs where the primary action area is the left-to-right reading flow, leaving the bottom-right as a utility zone.
+
+### 98. Assertion node edges retain animation after manual styling
+When creating edges from assertion nodes, the code explicitly sets `animated: true` alongside custom colors (green/red for pass/fail). This per-edge override takes precedence over `defaultEdgeOptions`. The result is that assertion edges are always animated (even before the global `animated: true` default was added), which is why they appeared to "always have animations" while regular edges didn't. This inconsistency was user-visible and confusing — users expected all edges to animate during workflow execution, not just assertion edges. Standardizing on `animated: true` as the default eliminates this cognitive load.
+
+### 99. ReactFlow MiniMap nodeColor callback receives full node objects with data
+The `nodeColor` prop on MiniMap receives each node object (including `type`, `data`, `position`, etc.), not just the node ID. This enables sophisticated color logic: checking `n.data?.executionStatus` for runtime state colors (running=blue, success=green, error=red) that take precedence over static node type colors. This priority system (execution state → node type → default) creates a minimap that reflects both the workflow structure (different node types) and the current execution state, making it far more informative than a single-color approach.
+
+### 100. MiniMap visual hierarchy: execution status > node type > default
+When coloring minimap nodes, priority matters. Execution status colors (running, success, error) should override node type colors because they represent time-sensitive information that users need to see immediately during workflow runs. Node type colors (HTTP=indigo, assertion=green, delay=yellow) create visual structure in the idle state. Default gray is the fallback for unknown types. This three-tier hierarchy is implemented with early returns in the `nodeColor` callback: check execution status first, then node type, then return default. Without this order, a running HTTP node would appear indigo (type color) instead of blue (running state), hiding critical runtime information.
+
+### 101. nodeStrokeWidth adds definition to minimap nodes without cluttering
+Adding `nodeStrokeWidth={2}` and `nodeStrokeColor` to the MiniMap creates visible borders around each node, making them stand out against the background mask. At small minimap scale (220x150), nodes without strokes can blend together, especially in dark mode where mask opacity is high. The 2px stroke is thick enough to be visible at minimap scale but doesn't overwhelm the color fill. Error nodes get a darker red stroke (`#dc2626` / `#b91c1c`) for extra emphasis, creating a double-layer signal (red fill + darker red border) that stands out even in peripheral vision.
+
+### 102. MiniMap size optimization: 220x150 shows detail without blocking canvas
+The minimap size jumped from 180x120 to 220x150 (+22% width, +25% height). This is large enough to distinguish individual nodes and their states but small enough to remain a utility element rather than a primary view. At 180x120, nodes with 3+ characters in labels or complex layouts became too compressed to be useful. At 220x150, the aspect ratio (1.47:1) roughly matches typical workflow layouts (wider than tall), and the absolute size fits comfortably in the bottom-right corner without obstructing canvas work. Beyond 250x150, the minimap starts feeling intrusive and defeats its purpose as a glanceable overview.
+
+### 103. ReactFlow callback props MUST be memoized with useCallback to prevent infinite loops
+Passing inline arrow functions to ReactFlow components (MiniMap, custom nodes, edge renderers) that reference props/state creates a new function reference on every render. ReactFlow's internal store detects this change and triggers a re-render, which creates a new function, which triggers another re-render — infinite loop. The error "Maximum update depth exceeded" always indicates this pattern. The fix: wrap all callback props (`nodeColor`, `nodeStrokeColor`, `onNodeClick`, etc.) in `useCallback` with explicit dependencies. For MiniMap's `nodeColor` callback that references `darkMode`, the memoization is `useCallback((n) => { ... }, [darkMode])`. This ensures the function reference only changes when `darkMode` actually changes, not on every render.
+
+### 104. useCallback dependencies must match what the callback actually uses
+When wrapping a callback with `useCallback`, the dependency array must include ALL values from the surrounding scope that the callback references. For `getNodeColor` and `getNodeStrokeColor`, the only external dependency is `darkMode` — the callbacks don't read `nodes`, `edges`, `workflowId`, or any other state. Including unnecessary dependencies causes the memoization to break (new function on every render anyway), while missing dependencies causes stale closures (the callback uses outdated values). ESLint's `exhaustive-deps` rule helps catch this, but React itself doesn't enforce it — incorrect dependencies silently produce bugs.
+
+### 105. Extracting inline callbacks to named useCallback is more maintainable
+Rather than putting a large inline arrow function directly in JSX (`nodeColor={(n) => { ...20 lines... }}`), extract it to a named constant above the return: `const getNodeColor = useCallback((n) => { ... }, [darkMode])`. This achieves three benefits: (1) the JSX stays clean and readable (`nodeColor={getNodeColor}`), (2) the callback logic is visible at the component level where other hooks live, making dependencies obvious, (3) multiple components can reuse the same memoized callback if needed. The naming convention `get*` for pure functions and `handle*` for event handlers helps distinguish intent at a glance.
+
+---
+
+## Phase 12: Swagger environment sync hardening (2026-02-11)
+
+### 106. Schema drift warnings must be keyed by durable endpoint identity, not by node type
+Marking every `http-request` node with a generic warning creates high false-positive noise and destroys trust in warnings. The robust pattern is endpoint identity metadata (method + normalized path + optional operationId) embedded at OpenAPI parse time (`openapiMeta.fingerprint`) and carried forward into dragged nodes. Only nodes that carry this metadata should be eligible for schema drift checks.
+
+### 107. Metadata can be silently dropped at transformation boundaries
+The OpenAPI parser produced rich node configs, but intermediate adapters (`nodes -> palette item -> node template -> dropped node config`) only copied a whitelist of known fields (url, method, headers, etc.). Any schema-link metadata not explicitly threaded through each adapter disappears. When introducing new cross-cutting metadata, audit every conversion layer end-to-end.
+
+### 108. Meaningful mismatch detection needs fallback matching tiers
+Comparing only full fingerprint can still create false warnings when non-breaking metadata changes (for example operationId changes while method+path stays the same). A practical matcher uses tiers: exact fingerprint match, then method+path match, then operationId relocation, then method mismatch on same path, then missing endpoint. This reduces warning noise while still surfacing actual API drift.
