@@ -381,3 +381,12 @@ The OpenAPI parser produced rich node configs, but intermediate adapters (`nodes
 
 ### 108. Meaningful mismatch detection needs fallback matching tiers
 Comparing only full fingerprint can still create false warnings when non-breaking metadata changes (for example operationId changes while method+path stays the same). A practical matcher uses tiers: exact fingerprint match, then method+path match, then operationId relocation, then method mismatch on same path, then missing endpoint. This reduces warning noise while still surfacing actual API drift.
+
+### 109. ReactFlow header interactions need `nodrag` on both trigger and panel
+Node headers are inside draggable ReactFlow nodes, so interactive controls can accidentally start drag/select behavior. Applying `nodrag` to both the warning badge button and the popover panel keeps the interaction stable (click, hover, link open) without fighting the canvas drag system.
+
+### 110. Accessible popovers in dense node UIs need hybrid open/close behavior
+In compact node headers, relying on click-only interaction feels slow, but hover-only is not keyboard-accessible. A hybrid model (`mouseenter`/`mouseleave` + focus handling + click toggle + Escape/outside close) gives quick mouse access while preserving keyboard and touch usability.
+
+### 111. Swagger source URLs need hard wrapping in tiny overlays
+Swagger doc URLs can be long and unbroken. In a small popover, using `break-all` on the source link prevents overflow and keeps the panel usable on narrow screens without horizontal scrolling.
