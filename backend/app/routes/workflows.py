@@ -10,6 +10,7 @@ from datetime import datetime, UTC
 import uuid
 import json
 import re
+import httpx
 from bson import ObjectId
 
 from app.models import Workflow, WorkflowCreate, WorkflowUpdate, PaginatedWorkflows
@@ -600,6 +601,27 @@ def generate_example_from_schema(schema: Dict[str, Any], openapi_data: Dict[str,
     return None
 
 
+def normalize_openapi_path(path: str) -> str:
+    """Normalize OpenAPI path for stable endpoint matching."""
+    if not path:
+        return "/"
+
+    normalized = path.strip()
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+
+    normalized = re.sub(r"//+", "/", normalized)
+    return normalized
+
+
+def build_openapi_endpoint_fingerprint(method: str, path: str, operation_id: str = "") -> str:
+    """Build deterministic endpoint fingerprint for OpenAPI request nodes."""
+    method_upper = (method or "GET").upper()
+    normalized_path = normalize_openapi_path(path)
+    operation_value = (operation_id or "").strip()
+    return f"{method_upper}|{normalized_path}|{operation_value}"
+
+
 def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", tag_filter: Optional[List[str]] = None, sanitize: bool = True) -> Dict[str, Any]:
     """
     Convert OpenAPI/Swagger spec to APIWeave workflow format
@@ -664,6 +686,7 @@ def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", 
             
             # Build full URL
             full_url = f"{base_url}{path}" if base_url else path
+            normalized_path = normalize_openapi_path(path)
             
             # Extract query parameters from parameters list
             query_params = {}
@@ -712,6 +735,18 @@ def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", 
             if len(label_text) > 40:
                 label_text = label_text[:37] + "..."
             label = f"[{method.upper()}] {label_text}"
+
+            openapi_meta = {
+                "source": "openapi",
+                "method": method.upper(),
+                "path": normalized_path,
+                "operationId": operation_id or None,
+                "fingerprint": build_openapi_endpoint_fingerprint(
+                    method.upper(),
+                    normalized_path,
+                    operation_id,
+                ),
+            }
             
             # Calculate grid position
             row = idx // nodes_per_row
@@ -729,7 +764,8 @@ def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", 
                 "body": body if body else None,
                 "timeout": 30,
                 "followRedirects": True,
-                "extractors": {}
+                "extractors": {},
+                "openapiMeta": openapi_meta,
             }
             
             node = {
@@ -1300,18 +1336,18 @@ async def import_workflow(
             env_data = next((e for e in environments if e.get("environmentId") == old_env_id), None)
             if env_data:
                 # Create new environment with new ID using repository
-                new_env_id = str(uuid.uuid4())
-                
-                env_create = {
-                    "environmentId": new_env_id,
-                    "name": env_data.get("name", "Imported Environment"),
-                    "description": env_data.get("description"),
-                    "variables": env_data.get("variables", {}),
-                    "secrets": {},  # Secrets not included in exports
-                    "isActive": False
-                }
-                
-                await EnvironmentRepository.create(env_create)  # type: ignore
+                from app.models import EnvironmentCreate
+
+                env_create = EnvironmentCreate(
+                    name=env_data.get("name", "Imported Environment"),
+                    description=env_data.get("description"),
+                    swaggerDocUrl=env_data.get("swaggerDocUrl"),
+                    variables=env_data.get("variables", {}),
+                    secrets={},  # Secrets not included in exports
+                )
+
+                new_env = await EnvironmentRepository.create(env_create)
+                new_env_id = new_env.environmentId
         else:
             # No mapping and can't create - set to null
             new_env_id = None
@@ -1727,6 +1763,98 @@ async def import_openapi_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to import OpenAPI file: {str(e)}"
+        )
+
+
+@router.get("/import/openapi/url")
+async def import_openapi_from_url(
+    swagger_url: str = Query(...),
+    base_url: str = Query(""),
+    tag_filter: Optional[str] = Query(None),
+    sanitize: bool = Query(True)
+):
+    """
+    Parse OpenAPI/Swagger JSON from a URL and return HTTP request nodes.
+    """
+    url = (swagger_url or "").strip()
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="swagger_url is required"
+        )
+
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="swagger_url must start with http:// or https://"
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            response = await client.get(
+                url,
+                headers={
+                    "Accept": "application/json, application/vnd.oai.openapi+json"
+                }
+            )
+            response.raise_for_status()
+
+        try:
+            openapi_data = response.json()
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Swagger URL did not return valid JSON: {str(e)}"
+            )
+
+        if not isinstance(openapi_data, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Swagger URL returned invalid OpenAPI document"
+            )
+
+        if "paths" not in openapi_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid OpenAPI file: missing 'paths' key"
+            )
+
+        tags = tag_filter.split(",") if tag_filter else None
+
+        try:
+            workflow_data = parse_openapi_to_workflow(openapi_data, base_url, tags, sanitize)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        http_nodes = [n for n in workflow_data["nodes"] if n["type"] == "http-request"]
+        return {
+            "nodes": http_nodes,
+            "stats": {
+                "totalEndpoints": len(http_nodes),
+                "apiTitle": openapi_data.get("info", {}).get("title", "API"),
+                "sourceUrl": url
+            }
+        }
+
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to fetch Swagger URL ({e.response.status_code})"
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to fetch Swagger URL: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import OpenAPI from URL: {str(e)}"
         )
 
 
