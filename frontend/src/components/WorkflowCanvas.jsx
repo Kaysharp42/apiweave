@@ -823,17 +823,33 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         <Panel position="bottom-right" style={{ bottom: 10, right: 10 }}>
           <MiniMap 
             nodeColor={(n) => {
-              if (n.type === 'start') return '#06b6d4';
-              if (n.type === 'end') return '#ef4444';
-              return '#64748b';
+              // Execution status colors take precedence
+              if (n.data?.executionStatus === 'running') return darkMode ? '#3b82f6' : '#2563eb';
+              if (n.data?.executionStatus === 'success') return darkMode ? '#22c55e' : '#16a34a';
+              if (n.data?.executionStatus === 'error') return darkMode ? '#ef4444' : '#dc2626';
+              
+              // Node type colors
+              if (n.type === 'start') return darkMode ? '#06b6d4' : '#0891b2';
+              if (n.type === 'end') return darkMode ? '#f87171' : '#dc2626';
+              if (n.type === 'httpRequest') return darkMode ? '#818cf8' : '#6366f1';
+              if (n.type === 'assertion') return darkMode ? '#4ade80' : '#22c55e';
+              if (n.type === 'delay') return darkMode ? '#fbbf24' : '#f59e0b';
+              if (n.type === 'merge') return darkMode ? '#a78bfa' : '#8b5cf6';
+              
+              return darkMode ? '#64748b' : '#94a3b8';
             }}
+            nodeStrokeColor={(n) => {
+              if (n.data?.executionStatus === 'error') return darkMode ? '#dc2626' : '#b91c1c';
+              return darkMode ? '#374151' : '#cbd5e1';
+            }}
+            nodeStrokeWidth={2}
             maskColor={darkMode ? "rgba(0, 0, 0, 0.6)" : "rgba(0, 0, 0, 0.05)"}
             style={{ 
               backgroundColor: darkMode ? '#1f2937' : 'white',
               border: darkMode ? '2px solid #374151' : '2px solid #0e7490',
               borderRadius: '8px',
-              width: 180,
-              height: 120,
+              width: 220,
+              height: 150,
             }}
             zoomable 
             pannable 
