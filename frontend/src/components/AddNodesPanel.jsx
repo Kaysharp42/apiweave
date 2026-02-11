@@ -94,6 +94,7 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
                     cookies: item.cookies || '',
                     body: item.body || '',
                     timeout: item.timeout || 30,
+                    openapiMeta: item.openapiMeta || null,
                   },
                 },
               }

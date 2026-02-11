@@ -108,6 +108,7 @@ const ImportToNodesPanel = ({
       pathVariables: node.config?.pathVariables || '',
       cookies: node.config?.cookies || '',
       timeout: node.config?.timeout || 30,
+      openapiMeta: node.config?.openapiMeta || null,
     }));
   };
 

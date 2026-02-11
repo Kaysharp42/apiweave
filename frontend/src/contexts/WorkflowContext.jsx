@@ -122,6 +122,7 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
       pathVariables: node.config?.pathVariables || '',
       cookies: node.config?.cookies || '',
       timeout: node.config?.timeout || 30,
+      openapiMeta: node.config?.openapiMeta || null,
     }));
 
     // Add templates to palette with workflow-specific ID
