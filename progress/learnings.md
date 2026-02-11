@@ -399,3 +399,12 @@ When users switch environments while a Swagger fetch is still in flight, the old
 
 ### 114. Manual refresh UX should report endpoint count, not just success/failure
 A toast like "Swagger refreshed: N endpoints" gives users immediate confidence that the refresh actually loaded data. For failure cases, surfacing the exact reason (missing environment, missing Swagger URL, fetch failure) removes guesswork and makes troubleshooting much faster.
+
+### 115. Swagger URL persistence depends on multiple layers, not just the UI form
+Keeping `swaggerDocUrl` stable across environment lifecycle actions requires alignment between frontend forms, route handlers, and repository normalization. The regression pass confirmed create/update normalization in the repository, explicit URL copy on duplicate, and propagation through import/export mapping paths.
+
+### 116. Refresh determinism comes from stable signatures plus group replacement semantics
+The refresh pipeline avoids palette duplication by combining a stable signature (`workflowId + environmentId + swaggerDocUrl`) with imported-group replacement by ID. Even when refresh is triggered multiple times, this pattern keeps Add Nodes groups idempotent.
+
+### 117. End-of-phase validation should include both language toolchains
+Swagger environment sync touches backend persistence and frontend canvas behavior, so final regression checks need both `python -m compileall backend/app` and `npm run build`. Running only one side can miss integration regressions hidden in the other runtime.
