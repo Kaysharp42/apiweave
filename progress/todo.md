@@ -32,23 +32,35 @@ git add -A
 git commit -m "fix: scope swagger warnings to schema-linked nodes"
 ```
 
+Execution log (Phase 1):
+
+- [x] Done - `0f21d68` backend OpenAPI fingerprint metadata.
+- [x] Done - `b2bfbf8` preserve OpenAPI metadata through palette/drop pipeline.
+- [x] Done - `12496c9` schema warnings limited to Swagger-linked nodes with mismatch tiers.
+- [x] Done - `0048874` docs updates for checklist and learnings.
+
 ---
 
 ## Phase 2 - Add warning tooltip/popover details
 
-Status: **Not done**
+Status: **Done**
 
-- [ ] Not done - Add a small warning badge interaction on HTTP node header.
-- [ ] Not done - Show popover content: warning reason, refresh timestamp, and source Swagger URL.
-- [ ] Not done - Ensure popover works in light/dark mode and on small screens.
-- [ ] Not done - Keep interaction non-blocking (hover/focus/click accessible behavior).
+- [x] Done - Add a small warning badge interaction on HTTP node header.
+- [x] Done - Show popover content: warning reason, refresh timestamp, and source Swagger URL.
+- [x] Done - Ensure popover works in light/dark mode and on small screens.
+- [x] Done - Keep interaction non-blocking (hover/focus/click accessible behavior).
 
 ### Phase 2 test and commit (required before Phase 3)
 
-- [ ] Not done - Frontend build passes.
-- [ ] Not done - Manual QA: badge opens details and displays timestamp + URL correctly.
-- [ ] Not done - Manual QA: keyboard accessibility (focus and escape/outside close behavior).
-- [ ] Not done - Commit Phase 2 only.
+- [x] Done - Frontend build passes.
+- [x] Done - Manual QA: badge opens details and displays timestamp + URL correctly.
+- [x] Done - Manual QA: keyboard accessibility (focus and escape/outside close behavior).
+- [x] Done - Commit Phase 2 only.
+
+Execution log (Phase 2):
+
+- [x] Done - `01df7f1` HTTP node warning badge interaction + details popover.
+- [x] Done - `767455c` phase 2 learnings added.
 
 Suggested commands:
 
