@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from './molecules';
+import Button from './atoms/Button';
 
 const SecretsPanel = ({ open, environment, onSecretsChange, onClose }) => {
   const [secrets, setSecrets] = useState(environment?.secrets || {});
@@ -46,10 +47,10 @@ const SecretsPanel = ({ open, environment, onSecretsChange, onClose }) => {
 
   const footer = (
     <div className="flex gap-3 w-full">
-      <button onClick={onClose} className="btn btn-ghost flex-1">Cancel</button>
-      <button onClick={handleSave} disabled={saving} className="btn btn-primary flex-1">
+      <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
+      <Button onClick={handleSave} disabled={saving} variant="primary" fullWidth>
         {saving ? 'Saving\u2026' : 'Save Changes'}
-      </button>
+      </Button>
     </div>
   );
 
@@ -111,14 +112,16 @@ const SecretsPanel = ({ open, environment, onSecretsChange, onClose }) => {
                 className="input input-bordered w-full"
               />
             </div>
-            <button
+            <Button
               onClick={handleAddSecret}
               disabled={!newSecretKey.trim()}
-              className="btn btn-primary btn-sm w-full gap-2"
+              variant="primary"
+              size="sm"
+              fullWidth
             >
               <Plus className="w-4 h-4" />
               Add Secret
-            </button>
+            </Button>
           </div>
         </div>
 

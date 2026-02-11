@@ -97,13 +97,15 @@ const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
                   placeholder={placeholder || `Enter ${key}`}
                   className="input input-bordered input-sm flex-1 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                 />
-                <button
+                <Button
                   onClick={() => toggleSecretVisibility(key)}
-                  className="btn btn-ghost btn-sm btn-square"
+                  variant="ghost"
+                  size="sm"
+                  className="!p-2 !min-w-0"
                   title={visibleSecrets.has(key) ? 'Hide' : 'Show'}
                 >
                   {visibleSecrets.has(key) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                </Button>
               </div>
             </div>
           ))}
