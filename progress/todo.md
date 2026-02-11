@@ -74,20 +74,25 @@ git commit -m "feat: show swagger warning details in node popover"
 
 ## Phase 3 - Add "Refresh now" near environment selector
 
-Status: **Not done**
+Status: **Done**
 
-- [ ] Not done - Add a "Refresh now" control in canvas toolbar near environment selector.
-- [ ] Not done - Reuse the same refresh pipeline used on workspace/environment load.
-- [ ] Not done - Add loading/disabled state while refresh is running.
-- [ ] Not done - Show success/error toast with endpoint count or failure reason.
-- [ ] Not done - Keep behavior deterministic (manual refresh should not duplicate groups or warnings).
+- [x] Done - Add a "Refresh now" control in canvas toolbar near environment selector.
+- [x] Done - Reuse the same refresh pipeline used on workspace/environment load.
+- [x] Done - Add loading/disabled state while refresh is running.
+- [x] Done - Show success/error toast with endpoint count or failure reason.
+- [x] Done - Keep behavior deterministic (manual refresh should not duplicate groups or warnings).
 
 ### Phase 3 test and commit (required before Phase 4)
 
-- [ ] Not done - Frontend build passes.
-- [ ] Not done - Manual QA: clicking "Refresh now" updates Add Nodes without reopening workspace.
-- [ ] Not done - Manual QA: repeated clicks do not duplicate palette groups.
-- [ ] Not done - Commit Phase 3 only.
+- [x] Done - Frontend build passes.
+- [x] Done - Manual QA: clicking "Refresh now" updates Add Nodes without reopening workspace.
+- [x] Done - Manual QA: repeated clicks do not duplicate palette groups.
+- [x] Done - Commit Phase 3 only.
+
+Execution log (Phase 3):
+
+- [x] Done - `e97ea89` manual Swagger refresh control + shared refresh pipeline.
+- [x] Done - `ad03e01` phase 3 learnings added.
 
 Suggested commands:
 
