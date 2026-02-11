@@ -1,9 +1,9 @@
-import React, { memo, useState, useCallback, useMemo } from 'react';
+import React, { memo, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { useWorkflow } from '../../contexts/WorkflowContext';
 import BaseNode from '../atoms/flow/BaseNode';
 import FileUploadSection from '../FileUploadSection';
-import { Puzzle, Plus, Trash2, CheckCircle, ArrowRight, AlertTriangle, XCircle, ChevronDown, ChevronUp, Snowflake } from 'lucide-react';
+import { Puzzle, Plus, Trash2, CheckCircle, ArrowRight, AlertTriangle, XCircle, ChevronDown, ChevronUp, Snowflake, ExternalLink, Clock3 } from 'lucide-react';
 
 // — Method badge color map (design tokens) —
 const methodColors = {
@@ -12,6 +12,127 @@ const methodColors = {
   PUT:    'bg-method-put text-white',
   DELETE: 'bg-method-delete text-white',
   PATCH:  'bg-method-patch text-white',
+};
+
+const formatRefreshTime = (isoValue) => {
+  if (!isoValue) return 'Unavailable';
+  const parsedDate = new Date(isoValue);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return isoValue;
+  }
+  return parsedDate.toLocaleString();
+};
+
+const SchemaWarningBadge = ({ warning }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef(null);
+  const triggerRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleClickOutside = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const handleBlur = useCallback((event) => {
+    const nextFocusedElement = event.relatedTarget;
+    if (!nextFocusedElement) return;
+    if (wrapperRef.current && !wrapperRef.current.contains(nextFocusedElement)) {
+      setIsOpen(false);
+    }
+  }, []);
+
+  const refreshedLabel = useMemo(() => formatRefreshTime(warning?.refreshedAt), [warning?.refreshedAt]);
+
+  if (!warning) return null;
+
+  return (
+    <div
+      ref={wrapperRef}
+      className="relative flex-shrink-0"
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+      onFocus={() => setIsOpen(true)}
+      onBlur={handleBlur}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        className="nodrag text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-200 font-semibold flex items-center gap-0.5 hover:bg-amber-200 dark:hover:bg-amber-900/80 focus:outline-none focus:ring-1 focus:ring-amber-400"
+        title={warning.text || 'Swagger docs changed. Verify this request.'}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        aria-label="Show Swagger warning details"
+        onClick={(event) => {
+          event.stopPropagation();
+          setIsOpen((previousState) => !previousState);
+        }}
+      >
+        <AlertTriangle className="w-3 h-3" />
+        Check API
+      </button>
+
+      {isOpen && (
+        <div
+          role="dialog"
+          aria-label="Swagger warning details"
+          className="nodrag absolute top-full right-0 mt-1 z-[120] w-[260px] max-w-[calc(100vw-2rem)] rounded-md border border-amber-300/70 dark:border-amber-700/70 bg-surface-raised dark:bg-surface-dark-raised p-2 shadow-2xl"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 mb-1">Swagger Warning</div>
+          <p className="text-[10px] text-text-primary dark:text-text-primary-dark leading-snug break-words">{warning.text}</p>
+
+          <div className="mt-2 pt-2 border-t border-border dark:border-border-dark space-y-1 text-[9px] text-text-secondary dark:text-text-secondary-dark">
+            <div className="flex items-center gap-1">
+              <Clock3 className="w-3 h-3" />
+              <span className="font-semibold">Refreshed:</span>
+            </div>
+            <div className="pl-4 text-text-primary dark:text-text-primary-dark">{refreshedLabel}</div>
+
+            <div className="flex items-center gap-1 pt-1">
+              <ExternalLink className="w-3 h-3" />
+              <span className="font-semibold">Source:</span>
+            </div>
+
+            {warning.sourceUrl ? (
+              <a
+                href={warning.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="pl-4 block text-primary dark:text-primary-dark underline hover:text-primary/80 dark:hover:text-primary-dark/80 break-all"
+                title={warning.sourceUrl}
+              >
+                {warning.sourceUrl}
+              </a>
+            ) : (
+              <div className="pl-4 text-text-muted dark:text-text-muted-dark">Unavailable</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 // — Extractor form sub-component —
@@ -182,6 +303,9 @@ const HTTPRequestNode = ({ id, data, selected }) => {
       headerBg="bg-surface-overlay dark:bg-surface-dark-overlay"
       titleExtra={
         <>
+          {data.schemaRefreshWarning && (
+            <SchemaWarningBadge warning={data.schemaRefreshWarning} />
+          )}
           {data.branchCount > 1 && (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-200 font-semibold flex items-center gap-0.5" title={`${data.branchCount} parallel branches`}>
               <Snowflake className="w-3 h-3" /> {data.branchCount}x
