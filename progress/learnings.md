@@ -430,3 +430,22 @@ Comparing the current payload against the graph shape that was initially hydrate
 
 ### 123. Incident runbooks should include a one-command integrity audit
 When workflow payload regressions are suspected, teams need a repeatable, low-friction way to identify potentially impacted records. A small CLI audit that lists workflows matching suspicious graph signatures (for example, canonical start-only payloads) enables quick triage before manual restoration. The runbook should pair this audit with a targeted `GET /api/workflows/{id}` count check for the reported workflow.
+
+---
+
+## Phase 14: Swagger UI Base URL multi-definition import (2026-02-12)
+
+### 124. Swagger UI landing pages require discovery, not direct parsing
+`/webjars/swagger-ui/index.html` is an HTML shell, not an OpenAPI document. Reliable import requires a discovery pipeline that extracts `configUrl`/`url`/`urls` hints from query + HTML and then resolves to concrete spec URLs before parsing.
+
+### 125. Definition-scoped fingerprints avoid cross-service false matches
+When multiple services expose similar paths/methods, fingerprints based only on method+path can collide. Prefixing endpoint fingerprints with a stable `definitionScope` preserves duplicates intentionally while keeping warning/refresh matching accurate per service.
+
+### 126. Recursive schema example generation must be guarded
+Large gateway docs often contain self-referential `$ref` graphs. Example generation without cycle detection or depth limits can crash with recursion overflow. A guarded generator with seen-ref tracking and max-depth limits prevents importer outages while still producing useful samples.
+
+### 127. Partial failure is a first-class success mode for gateway imports
+In multi-definition catalogs, one broken service spec should not block all others. Returning imported nodes plus per-definition status and warnings gives users useful progress and clear remediation targets.
+
+### 128. Autosave should pause during Swagger refresh mutations
+Swagger refresh can touch node warning metadata and trigger rapid state churn. Temporarily suspending autosave during refresh avoids noisy persistence activity and keeps editor behavior predictable on large imports.

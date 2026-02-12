@@ -30,12 +30,15 @@ from app.utils.openapi_examples import (
     resolve_openapi_schema_ref as resolve_openapi_schema_ref_helper,
     generate_example_from_schema as generate_example_from_schema_helper,
 )
+from app.utils.openapi_import_limits import (
+    DEFAULT_FETCH_TIMEOUT_SECONDS,
+    DEFAULT_FETCH_CONCURRENCY,
+    validate_definition_limit,
+    validate_endpoint_limit,
+)
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
-
-MAX_DISCOVERED_OPENAPI_DEFINITIONS = 50
-MAX_IMPORTED_OPENAPI_ENDPOINTS = 5000
 
 
 # Helper functions for export/import
@@ -1881,7 +1884,7 @@ async def import_openapi_from_url(
     try:
         tags = tag_filter.split(",") if tag_filter else None
 
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=DEFAULT_FETCH_TIMEOUT_SECONDS, follow_redirects=True) as client:
             initial_response = await client.get(
                 url,
                 headers={
@@ -1921,13 +1924,11 @@ async def import_openapi_from_url(
                         ),
                     )
 
-            if len(discovered_definitions) > MAX_DISCOVERED_OPENAPI_DEFINITIONS:
+            definition_limit_error = validate_definition_limit(len(discovered_definitions))
+            if definition_limit_error:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Discovered {len(discovered_definitions)} definitions, "
-                        f"which exceeds safety limit ({MAX_DISCOVERED_OPENAPI_DEFINITIONS})."
-                    ),
+                    detail=definition_limit_error,
                 )
 
             successful_specs: List[Dict[str, Any]] = []
@@ -1976,7 +1977,7 @@ async def import_openapi_from_url(
                         "error": str(exc),
                     }
 
-            semaphore = asyncio.Semaphore(6)
+            semaphore = asyncio.Semaphore(DEFAULT_FETCH_CONCURRENCY)
 
             async def fetch_with_limit(definition: Dict[str, str]) -> Dict[str, Any]:
                 async with semaphore:
@@ -2044,13 +2045,11 @@ async def import_openapi_from_url(
 
             all_http_nodes.extend(http_nodes)
 
-            if len(all_http_nodes) > MAX_IMPORTED_OPENAPI_ENDPOINTS:
+            endpoint_limit_error = validate_endpoint_limit(len(all_http_nodes))
+            if endpoint_limit_error:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Imported endpoint count exceeded safety limit "
-                        f"({MAX_IMPORTED_OPENAPI_ENDPOINTS})."
-                    ),
+                    detail=endpoint_limit_error,
                 )
 
             definition_summaries.append(

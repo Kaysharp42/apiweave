@@ -36,6 +36,7 @@ import useCanvasDrop from '../hooks/useCanvasDrop';
 import useWorkflowPolling from '../hooks/useWorkflowPolling';
 import API_BASE_URL from '../utils/api';
 import { shouldBlockDestructiveAutosave } from '../utils/workflowSaveSafety';
+import { buildSwaggerRefreshSummary } from '../utils/swaggerRefreshSummary';
 
 const nodeTypes = {
   'http-request': HTTPRequestNode,
@@ -447,17 +448,11 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       });
 
       if (showSuccessToast) {
-        const endpointCount = items.length;
-        const definitionCount = Number(result?.stats?.definitionCount || 0);
-        const failedDefinitionCount = Number(result?.stats?.failedDefinitionCount || 0);
-        const fromDefinitions = definitionCount > 0
-          ? ` from ${definitionCount} definition${definitionCount === 1 ? '' : 's'}`
-          : '';
+        const summary = buildSwaggerRefreshSummary(result?.stats || {}, items.length);
+        toast.success(summary.successMessage);
 
-        toast.success(`Swagger refreshed: ${endpointCount} endpoint${endpointCount === 1 ? '' : 's'}${fromDefinitions}.`);
-
-        if (failedDefinitionCount > 0) {
-          toast.warning(`Swagger refresh partial: ${failedDefinitionCount} definition${failedDefinitionCount === 1 ? '' : 's'} failed to import.`);
+        if (summary.warningMessage) {
+          toast.warning(summary.warningMessage);
         }
       }
 
@@ -1185,7 +1180,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   // --- Debounced auto-save via extracted hook ---
   useAutoSave({
     workflowId,
-    autoSaveEnabled: autoSaveEnabled && !isDraggingNode && !isRunning,
+    autoSaveEnabled: autoSaveEnabled && !isDraggingNode && !isRunning && !isSwaggerRefreshing,
     isHydrated: isWorkflowHydrated,
     nodes,
     edges,
