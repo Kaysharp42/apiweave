@@ -1,56 +1,67 @@
-# Workflow Editor Data-Loss Fix Plan
+# Swagger UI Base URL Integration Plan (Discover All Definitions)
 
-Issue: a workflow that should contain 14 nodes currently resolves to only the default start node payload (`nodes=[start-1], edges=[], variables={...}`) in the JSON editor, which suggests a load/save or JSON-view hydration regression and possible overwrite path.
+Issue: users will provide a Swagger UI landing URL like `{domain}/webjars/swagger-ui/index.html` (without `.json` and without `urls.primaryName`). The app must discover all available API definitions behind that UI, fetch each spec, and import complete endpoint data.
 
-## Phase 1 - Reproduce and Capture Evidence
-- [x] Done - Reproduce with the exact affected workflow and record the timeline (open workflow, wait, edit, save/autosave, refresh).
-- [x] Done - Capture API payloads for `GET /api/workflows/{id}`, list endpoints (`/api/workflows`, `/api/workflows/unattached`), and every `PUT /api/workflows/{id}` fired by the editor.
-- [x] Done - Confirm whether the database already contains only the start node or whether the collapse happens in the frontend before save.
-- [x] Done - Write a failing regression test that reproduces the current bad behavior (at minimum one backend/API-level regression test).
-- [x] Done - Run phase tests and checks (`pytest` and frontend build/lint as applicable).
-- [x] Done - Commit Phase 1 with message format: `test(regression): reproduce workflow graph collapse issue`.
+Assumption confirmed: target URLs are reachable over VPN and currently require no auth headers/cookies.
 
-## Phase 2 - Trace and Isolate Root Cause in Load Path
-- [x] Done - Trace workflow open flow end-to-end: Sidebar/Workspace tab open -> TabStore payload -> WorkflowProvider -> WorkflowCanvas initialization.
-- [x] Done - Validate whether tab opening uses summary data instead of a full workflow fetch by ID and whether missing `nodes/edges` falls back to `initialNodes`.
-- [x] Done - Add guardrails in investigation notes for the exact break point (file + function + condition).
-- [x] Done - Write/extend tests for load-path correctness (opening an existing workflow must hydrate full graph, not default start graph).
-- [x] Done - Run phase tests and checks.
-- [x] Done - Commit Phase 2 with message format: `test(workspace): lock expected workflow hydration behavior`.
+## Phase 1 - Discovery + Evidence Baseline
+- [x] Done - Reproduce current behavior using only base Swagger UI URL (`.../webjars/swagger-ui/index.html`) and confirm failure mode.
+- [x] Done - Capture network/evidence of what Swagger UI itself loads (config endpoint, definitions list, selected primaryName behavior).
+- [x] Done - Inventory at least 3 real URL patterns in your environment (Springdoc-style config, Swashbuckle-style config, custom UI hosting).
+- [x] Done - Define expected output contract: "all definitions" means aggregate all endpoints into one imported set with per-definition metadata.
+- [x] Done - Write failing backend tests for base UI URL discovery path.
+- [x] Done - Run phase tests/checks.
+- [x] Done - Commit Phase 1 (`test(openapi): capture swagger-ui base-url discovery failures`).
 
-## Phase 3 - Implement Fix for Workflow Hydration
-- [x] Done - Update workflow-open behavior to always hydrate from `GET /api/workflows/{id}` (or equivalent guaranteed-full payload) before editor state is considered ready.
-- [x] Done - Add defensive handling in `WorkflowCanvas` so incomplete payloads never silently become authoritative graph state.
-- [x] Done - Ensure tab re-activation refreshes stale/incomplete tab workflow objects safely.
-- [x] Done - Write tests for the new hydration behavior (including incomplete payload fallback scenarios).
-- [x] Done - Run phase tests and checks.
-- [x] Done - Commit Phase 3 with message format: `fix(workspace): hydrate workflow editor from canonical workflow payload`.
+## Phase 2 - Backend Definition Discovery Engine
+- [x] Done - Add backend URL classifier: `direct_spec`, `swagger_ui_index`, `swagger_config`, `unknown`.
+- [x] Done - Implement Swagger UI config resolution pipeline:
+- [x] Done - 1) Parse query hints (`configUrl`, `url`, `urls.primaryName`) when present.
+- [x] Done - 2) Fetch index HTML and extract SwaggerUIBundle config hints (`configUrl`, `url`, `urls`).
+- [x] Done - 3) Probe common config endpoints (for example relative `swagger-config`, `/v3/api-docs/swagger-config`, `/swagger/v1/swagger.json` fallback candidates).
+- [x] Done - Normalize and resolve all relative URLs to absolute URLs safely using page origin/path.
+- [x] Done - Return canonical discovered definitions list: `{name, specUrl, source}`.
+- [x] Done - Write unit tests for classifier + resolver + relative URL normalization + fallback ordering.
+- [x] Done - Run phase tests/checks.
+- [x] Done - Commit Phase 2 (`feat(openapi): discover definitions from swagger-ui base url`).
 
-## Phase 4 - Implement Save-Path Safety Nets
-- [x] Done - Prevent destructive save when graph appears unintentionally collapsed (for example: only default start node while canonical workflow has more nodes).
-- [x] Done - Ensure autosave cannot run before initial workflow hydration is complete.
-- [x] Done - Add structured logging/telemetry around save payload size (node/edge counts) to detect future regressions quickly.
-- [x] Done - Write tests covering autosave/manual-save safeguards and non-destructive behavior.
-- [x] Done - Fix JSON editor editing session stability by seeding content once per open cycle and freezing the payload snapshot while modal is open.
-- [x] Done - Stop save-loop PUT spam by removing save-path tab payload feedback and skipping autosave during active run polling updates.
-- [x] Done - Run phase tests and checks.
-- [x] Done - Commit Phase 4 with message format: `fix(editor): block destructive autosave on incomplete graph state`.
+## Phase 3 - Multi-definition Spec Fetch + Parse
+- [x] Done - Fetch all discovered definition URLs concurrently with bounded parallelism and per-request timeouts.
+- [x] Done - Parse both JSON and YAML specs robustly; validate `paths` and required OpenAPI/Swagger structure.
+- [x] Done - Aggregate endpoint nodes across definitions while preserving source metadata (`definitionName`, `specUrl`, `uiUrl`).
+- [x] Done - Prevent collisions by namespacing OpenAPI metadata fingerprints with definition identity.
+- [x] Done - Add partial-failure handling: continue on bad definition(s), return warnings with counts (`success`, `failed`, `skipped`).
+- [x] Done - Write tests for multi-definition success, partial failure, and metadata namespacing behavior.
+- [x] Done - Run phase tests/checks.
+- [x] Done - Commit Phase 3 (`feat(openapi): import and aggregate all discovered definitions`).
 
-## Phase 5 - Recovery and Verification of Affected Data
-- [x] Done - Verify whether the affected 14-node workflow can be restored from history/export/backups (or reconstruct from run artifacts if available).
-- [x] Done - Validate restored workflow integrity (node count, edge count, variable mappings, execution path).
-- [x] Done - Add a one-time verification script/checklist for other workflows that may have been overwritten similarly.
-- [x] Done - Write tests for any recovery script/validator logic introduced.
-- [x] Done - Run phase tests and checks.
-- [x] Done - Commit Phase 5 with message format: `chore(recovery): validate and restore impacted workflows`.
+## Phase 4 - API Contract + Frontend Refresh Flow
+- [x] Done - Extend `/api/workflows/import/openapi/url` response contract to include discovered definitions and aggregate stats.
+- [x] Done - Update frontend refresh in `WorkflowCanvas` to handle multi-definition payloads and display accurate endpoint counts.
+- [x] Done - Show import context in UI/toasts (for example: `3 definitions, 124 endpoints, 1 definition failed`).
+- [x] Done - Ensure Add Nodes group labeling includes definition context (so users know endpoint origin service).
+- [x] Done - Keep existing direct `.json` behavior unchanged and backward-compatible.
+- [x] Done - Write frontend tests for multi-definition payload mapping and user-facing messaging.
+- [x] Done - Run phase tests/checks.
+- [x] Done - Commit Phase 4 (`feat(ui): render multi-definition swagger refresh results`).
 
-## Phase 6 - Final QA and Rollout
-- [x] Done - Run full smoke QA: open existing large workflows, edit nodes, autosave, reload, switch tabs, and verify graph persistence.
-- [x] Done - Verify no regression in JSON editor import/apply and workflow create flow.
-- [x] Done - Document root cause, fix details, and operator runbook in `progress/learnings.md`.
-- [x] Done - Write final integration/regression test additions (if any remaining gap exists).
-- [x] Done - Run final test suite/build checks.
-- [x] Done - Commit Phase 6 with message format: `docs+qa: finalize workflow editor persistence regression fix`.
+## Phase 5 - Safety, Performance, and Regression Guards
+- [x] Done - Add limits/guards for large installs (max definitions, max endpoints, timeout budget).
+- [x] Done - Add dedupe strategy for identical endpoints across definitions (configurable: keep all vs dedupe by fingerprint).
+- [x] Done - Ensure autosave/refresh interactions remain stable with larger template imports.
+- [x] Done - Run one-time workflow integrity audit to verify no accidental workflow graph overwrite regressions.
+- [x] Done - Write regression tests for large-definition sets and timeout/limit behavior.
+- [x] Done - Run phase tests/checks.
+- [x] Done - Commit Phase 5 (`test(openapi): harden multi-definition import safety and scale`).
+
+## Phase 6 - Documentation + Rollout
+- [x] Done - Document supported input URL patterns, especially plain Swagger UI index URLs.
+- [x] Done - Document discovery algorithm and troubleshooting steps when definitions cannot be resolved.
+- [x] Done - Add operator notes for VPN/connectivity and partial-failure interpretation.
+- [x] Done - Record implementation learnings in `progress/learnings.md`.
+- [x] Done - Write final integration/regression tests for end-to-end base-url flow.
+- [x] Done - Run final full checks (backend tests + frontend tests/build).
+- [x] Done - Commit Phase 6 (`docs(openapi): support swagger-ui base-url all-definition discovery`).
 
 ---
 
