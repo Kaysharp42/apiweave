@@ -10,10 +10,10 @@ Command template:
 python docs/link_check.py <doc1.md> <doc2.md> ...
 ```
 
-For the Phase 1 foundation docs:
+For the Phase 1 and Phase 2 user docs:
 
 ```bash
-python docs/link_check.py README.md docs/README.md docs/NAVIGATION.md docs/DOCS_VALIDATION_CHECKLIST.md
+python docs/link_check.py README.md docs/README.md docs/NAVIGATION.md docs/DOCS_VALIDATION_CHECKLIST.md docs/WORKFLOWS_AND_NODES.md docs/VARIABLES_EXTRACTORS_JSON_EDITOR.md docs/ENVIRONMENTS_COLLECTIONS.md docs/SWAGGER_UI_BASE_URL_IMPORT.md
 ```
 
 Pass condition:

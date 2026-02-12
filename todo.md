@@ -56,11 +56,11 @@ Completion:
 - [x] Done - Commit Phase 1.
 
 ### Phase 2 - Core User Guides
-- [ ] Not done - Publish workflow and node usage guides.
-- [ ] Not done - Publish variables/extractors/JSON editor guides.
-- [ ] Not done - Publish environments/secrets and collections guides.
-- [ ] Not done - Publish Swagger/OpenAPI user guide.
-- [ ] Not done - Run docs checks and commit Phase 2.
+- [x] Done - Publish workflow and node usage guides.
+- [x] Done - Publish variables/extractors/JSON editor guides.
+- [x] Done - Publish environments/secrets and collections guides.
+- [x] Done - Publish Swagger/OpenAPI user guide.
+- [x] Done - Run docs checks and commit Phase 2.
 
 ### Phase 3 - Support Docs And Polish
 - [ ] Not done - Add FAQ and troubleshooting documentation.

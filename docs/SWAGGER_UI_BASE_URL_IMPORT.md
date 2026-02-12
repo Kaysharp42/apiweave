@@ -1,90 +1,100 @@
-# Swagger UI Base URL Import
+# Swagger and OpenAPI Import Guide
 
-APIWeave can now import OpenAPI endpoints from a plain Swagger UI landing page URL (for example `https://example.internal/webjars/swagger-ui/index.html`) in addition to direct `.json` OpenAPI URLs.
+Use this guide to import API request templates from Swagger/OpenAPI and keep them in sync with your environment.
 
-## Supported Input URL Patterns
+## Two Import Paths
 
-- Direct OpenAPI JSON URL (existing behavior)
-  - `https://example.internal/v3/api-docs`
-  - `https://example.internal/swagger/v1/swagger.json`
-- Swagger UI landing URL (new behavior)
-  - `https://example.internal/webjars/swagger-ui/index.html`
-  - `https://example.internal/swagger-ui/index.html`
-- Swagger UI URL with query hints
-  - `...?configUrl=...`
-  - `...?url=...`
-  - `...?urls.primaryName=Asset+Service`
+APIWeave supports two common flows:
 
-## Discovery Algorithm
+1. Environment-linked Swagger sync (recommended for ongoing work)
+2. One-time OpenAPI file import to Add Nodes panel
 
-When a Swagger UI page URL is provided, APIWeave resolves definitions using this order:
+## Path A: Environment-Linked Swagger Sync
 
-1. Parse query hints from the URL (`configUrl`, `url`, `urls.primaryName`).
-2. Fetch the UI HTML and extract `SwaggerUIBundle` hints (`configUrl`, `url`, `urls[]`).
-3. Probe common Swagger config endpoints if needed:
-   - relative `swagger-config` near UI path
-   - `/v3/api-docs/swagger-config`
-   - `/api-docs/swagger-config`
-   - `/swagger/v1/swagger-config`
-   - `/swagger/swagger-config`
-4. Normalize relative definition URLs to absolute URLs.
-5. Fetch all discovered definition specs and aggregate endpoints.
+Best when your API definition changes over time.
 
-## Multi-definition Behavior
+## Step 1: Set Swagger/OpenAPI URL on Environment
 
-- All discovered definitions are imported.
-- Duplicate endpoints across services are kept (not deduped) with service context.
-- Endpoint metadata includes:
-  - `definitionName`
-  - `definitionSpecUrl`
-  - `definitionScope`
-  - `sourceUiUrl`
-- Fingerprints are namespaced by `definitionScope` to avoid cross-service collisions.
+1. Open `Environments`.
+2. Create or edit an environment.
+3. Set `Swagger / OpenAPI URL`.
+4. Save.
 
-## Response Contract Notes
+Supported URL examples:
 
-`GET /api/workflows/import/openapi/url` now returns:
+- Direct spec URL:
+  - `https://api.example.com/v3/api-docs`
+  - `https://api.example.com/swagger/v1/swagger.json`
+- Swagger UI landing URL:
+  - `https://api.example.com/swagger-ui/index.html`
+  - `https://api.example.com/webjars/swagger-ui/index.html`
 
-- `nodes`: aggregated HTTP request nodes across imported definitions
-- `definitions`: per-definition status summary (`imported`/`failed`, endpoint count)
-- `stats`: aggregate totals including definition counts and failed count
-- `warnings`: partial-failure details when some definitions cannot be fetched
+## Step 2: Select Environment and Refresh
 
-## Safety and Performance Guards
+1. In the canvas toolbar, choose the environment.
+2. Click `Refresh`.
+3. APIWeave loads request templates into Add Nodes.
 
-- Definition discovery limit: 50 definitions
-- Imported endpoint limit: 5000 endpoints
-- Fetch timeout budget: 20 seconds per request
-- Concurrent spec fetches are bounded (default: 6)
+The imported group appears as:
 
-These limits prevent accidental overload on very large gateway catalogs.
+- `Swagger: <Environment Name>`
+
+## Step 3: Drag Imported Requests
+
+Open Add Nodes and drag imported HTTP requests to the canvas.
+
+These requests include method, URL, and request template fields from the spec.
+
+## Warning Badge: `Check API`
+
+If an existing schema-linked HTTP node no longer matches the refreshed spec, APIWeave shows `Check API` on that node.
+
+Open the badge to see:
+
+- mismatch reason
+- last refresh timestamp
+- source Swagger URL
+
+Important: refresh does not overwrite your existing node request body/headers/config.
+
+## Path B: OpenAPI File Import (One-Time)
+
+Best when you have a local spec file and want quick template generation.
+
+1. In sidebar, open import menu.
+2. Choose `OpenAPI`.
+3. Upload `.json` spec file.
+4. Click `Preview`.
+5. Optionally choose server URL, tags, and sanitization.
+6. Click `Add to Nodes`.
+
+Imported endpoints are added as a palette group in Add Nodes.
+
+## What Happens With Multi-Definition Swagger UI
+
+If a Swagger UI page exposes multiple definitions/services:
+
+- APIWeave discovers all available definitions.
+- Endpoints from each definition are imported.
+- Partial failures are reported (some definitions can fail while others still import).
 
 ## Troubleshooting
 
-### "Could not discover OpenAPI definitions from Swagger UI URL"
+### "Select an environment before refreshing Swagger"
 
-- Verify the URL is the actual Swagger UI landing page.
-- Open DevTools in browser and inspect which `swagger-config` endpoint is called.
-- Ensure that config endpoint is reachable from backend runtime.
+Choose an environment in the toolbar first.
 
-### "Failed to fetch any OpenAPI definitions"
+### "Environment has no Swagger/OpenAPI URL"
 
-- One or more discovered spec URLs may be inaccessible from backend network.
-- Check DNS/VPN reachability from backend host, not only browser machine.
-- Try one discovered `specUrl` directly to validate connectivity.
+Open Environment Manager and set `Swagger / OpenAPI URL`.
 
-### YAML/OpenAPI compatibility
+### "Failed to fetch Swagger URL"
 
-- JSON and YAML specs are supported.
-- If YAML parsing fails, verify the upstream content is valid OpenAPI YAML.
+- Verify URL starts with `http://` or `https://`
+- Confirm the backend can reach that URL from its network
+- Test with a direct spec URL if Swagger UI discovery fails
 
-### Partial refresh in UI
+### Imported templates not updating
 
-- Toasts may show a success count plus partial failure warning.
-- Review `definitions` and `warnings` in backend response for exact failing services.
-
-## Operator Notes (VPN / Connectivity)
-
-- APIWeave backend must have network route to Swagger UI host over VPN.
-- Browser access alone is not sufficient if backend runs in a different network context.
-- For private gateways, verify DNS resolution and outbound HTTPS from backend environment.
+- Click `Refresh` again after selecting the correct environment
+- Confirm environment URL is the current source-of-truth spec
