@@ -26,6 +26,10 @@ from app.utils.swagger_discovery import (
     resolve_url,
     make_definition_scope,
 )
+from app.utils.openapi_examples import (
+    resolve_openapi_schema_ref as resolve_openapi_schema_ref_helper,
+    generate_example_from_schema as generate_example_from_schema_helper,
+)
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -535,82 +539,13 @@ def parse_har_to_workflow(har_data: Dict[str, Any], import_mode: str = "linear",
 
 
 def resolve_openapi_schema_ref(ref_path: str, openapi_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Resolve a $ref path in OpenAPI spec (e.g., #/components/schemas/MyDto)
-    
-    Args:
-        ref_path: Reference path starting with #/
-        openapi_data: Full OpenAPI spec
-        
-    Returns:
-        Resolved schema object or empty dict
-    """
-    if not ref_path.startswith("#/"):
-        return {}
-    
-    parts = ref_path[2:].split("/")  # Remove #/ and split
-    current = openapi_data
-    
-    for part in parts:
-        if isinstance(current, dict) and part in current:
-            current = current[part]
-        else:
-            return {}
-    
-    return current if isinstance(current, dict) else {}
+    """Compatibility wrapper; implementation lives in app.utils.openapi_examples."""
+    return resolve_openapi_schema_ref_helper(ref_path, openapi_data)
 
 
 def generate_example_from_schema(schema: Dict[str, Any], openapi_data: Dict[str, Any]) -> Any:
-    """
-    Generate example value from OpenAPI schema
-    
-    Args:
-        schema: OpenAPI schema object
-        openapi_data: Full spec for resolving references
-        
-    Returns:
-        Example value based on schema
-    """
-    # If schema has example, use it
-    if "example" in schema:
-        return schema["example"]
-    
-    # If schema is a reference, resolve it
-    if "$ref" in schema:
-        resolved = resolve_openapi_schema_ref(schema["$ref"], openapi_data)
-        return generate_example_from_schema(resolved, openapi_data)
-    
-    schema_type = schema.get("type", "object")
-    
-    if schema_type == "object":
-        properties = schema.get("properties", {})
-        result = {}
-        for prop_name, prop_schema in properties.items():
-            result[prop_name] = generate_example_from_schema(prop_schema, openapi_data)
-        return result
-    elif schema_type == "array":
-        items_schema = schema.get("items", {})
-        example_item = generate_example_from_schema(items_schema, openapi_data)
-        return [example_item] if example_item else []
-    elif schema_type == "string":
-        schema_format = schema.get("format", "")
-        if schema_format == "uuid":
-            return "00000000-0000-0000-0000-000000000000"
-        elif schema_format == "date":
-            return "2024-01-01"
-        elif schema_format == "date-time":
-            return "2024-01-01T00:00:00Z"
-        elif schema_format == "email":
-            return "user@example.com"
-        return schema.get("default", "string")
-    elif schema_type == "integer":
-        return schema.get("default", 0)
-    elif schema_type == "number":
-        return schema.get("default", 0.0)
-    elif schema_type == "boolean":
-        return schema.get("default", False)
-    
-    return None
+    """Compatibility wrapper; implementation lives in app.utils.openapi_examples."""
+    return generate_example_from_schema_helper(schema, openapi_data)
 
 
 def normalize_openapi_path(path: str) -> str:
