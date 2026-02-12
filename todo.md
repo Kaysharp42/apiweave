@@ -1,70 +1,73 @@
-# Swagger UI Base URL Integration Plan (Discover All Definitions)
+# APIWeave Full Documentation Plan
 
-Issue: users will provide a Swagger UI landing URL like `{domain}/webjars/swagger-ui/index.html` (without `.json` and without `urls.primaryName`). The app must discover all available API definitions behind that UI, fetch each spec, and import complete endpoint data.
+Goal: deliver complete, production-grade documentation for APIWeave by consolidating learnings, progress artifacts, and current code behavior into a clear docs system in `docs/`.
 
-Assumption confirmed: target URLs are reachable over VPN and currently require no auth headers/cookies.
+## Phase 1 - Source Audit and Documentation Architecture
+- [x] Done - Read and index all files in `progress/` (including `progress/learnings.md`) and map each to product, architecture, API, operations, or historical context.
+- [x] Done - Audit current docs in `docs/` and root `README.md` for stale links, duplicate content, and missing topics.
+- [x] Done - Audit backend/frontend code to build a canonical feature inventory (routes, models, runner behavior, UI modules, stores, hooks).
+- [x] Done - Define documentation information architecture (top-level doc map + ownership + update cadence).
+- [x] Done - Write/extend a docs validation test/checklist for this phase (at minimum: link and file reference verification for touched docs).
+- [x] Done - Run phase tests/checks and record results.
+- [x] Done - Commit Phase 1 (`docs(plan): define full documentation architecture from progress and code audit`).
+- [x] Done - Phase note: completed source inventory + docs/code audit baseline in `docs/PHASE1_DOCUMENTATION_ARCHITECTURE.md` and validation tooling/report in `docs/link_check.py` + `docs/PHASE1_VALIDATION.md`.
 
-## Phase 1 - Discovery + Evidence Baseline
-- [x] Done - Reproduce current behavior using only base Swagger UI URL (`.../webjars/swagger-ui/index.html`) and confirm failure mode.
-- [x] Done - Capture network/evidence of what Swagger UI itself loads (config endpoint, definitions list, selected primaryName behavior).
-- [x] Done - Inventory at least 3 real URL patterns in your environment (Springdoc-style config, Swashbuckle-style config, custom UI hosting).
-- [x] Done - Define expected output contract: "all definitions" means aggregate all endpoints into one imported set with per-definition metadata.
-- [x] Done - Write failing backend tests for base UI URL discovery path.
-- [x] Done - Run phase tests/checks.
-- [x] Done - Commit Phase 1 (`test(openapi): capture swagger-ui base-url discovery failures`).
+## Phase 2 - Entry Points and Navigation Foundation
+- [ ] Not done - Rewrite root `README.md` to match current product state, supported features, and valid doc links.
+- [ ] Not done - Create `docs/README.md` as the central documentation hub with audience-based paths (user, developer, operator, contributor).
+- [ ] Not done - Add a docs navigation index (`docs/NAVIGATION.md`) with quick links and “start here” sequences.
+- [ ] Not done - Add a documentation versioning/change policy section (what belongs in `docs/` vs `progress/`).
+- [ ] Not done - Write/extend tests/checks for nav integrity (all links resolvable, no missing targets).
+- [ ] Not done - Run phase tests/checks and record results.
+- [ ] Not done - Commit Phase 2 (`docs(core): rebuild README and docs navigation foundation`).
 
-## Phase 2 - Backend Definition Discovery Engine
-- [x] Done - Add backend URL classifier: `direct_spec`, `swagger_ui_index`, `swagger_config`, `unknown`.
-- [x] Done - Implement Swagger UI config resolution pipeline:
-- [x] Done - 1) Parse query hints (`configUrl`, `url`, `urls.primaryName`) when present.
-- [x] Done - 2) Fetch index HTML and extract SwaggerUIBundle config hints (`configUrl`, `url`, `urls`).
-- [x] Done - 3) Probe common config endpoints (for example relative `swagger-config`, `/v3/api-docs/swagger-config`, `/swagger/v1/swagger.json` fallback candidates).
-- [x] Done - Normalize and resolve all relative URLs to absolute URLs safely using page origin/path.
-- [x] Done - Return canonical discovered definitions list: `{name, specUrl, source}`.
-- [x] Done - Write unit tests for classifier + resolver + relative URL normalization + fallback ordering.
-- [x] Done - Run phase tests/checks.
-- [x] Done - Commit Phase 2 (`feat(openapi): discover definitions from swagger-ui base url`).
+## Phase 3 - Product User Documentation (Top-of-Funnel)
+- [ ] Not done - Create/refresh end-user guides for workflow creation, node usage, variables/extractors, assertions, merge behavior, and JSON editor.
+- [ ] Not done - Add complete guides for environments, collections, import/export formats, and Swagger/OpenAPI sync behavior.
+- [ ] Not done - Add practical workflow walkthroughs (quick start, API chain, error handling, partial failure cases).
+- [ ] Not done - Add FAQ + common mistakes + troubleshooting matrix for user-facing features.
+- [ ] Not done - Write/extend tests/checks for user doc examples (commands and endpoint references are valid and current).
+- [ ] Not done - Run phase tests/checks and record results.
+- [ ] Not done - Commit Phase 3 (`docs(user): publish complete end-user workflow documentation`).
 
-## Phase 3 - Multi-definition Spec Fetch + Parse
-- [x] Done - Fetch all discovered definition URLs concurrently with bounded parallelism and per-request timeouts.
-- [x] Done - Parse both JSON and YAML specs robustly; validate `paths` and required OpenAPI/Swagger structure.
-- [x] Done - Aggregate endpoint nodes across definitions while preserving source metadata (`definitionName`, `specUrl`, `uiUrl`).
-- [x] Done - Prevent collisions by namespacing OpenAPI metadata fingerprints with definition identity.
-- [x] Done - Add partial-failure handling: continue on bad definition(s), return warnings with counts (`success`, `failed`, `skipped`).
-- [x] Done - Write tests for multi-definition success, partial failure, and metadata namespacing behavior.
-- [x] Done - Run phase tests/checks.
-- [x] Done - Commit Phase 3 (`feat(openapi): import and aggregate all discovered definitions`).
+## Phase 4 - Architecture and Developer Documentation
+- [ ] Not done - Create/update architecture docs for frontend, backend, runner, MongoDB, and major data flows.
+- [ ] Not done - Document core modules and extension points (contexts, stores, hooks, node system, executor pipeline).
+- [ ] Not done - Add sequence diagrams for create/save/run/poll/report and OpenAPI import/refresh flow.
+- [ ] Not done - Add coding conventions and “how to add a new node type/route/store pattern” guides.
+- [ ] Not done - Write/extend tests/checks that validate code references in dev docs map to existing files.
+- [ ] Not done - Run phase tests/checks and record results.
+- [ ] Not done - Commit Phase 4 (`docs(dev): add architecture and implementation guides`).
 
-## Phase 4 - API Contract + Frontend Refresh Flow
-- [x] Done - Extend `/api/workflows/import/openapi/url` response contract to include discovered definitions and aggregate stats.
-- [x] Done - Update frontend refresh in `WorkflowCanvas` to handle multi-definition payloads and display accurate endpoint counts.
-- [x] Done - Show import context in UI/toasts (for example: `3 definitions, 124 endpoints, 1 definition failed`).
-- [x] Done - Ensure Add Nodes group labeling includes definition context (so users know endpoint origin service).
-- [x] Done - Keep existing direct `.json` behavior unchanged and backward-compatible.
-- [x] Done - Write frontend tests for multi-definition payload mapping and user-facing messaging.
-- [x] Done - Run phase tests/checks.
-- [x] Done - Commit Phase 4 (`feat(ui): render multi-definition swagger refresh results`).
+## Phase 5 - API and Data Contract Reference
+- [ ] Not done - Create comprehensive API reference in `docs/` for workflows, runs, environments, collections, webhooks, and import endpoints.
+- [ ] Not done - Document request/response schemas, status/error semantics, and representative examples for each endpoint group.
+- [ ] Not done - Add data model reference (collections, key fields, indexes, artifact storage behavior, GridFS notes).
+- [ ] Not done - Add compatibility notes for legacy payloads and migration-sensitive fields.
+- [ ] Not done - Write/extend tests/checks to verify endpoint list coverage against route files.
+- [ ] Not done - Run phase tests/checks and record results.
+- [ ] Not done - Commit Phase 5 (`docs(api): publish full backend API and data contract reference`).
 
-## Phase 5 - Safety, Performance, and Regression Guards
-- [x] Done - Add limits/guards for large installs (max definitions, max endpoints, timeout budget).
-- [x] Done - Add dedupe strategy for identical endpoints across definitions (configurable: keep all vs dedupe by fingerprint).
-- [x] Done - Ensure autosave/refresh interactions remain stable with larger template imports.
-- [x] Done - Run one-time workflow integrity audit to verify no accidental workflow graph overwrite regressions.
-- [x] Done - Write regression tests for large-definition sets and timeout/limit behavior.
-- [x] Done - Run phase tests/checks.
-- [x] Done - Commit Phase 5 (`test(openapi): harden multi-definition import safety and scale`).
+## Phase 6 - Operations, Deployment, Security, and Runbooks
+- [ ] Not done - Create deployment docs for local, Docker, and environment configuration (dev/stage/prod).
+- [ ] Not done - Add operational runbooks: health checks, backups, incident triage, large-result handling, and recovery procedures.
+- [ ] Not done - Add security documentation for secrets handling, filtering behavior, webhook auth model, and current limitations.
+- [ ] Not done - Add performance and reliability notes (polling, autosave, import limits, safeguards).
+- [ ] Not done - Write/extend tests/checks for operational docs (command validity and endpoint existence checks).
+- [ ] Not done - Run phase tests/checks and record results.
+- [ ] Not done - Commit Phase 6 (`docs(ops): add deployment, security, and operational runbooks`).
 
-## Phase 6 - Documentation + Rollout
-- [x] Done - Document supported input URL patterns, especially plain Swagger UI index URLs.
-- [x] Done - Document discovery algorithm and troubleshooting steps when definitions cannot be resolved.
-- [x] Done - Add operator notes for VPN/connectivity and partial-failure interpretation.
-- [x] Done - Record implementation learnings in `progress/learnings.md`.
-- [x] Done - Write final integration/regression tests for end-to-end base-url flow.
-- [x] Done - Run final full checks (backend tests + frontend tests/build).
-- [x] Done - Commit Phase 6 (`docs(openapi): support swagger-ui base-url all-definition discovery`).
+## Phase 7 - Documentation QA, Standardization, and Final Rollout
+- [ ] Not done - Standardize writing style, terminology, frontmatter/headers, and cross-document structure.
+- [ ] Not done - Resolve duplicate/conflicting content by promoting canonical docs in `docs/` and demoting historical notes to `progress/`.
+- [ ] Not done - Add final “documentation coverage matrix” (feature -> doc file -> owner).
+- [ ] Not done - Record implementation learnings in `progress/learnings.md` for the documentation system itself.
+- [ ] Not done - Write final regression tests/checks for entire docs set (link checks + reference checks + smoke-readability checklist).
+- [ ] Not done - Run final full checks and record release-ready status.
+- [ ] Not done - Commit Phase 7 (`docs(complete): finalize comprehensive APIWeave documentation suite`).
 
 ---
 
 ## Phase Exit Rule (applies to every phase)
-- [x] Done - Every phase must include at least one test addition/update.
-- [x] Done - Every phase must end with: tests passing -> commit created -> short note of what changed and why.
+- [ ] Not done - Each phase must include at least one documentation validation test/check addition or update.
+- [ ] Not done - Each phase must end with tests/checks passing, a commit, and a short phase note summarizing what changed and why.

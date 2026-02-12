@@ -433,19 +433,16 @@ When workflow payload regressions are suspected, teams need a repeatable, low-fr
 
 ---
 
-## Phase 14: Swagger UI Base URL multi-definition import (2026-02-12)
+## Phase 15: Documentation system foundation (2026-02-12)
 
-### 124. Swagger UI landing pages require discovery, not direct parsing
-`/webjars/swagger-ui/index.html` is an HTML shell, not an OpenAPI document. Reliable import requires a discovery pipeline that extracts `configUrl`/`url`/`urls` hints from query + HTML and then resolves to concrete spec URLs before parsing.
+### 124. Progress-folder indexing works best as a two-pass audit
+For large historical folders like `progress/`, a reliable indexing pattern is: first pass by filename/theme to get full coverage quickly, second pass by targeted reads for high-signal docs (`learnings`, architecture notes, current plans). This avoids missing files while still producing a useful category map.
 
-### 125. Definition-scoped fingerprints avoid cross-service false matches
-When multiple services expose similar paths/methods, fingerprints based only on method+path can collide. Prefixing endpoint fingerprints with a stable `definitionScope` preserves duplicates intentionally while keeping warning/refresh matching accurate per service.
+### 125. Documentation validation should check both markdown links and inline file references
+Broken references are not only in `[text](path)` links. This repo also contains plain inline references like `` `docs/WEBHOOK_TESTING_GUIDE.md` `` that silently drift. A lightweight checker that validates both patterns catches more real issues than link-only checks.
 
-### 126. Recursive schema example generation must be guarded
-Large gateway docs often contain self-referential `$ref` graphs. Example generation without cycle detection or depth limits can crash with recursion overflow. A guarded generator with seen-ref tracking and max-depth limits prevents importer outages while still producing useful samples.
+### 126. Audit-first avoids rewriting stale docs blindly
+Running a baseline check before rewriting docs exposed that root `README.md` and `docs/WEBHOOK_QUICKSTART.md` already contain missing targets. Capturing that gap first gives a concrete migration backlog for later phases instead of accidentally copying stale links into new docs.
 
-### 127. Partial failure is a first-class success mode for gateway imports
-In multi-definition catalogs, one broken service spec should not block all others. Returning imported nodes plus per-definition status and warnings gives users useful progress and clear remediation targets.
-
-### 128. Autosave should pause during Swagger refresh mutations
-Swagger refresh can touch node warning metadata and trigger rapid state churn. Temporarily suspending autosave during refresh avoids noisy persistence activity and keeps editor behavior predictable on large imports.
+### 127. Repo-relative paths are better than bare filenames in architecture docs
+Using bare filenames (for example `workflows.py`) makes automated validation ambiguous. Switching to repo-relative paths (for example `backend/app/routes/workflows.py`) makes references verifiable and easier to navigate in editors and CLI tooling.
