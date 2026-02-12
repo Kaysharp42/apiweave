@@ -123,17 +123,17 @@ Total indexed files: 83
 
 Broken markdown links in `README.md`:
 
-- `docs/API.md`
-- `docs/INSTALLATION.md`
-- `docs/WORKFLOW_SCHEMA.md`
-- `docs/GITLAB_CI.md`
-- `CONTRIBUTING.md`
+- docs/API.md
+- docs/INSTALLATION.md
+- docs/WORKFLOW_SCHEMA.md
+- docs/GITLAB_CI.md
+- CONTRIBUTING.md
 
 Non-link plain-text references in `docs/WEBHOOK_QUICKSTART.md` also point to missing docs:
 
-- `docs/WEBHOOK_TESTING_GUIDE.md`
-- `docs/WEBHOOK_IMPLEMENTATION_SUMMARY.md`
-- `docs/CI_CD_WEBHOOK_IMPLEMENTATION_PLAN.md`
+- docs/WEBHOOK_TESTING_GUIDE.md
+- docs/WEBHOOK_IMPLEMENTATION_SUMMARY.md
+- docs/CI_CD_WEBHOOK_IMPLEMENTATION_PLAN.md
 
 ### Duplicate and overlapping content
 
@@ -145,7 +145,7 @@ Non-link plain-text references in `docs/WEBHOOK_QUICKSTART.md` also point to mis
 
 ### Missing topic coverage (relative to current codebase)
 
-- No centralized docs hub (`docs/README.md`) and no navigation index (`docs/NAVIGATION.md`).
+- No centralized docs hub (docs/README, planned) and no navigation index (docs/NAVIGATION, planned).
 - No architecture reference for current ReactFlow workspace, Zustand stores, runner lifecycle, or Beanie data model.
 - No complete API reference for route groups under:
   - `/api/workflows`
@@ -215,8 +215,8 @@ This is the Phase 1 information architecture baseline for implementation in late
 ### Proposed top-level doc map
 
 - `README.md` - product entry point, quick start, and top-level links.
-- `docs/README.md` - central docs hub by audience.
-- `docs/NAVIGATION.md` - deterministic start-here paths and quick links.
+- `docs/README (planned)` - central docs hub by audience.
+- `docs/NAVIGATION (planned)` - deterministic start-here paths and quick links.
 - `docs/product/` - end-user workflows, node behavior, environments, collections, import/export, troubleshooting.
 - `docs/developer/` - frontend/backend architecture, extension patterns, sequence diagrams, code conventions.
 - `docs/api/` - endpoint reference, request/response contracts, error semantics, examples.
