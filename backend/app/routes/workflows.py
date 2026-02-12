@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, status, Query, UploadFile, File
 from fastapi.responses import JSONResponse
 from typing import List, Optional, Dict, Any
 from datetime import datetime, UTC
+import asyncio
 import uuid
 import json
 import re
@@ -17,9 +18,20 @@ from app.models import Workflow, WorkflowCreate, WorkflowUpdate, PaginatedWorkfl
 from app.database import get_database
 from app.config import settings
 from app.repositories import WorkflowRepository, CollectionRepository, RunRepository, EnvironmentRepository
+from app.utils.swagger_discovery import (
+    parse_swagger_ui_query_hints,
+    extract_swagger_ui_hints_from_html,
+    build_swagger_config_candidates,
+    extract_definitions_from_swagger_config,
+    resolve_url,
+    make_definition_scope,
+)
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
+
+MAX_DISCOVERED_OPENAPI_DEFINITIONS = 50
+MAX_IMPORTED_OPENAPI_ENDPOINTS = 5000
 
 
 # Helper functions for export/import
@@ -614,15 +626,22 @@ def normalize_openapi_path(path: str) -> str:
     return normalized
 
 
-def build_openapi_endpoint_fingerprint(method: str, path: str, operation_id: str = "") -> str:
+def build_openapi_endpoint_fingerprint(method: str, path: str, operation_id: str = "", scope: str = "") -> str:
     """Build deterministic endpoint fingerprint for OpenAPI request nodes."""
     method_upper = (method or "GET").upper()
     normalized_path = normalize_openapi_path(path)
     operation_value = (operation_id or "").strip()
-    return f"{method_upper}|{normalized_path}|{operation_value}"
+    scope_value = (scope or "").strip()
+    return f"{scope_value}|{method_upper}|{normalized_path}|{operation_value}"
 
 
-def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", tag_filter: Optional[List[str]] = None, sanitize: bool = True) -> Dict[str, Any]:
+def parse_openapi_to_workflow(
+    openapi_data: Dict[str, Any],
+    base_url: str = "",
+    tag_filter: Optional[List[str]] = None,
+    sanitize: bool = True,
+    source_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Convert OpenAPI/Swagger spec to APIWeave workflow format
     
@@ -736,6 +755,9 @@ def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", 
                 label_text = label_text[:37] + "..."
             label = f"[{method.upper()}] {label_text}"
 
+            context = source_context or {}
+            definition_scope = context.get("definitionScope") or ""
+
             openapi_meta = {
                 "source": "openapi",
                 "method": method.upper(),
@@ -745,8 +767,14 @@ def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", 
                     method.upper(),
                     normalized_path,
                     operation_id,
+                    definition_scope,
                 ),
             }
+
+            for key in ("definitionName", "definitionSpecUrl", "definitionScope", "sourceUiUrl"):
+                value = context.get(key)
+                if value:
+                    openapi_meta[key] = value
             
             # Calculate grid position
             row = idx // nodes_per_row
@@ -1766,6 +1794,132 @@ async def import_openapi_file(
         )
 
 
+def _extract_openapi_document(response: httpx.Response) -> Optional[Dict[str, Any]]:
+    try:
+        data = response.json()
+    except (ValueError, json.JSONDecodeError):
+        data = None
+
+    if isinstance(data, dict) and "paths" in data:
+        return data
+
+    content_type = (response.headers.get("content-type") or "").lower()
+    body_text = response.text or ""
+    should_try_yaml = (
+        "yaml" in content_type
+        or body_text.lstrip().startswith("openapi:")
+        or body_text.lstrip().startswith("swagger:")
+    )
+
+    if not should_try_yaml:
+        return None
+
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        yaml_data = yaml.safe_load(body_text)
+    except Exception:
+        return None
+
+    if isinstance(yaml_data, dict) and "paths" in yaml_data:
+        return yaml_data
+
+    return None
+
+
+def _dedupe_definitions(definitions: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    deduped: List[Dict[str, str]] = []
+    seen = set()
+
+    for item in definitions:
+        spec_url = (item.get("specUrl") or "").strip()
+        if not spec_url or spec_url in seen:
+            continue
+        seen.add(spec_url)
+        deduped.append(
+            {
+                "name": (item.get("name") or "").strip() or spec_url,
+                "specUrl": spec_url,
+                "source": (item.get("source") or "discovered").strip() or "discovered",
+            }
+        )
+
+    return deduped
+
+
+async def _discover_definitions_from_swagger_ui(
+    client: httpx.AsyncClient,
+    swagger_ui_url: str,
+    html_text: str,
+) -> Dict[str, Any]:
+    query_hints = parse_swagger_ui_query_hints(swagger_ui_url)
+    html_hints = extract_swagger_ui_hints_from_html(html_text)
+
+    definitions: List[Dict[str, str]] = []
+
+    # Explicit query-provided doc URL
+    if query_hints.get("url"):
+        definitions.append(
+            {
+                "name": query_hints.get("primaryName") or "Default",
+                "specUrl": resolve_url(swagger_ui_url, query_hints["url"]),
+                "source": "swagger-ui.query.url",
+            }
+        )
+
+    # Inline HTML hints
+    for entry in html_hints.get("urls") or []:
+        definitions.append(
+            {
+                "name": (entry.get("name") or "").strip() or (entry.get("url") or "").strip(),
+                "specUrl": resolve_url(swagger_ui_url, entry.get("url") or ""),
+                "source": "swagger-ui.html.urls",
+            }
+        )
+
+    if html_hints.get("url"):
+        definitions.append(
+            {
+                "name": query_hints.get("primaryName") or "Default",
+                "specUrl": resolve_url(swagger_ui_url, html_hints["url"]),
+                "source": "swagger-ui.html.url",
+            }
+        )
+
+    primary_name = query_hints.get("primaryName")
+    config_candidates = build_swagger_config_candidates(swagger_ui_url, query_hints, html_hints)
+
+    for candidate in config_candidates:
+        try:
+            response = await client.get(
+                candidate,
+                headers={
+                    "Accept": "application/json, application/vnd.oai.openapi+json",
+                },
+            )
+            response.raise_for_status()
+            config_data = response.json()
+            if not isinstance(config_data, dict):
+                continue
+            extracted = extract_definitions_from_swagger_config(config_data, str(response.url))
+            if extracted.get("primaryName") and not primary_name:
+                primary_name = extracted["primaryName"]
+            definitions.extend(extracted.get("definitions") or [])
+            if extracted.get("definitions"):
+                break
+        except Exception:
+            continue
+
+    deduped = _dedupe_definitions(definitions)
+    return {
+        "definitions": deduped,
+        "primaryName": primary_name,
+    }
+
+
 @router.get("/import/openapi/url")
 async def import_openapi_from_url(
     swagger_url: str = Query(...),
@@ -1790,53 +1944,226 @@ async def import_openapi_from_url(
         )
 
     try:
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-            response = await client.get(
-                url,
-                headers={
-                    "Accept": "application/json, application/vnd.oai.openapi+json"
-                }
-            )
-            response.raise_for_status()
-
-        try:
-            openapi_data = response.json()
-        except json.JSONDecodeError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Swagger URL did not return valid JSON: {str(e)}"
-            )
-
-        if not isinstance(openapi_data, dict):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Swagger URL returned invalid OpenAPI document"
-            )
-
-        if "paths" not in openapi_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid OpenAPI file: missing 'paths' key"
-            )
-
         tags = tag_filter.split(",") if tag_filter else None
 
-        try:
-            workflow_data = parse_openapi_to_workflow(openapi_data, base_url, tags, sanitize)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            initial_response = await client.get(
+                url,
+                headers={
+                    "Accept": "application/json, application/vnd.oai.openapi+json, text/html",
+                },
+            )
+            initial_response.raise_for_status()
+
+            direct_spec = _extract_openapi_document(initial_response)
+
+            discovered_definitions: List[Dict[str, str]] = []
+            primary_name: Optional[str] = None
+
+            if direct_spec:
+                discovered_definitions = [
+                    {
+                        "name": direct_spec.get("info", {}).get("title") or "Default",
+                        "specUrl": url,
+                        "source": "direct-url",
+                    }
+                ]
+            else:
+                discovery = await _discover_definitions_from_swagger_ui(
+                    client,
+                    swagger_ui_url=url,
+                    html_text=initial_response.text,
+                )
+                discovered_definitions = discovery.get("definitions") or []
+                primary_name = discovery.get("primaryName")
+
+                if not discovered_definitions:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Could not discover OpenAPI definitions from Swagger UI URL. "
+                            "Use a direct OpenAPI spec URL or verify Swagger UI config exposure."
+                        ),
+                    )
+
+            if len(discovered_definitions) > MAX_DISCOVERED_OPENAPI_DEFINITIONS:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Discovered {len(discovered_definitions)} definitions, "
+                        f"which exceeds safety limit ({MAX_DISCOVERED_OPENAPI_DEFINITIONS})."
+                    ),
+                )
+
+            successful_specs: List[Dict[str, Any]] = []
+            failed_definitions: List[Dict[str, str]] = []
+
+            async def fetch_definition(definition: Dict[str, str]) -> Dict[str, Any]:
+                definition_name = definition.get("name") or "Definition"
+                spec_url = definition.get("specUrl") or ""
+                if not spec_url:
+                    return {
+                        "status": "failed",
+                        "name": definition_name,
+                        "specUrl": spec_url,
+                        "error": "Missing spec URL",
+                    }
+
+                if direct_spec and spec_url == url:
+                    return {
+                        "status": "imported",
+                        "definition": definition,
+                        "openapi_data": direct_spec,
+                    }
+
+                try:
+                    spec_response = await client.get(
+                        spec_url,
+                        headers={
+                            "Accept": "application/json, application/vnd.oai.openapi+json",
+                        },
+                    )
+                    spec_response.raise_for_status()
+                    openapi_data = _extract_openapi_document(spec_response)
+                    if not openapi_data:
+                        raise ValueError("Definition URL did not return a valid OpenAPI JSON document")
+
+                    return {
+                        "status": "imported",
+                        "definition": definition,
+                        "openapi_data": openapi_data,
+                    }
+                except Exception as exc:
+                    return {
+                        "status": "failed",
+                        "name": definition_name,
+                        "specUrl": spec_url,
+                        "error": str(exc),
+                    }
+
+            semaphore = asyncio.Semaphore(6)
+
+            async def fetch_with_limit(definition: Dict[str, str]) -> Dict[str, Any]:
+                async with semaphore:
+                    return await fetch_definition(definition)
+
+            fetch_results = await asyncio.gather(
+                *(fetch_with_limit(definition) for definition in discovered_definitions)
             )
 
-        http_nodes = [n for n in workflow_data["nodes"] if n["type"] == "http-request"]
+            for result in fetch_results:
+                if result.get("status") == "imported":
+                    successful_specs.append(
+                        {
+                            "definition": result["definition"],
+                            "openapi_data": result["openapi_data"],
+                        }
+                    )
+                else:
+                    failed_definitions.append(
+                        {
+                            "name": result["name"],
+                            "specUrl": result["specUrl"],
+                            "error": result["error"],
+                        }
+                    )
+
+        if not successful_specs:
+            first_error = failed_definitions[0]["error"] if failed_definitions else "Unknown fetch error"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to fetch any OpenAPI definitions: {first_error}",
+            )
+
+        total_discovered = len(discovered_definitions)
+        total_imported = len(successful_specs)
+        is_multi_definition = total_discovered > 1
+
+        all_http_nodes: List[Dict[str, Any]] = []
+        definition_summaries: List[Dict[str, Any]] = []
+
+        for bundle in successful_specs:
+            definition = bundle["definition"]
+            definition_name = definition.get("name") or "Definition"
+            definition_spec_url = definition.get("specUrl") or ""
+            definition_scope = make_definition_scope(definition_name, definition_spec_url)
+
+            workflow_data = parse_openapi_to_workflow(
+                bundle["openapi_data"],
+                base_url,
+                tags,
+                sanitize,
+                source_context={
+                    "definitionName": definition_name,
+                    "definitionSpecUrl": definition_spec_url,
+                    "definitionScope": definition_scope,
+                    "sourceUiUrl": url,
+                },
+            )
+            http_nodes = [n for n in workflow_data["nodes"] if n["type"] == "http-request"]
+
+            if is_multi_definition:
+                for node in http_nodes:
+                    label = node.get("label") or node.get("config", {}).get("url") or "Request"
+                    node["label"] = f"[{definition_name}] {label}"
+
+            all_http_nodes.extend(http_nodes)
+
+            if len(all_http_nodes) > MAX_IMPORTED_OPENAPI_ENDPOINTS:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Imported endpoint count exceeded safety limit "
+                        f"({MAX_IMPORTED_OPENAPI_ENDPOINTS})."
+                    ),
+                )
+
+            definition_summaries.append(
+                {
+                    "name": definition_name,
+                    "specUrl": definition_spec_url,
+                    "status": "imported",
+                    "endpointCount": len(http_nodes),
+                    "source": definition.get("source") or "discovered",
+                }
+            )
+
+        for failed in failed_definitions:
+            definition_summaries.append(
+                {
+                    "name": failed["name"],
+                    "specUrl": failed["specUrl"],
+                    "status": "failed",
+                    "endpointCount": 0,
+                    "error": failed["error"],
+                }
+            )
+
+        api_title = "Multiple APIs" if total_imported > 1 else (
+            successful_specs[0]["openapi_data"].get("info", {}).get("title", "API")
+        )
+
         return {
-            "nodes": http_nodes,
+            "nodes": all_http_nodes,
+            "definitions": definition_summaries,
             "stats": {
-                "totalEndpoints": len(http_nodes),
-                "apiTitle": openapi_data.get("info", {}).get("title", "API"),
-                "sourceUrl": url
-            }
+                "totalEndpoints": len(all_http_nodes),
+                "apiTitle": api_title,
+                "sourceUrl": url,
+                "definitionCount": total_discovered,
+                "importedDefinitionCount": total_imported,
+                "failedDefinitionCount": len(failed_definitions),
+                "primaryName": primary_name,
+            },
+            "warnings": [
+                {
+                    "type": "definition-fetch-failed",
+                    "name": item["name"],
+                    "specUrl": item["specUrl"],
+                    "message": item["error"],
+                }
+                for item in failed_definitions
+            ],
         }
 
     except HTTPException:

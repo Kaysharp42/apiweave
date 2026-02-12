@@ -336,23 +336,25 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         const meta = apiNode?.config?.openapiMeta;
         if (!meta || meta.source !== 'openapi') return;
 
+        const definitionScope = (meta.definitionScope || '').trim();
         const method = (meta.method || '').toUpperCase();
         const path = meta.path || '';
         const fingerprint = meta.fingerprint || '';
         const operationId = (meta.operationId || '').trim();
 
         if (fingerprint) latestFingerprintSet.add(fingerprint);
-        if (method && path) latestMethodPathSet.add(`${method}|${path}`);
+        if (method && path) latestMethodPathSet.add(`${definitionScope}|${method}|${path}`);
 
         if (path && method) {
-          if (!latestMethodsByPath.has(path)) {
-            latestMethodsByPath.set(path, new Set());
+          const pathScopeKey = `${definitionScope}|${path}`;
+          if (!latestMethodsByPath.has(pathScopeKey)) {
+            latestMethodsByPath.set(pathScopeKey, new Set());
           }
-          latestMethodsByPath.get(path).add(method);
+          latestMethodsByPath.get(pathScopeKey).add(method);
         }
 
         if (operationId) {
-          latestByOperationId.set(operationId, meta);
+          latestByOperationId.set(`${definitionScope}|${operationId}`, meta);
         }
       });
 
@@ -378,8 +380,12 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           const metaMethod = (nodeMeta.method || '').toUpperCase();
           const metaPath = nodeMeta.path || '';
           const metaFingerprint = nodeMeta.fingerprint || '';
+          const metaScope = (nodeMeta.definitionScope || '').trim();
+          const metaDefinitionName = (nodeMeta.definitionName || '').trim();
           const metaOperationId = (nodeMeta.operationId || '').trim();
-          const methodPathKey = metaMethod && metaPath ? `${metaMethod}|${metaPath}` : '';
+          const methodPathKey = metaMethod && metaPath ? `${metaScope}|${metaMethod}|${metaPath}` : '';
+          const operationScopeKey = metaOperationId ? `${metaScope}|${metaOperationId}` : '';
+          const pathScopeKey = metaPath ? `${metaScope}|${metaPath}` : '';
 
           let warningText = null;
 
@@ -387,14 +393,18 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
             warningText = null;
           } else if (methodPathKey && latestMethodPathSet.has(methodPathKey)) {
             warningText = null;
-          } else if (metaOperationId && latestByOperationId.has(metaOperationId)) {
-            const latestMeta = latestByOperationId.get(metaOperationId);
+          } else if (operationScopeKey && latestByOperationId.has(operationScopeKey)) {
+            const latestMeta = latestByOperationId.get(operationScopeKey);
             warningText = `Endpoint changed in Swagger docs (${metaMethod} ${metaPath} -> ${latestMeta.method} ${latestMeta.path}).`;
-          } else if (metaPath && latestMethodsByPath.has(metaPath)) {
-            const availableMethods = Array.from(latestMethodsByPath.get(metaPath)).join(', ');
+          } else if (pathScopeKey && latestMethodsByPath.has(pathScopeKey)) {
+            const availableMethods = Array.from(latestMethodsByPath.get(pathScopeKey)).join(', ');
             warningText = `Method mismatch for ${metaPath}. Available method(s): ${availableMethods}.`;
           } else {
             warningText = `Endpoint no longer found in Swagger docs (${metaMethod} ${metaPath}).`;
+          }
+
+          if (warningText && metaDefinitionName) {
+            warningText = `[${metaDefinitionName}] ${warningText}`;
           }
 
           if (!warningText) {
@@ -438,7 +448,17 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
       if (showSuccessToast) {
         const endpointCount = items.length;
-        toast.success(`Swagger refreshed: ${endpointCount} endpoint${endpointCount === 1 ? '' : 's'}.`);
+        const definitionCount = Number(result?.stats?.definitionCount || 0);
+        const failedDefinitionCount = Number(result?.stats?.failedDefinitionCount || 0);
+        const fromDefinitions = definitionCount > 0
+          ? ` from ${definitionCount} definition${definitionCount === 1 ? '' : 's'}`
+          : '';
+
+        toast.success(`Swagger refreshed: ${endpointCount} endpoint${endpointCount === 1 ? '' : 's'}${fromDefinitions}.`);
+
+        if (failedDefinitionCount > 0) {
+          toast.warning(`Swagger refresh partial: ${failedDefinitionCount} definition${failedDefinitionCount === 1 ? '' : 's'} failed to import.`);
+        }
       }
 
       return { endpointCount: items.length };

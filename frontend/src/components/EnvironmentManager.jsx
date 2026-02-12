@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2, Copy, Pencil, Lock, X } from 'lucide-react';
+import { Plus, Trash2, Copy, Pencil, Lock, X, Link2 } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 import { Modal, ConfirmDialog } from './molecules';
 import { Button, Input, TextArea, Badge } from './atoms';
@@ -16,6 +16,7 @@ const EnvironmentManager = ({ open, onClose }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    swaggerDocUrl: '',
     variables: {}
   });
   const [newVarKey, setNewVarKey] = useState('');
@@ -40,7 +41,7 @@ const EnvironmentManager = ({ open, onClose }) => {
   const handleCreate = () => {
     setIsEditing(true);
     setSelectedEnv(null);
-    setFormData({ name: '', description: '', variables: {} });
+    setFormData({ name: '', description: '', swaggerDocUrl: '', variables: {} });
   };
 
   const handleEdit = (env) => {
@@ -49,6 +50,7 @@ const EnvironmentManager = ({ open, onClose }) => {
     setFormData({
       name: env.name,
       description: env.description || '',
+      swaggerDocUrl: env.swaggerDocUrl || '',
       variables: { ...env.variables }
     });
   };
@@ -190,6 +192,11 @@ const EnvironmentManager = ({ open, onClose }) => {
                         </div>
                         <div className="text-xs text-text-muted dark:text-text-muted-dark mt-0.5">
                           {Object.keys(env.variables).length} variables
+                          {env.swaggerDocUrl && (
+                            <span className="ml-2 inline-flex items-center gap-1">
+                              <Link2 className="w-3 h-3 inline" /> Swagger
+                            </span>
+                          )}
                           {env.secrets && Object.keys(env.secrets).length > 0 && (
                             <span className="ml-2">
                               <Lock className="w-3 h-3 inline" /> {Object.keys(env.secrets).length} secrets
@@ -232,6 +239,22 @@ const EnvironmentManager = ({ open, onClose }) => {
                     rows={2}
                     placeholder="Optional description..."
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">
+                    Swagger / OpenAPI URL
+                  </label>
+                  <input
+                    type="url"
+                    value={formData.swaggerDocUrl}
+                    onChange={(e) => setFormData({ ...formData, swaggerDocUrl: e.target.value })}
+                    className="input input-bordered input-sm w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                    placeholder="https://api.example.com/webjars/swagger-ui/index.html"
+                  />
+                  <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
+                    Supports direct spec URLs and Swagger UI landing URLs. For Swagger UI, APIWeave discovers all definitions automatically.
+                  </p>
                 </div>
 
                 <div>
@@ -331,6 +354,23 @@ const EnvironmentManager = ({ open, onClose }) => {
                     ))}
                   </div>
                 </div>
+
+                {selectedEnv.swaggerDocUrl && (
+                  <div>
+                    <h4 className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">
+                      Swagger / OpenAPI URL
+                    </h4>
+                    <a
+                      href={selectedEnv.swaggerDocUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-primary dark:text-primary-dark hover:underline break-all inline-flex items-center gap-1"
+                    >
+                      <Link2 className="w-3.5 h-3.5" />
+                      {selectedEnv.swaggerDocUrl}
+                    </a>
+                  </div>
+                )}
 
                 {/* Secrets */}
                 {selectedEnv.secrets && Object.keys(selectedEnv.secrets).length > 0 && (

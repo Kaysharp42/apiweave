@@ -11,6 +11,14 @@ from app.models import Environment, EnvironmentCreate, EnvironmentUpdate
 
 class EnvironmentRepository:
     """Repository for Environment CRUD operations"""
+
+    @staticmethod
+    def _normalize_swagger_doc_url(url: Optional[str]) -> Optional[str]:
+        """Normalize Swagger/OpenAPI URL field."""
+        if url is None:
+            return None
+        normalized = url.strip()
+        return normalized if normalized else None
     
     @staticmethod
     async def create(env_data: EnvironmentCreate) -> Environment:
@@ -19,6 +27,7 @@ class EnvironmentRepository:
             environmentId=str(uuid.uuid4()),
             name=env_data.name,
             description=env_data.description,
+            swaggerDocUrl=EnvironmentRepository._normalize_swagger_doc_url(env_data.swaggerDocUrl),
             variables=env_data.variables,
             secrets=env_data.secrets,
             isActive=False,
@@ -51,6 +60,12 @@ class EnvironmentRepository:
         
         # Update only provided fields
         update_dict = update_data.model_dump(exclude_unset=True)
+
+        if "swaggerDocUrl" in update_dict:
+            update_dict["swaggerDocUrl"] = EnvironmentRepository._normalize_swagger_doc_url(
+                update_dict["swaggerDocUrl"]
+            )
+
         update_dict["updatedAt"] = datetime.now(UTC)
         
         for key, value in update_dict.items():

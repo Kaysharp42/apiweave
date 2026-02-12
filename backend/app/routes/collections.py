@@ -307,7 +307,8 @@ async def export_collection(collection_id: str, include_environment: bool = Quer
         "environments": [{
             "environmentId": env.get("environmentId"),
             "name": env.get("name"),
-            "variables": env.get("variables", {})
+            "variables": env.get("variables", {}),
+            "swaggerDocUrl": env.get("swaggerDocUrl")
         } for env in environments_list],
         "secretReferences": secret_refs,
         "metadata": {
@@ -464,6 +465,7 @@ async def import_collection(
                 env_create = EnvironmentCreate(
                     name=bundle_env.get("name", "Imported Environment"),
                     description=None,
+                    swaggerDocUrl=bundle_env.get("swaggerDocUrl"),
                     variables=bundle_env.get("variables", {}),
                     secrets={}
                 )
@@ -484,6 +486,7 @@ async def import_collection(
             env_create = EnvironmentCreate(
                 name=bundle_env.get("name", "Imported Environment"),
                 description=None,
+                swaggerDocUrl=bundle_env.get("swaggerDocUrl"),
                 variables=bundle_env.get("variables", {}),
                 secrets={}
             )

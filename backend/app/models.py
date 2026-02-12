@@ -191,6 +191,7 @@ class EnvironmentCreate(BaseModel):
     """Request model for creating an environment"""
     name: str
     description: Optional[str] = None
+    swaggerDocUrl: Optional[str] = None
     variables: Dict[str, Any] = Field(default_factory=dict)
     secrets: Dict[str, str] = Field(default_factory=dict)  # NEW: Secrets
 
@@ -244,6 +245,7 @@ class EnvironmentUpdate(BaseModel):
     """Request model for updating an environment"""
     name: Optional[str] = None
     description: Optional[str] = None
+    swaggerDocUrl: Optional[str] = None
     variables: Optional[Dict[str, Any]] = None
     secrets: Optional[Dict[str, str]] = None  # NEW: Secrets
     isActive: Optional[bool] = None
@@ -254,6 +256,7 @@ class Environment(Document):
     environmentId: str
     name: str
     description: Optional[str] = None
+    swaggerDocUrl: Optional[str] = None
     variables: Dict[str, Any] = Field(default_factory=dict)
     secrets: Dict[str, str] = Field(default_factory=dict)  # Secrets for this environment
     isActive: bool = False
