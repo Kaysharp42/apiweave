@@ -1,50 +1,15 @@
 # APIWeave
 
-**Visual API Test Workflows Made Simple**
+APIWeave is a visual API testing workspace where you build test flows on a canvas, run them, and inspect results node-by-node.
 
-![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
-![Version](https://img.shields.io/badge/Version-1.0.0-blue)
-![Bugs Fixed](https://img.shields.io/badge/Bugs%20Fixed-11%2F11-success)
+## What You Can Do
 
-APIWeave is an open-source, visual, step-by-step API test workflow tool that allows you to create test stories using a drag-and-drop canvas. Chain API requests, perform assertions, and generate CI-friendly reports (JUnit XML + HTML).
-
-## ✨ Latest Updates (2025-10-27)
-
-**All 11 critical bugs fixed!** 🎉
-
-- ✅ **Context API Integration** - Single source of truth for workflow state
-- ✅ **Independent Branch Failure** - Parallel branches can fail without stopping others
-- ✅ **Comprehensive Auto-Save** - All changes auto-saved with 700ms debouncing
-- ✅ **Dynamic Variable Display** - Real-time variable updates across all nodes
-- ✅ **Enhanced Error Handling** - Better logging and failure tracking
-
-See [BUG_TRACKER.md](progress/BUG_TRACKER.md) for complete details.
-
-### Swagger Environment Sync (2026-02-11)
-
-- Added manual `Refresh` action next to environment selection in the canvas toolbar.
-- Kept manual refresh and automatic environment refresh on the same pipeline for deterministic results.
-- Preserved `swaggerDocUrl` through environment duplicate and collection export/import flows.
-- Scoped "Check API" warnings to schema-linked HTTP nodes with stable drift detection metadata.
-
-## Features
-
-- 🎨 **Visual Workflow Builder** - Drag-and-drop canvas with React Flow
-- 🔗 **Request Chaining** - Use data from previous steps in subsequent requests
-- 📦 **Workflow Variables** - Extract and reuse tokens, IDs, session data across the workflow
-- ✅ **Assertions** - Status codes, JSONPath matches, schema validation
-- 📊 **CI-Friendly Reports** - JUnit XML and HTML reports
-- 🔐 **Secrets Management** - Never persist secrets in workflows
-- 🐳 **Self-Hostable** - Docker-based deployment
-- 🚀 **Webhook-Driven** - Perfect for GitLab CI/CD integration
-
-## Architecture
-
-```
-Frontend (React + React Flow) → Backend (FastAPI) → Runner (Python Worker)
-                                       ↓
-                                    MongoDB
-```
+- Build workflows with drag-and-drop nodes (HTTP, assertion, delay, merge, start/end).
+- Chain requests by extracting values from responses and reusing them in later steps.
+- Manage environments and secrets for dev/stage/prod testing.
+- Import request templates from OpenAPI/Swagger, HAR, and cURL.
+- Organize workflows into collections.
+- Trigger runs manually or through webhooks for CI/CD pipelines.
 
 ## Quick Start
 
@@ -52,143 +17,101 @@ Frontend (React + React Flow) → Backend (FastAPI) → Runner (Python Worker)
 
 - Python 3.13+
 - Node.js 20+
-- MongoDB 7+ (running locally)
+- MongoDB 7+
 
-### Setup (One-Time)
+### 1) Set Up
 
-```cmd
-# Run complete setup
+Windows:
+
+```bash
 setup.bat
 ```
 
-Or manually:
+macOS/Linux:
 
-```cmd
-# Backend setup
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -e .
-copy .env.example .env
-
-# Frontend setup
-cd ..\frontend
-npm install
-copy .env.example .env
+```bash
+./setup.sh
 ```
 
-### Run Development
+If you prefer manual setup, copy environment files first:
 
-```cmd
-# Start all services
+- `backend/.env.example` -> `backend/.env`
+- `frontend/.env.example` -> `frontend/.env`
+
+### 2) Start Development Services
+
+Windows:
+
+```bash
 start-dev.bat
 ```
 
-This opens separate windows for:
-- Backend API (http://localhost:8000)
-- Worker (background jobs)
-- Frontend (http://localhost:3000)
+macOS/Linux:
 
-### Stop Development
+```bash
+./start-dev.sh
+```
 
-```cmd
+Default local URLs:
+
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8000`
+- OpenAPI docs: `http://localhost:8000/docs`
+
+### 3) Stop Services
+
+Windows:
+
+```bash
 stop-dev.bat
 ```
 
-## Usage
+macOS/Linux:
 
-### 1. Create a Workflow in the UI
-
-1. Open http://localhost:3000
-2. Drag nodes from the palette to the canvas
-3. Connect nodes to create your test flow
-4. Configure each node (method, URL, assertions)
-5. Save the workflow
-
-### 2. Trigger from GitLab CI
-
-```yaml
-stages:
-  - deploy
-  - test
-
-deploy_dev:
-  stage: deploy
-  script:
-    - deploy_to_dev.sh
-
-trigger_tests:
-  stage: test
-  script:
-    - |
-      curl -X POST "https://apiweave.company.com/api/runs/trigger" \
-        -H "Authorization: Bearer ${APIWEAVE_API_KEY}" \
-        -H "Content-Type: application/json" \
-        -d '{
-          "workflowId": "smoke-test",
-          "environment": {"API_BASE_URL": "https://dev.company.com"}
-        }'
+```bash
+./stop-dev.sh
 ```
 
-### 3. View Reports
+## First Workflow (5 Minutes)
 
-- Access run history in the UI
-- Download JUnit XML: `GET /api/runs/{runId}/artifacts/junit.xml`
-- Download HTML report: `GET /api/runs/{runId}/artifacts/report.html`
-
-## API Reference
-
-See [API Documentation](docs/API.md) for detailed endpoint reference.
-
-## Example Workflows
-
-Check out the [workflows/](workflows/) directory for example test scenarios:
-
-- `smoke-test.json` - Basic health check and login
-- `user-lifecycle.json` - CRUD operations
-- `api-chain.json` - Multiple dependent requests
+1. Open `http://localhost:3000`.
+2. Create a new workflow.
+3. Drag an HTTP Request node onto the canvas and configure URL/method.
+4. Add an Assertion node and connect it.
+5. Run the workflow and inspect node execution results.
 
 ## Documentation
 
-- [Installation Guide](docs/INSTALLATION.md)
-- [Workflow Variables Guide](docs/WORKFLOW_VARIABLES_QUICKSTART.md) - Extract and reuse data across workflow
-- [Workflow Variables (Full Reference)](docs/WORKFLOW_VARIABLES.md) - Complete documentation
-- [Workflow Schema](docs/WORKFLOW_SCHEMA.md)
-- [GitLab CI Integration](docs/GITLAB_CI.md)
-- [API Reference](docs/API.md)
+Start here:
 
-## Project Structure
+- [Documentation Hub](docs/README.md)
+- [Navigation Guide](docs/NAVIGATION.md)
 
-```
+Current guides:
+
+- [Variables and Data Passing](docs/VARIABLES.md)
+- [Workflow Variables Quick Start](docs/WORKFLOW_VARIABLES_QUICKSTART.md)
+- [Workflow Variables Reference](docs/WORKFLOW_VARIABLES.md)
+- [Swagger UI Base URL Import](docs/SWAGGER_UI_BASE_URL_IMPORT.md)
+- [Webhook Quick Start](docs/WEBHOOK_QUICKSTART.md)
+
+## Tech Stack
+
+- Frontend: React, React Flow, Zustand, Tailwind, DaisyUI
+- Backend: FastAPI, Beanie (MongoDB ODM), Motor
+- Worker: Python async worker processing workflow runs
+- Database: MongoDB
+
+## Project Layout
+
+```text
 apiweave/
-├── frontend/          # React UI
-├── backend/           # FastAPI backend
-├── shared/            # Shared schemas
-├── workflows/         # Example workflows
-├── docs/              # Documentation
-└── docker-compose.yml # Local dev environment
+  backend/   FastAPI API, worker, data models
+  frontend/  React app and workflow canvas UI
+  docs/      User-facing documentation
+  progress/  Internal implementation notes and history
 ```
-
-## Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
-## Roadmap
-
-- [x] v0.1 - MVP (Sequential workflows, basic nodes, webhook triggers)
-- [ ] v0.2 - Parallel execution, OAuth helpers, retries
-- [ ] v0.3 - OpenAPI validation, dataset-driven runs
-- [ ] v0.4 - Plugin SDK, vault integration
-- [ ] v1.0 - Team workspaces, RBAC, audit logs
-
-## Support
-
-- 📖 [Documentation](docs/)
-- 💬 [Discussions](https://github.com/yourusername/apiweave/discussions)
-- 🐛 [Issues](https://github.com/yourusername/apiweave/issues)
-
----
+MIT - see `LICENSE`.
