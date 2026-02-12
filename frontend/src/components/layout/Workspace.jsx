@@ -90,8 +90,9 @@ const Workspace = ({ onActiveTabChange }) => {
         body: JSON.stringify({
           name,
           description: '',
-          nodes: [{ nodeId: 'start-1', type: 'start', position: { x: 100, y: 100 }, data: { label: 'Start' } }],
+          nodes: [{ nodeId: 'start-1', type: 'start', label: 'Start', position: { x: 100, y: 100 }, config: {} }],
           edges: [],
+          variables: {},
         }),
       });
       if (response.ok) {

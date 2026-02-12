@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { toast } from 'sonner';
 import CollectionManager from '../CollectionManager';
 import WebhookManager from '../WebhookManager';
 import SidebarHeader from './SidebarHeader';
@@ -193,10 +194,12 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
           nodes: [{
             nodeId: 'start-1',
             type: 'start',
+            label: 'Start',
             position: { x: 100, y: 100 },
-            data: { label: 'Start' },
+            config: {},
           }],
           edges: [],
+          variables: {},
         }),
       });
 
@@ -211,10 +214,22 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
     }
   };
 
-  const handleWorkflowClick = (workflow) => {
+  const handleWorkflowClick = async (workflow) => {
     setSelectedWorkflowId(workflow.workflowId);
-    
-    useTabStore.getState().openTab(workflow);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflow.workflowId}`);
+      if (response.ok) {
+        const fullWorkflow = await response.json();
+        useTabStore.getState().openTab(fullWorkflow);
+        return;
+      }
+      toast.error(`Unable to open workflow (${response.status}). Please retry.`);
+      console.error(`Failed to fetch full workflow payload (${response.status})`);
+    } catch (error) {
+      toast.error('Unable to open workflow. Check your connection and retry.');
+      console.error('Error fetching full workflow payload:', error);
+    }
   };
 
   const handleExportWorkflow = (workflow) => {

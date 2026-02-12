@@ -19,6 +19,7 @@ import useTabStore from '../stores/TabStore';
 export default function useAutoSave({
   workflowId,
   autoSaveEnabled,
+  isHydrated = true,
   nodes,
   edges,
   workflowVariables,
@@ -28,9 +29,16 @@ export default function useAutoSave({
   const lastSnapshotRef = useRef({ nodes: null, edges: null, vars: null });
 
   useEffect(() => {
-    if (!autoSaveEnabled || !workflowId) return;
+    if (!autoSaveEnabled || !workflowId || !isHydrated) return;
 
     const lastSnapshot = lastSnapshotRef.current;
+
+    // Seed baseline snapshot after initial hydration without marking dirty/saving.
+    if (lastSnapshot.nodes === null && lastSnapshot.edges === null && lastSnapshot.vars === null) {
+      lastSnapshotRef.current = { nodes, edges, vars: workflowVariables };
+      return;
+    }
+
     if (lastSnapshot.nodes === nodes && lastSnapshot.edges === edges && lastSnapshot.vars === workflowVariables) {
       return;
     }
@@ -54,5 +62,5 @@ export default function useAutoSave({
         timerRef.current = null;
       }
     };
-  }, [nodes, edges, workflowVariables, autoSaveEnabled, workflowId, saveWorkflow]);
+  }, [nodes, edges, workflowVariables, autoSaveEnabled, workflowId, isHydrated, saveWorkflow]);
 }

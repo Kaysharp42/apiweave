@@ -26,7 +26,18 @@ const useTabStore = create((set, get) => ({
     const existing = tabs.find((t) => t.workflowId === workflow.workflowId);
 
     if (existing) {
-      set({ activeTabId: existing.id });
+      set((s) => ({
+        activeTabId: existing.id,
+        tabs: s.tabs.map((t) => (
+          t.workflowId === workflow.workflowId
+            ? {
+                ...t,
+                name: workflow.name || t.name,
+                workflow,
+              }
+            : t
+        )),
+      }));
       return;
     }
 
@@ -104,6 +115,20 @@ const useTabStore = create((set, get) => ({
   renameTab: (id, name) =>
     set((s) => ({
       tabs: s.tabs.map((t) => (t.id === id ? { ...t, name } : t)),
+    })),
+
+  /** Replace the stored workflow payload for a tab. */
+  updateTabWorkflow: (workflowId, workflow) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) => (
+        t.workflowId === workflowId
+          ? {
+              ...t,
+              name: workflow?.name || t.name,
+              workflow,
+            }
+          : t
+      )),
     })),
 
   /** Cycle to the next tab (Ctrl+Tab). Wraps around. */

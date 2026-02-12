@@ -466,18 +466,27 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
   );
   const textareaRef = useRef(null);
   const promptRef = useRef(null);
+  const seededForOpenRef = useRef(false);
 
-  // Seed editor with pretty-printed JSON on open
+  // Seed editor with pretty-printed JSON once per open cycle
   useEffect(() => {
-    if (!open || !workflowJson) return;
+    if (!open) {
+      seededForOpenRef.current = false;
+      return;
+    }
+    if (!workflowJson || seededForOpenRef.current) return;
+
     try {
       const pretty = JSON.stringify(workflowJson, null, 2);
-      setValue((prev) => (prev === pretty ? prev : pretty));
+      setValue(pretty);
       setError(null);
       setIsDirty(false);
+      setIncludeWorkflow(workflowJson?.nodes?.length > 0);
     } catch {
       setValue('{}');
+      setIncludeWorkflow(false);
     }
+    seededForOpenRef.current = true;
   }, [open, workflowJson]);
 
   // Focus textarea on mount

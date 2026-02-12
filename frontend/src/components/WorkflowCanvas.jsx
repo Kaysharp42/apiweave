@@ -35,6 +35,7 @@ import useAutoSave from '../hooks/useAutoSave';
 import useCanvasDrop from '../hooks/useCanvasDrop';
 import useWorkflowPolling from '../hooks/useWorkflowPolling';
 import API_BASE_URL from '../utils/api';
+import { shouldBlockDestructiveAutosave } from '../utils/workflowSaveSafety';
 
 const nodeTypes = {
   'http-request': HTTPRequestNode,
@@ -111,15 +112,18 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   
   const [selectedNode, setSelectedNode] = useState(null);
   const [isDraggingNode, setIsDraggingNode] = useState(false);
+  const [isWorkflowHydrated, setIsWorkflowHydrated] = useState(false);
   const reactFlowInstanceRef = useRef(null);
   const [modalNode, setModalNode] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
+  const [jsonEditorInitialValue, setJsonEditorInitialValue] = useState(null);
   const [environments, setEnvironments] = useState([]);
   const [isSwaggerRefreshing, setIsSwaggerRefreshing] = useState(false);
   const swaggerRefreshSignatureRef = useRef('');
   const swaggerRefreshRequestIdRef = useRef(0);
+  const hydratedBaselineRef = useRef(null);
   const envSwaggerGroupId = `env-openapi-${workflowId}`;
   
   // Initialize selectedEnvironment from localStorage if available
@@ -711,56 +715,64 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
   // Load workflow data when available
   React.useEffect(() => {
-    if (workflow && workflow.nodes && workflow.edges) {
-      const loadedNodes = workflow.nodes.map(node => ({
-        id: node.nodeId,
-        type: node.type,
-        position: node.position,
-        data: {
-          label: node.label,
-          config: node.config || {},
-        },
-      }));
-      
-      const loadedEdges = workflow.edges.map(edge => ({
-        id: edge.edgeId,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle || null,
-        targetHandle: edge.targetHandle || null,
-        label: edge.label,
-        type: 'custom',
-        // Restore assertion edge styling on load
-        ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
-          animated: true,
-          style: {
-            stroke: edge.sourceHandle === 'pass'
-              ? (darkMode ? '#4ade80' : '#16a34a')
-              : (darkMode ? '#f87171' : '#dc2626'),
-            strokeWidth: 2,
-          },
-          labelStyle: {
-            fill: edge.sourceHandle === 'pass'
-              ? (darkMode ? '#4ade80' : '#16a34a')
-              : (darkMode ? '#f87171' : '#dc2626'),
-            fontWeight: 700,
-            fontSize: 11,
-          },
-          labelBgStyle: {
-            fill: darkMode ? '#1f2937' : '#ffffff',
-            fillOpacity: 0.95,
-          },
-          labelBgPadding: [6, 4],
-          labelBgBorderRadius: 4,
-        } : {}),
-      }));
-      
-      setNodes(loadedNodes);
-      setEdges(loadedEdges);
-      
-      // Note: workflow.variables are loaded via WorkflowContext initialWorkflow prop
+    if (!workflow || !Array.isArray(workflow.nodes) || !Array.isArray(workflow.edges)) {
+      setIsWorkflowHydrated(false);
+      return;
     }
-  }, [workflow]);
+
+    const loadedNodes = workflow.nodes.map(node => ({
+      id: node.nodeId,
+      type: node.type,
+      position: node.position,
+      data: {
+        label: node.label,
+        config: node.config || {},
+      },
+    }));
+    
+    const loadedEdges = workflow.edges.map(edge => ({
+      id: edge.edgeId,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle || null,
+      targetHandle: edge.targetHandle || null,
+      label: edge.label,
+      type: 'custom',
+      // Restore assertion edge styling on load
+      ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
+        animated: true,
+        style: {
+          stroke: edge.sourceHandle === 'pass'
+            ? (darkMode ? '#4ade80' : '#16a34a')
+            : (darkMode ? '#f87171' : '#dc2626'),
+          strokeWidth: 2,
+        },
+        labelStyle: {
+          fill: edge.sourceHandle === 'pass'
+            ? (darkMode ? '#4ade80' : '#16a34a')
+            : (darkMode ? '#f87171' : '#dc2626'),
+          fontWeight: 700,
+          fontSize: 11,
+        },
+        labelBgStyle: {
+          fill: darkMode ? '#1f2937' : '#ffffff',
+          fillOpacity: 0.95,
+        },
+        labelBgPadding: [6, 4],
+        labelBgBorderRadius: 4,
+      } : {}),
+    }));
+    
+    setNodes(loadedNodes);
+    setEdges(loadedEdges);
+    setIsWorkflowHydrated(true);
+    hydratedBaselineRef.current = {
+      nodeCount: loadedNodes.length,
+      edgeCount: loadedEdges.length,
+    };
+    
+    // Note: workflow.variables are loaded via WorkflowContext initialWorkflow prop
+  }, [workflow, darkMode, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (params) => {
@@ -956,7 +968,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
   // Save workflow; when `silent` is true do not show alerts (used for autosave)
   const saveWorkflow = useCallback(async (silent = false) => {
-    const workflow = {
+    const workflowPayload = {
       nodes: nodesRef.current.map(node => ({
         nodeId: node.id,
         type: node.type,
@@ -975,14 +987,38 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       variables: workflowVariablesRef.current,
     };
 
+    const nodeCount = workflowPayload.nodes.length;
+    const edgeCount = workflowPayload.edges.length;
+    const variableCount = Object.keys(workflowPayload.variables || {}).length;
+
+    console.info('[workflow-save]', {
+      workflowId,
+      silent,
+      nodeCount,
+      edgeCount,
+      variableCount,
+    });
+
+    if (silent && shouldBlockDestructiveAutosave(workflowPayload.nodes, workflowPayload.edges, hydratedBaselineRef.current)) {
+      console.warn('[workflow-save-blocked]', {
+        workflowId,
+        reason: 'destructive-autosave-protection',
+        baseline: hydratedBaselineRef.current,
+        nodeCount,
+        edgeCount,
+      });
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(workflow),
+        body: JSON.stringify(workflowPayload),
       });
       
       if (response.ok) {
+        hydratedBaselineRef.current = { nodeCount, edgeCount };
         useTabStore.getState().markClean(workflowId);
       } else {
         console.error('Failed to save workflow');
@@ -990,31 +1026,27 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     } catch (error) {
       console.error('Save error:', error);
     }
-  }, [workflowId]);
+  }, [workflowId, workflow]);
 
-  // Build the JSON object shown in the JSON editor
-  const getWorkflowJson = useCallback(() => {
-    return {
-      nodes: nodesRef.current.map(node => ({
-        nodeId: node.id,
-        type: node.type,
-        label: node.data.label,
-        position: node.position,
-        config: node.data.config || {},
-      })),
-      edges: edgesRef.current.map(edge => ({
-        edgeId: edge.id,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle || null,
-        targetHandle: edge.targetHandle || null,
-        label: edge.label || null,
-      })),
-      variables: workflowVariablesRef.current,
-    };
-  }, []);
-
-  const workflowJsonMemo = useMemo(() => getWorkflowJson(), [getWorkflowJson]);
+  // Build JSON for the JSON editor from live state (not stale refs)
+  const workflowJsonMemo = useMemo(() => ({
+    nodes: nodes.map(node => ({
+      nodeId: node.id,
+      type: node.type,
+      label: node.data.label,
+      position: node.position,
+      config: node.data.config || {},
+    })),
+    edges: edges.map(edge => ({
+      edgeId: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle || null,
+      targetHandle: edge.targetHandle || null,
+      label: edge.label || null,
+    })),
+    variables: workflowVariables,
+  }), [nodes, edges, workflowVariables]);
 
   // Apply changes from the JSON editor back to the canvas
   const handleJsonApply = useCallback(async (parsed) => {
@@ -1074,6 +1106,10 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         }),
       });
       if (response.ok) {
+        hydratedBaselineRef.current = {
+          nodeCount: Array.isArray(parsed.nodes) ? parsed.nodes.length : 0,
+          edgeCount: Array.isArray(parsed.edges) ? parsed.edges.length : 0,
+        };
         // Save succeeded — apply to canvas and close editor
         setNodes(newNodes);
         setEdges(newEdges);
@@ -1105,7 +1141,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       console.error('JSON editor save error:', err);
       toast.error('Network error — see console');
     }
-  }, [setNodes, setEdges, workflowId, workflowVariables, darkMode, updateVariable]);
+  }, [setNodes, setEdges, workflowId, workflowVariables, darkMode, updateVariable, workflow]);
 
   // --- Workflow run + adaptive polling via extracted hook ---
   const {
@@ -1129,7 +1165,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   // --- Debounced auto-save via extracted hook ---
   useAutoSave({
     workflowId,
-    autoSaveEnabled: autoSaveEnabled && !isDraggingNode,
+    autoSaveEnabled: autoSaveEnabled && !isDraggingNode && !isRunning,
+    isHydrated: isWorkflowHydrated,
     nodes,
     edges,
     workflowVariables,
@@ -1240,7 +1277,14 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       <CanvasToolbar
         onSave={() => saveWorkflow(false)}
         onHistory={() => setShowHistory(true)}
-        onJsonEditor={() => setShowJsonEditor(true)}
+        onJsonEditor={() => {
+          if (!isWorkflowHydrated) {
+            toast.info('Workflow is still loading. Try JSON again in a moment.');
+            return;
+          }
+          setJsonEditorInitialValue(workflowJsonMemo);
+          setShowJsonEditor(true);
+        }}
         onImport={() => setShowImportToNodes(true)}
         onRun={runWorkflow}
         isRunning={isRunning}
@@ -1290,9 +1334,12 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       {/* JSON Workflow Editor */}
       <WorkflowJsonEditor
         open={showJsonEditor}
-        workflowJson={showJsonEditor ? workflowJsonMemo : null}
+        workflowJson={showJsonEditor ? jsonEditorInitialValue : null}
         onApply={handleJsonApply}
-        onClose={() => setShowJsonEditor(false)}
+        onClose={() => {
+          setShowJsonEditor(false);
+          setJsonEditorInitialValue(null);
+        }}
       />
 
       {/* Secrets Prompt — shown when run is triggered and environment has unfilled secrets */}

@@ -408,3 +408,25 @@ The refresh pipeline avoids palette duplication by combining a stable signature 
 
 ### 117. End-of-phase validation should include both language toolchains
 Swagger environment sync touches backend persistence and frontend canvas behavior, so final regression checks need both `python -m compileall backend/app` and `npm run build`. Running only one side can miss integration regressions hidden in the other runtime.
+
+---
+
+## Phase 13: Workflow Editor JSON + autosave stabilization (2026-02-12)
+
+### 118. JSON editor content must be seeded once per open cycle
+If the modal re-seeds from props while open, any unsaved user edits can be overwritten by background state updates. The robust pattern is: seed once on open, keep local text state authoritative during editing, then reset the seed guard only when the modal closes.
+
+### 119. JSON view serialization should use live React state, not potentially stale refs
+The JSON button should serialize from current `nodes`, `edges`, and `workflowVariables` state at open time. Building from stale snapshots can show a default start-only graph even when the canvas visibly contains the full workflow, creating false "data loss" symptoms.
+
+### 120. Save-path tab payload writes can create autosave feedback loops
+Writing back into tab workflow state on every successful save can trigger parent prop changes, canvas re-hydration, and new object references; autosave then interprets that as a fresh change and sends another PUT. Breaking this feedback path (or carefully gating updates) is necessary to avoid 1-second save storms.
+
+### 121. Autosave should be disabled while run polling mutates node execution status
+Execution polling updates node metadata frequently. If autosave remains active, those runtime-only state changes can be treated as editable workflow changes and trigger unnecessary persistence calls. Gating autosave with `!isRunning` keeps persistence focused on authoring changes.
+
+### 122. Destructive autosave protection benefits from a hydrated baseline
+Comparing the current payload against the graph shape that was initially hydrated (node/edge counts) allows a simple safety rule: block silent autosave when a previously non-trivial workflow suddenly looks like the default start-only graph. This protects existing workflows while still allowing valid new start-only workflows.
+
+### 123. Incident runbooks should include a one-command integrity audit
+When workflow payload regressions are suspected, teams need a repeatable, low-friction way to identify potentially impacted records. A small CLI audit that lists workflows matching suspicious graph signatures (for example, canonical start-only payloads) enables quick triage before manual restoration. The runbook should pair this audit with a targeted `GET /api/workflows/{id}` count check for the reported workflow.
