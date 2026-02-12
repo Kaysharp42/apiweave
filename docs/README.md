@@ -25,4 +25,3 @@ This hub is the main entry point for APIWeave documentation.
 ## Documentation Notes
 
 - Docs in this folder are user-facing and should stay task-oriented.
-- Historical implementation notes live in `progress/` and are not the canonical user documentation.
