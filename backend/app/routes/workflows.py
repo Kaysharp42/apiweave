@@ -4,7 +4,6 @@ CRUD operations for workflows
 Now using Beanie ODM with repository pattern for enhanced security
 """
 from fastapi import APIRouter, HTTPException, status, Query, UploadFile, File
-from fastapi.responses import JSONResponse
 from typing import List, Optional, Dict, Any
 from datetime import datetime, UTC
 import asyncio
@@ -86,6 +85,14 @@ def sanitize_secrets_in_dict(data: Dict[str, Any], secret_refs: List[str], path:
             sanitized[key] = value
     
     return sanitized
+
+
+def serialize_document_for_export(document: Any) -> Dict[str, Any]:
+    """Convert Beanie documents into JSON-safe dictionaries for exports."""
+    serialized = document.model_dump(by_alias=True)
+    serialized.pop("_id", None)
+    serialized.pop("id", None)
+    return serialized
 
 
 def parse_curl_to_workflow(curl_commands: str, sanitize: bool = True) -> Dict[str, Any]:
@@ -1181,7 +1188,7 @@ async def export_workflow(workflow_id: str, include_environment: bool = Query(Tr
             )
         
         # Convert Beanie Document to dict
-        workflow = workflow_doc.model_dump()
+        workflow = serialize_document_for_export(workflow_doc)
         
         # Convert datetime objects to ISO strings
         if workflow.get("createdAt"):
@@ -1220,7 +1227,7 @@ async def export_workflow(workflow_id: str, include_environment: bool = Query(Tr
             
             if environment_doc:
                 # Convert Beanie Document to dict
-                environment = environment_doc.model_dump()
+                environment = serialize_document_for_export(environment_doc)
                 
                 # Convert datetime objects to ISO strings
                 if environment.get("createdAt"):
@@ -1237,7 +1244,7 @@ async def export_workflow(workflow_id: str, include_environment: bool = Query(Tr
                     )
                 export_bundle["environments"].append(environment)
         
-        return JSONResponse(content=export_bundle)
+        return export_bundle
         
     except HTTPException:
         raise
@@ -1318,9 +1325,6 @@ async def import_workflow(
             # No mapping and can't create - set to null
             new_env_id = None
     
-    # Create new workflow with new IDs using repository
-    new_workflow_id = str(uuid.uuid4())
-    
     # Optionally sanitize again (belt and suspenders)
     if sanitize:
         if workflow_data.get("variables"):
@@ -1332,24 +1336,26 @@ async def import_workflow(
                 secret_refs = []
                 node["config"] = sanitize_secrets_in_dict(node["config"], secret_refs)
     
-    workflow_create = {
-        "workflowId": new_workflow_id,
-        "name": workflow_data["name"],
-        "description": workflow_data.get("description"),
-        "nodes": workflow_data["nodes"],
-        "edges": workflow_data["edges"],
-        "variables": workflow_data.get("variables", {}),
-        "tags": workflow_data.get("tags", []),
-        "collectionId": None,
-        "environmentId": new_env_id,
-        "nodeTemplates": workflow_data.get("nodeTemplates", [])
-    }
-    
-    await WorkflowRepository.create(workflow_create)  # type: ignore
+    workflow_create = WorkflowCreate(
+        name=workflow_data["name"],
+        description=workflow_data.get("description"),
+        nodes=workflow_data["nodes"],
+        edges=workflow_data["edges"],
+        variables=workflow_data.get("variables", {}),
+        tags=workflow_data.get("tags", []),
+        collectionId=None,
+        nodeTemplates=workflow_data.get("nodeTemplates", [])
+    )
+
+    created_workflow = await WorkflowRepository.create(workflow_create)
+    if new_env_id:
+        created_workflow.environmentId = new_env_id
+        created_workflow.updatedAt = datetime.now(UTC)
+        await created_workflow.save()
     
     return {
         "message": "Workflow imported successfully",
-        "workflowId": new_workflow_id,
+        "workflowId": created_workflow.workflowId,
         "environmentId": new_env_id,
         "secretReferences": bundle.get("secretReferences", [])
     }
@@ -1497,26 +1503,26 @@ async def import_har_file(
             }
         
         # Otherwise, create full workflow in database using repository
-        new_workflow_id = str(uuid.uuid4())
-        
-        workflow_create = {
-            "workflowId": new_workflow_id,
-            "name": workflow_data["name"],
-            "description": workflow_data["description"],
-            "nodes": workflow_data["nodes"],
-            "edges": workflow_data["edges"],
-            "variables": workflow_data.get("variables", {}),
-            "tags": workflow_data.get("tags", []),
-            "collectionId": None,
-            "nodeTemplates": [],  # Initialize empty templates
-            "environmentId": environment_id
-        }
-        
-        await WorkflowRepository.create(workflow_create)  # type: ignore
+        workflow_create = WorkflowCreate(
+            name=workflow_data["name"],
+            description=workflow_data["description"],
+            nodes=workflow_data["nodes"],
+            edges=workflow_data["edges"],
+            variables=workflow_data.get("variables", {}),
+            tags=workflow_data.get("tags", []),
+            collectionId=None,
+            nodeTemplates=[]
+        )
+
+        created_workflow = await WorkflowRepository.create(workflow_create)
+        if environment_id:
+            created_workflow.environmentId = environment_id
+            created_workflow.updatedAt = datetime.now(UTC)
+            await created_workflow.save()
         
         return {
             "message": "HAR file imported successfully",
-            "workflowId": new_workflow_id,
+            "workflowId": created_workflow.workflowId,
             "stats": {
                 "totalRequests": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
                 "importMode": import_mode
@@ -1694,26 +1700,22 @@ async def import_openapi_file(
             }
         
         # Otherwise, create full workflow in database using repository
-        new_workflow_id = str(uuid.uuid4())
-        
-        workflow_create = {
-            "workflowId": new_workflow_id,
-            "name": workflow_data["name"],
-            "description": workflow_data["description"],
-            "nodes": workflow_data["nodes"],
-            "edges": workflow_data["edges"],
-            "variables": workflow_data.get("variables", {}),
-            "tags": workflow_data.get("tags", []),
-            "collectionId": None,
-            "nodeTemplates": [],  # Initialize empty templates
-            "environmentId": None
-        }
-        
-        await WorkflowRepository.create(workflow_create)  # type: ignore
+        workflow_create = WorkflowCreate(
+            name=workflow_data["name"],
+            description=workflow_data["description"],
+            nodes=workflow_data["nodes"],
+            edges=workflow_data["edges"],
+            variables=workflow_data.get("variables", {}),
+            tags=workflow_data.get("tags", []),
+            collectionId=None,
+            nodeTemplates=[]
+        )
+
+        created_workflow = await WorkflowRepository.create(workflow_create)
         
         return {
             "message": "OpenAPI file imported successfully",
-            "workflowId": new_workflow_id,
+            "workflowId": created_workflow.workflowId,
             "stats": {
                 "totalEndpoints": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
                 "apiTitle": openapi_data.get("info", {}).get("title", "API")
@@ -2537,10 +2539,10 @@ async def import_curl_file(
             updated_edges_dicts = existing_edges_dicts + imported_edges
             
             # Update workflow using repository update method
-            await WorkflowRepository.update(workflowId, {  # type: ignore
-                "nodes": updated_nodes_dicts,
-                "edges": updated_edges_dicts
-            })
+            await WorkflowRepository.update(
+                workflowId,
+                WorkflowUpdate(nodes=updated_nodes_dicts, edges=updated_edges_dicts)
+            )
             
             return {
                 "message": f"Curl commands imported and appended to workflow {workflowId}",
@@ -2552,23 +2554,20 @@ async def import_curl_file(
             }
         else:
             # Create new workflow as before using repository
-            new_workflow_id = str(uuid.uuid4())
-            workflow_create = {
-                "workflowId": new_workflow_id,
-                "name": workflow_data["name"],
-                "description": workflow_data["description"],
-                "nodes": workflow_data["nodes"],
-                "edges": workflow_data["edges"],
-                "variables": workflow_data.get("variables", {}),
-                "tags": workflow_data.get("tags", []),
-                "collectionId": None,
-                "nodeTemplates": [],  # Initialize empty templates
-                "environmentId": None
-            }
-            await WorkflowRepository.create(workflow_create)  # type: ignore
+            workflow_create = WorkflowCreate(
+                name=workflow_data["name"],
+                description=workflow_data["description"],
+                nodes=workflow_data["nodes"],
+                edges=workflow_data["edges"],
+                variables=workflow_data.get("variables", {}),
+                tags=workflow_data.get("tags", []),
+                collectionId=None,
+                nodeTemplates=[]
+            )
+            created_workflow = await WorkflowRepository.create(workflow_create)
             return {
                 "message": "Curl commands imported successfully",
-                "workflowId": new_workflow_id,
+                "workflowId": created_workflow.workflowId,
                 "stats": {
                     "totalRequests": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
                     "importType": "curl"
