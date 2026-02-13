@@ -1,6 +1,18 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import API_BASE_URL from '../utils/api';
 import { usePalette } from './PaletteContext';
+import useSidebarStore from '../stores/SidebarStore';
+
+const shallowEqual = (left, right) => {
+  if (left === right) return true;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (const key of leftKeys) {
+    if (left[key] !== right[key]) return false;
+  }
+  return true;
+};
 
 /**
  * WorkflowContext - Single Source of Truth for Workflow State
@@ -41,6 +53,10 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
   // Track extractor-based variables using ref so we can distinguish them from manual variables
   // Using ref instead of state to avoid dependency issues in registerExtractors callback
   const extractorVariablesRef = useRef({});
+
+  // Callback ref for WorkflowCanvas to handle variable-deleted cleanup (extractor removal)
+  // This replaces the old `window.dispatchEvent(new CustomEvent('variableDeleted', ...))` pattern.
+  const onVariablesDeletedRef = useRef(null);
 
   // Fetch available collections - MUST be defined before useEffect that calls it
   const fetchCollections = useCallback(async () => {
@@ -106,6 +122,7 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
       pathVariables: node.config?.pathVariables || '',
       cookies: node.config?.cookies || '',
       timeout: node.config?.timeout || 30,
+      openapiMeta: node.config?.openapiMeta || null,
     }));
 
     // Add templates to palette with workflow-specific ID
@@ -120,28 +137,20 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
   useEffect(() => {
     console.log('🔵 fetchCollections useEffect triggered');
     fetchCollections();
-    
-    const handleCollectionsChanged = () => {
-      console.log('🔵 collectionsChanged event fired');
-      fetchCollections();
-    };
-    
-    window.addEventListener('collectionsChanged', handleCollectionsChanged);
-    return () => window.removeEventListener('collectionsChanged', handleCollectionsChanged);
   }, [fetchCollections]);
 
-  // Listen for variable updates from WorkflowCanvas (e.g., when extractors are deleted)
+  // React to Zustand collection version changes
+  const collectionVersion = useSidebarStore((s) => s.collectionVersion);
   useEffect(() => {
-    const handleVariablesUpdate = (event) => {
-      if (event.detail.workflowId === workflowId) {
-        console.log('📝 WorkflowContext: Updating variables from WorkflowCanvas:', event.detail.variables);
-        setVariables(event.detail.variables);
-      }
-    };
-    
-    window.addEventListener('variablesToUpdate', handleVariablesUpdate);
-    return () => window.removeEventListener('variablesToUpdate', handleVariablesUpdate);
-  }, [workflowId]);
+    if (collectionVersion > 0) {
+      console.log('🔵 collectionVersion changed, refreshing collections');
+      fetchCollections();
+    }
+  }, [collectionVersion, fetchCollections]);
+
+  // Listen for variable updates from WorkflowCanvas (e.g., when extractors are deleted)
+  // NOTE: The `variablesToUpdate` event had no remaining dispatchers — this listener
+  // is removed. Variables are now updated directly via context methods.
 
   // Update a specific variable
   const updateVariable = useCallback((varName, varValue) => {
@@ -158,6 +167,24 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
       delete updated[varName];
       return updated;
     });
+  }, []);
+
+  /**
+   * Delete variables AND notify WorkflowCanvas to clean up extractors.
+   * This replaces the old `window.dispatchEvent(new CustomEvent('variableDeleted', ...))`.
+   * VariablesPanel calls this; WorkflowCanvas sets `onVariablesDeletedRef` to handle cleanup.
+   */
+  const deleteVariablesWithCleanup = useCallback((varNames) => {
+    // Remove from context variables
+    setVariables(prev => {
+      const updated = { ...prev };
+      varNames.forEach(name => delete updated[name]);
+      return updated;
+    });
+    // Notify WorkflowCanvas to remove matching extractors from nodes
+    if (onVariablesDeletedRef.current) {
+      onVariablesDeletedRef.current(varNames);
+    }
   }, []);
 
   // Bulk update variables
@@ -177,6 +204,10 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
   const registerExtractors = useCallback((extractors) => {
     // Get previous extractor variable names
     const prevExtractorVarNames = Object.keys(extractorVariablesRef.current);
+
+    if (shallowEqual(extractorVariablesRef.current, extractors)) {
+      return;
+    }
     
     // Update the ref with new extractors
     extractorVariablesRef.current = extractors;
@@ -204,6 +235,9 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
         merged: Object.keys(merged)
       });
       
+      if (shallowEqual(prev, merged)) {
+        return prev;
+      }
       return merged;
     });
   }, []);
@@ -216,8 +250,8 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
   // Refresh both collections and trigger workflow refresh
   const refreshCollectionsAndWorkflows = useCallback(() => {
     fetchCollections();
-    // Trigger workflow refresh in sidebar
-    window.dispatchEvent(new CustomEvent('workflowsNeedRefresh'));
+    // Trigger workflow refresh in sidebar via Zustand store
+    useSidebarStore.getState().signalWorkflowsRefresh();
   }, [fetchCollections]);
 
   const contextValue = {
@@ -238,11 +272,13 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }) => {
     // Helper methods
     updateVariable,
     deleteVariable,
+    deleteVariablesWithCleanup,
     updateVariables,
     updateSettings,
     registerExtractors,
     fetchCollections,
     refreshCollectionsAndWorkflows,
+    onVariablesDeletedRef,
   };
 
   return (

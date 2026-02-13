@@ -1,20 +1,28 @@
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
-import { MdPlayArrow } from 'react-icons/md';
+import { Play } from 'lucide-react';
 
 const StartNode = ({ data, selected }) => {
   return (
     <div
-      className={`px-4 py-2 shadow-lg rounded-full border-2 ${
-        selected ? 'bg-cyan-900 border-cyan-950 dark:bg-cyan-800 dark:border-cyan-900' : 'bg-gray-700 border-gray-900 dark:bg-gray-600 dark:border-gray-800'
-      } text-white`}
-      style={{ fontSize: '11px' }}
+      className={[
+        'px-5 py-2.5 rounded-full border-2 shadow-node transition-all cursor-pointer',
+        'bg-gradient-to-r from-emerald-600 to-green-500 dark:from-emerald-700 dark:to-green-600',
+        selected
+          ? 'border-emerald-300 ring-2 ring-emerald-400/50 ring-offset-1 shadow-node-selected'
+          : 'border-emerald-700 dark:border-emerald-800',
+        'text-white',
+      ].filter(Boolean).join(' ')}
     >
       <div className="flex items-center justify-center gap-2">
-        <MdPlayArrow className="w-3.5 h-3.5 flex-shrink-0 self-center" />
-        <div className="text-xs font-bold leading-none self-center">Start</div>
+        <Play className="w-4 h-4 flex-shrink-0 fill-current" />
+        <span className="text-xs font-bold tracking-wide">Start</span>
       </div>
-      <Handle type="source" position={Position.Right} className="w-2 h-2 bg-gray-400 dark:bg-gray-500" />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!w-3 !h-3 !bg-white !border-2 !border-emerald-600 dark:!border-emerald-500 !rounded-sm"
+      />
     </div>
   );
 };

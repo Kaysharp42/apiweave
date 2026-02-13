@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { MdKeyboardArrowDown } from 'react-icons/md';
+import { ChevronDown } from 'lucide-react';
 
 const ButtonSelect = ({ options = [], value = '', onChange = () => {}, placeholder = 'Select', buttonClass = '' }) => {
   const [open, setOpen] = useState(false);
@@ -27,7 +27,7 @@ const ButtonSelect = ({ options = [], value = '', onChange = () => {}, placehold
         aria-expanded={open}
       >
         <span className="truncate">{selected?.label || placeholder}</span>
-        <MdKeyboardArrowDown className="w-4 h-4 ml-2 flex-shrink-0" />
+        <ChevronDown className="w-4 h-4 ml-2 flex-shrink-0" />
       </button>
 
       {open && (

@@ -1,108 +1,99 @@
+/* Design system base styles (tokens, fonts, scrollbars) — must be first @import */
+@import './styles/base.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  transition: background-color 0.3s ease, color 0.3s ease;
-}
+/* ──────────────────────────────────────────────
+   React Flow — Token-Based Dark Mode Overrides
+   ────────────────────────────────────────────── */
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
-
-/* Dark mode styles */
-.dark body {
-  background-color: #111827;
-  color: #e5e5e5;
-}
-
-/* React Flow dark mode */
+/* React Flow canvas background */
 .dark .react-flow {
-  background-color: #111827;
+  background-color: var(--aw-surface);
 }
 
+/* Node defaults in dark mode */
 .dark .react-flow__node {
-  background-color: #1f2937;
-  border-color: #374151;
-  color: #e5e5e5;
+  background-color: var(--aw-surface-raised);
+  border-color: var(--aw-border);
+  color: var(--aw-text-primary);
 }
 
+/* Edge styling */
 .dark .react-flow__edge-path {
   stroke: #6b7280;
 }
 
 .dark .react-flow__edge-text {
-  fill: #e5e5e5;
+  fill: var(--aw-text-primary);
 }
 
-/* Edge label background - ensure readable in dark mode */
+/* Edge label background */
 .react-flow__edge-text rect,
 .react-flow__edge-textbg {
-  fill: rgba(255,255,255,0.95) !important;
-  stroke: rgba(0,0,0,0.05) !important;
+  fill: rgba(255, 255, 255, 0.95) !important;
+  stroke: rgba(0, 0, 0, 0.05) !important;
 }
 
 .dark .react-flow__edge-text rect,
 .dark .react-flow__edge-textbg {
-  fill: rgba(31, 41, 55, 0.95) !important; /* #1f2937 with slight opacity */
-  stroke: rgba(255,255,255,0.04) !important;
+  fill: rgba(31, 41, 55, 0.95) !important;
+  stroke: rgba(255, 255, 255, 0.04) !important;
 }
 
 .react-flow__edge-text {
   font-weight: 600;
 }
 
+/* Controls */
 .dark .react-flow__controls {
-  background-color: #1f2937;
-  border-color: #374151;
+  background-color: var(--aw-surface-raised);
+  border-color: var(--aw-border);
 }
 
 .dark .react-flow__controls button {
-  background-color: #1f2937;
-  border-color: #374151;
-  color: #e5e5e5;
+  background-color: var(--aw-surface-raised);
+  border-color: var(--aw-border);
+  color: var(--aw-text-primary);
 }
 
 .dark .react-flow__controls button:hover {
-  background-color: #374151;
+  background-color: var(--aw-surface-overlay);
 }
 
 .dark .react-flow__controls button svg {
-  fill: #e5e5e5;
+  fill: var(--aw-text-primary);
 }
 
+/* Minimap */
 .dark .react-flow__minimap {
-  background-color: #1f2937;
-  border-color: #374151;
+  background-color: var(--aw-surface-raised);
+  border-color: var(--aw-border);
 }
 
 .dark .react-flow__minimap-mask {
   fill: rgba(0, 0, 0, 0.6);
 }
 
+/* Background & attribution */
 .dark .react-flow__background {
-  background-color: #111827;
+  background-color: var(--aw-surface);
 }
 
 .dark .react-flow__attribution {
   background-color: rgba(31, 41, 55, 0.9);
-  color: #9ca3af;
+  color: var(--aw-text-muted);
 }
 
-/* Selection box in dark mode */
+/* Selection box */
 .dark .react-flow__selectionpane {
   background: rgba(59, 130, 246, 0.2);
   border: 1px solid #3b82f6;
 }
 
-/* Node handles in dark mode */
+/* Node handles */
 .dark .react-flow__handle {
   background-color: #6b7280;
   border-color: #9ca3af;
@@ -112,28 +103,31 @@ code {
   background-color: #9ca3af;
 }
 
-/* Allotment (split pane) dark mode styles */
+/* ──────────────────────────────────────────────
+   Allotment (Split Pane) — Dark Mode
+   ────────────────────────────────────────────── */
 .dark .split-view-view {
-  background-color: #1f2937;
+  background-color: var(--aw-surface-raised);
 }
 
 .dark .sash {
-  background-color: #374151 !important;
+  background-color: var(--aw-border) !important;
 }
 
 .dark .sash:hover {
   background-color: #4b5563 !important;
 }
 
-.dark .sash.vertical {
-  background-color: #374151 !important;
-}
-
+.dark .sash.vertical,
 .dark .sash.horizontal {
-  background-color: #374151 !important;
+  background-color: var(--aw-border) !important;
 }
 
-/* Fix React Flow node wrapper - only remove the wrapper's default white background */
+/* ──────────────────────────────────────────────
+   React Flow Node Wrapper Reset
+   (remove default white background from wrappers;
+    each node component handles its own styling)
+   ────────────────────────────────────────────── */
 .react-flow__node-default,
 .react-flow__node-input,
 .react-flow__node-output,
@@ -141,13 +135,13 @@ code {
 .react-flow__node-assertion,
 .react-flow__node-delay,
 .react-flow__node-start,
-.react-flow__node-end {
+.react-flow__node-end,
+.react-flow__node-merge {
   background-color: transparent !important;
   border: none !important;
   padding: 0 !important;
 }
 
-/* In dark mode, just ensure the wrapper is transparent */
 .dark .react-flow__node-default,
 .dark .react-flow__node-input,
 .dark .react-flow__node-output,
@@ -155,7 +149,8 @@ code {
 .dark .react-flow__node-assertion,
 .dark .react-flow__node-delay,
 .dark .react-flow__node-start,
-.dark .react-flow__node-end {
+.dark .react-flow__node-end,
+.dark .react-flow__node-merge {
   background-color: transparent !important;
 }
 

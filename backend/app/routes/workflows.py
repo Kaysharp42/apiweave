@@ -4,18 +4,37 @@ CRUD operations for workflows
 Now using Beanie ODM with repository pattern for enhanced security
 """
 from fastapi import APIRouter, HTTPException, status, Query, UploadFile, File
-from fastapi.responses import JSONResponse
 from typing import List, Optional, Dict, Any
 from datetime import datetime, UTC
+import asyncio
 import uuid
 import json
 import re
+import httpx
 from bson import ObjectId
 
 from app.models import Workflow, WorkflowCreate, WorkflowUpdate, PaginatedWorkflows
 from app.database import get_database
 from app.config import settings
 from app.repositories import WorkflowRepository, CollectionRepository, RunRepository, EnvironmentRepository
+from app.utils.swagger_discovery import (
+    parse_swagger_ui_query_hints,
+    extract_swagger_ui_hints_from_html,
+    build_swagger_config_candidates,
+    extract_definitions_from_swagger_config,
+    resolve_url,
+    make_definition_scope,
+)
+from app.utils.openapi_examples import (
+    resolve_openapi_schema_ref as resolve_openapi_schema_ref_helper,
+    generate_example_from_schema as generate_example_from_schema_helper,
+)
+from app.utils.openapi_import_limits import (
+    DEFAULT_FETCH_TIMEOUT_SECONDS,
+    DEFAULT_FETCH_CONCURRENCY,
+    validate_definition_limit,
+    validate_endpoint_limit,
+)
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -66,6 +85,14 @@ def sanitize_secrets_in_dict(data: Dict[str, Any], secret_refs: List[str], path:
             sanitized[key] = value
     
     return sanitized
+
+
+def serialize_document_for_export(document: Any) -> Dict[str, Any]:
+    """Convert Beanie documents into JSON-safe dictionaries for exports."""
+    serialized = document.model_dump(by_alias=True)
+    serialized.pop("_id", None)
+    serialized.pop("id", None)
+    return serialized
 
 
 def parse_curl_to_workflow(curl_commands: str, sanitize: bool = True) -> Dict[str, Any]:
@@ -522,85 +549,44 @@ def parse_har_to_workflow(har_data: Dict[str, Any], import_mode: str = "linear",
 
 
 def resolve_openapi_schema_ref(ref_path: str, openapi_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Resolve a $ref path in OpenAPI spec (e.g., #/components/schemas/MyDto)
-    
-    Args:
-        ref_path: Reference path starting with #/
-        openapi_data: Full OpenAPI spec
-        
-    Returns:
-        Resolved schema object or empty dict
-    """
-    if not ref_path.startswith("#/"):
-        return {}
-    
-    parts = ref_path[2:].split("/")  # Remove #/ and split
-    current = openapi_data
-    
-    for part in parts:
-        if isinstance(current, dict) and part in current:
-            current = current[part]
-        else:
-            return {}
-    
-    return current if isinstance(current, dict) else {}
+    """Compatibility wrapper; implementation lives in app.utils.openapi_examples."""
+    return resolve_openapi_schema_ref_helper(ref_path, openapi_data)
 
 
 def generate_example_from_schema(schema: Dict[str, Any], openapi_data: Dict[str, Any]) -> Any:
-    """
-    Generate example value from OpenAPI schema
-    
-    Args:
-        schema: OpenAPI schema object
-        openapi_data: Full spec for resolving references
-        
-    Returns:
-        Example value based on schema
-    """
-    # If schema has example, use it
-    if "example" in schema:
-        return schema["example"]
-    
-    # If schema is a reference, resolve it
-    if "$ref" in schema:
-        resolved = resolve_openapi_schema_ref(schema["$ref"], openapi_data)
-        return generate_example_from_schema(resolved, openapi_data)
-    
-    schema_type = schema.get("type", "object")
-    
-    if schema_type == "object":
-        properties = schema.get("properties", {})
-        result = {}
-        for prop_name, prop_schema in properties.items():
-            result[prop_name] = generate_example_from_schema(prop_schema, openapi_data)
-        return result
-    elif schema_type == "array":
-        items_schema = schema.get("items", {})
-        example_item = generate_example_from_schema(items_schema, openapi_data)
-        return [example_item] if example_item else []
-    elif schema_type == "string":
-        schema_format = schema.get("format", "")
-        if schema_format == "uuid":
-            return "00000000-0000-0000-0000-000000000000"
-        elif schema_format == "date":
-            return "2024-01-01"
-        elif schema_format == "date-time":
-            return "2024-01-01T00:00:00Z"
-        elif schema_format == "email":
-            return "user@example.com"
-        return schema.get("default", "string")
-    elif schema_type == "integer":
-        return schema.get("default", 0)
-    elif schema_type == "number":
-        return schema.get("default", 0.0)
-    elif schema_type == "boolean":
-        return schema.get("default", False)
-    
-    return None
+    """Compatibility wrapper; implementation lives in app.utils.openapi_examples."""
+    return generate_example_from_schema_helper(schema, openapi_data)
 
 
-def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", tag_filter: Optional[List[str]] = None, sanitize: bool = True) -> Dict[str, Any]:
+def normalize_openapi_path(path: str) -> str:
+    """Normalize OpenAPI path for stable endpoint matching."""
+    if not path:
+        return "/"
+
+    normalized = path.strip()
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+
+    normalized = re.sub(r"//+", "/", normalized)
+    return normalized
+
+
+def build_openapi_endpoint_fingerprint(method: str, path: str, operation_id: str = "", scope: str = "") -> str:
+    """Build deterministic endpoint fingerprint for OpenAPI request nodes."""
+    method_upper = (method or "GET").upper()
+    normalized_path = normalize_openapi_path(path)
+    operation_value = (operation_id or "").strip()
+    scope_value = (scope or "").strip()
+    return f"{scope_value}|{method_upper}|{normalized_path}|{operation_value}"
+
+
+def parse_openapi_to_workflow(
+    openapi_data: Dict[str, Any],
+    base_url: str = "",
+    tag_filter: Optional[List[str]] = None,
+    sanitize: bool = True,
+    source_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Convert OpenAPI/Swagger spec to APIWeave workflow format
     
@@ -664,6 +650,7 @@ def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", 
             
             # Build full URL
             full_url = f"{base_url}{path}" if base_url else path
+            normalized_path = normalize_openapi_path(path)
             
             # Extract query parameters from parameters list
             query_params = {}
@@ -712,6 +699,27 @@ def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", 
             if len(label_text) > 40:
                 label_text = label_text[:37] + "..."
             label = f"[{method.upper()}] {label_text}"
+
+            context = source_context or {}
+            definition_scope = context.get("definitionScope") or ""
+
+            openapi_meta = {
+                "source": "openapi",
+                "method": method.upper(),
+                "path": normalized_path,
+                "operationId": operation_id or None,
+                "fingerprint": build_openapi_endpoint_fingerprint(
+                    method.upper(),
+                    normalized_path,
+                    operation_id,
+                    definition_scope,
+                ),
+            }
+
+            for key in ("definitionName", "definitionSpecUrl", "definitionScope", "sourceUiUrl"):
+                value = context.get(key)
+                if value:
+                    openapi_meta[key] = value
             
             # Calculate grid position
             row = idx // nodes_per_row
@@ -729,7 +737,8 @@ def parse_openapi_to_workflow(openapi_data: Dict[str, Any], base_url: str = "", 
                 "body": body if body else None,
                 "timeout": 30,
                 "followRedirects": True,
-                "extractors": {}
+                "extractors": {},
+                "openapiMeta": openapi_meta,
             }
             
             node = {
@@ -1179,7 +1188,7 @@ async def export_workflow(workflow_id: str, include_environment: bool = Query(Tr
             )
         
         # Convert Beanie Document to dict
-        workflow = workflow_doc.model_dump()
+        workflow = serialize_document_for_export(workflow_doc)
         
         # Convert datetime objects to ISO strings
         if workflow.get("createdAt"):
@@ -1218,7 +1227,7 @@ async def export_workflow(workflow_id: str, include_environment: bool = Query(Tr
             
             if environment_doc:
                 # Convert Beanie Document to dict
-                environment = environment_doc.model_dump()
+                environment = serialize_document_for_export(environment_doc)
                 
                 # Convert datetime objects to ISO strings
                 if environment.get("createdAt"):
@@ -1235,7 +1244,7 @@ async def export_workflow(workflow_id: str, include_environment: bool = Query(Tr
                     )
                 export_bundle["environments"].append(environment)
         
-        return JSONResponse(content=export_bundle)
+        return export_bundle
         
     except HTTPException:
         raise
@@ -1300,24 +1309,21 @@ async def import_workflow(
             env_data = next((e for e in environments if e.get("environmentId") == old_env_id), None)
             if env_data:
                 # Create new environment with new ID using repository
-                new_env_id = str(uuid.uuid4())
-                
-                env_create = {
-                    "environmentId": new_env_id,
-                    "name": env_data.get("name", "Imported Environment"),
-                    "description": env_data.get("description"),
-                    "variables": env_data.get("variables", {}),
-                    "secrets": {},  # Secrets not included in exports
-                    "isActive": False
-                }
-                
-                await EnvironmentRepository.create(env_create)  # type: ignore
+                from app.models import EnvironmentCreate
+
+                env_create = EnvironmentCreate(
+                    name=env_data.get("name", "Imported Environment"),
+                    description=env_data.get("description"),
+                    swaggerDocUrl=env_data.get("swaggerDocUrl"),
+                    variables=env_data.get("variables", {}),
+                    secrets={},  # Secrets not included in exports
+                )
+
+                new_env = await EnvironmentRepository.create(env_create)
+                new_env_id = new_env.environmentId
         else:
             # No mapping and can't create - set to null
             new_env_id = None
-    
-    # Create new workflow with new IDs using repository
-    new_workflow_id = str(uuid.uuid4())
     
     # Optionally sanitize again (belt and suspenders)
     if sanitize:
@@ -1330,24 +1336,26 @@ async def import_workflow(
                 secret_refs = []
                 node["config"] = sanitize_secrets_in_dict(node["config"], secret_refs)
     
-    workflow_create = {
-        "workflowId": new_workflow_id,
-        "name": workflow_data["name"],
-        "description": workflow_data.get("description"),
-        "nodes": workflow_data["nodes"],
-        "edges": workflow_data["edges"],
-        "variables": workflow_data.get("variables", {}),
-        "tags": workflow_data.get("tags", []),
-        "collectionId": None,
-        "environmentId": new_env_id,
-        "nodeTemplates": workflow_data.get("nodeTemplates", [])
-    }
-    
-    await WorkflowRepository.create(workflow_create)  # type: ignore
+    workflow_create = WorkflowCreate(
+        name=workflow_data["name"],
+        description=workflow_data.get("description"),
+        nodes=workflow_data["nodes"],
+        edges=workflow_data["edges"],
+        variables=workflow_data.get("variables", {}),
+        tags=workflow_data.get("tags", []),
+        collectionId=None,
+        nodeTemplates=workflow_data.get("nodeTemplates", [])
+    )
+
+    created_workflow = await WorkflowRepository.create(workflow_create)
+    if new_env_id:
+        created_workflow.environmentId = new_env_id
+        created_workflow.updatedAt = datetime.now(UTC)
+        await created_workflow.save()
     
     return {
         "message": "Workflow imported successfully",
-        "workflowId": new_workflow_id,
+        "workflowId": created_workflow.workflowId,
         "environmentId": new_env_id,
         "secretReferences": bundle.get("secretReferences", [])
     }
@@ -1495,26 +1503,26 @@ async def import_har_file(
             }
         
         # Otherwise, create full workflow in database using repository
-        new_workflow_id = str(uuid.uuid4())
-        
-        workflow_create = {
-            "workflowId": new_workflow_id,
-            "name": workflow_data["name"],
-            "description": workflow_data["description"],
-            "nodes": workflow_data["nodes"],
-            "edges": workflow_data["edges"],
-            "variables": workflow_data.get("variables", {}),
-            "tags": workflow_data.get("tags", []),
-            "collectionId": None,
-            "nodeTemplates": [],  # Initialize empty templates
-            "environmentId": environment_id
-        }
-        
-        await WorkflowRepository.create(workflow_create)  # type: ignore
+        workflow_create = WorkflowCreate(
+            name=workflow_data["name"],
+            description=workflow_data["description"],
+            nodes=workflow_data["nodes"],
+            edges=workflow_data["edges"],
+            variables=workflow_data.get("variables", {}),
+            tags=workflow_data.get("tags", []),
+            collectionId=None,
+            nodeTemplates=[]
+        )
+
+        created_workflow = await WorkflowRepository.create(workflow_create)
+        if environment_id:
+            created_workflow.environmentId = environment_id
+            created_workflow.updatedAt = datetime.now(UTC)
+            await created_workflow.save()
         
         return {
             "message": "HAR file imported successfully",
-            "workflowId": new_workflow_id,
+            "workflowId": created_workflow.workflowId,
             "stats": {
                 "totalRequests": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
                 "importMode": import_mode
@@ -1692,26 +1700,22 @@ async def import_openapi_file(
             }
         
         # Otherwise, create full workflow in database using repository
-        new_workflow_id = str(uuid.uuid4())
-        
-        workflow_create = {
-            "workflowId": new_workflow_id,
-            "name": workflow_data["name"],
-            "description": workflow_data["description"],
-            "nodes": workflow_data["nodes"],
-            "edges": workflow_data["edges"],
-            "variables": workflow_data.get("variables", {}),
-            "tags": workflow_data.get("tags", []),
-            "collectionId": None,
-            "nodeTemplates": [],  # Initialize empty templates
-            "environmentId": None
-        }
-        
-        await WorkflowRepository.create(workflow_create)  # type: ignore
+        workflow_create = WorkflowCreate(
+            name=workflow_data["name"],
+            description=workflow_data["description"],
+            nodes=workflow_data["nodes"],
+            edges=workflow_data["edges"],
+            variables=workflow_data.get("variables", {}),
+            tags=workflow_data.get("tags", []),
+            collectionId=None,
+            nodeTemplates=[]
+        )
+
+        created_workflow = await WorkflowRepository.create(workflow_create)
         
         return {
             "message": "OpenAPI file imported successfully",
-            "workflowId": new_workflow_id,
+            "workflowId": created_workflow.workflowId,
             "stats": {
                 "totalEndpoints": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
                 "apiTitle": openapi_data.get("info", {}).get("title", "API")
@@ -1727,6 +1731,393 @@ async def import_openapi_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to import OpenAPI file: {str(e)}"
+        )
+
+
+def _extract_openapi_document(response: httpx.Response) -> Optional[Dict[str, Any]]:
+    try:
+        data = response.json()
+    except (ValueError, json.JSONDecodeError):
+        data = None
+
+    if isinstance(data, dict) and "paths" in data:
+        return data
+
+    content_type = (response.headers.get("content-type") or "").lower()
+    body_text = response.text or ""
+    should_try_yaml = (
+        "yaml" in content_type
+        or body_text.lstrip().startswith("openapi:")
+        or body_text.lstrip().startswith("swagger:")
+    )
+
+    if not should_try_yaml:
+        return None
+
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        yaml_data = yaml.safe_load(body_text)
+    except Exception:
+        return None
+
+    if isinstance(yaml_data, dict) and "paths" in yaml_data:
+        return yaml_data
+
+    return None
+
+
+def _dedupe_definitions(definitions: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    deduped: List[Dict[str, str]] = []
+    seen = set()
+
+    for item in definitions:
+        spec_url = (item.get("specUrl") or "").strip()
+        if not spec_url or spec_url in seen:
+            continue
+        seen.add(spec_url)
+        deduped.append(
+            {
+                "name": (item.get("name") or "").strip() or spec_url,
+                "specUrl": spec_url,
+                "source": (item.get("source") or "discovered").strip() or "discovered",
+            }
+        )
+
+    return deduped
+
+
+async def _discover_definitions_from_swagger_ui(
+    client: httpx.AsyncClient,
+    swagger_ui_url: str,
+    html_text: str,
+) -> Dict[str, Any]:
+    query_hints = parse_swagger_ui_query_hints(swagger_ui_url)
+    html_hints = extract_swagger_ui_hints_from_html(html_text)
+
+    definitions: List[Dict[str, str]] = []
+
+    # Explicit query-provided doc URL
+    if query_hints.get("url"):
+        definitions.append(
+            {
+                "name": query_hints.get("primaryName") or "Default",
+                "specUrl": resolve_url(swagger_ui_url, query_hints["url"]),
+                "source": "swagger-ui.query.url",
+            }
+        )
+
+    # Inline HTML hints
+    for entry in html_hints.get("urls") or []:
+        definitions.append(
+            {
+                "name": (entry.get("name") or "").strip() or (entry.get("url") or "").strip(),
+                "specUrl": resolve_url(swagger_ui_url, entry.get("url") or ""),
+                "source": "swagger-ui.html.urls",
+            }
+        )
+
+    if html_hints.get("url"):
+        definitions.append(
+            {
+                "name": query_hints.get("primaryName") or "Default",
+                "specUrl": resolve_url(swagger_ui_url, html_hints["url"]),
+                "source": "swagger-ui.html.url",
+            }
+        )
+
+    primary_name = query_hints.get("primaryName")
+    config_candidates = build_swagger_config_candidates(swagger_ui_url, query_hints, html_hints)
+
+    for candidate in config_candidates:
+        try:
+            response = await client.get(
+                candidate,
+                headers={
+                    "Accept": "application/json, application/vnd.oai.openapi+json",
+                },
+            )
+            response.raise_for_status()
+            config_data = response.json()
+            if not isinstance(config_data, dict):
+                continue
+            extracted = extract_definitions_from_swagger_config(config_data, str(response.url))
+            if extracted.get("primaryName") and not primary_name:
+                primary_name = extracted["primaryName"]
+            definitions.extend(extracted.get("definitions") or [])
+            if extracted.get("definitions"):
+                break
+        except Exception:
+            continue
+
+    deduped = _dedupe_definitions(definitions)
+    return {
+        "definitions": deduped,
+        "primaryName": primary_name,
+    }
+
+
+@router.get("/import/openapi/url")
+async def import_openapi_from_url(
+    swagger_url: str = Query(...),
+    base_url: str = Query(""),
+    tag_filter: Optional[str] = Query(None),
+    sanitize: bool = Query(True)
+):
+    """
+    Parse OpenAPI/Swagger JSON from a URL and return HTTP request nodes.
+    """
+    url = (swagger_url or "").strip()
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="swagger_url is required"
+        )
+
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="swagger_url must start with http:// or https://"
+        )
+
+    try:
+        tags = tag_filter.split(",") if tag_filter else None
+
+        async with httpx.AsyncClient(timeout=DEFAULT_FETCH_TIMEOUT_SECONDS, follow_redirects=True) as client:
+            initial_response = await client.get(
+                url,
+                headers={
+                    "Accept": "application/json, application/vnd.oai.openapi+json, text/html",
+                },
+            )
+            initial_response.raise_for_status()
+
+            direct_spec = _extract_openapi_document(initial_response)
+
+            discovered_definitions: List[Dict[str, str]] = []
+            primary_name: Optional[str] = None
+
+            if direct_spec:
+                discovered_definitions = [
+                    {
+                        "name": direct_spec.get("info", {}).get("title") or "Default",
+                        "specUrl": url,
+                        "source": "direct-url",
+                    }
+                ]
+            else:
+                discovery = await _discover_definitions_from_swagger_ui(
+                    client,
+                    swagger_ui_url=url,
+                    html_text=initial_response.text,
+                )
+                discovered_definitions = discovery.get("definitions") or []
+                primary_name = discovery.get("primaryName")
+
+                if not discovered_definitions:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Could not discover OpenAPI definitions from Swagger UI URL. "
+                            "Use a direct OpenAPI spec URL or verify Swagger UI config exposure."
+                        ),
+                    )
+
+            definition_limit_error = validate_definition_limit(len(discovered_definitions))
+            if definition_limit_error:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=definition_limit_error,
+                )
+
+            successful_specs: List[Dict[str, Any]] = []
+            failed_definitions: List[Dict[str, str]] = []
+
+            async def fetch_definition(definition: Dict[str, str]) -> Dict[str, Any]:
+                definition_name = definition.get("name") or "Definition"
+                spec_url = definition.get("specUrl") or ""
+                if not spec_url:
+                    return {
+                        "status": "failed",
+                        "name": definition_name,
+                        "specUrl": spec_url,
+                        "error": "Missing spec URL",
+                    }
+
+                if direct_spec and spec_url == url:
+                    return {
+                        "status": "imported",
+                        "definition": definition,
+                        "openapi_data": direct_spec,
+                    }
+
+                try:
+                    spec_response = await client.get(
+                        spec_url,
+                        headers={
+                            "Accept": "application/json, application/vnd.oai.openapi+json",
+                        },
+                    )
+                    spec_response.raise_for_status()
+                    openapi_data = _extract_openapi_document(spec_response)
+                    if not openapi_data:
+                        raise ValueError("Definition URL did not return a valid OpenAPI JSON document")
+
+                    return {
+                        "status": "imported",
+                        "definition": definition,
+                        "openapi_data": openapi_data,
+                    }
+                except Exception as exc:
+                    return {
+                        "status": "failed",
+                        "name": definition_name,
+                        "specUrl": spec_url,
+                        "error": str(exc),
+                    }
+
+            semaphore = asyncio.Semaphore(DEFAULT_FETCH_CONCURRENCY)
+
+            async def fetch_with_limit(definition: Dict[str, str]) -> Dict[str, Any]:
+                async with semaphore:
+                    return await fetch_definition(definition)
+
+            fetch_results = await asyncio.gather(
+                *(fetch_with_limit(definition) for definition in discovered_definitions)
+            )
+
+            for result in fetch_results:
+                if result.get("status") == "imported":
+                    successful_specs.append(
+                        {
+                            "definition": result["definition"],
+                            "openapi_data": result["openapi_data"],
+                        }
+                    )
+                else:
+                    failed_definitions.append(
+                        {
+                            "name": result["name"],
+                            "specUrl": result["specUrl"],
+                            "error": result["error"],
+                        }
+                    )
+
+        if not successful_specs:
+            first_error = failed_definitions[0]["error"] if failed_definitions else "Unknown fetch error"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to fetch any OpenAPI definitions: {first_error}",
+            )
+
+        total_discovered = len(discovered_definitions)
+        total_imported = len(successful_specs)
+        is_multi_definition = total_discovered > 1
+
+        all_http_nodes: List[Dict[str, Any]] = []
+        definition_summaries: List[Dict[str, Any]] = []
+
+        for bundle in successful_specs:
+            definition = bundle["definition"]
+            definition_name = definition.get("name") or "Definition"
+            definition_spec_url = definition.get("specUrl") or ""
+            definition_scope = make_definition_scope(definition_name, definition_spec_url)
+
+            workflow_data = parse_openapi_to_workflow(
+                bundle["openapi_data"],
+                base_url,
+                tags,
+                sanitize,
+                source_context={
+                    "definitionName": definition_name,
+                    "definitionSpecUrl": definition_spec_url,
+                    "definitionScope": definition_scope,
+                    "sourceUiUrl": url,
+                },
+            )
+            http_nodes = [n for n in workflow_data["nodes"] if n["type"] == "http-request"]
+
+            if is_multi_definition:
+                for node in http_nodes:
+                    label = node.get("label") or node.get("config", {}).get("url") or "Request"
+                    node["label"] = f"[{definition_name}] {label}"
+
+            all_http_nodes.extend(http_nodes)
+
+            endpoint_limit_error = validate_endpoint_limit(len(all_http_nodes))
+            if endpoint_limit_error:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=endpoint_limit_error,
+                )
+
+            definition_summaries.append(
+                {
+                    "name": definition_name,
+                    "specUrl": definition_spec_url,
+                    "status": "imported",
+                    "endpointCount": len(http_nodes),
+                    "source": definition.get("source") or "discovered",
+                }
+            )
+
+        for failed in failed_definitions:
+            definition_summaries.append(
+                {
+                    "name": failed["name"],
+                    "specUrl": failed["specUrl"],
+                    "status": "failed",
+                    "endpointCount": 0,
+                    "error": failed["error"],
+                }
+            )
+
+        api_title = "Multiple APIs" if total_imported > 1 else (
+            successful_specs[0]["openapi_data"].get("info", {}).get("title", "API")
+        )
+
+        return {
+            "nodes": all_http_nodes,
+            "definitions": definition_summaries,
+            "stats": {
+                "totalEndpoints": len(all_http_nodes),
+                "apiTitle": api_title,
+                "sourceUrl": url,
+                "definitionCount": total_discovered,
+                "importedDefinitionCount": total_imported,
+                "failedDefinitionCount": len(failed_definitions),
+                "primaryName": primary_name,
+            },
+            "warnings": [
+                {
+                    "type": "definition-fetch-failed",
+                    "name": item["name"],
+                    "specUrl": item["specUrl"],
+                    "message": item["error"],
+                }
+                for item in failed_definitions
+            ],
+        }
+
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to fetch Swagger URL ({e.response.status_code})"
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to fetch Swagger URL: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import OpenAPI from URL: {str(e)}"
         )
 
 
@@ -2148,10 +2539,10 @@ async def import_curl_file(
             updated_edges_dicts = existing_edges_dicts + imported_edges
             
             # Update workflow using repository update method
-            await WorkflowRepository.update(workflowId, {  # type: ignore
-                "nodes": updated_nodes_dicts,
-                "edges": updated_edges_dicts
-            })
+            await WorkflowRepository.update(
+                workflowId,
+                WorkflowUpdate(nodes=updated_nodes_dicts, edges=updated_edges_dicts)
+            )
             
             return {
                 "message": f"Curl commands imported and appended to workflow {workflowId}",
@@ -2163,23 +2554,20 @@ async def import_curl_file(
             }
         else:
             # Create new workflow as before using repository
-            new_workflow_id = str(uuid.uuid4())
-            workflow_create = {
-                "workflowId": new_workflow_id,
-                "name": workflow_data["name"],
-                "description": workflow_data["description"],
-                "nodes": workflow_data["nodes"],
-                "edges": workflow_data["edges"],
-                "variables": workflow_data.get("variables", {}),
-                "tags": workflow_data.get("tags", []),
-                "collectionId": None,
-                "nodeTemplates": [],  # Initialize empty templates
-                "environmentId": None
-            }
-            await WorkflowRepository.create(workflow_create)  # type: ignore
+            workflow_create = WorkflowCreate(
+                name=workflow_data["name"],
+                description=workflow_data["description"],
+                nodes=workflow_data["nodes"],
+                edges=workflow_data["edges"],
+                variables=workflow_data.get("variables", {}),
+                tags=workflow_data.get("tags", []),
+                collectionId=None,
+                nodeTemplates=[]
+            )
+            created_workflow = await WorkflowRepository.create(workflow_create)
             return {
                 "message": "Curl commands imported successfully",
-                "workflowId": new_workflow_id,
+                "workflowId": created_workflow.workflowId,
                 "stats": {
                     "totalRequests": len(workflow_data["nodes"]) - 2,  # Exclude start/end nodes
                     "importType": "curl"

@@ -12,17 +12,18 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",
-    "@heroicons/react": "^2.2.0",
     "@monaco-editor/react": "^4.6.0",
     "@tippyjs/react": "^4.2.6",
     "allotment": "^1.20.4",
     "axios": "^1.6.0",
+    "daisyui": "^5.5.18",
     "lucide-react": "^0.548.0",
+    "mousetrap": "^1.6.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-icons": "^5.5.0",
     "react-router-dom": "^6.20.0",
     "reactflow": "^11.10.0",
+    "sonner": "^2.0.7",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

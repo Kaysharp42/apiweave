@@ -21,19 +21,19 @@ export const AppNavBarItems = {
 
 export const AppNavBarStyles = {
   collapsedNavBarWidth: {
-    absolute: 30,
-    pixelInString: '30px',
+    absolute: 56,
+    pixelInString: '56px',
     tailwindValue: {
-      default: 'w-8',
-      min: 'min-w-8',
+      default: 'w-nav-collapsed',
+      min: 'min-w-nav-collapsed',
     },
   },
   expandedNavBarWidth: {
-    absolute: 100,
-    pixelInString: '100px',
+    absolute: 180,
+    pixelInString: '180px',
     tailwindValue: {
-      default: 'w-25',
-      min: 'min-w-25',
+      default: 'w-nav-expanded',
+      min: 'min-w-nav-expanded',
     },
   },
 };

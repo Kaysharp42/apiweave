@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import API_BASE_URL from '../utils/api';
+import useSidebarStore from '../stores/SidebarStore';
 
 const EnvironmentSelector = ({ onManageClick }) => {
   const [environments, setEnvironments] = useState([]);
@@ -8,12 +9,6 @@ const EnvironmentSelector = ({ onManageClick }) => {
 
   useEffect(() => {
     fetchEnvironments();
-    
-    // Listen for environment changes
-    const handleEnvironmentsChanged = () => {
-      fetchEnvironments();
-    };
-    window.addEventListener('environmentsChanged', handleEnvironmentsChanged);
     
     // Close dropdown when clicking outside
     const handleClickOutside = (event) => {
@@ -25,9 +20,14 @@ const EnvironmentSelector = ({ onManageClick }) => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('environmentsChanged', handleEnvironmentsChanged);
     };
   }, []);
+
+  // Refresh environments when store signals a change
+  const environmentVersion = useSidebarStore((s) => s.environmentVersion);
+  useEffect(() => {
+    if (environmentVersion > 0) fetchEnvironments();
+  }, [environmentVersion]);
 
   const fetchEnvironments = async () => {
     try {

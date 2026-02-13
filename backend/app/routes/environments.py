@@ -133,6 +133,7 @@ async def duplicate_environment(environment_id: str):
     duplicate_data = EnvironmentCreate(
         name=f"{source_env.name} (Copy)",
         description=source_env.description,
+        swaggerDocUrl=source_env.swaggerDocUrl,
         variables=source_env.variables.copy() if source_env.variables else {},
         secrets=source_env.secrets.copy() if source_env.secrets else {}
     )

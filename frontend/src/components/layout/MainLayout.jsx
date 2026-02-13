@@ -8,7 +8,9 @@ import MainHeader from './MainHeader';
 import MainFooter from './MainFooter';
 import SecretsPrompt from '../SecretsPrompt';
 import useNavigationStore from '../../stores/NavigationStore';
+import useSidebarStore from '../../stores/SidebarStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
+import { HorizontalDivider } from '../atoms';
 import API_BASE_URL from '../../utils/api';
 
 const MainLayout = () => {
@@ -48,35 +50,62 @@ const MainLayout = () => {
     };
 
     checkEnvironmentSecrets();
-
-    // Listen for environment changes
-    const handleEnvironmentsChanged = () => {
-      checkEnvironmentSecrets();
-    };
-    window.addEventListener('environmentsChanged', handleEnvironmentsChanged);
-    return () => window.removeEventListener('environmentsChanged', handleEnvironmentsChanged);
   }, []);
+
+  // Re-check secrets when environments change (via Zustand store)
+  const environmentVersion = useSidebarStore((s) => s.environmentVersion);
+  useEffect(() => {
+    if (environmentVersion > 0) {
+      const checkSecrets = async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/environments`);
+          if (response.ok) {
+            const envs = await response.json();
+            for (const env of envs) {
+              if (env.isActive && env.secrets) {
+                for (const [, val] of Object.entries(env.secrets)) {
+                  if (!val || val === '***') {
+                    setShowSecretsPrompt(true);
+                    return;
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error checking environment secrets:', error);
+        }
+      };
+      checkSecrets();
+    }
+  }, [environmentVersion]);
+
+  // Collapsed: just the nav bar width. Expanded: nav bar + sidebar.
+  const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth.absolute;
+  const expandedPreferred = 450;
+  const expandedMin = 450;
+  const expandedMax = 600;
 
   return (
     <>
       <MainHeader />
-      <div className="h-px bg-gray-300 dark:bg-gray-700" />
-      
-      <main className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900">
+      <HorizontalDivider />
+
+      <main className="flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
         <Allotment>
           {/* Left: AppNavBar + Sidebar */}
           <Allotment.Pane
-            preferredSize={isNavBarCollapsed ? AppNavBarStyles.collapsedNavBarWidth.absolute : 450}
-            minSize={isNavBarCollapsed ? AppNavBarStyles.collapsedNavBarWidth.absolute : 450}
-            maxSize={isNavBarCollapsed ? AppNavBarStyles.collapsedNavBarWidth.absolute : 600}
+            preferredSize={isNavBarCollapsed ? collapsedWidth : expandedPreferred}
+            minSize={isNavBarCollapsed ? collapsedWidth : expandedMin}
+            maxSize={isNavBarCollapsed ? collapsedWidth : expandedMax}
             snap={false}
           >
             <div className="flex h-full w-full text-xs">
               <AppNavBar />
               {!isNavBarCollapsed && (
-                <div className="flex-1 h-full w-full overflow-hidden bg-white dark:bg-gray-800">
-                  <Sidebar 
-                    selectedNav={navigationSelectedValue} 
+                <div className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
+                  <Sidebar
+                    selectedNav={navigationSelectedValue}
                     currentWorkflowId={currentWorkflowId}
                   />
                 </div>
@@ -91,17 +120,16 @@ const MainLayout = () => {
         </Allotment>
       </main>
 
-      <div className="h-px bg-gray-300 dark:bg-gray-700" />
+      <HorizontalDivider />
       <MainFooter />
 
       {/* Secrets Prompt */}
-      {showSecretsPrompt && environmentWithSecrets && (
-        <SecretsPrompt
-          environment={environmentWithSecrets}
-          onClose={() => setShowSecretsPrompt(false)}
-          onSecretsProvided={() => setShowSecretsPrompt(false)}
-        />
-      )}
+      <SecretsPrompt
+        open={showSecretsPrompt && !!environmentWithSecrets}
+        environment={environmentWithSecrets || {}}
+        onClose={() => setShowSecretsPrompt(false)}
+        onSecretsProvided={() => setShowSecretsPrompt(false)}
+      />
     </>
   );
 };

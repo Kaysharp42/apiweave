@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import useSidebarStore from '../stores/SidebarStore';
 import {
   X,
   Download,
@@ -252,7 +253,7 @@ const CollectionExportImport = ({
         setNewCollectionName('');
 
         // Refresh collections
-        window.dispatchEvent(new CustomEvent('collectionsChanged'));
+        useSidebarStore.getState().signalCollectionsRefresh();
 
         // Call callback
         setTimeout(() => {
@@ -364,7 +365,7 @@ const CollectionExportImport = ({
             setSelectedTargetCollection(null);
 
             // Refresh
-            window.dispatchEvent(new CustomEvent('workflowsNeedRefresh'));
+            useSidebarStore.getState().signalWorkflowsRefresh();
 
             setTimeout(() => {
               onClose();
@@ -475,7 +476,7 @@ const CollectionExportImport = ({
           setSelectedTargetCollection(null);
 
           // Refresh
-          window.dispatchEvent(new CustomEvent('workflowsNeedRefresh'));
+          useSidebarStore.getState().signalWorkflowsRefresh();
 
           setTimeout(() => {
             onClose();
@@ -560,7 +561,7 @@ const CollectionExportImport = ({
       setSelectedTargetCollection(null);
 
       // Refresh
-      window.dispatchEvent(new CustomEvent('collectionsChanged'));
+      useSidebarStore.getState().signalCollectionsRefresh();
 
       setTimeout(() => {
         onClose();

@@ -1819,10 +1819,11 @@ class WorkflowExecutor:
             except (ValueError, TypeError):
                 return False
         
-        # For other operators with count values, convert list to count first
-        # Check if we should use count (if actual is a list and operator expects numeric comparison)
-        is_list = isinstance(actual, (list, dict, str))
-        if is_list and operator in ['gt', 'gte', 'lt', 'lte', 'equals', 'notEquals']:
+        # For other operators with count values, convert collections to count first.
+        # Do not auto-convert strings here; string assertions should compare string values,
+        # not their length.
+        is_collection = isinstance(actual, (list, dict))
+        if is_collection and operator in ['gt', 'gte', 'lt', 'lte', 'equals', 'notEquals']:
             try:
                 actual = len(actual)
             except:
