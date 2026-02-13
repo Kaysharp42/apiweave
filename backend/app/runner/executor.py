@@ -6,6 +6,7 @@ import asyncio
 import aiohttp
 import aiofiles
 import base64
+import mimetypes
 import re
 import json
 import time
@@ -884,8 +885,8 @@ class WorkflowExecutor:
                     if len(parts) == 2:
                         value = parts[1]
                         # Extract MIME type from data URI if available
-                        mime_match = parts[0].replace('data:', '')
-                        if mime_match and mime_match != 'base64':
+                        mime_match = parts[0].replace('data:', '').split(';', 1)[0].strip()
+                        if mime_match:
                             mime_type = mime_match
                 
                 file_bytes = base64.b64decode(value)
@@ -934,6 +935,9 @@ class WorkflowExecutor:
                     parts = resolved_value.split(',', 1)
                     if len(parts) == 2:
                         base64_data = parts[1]
+                        mime_match = parts[0].replace('data:', '').split(';', 1)[0].strip()
+                        if mime_match:
+                            mime_type = mime_match
                         file_bytes = base64.b64decode(base64_data)
                         self.logger.info(f"✅ Resolved variable as base64: {value} ({len(file_bytes)} bytes)")
                         return file_bytes, field_name, mime_type
@@ -967,6 +971,26 @@ class WorkflowExecutor:
             error_msg = f"Failed to resolve file upload: {str(e)}"
             self.logger.error(error_msg)
             raise Exception(error_msg)
+
+    def _build_upload_filename(self, file_ref: Dict[str, str], field_name: str, mime_type: str) -> str:
+        """Build upload filename and infer extension from MIME type when missing."""
+        raw_name = (file_ref.get('name') or '').strip()
+        candidate = raw_name or field_name or 'upload'
+
+        # Keep only basename to avoid directory leakage in multipart filename.
+        file_name = Path(candidate).name
+        if Path(file_name).suffix:
+            return file_name
+
+        clean_mime = (mime_type or '').split(';', 1)[0].strip().lower()
+        if clean_mime == 'application/pdf':
+            return f"{file_name}.pdf"
+
+        inferred_ext = mimetypes.guess_extension(clean_mime) if clean_mime else None
+        if inferred_ext:
+            return f"{file_name}{inferred_ext}"
+
+        return file_name
 
     async def _execute_http_request(self, node: Dict) -> Dict[str, Any]:
         """Execute HTTP request node"""
@@ -1025,6 +1049,17 @@ class WorkflowExecutor:
         # Handle file uploads
         file_uploads = config.get('fileUploads', [])
         has_files = len(file_uploads) > 0
+
+        if has_files:
+            # Let aiohttp generate multipart Content-Type (with boundary).
+            # If users keep a JSON Content-Type header, many APIs reject the request
+            # as "not multipart" before controller logic runs.
+            for header_name in list(headers.keys()):
+                if header_name.lower() in {'content-type', 'content-length'}:
+                    removed_value = headers.pop(header_name)
+                    self.logger.warning(
+                        f"Removed header for multipart upload: {header_name}={removed_value}"
+                    )
         
         try:
             # Prepare request data
@@ -1048,13 +1083,16 @@ class WorkflowExecutor:
                 for file_ref in file_uploads:
                     try:
                         file_bytes, field_name, mime_type = await self._get_file_content(file_ref)
+                        upload_filename = self._build_upload_filename(file_ref, field_name, mime_type)
                         form_data.add_field(
                             field_name,
                             file_bytes,
-                            filename=file_ref.get('name', field_name),
+                            filename=upload_filename,
                             content_type=mime_type
                         )
-                        self.logger.info(f"✅ Added file to form: {field_name}")
+                        self.logger.info(
+                            f"✅ Added file to form: {field_name} (filename: {upload_filename}, MIME: {mime_type})"
+                        )
                     except Exception as e:
                         self.logger.error(f"❌ Failed to add file: {str(e)}")
                         raise
