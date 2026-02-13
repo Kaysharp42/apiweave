@@ -1,10 +1,12 @@
 """
 MongoDB database connection and utilities with Beanie ODM
 """
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+
 from beanie import init_beanie
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+
 from app.config import settings
-from app.models import Workflow, Run, Environment, Collection, Webhook, CollectionRun, WebhookLog
+from app.models import Collection, CollectionRun, Environment, Run, Webhook, WebhookLog, Workflow
 
 # Global database client
 client: AsyncIOMotorClient = None
@@ -14,10 +16,10 @@ db: AsyncIOMotorDatabase = None
 async def connect_db():
     """Connect to MongoDB and initialize Beanie ODM"""
     global client, db
-    
+
     client = AsyncIOMotorClient(settings.MONGODB_URL)
     db = client[settings.MONGODB_DB_NAME]
-    
+
     # Initialize Beanie with Document models
     await init_beanie(
         database=db,
@@ -28,18 +30,18 @@ async def connect_db():
             Collection,
             Webhook,
             CollectionRun,
-            WebhookLog
-        ]
+            WebhookLog,
+        ],
     )
-    
+
     print(f"✅ Connected to MongoDB: {settings.MONGODB_DB_NAME}")
-    print(f"✅ Initialized Beanie ODM with type-safe models")
+    print("✅ Initialized Beanie ODM with type-safe models")
 
 
 async def close_db():
     """Close MongoDB connection"""
     global client
-    
+
     if client:
         client.close()
         print("❌ Closed MongoDB connection")

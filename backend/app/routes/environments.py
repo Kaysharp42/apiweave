@@ -3,10 +3,8 @@ Environment API routes
 CRUD operations for environments
 Now using Beanie ODM with repository pattern - FULLY MIGRATED ✅
 """
+
 from fastapi import APIRouter, HTTPException, status
-from typing import List, Optional
-from datetime import datetime, UTC
-import uuid
 
 from app.models import Environment, EnvironmentCreate, EnvironmentUpdate
 from app.repositories import EnvironmentRepository
@@ -21,7 +19,7 @@ async def create_environment(environment: EnvironmentCreate):
     return created_environment
 
 
-@router.get("", response_model=List[Environment])
+@router.get("", response_model=list[Environment])
 async def list_environments():
     """List all environments (SQL injection safe)"""
     environments, _ = await EnvironmentRepository.list_all(skip=0, limit=1000)
@@ -34,10 +32,9 @@ async def get_environment(environment_id: str):
     environment = await EnvironmentRepository.get_by_id(environment_id)
     if not environment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Environment {environment_id} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Environment {environment_id} not found"
         )
-    
+
     return environment
 
 
@@ -47,10 +44,9 @@ async def get_active_environment():
     environment = await EnvironmentRepository.get_active()
     if not environment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active environment set"
+            status_code=status.HTTP_404_NOT_FOUND, detail="No active environment set"
         )
-    
+
     return environment
 
 
@@ -60,16 +56,15 @@ async def update_environment(environment_id: str, update: EnvironmentUpdate):
     # Handle isActive special case - deactivate others if setting active
     if update.isActive:
         await EnvironmentRepository.set_active(environment_id)
-    
+
     # Update the environment
     updated_env = await EnvironmentRepository.update(environment_id, update)
-    
+
     if not updated_env:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Environment {environment_id} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Environment {environment_id} not found"
         )
-    
+
     return updated_env
 
 
@@ -80,25 +75,24 @@ async def delete_environment(environment_id: str):
     environment = await EnvironmentRepository.get_by_id(environment_id)
     if not environment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Environment {environment_id} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Environment {environment_id} not found"
         )
-    
+
     # Check if any workflows reference this environment using Beanie
     from app.models import Workflow
+
     workflows_count = await Workflow.find(Workflow.environmentId == environment_id).count()
     if workflows_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete environment. {workflows_count} workflow(s) are still attached to it."
+            detail=f"Cannot delete environment. {workflows_count} workflow(s) are still attached to it.",
         )
-    
+
     # Delete the environment using repository
     success = await EnvironmentRepository.delete(environment_id)
     if not success:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete environment"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete environment"
         )
 
 
@@ -107,36 +101,37 @@ async def activate_environment(environment_id: str):
     """Set an environment as active - deactivates all others (SQL injection safe)"""
     # Use repository to set active (handles deactivation of others)
     environment = await EnvironmentRepository.set_active(environment_id)
-    
+
     if not environment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Environment {environment_id} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Environment {environment_id} not found"
         )
-    
+
     return environment
 
 
-@router.post("/{environment_id}/duplicate", response_model=Environment, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{environment_id}/duplicate", response_model=Environment, status_code=status.HTTP_201_CREATED
+)
 async def duplicate_environment(environment_id: str):
     """Duplicate an existing environment (SQL injection safe)"""
     # Check if environment exists using repository
     source_env = await EnvironmentRepository.get_by_id(environment_id)
     if not source_env:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Environment {environment_id} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Environment {environment_id} not found"
         )
-    
+
     # Create duplicate using repository
     from app.models import EnvironmentCreate
+
     duplicate_data = EnvironmentCreate(
         name=f"{source_env.name} (Copy)",
         description=source_env.description,
         swaggerDocUrl=source_env.swaggerDocUrl,
         variables=source_env.variables.copy() if source_env.variables else {},
-        secrets=source_env.secrets.copy() if source_env.secrets else {}
+        secrets=source_env.secrets.copy() if source_env.secrets else {},
     )
-    
+
     duplicate_env = await EnvironmentRepository.create(duplicate_data)
     return duplicate_env

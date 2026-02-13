@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -13,13 +14,13 @@ class WorkflowIntegrityResult:
     default_start_only: bool
 
 
-def count_nodes_edges(workflow: Dict[str, Any]) -> Tuple[int, int]:
+def count_nodes_edges(workflow: dict[str, Any]) -> tuple[int, int]:
     nodes = workflow.get("nodes") or []
     edges = workflow.get("edges") or []
     return len(nodes), len(edges)
 
 
-def is_default_start_only_graph(workflow: Dict[str, Any]) -> bool:
+def is_default_start_only_graph(workflow: dict[str, Any]) -> bool:
     nodes = workflow.get("nodes") or []
     edges = workflow.get("edges") or []
 
@@ -32,8 +33,8 @@ def is_default_start_only_graph(workflow: Dict[str, Any]) -> bool:
     return node_id == "start-1" and node_type == "start"
 
 
-def summarize_workflows(workflows: Iterable[Dict[str, Any]]) -> List[WorkflowIntegrityResult]:
-    results: List[WorkflowIntegrityResult] = []
+def summarize_workflows(workflows: Iterable[dict[str, Any]]) -> list[WorkflowIntegrityResult]:
+    results: list[WorkflowIntegrityResult] = []
 
     for workflow in workflows:
         workflow_id = workflow.get("workflowId") or "<unknown>"

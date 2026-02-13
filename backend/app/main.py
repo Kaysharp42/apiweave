@@ -2,13 +2,15 @@
 APIWeave - Visual API Test Workflows
 Main FastAPI application entry point
 """
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+
 from contextlib import asynccontextmanager
 
-from app.database import connect_db, close_db
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.config import settings
-from app.routes import workflows, runs, environments, collections, webhooks
+from app.database import close_db, connect_db
+from app.routes import collections, environments, runs, webhooks, workflows
 
 
 @asynccontextmanager
@@ -48,11 +50,7 @@ app.include_router(webhooks.router)
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {
-        "name": "APIWeave",
-        "version": "0.1.0",
-        "status": "running"
-    }
+    return {"name": "APIWeave", "version": "0.1.0", "status": "running"}
 
 
 @app.get("/health")
@@ -60,7 +58,7 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "database": "connected"  # TODO: Add actual DB health check
+        "database": "connected",  # TODO: Add actual DB health check
     }
 
 
@@ -72,4 +70,5 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

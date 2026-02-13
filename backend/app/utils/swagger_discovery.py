@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 
-def parse_swagger_ui_query_hints(swagger_ui_url: str) -> Dict[str, Optional[str]]:
+def parse_swagger_ui_query_hints(swagger_ui_url: str) -> dict[str, str | None]:
     parsed = urlsplit(swagger_ui_url)
     query = parse_qs(parsed.query)
 
-    def first(name: str) -> Optional[str]:
+    def first(name: str) -> str | None:
         values = query.get(name) or []
         if not values:
             return None
@@ -23,13 +23,13 @@ def parse_swagger_ui_query_hints(swagger_ui_url: str) -> Dict[str, Optional[str]
     }
 
 
-def extract_swagger_ui_hints_from_html(html: str) -> Dict[str, Any]:
+def extract_swagger_ui_hints_from_html(html: str) -> dict[str, Any]:
     if not html:
         return {"configUrl": None, "url": None, "urls": []}
 
     config_match = re.search(r"configUrl\s*:\s*['\"]([^'\"]+)['\"]", html, re.IGNORECASE)
 
-    parsed_urls: List[Dict[str, str]] = []
+    parsed_urls: list[dict[str, str]] = []
     urls_block = re.search(r"\burls\s*:\s*\[(.*?)\]", html, re.IGNORECASE | re.DOTALL)
     html_without_urls_array = html
     if urls_block:
@@ -42,12 +42,15 @@ def extract_swagger_ui_hints_from_html(html: str) -> Dict[str, Any]:
                 continue
             parsed_urls.append(
                 {
-                    "name": (name_match.group(1).strip() if name_match else "") or url_item_match.group(1).strip(),
+                    "name": (name_match.group(1).strip() if name_match else "")
+                    or url_item_match.group(1).strip(),
                     "url": url_item_match.group(1).strip(),
                 }
             )
 
-    url_match = re.search(r"\burl\s*:\s*['\"]([^'\"]+)['\"]", html_without_urls_array, re.IGNORECASE)
+    url_match = re.search(
+        r"\burl\s*:\s*['\"]([^'\"]+)['\"]", html_without_urls_array, re.IGNORECASE
+    )
 
     return {
         "configUrl": config_match.group(1).strip() if config_match else None,
@@ -62,9 +65,9 @@ def resolve_url(base_url: str, target: str) -> str:
 
 def build_swagger_config_candidates(
     swagger_ui_url: str,
-    query_hints: Dict[str, Optional[str]],
-    html_hints: Dict[str, Any],
-) -> List[str]:
+    query_hints: dict[str, str | None],
+    html_hints: dict[str, Any],
+) -> list[str]:
     parsed = urlsplit(swagger_ui_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
     path = parsed.path or "/"
@@ -75,9 +78,9 @@ def build_swagger_config_candidates(
         if marker in path:
             prefixes.add(path.split(marker)[0])
 
-    candidates: List[str] = []
+    candidates: list[str] = []
 
-    def push(url: Optional[str], *, relative_to: str = swagger_ui_url) -> None:
+    def push(url: str | None, *, relative_to: str = swagger_ui_url) -> None:
         if not url:
             return
         candidate = resolve_url(relative_to, url)
@@ -105,8 +108,10 @@ def build_swagger_config_candidates(
     return candidates
 
 
-def extract_definitions_from_swagger_config(config_data: Dict[str, Any], config_url: str) -> Dict[str, Any]:
-    definitions: List[Dict[str, str]] = []
+def extract_definitions_from_swagger_config(
+    config_data: dict[str, Any], config_url: str
+) -> dict[str, Any]:
+    definitions: list[dict[str, str]] = []
 
     urls = config_data.get("urls")
     if isinstance(urls, list):
@@ -135,7 +140,7 @@ def extract_definitions_from_swagger_config(config_data: Dict[str, Any], config_
             }
         )
 
-    deduped: List[Dict[str, str]] = []
+    deduped: list[dict[str, str]] = []
     seen = set()
     for item in definitions:
         key = item["specUrl"]
