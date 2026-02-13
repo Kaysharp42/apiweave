@@ -63,7 +63,7 @@ Completion:
 - [x] Done - Run docs checks and commit Phase 2.
 
 ### Phase 3 - Support Docs And Polish
-- [ ] Not done - Add FAQ and troubleshooting documentation.
-- [ ] Not done - Standardize wording and remove duplicate/conflicting pages.
-- [ ] Not done - Run final docs checks (links + file refs) and fix issues.
-- [ ] Not done - Commit Phase 3.
+- [x] Done - Add FAQ and troubleshooting documentation.
+- [x] Done - Standardize wording and remove duplicate/conflicting pages.
+- [x] Done - Run final docs checks (links + file refs) and fix issues.
+- [x] Done - Commit Phase 3.

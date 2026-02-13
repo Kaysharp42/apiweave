@@ -92,11 +92,9 @@ Current guides:
 - [Workflows and Nodes Guide](docs/WORKFLOWS_AND_NODES.md)
 - [Variables, Extractors, and JSON Editor](docs/VARIABLES_EXTRACTORS_JSON_EDITOR.md)
 - [Environments, Secrets, and Collections](docs/ENVIRONMENTS_COLLECTIONS.md)
-- [Variables and Data Passing](docs/VARIABLES.md)
-- [Workflow Variables Quick Start](docs/WORKFLOW_VARIABLES_QUICKSTART.md)
-- [Workflow Variables Reference](docs/WORKFLOW_VARIABLES.md)
 - [Swagger and OpenAPI Import Guide](docs/SWAGGER_UI_BASE_URL_IMPORT.md)
 - [Webhook Quick Start](docs/WEBHOOK_QUICKSTART.md)
+- [FAQ and Troubleshooting](docs/FAQ_TROUBLESHOOTING.md)
 
 ## Tech Stack
 

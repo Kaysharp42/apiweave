@@ -1,31 +1,28 @@
 # Documentation Navigation
 
-Use these paths based on what you are trying to do.
+Pick the path that matches your goal.
 
-## Path A: Build Your First Workflow
+## Path A: Build and Run Your First Workflow
 
-1. Read the project [README](../README.md) quick start.
-2. Build your flow in [Workflows and Nodes Guide](WORKFLOWS_AND_NODES.md).
-3. Learn data substitution in [Variables, Extractors, and JSON Editor](VARIABLES_EXTRACTORS_JSON_EDITOR.md).
-4. Use [Environments, Secrets, and Collections](ENVIRONMENTS_COLLECTIONS.md) to parameterize and organize tests.
+1. [README](../README.md) - local setup and first run.
+2. [Workflows and Nodes Guide](WORKFLOWS_AND_NODES.md) - canvas and node behavior.
+3. [Variables, Extractors, and JSON Editor](VARIABLES_EXTRACTORS_JSON_EDITOR.md) - data passing.
+4. [Environments, Secrets, and Collections](ENVIRONMENTS_COLLECTIONS.md) - reusable configuration.
 
 ## Path B: Import Existing API Definitions
 
-1. Confirm your local setup in [README](../README.md).
-2. Read [Swagger and OpenAPI Import Guide](SWAGGER_UI_BASE_URL_IMPORT.md).
-3. Import endpoints from your Swagger/OpenAPI source and refresh as needed.
+1. [Swagger and OpenAPI Import Guide](SWAGGER_UI_BASE_URL_IMPORT.md)
+2. [Workflows and Nodes Guide](WORKFLOWS_AND_NODES.md) - drag imported requests to canvas.
+3. [FAQ and Troubleshooting](FAQ_TROUBLESHOOTING.md) - resolve import and refresh issues.
 
-## Path C: Trigger Workflows From CI/CD
+## Path C: Trigger from CI/CD
 
-1. Start with [Webhook Quick Start](WEBHOOK_QUICKSTART.md).
-2. Create a webhook and store credentials securely.
-3. Trigger runs from your pipeline and inspect logs/results.
+1. [Webhook Quick Start](WEBHOOK_QUICKSTART.md)
+2. [Environments, Secrets, and Collections](ENVIRONMENTS_COLLECTIONS.md)
+3. [FAQ and Troubleshooting](FAQ_TROUBLESHOOTING.md)
 
 ## Quick Links
 
 - Docs hub: [docs/README.md](README.md)
-- Root getting started: [README.md](../README.md)
-- Workflow guide: [docs/WORKFLOWS_AND_NODES.md](WORKFLOWS_AND_NODES.md)
-- Variables guide: [docs/VARIABLES_EXTRACTORS_JSON_EDITOR.md](VARIABLES_EXTRACTORS_JSON_EDITOR.md)
-- Environments and collections: [docs/ENVIRONMENTS_COLLECTIONS.md](ENVIRONMENTS_COLLECTIONS.md)
-- API explorer (local): `http://localhost:8000/docs`
+- Root project guide: [README.md](../README.md)
+- Local API explorer: `http://localhost:8000/docs`
