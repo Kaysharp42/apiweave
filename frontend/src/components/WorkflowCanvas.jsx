@@ -1236,6 +1236,15 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     [],
   );
 
+  const fitViewOptions = useMemo(
+    () => ({
+      padding: 0.25,
+      minZoom: 0.02,
+      includeHiddenNodes: true,
+    }),
+    [],
+  );
+
   return (
     <div className="w-full h-full min-h-0 relative bg-surface dark:bg-surface-dark transition-colors" role="main" aria-label="Workflow canvas">
       <ReactFlow
@@ -1258,6 +1267,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
+        fitViewOptions={fitViewOptions}
+        minZoom={0.02}
+        maxZoom={2.5}
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Control"
       >
@@ -1271,6 +1283,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         {/* Zoom controls — bottom-left */}
         <Controls 
           position="bottom-left"
+          fitViewOptions={fitViewOptions}
           className="border border-border-default dark:border-border-default-dark shadow-md rounded-lg"
         />
         
