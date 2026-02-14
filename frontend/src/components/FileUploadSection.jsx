@@ -26,7 +26,7 @@ const FileUploadSection = ({ fileUploads = [], onUpdate, variables = {} }) => {
         type: 'base64',
         value: base64String,
         mimeType: file.type || 'application/octet-stream',
-        name: file.name.replace(/\.[^/.]+$/, '') // Remove extension for name
+        name: file.name
       }));
 
       // Preview for images

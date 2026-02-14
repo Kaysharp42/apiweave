@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AssertionEditor from './AssertionEditor';
+import FileUploadSection from './FileUploadSection';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
 import Button from './atoms/Button';
+import { useWorkflow } from '../contexts/WorkflowContext';
 
 const NodeModal = ({ open, node, onClose, onSave }) => {
   // Use ref to store working data - NEVER update during editing
@@ -250,6 +252,7 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
 // HTTP Request Configuration Component
 const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const [activeTab, setActiveTab] = useState('parameters');
+  const { variables } = useWorkflow();
   
   // Use refs for all inputs to avoid re-renders on every keystroke
   const urlRef = useRef(initialConfig.url || '');
@@ -259,9 +262,12 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const cookiesRef = useRef(initialConfig.cookies || '');
   const bodyRef = useRef(initialConfig.body || '');
   const timeoutRef = useRef(initialConfig.timeout || 30);
+  const fileUploadsRef = useRef(initialConfig.fileUploads || []);
+  const [fileUploads, setFileUploads] = useState(initialConfig.fileUploads || []);
 
   const updateRef = () => {
     const newConfig = {
+      ...initialConfig,
       url: urlRef.current,
       method: methodRef.current,
       queryParams: queryParamsRef.current,
@@ -269,15 +275,16 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
       cookies: cookiesRef.current,
       body: bodyRef.current,
       timeout: timeoutRef.current,
-      // CRITICAL: Preserve extractors from original config
-      extractors: initialConfig.extractors || {}
+      fileUploads: fileUploadsRef.current
     };
     if (workingDataRef) {
       workingDataRef.current = { ...workingDataRef.current, config: newConfig };
     }
   };
 
-  const handleFieldChange = () => {
+  const handleFileUploadsUpdate = (files) => {
+    fileUploadsRef.current = files;
+    setFileUploads(files);
     updateRef();
   };
 
@@ -443,6 +450,17 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
                 Configure in the node's extractors field or Variables Panel
               </div>
             </FormField>
+
+            <div>
+              <FileUploadSection
+                fileUploads={fileUploads}
+                onUpdate={handleFileUploadsUpdate}
+                variables={variables || {}}
+              />
+              <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
+                Add files here to send this request as multipart/form-data.
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -1358,4 +1376,3 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
 MergeConfig.displayName = 'MergeConfig';
 
 export default NodeModal;
-
