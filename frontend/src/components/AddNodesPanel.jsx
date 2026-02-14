@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Popover, Transition } from '@headlessui/react';
 import { X, Plus, PanelRightOpen, Search, Globe, GitBranch, CheckCircle, Package } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
+import { getNextNodeFilterValue, shouldClearNodeFilter } from '../utils/nodeFilterBehavior';
 
 /** Per-method badge colours matching the node redesign */
 const methodBadge = {
@@ -50,9 +51,7 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
   const { importedGroups } = usePalette();
 
   useEffect(() => {
-    if (isModalOpen) {
-      setSearchQuery('');
-    }
+    setSearchQuery((currentValue) => getNextNodeFilterValue({ currentValue, isModalOpen }));
   }, [isModalOpen]);
 
   /* ---- Flatten all nodes for search filtering ---- */
@@ -178,7 +177,11 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
               leave="transition duration-100 ease-in"
               leaveFrom="opacity-100 translate-y-0 scale-100"
               leaveTo="opacity-0 translate-y-2 scale-95"
-              afterLeave={() => setSearchQuery('')}
+              afterLeave={() => {
+                setSearchQuery((currentValue) =>
+                  getNextNodeFilterValue({ currentValue, isPaletteClosing: true }),
+                );
+              }}
             >
               <Popover.Panel className="absolute bottom-full mb-2 right-0 w-72 max-h-[60vh] flex flex-col rounded-xl bg-surface-raised dark:bg-surface-dark-raised shadow-2xl border border-border-default dark:border-border-default-dark overflow-hidden">
                 {/* Header + Search */}
@@ -194,8 +197,10 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
-                          setSearchQuery('');
+                        if (shouldClearNodeFilter({ key: e.key })) {
+                          setSearchQuery((currentValue) =>
+                            getNextNodeFilterValue({ currentValue, key: e.key }),
+                          );
                         }
                       }}
                       placeholder="Filter nodes…"
@@ -206,7 +211,11 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
                     {searchQuery && (
                       <button
                         type="button"
-                        onClick={() => setSearchQuery('')}
+                        onClick={() => {
+                          setSearchQuery((currentValue) =>
+                            getNextNodeFilterValue({ currentValue, clearRequested: true }),
+                          );
+                        }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
                         aria-label="Clear node filter"
                         title="Clear filter"

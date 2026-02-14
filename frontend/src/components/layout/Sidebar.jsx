@@ -22,6 +22,7 @@ import { ConfirmDialog, EmptyState, PromptDialog } from '../molecules';
 import useSidebarStore from '../../stores/SidebarStore';
 import useTabStore from '../../stores/TabStore';
 import { getSidebarItemLabel } from '../../utils/sidebarItemLabel';
+import { requestCollectionDeletion, requestWorkflowDeletion } from '../../utils/sidebarDeletion';
 
 const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [workflows, setWorkflows] = useState([]);
@@ -252,25 +253,15 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   };
 
   const handleDeleteWorkflow = async () => {
-    if (!deleteWorkflowTarget?.workflowId) return;
-
-    const workflowId = deleteWorkflowTarget.workflowId;
-
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
-        method: 'DELETE',
+      const result = await requestWorkflowDeletion({
+        target: deleteWorkflowTarget,
+        apiBaseUrl: API_BASE_URL,
       });
 
-      if (!response.ok) {
-        let detail = 'Failed to delete workflow';
-        try {
-          const errorData = await response.json();
-          detail = errorData?.detail || detail;
-        } catch (_) {
-          // Ignore parsing errors for empty/non-JSON responses.
-        }
-        throw new Error(detail);
-      }
+      if (!result.deleted) return;
+
+      const workflowId = result.workflowId;
 
       toast.success('Workflow deleted permanently');
       setSelectedWorkflowId((prev) => (prev === workflowId ? null : prev));
@@ -293,25 +284,15 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   };
 
   const handleDeleteCollection = async () => {
-    if (!deleteCollectionTarget?.collectionId) return;
-
-    const collectionId = deleteCollectionTarget.collectionId;
-
     try {
-      const response = await fetch(`${API_BASE_URL}/api/collections/${collectionId}`, {
-        method: 'DELETE',
+      const result = await requestCollectionDeletion({
+        target: deleteCollectionTarget,
+        apiBaseUrl: API_BASE_URL,
       });
 
-      if (!response.ok) {
-        let detail = 'Failed to delete collection';
-        try {
-          const errorData = await response.json();
-          detail = errorData?.detail || detail;
-        } catch (_) {
-          // Ignore parsing errors for empty/non-JSON responses.
-        }
-        throw new Error(detail);
-      }
+      if (!result.deleted) return;
+
+      const collectionId = result.collectionId;
 
       toast.success('Collection deleted permanently');
       setCollections((prev) => prev.filter((c) => c.collectionId !== collectionId));
