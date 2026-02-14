@@ -5,26 +5,23 @@ import WebhookManager from '../WebhookManager';
 import SidebarHeader from './SidebarHeader';
 import {
   Download,
-  Folder,
-  File,
   ChevronDown,
   ChevronRight,
-  Settings,
-  LayoutGrid,
   FileText,
   FolderOpen,
   Globe,
   Layers,
   Cog,
-  Webhook,
+  Trash2,
 } from 'lucide-react';
 import API_BASE_URL from '../../utils/api';
 import WorkflowExportImport from '../WorkflowExportImport';
 import CollectionExportImport from '../CollectionExportImport';
 import { Badge, Spinner, Skeleton } from '../atoms';
-import { EmptyState, PromptDialog } from '../molecules';
+import { ConfirmDialog, EmptyState, PromptDialog } from '../molecules';
 import useSidebarStore from '../../stores/SidebarStore';
 import useTabStore from '../../stores/TabStore';
+import { getSidebarItemLabel } from '../../utils/sidebarItemLabel';
 
 const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [workflows, setWorkflows] = useState([]);
@@ -46,12 +43,15 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const [exportingCollectionName, setExportingCollectionName] = useState(null);
   const [environments, setEnvironments] = useState([]);
   const [showNewWorkflowPrompt, setShowNewWorkflowPrompt] = useState(false);
+  const [deleteWorkflowTarget, setDeleteWorkflowTarget] = useState(null);
+  const [deleteCollectionTarget, setDeleteCollectionTarget] = useState(null);
   const scrollContainerRef = useRef(null);
 
   // Zustand sidebar store subscriptions
   const searchQuery = useSidebarStore((s) => s.searchQuery);
   const workflowVersion = useSidebarStore((s) => s.workflowVersion);
   const collectionVersion = useSidebarStore((s) => s.collectionVersion);
+  const closeTab = useTabStore((s) => s.closeTab);
 
   // Fetch workflows/collections on initial navigation
   useEffect(() => {
@@ -251,6 +251,93 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
     }
   };
 
+  const handleDeleteWorkflow = async () => {
+    if (!deleteWorkflowTarget?.workflowId) return;
+
+    const workflowId = deleteWorkflowTarget.workflowId;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        let detail = 'Failed to delete workflow';
+        try {
+          const errorData = await response.json();
+          detail = errorData?.detail || detail;
+        } catch (_) {
+          // Ignore parsing errors for empty/non-JSON responses.
+        }
+        throw new Error(detail);
+      }
+
+      toast.success('Workflow deleted permanently');
+      setSelectedWorkflowId((prev) => (prev === workflowId ? null : prev));
+      setWorkflows((prev) => prev.filter((wf) => wf.workflowId !== workflowId));
+      closeTab(workflowId);
+
+      if (selectedNav === 'collections') {
+        await Promise.all([fetchCollections(), fetchWorkflows(0, false, 1000)]);
+      } else {
+        await fetchWorkflows(0);
+      }
+
+      useSidebarStore.getState().signalWorkflowsRefresh();
+    } catch (error) {
+      console.error('Error deleting workflow:', error);
+      toast.error(error.message || 'Error deleting workflow');
+    } finally {
+      setDeleteWorkflowTarget(null);
+    }
+  };
+
+  const handleDeleteCollection = async () => {
+    if (!deleteCollectionTarget?.collectionId) return;
+
+    const collectionId = deleteCollectionTarget.collectionId;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/collections/${collectionId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        let detail = 'Failed to delete collection';
+        try {
+          const errorData = await response.json();
+          detail = errorData?.detail || detail;
+        } catch (_) {
+          // Ignore parsing errors for empty/non-JSON responses.
+        }
+        throw new Error(detail);
+      }
+
+      toast.success('Collection deleted permanently');
+      setCollections((prev) => prev.filter((c) => c.collectionId !== collectionId));
+      setExpandedCollections((prev) => {
+        const next = new Set(prev);
+        next.delete(collectionId);
+        return next;
+      });
+
+      if (selectedNav === 'collections') {
+        await Promise.all([fetchCollections(), fetchWorkflows(0, false, 1000)]);
+      } else {
+        await fetchWorkflows(0);
+      }
+
+      const sidebarStore = useSidebarStore.getState();
+      sidebarStore.signalCollectionsRefresh();
+      sidebarStore.signalWorkflowsRefresh();
+    } catch (error) {
+      console.error('Error deleting collection:', error);
+      toast.error(error.message || 'Error deleting collection');
+    } finally {
+      setDeleteCollectionTarget(null);
+    }
+  };
+
   // --- Filtered data ---
   const filteredWorkflows = useMemo(() => {
     if (!searchQuery) return workflows;
@@ -271,13 +358,26 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   // --- Workflow item renderer (shared between workflows & collections views) ---
   const WorkflowItem = ({ workflow, isActive }) => {
     const envName = getWorkflowEnvName(workflow.workflowId);
+    const workflowLabel = getSidebarItemLabel(workflow.name, 46, 'Untitled workflow');
+    const collectionName = workflow.collectionId
+      ? collections.find((c) => c.collectionId === workflow.collectionId)?.name
+      : null;
+    const collectionLabel = collectionName
+      ? getSidebarItemLabel(collectionName, 18, 'Collection')
+      : null;
+    const environmentLabel = envName
+      ? getSidebarItemLabel(envName, 16, 'Environment')
+      : null;
+
     const handleActivate = () => handleWorkflowClick(workflow);
+
     const handleKeyDown = (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         handleActivate();
       }
     };
+
     return (
       <li>
         <div
@@ -287,39 +387,75 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
           onClick={handleActivate}
           onKeyDown={handleKeyDown}
           className={[
-            'group flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-all duration-150 cursor-pointer',
+            'group flex w-full items-start gap-2 rounded-xl px-2.5 py-2 text-sm transition-all duration-150 cursor-pointer border',
             isActive
-              ? 'bg-primary/10 dark:bg-primary-light/10 border-l-[3px] border-primary dark:border-primary-light'
-              : 'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay border-l-[3px] border-transparent',
+              ? 'bg-primary/10 dark:bg-primary-light/10 border-primary/30 dark:border-primary-light/30 shadow-sm'
+              : 'border-transparent hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:border-border/70 dark:hover:border-border-dark/70',
           ].join(' ')}
         >
-          <FileText className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
-          <div className="flex-1 min-w-0 text-left">
-            <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">
-              {workflow.name}
+          <FileText className="mt-0.5 h-4 w-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+
+          <div className="min-w-0 flex-1 text-left overflow-hidden">
+            <div
+              className="font-medium text-text-primary dark:text-text-primary-dark truncate"
+              title={workflowLabel.fullLabel}
+            >
+              {workflowLabel.label}
             </div>
-            <div className="text-xs text-text-secondary dark:text-text-secondary-dark flex items-center gap-1.5 flex-wrap mt-0.5">
+
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-text-secondary dark:text-text-secondary-dark overflow-hidden">
               <Badge variant="ghost" size="xs">{workflow.nodes?.length || 0} nodes</Badge>
-              {workflow.collectionId && (
-                <Badge variant="info" size="xs">
-                  {collections.find(c => c.collectionId === workflow.collectionId)?.name || '…'}
+
+              {collectionLabel && (
+                <Badge
+                  variant="info"
+                  size="xs"
+                  className="max-w-[9.5rem] truncate"
+                  title={collectionLabel.fullLabel}
+                >
+                  {collectionLabel.label}
                 </Badge>
               )}
-              {envName && (
-                <Badge variant="secondary" size="xs">
+
+              {environmentLabel && (
+                <Badge
+                  variant="secondary"
+                  size="xs"
+                  className="max-w-[9rem] truncate"
+                  title={environmentLabel.fullLabel}
+                >
                   <Globe className="w-2.5 h-2.5 mr-0.5" />
-                  {envName}
+                  {environmentLabel.label}
                 </Badge>
               )}
             </div>
           </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleExportWorkflow(workflow); }}
-            className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark"
-            title="Export workflow"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </button>
+
+          <div className="ml-1 flex w-[64px] shrink-0 items-center justify-end gap-1">
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                handleExportWorkflow(workflow);
+              }}
+              className="p-1.5 rounded-md text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark opacity-40 group-hover:opacity-100 group-focus-within:opacity-100 transition-all"
+              title="Export workflow"
+              aria-label="Export workflow"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                setDeleteWorkflowTarget({ workflowId: workflow.workflowId, name: workflow.name });
+              }}
+              className="p-1.5 rounded-md text-status-error/80 hover:bg-status-error/10 hover:text-status-error opacity-40 group-hover:opacity-100 group-focus-within:opacity-100 transition-all"
+              title="Delete workflow permanently"
+              aria-label="Delete workflow permanently"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </li>
     );
@@ -331,7 +467,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
       <div
         ref={scrollContainerRef}
         className={[
-          'flex-1 overflow-auto transition-opacity duration-300',
+          'flex-1 overflow-y-auto overflow-x-hidden transition-opacity duration-300',
           isRefreshing ? 'opacity-50' : 'opacity-100',
         ].join(' ')}
         style={{ scrollbarGutter: 'stable' }}
@@ -366,7 +502,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
           />
         ) : (
           <>
-            <ul className="menu menu-sm w-full p-1.5 gap-0.5">
+            <ul className="w-full list-none p-2 space-y-1">
               {filteredWorkflows.map((workflow) => (
                 <WorkflowItem
                   key={workflow.workflowId}
@@ -405,7 +541,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
   const renderCollectionsContent = () => (
     <div
       className={[
-        'h-full overflow-auto p-1.5 transition-opacity duration-300',
+        'h-full overflow-y-auto overflow-x-hidden p-1.5 transition-opacity duration-300',
         isRefreshing ? 'opacity-50' : 'opacity-100',
       ].join(' ')}
     >
@@ -426,43 +562,69 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
             )
           }
         />
-      ) : (
-        <ul className="menu menu-sm w-full gap-1">
+        ) : (
+        <ul className="w-full list-none space-y-1 px-0.5">
           {filteredCollections.map((collection) => {
             const collectionWorkflows = Array.isArray(workflows)
               ? workflows.filter((wf) => wf.collectionId === collection.collectionId)
               : [];
             const isExpanded = expandedCollections.has(collection.collectionId);
+            const collectionLabel = getSidebarItemLabel(collection.name, 40, 'Untitled collection');
 
             return (
               <li key={collection.collectionId}>
                 {/* Collection header row */}
                 <div
-                  className="group flex items-center justify-between gap-1.5 rounded-lg cursor-pointer hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                  className="group flex items-center gap-2 rounded-xl border border-transparent px-2.5 py-2 cursor-pointer transition-all hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:border-border/70 dark:hover:border-border-dark/70"
                   onClick={() => toggleCollection(collection.collectionId)}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
                     {isExpanded
                       ? <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
                       : <ChevronRight className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />}
                     <FolderOpen className="w-4 h-4 text-primary dark:text-primary-light flex-shrink-0" />
-                    <span className="font-medium text-text-primary dark:text-text-primary-dark truncate">
-                      {collection.name}
+                    <span
+                      className="font-medium text-text-primary dark:text-text-primary-dark truncate"
+                      title={collectionLabel.fullLabel}
+                    >
+                      {collectionLabel.label}
                     </span>
                     <Badge variant="ghost" size="xs">{collectionWorkflows.length}</Badge>
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleExportCollection(collection); }}
-                    className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark flex-shrink-0"
-                    title="Export collection"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
+
+                  <div className="ml-1 flex w-[64px] shrink-0 items-center justify-end gap-1">
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleExportCollection(collection);
+                      }}
+                      className="p-1.5 rounded-md text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark opacity-40 group-hover:opacity-100 group-focus-within:opacity-100 transition-all"
+                      title="Export collection"
+                      aria-label="Export collection"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setDeleteCollectionTarget({
+                          collectionId: collection.collectionId,
+                          name: collection.name,
+                        });
+                      }}
+                      className="p-1.5 rounded-md text-status-error/80 hover:bg-status-error/10 hover:text-status-error opacity-40 group-hover:opacity-100 group-focus-within:opacity-100 transition-all"
+                      title="Delete collection permanently"
+                      aria-label="Delete collection permanently"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Nested workflows with indent guide */}
                 {isExpanded && (
-                  <ul className="relative ml-3 pl-3 mt-0.5 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-px before:bg-border dark:before:bg-border-dark">
+                  <ul className="relative ml-3 mt-0.5 space-y-1 pl-3 before:absolute before:bottom-0 before:left-0 before:top-0 before:w-px before:bg-border dark:before:bg-border-dark">
                     {collectionWorkflows.length === 0 ? (
                       <li className="py-3 text-center">
                         <span className="text-xs text-text-muted dark:text-text-muted-dark">
@@ -539,6 +701,7 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
         <WorkflowExportImport
           workflowId={exportingWorkflowId}
           workflowName={exportingWorkflowName}
+          initialTab="export"
           onClose={() => {
             setExportingWorkflowId(null);
             setExportingWorkflowName(null);
@@ -559,6 +722,38 @@ const Sidebar = ({ selectedNav, currentWorkflowId }) => {
           mode="export"
         />
       )}
+
+      <ConfirmDialog
+        open={!!deleteWorkflowTarget}
+        onClose={() => setDeleteWorkflowTarget(null)}
+        onConfirm={handleDeleteWorkflow}
+        title="Delete Workflow Permanently"
+        message={
+          <span>
+            Permanently delete workflow{' '}
+            <strong className="text-text-primary dark:text-text-primary-dark">"{deleteWorkflowTarget?.name || 'Untitled workflow'}"</strong>
+            ? This removes its graph and run history links from this workspace and cannot be undone.
+          </span>
+        }
+        confirmLabel="Delete Permanently"
+        intent="error"
+      />
+
+      <ConfirmDialog
+        open={!!deleteCollectionTarget}
+        onClose={() => setDeleteCollectionTarget(null)}
+        onConfirm={handleDeleteCollection}
+        title="Delete Collection Permanently"
+        message={
+          <span>
+            Permanently delete collection{' '}
+            <strong className="text-text-primary dark:text-text-primary-dark">"{deleteCollectionTarget?.name || 'Untitled collection'}"</strong>
+            ? Workflows will stay in your workspace but lose this collection assignment. This cannot be undone.
+          </span>
+        }
+        confirmLabel="Delete Permanently"
+        intent="error"
+      />
 
       {/* New Workflow Prompt */}
       <PromptDialog
