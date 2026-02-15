@@ -94,7 +94,7 @@ export default function BaseNode({
         className={[
           'flex flex-col rounded-2xl border-2 bg-surface-raised dark:bg-surface-dark-raised min-w-[180px] max-w-node overflow-hidden transition-all duration-150 shadow-[0_8px_24px_rgba(15,23,42,0.08)] dark:shadow-[0_10px_28px_rgba(2,6,23,0.45)]',
           borderClass,
-          selected && 'ring-2 ring-primary/70 ring-offset-2 ring-offset-surface dark:ring-offset-surface-dark shadow-node-selected',
+          selected && 'ring-2 ring-primary/70 shadow-node-selected',
           status === 'error' && 'shadow-[0_0_8px_rgba(220,38,38,0.25)]',
           className,
         ]

@@ -14,7 +14,7 @@ const StartNode = ({ id, selected }) => {
         isExpanded ? 'rounded-2xl px-4 py-3 min-w-[220px]' : 'rounded-full px-5 py-2.5',
         'bg-gradient-to-r from-emerald-600 to-green-500 dark:from-emerald-700 dark:to-green-600',
         selected
-          ? 'border-emerald-300 ring-2 ring-emerald-400/50 ring-offset-1 shadow-node-selected'
+          ? 'border-emerald-300 ring-2 ring-emerald-400/50 shadow-node-selected'
           : 'border-emerald-700 dark:border-emerald-800',
       ].filter(Boolean).join(' ')}
     >

@@ -14,7 +14,7 @@ const EndNode = ({ id, selected }) => {
         isExpanded ? 'rounded-2xl px-4 py-3 min-w-[220px]' : 'rounded-full px-5 py-2.5',
         'bg-gradient-to-r from-red-600 to-rose-500 dark:from-red-700 dark:to-rose-600',
         selected
-          ? 'border-red-300 ring-2 ring-red-400/50 ring-offset-1 shadow-node-selected'
+          ? 'border-red-300 ring-2 ring-red-400/50 shadow-node-selected'
           : 'border-red-700 dark:border-red-800',
       ].filter(Boolean).join(' ')}
     >
