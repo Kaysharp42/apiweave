@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Handle, Position } from 'reactflow';
-import { ChevronDown, ChevronUp, MoreHorizontal, Files, Copy } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import useCanvasStore from '../../../stores/CanvasStore';
+import NodeActionMenu from './NodeActionMenu';
 
 /**
  * BaseNode — Shared node shell for all ReactFlow nodes.
@@ -47,7 +48,6 @@ export default function BaseNode({
   className = '',
 }) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const statusBorder = {
     idle: 'border-border dark:border-border-dark',
@@ -85,16 +85,16 @@ export default function BaseNode({
           position={Position.Left}
           id={handleLeft.id}
           style={handleLeft.style}
-          className="!w-3 !h-3 !bg-primary !border-2 !border-white dark:!border-gray-800 !rounded-sm"
+          className="!w-3 !h-3 !bg-primary !border-2 !border-white dark:!border-gray-800 !rounded-full"
         />
       )}
 
       {/* Node body */}
       <div
         className={[
-          'flex flex-col rounded-lg border-2 shadow-node bg-surface-raised dark:bg-surface-dark-raised min-w-[180px] max-w-node transition-shadow',
+          'flex flex-col rounded-2xl border-2 bg-surface-raised dark:bg-surface-dark-raised min-w-[180px] max-w-node overflow-hidden transition-all duration-150 shadow-[0_8px_24px_rgba(15,23,42,0.08)] dark:shadow-[0_10px_28px_rgba(2,6,23,0.45)]',
           borderClass,
-          selected && 'ring-2 ring-primary ring-offset-1 shadow-node-selected',
+          selected && 'ring-2 ring-primary/70 ring-offset-2 ring-offset-surface dark:ring-offset-surface-dark shadow-node-selected',
           status === 'error' && 'shadow-[0_0_8px_rgba(220,38,38,0.25)]',
           className,
         ]
@@ -106,7 +106,7 @@ export default function BaseNode({
         {title && (
           <div
             className={[
-              'flex items-center gap-2 px-3 py-2 border-b border-border dark:border-border-dark rounded-t-lg',
+              'flex items-center gap-2.5 px-3 py-2.5 border-b border-border dark:border-border-dark',
               headerBg || 'bg-surface-overlay dark:bg-surface-dark-overlay',
             ]
               .filter(Boolean)
@@ -118,7 +118,7 @@ export default function BaseNode({
               </span>
             )}
             <span
-              className={`flex-1 text-sm font-semibold truncate ${headerTextClass || 'text-text-primary dark:text-text-primary-dark'}`}
+              className={`flex-1 text-sm font-semibold leading-tight truncate ${headerTextClass || 'text-text-primary dark:text-text-primary-dark'}`}
             >
               {title}
             </span>
@@ -140,47 +140,21 @@ export default function BaseNode({
 
             {/* Three-dot menu */}
             {showMenu && nodeId && (
-              <div className="relative">
-                <button
-                  onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-                  className="p-0.5 text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark nodrag focus:outline-none"
-                  style={{ background: 'transparent', border: 'none', WebkitTapHighlightColor: 'transparent' }}
-                  title="More options"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </button>
-                {menuOpen && (
-                  <div className="absolute right-0 mt-1 bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg shadow-lg z-50 nodrag min-w-[120px] py-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        useCanvasStore.getState().duplicateNode(nodeId);
-                        setMenuOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-1.5 text-xs text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay flex items-center gap-2"
-                    >
-                      <Files className="w-3.5 h-3.5" /> Duplicate
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        useCanvasStore.getState().copyNode(nodeId);
-                        setMenuOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-1.5 text-xs text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay flex items-center gap-2 border-t border-border dark:border-border-dark"
-                    >
-                      <Copy className="w-3.5 h-3.5" /> Copy
-                    </button>
-                  </div>
-                )}
-              </div>
+              <NodeActionMenu
+                nodeId={nodeId}
+                collapsible={collapsible}
+                isExpanded={isExpanded}
+                onDuplicate={() => useCanvasStore.getState().duplicateNode(nodeId)}
+                onCopy={() => useCanvasStore.getState().copyNode(nodeId)}
+                onToggleExpand={(nextExpanded) => setIsExpanded(nextExpanded)}
+              />
             )}
 
             {/* Collapse toggle */}
             {collapsible && (
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="p-0.5 text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark nodrag focus:outline-none"
+                className="p-1 rounded-md text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus:outline-none"
                 style={{ background: 'transparent', border: 'none', WebkitTapHighlightColor: 'transparent' }}
                 aria-expanded={isExpanded}
                 title={isExpanded ? 'Collapse' : 'Expand'}
@@ -204,7 +178,7 @@ export default function BaseNode({
           position={Position.Right}
           id={handleRight.id}
           style={handleRight.style}
-          className="!w-3 !h-3 !bg-primary !border-2 !border-white dark:!border-gray-800 !rounded-sm"
+          className="!w-3 !h-3 !bg-primary !border-2 !border-white dark:!border-gray-800 !rounded-full"
         />
       )}
 

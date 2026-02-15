@@ -15,20 +15,22 @@ import { Loader2 } from 'lucide-react';
  * @param {boolean} fullWidth
  * @param {string} className  — escape hatch for one-off overrides
  */
-export default function Button({
-  children,
-  variant = 'primary',
-  intent = 'default',
-  size = 'md',
-  loading = false,
-  disabled = false,
-  fullWidth = false,
-  className = '',
-  type = 'button',
-  onClick,
-  ...rest
-}) {
-  // Base classes for all buttons
+const Button = React.forwardRef(function Button(
+  {
+    children,
+    variant = 'primary',
+    intent = 'default',
+    size = 'md',
+    loading = false,
+    disabled = false,
+    fullWidth = false,
+    className = '',
+    type = 'button',
+    onClick,
+    ...rest
+  },
+  ref,
+) {
   const baseClasses = 'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded transition';
 
   // Size classes
@@ -80,6 +82,7 @@ export default function Button({
 
   return (
     <button
+      ref={ref}
       type={type}
       className={[
         baseClasses,
@@ -99,4 +102,6 @@ export default function Button({
       {children}
     </button>
   );
-}
+});
+
+export default Button;

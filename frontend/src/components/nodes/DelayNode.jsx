@@ -29,7 +29,7 @@ const DelayNode = ({ id, data, selected }) => {
       handleLeft={{ type: 'target' }}
       handleRight={{ type: 'source' }}
       collapsible={true}
-      defaultExpanded={true}
+      defaultExpanded={false}
       headerBg="bg-yellow-50 dark:bg-yellow-900/60"
       headerTextClass="text-yellow-800 dark:text-yellow-200"
       titleExtra={
