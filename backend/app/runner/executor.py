@@ -827,17 +827,23 @@ class WorkflowExecutor:
         return re.sub(r'\{\{([^}]+)\}\}', replacer, text)
     
     def _parse_key_value_pairs(self, text: str) -> Dict[str, str]:
-        """Parse key=value pairs (one per line) into a dictionary"""
+        """Parse key=value (or key:value) pairs (one per line) into a dictionary."""
         if not text:
             return {}
         
         result = {}
         for line in text.strip().split('\n'):
             line = line.strip()
-            if not line or '=' not in line:
+            if not line:
                 continue
-            
-            key, value = line.split('=', 1)
+
+            if '=' in line:
+                key, value = line.split('=', 1)
+            elif ':' in line:
+                key, value = line.split(':', 1)
+            else:
+                continue
+
             result[key.strip()] = self._substitute_variables(value.strip())
         
         return result
@@ -1064,6 +1070,7 @@ class WorkflowExecutor:
         try:
             # Prepare request data
             data = None
+            json_payload = None
             if has_files:
                 # Use multipart/form-data for file uploads
                 form_data = aiohttp.FormData()
@@ -1100,8 +1107,36 @@ class WorkflowExecutor:
                 data = form_data
             else:
                 # Regular request without files
-                if body:
-                    data = body
+                if body and method != 'GET':
+                    content_type_value = ''
+                    for header_name, header_value in headers.items():
+                        if header_name.lower() == 'content-type':
+                            content_type_value = str(header_value).lower()
+                            break
+
+                    body_stripped = body.strip()
+                    looks_like_json = body_stripped.startswith('{') or body_stripped.startswith('[')
+
+                    if 'application/json' in content_type_value:
+                        try:
+                            json_payload = json.loads(body)
+                        except Exception:
+                            # Keep raw body if JSON parsing fails; server will validate.
+                            data = body
+                    elif not content_type_value and looks_like_json:
+                        headers['Content-Type'] = 'application/json'
+                        try:
+                            json_payload = json.loads(body)
+                            self.logger.info(
+                                "Auto-detected JSON body and set Content-Type=application/json"
+                            )
+                        except Exception:
+                            self.logger.warning(
+                                "JSON-like body detected but parsing failed; sending raw body with Content-Type=application/json"
+                            )
+                            data = body
+                    else:
+                        data = body
             
             async with aiohttp.ClientSession() as session:
                 async with session.request(
@@ -1109,6 +1144,7 @@ class WorkflowExecutor:
                     url=url,
                     headers=headers,
                     data=data if method != 'GET' else None,
+                    json=json_payload if method != 'GET' else None,
                     timeout=aiohttp.ClientTimeout(total=timeout)
                 ) as response:
                     response_text = await response.text()
