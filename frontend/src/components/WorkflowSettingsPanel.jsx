@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import API_BASE_URL from '../utils/api';
 import { toast } from 'sonner';
-import { ToggleLeft, ToggleRight, Check, X, RefreshCw, Plus, Info, ChevronDown, LayoutGrid } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Check, X, RefreshCw, Plus, Info, ChevronDown, LayoutGrid, Search } from 'lucide-react';
 
 const WorkflowSettingsPanel = () => {
   const { 
@@ -18,6 +18,24 @@ const WorkflowSettingsPanel = () => {
   } = useWorkflow();
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [showCollectionDropdown, setShowCollectionDropdown] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const normalizedQuery = searchTerm.trim().toLowerCase();
+  const matchesSearch = (value) => !normalizedQuery || value.toLowerCase().includes(normalizedQuery);
+
+  const executionSectionMatch = matchesSearch('execution settings continue on fail');
+  const continueOnFailItemMatch = matchesSearch('continue on fail stops at first api failure continues even if api fails');
+  const showExecutionSection = executionSectionMatch || continueOnFailItemMatch;
+  const showExecutionItem = executionSectionMatch || continueOnFailItemMatch;
+
+  const collectionsSectionMatch = matchesSearch('collections collection assignment add remove');
+  const collectionAssignmentItemMatch = matchesSearch('add to collection remove from collection workflow collection assignment');
+  const showCollectionsSection = collectionsSectionMatch || collectionAssignmentItemMatch;
+  const showCollectionsItem = collectionsSectionMatch || collectionAssignmentItemMatch;
+
+  const infoSectionMatch = matchesSearch('about continue on fail useful for testing error scenarios conditional workflows');
+  const showInfoSection = infoSectionMatch;
+  const hasSearchMatches = showExecutionSection || showCollectionsSection || showInfoSection;
   
   useEffect(() => {
     console.log('WorkflowSettingsPanel - collections:', collections.length, collections);
@@ -114,13 +132,27 @@ const WorkflowSettingsPanel = () => {
   return (
     <div className="w-full bg-white dark:bg-gray-800 h-full flex flex-col border-t dark:border-gray-700">
       <div className="p-3 space-y-4">
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search settings"
+            className="w-full pl-8 pr-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            aria-label="Search settings"
+          />
+        </div>
+
         {/* Continue on Fail Option */}
+        {showExecutionSection && (
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
             <ToggleRight className="w-4 h-4 flex-shrink-0" />
             <span>Execution Settings</span>
           </label>
           
+          {showExecutionItem && (
           <div className="p-3 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded space-y-3">
             {/* Continue on Fail Toggle */}
             <div className="flex items-center justify-between">
@@ -150,15 +182,18 @@ const WorkflowSettingsPanel = () => {
               </div>
             </div>
           </div>
+          )}
         </div>
+        )}
 
         {/* Collection Assignment Section */}
+        {showCollectionsSection && (
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
             <LayoutGrid className="w-4 h-4 flex-shrink-0" />
             <span>Collections</span>
           </label>
-          
+          {showCollectionsItem && (
           <div className="relative">
             {isLoadingCollections ? (
               <div className="flex items-center justify-center py-3 px-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded">
@@ -274,9 +309,12 @@ const WorkflowSettingsPanel = () => {
               />
             )}
           </div>
+          )}
         </div>
+        )}
 
         {/* Info Section */}
+        {showInfoSection && (
         <div className="p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-[10px] text-blue-700 dark:text-blue-300 space-y-1">
           <p className="flex items-center gap-1">
             <Info className="w-3 h-3 flex-shrink-0" />
@@ -288,6 +326,13 @@ const WorkflowSettingsPanel = () => {
             <li>Useful for testing error scenarios or conditional workflows</li>
           </ul>
         </div>
+        )}
+
+        {!hasSearchMatches && (
+          <div className="text-center py-4 text-gray-500 dark:text-gray-400 text-xs border border-dashed border-gray-300 dark:border-gray-600 rounded">
+            No matching settings
+          </div>
+        )}
       </div>
     </div>
   );

@@ -158,12 +158,24 @@ const Workspace = ({ onActiveTabChange }) => {
 
                 {/* Right: Variables & Settings Panel (Conditional) */}
                 {showVariablesPanel && (
-                  <Allotment.Pane preferredSize={300} minSize={200}>
+                  <Allotment.Pane preferredSize={320} minSize={280}>
                     <div className="flex flex-col h-full bg-surface-raised dark:bg-surface-dark-raised border-l border-border-default dark:border-border-default-dark">
                       {/* Panel Header with Tabs */}
                       <div className="bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border-default dark:border-border-default-dark flex flex-col">
                         <div className="flex items-center justify-between px-3 py-2">
-                          <div className="flex gap-1">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setShowVariablesPanel(false)}
+                              className="p-1.5 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay rounded transition-colors flex-shrink-0"
+                              title="Collapse panel"
+                              aria-label="Collapse panel"
+                            >
+                              <svg width="16" height="16" viewBox="0 0 20 20" focusable="false" aria-hidden="true" fill="currentColor" className="text-text-secondary dark:text-text-secondary-dark">
+                                <path d="M16 16V4h2v12h-2zM6 9l2.501-2.5-1.5-1.5-5 5 5 5 1.5-1.5-2.5-2.5h8V9H6z" />
+                              </svg>
+                            </button>
+
+                            <div className="flex gap-1 overflow-x-auto scrollbar-thin">
                             {[
                               { key: 'variables', icon: Package, label: 'Variables' },
                               { key: 'dynamic', icon: Sparkles, label: 'Functions' },
@@ -173,7 +185,7 @@ const Workspace = ({ onActiveTabChange }) => {
                                 key={key}
                                 onClick={() => setActivePanelTab(key)}
                                 className={[
-                                  'px-2 py-1 text-xs font-medium rounded transition-colors flex items-center gap-1',
+                                  'px-2 py-1 text-xs font-medium rounded transition-colors flex items-center gap-1 whitespace-nowrap',
                                   activePanelTab === key
                                     ? 'bg-primary dark:bg-primary-dark text-white'
                                     : 'bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark hover:bg-border-default dark:hover:bg-border-default-dark',
@@ -184,17 +196,8 @@ const Workspace = ({ onActiveTabChange }) => {
                                 {label}
                               </button>
                             ))}
+                            </div>
                           </div>
-                          <button
-                            onClick={() => setShowVariablesPanel(false)}
-                            className="p-1.5 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay rounded transition-colors flex-shrink-0"
-                            title="Collapse panel"
-                            aria-label="Collapse panel"
-                          >
-                            <svg width="16" height="16" viewBox="0 0 20 20" focusable="false" aria-hidden="true" fill="currentColor" className="text-text-secondary dark:text-text-secondary-dark">
-                              <path d="M16 16V4h2v12h-2zM6 9l2.501-2.5-1.5-1.5-5 5 5 5 1.5-1.5-2.5-2.5h8V9H6z" />
-                            </svg>
-                          </button>
                         </div>
                       </div>
 

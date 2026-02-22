@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useWorkflow } from '../contexts/WorkflowContext';
-import { GitMerge, Pencil, Trash2 } from 'lucide-react';
+import { GitMerge, Pencil, Search, Trash2 } from 'lucide-react';
 
 const VariablesPanel = () => {
   const { variables, updateVariable, updateVariables, deleteVariablesWithCleanup } = useWorkflow();
@@ -10,6 +10,21 @@ const VariablesPanel = () => {
   const [newVarValue, setNewVarValue] = useState('');
   const [editingVar, setEditingVar] = useState(null);
   const [editValue, setEditValue] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const normalizedQuery = searchTerm.trim().toLowerCase();
+  const filteredVariables = Object.entries(variables || {}).filter(([varName, varValue]) => {
+    if (!normalizedQuery) return true;
+
+    const valueText = typeof varValue === 'string' ? varValue : JSON.stringify(varValue);
+    const usageHint = `{{variables.${varName}}}`;
+
+    return (
+      varName.toLowerCase().includes(normalizedQuery)
+      || valueText.toLowerCase().includes(normalizedQuery)
+      || usageHint.toLowerCase().includes(normalizedQuery)
+    );
+  });
 
   const handleAdd = () => {
     if (newVarName.trim()) {
@@ -33,6 +48,18 @@ const VariablesPanel = () => {
   return (
     <div className="w-full bg-white dark:bg-gray-800 overflow-y-auto h-full flex flex-col">
       <div className="sticky top-0 bg-slate-50 dark:bg-gray-900 border-b dark:border-gray-700 p-3 z-10">
+        <div className="relative mb-2">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search variables"
+            className="w-full pl-8 pr-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            aria-label="Search variables"
+          />
+        </div>
+
         <button
           onClick={() => setShowForm(!showForm)}
           className="w-full px-2 py-1 bg-cyan-500 dark:bg-cyan-600 hover:bg-cyan-600 dark:hover:bg-cyan-700 text-white text-xs rounded transition-colors"
@@ -83,7 +110,7 @@ const VariablesPanel = () => {
         {/* Variables List */}
         {variables && Object.keys(variables).length > 0 ? (
           <div className="space-y-2">
-            {Object.entries(variables).map(([varName, varValue]) => (
+            {filteredVariables.map(([varName, varValue]) => (
               <div
                 key={varName}
                 className="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded space-y-1"
@@ -150,6 +177,13 @@ const VariablesPanel = () => {
                 </div>
               </div>
             ))}
+
+            {filteredVariables.length === 0 && (
+              <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-sm border border-dashed border-gray-300 dark:border-gray-600 rounded">
+                <p>No matching variables</p>
+                <p className="text-xs mt-1">Try a different search term</p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-sm">
