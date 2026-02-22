@@ -35,6 +35,10 @@ Useful shortcuts:
 - `Ctrl+S`: save
 - `Ctrl+R` or `F5`: run
 - `Ctrl+J`: JSON editor
+- `Ctrl+C`: copy selected node (canvas context only)
+- `Ctrl+V`: paste node (canvas context only)
+
+Note: copy/paste shortcuts are context-aware. When your cursor is in a text editor (for example request body, response view, or node modal fields), normal text copy/paste takes precedence.
 
 ## Node Types
 
