@@ -13,7 +13,7 @@ import time
 import logging
 from pathlib import Path
 from datetime import datetime, UTC
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from urllib.parse import urlencode
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
@@ -56,10 +56,19 @@ def setup_run_logger(run_id: str):
 class WorkflowExecutor:
     """Executes workflows node by node"""
     
-    def __init__(self, run_id: str, workflow_id: str, runtime_secrets: Dict[str, str] = None):
+    def __init__(
+        self,
+        run_id: str,
+        workflow_id: str,
+        runtime_secrets: Dict[str, str] = None,
+        start_node_ids: Optional[List[str]] = None,
+        resume_from_run_id: Optional[str] = None,
+    ):
         self.run_id = run_id
         self.workflow_id = workflow_id
         self.runtime_secrets = runtime_secrets or {}  # Secret values provided at run time (never persisted)
+        self.start_node_ids = start_node_ids or []
+        self.resume_from_run_id = resume_from_run_id
         self.results = {}
         self.context = {}  # Stores variables and results from previous nodes
         self.workflow_variables = {}  # Workflow-level variables that persist across nodes
@@ -102,6 +111,10 @@ class WorkflowExecutor:
         # Initialize workflow variables from the workflow definition
         self.workflow_variables = workflow.get('variables', {}).copy() if workflow.get('variables') else {}
         self.logger.debug(f"Initialized workflow variables: {self.workflow_variables}")
+
+        # Build node/edge map early (used for resume context hydration)
+        nodes = {node['nodeId']: node for node in workflow['nodes']}
+        edges = workflow['edges']
         
         # Load environment variables from the run's specified environment
         environment_id = run.get('environmentId')
@@ -131,23 +144,37 @@ class WorkflowExecutor:
         
         # Track start time for duration calculation
         self.start_time = time.time()
+
+        # Optional resume context hydration from a previous failed run
+        if self.resume_from_run_id:
+            await self._hydrate_resume_context(db, nodes, edges)
         
         # Update run status to running using repository
         await RunRepository.update_status(self.run_id, "running")
-        
-        # Execute nodes in order (starting from 'start' node)
-        nodes = {node['nodeId']: node for node in workflow['nodes']}
-        edges = workflow['edges']
-        
-        # Find start node
-        start_node = next((n for n in workflow['nodes'] if n['type'] == 'start'), None)
-        if not start_node:
-            await self._fail_run("No start node found")
-            return
+
+        # Resolve entry node(s)
+        entry_node_ids = [node_id for node_id in self.start_node_ids if node_id in nodes]
+        if not entry_node_ids:
+            start_node = next((n for n in workflow['nodes'] if n['type'] == 'start'), None)
+            if not start_node:
+                await self._fail_run("No start node found")
+                return
+            entry_node_ids = [start_node['nodeId']]
         
         try:
-            # Execute from start node
-            await self._execute_from_node(start_node['nodeId'], nodes, edges, db)
+            # Execute from one or more entry nodes
+            if len(entry_node_ids) == 1:
+                await self._execute_from_node(entry_node_ids[0], nodes, edges, db)
+            else:
+                tasks = [self._execute_from_node(node_id, nodes, edges, db) for node_id in entry_node_ids]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, Exception):
+                        self.has_failures = True
+                        if not self.first_error_message:
+                            self.first_error_message = str(result)
+                        if not self.continue_on_fail:
+                            raise result
             
             # Calculate total run duration
             end_time = time.time()
@@ -161,7 +188,8 @@ class WorkflowExecutor:
                 update_data = {
                     "status": final_status,
                     "completedAt": datetime.now(UTC),
-                    "duration": duration_ms
+                    "duration": duration_ms,
+                    "variables": self.workflow_variables,
                 }
                 
                 # Add failed nodes info if there were failures
@@ -191,6 +219,107 @@ class WorkflowExecutor:
             else:
                 print(f"⚠️  Run completed but encountered document size issue: {str(e)}")
                 print(f"   All results are safely stored in node_results collection")
+
+    async def _hydrate_resume_context(self, db, nodes: Dict, edges: List):
+        """Hydrate execution context from a previous run for resume support."""
+        source_run = await RunRepository.get_by_id(self.resume_from_run_id)
+        if not source_run or source_run.workflowId != self.workflow_id:
+            raise Exception("Invalid resume source run")
+
+        # Build resume lineage so repeated failed resumes can still hydrate from
+        # earlier attempts where context/results were available.
+        lineage = []
+        seen_run_ids = set()
+        current = source_run
+        while current and current.workflowId == self.workflow_id and current.runId not in seen_run_ids:
+            lineage.append(current)
+            seen_run_ids.add(current.runId)
+            parent_run_id = getattr(current, "resumeFromRunId", None)
+            if not parent_run_id:
+                break
+            current = await RunRepository.get_by_id(parent_run_id)
+
+        # Process from oldest -> newest so newer attempts can override values.
+        lineage.reverse()
+
+        for run_doc in lineage:
+            if run_doc.variables:
+                self.workflow_variables.update(run_doc.variables)
+
+        ordered_node_ids = []
+        result_cache = {}
+        gridfs_bucket = AsyncIOMotorGridFSBucket(db)
+
+        for run_doc in lineage:
+            failed_nodes = set(run_doc.failedNodes or [])
+            statuses = run_doc.nodeStatuses or {}
+
+            status_items = sorted(
+                statuses.items(),
+                key=lambda item: item[1].get("timestamp") or "",
+            )
+
+            for node_id, _status_meta in status_items:
+                if node_id in failed_nodes:
+                    continue
+
+                stored = await db.node_results.find_one({"runId": run_doc.runId, "nodeId": node_id})
+                if not stored:
+                    continue
+
+                result = stored.get("result")
+                if stored.get("stored_in_gridfs") and stored.get("gridfs_file_id"):
+                    try:
+                        from bson import ObjectId
+                        file_id = ObjectId(stored.get("gridfs_file_id"))
+                        stream = await gridfs_bucket.open_download_stream(file_id)
+                        data = await stream.read()
+                        result = json.loads(data.decode("utf-8"))
+                    except Exception as read_error:
+                        self.logger.warning(f"Failed to read GridFS result for {node_id}: {read_error}")
+                        continue
+
+                if not isinstance(result, dict):
+                    continue
+
+                node_type = nodes.get(node_id, {}).get("type")
+                if node_type:
+                    result["type"] = node_type
+
+                if node_id not in result_cache:
+                    ordered_node_ids.append(node_id)
+                result_cache[node_id] = result
+
+        # Preserve ordering for non-indexed prev references.
+        for node_id in ordered_node_ids:
+            self.results[node_id] = result_cache[node_id]
+
+        # Rebuild merge branch context from hydrated results.
+        for node in nodes.values():
+            if node.get("type") != "merge":
+                continue
+
+            merge_node_id = node.get("nodeId")
+            incoming_edges = [edge for edge in edges if edge.get("target") == merge_node_id]
+            predecessor_results = []
+
+            for edge in incoming_edges:
+                predecessor_id = edge.get("source")
+                data_node_id = self._find_data_producing_ancestor(predecessor_id, edges, nodes)
+                result = self.results.get(data_node_id)
+                if isinstance(result, dict) and result.get("type") == "http-request":
+                    predecessor_results.append((data_node_id, result))
+
+            if predecessor_results:
+                self.branch_results[merge_node_id] = predecessor_results
+
+        self.logger.info(
+            "Resume context hydrated from run %s: lineageDepth=%d, results=%d, mergeContexts=%d",
+            self.resume_from_run_id,
+            len(lineage),
+            len(self.results),
+            len(self.branch_results),
+        )
     
     async def _execute_from_node(self, node_id: str, nodes: Dict, edges: List, db):
         """Execute starting from a specific node"""
@@ -2077,11 +2206,17 @@ class WorkflowExecutor:
         if self.start_time is not None:
             end_time = time.time()
             duration_ms = int(round((end_time - self.start_time) * 1000))  # Convert to int milliseconds
-        
-        await RunRepository.update_fields(
-            self.run_id,
-            status="failed",
-            completedAt=datetime.now(UTC),
-            duration=duration_ms,
-            error=error
-        )
+
+        update_data = {
+            "status": "failed",
+            "completedAt": datetime.now(UTC),
+            "duration": duration_ms,
+            "error": error,
+            "variables": self.workflow_variables,
+        }
+
+        if self.failed_nodes:
+            update_data["failedNodes"] = self.failed_nodes
+            update_data["failureMessage"] = f"{len(self.failed_nodes)} node(s) failed during execution"
+
+        await RunRepository.update_fields(self.run_id, **update_data)

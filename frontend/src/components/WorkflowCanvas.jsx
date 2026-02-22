@@ -168,6 +168,12 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     isRunning,
     currentRunId,
     runWorkflow,
+    runFromLastFailed,
+    runAllFailed,
+    runFromFailedNodes,
+    resumeOptions,
+    resumeSourceRunId,
+    isResumeLoading,
     showSecretsPrompt,
     setShowSecretsPrompt,
     pendingRunRef,
@@ -1324,11 +1330,16 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         }}
         onImport={() => setShowImportToNodes(true)}
         onRun={runWorkflow}
+        onRunFromLastFailed={runFromLastFailed}
+        onRunAllFailed={runAllFailed}
+        onRunFromFailedNode={(nodeId) => runFromFailedNodes([nodeId], resumeSourceRunId, 'single')}
         isRunning={isRunning}
         environments={environments}
         selectedEnvironment={selectedEnvironment}
         onRefreshSwagger={handleManualSwaggerRefresh}
         isSwaggerRefreshing={isSwaggerRefreshing}
+        resumeOptions={resumeOptions}
+        isResumeLoading={isResumeLoading}
         onEnvironmentChange={(val) => {
           const processed = (val && val.trim()) ? val.trim() : null;
           const selectedEnv = environments.find(e => e.environmentId === processed);
