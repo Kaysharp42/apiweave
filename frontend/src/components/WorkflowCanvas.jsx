@@ -37,6 +37,7 @@ import useWorkflowPolling from '../hooks/useWorkflowPolling';
 import API_BASE_URL from '../utils/api';
 import { shouldBlockDestructiveAutosave } from '../utils/workflowSaveSafety';
 import { buildSwaggerRefreshSummary } from '../utils/swaggerRefreshSummary';
+import { getCanvasClipboardShortcutAction } from '../utils/shortcutGuards';
 
 const nodeTypes = {
   'http-request': HTTPRequestNode,
@@ -161,6 +162,31 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       localStorage.removeItem(`selectedEnvironment_${workflowId}`);
     }
   }, [selectedEnvironment, workflowId]);
+
+  // --- Workflow run + adaptive polling via extracted hook ---
+  const {
+    isRunning,
+    currentRunId,
+    runWorkflow,
+    runFromLastFailed,
+    runAllFailed,
+    runFromFailedNodes,
+    resumeOptions,
+    resumeSourceRunId,
+    isResumeLoading,
+    showSecretsPrompt,
+    setShowSecretsPrompt,
+    pendingRunRef,
+    handleSecretsProvided,
+    loadHistoricalRun,
+  } = useWorkflowPolling({
+    workflowId,
+    nodes,
+    setNodes,
+    selectedEnvironment,
+    environments,
+    reactFlowInstanceRef,
+  });
 
 
   // Track newly duplicated node IDs to prevent auto-selection
@@ -619,20 +645,23 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
   // ---------- Keyboard shortcuts (Ctrl+C / Ctrl+V) ----------
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      const isInputFocused = document.activeElement?.tagName === 'INPUT' || 
-                             document.activeElement?.tagName === 'TEXTAREA' ||
-                             document.activeElement?.contentEditable === 'true';
-      if (isInputFocused) return;
+    const isEditorOverlayOpen = !!modalNode || showJsonEditor || showImportToNodes || showHistory || showSecretsPrompt;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (selectedNode) {
-          e.preventDefault();
-          useCanvasStore.getState().copyNode(selectedNode.id);
-          toast.success('Node copied to clipboard');
-        }
+    const handleKeyDown = (e) => {
+      const action = getCanvasClipboardShortcutAction({
+        event: e,
+        hasSelectedNode: !!selectedNode,
+        isEditorOverlayOpen,
+      });
+      if (!action) return;
+
+      if (action === 'copy' && selectedNode) {
+        e.preventDefault();
+        useCanvasStore.getState().copyNode(selectedNode.id);
+        toast.success('Node copied to clipboard');
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+
+      if (action === 'paste') {
         e.preventDefault();
         useCanvasStore.getState().pasteNode();
       }
@@ -640,7 +669,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode]);
+  }, [selectedNode, modalNode, showJsonEditor, showImportToNodes, showHistory, showSecretsPrompt]);
 
   // Detect parallel branches and update node data with branch counts
   useEffect(() => {
@@ -913,6 +942,10 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     setSelectedNode(node);
   }, []);
 
+  const onPaneClick = useCallback(() => {
+    setSelectedNode(null);
+  }, []);
+
   const onNodeDragStart = useCallback(() => {
     setIsDraggingNode(true);
   }, []);
@@ -1158,25 +1191,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     }
   }, [setNodes, setEdges, workflowId, workflowVariables, darkMode, updateVariable, workflow]);
 
-  // --- Workflow run + adaptive polling via extracted hook ---
-  const {
-    isRunning,
-    currentRunId,
-    runWorkflow,
-    showSecretsPrompt,
-    setShowSecretsPrompt,
-    pendingRunRef,
-    handleSecretsProvided,
-    loadHistoricalRun,
-  } = useWorkflowPolling({
-    workflowId,
-    nodes,
-    setNodes,
-    selectedEnvironment,
-    environments,
-    reactFlowInstanceRef,
-  });
-
   // --- Debounced auto-save via extracted hook ---
   useAutoSave({
     workflowId,
@@ -1255,6 +1269,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
@@ -1315,11 +1330,16 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         }}
         onImport={() => setShowImportToNodes(true)}
         onRun={runWorkflow}
+        onRunFromLastFailed={runFromLastFailed}
+        onRunAllFailed={runAllFailed}
+        onRunFromFailedNode={(nodeId) => runFromFailedNodes([nodeId], resumeSourceRunId, 'single')}
         isRunning={isRunning}
         environments={environments}
         selectedEnvironment={selectedEnvironment}
         onRefreshSwagger={handleManualSwaggerRefresh}
         isSwaggerRefreshing={isSwaggerRefreshing}
+        resumeOptions={resumeOptions}
+        isResumeLoading={isResumeLoading}
         onEnvironmentChange={(val) => {
           const processed = (val && val.trim()) ? val.trim() : null;
           const selectedEnv = environments.find(e => e.environmentId === processed);

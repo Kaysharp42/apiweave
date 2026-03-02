@@ -166,6 +166,9 @@ class Run(Document):
     failedNodes: Optional[List[str]] = None  # List of node IDs that failed
     failureMessage: Optional[str] = None  # Summary of failures
     nodeStatuses: Dict[str, Any] = Field(default_factory=dict)  # Node execution statuses
+    resumeFromRunId: Optional[str] = None  # Source run used to resume context
+    resumeFromNodeIds: Optional[List[str]] = None  # Entry nodes used for resumed run
+    resumeMode: Optional[Literal["single", "all-failed"]] = None
     
     class Settings:
         name = "runs"

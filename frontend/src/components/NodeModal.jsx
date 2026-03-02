@@ -5,6 +5,8 @@ import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
 import Button from './atoms/Button';
 import { useWorkflow } from '../contexts/WorkflowContext';
+import { getNodeModalTypeName } from '../utils/nodeModalMeta';
+import { formatNodeOutputDuration, getNodeOutputStatusClass } from '../utils/nodeOutputStatus';
 
 const NodeModal = ({ open, node, onClose, onSave }) => {
   // Use ref to store working data - NEVER update during editing
@@ -49,15 +51,7 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
     }
   };
 
-  const nodeTypes = {
-    'http-request': { name: 'HTTP Request' },
-    'assertion': { name: 'Assertion' },
-    'delay': { name: 'Delay' },
-    'merge': { name: 'Merge' },
-    'start': { name: 'Start' },
-    'end': { name: 'End' }
-  };
-  const nodeInfo = nodeTypes[node.type] || { name: 'Node' };
+  const nodeInfo = { name: getNodeModalTypeName(node.type) };
 
   return (
     <Transition show={open} as={React.Fragment}>
@@ -68,179 +62,110 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
         >
           <div className="fixed inset-0 bg-black/60 dark:bg-black/70 backdrop-blur-sm" />
         </TransitionChild>
-        <div className="fixed inset-0 flex items-center justify-center">
+        <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-5">
           <TransitionChild
             enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
             leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel>
-      
-      {/* Modal Container - Centered Popup */}
-      <div 
-        className="relative z-10 rounded-xl overflow-visible flex flex-row p-6"
-        style={{ 
-          width: '90vw',
-          maxWidth: '2000px',
-          height: '85vh',
-          maxHeight: '1400px',
-          gap: '40px'
-        }}
-      >
-        {/* Left Card - Configuration */}
-        <div 
-          className="flex-1 bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised rounded-xl overflow-hidden flex flex-col relative"
-          style={{
-            boxShadow: '8px 8px 24px rgba(0, 0, 0, 0.2), 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-            transform: 'translateY(-20px)',
-            zIndex: 10,
-            marginRight: '0px'
-          }}
-        >
-          {/* Back shadow layers for card stack effect */}
-          <div className="absolute inset-0 bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised rounded-xl" style={{
-            transform: 'translateY(8px) translateX(8px)',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-            zIndex: -2
-          }} />
-          <div className="absolute inset-0 bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised rounded-xl" style={{
-            transform: 'translateY(4px) translateX(4px)',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
-            zIndex: -1
-          }} />
+            <Dialog.Panel className="h-[90vh] w-[96vw] max-w-[1800px]">
+              <div className="grid h-full grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+                {/* Left Card - Configuration */}
+                <div className="min-h-0 overflow-hidden rounded-2xl border border-border dark:border-border-dark bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised shadow-xl">
+                  <div className="flex h-full min-h-0 flex-col p-5 sm:p-6">
+                    {/* Header */}
+                    <div className="mb-5 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-xl bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark">
+                          {getNodeIcon(node.type)}
+                        </div>
+                        <div>
+                          <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
+                            {nodeInfo.name}
+                          </h2>
+                          <p className="text-xs text-text-muted dark:text-text-muted-dark">Configure node</p>
+                        </div>
+                      </div>
+                      <Button
+                        onClick={handleClose}
+                        variant="ghost"
+                        size="sm"
+                        className="!p-2 !min-w-0"
+                        title="Close"
+                      >
+                        <X className="w-6 h-6" />
+                      </Button>
+                    </div>
 
-          <div className="p-6 flex flex-col h-full relative z-0">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="text-3xl text-text-secondary dark:text-text-secondary-dark">
-                {getNodeIcon(node.type)}
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
-                  {nodeInfo.name}
-                </h2>
-                <p className="text-xs text-text-muted dark:text-text-muted-dark">Configure node</p>
-              </div>
-            </div>
-            <Button
-              onClick={handleClose}
-              variant="ghost"
-              size="sm"
-              className="!p-2 !min-w-0"
-              title="Close"
-            >
-              <X className="w-6 h-6" />
-            </Button>
-          </div>
+                    {/* Node Name Card */}
+                    <div className="mb-4 rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-4 shadow-sm">
+                      <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
+                        Node Name
+                      </label>
+                      <input
+                        type="text"
+                        defaultValue={node.data.label || ''}
+                        onChange={(e) => handleLabelChange(e.target.value)}
+                        className="w-full rounded-md border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark px-3 py-2 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        placeholder="Enter node name"
+                      />
+                    </div>
 
-          {/* Node Name Card */}
-          <div className="mb-4 p-4 bg-surface dark:bg-surface-dark rounded-lg shadow-md hover:shadow-lg transition-shadow" style={{
-            transform: 'translateY(0px)',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-          }}>
-            <label className="block text-xs font-medium text-text-secondary dark:text-text-secondary-dark mb-2 uppercase tracking-wide">
-              Node Name
-            </label>
-            <input
-              type="text"
-              defaultValue={node.data.label || ''}
-              onChange={(e) => handleLabelChange(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-              placeholder="Enter node name"
-            />
-          </div>
+                    {/* Configuration Card */}
+                    <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark shadow-inner">
+                      <div className="h-full overflow-y-auto p-4">
+                        {node.type === 'http-request' && (
+                          <HTTPRequestConfig
+                            initialConfig={node.data.config || {}}
+                            workingDataRef={workingDataRef}
+                          />
+                        )}
+                        {node.type === 'assertion' && (
+                          <AssertionConfig
+                            initialConfig={node.data.config || {}}
+                            workingDataRef={workingDataRef}
+                          />
+                        )}
+                        {node.type === 'delay' && (
+                          <DelayConfig
+                            initialConfig={node.data.config || {}}
+                            workingDataRef={workingDataRef}
+                          />
+                        )}
+                        {node.type === 'merge' && (
+                          <MergeConfig
+                            initialConfig={node.data.config || {}}
+                            workingDataRef={workingDataRef}
+                          />
+                        )}
+                        {(node.type === 'start' || node.type === 'end') && (
+                          <div className="p-4">
+                            <p className="text-sm text-text-muted dark:text-text-muted-dark">
+                              No configuration needed for {node.type} nodes.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
-          {/* Configuration Card - 3D Stack Effect */}
-          <div className="flex-1 relative">
-            {/* Back shadow layers */}
-            <div className="absolute inset-0 bg-surface dark:bg-surface-dark rounded-lg" style={{
-              transform: 'translateY(8px) translateX(8px)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-              zIndex: 1
-            }} />
-            <div className="absolute inset-0 bg-surface dark:bg-surface-dark rounded-lg" style={{
-              transform: 'translateY(4px) translateX(4px)',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
-              zIndex: 2
-            }} />
-            
-            {/* Main card */}
-            <div className="absolute inset-0 bg-surface dark:bg-surface-dark rounded-lg p-4 overflow-y-auto" style={{
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-              zIndex: 3
-            }}>
-              {node.type === 'http-request' && (
-                <HTTPRequestConfig
-                  initialConfig={node.data.config || {}}
-                  workingDataRef={workingDataRef}
-                />
-              )}
-              {node.type === 'assertion' && (
-                <AssertionConfig 
-                  initialConfig={node.data.config || {}} 
-                  workingDataRef={workingDataRef}
-                />
-              )}
-              {node.type === 'delay' && (
-                <DelayConfig 
-                  initialConfig={node.data.config || {}} 
-                  workingDataRef={workingDataRef}
-                />
-              )}
-              {node.type === 'merge' && (
-                <MergeConfig 
-                  initialConfig={node.data.config || {}} 
-                  workingDataRef={workingDataRef}
-                />
-              )}
-              {(node.type === 'start' || node.type === 'end') && (
-                <div className="p-4">
-                  <p className="text-sm text-text-muted dark:text-text-muted-dark">
-                    No configuration needed for {node.type} nodes.
-                  </p>
+                    {/* Footer Actions */}
+                    <div className="mt-5 flex flex-shrink-0 justify-end gap-3">
+                      <Button onClick={handleClose} variant="ghost">Cancel</Button>
+                      <Button onClick={handleSave} variant="primary">Save</Button>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* Footer Actions */}
-          <div className="flex-shrink-0 mt-6 flex gap-3 justify-end">
-            <Button onClick={handleClose} variant="ghost">Cancel</Button>
-            <Button onClick={handleSave} variant="primary">Save</Button>
-          </div>
-          </div>
-        </div>
-
-        {/* Right Card - Response Output */}
-        <div 
-          className="flex-1 bg-surface dark:bg-surface-dark rounded-xl overflow-hidden flex flex-col relative"
-          style={{
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08)',
-            zIndex: 5,
-            marginLeft: '-50px'
-          }}
-        >
-          {/* Back shadow layers for card stack effect */}
-          <div className="absolute inset-0 bg-surface dark:bg-surface-dark rounded-xl" style={{
-            transform: 'translateY(8px) translateX(8px)',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-            zIndex: -2
-          }} />
-          <div className="absolute inset-0 bg-surface dark:bg-surface-dark rounded-xl" style={{
-            transform: 'translateY(4px) translateX(4px)',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
-            zIndex: -1
-          }} />
-
-          <div className="p-6 flex flex-col h-full relative z-0">
-            <OutputPanel 
-              node={node}
-              initialConfig={node.data.config || {}}
-              output={node.data?.executionResult || null}
-            />
-          </div>
-        </div>
-      </div>
+                {/* Right Card - Response Output */}
+                <div className="min-h-0 overflow-hidden rounded-2xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark shadow-xl">
+                  <div className="h-full">
+                    <OutputPanel
+                      node={node}
+                      initialConfig={node.data.config || {}}
+                      output={node.data?.executionResult || null}
+                    />
+                  </div>
+                </div>
+              </div>
             </Dialog.Panel>
           </TransitionChild>
         </div>
@@ -291,11 +216,11 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const TabButton = ({ id, label }) => (
     <button
       onClick={() => setActiveTab(id)}
-      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-        activeTab === id
-          ? 'border-primary text-primary'
-          : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-gray-700 dark:hover:text-gray-300'
-      }`}
+        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+          activeTab === id
+            ? 'border-primary text-primary'
+            : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
+        }`}
     >
       {label}
     </button>
@@ -335,7 +260,7 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
                     className={`px-3 py-1.5 text-xs font-medium rounded border transition-colors ${
                       methodRef.current === method
                         ? 'bg-cyan-600 text-white border-cyan-700'
-                        : 'bg-white dark:bg-gray-700 text-text-secondary dark:text-text-secondary-dark border-border dark:border-border-dark hover:bg-gray-50 dark:hover:bg-gray-600'
+                        : 'bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
                     }`}
                   >
                     {method}
@@ -477,22 +402,16 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
   const headers = output?.headers || {};
   const cookies = output?.cookies || {};
   const body = output?.body;
-
-  const statusColor = !statusCode
-    ? 'bg-gray-200 text-gray-700 dark:bg-surface-dark-raised dark:text-text-secondary-dark'
-    : statusCode >= 200 && statusCode < 300
-      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-      : statusCode >= 300 && statusCode < 400
-        ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
-        : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+  const statusColor = getNodeOutputStatusClass(statusCode);
+  const durationLabel = formatNodeOutputDuration(output?.duration);
 
   const TabButton = ({ id, label }) => (
     <button
       onClick={() => setActiveTab(id)}
       className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
         activeTab === id
-          ? 'bg-cyan-600 text-white shadow-sm'
-          : 'bg-gray-200 dark:bg-gray-600 text-text-secondary dark:text-text-secondary-dark hover:bg-gray-300 dark:hover:bg-gray-500'
+          ? 'bg-primary text-white shadow-sm'
+          : 'bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay/80 dark:hover:bg-surface-dark-overlay/80'
       }`}
     >
       {label}
@@ -508,20 +427,19 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
   return (
     <div className="h-full flex flex-col bg-surface dark:bg-surface-dark">
       {/* Header */}
-      <div className="flex-shrink-0 px-4 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white dark:from-gray-800 dark:to-gray-700">
+      <div className="flex-shrink-0 px-4 py-4 border-b border-border dark:border-border-dark flex items-center justify-between bg-surface-raised dark:bg-surface-dark-raised">
         <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark flex items-center gap-2">
-          📤 Response
+          <FileText className="w-4 h-4" />
+          Response Output
         </h3>
         {node.type === 'http-request' && statusCode && (
           <div className="flex items-center gap-2">
             <span className={`text-xs font-semibold px-2 py-1 rounded ${statusColor}`}>
               {statusCode}
             </span>
-            {output?.duration !== undefined && (
+            {durationLabel && (
               <span className="text-xs font-semibold px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
-                ⏱ {output.duration >= 1000 
-                  ? `${(output.duration / 1000).toFixed(2)}s` 
-                  : `${output.duration}ms`}
+                ⏱ {durationLabel}
               </span>
             )}
           </div>
@@ -532,13 +450,10 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
       {!output && (
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
-            <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+            <FileText className="w-16 h-16 mx-auto mb-4 text-text-muted dark:text-text-muted-dark/70" />
             <p className="text-sm text-text-muted dark:text-text-muted-dark mb-2">
               Execute this node to view data
             </p>
-            <button className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline">
-              or set mock data
-            </button>
           </div>
         </div>
       )}
@@ -547,19 +462,19 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
       {output && node.type === 'http-request' && (
         <>
           {/* Method & URL */}
-          <div className="flex-shrink-0 px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-600">
+          <div className="flex-shrink-0 px-4 py-3 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark">
             <div className="flex items-center gap-2 text-xs">
-              <span className="font-semibold px-2 py-1 rounded bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300">
+              <span className="font-semibold px-2 py-1 rounded bg-primary/15 dark:bg-primary-dark/25 text-primary dark:text-primary-dark">
                 {initialConfig.method || 'GET'}
               </span>
-              <span className="text-gray-600 dark:text-gray-300 truncate font-mono text-xs">
+              <span className="text-text-secondary dark:text-text-secondary-dark truncate font-mono text-xs">
                 {initialConfig.url || '—'}
               </span>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex-shrink-0 px-4 py-2 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-600 flex gap-1 overflow-x-auto">
+          <div className="flex-shrink-0 px-4 py-2 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark flex gap-1 overflow-x-auto">
             <TabButton id="body" label="Body" />
             <TabButton id="headers" label={`Headers (${Object.keys(headers).length})`} />
             <TabButton id="cookies" label={`Cookies (${Object.keys(cookies).length})`} />
@@ -596,13 +511,9 @@ const AssertionFormModal = ({ onAdd }) => {
   const [errors, setErrors] = useState({ path: '', expectedValue: '' });
 
   const handleAdd = () => {
-    console.log('Add assertion button clicked');
-    console.log('Current values:', { source, path, operator, expectedValue });
-    
     // Validate based on source and operator
     if (source === 'status') {
       // Status doesn't need a path
-      console.log('Adding status assertion');
       onAdd({
         source: source.trim(),
         path: '',
@@ -612,7 +523,6 @@ const AssertionFormModal = ({ onAdd }) => {
     } else if (['exists', 'notExists'].includes(operator)) {
       // Exists/NotExists don't need expected value
       if (path.trim()) {
-        console.log('Adding exists/notExists assertion');
         onAdd({
           source: source.trim(),
           path: path.trim(),
@@ -621,14 +531,12 @@ const AssertionFormModal = ({ onAdd }) => {
         });
         setErrors({ path: '', expectedValue: '' });
       } else {
-        console.log('Path is required for this operator');
         setErrors({ path: 'Path is required', expectedValue: '' });
         return;
       }
     } else if (operator === 'count') {
       // Count operator needs path and expected value
       if (path.trim() && expectedValue.trim()) {
-        console.log('Adding count assertion');
         onAdd({
           source: source.trim(),
           path: path.trim(),
@@ -637,14 +545,12 @@ const AssertionFormModal = ({ onAdd }) => {
         });
         setErrors({ path: '', expectedValue: '' });
       } else {
-        console.log('Path and expectedValue are required for count operator');
         setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Expected count is required' });
         return;
       }
     } else {
       // All others need path and expected value
       if (path.trim() && expectedValue.trim()) {
-        console.log('Adding standard assertion');
         onAdd({
           source: source.trim(),
           path: path.trim(),
@@ -653,7 +559,6 @@ const AssertionFormModal = ({ onAdd }) => {
         });
         setErrors({ path: '', expectedValue: '' });
       } else {
-        console.log('Path and expectedValue are required');
         setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Expected value is required' });
         return;
       }
@@ -751,12 +656,9 @@ const AssertionFormModal = ({ onAdd }) => {
       )}
 
       {/* Add Button */}
-      <button
-        onClick={handleAdd}
-        className="w-full px-4 py-2 bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 text-white text-sm font-semibold rounded transition-colors shadow-md hover:shadow-lg"
-      >
-        + Add Assertion
-      </button>
+      <Button onClick={handleAdd} variant="primary" intent="success" size="sm" fullWidth>
+        Add Assertion
+      </Button>
     </div>
   );
 };
@@ -770,9 +672,7 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const [editDraft, setEditDraft] = useState(null);
 
   const handleAddAssertion = (assertion) => {
-    console.log('Adding assertion:', assertion);
     const updated = [...assertions, assertion];
-    console.log('Updated assertions:', updated);
     setAssertions(updated);
     
     // Update working data ref
@@ -788,9 +688,7 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
   };
 
   const handleDeleteAssertion = (index) => {
-    console.log('Deleting assertion at index:', index);
     const updated = assertions.filter((_, i) => i !== index);
-    console.log('Updated assertions after delete:', updated);
     setAssertions(updated);
     
     // Update working data ref
@@ -808,11 +706,11 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const TabButton = ({ id, label }) => (
     <button
       onClick={() => setActiveTab(id)}
-      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-        activeTab === id
-          ? 'border-primary text-primary'
-          : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-gray-700 dark:hover:text-gray-300'
-      }`}
+        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+          activeTab === id
+            ? 'border-primary text-primary'
+            : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
+        }`}
     >
       {label}
     </button>
@@ -856,7 +754,7 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
                 {assertions.map((assertion, index) => (
                   <div
                     key={index}
-                    className="p-3 bg-gray-50 dark:bg-gray-700 border border-border dark:border-border-dark rounded-lg space-y-2"
+                    className="p-3 bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded-lg space-y-2"
                   >
                     {/* If this assertion is being edited show shared AssertionEditor */}
                     {editingIndex === index ? (
@@ -901,30 +799,36 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
                             <span className="font-medium">{assertion.operator}</span>
                             {assertion.expectedValue && (
                               <>
-                                {' '}<code className="bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded">{assertion.expectedValue}</code>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <button
+                                 {' '}<code className="bg-surface dark:bg-surface-dark-raised px-1.5 py-0.5 rounded">{assertion.expectedValue}</code>
+                               </>
+                             )}
+                           </div>
+                         </div>
+                        <div className="flex flex-col gap-2 min-w-[92px]">
+                          <Button
                             onClick={() => {
                               // Start editing: seed draft with current assertion
                               setEditingIndex(index);
                               setEditDraft({ ...assertion });
                             }}
-                            className="px-3 py-1.5 bg-yellow-500 dark:bg-yellow-600 hover:bg-yellow-600 dark:hover:bg-yellow-700 text-white text-xs font-semibold rounded transition-colors flex-shrink-0"
+                            variant="primary"
+                            intent="warning"
+                            size="xs"
+                            className="!justify-start"
                             title="Edit assertion"
                           >
-                            <Pencil className="w-4 h-4 inline" /> Edit
-                          </button>
-                          <button
+                            <Pencil className="w-3.5 h-3.5" /> Edit
+                          </Button>
+                          <Button
                             onClick={() => handleDeleteAssertion(index)}
-                            className="px-3 py-1.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-xs font-semibold rounded transition-colors flex-shrink-0"
+                            variant="primary"
+                            intent="error"
+                            size="xs"
+                            className="!justify-start"
                             title="Delete assertion"
                           >
-                            <Trash2 className="w-4 h-4 inline" /> Delete
-                          </button>
+                            <Trash2 className="w-3.5 h-3.5" /> Delete
+                          </Button>
                         </div>
                       </div>
                     )}
@@ -938,12 +842,12 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
             )}
 
             {/* Help Text */}
-            <div className="text-xs text-text-muted dark:text-text-muted-dark space-y-1 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-border dark:border-border-dark">
-              <p><strong>💡 Tips:</strong></p>
+            <div className="text-xs text-text-muted dark:text-text-muted-dark space-y-1 p-3 bg-surface-overlay dark:bg-surface-dark-overlay rounded-lg border border-border dark:border-border-dark">
+              <p><strong>Tips:</strong></p>
               <ul className="list-disc list-inside space-y-0.5 ml-2">
-                <li>Use <code className="bg-gray-200 dark:bg-gray-600 px-1">prev.*</code> to reference the previous node's response</li>
-                <li>Use <code className="bg-gray-200 dark:bg-gray-600 px-1">variables.*</code> to reference workflow variables</li>
-                <li>JSONPath example: <code className="bg-gray-200 dark:bg-gray-600 px-1">body.data[0].id</code></li>
+                <li>Use <code className="bg-surface dark:bg-surface-dark-raised px-1">prev.*</code> to reference the previous node's response</li>
+                <li>Use <code className="bg-surface dark:bg-surface-dark-raised px-1">variables.*</code> to reference workflow variables</li>
+                <li>JSONPath example: <code className="bg-surface dark:bg-surface-dark-raised px-1">body.data[0].id</code></li>
               </ul>
             </div>
           </div>
@@ -980,11 +884,11 @@ const DelayConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const TabButton = ({ id, label }) => (
     <button
       onClick={() => setActiveTab(id)}
-      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-        activeTab === id
-          ? 'border-primary text-primary'
-          : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-gray-700 dark:hover:text-gray-300'
-      }`}
+        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+          activeTab === id
+            ? 'border-primary text-primary'
+            : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
+        }`}
     >
       {label}
     </button>
@@ -1045,8 +949,6 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const conditionsRef = useRef(initialConfig.conditions || []);
   const conditionLogicRef = useRef(initialConfig.conditionLogic || 'OR');
 
-  console.log('MergeConfig rendered - currentStrategy:', currentStrategy, 'activeTab:', activeTab);
-
   const updateRef = () => {
     const newConfig = {
       mergeStrategy: strategyRef.current,
@@ -1061,11 +963,11 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const TabButton = ({ id, label }) => (
     <button
       onClick={() => setActiveTab(id)}
-      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-        activeTab === id
-          ? 'border-purple-500 text-purple-600 dark:text-purple-400'
-          : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-gray-700 dark:hover:text-gray-300'
-      }`}
+        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/40 ${
+          activeTab === id
+            ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+            : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
+        }`}
     >
       {label}
     </button>
@@ -1082,10 +984,10 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
   );
 
   const strategyDescriptions = {
-    all: '⏳ Waits for ALL incoming branches to complete before continuing (AND logic)',
-    any: '⚡ Continues as soon as ANY branch completes (OR logic)',
-    first: '🏃 Uses the first branch that completes and ignores the rest',
-    conditional: '🎯 Merges only branches that match specified conditions (filters by status, response values, etc.)'
+    all: 'Waits for all incoming branches to complete before continuing (AND logic).',
+    any: 'Continues as soon as any branch completes (OR logic).',
+    first: 'Uses the first branch that completes and ignores the rest.',
+    conditional: 'Merges only branches that match the configured conditions.'
   };
 
   const addCondition = () => {
@@ -1136,13 +1038,11 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                 value={currentStrategy}
                 onChange={(e) => {
                   const newStrategy = e.target.value;
-                  console.log('Strategy changed to:', newStrategy);
                   strategyRef.current = newStrategy;
                   setCurrentStrategy(newStrategy);
                   updateRef();
                   // Switch to conditions tab if conditional selected
                   if (newStrategy === 'conditional') {
-                    console.log('Switching to conditions tab');
                     setActiveTab('conditions');
                   }
                 }}
@@ -1157,9 +1057,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
 
             {/* Info Box */}
             <div className="mt-6 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg">
-              <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-200 mb-2">
-                📝 How Merge Works
-              </h4>
+              <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-200 mb-2">How Merge Works</h4>
               <ul className="text-xs text-purple-800 dark:text-purple-300 space-y-1">
                 <li>• Multiple edges leading to this node create parallel branches</li>
                 <li>• Access branch results using: <code className="bg-surface dark:bg-surface-dark px-1 py-0.5 rounded">{'{{prev[0].response}}'}</code></li>
@@ -1181,12 +1079,14 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
               <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark">
                 Merge Conditions
               </h3>
-              <button
+              <Button
                 onClick={addCondition}
-                className="px-3 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
+                variant="primary"
+                size="xs"
+                className="!px-3"
               >
-                + Add Condition
-              </button>
+                Add Condition
+              </Button>
             </div>
 
             {/* Condition Logic Selector */}
@@ -1246,7 +1146,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
 
             {conditions.length === 0 ? (
               <div className="text-sm text-text-muted dark:text-text-muted-dark text-center py-8 border-2 border-dashed border-border dark:border-border-dark rounded-lg">
-                No conditions defined. Click "+ Add Condition" to start.
+                No conditions defined. Click "Add Condition" to start.
               </div>
             ) : (
               <div className="space-y-3">
@@ -1279,7 +1179,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                           type="number"
                           value={condition.branchIndex}
                           onChange={(e) => updateCondition(index, { branchIndex: parseInt(e.target.value) || 0 })}
-                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-white dark:bg-gray-700 text-text-primary dark:text-text-primary-dark"
+                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                           min="0"
                         />
                       </div>
@@ -1296,7 +1196,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                           type="text"
                           value={condition.field}
                           onChange={(e) => updateCondition(index, { field: e.target.value })}
-                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-white dark:bg-gray-700 text-text-primary dark:text-text-primary-dark font-mono"
+                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark font-mono"
                           placeholder="statusCode or {{prev[0].response.body.name}}"
                         />
                         <div className="mt-0.5 text-[9px] text-text-muted dark:text-text-muted-dark">
@@ -1310,7 +1210,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                         <select
                           value={condition.operator}
                           onChange={(e) => updateCondition(index, { operator: e.target.value })}
-                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-white dark:bg-gray-700 text-text-primary dark:text-text-primary-dark"
+                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                         >
                           <option value="equals">Equals</option>
                           <option value="notEquals">Not Equals</option>
@@ -1333,15 +1233,15 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                           type="text"
                           value={condition.value}
                           onChange={(e) => updateCondition(index, { value: e.target.value })}
-                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-white dark:bg-gray-700 text-text-primary dark:text-text-primary-dark font-mono"
+                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark font-mono"
                           placeholder="200 or {{prev[0].id}}"
                         />
                       </div>
                     </div>
                     
                     {/* Variable hint for this condition */}
-                    <div className="mt-2 text-[10px] text-text-muted dark:text-text-muted-dark bg-gray-100 dark:bg-gray-800 rounded p-1.5">
-                      💡 Examples: <code className="text-purple-600 dark:text-purple-400">200</code>, 
+                    <div className="mt-2 text-[10px] text-text-muted dark:text-text-muted-dark bg-surface-overlay dark:bg-surface-dark-overlay rounded p-1.5">
+                      Examples: <code className="text-purple-600 dark:text-purple-400">200</code>, 
                       <code className="ml-1 text-purple-600 dark:text-purple-400">{'{{prev[0].response.body.status}}'}</code>,
                       <code className="ml-1 text-purple-600 dark:text-purple-400">{'{{variables.expectedCode}}'}</code>
                     </div>
@@ -1353,7 +1253,6 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
             {/* Hint */}
             <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
               <p className="text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2">
-                <span>💡</span>
                 <span><strong>How it works:</strong> {conditionLogic === 'OR' 
                   ? 'Each branch is evaluated independently. If a branch matches ANY condition, it passes.' 
                   : 'Each branch is evaluated independently. A branch passes ONLY if it matches ALL conditions.'}</span>
@@ -1363,7 +1262,6 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                 <span><strong>Important:</strong> If ANY branch fails its conditions, the entire merge FAILS and the workflow stops (like an assertion).</span>
               </p>
               <p className="text-xs text-blue-700 dark:text-blue-400 mt-2 flex items-start gap-2">
-                <span>🔧</span>
                 <span><strong>Variable support:</strong> Use <code className="bg-surface dark:bg-surface-dark px-1 rounded">{'{{prev[N].path}}'}</code> to reference other branch data or <code className="bg-surface dark:bg-surface-dark px-1 rounded">{'{{variables.name}}'}</code> for workflow variables.</span>
               </p>
             </div>

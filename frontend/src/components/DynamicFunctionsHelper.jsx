@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Copy, Info, ChevronDown, ChevronUp, Sparkles, CheckCircle, Type, Hash, Calendar, Clock, Code, Link } from 'lucide-react';
+import { Copy, Info, Search, Sparkles, CheckCircle, Type, Hash, Calendar, Clock, Code, Link } from 'lucide-react';
 import { toast } from 'sonner';
 
 const DynamicFunctionsHelper = () => {
   const [expandedCategory, setExpandedCategory] = useState('string');
   const [copiedFunc, setCopiedFunc] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const functions = {
     string: [
@@ -47,6 +48,26 @@ const DynamicFunctionsHelper = () => {
     setTimeout(() => setCopiedFunc(null), 2000);
   };
 
+  const normalizedQuery = searchTerm.trim().toLowerCase();
+  const filteredFunctions = Object.entries(functions).reduce((acc, [category, funcs]) => {
+    const nextFuncs = funcs.filter((func) => {
+      if (!normalizedQuery) return true;
+      return (
+        func.name.toLowerCase().includes(normalizedQuery)
+        || func.syntax.toLowerCase().includes(normalizedQuery)
+        || func.description.toLowerCase().includes(normalizedQuery)
+      );
+    });
+
+    if (nextFuncs.length > 0) {
+      acc[category] = nextFuncs;
+    }
+
+    return acc;
+  }, {});
+
+  const visibleCategories = Object.entries(filteredFunctions);
+
   return (
     <div className="w-full bg-surface dark:bg-surface-dark overflow-y-auto h-full flex flex-col">
       {/* Header */}
@@ -58,11 +79,22 @@ const DynamicFunctionsHelper = () => {
         <p className="text-[10px] text-text-muted mt-1">
           Generate random data, dates, IDs on every run
         </p>
+        <div className="relative mt-2">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted dark:text-text-muted-dark" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search functions"
+            className="w-full pl-8 pr-2 py-1.5 border border-border dark:border-border-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+            aria-label="Search functions"
+          />
+        </div>
       </div>
 
       {/* Functions List */}
       <div className="p-3 space-y-2 flex-1 overflow-y-auto">
-        {Object.entries(functions).map(([category, funcs]) => {
+        {visibleCategories.map(([category, funcs]) => {
           const Icon = categoryIcons[category];
           const isOpen = expandedCategory === category;
 
@@ -93,10 +125,10 @@ const DynamicFunctionsHelper = () => {
                         </code>
                         <button
                           onClick={() => copyToClipboard(func.example)}
-                          className={`btn btn-xs flex-shrink-0 ${
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold rounded border transition-colors flex-shrink-0 ${
                             copiedFunc === func.example
-                              ? 'btn-success text-white'
-                              : 'btn-primary text-white'
+                              ? 'border-status-success bg-status-success text-white'
+                              : 'border-primary bg-primary text-white hover:bg-primary-hover'
                           }`}
                           title="Copy to clipboard"
                         >
@@ -136,29 +168,35 @@ const DynamicFunctionsHelper = () => {
             </div>
           );
         })}
+
+        {visibleCategories.length === 0 && (
+          <div className="text-center py-6 text-xs text-text-muted dark:text-text-muted-dark border border-dashed border-border dark:border-border-dark rounded-lg">
+            No matching functions
+          </div>
+        )}
       </div>
 
       {/* Usage Tips */}
-      <div className="border-t border-border dark:border-border-dark p-3 text-[10px] text-text-muted bg-surface-raised dark:bg-surface-dark-raised space-y-1.5">
+      <div className="border-t border-border dark:border-border-dark p-3 text-[10px] text-text-muted bg-surface-raised dark:bg-surface-dark-raised space-y-1.5 overflow-x-hidden">
         <div className="font-semibold text-text-secondary dark:text-text-primary-dark flex items-center gap-1">
           <Sparkles className="w-3 h-3" />
           Quick Tips
         </div>
 
-        <ul className="space-y-1 pl-4">
-          <li className="flex items-start gap-1">
+        <ul className="space-y-1 pl-4 break-words">
+          <li className="flex items-start gap-1 flex-wrap">
             <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
             Use in any field: URL, Headers, Body, Assertions
           </li>
-          <li className="flex items-start gap-1">
+          <li className="flex items-start gap-1 flex-wrap">
             <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
             Fresh value generated per workflow run
           </li>
-          <li className="flex items-start gap-1">
+          <li className="flex items-start gap-1 flex-wrap">
             <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-            Combine: <code className="bg-info/5 border border-info/20 px-1 rounded ml-1">{`user_{{randomNumber(4)}}@test.com`}</code>
+            Combine: <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 rounded ml-1 break-all max-w-full">{`user_{{randomNumber(4)}}@test.com`}</code>
           </li>
-          <li className="flex items-start gap-1">
+          <li className="flex items-start gap-1 flex-wrap">
             <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
             Works in Workflow Variables too
           </li>
@@ -168,10 +206,10 @@ const DynamicFunctionsHelper = () => {
           <Calendar className="w-3 h-3" />
           <span className="font-semibold text-text-secondary dark:text-text-primary-dark">Date Format Codes</span>
         </div>
-        <ul className="space-y-0.5 pl-4 text-[9px]">
+        <ul className="space-y-0.5 pl-4 text-[9px] break-words">
           <li>%Y = Year (2025) | %m = Month (10) | %d = Day (30)</li>
           <li>%H = Hour (14) | %M = Minute (30) | %S = Second (45)</li>
-          <li>Example: <code className="bg-info/5 border border-info/20 px-1">{`date("%d/%m/%Y")`}</code> → 30/10/2025</li>
+          <li>Example: <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 break-all max-w-full">{`date("%d/%m/%Y")`}</code> → 30/10/2025</li>
         </ul>
 
         <div className="pt-1.5 border-t border-border dark:border-border-dark flex items-center gap-1">
@@ -179,7 +217,7 @@ const DynamicFunctionsHelper = () => {
           <span className="font-semibold text-text-secondary dark:text-text-primary-dark">In Assertions</span>
         </div>
         <p className="text-[9px] pl-4">
-          Compare with dynamic values: <code className="bg-info/5 border border-info/20 px-1">{`Expected: {{futureDate(1)}}`}</code>
+          Compare with dynamic values: <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 break-all max-w-full">{`Expected: {{futureDate(1)}}`}</code>
         </p>
       </div>
     </div>

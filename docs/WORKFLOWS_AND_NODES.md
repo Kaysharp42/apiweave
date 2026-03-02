@@ -24,10 +24,17 @@ Tip: Save often from the top toolbar (`Save`) or use `Ctrl+S`.
 ## Canvas Actions
 
 - `Run`: executes the active workflow.
+- `Run` dropdown:
+  - `Run`: full workflow from Start.
+  - `Run from last failed node`: resumes from the first failed node of the latest failed run.
+  - `Run all failed nodes and continue`: resumes from every failed node in the latest failed run.
+  - Per-node failed entries: resumes from a specific failed node.
 - `History`: opens previous runs.
 - `JSON`: opens the JSON editor.
 - `Import`: opens import-to-nodes panel.
 - `Refresh`: refreshes Swagger/OpenAPI templates from the selected environment.
+
+Resume actions are available only when the latest run status is failed.
 
 Useful shortcuts:
 
@@ -35,6 +42,10 @@ Useful shortcuts:
 - `Ctrl+S`: save
 - `Ctrl+R` or `F5`: run
 - `Ctrl+J`: JSON editor
+- `Ctrl+C`: copy selected node (canvas context only)
+- `Ctrl+V`: paste node (canvas context only)
+
+Note: copy/paste shortcuts are context-aware. When your cursor is in a text editor (for example request body, response view, or node modal fields), normal text copy/paste takes precedence.
 
 ## Node Types
 
@@ -118,3 +129,12 @@ Use merge when one node fans out into multiple branches and you need a single do
 - Keep one responsibility per node.
 - Validate each new branch quickly with a short test run.
 - If a node fails, inspect its response panel before changing downstream logic.
+
+## Resume Behavior Details
+
+- Resume runs reuse prior workflow variables and successful upstream node results.
+- In parallel failures, you can resume one failed node or all failed nodes together.
+- Repeated failed resumes are lineage-aware:
+  - If resume attempt A fails, and resume attempt B fails again,
+  - a later resume still hydrates context from earlier successful upstream attempts.
+- If the latest run is successful, resume options are hidden/disabled until a new failure occurs.

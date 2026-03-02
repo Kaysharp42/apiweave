@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Download, Upload, FileText, AlertCircle, CheckCircle, X, AlertTriangle } from 'lucide-react';
+import { resolveWorkflowExportImportInitialTab } from '../utils/workflowExportImportTabs';
 
-const WorkflowExportImport = ({ workflowId, workflowName, onClose, onImportSuccess }) => {
-  const [activeTab, setActiveTab] = useState('export');
+const WorkflowExportImport = ({ workflowId, workflowName, onClose, onImportSuccess, initialTab, mode }) => {
+  const [activeTab, setActiveTab] = useState(() =>
+    resolveWorkflowExportImportInitialTab({ initialTab, mode }),
+  );
   const [includeEnvironment, setIncludeEnvironment] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -13,7 +16,16 @@ const WorkflowExportImport = ({ workflowId, workflowName, onClose, onImportSucce
   const [error, setError] = useState(null);
   const [createMissingEnvs, setCreateMissingEnvs] = useState(true);
 
+  useEffect(() => {
+    setActiveTab(resolveWorkflowExportImportInitialTab({ initialTab, mode }));
+  }, [initialTab, mode, workflowId]);
+
   const handleExport = async () => {
+    if (!workflowId) {
+      setError('Select a workflow from the list to export.');
+      return;
+    }
+
     setExporting(true);
     setError(null);
 
@@ -185,12 +197,14 @@ const WorkflowExportImport = ({ workflowId, workflowName, onClose, onImportSucce
         {/* Tabs */}
         <div className="flex border-b dark:border-gray-700">
           <button
-            onClick={() => setActiveTab('export')}
+            onClick={() => workflowId && setActiveTab('export')}
+            disabled={!workflowId}
+            title={!workflowId ? 'Select a workflow from the list to export' : undefined}
             className={`px-6 py-3 font-medium ${
               activeTab === 'export'
                 ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
+            } ${!workflowId ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Download className="w-4 h-4 inline mr-2" />
             Export

@@ -40,6 +40,48 @@ from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 
+def _node_id(node: Any) -> Optional[str]:
+    if isinstance(node, dict):
+        return node.get("nodeId")
+    return getattr(node, "nodeId", None)
+
+
+def _node_label(node: Any, fallback: str) -> str:
+    if isinstance(node, dict):
+        return node.get("label", fallback)
+    return getattr(node, "label", fallback)
+
+
+def _node_type(node: Any) -> Optional[str]:
+    if isinstance(node, dict):
+        return node.get("type")
+    return getattr(node, "type", None)
+
+
+def _derive_failed_node_ids(run: Any) -> List[str]:
+    """Resolve failed node IDs from failedNodes, or fallback to nodeStatuses error states."""
+    explicit_failed = list((getattr(run, "failedNodes", None) or []))
+    explicit_failed = [node_id for node_id in explicit_failed if isinstance(node_id, str) and node_id]
+    if explicit_failed:
+        return explicit_failed
+
+    node_statuses = getattr(run, "nodeStatuses", None) or {}
+    if not isinstance(node_statuses, dict):
+        return []
+
+    error_like = {"error", "failed", "client_error", "server_error"}
+    ordered = sorted(
+        node_statuses.items(),
+        key=lambda item: (item[1] or {}).get("timestamp") or "",
+    )
+
+    return [
+        node_id
+        for node_id, status_meta in ordered
+        if isinstance(node_id, str) and ((status_meta or {}).get("status") in error_like)
+    ]
+
+
 # Helper functions for export/import
 
 def detect_secrets_in_value(value: str) -> bool:
@@ -895,6 +937,10 @@ async def run_workflow(
     import asyncio
     
     runtime_secrets = (body or {}).get('secrets', {}) if body else {}
+    resume_payload = (body or {}).get('resume', {}) if body else {}
+    resume_mode = resume_payload.get('mode')
+    resume_from_run_id = resume_payload.get('sourceRunId')
+    start_node_ids = resume_payload.get('startNodeIds') or []
     
     # Verify workflow exists using repository
     workflow = await WorkflowRepository.get_by_id(workflow_id)
@@ -903,6 +949,48 @@ async def run_workflow(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
+
+    node_ids = {_node_id(node) for node in workflow.nodes}
+    node_ids.discard(None)
+
+    # Resolve and validate resume mode (optional)
+    if resume_mode in {"single", "all-failed"}:
+        if not resume_from_run_id:
+            latest_failed = await RunRepository.get_latest_failed_run(workflow_id)
+            if not latest_failed:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="No failed run found to resume from"
+                )
+            resume_from_run_id = latest_failed.runId
+            if not start_node_ids:
+                start_node_ids = _derive_failed_node_ids(latest_failed)
+
+        source_run = await RunRepository.get_by_id(resume_from_run_id)
+        if not source_run or source_run.workflowId != workflow_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid resume source run"
+            )
+
+        if not start_node_ids:
+            start_node_ids = _derive_failed_node_ids(source_run)
+
+        if resume_mode == "single" and len(start_node_ids) > 1:
+            start_node_ids = [start_node_ids[0]]
+
+        invalid_node_ids = [node_id for node_id in start_node_ids if node_id not in node_ids]
+        if invalid_node_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid resume node(s): {invalid_node_ids}"
+            )
+
+        if not start_node_ids:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No failed nodes found to resume from"
+            )
     
     # Verify environment exists if provided
     if environmentId:
@@ -931,6 +1019,9 @@ async def run_workflow(
         "status": "pending",
         "trigger": "manual",
         "variables": run_request.variables,
+        "resumeFromRunId": resume_from_run_id,
+        "resumeFromNodeIds": start_node_ids if start_node_ids else None,
+        "resumeMode": resume_mode if resume_mode in {"single", "all-failed"} else None,
         "callbackUrl": None,
         "results": [],
         "createdAt": now,
@@ -949,7 +1040,13 @@ async def run_workflow(
     # This allows immediate response while execution happens in background
     async def execute_workflow():
         try:
-            executor = WorkflowExecutor(run_id, workflow_id, runtime_secrets=runtime_secrets)
+            executor = WorkflowExecutor(
+                run_id,
+                workflow_id,
+                runtime_secrets=runtime_secrets,
+                start_node_ids=start_node_ids if start_node_ids else None,
+                resume_from_run_id=resume_from_run_id,
+            )
             await executor.execute()
         except Exception as e:
             # Error is already logged in executor
@@ -963,6 +1060,9 @@ async def run_workflow(
         "runId": run_id,
         "workflowId": workflow_id,
         "environmentId": environmentId,
+        "resumeMode": resume_mode if resume_mode in {"single", "all-failed"} else None,
+        "resumeFromRunId": resume_from_run_id,
+        "startNodeIds": start_node_ids if start_node_ids else None,
         "status": "pending"
     }
 
@@ -1013,6 +1113,54 @@ async def get_workflow_runs(workflow_id: str, page: int = 1, limit: int = 10):
             "hasNext": page < total_pages,
             "hasPrevious": page > 1
         }
+    }
+
+
+@router.get("/{workflow_id}/runs/latest-failed")
+async def get_latest_failed_run_metadata(workflow_id: str):
+    """Get latest failed run and failed node metadata for resume actions."""
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+
+    latest_run = await RunRepository.get_latest_run(workflow_id)
+    if not latest_run or latest_run.status != "failed":
+        return {
+            "hasFailedRun": False,
+            "workflowId": workflow_id,
+            "runId": None,
+            "failedNodes": [],
+        }
+
+    failed_node_ids = _derive_failed_node_ids(latest_run)
+    node_map = {_node_id(node): node for node in workflow.nodes}
+    node_map.pop(None, None)
+
+    failed_nodes = []
+    for node_id in failed_node_ids:
+        node = node_map.get(node_id, {})
+        node_status = latest_run.nodeStatuses.get(node_id, {}) if latest_run.nodeStatuses else {}
+        node_label = _node_label(node, node_id)
+        node_type = _node_type(node)
+        failed_nodes.append({
+            "nodeId": node_id,
+            "label": node_label,
+            "type": node_type,
+            "status": node_status.get("status"),
+            "timestamp": node_status.get("timestamp"),
+        })
+
+    return {
+        "hasFailedRun": True,
+        "workflowId": workflow_id,
+        "runId": latest_run.runId,
+        "failedNodes": failed_nodes,
+        "failedNodeIds": failed_node_ids,
+        "failedCount": len(failed_nodes),
+        "createdAt": latest_run.createdAt,
     }
 
 

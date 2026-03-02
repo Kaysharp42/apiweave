@@ -318,7 +318,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
       {({ isExpanded }) => (
         <div className="p-2 space-y-1.5">
           {/* Method & URL (always visible) */}
-          <div className="flex gap-1">
+          <div className={`flex gap-1 ${isExpanded ? 'items-start' : 'items-center'}`}>
             <select
               className="nodrag px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
               value={method}
@@ -330,13 +330,24 @@ const HTTPRequestNode = ({ id, data, selected }) => {
               <option value="DELETE">DEL</option>
               <option value="PATCH">PATCH</option>
             </select>
-            <input
-              type="text"
-              placeholder="Enter URL..."
-              className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary truncate"
-              value={data.config?.url || ''}
-              onChange={(e) => updateNodeData('url', e.target.value)}
-            />
+
+            {isExpanded ? (
+              <textarea
+                placeholder="Enter URL..."
+                rows={2}
+                className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-y min-h-[58px]"
+                value={data.config?.url || ''}
+                onChange={(e) => updateNodeData('url', e.target.value)}
+              />
+            ) : (
+              <input
+                type="text"
+                placeholder="Enter URL..."
+                className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                value={data.config?.url || ''}
+                onChange={(e) => updateNodeData('url', e.target.value)}
+              />
+            )}
           </div>
 
           {/* Compact summary when collapsed */}

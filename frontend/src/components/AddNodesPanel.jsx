@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Popover, Transition } from '@headlessui/react';
-import { X, Plus, Settings, Search, Globe, GitBranch, CheckCircle, Package } from 'lucide-react';
+import { X, Plus, PanelRightOpen, Search, Globe, GitBranch, CheckCircle, Package } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
+import { getNextNodeFilterValue, shouldClearNodeFilter } from '../utils/nodeFilterBehavior';
 
 /** Per-method badge colours matching the node redesign */
 const methodBadge = {
@@ -48,6 +49,10 @@ const nodeTemplates = [
 const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShowVariablesPanel = () => {} }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const { importedGroups } = usePalette();
+
+  useEffect(() => {
+    setSearchQuery((currentValue) => getNextNodeFilterValue({ currentValue, isModalOpen }));
+  }, [isModalOpen]);
 
   /* ---- Flatten all nodes for search filtering ---- */
   const allSections = useMemo(() => {
@@ -137,7 +142,7 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
 
   return (
     <div
-      className={`fixed bottom-16 right-3 z-[9999] flex flex-col gap-2.5 ${
+      className={`fixed bottom-20 right-5 sm:right-6 z-[9999] flex flex-col gap-2.5 ${
         isModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
       } transition-opacity duration-200`}
     >
@@ -145,11 +150,11 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
       {!showVariablesPanel && (
         <button
           onClick={() => onShowVariablesPanel(true)}
-          className="flex items-center justify-center w-11 h-11 rounded-full bg-primary text-white shadow-lg hover:brightness-110 transition-all"
-          title="Show Panel (Variables, Functions, Settings)"
+          className="flex items-center justify-center w-11 h-11 rounded-full bg-primary text-white shadow-lg ring-1 ring-primary/40 hover:brightness-110 transition-all"
+          title="Show Side Panel (Variables, Functions, Settings)"
           aria-label="Show panel"
         >
-          <Settings className="w-5 h-5" />
+          <PanelRightOpen className="w-5 h-5" />
         </button>
       )}
 
@@ -172,6 +177,11 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
               leave="transition duration-100 ease-in"
               leaveFrom="opacity-100 translate-y-0 scale-100"
               leaveTo="opacity-0 translate-y-2 scale-95"
+              afterLeave={() => {
+                setSearchQuery((currentValue) =>
+                  getNextNodeFilterValue({ currentValue, isPaletteClosing: true }),
+                );
+              }}
             >
               <Popover.Panel className="absolute bottom-full mb-2 right-0 w-72 max-h-[60vh] flex flex-col rounded-xl bg-surface-raised dark:bg-surface-dark-raised shadow-2xl border border-border-default dark:border-border-default-dark overflow-hidden">
                 {/* Header + Search */}
@@ -186,10 +196,33 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (shouldClearNodeFilter({ key: e.key })) {
+                          setSearchQuery((currentValue) =>
+                            getNextNodeFilterValue({ currentValue, key: e.key }),
+                          );
+                        }
+                      }}
                       placeholder="Filter nodes…"
-                      className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-border-default dark:border-border-default-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-primary-dark"
+                      className="w-full pl-8 pr-8 py-1.5 text-sm rounded-lg border border-border-default dark:border-border-default-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-primary-dark"
                       autoFocus
                     />
+
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery((currentValue) =>
+                            getNextNodeFilterValue({ currentValue, clearRequested: true }),
+                          );
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                        aria-label="Clear node filter"
+                        title="Clear filter"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 

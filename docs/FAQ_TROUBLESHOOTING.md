@@ -4,6 +4,16 @@ Use this page when setup, imports, substitutions, or runs do not behave as expec
 
 ## FAQ
 
+## Why are "Run from last failed" options disabled?
+
+- Resume actions are shown only when the latest run for the workflow is failed.
+- If your latest run succeeded, start a normal run and reproduce the failure first.
+
+## Which failed node does "Run from last failed node" use?
+
+- It uses the first failed node from the latest failed run.
+- Use the per-node entries in the Run dropdown to pick a specific failed node.
+
 ## Why does my placeholder show up as plain text?
 
 Common causes:
@@ -59,6 +69,27 @@ Yes, you can manage workflow order in collections. Collection webhook execution 
 
 - update/delete value in Variables panel
 - rerun from the first relevant node in flow
+
+## Repeated failed resumes lose context
+
+Symptoms:
+
+- first resume fails (for example due to a typo),
+- second resume fails,
+- after fixing config, a later resume errors with missing/invalid variable-derived values.
+
+Checks:
+
+- confirm the failing placeholder exists exactly as expected (`{{variables.catID}}` vs typo variants)
+- verify the variable is present in Variables panel after the source request succeeds
+- open Run History and confirm upstream request nodes have successful stored results
+
+Current behavior:
+
+- resume hydration follows the resume lineage, not just the immediately previous failed attempt
+- failed runs persist variables and failed node metadata for follow-up resumes
+
+If an upstream value still cannot be resolved, run the full workflow once to refresh all context, then resume from failed nodes again.
 
 ## Merge branch variable lookup fails
 

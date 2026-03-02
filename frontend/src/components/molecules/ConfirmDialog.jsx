@@ -1,6 +1,11 @@
-import React, { Fragment, useRef, useEffect } from 'react';
+import React, { Fragment, useRef } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { AlertTriangle } from 'lucide-react';
+import Button from '../atoms/Button';
+import {
+  resolveConfirmDialogIntent,
+  runConfirmDialogAction,
+} from '../../utils/confirmDialogActions';
 
 /**
  * ConfirmDialog — Replaces all `window.confirm()` / `window.alert()` with
@@ -26,12 +31,7 @@ export default function ConfirmDialog({
   intent = 'error',
 }) {
   const cancelRef = useRef(null);
-
-  const confirmBtnClass = {
-    error: 'btn-error',
-    warning: 'btn-warning',
-    info: 'btn-info',
-  }[intent] ?? 'btn-error';
+  const confirmIntent = resolveConfirmDialogIntent(intent);
 
   return (
     <Transition appear show={open} as={Fragment}>
@@ -83,24 +83,23 @@ export default function ConfirmDialog({
               </div>
 
               <div className="flex justify-end gap-2 mt-6">
-                <button
+                <Button
                   ref={cancelRef}
-                  type="button"
-                  className="btn btn-ghost btn-sm"
+                  variant="ghost"
+                  size="sm"
                   onClick={onClose}
                 >
                   {cancelLabel}
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${confirmBtnClass}`}
-                  onClick={() => {
-                    onConfirm?.();
-                    onClose?.();
-                  }}
+                </Button>
+
+                <Button
+                  variant="primary"
+                  size="sm"
+                  intent={confirmIntent}
+                  onClick={() => runConfirmDialogAction({ onConfirm, onClose })}
                 >
                   {confirmLabel}
-                </button>
+                </Button>
               </div>
             </Dialog.Panel>
           </Transition.Child>

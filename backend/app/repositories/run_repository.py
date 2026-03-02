@@ -130,6 +130,21 @@ class RunRepository:
     async def get_recent_runs(limit: int = 10) -> List[Run]:
         """Get most recent runs across all workflows"""
         return await Run.find_all().sort(-Run.createdAt).limit(limit).to_list()
+
+    @staticmethod
+    async def get_latest_failed_run(workflow_id: str) -> Optional[Run]:
+        """Get latest failed run for a workflow"""
+        return await Run.find(
+            Run.workflowId == workflow_id,
+            Run.status == "failed",
+        ).sort(-Run.createdAt).first_or_none()
+
+    @staticmethod
+    async def get_latest_run(workflow_id: str) -> Optional[Run]:
+        """Get latest run for a workflow regardless of status"""
+        return await Run.find(
+            Run.workflowId == workflow_id,
+        ).sort(-Run.createdAt).first_or_none()
     
     @staticmethod
     async def count_by_status(workflow_id: Optional[str] = None) -> Dict[str, int]:

@@ -142,7 +142,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
       {showWorkflowImportExport && (
         <WorkflowExportImport
           onClose={() => setShowWorkflowImportExport(false)}
-          mode="import"
+          initialTab="import"
           onImportSuccess={() => {
             setShowWorkflowImportExport(false);
             useSidebarStore.getState().signalWorkflowsRefresh();
