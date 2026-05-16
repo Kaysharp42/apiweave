@@ -1,24 +1,13 @@
-import React from 'react';
 import { Inbox } from 'lucide-react';
+import type { EmptyStateProps } from '../../types';
 
-/**
- * EmptyState — Reusable empty state with icon, title, description, and optional CTA.
- *
- * Inspired by FlowTest's EmptyWorkSpaceContent — displays when there's
- * no data to show (no workflows, no collections, no results, etc.).
- *
- * @param {React.ReactNode} icon — override the default icon
- * @param {string} title
- * @param {string} description
- * @param {React.ReactNode} action — optional CTA button or element
- */
-export default function EmptyState({
-  icon,
+export function EmptyState({
+  icon: Icon,
   title = 'Nothing here yet',
   description,
   action,
   className = '',
-}) {
+}: EmptyStateProps) {
   const defaultIcon = <Inbox className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />;
 
   return (
@@ -31,7 +20,7 @@ export default function EmptyState({
         .join(' ')}
     >
       <div className="flex items-center justify-center">
-        {icon ?? defaultIcon}
+        {Icon ? <Icon className="w-12 h-12" /> : defaultIcon}
       </div>
       <h3 className="text-lg font-semibold font-display text-text-primary dark:text-text-primary-dark">
         {title}

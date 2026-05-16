@@ -1,23 +1,19 @@
-import React from 'react';
 import { LayoutGrid, Plus, Upload, FolderOpen } from 'lucide-react';
-import { Button } from '../atoms';
+import { Button } from '../atoms/Button';
 
-/**
- * WorkspaceEmptyState — displayed when no tabs are open.
- *
- * Large centered welcome panel with quick-action buttons:
- * New Workflow, Import Workflow, Open Collection.
- * Keyboard shortcuts hint at the bottom.
- */
-export default function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCollection }) {
+export interface WorkspaceEmptyStateProps {
+  onNewWorkflow?: () => void;
+  onImport?: () => void;
+  onOpenCollection?: () => void;
+}
+
+export function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCollection }: WorkspaceEmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-6 select-none px-6">
-      {/* Icon */}
       <div className="flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 dark:bg-primary-dark/20">
         <LayoutGrid className="w-10 h-10 text-primary dark:text-primary-dark" strokeWidth={1.4} />
       </div>
 
-      {/* Copy */}
       <div className="text-center space-y-2">
         <h2 className="text-2xl font-display font-semibold text-text-primary dark:text-text-primary-dark">
           Welcome to APIWeave
@@ -27,7 +23,6 @@ export default function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCol
         </p>
       </div>
 
-      {/* Quick actions */}
       <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
         {onNewWorkflow && (
           <Button variant="primary" size="sm" onClick={onNewWorkflow}>
@@ -49,7 +44,6 @@ export default function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCol
         )}
       </div>
 
-      {/* Keyboard hints */}
       <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-text-muted dark:text-text-muted-dark">
         <span>
           <kbd className="kbd kbd-xs">Ctrl</kbd> + <kbd className="kbd kbd-xs">N</kbd> New workflow

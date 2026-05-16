@@ -1,49 +1,53 @@
-import React, { useCallback } from 'react';
+import { useCallback } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
+import { Button } from '../atoms/Button';
+import { IconButton } from '../atoms/IconButton';
 
-/**
- * KeyValueEditor — Reusable key-value pair table.
- *
- * Used by: headers editor, environment variables, extractors, query params.
- *
- * @param {Array<{key: string, value: string}>} pairs — current key-value pairs
- * @param {function} onChange — called with updated pairs array
- * @param {string} keyPlaceholder
- * @param {string} valuePlaceholder
- * @param {boolean} readOnly
- */
-export default function KeyValueEditor({
+export interface KeyValuePair {
+  key: string;
+  value: string;
+}
+
+export interface KeyValueEditorProps {
+  pairs?: KeyValuePair[];
+  onChange: (pairs: KeyValuePair[]) => void;
+  keyPlaceholder?: string;
+  valuePlaceholder?: string;
+  readOnly?: boolean;
+  className?: string;
+}
+
+export function KeyValueEditor({
   pairs = [],
   onChange,
   keyPlaceholder = 'Key',
   valuePlaceholder = 'Value',
   readOnly = false,
   className = '',
-}) {
+}: KeyValueEditorProps) {
   const updatePair = useCallback(
-    (index, field, newValue) => {
+    (index: number, field: 'key' | 'value', newValue: string) => {
       const updated = pairs.map((pair, i) =>
         i === index ? { ...pair, [field]: newValue } : pair,
       );
-      onChange?.(updated);
+      onChange(updated);
     },
     [pairs, onChange],
   );
 
   const addPair = useCallback(() => {
-    onChange?.([...pairs, { key: '', value: '' }]);
+    onChange([...pairs, { key: '', value: '' }]);
   }, [pairs, onChange]);
 
   const removePair = useCallback(
-    (index) => {
-      onChange?.(pairs.filter((_, i) => i !== index));
+    (index: number) => {
+      onChange(pairs.filter((_, i) => i !== index));
     },
     [pairs, onChange],
   );
 
   return (
     <div className={['w-full', className].filter(Boolean).join(' ')}>
-      {/* Header */}
       <div className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
         <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark px-2 py-1">
           {keyPlaceholder}
@@ -54,7 +58,6 @@ export default function KeyValueEditor({
         <span className="w-8" />
       </div>
 
-      {/* Rows */}
       {pairs.map((pair, index) => (
         <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
           <input
@@ -74,28 +77,30 @@ export default function KeyValueEditor({
             className="input input-bordered input-sm w-full"
           />
           {!readOnly && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm btn-square text-text-muted hover:text-status-error"
+            <IconButton
+              tooltip="Remove row"
+              size="xs"
+              variant="ghost"
               onClick={() => removePair(index)}
-              aria-label="Remove row"
+              className="text-text-muted hover:text-status-error"
             >
               <Trash2 className="w-4 h-4" />
-            </button>
+            </IconButton>
           )}
         </div>
       ))}
 
-      {/* Add row */}
       {!readOnly && (
-        <button
+        <Button
           type="button"
-          className="btn btn-ghost btn-sm gap-1 mt-1 text-text-secondary dark:text-text-secondary-dark"
+          variant="ghost"
+          size="sm"
           onClick={addPair}
+          className="gap-1 mt-1 text-text-secondary dark:text-text-secondary-dark"
         >
           <Plus className="w-4 h-4" />
           Add
-        </button>
+        </Button>
       )}
     </div>
   );

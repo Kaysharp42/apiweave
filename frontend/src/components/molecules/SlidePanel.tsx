@@ -1,28 +1,27 @@
 import React from 'react';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { X } from 'lucide-react';
+import { IconButton } from '../atoms/IconButton';
 
-/**
- * SlidePanel — an accessible side-sheet built on Headless UI Dialog.
- *
- * Props:
- *  - open        : boolean — whether the panel is visible
- *  - onClose     : () => void — called when the user clicks the backdrop / presses Escape
- *  - title       : ReactNode — panel heading
- *  - children    : ReactNode — panel body
- *  - footer      : ReactNode (optional) — sticky footer area
- *  - side        : 'left' | 'right' (default 'right')
- *  - size        : 'sm' | 'md' | 'lg' (default 'md')  →  320 / 400 / 512 px
- *  - showClose   : boolean (default true)
- *  - className   : string  — extra classes for the panel body
- */
-const SIZE_MAP = {
-  sm: 'max-w-xs',   // 320px
-  md: 'max-w-md',   // 448px (28rem)
-  lg: 'max-w-lg',   // 512px
+export interface SlidePanelProps {
+  open: boolean;
+  onClose: () => void;
+  title: React.ReactNode;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  side?: 'left' | 'right';
+  size?: 'sm' | 'md' | 'lg';
+  showClose?: boolean;
+  className?: string;
+}
+
+const SIZE_MAP: Record<string, string> = {
+  sm: 'max-w-xs',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
 };
 
-const SlidePanel = ({
+export function SlidePanel({
   open,
   onClose,
   title,
@@ -32,13 +31,12 @@ const SlidePanel = ({
   size = 'md',
   showClose = true,
   className = '',
-}) => {
+}: SlidePanelProps) {
   const isRight = side === 'right';
 
   return (
     <Transition show={open}>
       <Dialog onClose={onClose} className="relative z-50">
-        {/* Backdrop */}
         <TransitionChild
           enter="transition-opacity duration-200 ease-out"
           enterFrom="opacity-0"
@@ -50,7 +48,6 @@ const SlidePanel = ({
           <div className="fixed inset-0 bg-surface-overlay" />
         </TransitionChild>
 
-        {/* Panel wrapper */}
         <div className="fixed inset-0 overflow-hidden">
           <div
             className={`absolute inset-y-0 flex ${
@@ -70,28 +67,26 @@ const SlidePanel = ({
                   bg-surface dark:bg-surface-dark border-border dark:border-border-dark
                   ${isRight ? 'border-l' : 'border-r'} shadow-xl`}
               >
-                {/* ── Header ── */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
                   <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark">
                     {title}
                   </Dialog.Title>
                   {showClose && (
-                    <button
+                    <IconButton
+                      tooltip="Close panel"
+                      size="sm"
+                      variant="ghost"
                       onClick={onClose}
-                      className="btn btn-ghost btn-sm btn-square"
-                      aria-label="Close panel"
                     >
                       <X size={16} />
-                    </button>
+                    </IconButton>
                   )}
                 </div>
 
-                {/* ── Body ── */}
                 <div className={`flex-1 overflow-y-auto px-4 py-3 ${className}`}>
                   {children}
                 </div>
 
-                {/* ── Footer (optional) ── */}
                 {footer && (
                   <div className="px-4 py-3 border-t border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
                     {footer}
@@ -104,6 +99,4 @@ const SlidePanel = ({
       </Dialog>
     </Transition>
   );
-};
-
-export default SlidePanel;
+}

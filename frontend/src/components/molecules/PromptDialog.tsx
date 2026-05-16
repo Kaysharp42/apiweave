@@ -1,21 +1,21 @@
 import React, { Fragment, useRef, useState, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { FileText } from 'lucide-react';
+import { Button } from '../atoms/Button';
 
-/**
- * PromptDialog — Replaces `window.prompt()` with a styled, accessible modal.
- *
- * @param {boolean} open
- * @param {function} onClose     — called on cancel / backdrop click / Escape
- * @param {function} onSubmit    — called with the input value on submit
- * @param {string} title         — dialog title
- * @param {string} message       — optional description text
- * @param {string} placeholder   — input placeholder text
- * @param {string} defaultValue  — initial input value
- * @param {string} submitLabel   — submit button text (default: "Create")
- * @param {string} cancelLabel   — cancel button text (default: "Cancel")
- */
-export default function PromptDialog({
+export interface PromptDialogProps {
+  open?: boolean;
+  onClose: () => void;
+  onSubmit: (value: string) => void;
+  title?: string;
+  message?: string;
+  placeholder?: string;
+  defaultValue?: string;
+  submitLabel?: string;
+  cancelLabel?: string;
+}
+
+export function PromptDialog({
   open = false,
   onClose,
   onSubmit,
@@ -25,25 +25,23 @@ export default function PromptDialog({
   defaultValue = '',
   submitLabel = 'Create',
   cancelLabel = 'Cancel',
-}) {
-  const inputRef = useRef(null);
+}: PromptDialogProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(defaultValue);
 
-  // Reset value when dialog opens
   useEffect(() => {
     if (open) {
       setValue(defaultValue);
-      // Focus the input after transition
       setTimeout(() => inputRef.current?.select(), 100);
     }
   }, [open, defaultValue]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e?.preventDefault();
     const trimmed = value.trim();
     if (trimmed) {
-      onSubmit?.(trimmed);
-      onClose?.();
+      onSubmit(trimmed);
+      onClose();
     }
   };
 
@@ -55,7 +53,6 @@ export default function PromptDialog({
         onClose={onClose}
         initialFocus={inputRef}
       >
-        {/* Backdrop */}
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-200"
@@ -68,7 +65,6 @@ export default function PromptDialog({
           <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
         </Transition.Child>
 
-        {/* Panel */}
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <Transition.Child
             as={Fragment}
@@ -107,20 +103,22 @@ export default function PromptDialog({
                 />
 
                 <div className="flex justify-end gap-2 mt-4">
-                  <button
+                  <Button
                     type="button"
-                    className="btn btn-ghost btn-sm"
+                    variant="ghost"
+                    size="sm"
                     onClick={onClose}
                   >
                     {cancelLabel}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
-                    className="btn btn-primary btn-sm"
+                    variant="primary"
+                    size="sm"
                     disabled={!value.trim()}
                   >
                     {submitLabel}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </Dialog.Panel>

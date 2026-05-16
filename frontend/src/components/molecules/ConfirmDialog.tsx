@@ -7,20 +7,18 @@ import {
   runConfirmDialogAction,
 } from '../../utils/confirmDialogActions';
 
-/**
- * ConfirmDialog — Replaces all `window.confirm()` / `window.alert()` with
- * a styled, accessible DaisyUI modal powered by Headless UI Dialog.
- *
- * @param {boolean} open
- * @param {function} onClose      — called on cancel / backdrop click / Escape
- * @param {function} onConfirm    — called on confirm button click
- * @param {string} title
- * @param {string|React.ReactNode} message
- * @param {string} confirmLabel   — confirm button text (default: "Confirm")
- * @param {string} cancelLabel    — cancel button text (default: "Cancel")
- * @param {'error'|'warning'|'info'} intent — affects confirm button color
- */
-export default function ConfirmDialog({
+export interface ConfirmDialogProps {
+  open?: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title?: string;
+  message: string | React.ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  intent?: 'error' | 'warning' | 'info';
+}
+
+export function ConfirmDialog({
   open = false,
   onClose,
   onConfirm,
@@ -29,8 +27,8 @@ export default function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   intent = 'error',
-}) {
-  const cancelRef = useRef(null);
+}: ConfirmDialogProps) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmIntent = resolveConfirmDialogIntent(intent);
 
   return (
@@ -41,7 +39,6 @@ export default function ConfirmDialog({
         onClose={onClose}
         initialFocus={cancelRef}
       >
-        {/* Backdrop */}
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-200"
@@ -54,7 +51,6 @@ export default function ConfirmDialog({
           <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
         </Transition.Child>
 
-        {/* Panel */}
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <Transition.Child
             as={Fragment}

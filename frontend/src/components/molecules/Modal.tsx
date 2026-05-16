@@ -1,29 +1,18 @@
-import React, { Fragment, useRef } from 'react';
+import { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { X } from 'lucide-react';
+import type { ModalProps } from '../../types';
 
-/**
- * Modal — Shared modal shell powered by Headless UI Dialog.
- *
- * Provides consistent overlay, panel sizing, header/body/footer structure,
- * fade+scale animation, focus trapping, and Escape-to-close behavior.
- *
- * Sizes: sm (max-w-md), md (max-w-2xl), lg (max-w-4xl), xl (max-w-6xl), fullscreen
- *
- * @param {boolean} open
- * @param {function} onClose          — called on Escape / overlay click / close button
- * @param {string} title              — modal header title
- * @param {React.ReactNode} children  — modal body content
- * @param {React.ReactNode} footer    — optional footer (action buttons)
- * @param {React.ReactNode} headerExtra — optional extra content in the header (right side, before close btn)
- * @param {'sm'|'md'|'lg'|'xl'|'fullscreen'} size — panel width
- * @param {string} className          — extra classes on the panel
- * @param {boolean} showClose         — show close button in header (default true)
- * @param {boolean} scrollable        — make body scrollable (default true)
- * @param {React.Ref} initialFocus    — element to focus on open
- */
-export default function Modal({
-  open = false,
+export interface ModalInternalProps extends ModalProps {
+  headerExtra?: React.ReactNode;
+  showClose?: boolean;
+  scrollable?: boolean;
+  initialFocus?: React.MutableRefObject<HTMLElement | null>;
+  className?: string;
+}
+
+export function Modal({
+  isOpen,
   onClose,
   title,
   children,
@@ -34,8 +23,8 @@ export default function Modal({
   showClose = true,
   scrollable = true,
   initialFocus,
-}) {
-  const sizeClasses = {
+}: ModalInternalProps) {
+  const sizeClasses: Record<string, string> = {
     sm: 'max-w-md',
     md: 'max-w-2xl',
     lg: 'max-w-4xl',
@@ -46,14 +35,13 @@ export default function Modal({
   const panelSize = sizeClasses[size] ?? sizeClasses.md;
 
   return (
-    <Transition appear show={open} as={Fragment}>
+    <Transition appear show={isOpen} as={Fragment}>
       <Dialog
         as="div"
         className="relative z-50"
         onClose={onClose}
-        initialFocus={initialFocus}
+        {...(initialFocus && { initialFocus })}
       >
-        {/* Backdrop */}
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-200"
@@ -66,7 +54,6 @@ export default function Modal({
           <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
         </Transition.Child>
 
-        {/* Panel centering wrapper */}
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <Transition.Child
             as={Fragment}
@@ -89,7 +76,6 @@ export default function Modal({
                 .filter(Boolean)
                 .join(' ')}
             >
-              {/* Header */}
               {title && (
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-border dark:border-border-dark flex-shrink-0">
                   <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark truncate">
@@ -111,7 +97,6 @@ export default function Modal({
                 </div>
               )}
 
-              {/* Body */}
               <div
                 className={[
                   'flex-1 min-h-0',
@@ -123,7 +108,6 @@ export default function Modal({
                 {children}
               </div>
 
-              {/* Footer */}
               {footer && (
                 <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border dark:border-border-dark flex-shrink-0">
                   {footer}
