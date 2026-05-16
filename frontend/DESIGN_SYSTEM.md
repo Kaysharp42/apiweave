@@ -14,7 +14,8 @@
 - ALL files MUST be `.ts` or `.tsx` — no `.js` or `.jsx`
 - `tsconfig.json` strict mode enabled — `any` is forbidden
 - ALL props, state, hooks, stores, API calls MUST have explicit types
-- Shared types live in `src/types/` — never duplicate type definitions
+- Shared types live in `src/types/` — ONE type per file, NEVER duplicate type definitions
+- **ONE type per file**: Every type, interface, or union MUST be in its own file named after the type (e.g., `Workflow.ts`, `ButtonProps.ts`). Barrel export `index.ts` re-exports all types.
 
 ### DRY — Never Duplicate
 - **Buttons**: always use `Button` or `IconButton` atoms
@@ -275,7 +276,12 @@ frontend/
 ├── index.html                 — Google Fonts import
 ├── src/
 │   ├── types/
-│   │   └── index.ts           — Shared TypeScript interfaces and types
+│   │   ├── index.ts           — Barrel export (re-exports all types)
+│   │   ├── Workflow.ts        — Workflow interface
+│   │   ├── WorkflowNode.ts    — WorkflowNode interface
+│   │   ├── ButtonVariant.ts   — ButtonVariant union type
+│   │   ├── ButtonProps.ts     — ButtonProps interface
+│   │   └── ...                — One file per type/interface
 │   ├── index.css              — Tailwind directives + ReactFlow dark mode overrides
 │   ├── main.tsx               — App entry point
 │   ├── App.tsx                — Root component with theme switching
