@@ -1,20 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { Modal } from './molecules';
 import { Button } from './atoms';
+import type { Environment } from '../types';
 
-const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
-  const [secrets, setSecrets] = useState({});
-  const [visibleSecrets, setVisibleSecrets] = useState(new Set());
+export interface SecretsPromptProps {
+  isOpen: boolean;
+  environment: Environment | null;
+  onClose: () => void;
+  onSecretsProvided?: (secrets: Record<string, string>) => void;
+}
+
+export default function SecretsPrompt({
+  isOpen,
+  environment,
+  onClose,
+  onSecretsProvided,
+}: SecretsPromptProps) {
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [visibleSecrets, setVisibleSecrets] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [allFilled, setAllFilled] = useState(false);
 
   useEffect(() => {
     if (!environment?.secrets) return;
-    const secretsObj = {};
+    const secretsObj: Record<string, string> = {};
     Object.keys(environment.secrets).forEach((key) => {
-      secretsObj[key] = sessionStorage.getItem(`secret_${key}`) || '';
+      secretsObj[key] = sessionStorage.getItem(`secret_${key}`) ?? '';
     });
     setSecrets(secretsObj);
   }, [environment]);
@@ -25,11 +38,11 @@ const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
     setAllFilled(secretKeys.length > 0 && secretKeys.every((key) => secrets[key]?.trim()));
   }, [secrets, environment?.secrets]);
 
-  const handleSecretChange = (key, value) => {
+  const handleSecretChange = (key: string, value: string) => {
     setSecrets((prev) => ({ ...prev, [key]: value }));
   };
 
-  const toggleSecretVisibility = (key) => {
+  const toggleSecretVisibility = (key: string) => {
     setVisibleSecrets((prev) => {
       const newSet = new Set(prev);
       newSet.has(key) ? newSet.delete(key) : newSet.add(key);
@@ -45,8 +58,7 @@ const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
       });
       onSecretsProvided?.(secrets);
       onClose();
-    } catch (error) {
-      console.error('Error saving secrets:', error);
+    } catch {
       toast.error('Error saving secrets');
     } finally {
       setSaving(false);
@@ -59,7 +71,7 @@ const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
 
   return (
     <Modal
-      open={open}
+      isOpen={isOpen}
       onClose={onClose}
       title="Environment Secrets Required"
       size="sm"
@@ -74,7 +86,6 @@ const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
       }
     >
       <div className="p-5 space-y-4">
-        {/* Info */}
         <div className="flex gap-3 p-3 bg-primary/5 dark:bg-primary/10 rounded border border-primary/20">
           <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
           <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
@@ -82,7 +93,6 @@ const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
           </p>
         </div>
 
-        {/* Secret Inputs */}
         <div className="space-y-3">
           {Object.entries(environment.secrets).map(([key, placeholder]) => (
             <div key={key} className="space-y-1">
@@ -92,9 +102,9 @@ const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
               <div className="flex gap-2">
                 <input
                   type={visibleSecrets.has(key) ? 'text' : 'password'}
-                  value={secrets[key] || ''}
+                  value={secrets[key] ?? ''}
                   onChange={(e) => handleSecretChange(key, e.target.value)}
-                  placeholder={placeholder || `Enter ${key}`}
+                  placeholder={placeholder ?? `Enter ${key}`}
                   className="input input-bordered input-sm flex-1 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                 />
                 <Button
@@ -111,7 +121,6 @@ const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
           ))}
         </div>
 
-        {/* Warning */}
         <div className="p-3 bg-status-warning/5 rounded border border-status-warning/20">
           <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
             <strong>Note:</strong> Secrets are stored in browser session storage only and will be cleared when you close the browser.
@@ -120,6 +129,4 @@ const SecretsPrompt = ({ open, environment, onClose, onSecretsProvided }) => {
       </div>
     </Modal>
   );
-};
-
-export default SecretsPrompt;
+}

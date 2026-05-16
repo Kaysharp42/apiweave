@@ -1,13 +1,32 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-const ButtonSelect = ({ options = [], value = '', onChange = () => {}, placeholder = 'Select', buttonClass = '' }) => {
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
+export interface ButtonSelectProps {
+  options?: SelectOption[];
+  value?: string;
+  onChange?: (value: string) => void;
+  placeholder?: string;
+  buttonClass?: string;
+}
+
+export default function ButtonSelect({
+  options = [],
+  value = '',
+  onChange = () => {},
+  placeholder = 'Select',
+  buttonClass = '',
+}: ButtonSelectProps) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const onDocClick = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) {
+    const onDocClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
@@ -15,7 +34,10 @@ const ButtonSelect = ({ options = [], value = '', onChange = () => {}, placehold
     return () => document.removeEventListener('click', onDocClick);
   }, []);
 
-  const selected = useMemo(() => options.find((o) => o.value === value), [options, value]);
+  const selected = useMemo(
+    () => options.find((o) => o.value === value),
+    [options, value],
+  );
 
   return (
     <div ref={ref} className="relative">
@@ -26,7 +48,7 @@ const ButtonSelect = ({ options = [], value = '', onChange = () => {}, placehold
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="truncate">{selected?.label || placeholder}</span>
+        <span className="truncate">{selected?.label ?? placeholder}</span>
         <ChevronDown className="w-4 h-4 ml-2 flex-shrink-0" />
       </button>
 
@@ -54,6 +76,4 @@ const ButtonSelect = ({ options = [], value = '', onChange = () => {}, placehold
       )}
     </div>
   );
-};
-
-export default ButtonSelect;
+}

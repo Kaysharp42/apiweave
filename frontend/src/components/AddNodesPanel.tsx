@@ -1,25 +1,60 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, type DragEvent } from 'react';
 import { Popover, Transition } from '@headlessui/react';
-import { X, Plus, PanelRightOpen, Search, Globe, GitBranch, CheckCircle, Package } from 'lucide-react';
+import { X, Plus, PanelRightOpen, Search, Globe, GitBranch, CheckCircle, Package, type LucideIcon } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
 import { getNextNodeFilterValue, shouldClearNodeFilter } from '../utils/nodeFilterBehavior';
 
-/** Per-method badge colours matching the node redesign */
-const methodBadge = {
-  GET:    'bg-method-get',
-  POST:   'bg-method-post',
-  PUT:    'bg-method-put',
+const methodBadge: Record<string, string> = {
+  GET: 'bg-method-get',
+  POST: 'bg-method-post',
+  PUT: 'bg-method-put',
   DELETE: 'bg-method-delete',
-  PATCH:  'bg-method-patch',
+  PATCH: 'bg-method-patch',
 };
 
-const sectionIcons = {
+const sectionIcons: Record<string, LucideIcon> = {
   'HTTP Requests': Globe,
   'Control Flow': GitBranch,
   'Validation': CheckCircle,
 };
 
-const nodeTemplates = [
+interface PaletteItem {
+  method?: string;
+  label?: string;
+  url?: string;
+  queryParams?: string;
+  pathVariables?: string;
+  headers?: string;
+  cookies?: string;
+  body?: string;
+  timeout?: number;
+  workflowId?: string;
+  openapiMeta?: Record<string, unknown> | null;
+}
+
+interface ImportedGroup {
+  id: string;
+  title: string;
+  items?: unknown[];
+}
+
+interface NodeTemplate {
+  type: string;
+  label: string;
+  description: string;
+  method?: string;
+  workflowId?: string;
+  template?: Record<string, unknown>;
+}
+
+interface NodeSection {
+  key: string;
+  title: string;
+  icon: LucideIcon;
+  nodes: NodeTemplate[];
+}
+
+const nodeTemplates: { category: string; nodes: NodeTemplate[] }[] = [
   {
     category: 'HTTP Requests',
     nodes: [
@@ -46,7 +81,17 @@ const nodeTemplates = [
   },
 ];
 
-const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShowVariablesPanel = () => {} }) => {
+export interface AddNodesPanelProps {
+  isModalOpen?: boolean;
+  showVariablesPanel?: boolean;
+  onShowVariablesPanel?: (show: boolean) => void;
+}
+
+export default function AddNodesPanel({
+  isModalOpen = false,
+  showVariablesPanel = false,
+  onShowVariablesPanel = () => {},
+}: AddNodesPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const { importedGroups } = usePalette();
 
@@ -54,63 +99,63 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
     setSearchQuery((currentValue) => getNextNodeFilterValue({ currentValue, isModalOpen }));
   }, [isModalOpen]);
 
-  /* ---- Flatten all nodes for search filtering ---- */
-  const allSections = useMemo(() => {
-    const sections = nodeTemplates.map((cat) => ({
+  const allSections = useMemo<NodeSection[]>(() => {
+    const sections: NodeSection[] = nodeTemplates.map((cat) => ({
       key: cat.category,
       title: cat.category,
-      icon: sectionIcons[cat.category] || Package,
-      nodes: cat.nodes,
+      icon: sectionIcons[cat.category] ?? Package,
+      nodes: cat.nodes as NodeTemplate[],
     }));
 
-    importedGroups.forEach((group) => {
-      sections.push({
-        key: `imported-${group.id}`,
-        title: group.title,
-        icon: Package,
-        nodes: (group.items || []).map((item) =>
+    importedGroups.forEach((group: ImportedGroup) => {
+      const items = (group.items ?? []) as PaletteItem[];
+      const importedNodes: NodeTemplate[] = items.map((item) =>
           item.method === 'WORKFLOW'
             ? {
                 type: 'workflow',
-                label: item.label || 'Workflow',
+                label: item.label ?? 'Workflow',
                 description: 'Sub-workflow',
                 method: 'WORKFLOW',
                 workflowId: item.workflowId,
                 template: {
                   type: 'workflow',
-                  label: item.label || 'Workflow',
+                  label: item.label ?? 'Workflow',
                   config: { workflowId: item.workflowId, workflowName: item.label },
                 },
               }
             : {
                 type: 'http-request',
-                label: item.label || item.url || 'Request',
-                description: item.url || '',
-                method: item.method || 'GET',
+                label: item.label ?? item.url ?? 'Request',
+                description: item.url ?? '',
+                method: item.method ?? 'GET',
                 template: {
                   type: 'http-request',
-                  label: item.label || item.url || 'Request',
+                  label: item.label ?? item.url ?? 'Request',
                   config: {
-                    method: item.method || 'GET',
-                    url: item.url || '',
-                    queryParams: item.queryParams || '',
-                    pathVariables: item.pathVariables || '',
-                    headers: item.headers || '',
-                    cookies: item.cookies || '',
-                    body: item.body || '',
-                    timeout: item.timeout || 30,
-                    openapiMeta: item.openapiMeta || null,
+                    method: item.method ?? 'GET',
+                    url: item.url ?? '',
+                    queryParams: item.queryParams ?? '',
+                    pathVariables: item.pathVariables ?? '',
+                    headers: item.headers ?? '',
+                    cookies: item.cookies ?? '',
+                    body: item.body ?? '',
+                    timeout: item.timeout ?? 30,
+                    openapiMeta: item.openapiMeta ?? null,
                   },
                 },
-              }
-        ),
+              },
+        ) as NodeTemplate[];
+      sections.push({
+        key: `imported-${group.id}`,
+        title: group.title,
+        icon: Package,
+        nodes: importedNodes,
       });
     });
 
     return sections;
   }, [importedGroups]);
 
-  /* ---- Filter by search ---- */
   const filteredSections = useMemo(() => {
     if (!searchQuery.trim()) return allSections;
     const q = searchQuery.toLowerCase();
@@ -121,13 +166,13 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
           (n) =>
             n.label.toLowerCase().includes(q) ||
             (n.method && n.method.toLowerCase().includes(q)) ||
-            (n.description && n.description.toLowerCase().includes(q))
+            (n.description && n.description.toLowerCase().includes(q)),
         ),
       }))
       .filter((sec) => sec.nodes.length > 0);
   }, [allSections, searchQuery]);
 
-  const onDragStart = (event, node) => {
+  const onDragStart = (event: DragEvent, node: NodeTemplate) => {
     event.dataTransfer.setData('application/reactflow', node.type);
     if (node.method && node.method !== 'WORKFLOW') {
       event.dataTransfer.setData('application/reactflow-method', node.method);
@@ -135,7 +180,9 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
     if (node.template) {
       try {
         event.dataTransfer.setData('application/reactflow-node-template', JSON.stringify(node.template));
-      } catch (_) {}
+      } catch {
+        // Ignore serialization errors
+      }
     }
     event.dataTransfer.effectAllowed = 'move';
   };
@@ -146,7 +193,6 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
         isModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
       } transition-opacity duration-200`}
     >
-      {/* Show panel button */}
       {!showVariablesPanel && (
         <button
           onClick={() => onShowVariablesPanel(true)}
@@ -158,7 +204,6 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
         </button>
       )}
 
-      {/* Headless UI Popover — opens upward from FAB */}
       <Popover className="relative">
         {({ open, close }) => (
           <>
@@ -184,7 +229,6 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
               }}
             >
               <Popover.Panel className="absolute bottom-full mb-2 right-0 w-72 max-h-[60vh] flex flex-col rounded-xl bg-surface-raised dark:bg-surface-dark-raised shadow-2xl border border-border-default dark:border-border-default-dark overflow-hidden">
-                {/* Header + Search */}
                 <div className="p-3 border-b border-border-default dark:border-border-default-dark">
                   <h3 className="text-sm font-bold text-primary dark:text-primary-dark mb-2">
                     Add Nodes
@@ -226,11 +270,10 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
                   </div>
                 </div>
 
-                {/* Sections */}
                 <div className="flex-1 overflow-y-auto">
                   {filteredSections.length === 0 ? (
                     <div className="p-4 text-center text-sm text-text-muted dark:text-text-muted-dark">
-                      No nodes match "{searchQuery}"
+                      No nodes match &quot;{searchQuery}&quot;
                     </div>
                   ) : (
                     filteredSections.map((section) => (
@@ -255,10 +298,17 @@ const AddNodesPanel = ({ isModalOpen = false, showVariablesPanel = false, onShow
       </Popover>
     </div>
   );
-};
+}
 
-/** Collapsible section using DaisyUI collapse */
-function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }) {
+interface NodeSectionProps {
+  title: string;
+  icon: LucideIcon;
+  nodes: NodeTemplate[];
+  onDragStart: (event: DragEvent, node: NodeTemplate) => void;
+  defaultOpen: boolean;
+}
+
+function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }: NodeSectionProps) {
   return (
     <div className="collapse collapse-arrow rounded-none border-b border-border-default dark:border-border-default-dark last:border-b-0">
       <input type="checkbox" defaultChecked={defaultOpen} />
@@ -279,7 +329,7 @@ function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }) {
             >
               <div className="flex items-center gap-1.5 text-sm text-text-primary dark:text-text-primary-dark">
                 {node.method && node.method !== 'WORKFLOW' && (
-                  <span className={`inline-block px-1.5 py-px text-[10px] font-bold text-white rounded ${methodBadge[node.method] || 'bg-primary'}`}>
+                  <span className={`inline-block px-1.5 py-px text-[10px] font-bold text-white rounded ${methodBadge[node.method] ?? 'bg-primary'}`}>
                     {node.method}
                   </span>
                 )}
@@ -300,5 +350,3 @@ function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }) {
     </div>
   );
 }
-
-export default AddNodesPanel;

@@ -1,22 +1,35 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-const AssertionEditor = ({
+export interface AssertionValue {
+  source: string;
+  path: string;
+  operator: string;
+  expectedValue: string;
+}
+
+export interface AssertionEditorProps {
+  value: AssertionValue;
+  onChange: (value: AssertionValue) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}
+
+export default function AssertionEditor({
   value,
   onChange,
   onCancel,
-  onSave
-}) => {
-  const local = value || { source: 'prev', path: '', operator: 'equals', expectedValue: '' };
+  onSave,
+}: AssertionEditorProps) {
+  const local = value ?? { source: 'prev', path: '', operator: 'equals', expectedValue: '' };
   const { source, path, operator, expectedValue } = local;
-  const inputRef = useRef(null);
-  const [errors, setErrors] = useState({ path: '', expectedValue: '' });
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [errors, setErrors] = useState<{ path: string; expectedValue: string }>({ path: '', expectedValue: '' });
 
   useEffect(() => {
-    // focus first input when mounted
     if (inputRef.current) inputRef.current.focus();
   }, []);
 
-  const validate = () => {
+  const validate = (): boolean => {
     const next = { path: '', expectedValue: '' };
     if (source !== 'status') {
       if (['exists', 'notExists'].includes(operator)) {
@@ -30,15 +43,15 @@ const AssertionEditor = ({
     return !next.path && !next.expectedValue;
   };
 
-  const handleKey = (e) => {
-    if (e.key === 'Escape') onCancel?.();
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') onCancel();
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      if (validate()) onSave?.();
+      if (validate()) onSave();
     }
   };
 
   const handleSave = () => {
-    if (validate()) onSave?.();
+    if (validate()) onSave();
   };
 
   return (
@@ -47,7 +60,7 @@ const AssertionEditor = ({
         <select
           value={source}
           onChange={(e) => onChange({ ...local, source: e.target.value })}
-          className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded"
+          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded"
         >
           <option value="prev">prev</option>
           <option value="variables">variables</option>
@@ -62,7 +75,7 @@ const AssertionEditor = ({
             value={path}
             onChange={(e) => onChange({ ...local, path: e.target.value })}
             placeholder="path or name"
-            className={`w-full px-2 py-1 text-sm border rounded font-mono ${errors.path ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200'}`}
+            className={`w-full px-2 py-1 text-sm border rounded font-mono ${errors.path ? 'border-red-500 dark:border-red-400' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
           />
           {errors.path && <div className="text-[11px] text-red-600 dark:text-red-400 mt-1">{errors.path}</div>}
         </div>
@@ -72,7 +85,7 @@ const AssertionEditor = ({
         <select
           value={operator}
           onChange={(e) => onChange({ ...local, operator: e.target.value })}
-          className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded"
+          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded"
         >
           <option value="equals">Equals (==)</option>
           <option value="notEquals">Not Equals (!=)</option>
@@ -94,31 +107,29 @@ const AssertionEditor = ({
               value={expectedValue}
               onChange={(e) => onChange({ ...local, expectedValue: e.target.value })}
               placeholder="expected value"
-              className={`w-full px-2 py-1 text-sm border rounded font-mono ${errors.expectedValue ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200'}`}
+              className={`w-full px-2 py-1 text-sm border rounded font-mono ${errors.expectedValue ? 'border-red-500 dark:border-red-400' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
             />
             {errors.expectedValue && <div className="text-[11px] text-red-600 dark:text-red-400 mt-1">{errors.expectedValue}</div>}
           </div>
         ) : (
-          <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center px-2">No value required</div>
+          <div className="text-sm text-text-muted dark:text-text-muted-dark flex items-center px-2">No value required</div>
         )}
       </div>
 
       <div className="flex gap-2 justify-end">
         <button
           onClick={onCancel}
-          className="px-3 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded text-sm"
+          className="px-3 py-1 bg-surface dark:bg-surface-dark-raised text-text-secondary dark:text-text-primary-dark rounded text-sm"
         >
           Cancel
         </button>
         <button
           onClick={handleSave}
-          className="px-3 py-1 bg-cyan-600 dark:bg-cyan-700 text-white rounded text-sm"
+          className="px-3 py-1 bg-primary text-white rounded text-sm"
         >
           Save
         </button>
       </div>
     </div>
   );
-};
-
-export default AssertionEditor;
+}

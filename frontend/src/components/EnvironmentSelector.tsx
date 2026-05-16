@@ -1,29 +1,32 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import API_BASE_URL from '../utils/api';
 import useSidebarStore from '../stores/SidebarStore';
+import type { Environment } from '../types';
 
-const EnvironmentSelector = ({ onManageClick }) => {
-  const [environments, setEnvironments] = useState([]);
+export interface EnvironmentSelectorProps {
+  onManageClick: () => void;
+}
+
+export default function EnvironmentSelector({ onManageClick }: EnvironmentSelectorProps) {
+  const [environments, setEnvironments] = useState<Environment[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchEnvironments();
-    
-    // Close dropdown when clicking outside
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
-    
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
 
-  // Refresh environments when store signals a change
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);
   useEffect(() => {
     if (environmentVersion > 0) fetchEnvironments();
@@ -33,17 +36,12 @@ const EnvironmentSelector = ({ onManageClick }) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
-        const data = await response.json();
+        const data: Environment[] = await response.json();
         setEnvironments(data);
       }
-    } catch (error) {
-      console.error('Error fetching environments:', error);
+    } catch {
+      // Silently fail - environments will be fetched on next attempt
     }
-  };
-
-  const handleActivate = async (envId) => {
-    // This function is removed - we don't activate environments anymore
-    // Environments are selected per workflow run instead
   };
 
   const handleManage = () => {
@@ -121,6 +119,4 @@ const EnvironmentSelector = ({ onManageClick }) => {
       )}
     </div>
   );
-};
-
-export default EnvironmentSelector;
+}

@@ -1,8 +1,13 @@
-import React from 'react';
-import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useReactFlow } from 'reactflow';
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useReactFlow, type EdgeProps } from 'reactflow';
 import { X } from 'lucide-react';
 
-const CustomEdge = ({
+interface CustomEdgeData {
+  animated?: boolean;
+}
+
+type CustomEdgeProps = EdgeProps<CustomEdgeData>;
+
+export default function CustomEdge({
   id,
   sourceX,
   sourceY,
@@ -13,7 +18,7 @@ const CustomEdge = ({
   style = {},
   markerEnd,
   data,
-}) => {
+}: CustomEdgeProps) {
   const { deleteElements } = useReactFlow();
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
@@ -28,7 +33,7 @@ const CustomEdge = ({
 
   const isRunning = data?.animated;
 
-  const onEdgeClick = (event) => {
+  const onEdgeClick = (event: React.MouseEvent) => {
     event.stopPropagation();
     deleteElements({ edges: [{ id }] });
   };
@@ -37,13 +42,13 @@ const CustomEdge = ({
     <>
       <BaseEdge
         path={edgePath}
-        markerEnd={markerEnd}
+        markerEnd={markerEnd ?? ''}
         style={{
           strokeWidth: 2,
           stroke: isRunning ? 'var(--color-primary, #6366f1)' : undefined,
+          ...(isRunning ? { strokeDasharray: '5,5' } : {}),
           ...style,
         }}
-        className={isRunning ? 'react-flow__edge-animated' : ''}
       />
       <EdgeLabelRenderer>
         <div
@@ -68,6 +73,4 @@ const CustomEdge = ({
       </EdgeLabelRenderer>
     </>
   );
-};
-
-export default CustomEdge;
+}

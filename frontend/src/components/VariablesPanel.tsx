@@ -1,19 +1,19 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { GitMerge, Pencil, Search, Trash2 } from 'lucide-react';
 
-const VariablesPanel = () => {
-  const { variables, updateVariable, updateVariables, deleteVariablesWithCleanup } = useWorkflow();
-  
+export default function VariablesPanel() {
+  const { variables, updateVariable, deleteVariablesWithCleanup } = useWorkflow();
+
   const [showForm, setShowForm] = useState(false);
   const [newVarName, setNewVarName] = useState('');
   const [newVarValue, setNewVarValue] = useState('');
-  const [editingVar, setEditingVar] = useState(null);
+  const [editingVar, setEditingVar] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
   const normalizedQuery = searchTerm.trim().toLowerCase();
-  const filteredVariables = Object.entries(variables || {}).filter(([varName, varValue]) => {
+  const filteredVariables = Object.entries(variables ?? {}).filter(([varName, varValue]) => {
     if (!normalizedQuery) return true;
 
     const valueText = typeof varValue === 'string' ? varValue : JSON.stringify(varValue);
@@ -35,12 +35,11 @@ const VariablesPanel = () => {
     }
   };
 
-  const handleDelete = (varName) => {
-    // Delete from context and notify WorkflowCanvas to clean up extractors
+  const handleDelete = (varName: string) => {
     deleteVariablesWithCleanup([varName]);
   };
 
-  const handleEdit = (varName, value) => {
+  const handleEdit = (varName: string, value: string) => {
     updateVariable(varName, value);
     setEditingVar(null);
   };
@@ -55,33 +54,32 @@ const VariablesPanel = () => {
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Search variables"
-            className="w-full pl-8 pr-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className="w-full pl-8 pr-2 py-1.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-gray-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
             aria-label="Search variables"
           />
         </div>
 
         <button
           onClick={() => setShowForm(!showForm)}
-          className="w-full px-2 py-1 bg-cyan-500 dark:bg-cyan-600 hover:bg-cyan-600 dark:hover:bg-cyan-700 text-white text-xs rounded transition-colors"
+          className="w-full px-2 py-1 bg-primary hover:bg-primary/90 text-white text-xs rounded transition-colors"
         >
           + Add Variable
         </button>
       </div>
 
       <div className="p-3 space-y-2 flex-1 overflow-y-auto">
-        {/* Add Form */}
         {showForm && (
           <div className="p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded space-y-2">
             <input
               type="text"
               placeholder="Variable name"
-              className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-gray-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
               value={newVarName}
               onChange={(e) => setNewVarName(e.target.value)}
             />
             <textarea
               placeholder="Value (can be JSON, text, etc.)"
-              className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-gray-400 rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary"
               rows={3}
               value={newVarValue}
               onChange={(e) => setNewVarValue(e.target.value)}
@@ -89,7 +87,7 @@ const VariablesPanel = () => {
             <div className="flex gap-2">
               <button
                 onClick={handleAdd}
-                className="flex-1 px-2 py-1 bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 text-white text-xs font-semibold rounded transition-colors"
+                className="flex-1 px-2 py-1 bg-status-success hover:bg-status-success/90 text-white text-xs font-semibold rounded transition-colors"
               >
                 Save
               </button>
@@ -99,7 +97,7 @@ const VariablesPanel = () => {
                   setNewVarName('');
                   setNewVarValue('');
                 }}
-                className="flex-1 px-2 py-1 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs font-semibold rounded transition-colors"
+                className="flex-1 px-2 py-1 bg-surface dark:bg-surface-dark-raised hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-primary dark:text-text-primary-dark text-xs font-semibold rounded transition-colors"
               >
                 Cancel
               </button>
@@ -107,16 +105,15 @@ const VariablesPanel = () => {
           </div>
         )}
 
-        {/* Variables List */}
         {variables && Object.keys(variables).length > 0 ? (
           <div className="space-y-2">
             {filteredVariables.map(([varName, varValue]) => (
               <div
                 key={varName}
-                className="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded space-y-1"
+                className="p-2 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded space-y-1"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <code className="text-xs font-semibold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded flex-1">
+                  <code className="text-xs font-semibold text-status-success dark:text-status-success bg-status-success/10 dark:bg-status-success/20 px-2 py-1 rounded flex-1">
                     {varName}
                   </code>
                   <button
@@ -124,14 +121,14 @@ const VariablesPanel = () => {
                       setEditingVar(varName);
                       setEditValue(typeof varValue === 'string' ? varValue : JSON.stringify(varValue));
                     }}
-                    className="px-2 py-1 bg-blue-500 dark:bg-blue-600 hover:bg-blue-600 dark:hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                    className="px-2 py-1 bg-primary hover:bg-primary/90 text-white text-xs rounded transition-colors"
                     title="Edit variable"
                   >
                     <Pencil className="w-3 h-3" />
                   </button>
                   <button
                     onClick={() => handleDelete(varName)}
-                    className="px-2 py-1 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-xs rounded transition-colors"
+                    className="px-2 py-1 bg-status-error hover:bg-status-error/90 text-white text-xs rounded transition-colors"
                     title="Delete variable"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -141,7 +138,7 @@ const VariablesPanel = () => {
                 {editingVar === varName ? (
                   <div className="space-y-1">
                     <textarea
-                      className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-gray-200 rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                      className="w-full px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                       rows={3}
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
@@ -149,20 +146,20 @@ const VariablesPanel = () => {
                     <div className="flex gap-1">
                       <button
                         onClick={() => handleEdit(varName, editValue)}
-                        className="flex-1 px-1.5 py-0.5 bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 text-white text-xs font-semibold rounded transition-colors"
+                        className="flex-1 px-1.5 py-0.5 bg-status-success hover:bg-status-success/90 text-white text-xs font-semibold rounded transition-colors"
                       >
                         Save
                       </button>
                       <button
                         onClick={() => setEditingVar(null)}
-                        className="flex-1 px-1.5 py-0.5 bg-gray-400 dark:bg-gray-600 hover:bg-gray-500 dark:hover:bg-gray-700 text-white text-xs font-semibold rounded transition-colors"
+                        className="flex-1 px-1.5 py-0.5 bg-surface dark:bg-surface-dark-raised hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-primary dark:text-text-primary-dark text-xs font-semibold rounded transition-colors"
                       >
                         Cancel
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-gray-600 dark:text-gray-300 break-words font-mono max-h-20 overflow-y-auto">
+                  <div className="text-xs text-text-secondary dark:text-text-primary-dark break-words font-mono max-h-20 overflow-y-auto">
                     {typeof varValue === 'string' ? (
                       <pre>{varValue}</pre>
                     ) : (
@@ -171,48 +168,44 @@ const VariablesPanel = () => {
                   </div>
                 )}
 
-                {/* Usage hint */}
-                <div className="text-[9px] text-gray-500 dark:text-gray-400">
-                  Use in workflow: <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded">{`{{variables.${varName}}}`}</code>
+                <div className="text-[9px] text-text-muted dark:text-text-muted-dark">
+                  Use in workflow: <code className="bg-surface dark:bg-surface-dark-raised px-1 rounded">{`{{variables.${varName}}}`}</code>
                 </div>
               </div>
             ))}
 
             {filteredVariables.length === 0 && (
-              <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-sm border border-dashed border-gray-300 dark:border-gray-600 rounded">
+              <div className="text-center py-4 text-text-muted dark:text-text-muted-dark text-sm border border-dashed border-border dark:border-border-dark rounded">
                 <p>No matching variables</p>
                 <p className="text-xs mt-1">Try a different search term</p>
               </div>
             )}
           </div>
         ) : (
-          <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-sm">
+          <div className="text-center py-4 text-text-muted dark:text-text-muted-dark text-sm">
             <p>No workflow variables yet</p>
             <p className="text-xs mt-1">Create variables to share data between nodes</p>
           </div>
         )}
       </div>
 
-      {/* Info Section */}
-      <div className="border-t dark:border-gray-700 p-3 text-[10px] text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 space-y-1">
-        <div><strong>💡 Tips:</strong></div>
+      <div className="border-t dark:border-gray-700 p-3 text-[10px] text-text-muted dark:text-text-muted-dark bg-surface dark:bg-surface-dark/50 space-y-1">
+        <div><strong>Tips:</strong></div>
         <ul className="list-disc list-inside space-y-0.5 pl-1">
-          <li>Extract values from API responses using "Store Response Fields"</li>
-          <li>Reference variables anywhere: <code className="bg-gray-200 dark:bg-gray-700 px-1">{`{{variables.name}}`}</code></li>
+          <li>Extract values from API responses using &quot;Store Response Fields&quot;</li>
+          <li>Reference variables anywhere: <code className="bg-surface dark:bg-surface-dark-raised px-1">{`{{variables.name}}`}</code></li>
           <li>Variables persist throughout workflow execution</li>
           <li>Great for storing tokens, IDs, and authentication data</li>
         </ul>
-        
-        <div className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-600 flex items-center gap-2"><GitMerge className="w-4 h-4" /><strong>Parallel Branches:</strong></div>
+
+        <div className="mt-2 pt-2 border-t border-border dark:border-border-dark flex items-center gap-2"><GitMerge className="w-4 h-4" /><strong>Parallel Branches:</strong></div>
         <ul className="list-disc list-inside space-y-0.5 pl-1">
-          <li>Access specific branches: <code className="bg-gray-200 dark:bg-gray-700 px-1">{`{{prev[0].response}}`}</code></li>
+          <li>Access specific branches: <code className="bg-surface dark:bg-surface-dark-raised px-1">{`{{prev[0].response}}`}</code></li>
           <li>Branch indexes shown on Merge node after execution</li>
-          <li>Example: <code className="bg-gray-200 dark:bg-gray-700 px-1">{`{{prev[1].response.body.id}}`}</code></li>
-          <li>Single predecessor: <code className="bg-gray-200 dark:bg-gray-700 px-1">{`{{prev.response}}`}</code></li>
+          <li>Example: <code className="bg-surface dark:bg-surface-dark-raised px-1">{`{{prev[1].response.body.id}}`}</code></li>
+          <li>Single predecessor: <code className="bg-surface dark:bg-surface-dark-raised px-1">{`{{prev.response}}`}</code></li>
         </ul>
       </div>
     </div>
   );
-};
-
-export default VariablesPanel;
+}
