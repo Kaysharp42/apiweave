@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   normalizeExportImportTab,
   resolveWorkflowExportImportInitialTab,
-} from './workflowExportImportTabs.js';
+} from './workflowExportImportTabs.ts';
 
 test('normalizeExportImportTab accepts valid tab names case-insensitively', () => {
   assert.equal(normalizeExportImportTab('import'), 'import');

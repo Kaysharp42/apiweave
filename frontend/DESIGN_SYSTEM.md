@@ -264,6 +264,13 @@ These properties automatically switch values between light and dark themes.
 - All interactive buttons have explicit `title` attributes
 - Focus management in modals via Headless UI
 
+### Phase 10 Verification Baseline
+- `npm run lint`, `npx tsc --noEmit`, `npm run build`, and `npm test` pass as of 2026-05-16.
+- `frontend/src` contains only TypeScript source and test files (`.ts`/`.tsx`); legacy `.js` tests were migrated to `.ts`.
+- Production `console.log`/`console.info` statements are not allowed in `frontend/src`; use `console.warn`/`console.error` only for actionable diagnostics.
+- Light/dark mode coverage is enforced through tokenized Tailwind classes and `dark:` variants, with page landmarks verified for keyboard and screen-reader navigation.
+- Responsive behavior relies on the split-pane layout (`Allotment`), flexible panel widths, and overflow-safe canvas/workspace containers rather than fixed viewport assumptions.
+
 ---
 
 ## File Structure

@@ -14,12 +14,8 @@ import { join } from 'node:path';
 
 const SRC_DIR = join('src', 'components');
 
-/**
- * @param {string} dir
- * @returns {string[]}
- */
-function findComponentFiles(dir) {
-  const files = [];
+function findComponentFiles(dir: string): string[] {
+  const files: string[] = [];
   const entries = readdirSync(dir, { withFileTypes: true });
 
   for (const entry of entries) {
@@ -48,7 +44,7 @@ test('no hardcoded hex colors in component files', { skip: 'Existing components 
     if (matches) {
       const lines = content.split('\n');
       for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
+        const line = lines[i] ?? '';
         if (line.trim().startsWith('//') || line.trim().startsWith('/*')) continue;
         if (line.includes('@param')) continue;
         if (HEX_PATTERN.test(line)) {

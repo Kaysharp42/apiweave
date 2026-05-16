@@ -16,12 +16,12 @@ test('buildNodeActionMenuItems includes expand action for collapsible nodes', ()
   const items = buildNodeActionMenuItems({ collapsible: true, isExpanded: false });
 
   assert.deepEqual(items.map((item) => item.key), ['duplicate', 'copy', 'toggle-expand']);
-  assert.equal(items[2].label, 'Expand');
+  assert.equal(items[2]!.label, 'Expand');
 });
 
 test('buildNodeActionMenuItems switches expand label when expanded', () => {
   const items = buildNodeActionMenuItems({ collapsible: true, isExpanded: true });
-  assert.equal(items[2].label, 'Collapse');
+  assert.equal(items[2]!.label, 'Collapse');
 });
 
 test('getNextNodeExpandedState toggles expanded state', () => {

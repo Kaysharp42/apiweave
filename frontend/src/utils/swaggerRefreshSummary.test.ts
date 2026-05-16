@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSwaggerRefreshSummary } from './swaggerRefreshSummary.js';
+import { buildSwaggerRefreshSummary } from './swaggerRefreshSummary.ts';
 
 test('buildSwaggerRefreshSummary formats success message with definition count', () => {
   const summary = buildSwaggerRefreshSummary({ definitionCount: 3, failedDefinitionCount: 0 }, 124);

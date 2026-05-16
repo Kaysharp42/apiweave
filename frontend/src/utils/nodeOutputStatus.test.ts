@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   formatNodeOutputDuration,
   getNodeOutputStatusClass,
-} from './nodeOutputStatus.js';
+} from './nodeOutputStatus.ts';
 
 test('getNodeOutputStatusClass handles status ranges', () => {
   assert.match(getNodeOutputStatusClass(undefined), /bg-surface-overlay/);
@@ -19,5 +19,5 @@ test('formatNodeOutputDuration formats milliseconds and seconds', () => {
 
 test('formatNodeOutputDuration returns null for invalid duration values', () => {
   assert.equal(formatNodeOutputDuration(undefined), null);
-  assert.equal(formatNodeOutputDuration('abc'), null);
+  assert.equal(formatNodeOutputDuration('abc' as never), null);
 });

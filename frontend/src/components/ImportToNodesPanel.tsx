@@ -152,8 +152,7 @@ export function ImportToNodesPanel({
         throw new Error(error.detail || 'Failed to save templates');
       }
 
-      const result = (await response.json()) as { totalTemplates: number };
-      console.log(`Saved ${result.totalTemplates} templates to workflow`);
+      await response.json();
     } catch (error) {
       console.error('Error saving templates to workflow:', error);
       throw error;

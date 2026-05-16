@@ -818,7 +818,7 @@ const AssertionConfig = ({ initialConfig, workingDataRef }: AssertionConfigProps
                     {editingIndex === index ? (
                       <AssertionEditor
                         value={editDraft as AssertionItem}
-                        onChange={(next: AssertionItem) => setEditDraft(next)}
+                        onChange={(next) => setEditDraft(next as AssertionItem)}
                         onCancel={() => {
                           setEditingIndex(-1);
                           setEditDraft(null);

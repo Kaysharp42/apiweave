@@ -97,8 +97,6 @@ export function WorkflowExportImport({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-
-      console.log(' Workflow exported successfully');
     } catch (err: unknown) {
       console.error('Export error:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred');

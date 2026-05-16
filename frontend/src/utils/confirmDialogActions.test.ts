@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   resolveConfirmDialogIntent,
   runConfirmDialogAction,
-} from './confirmDialogActions.js';
+} from './confirmDialogActions.ts';
 
 test('resolveConfirmDialogIntent keeps supported semantic intents', () => {
   assert.equal(resolveConfirmDialogIntent('error'), 'error');
@@ -17,7 +17,7 @@ test('resolveConfirmDialogIntent falls back to default intent', () => {
 });
 
 test('runConfirmDialogAction triggers both callbacks in order', () => {
-  const calls = [];
+  const calls: string[] = [];
 
   runConfirmDialogAction({
     onConfirm: () => calls.push('confirm'),

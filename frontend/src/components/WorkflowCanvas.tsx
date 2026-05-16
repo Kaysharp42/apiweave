@@ -78,26 +78,38 @@ interface EdgeData {
   [key: string]: unknown;
 }
 
+interface WorkflowCanvasNode {
+  nodeId?: string;
+  id?: string;
+  type?: string;
+  position: { x: number; y: number };
+  label?: string;
+  config?: Record<string, unknown>;
+  data?: {
+    label?: string;
+    config?: Record<string, unknown>;
+  };
+}
+
+interface WorkflowCanvasEdge {
+  edgeId?: string;
+  id?: string;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  label?: string | null;
+}
+
+export interface WorkflowCanvasWorkflow {
+  environmentId?: string;
+  nodes?: WorkflowCanvasNode[];
+  edges?: WorkflowCanvasEdge[];
+}
+
 interface WorkflowCanvasProps {
   workflowId: string | undefined;
-  workflow: {
-    environmentId?: string;
-    nodes?: Array<{
-      nodeId: string;
-      type: string;
-      position: { x: number; y: number };
-      label?: string;
-      config?: Record<string, unknown>;
-    }>;
-    edges?: Array<{
-      edgeId: string;
-      source: string;
-      target: string;
-      sourceHandle?: string | null;
-      targetHandle?: string | null;
-      label?: string;
-    }>;
-  } | undefined;
+  workflow: WorkflowCanvasWorkflow | null | undefined;
   isPanelOpen?: boolean;
   showVariablesPanel?: boolean;
   onShowVariablesPanel?: (show: boolean) => void;
@@ -355,7 +367,8 @@ export function WorkflowCanvas({
         if (node.type !== 'http-request' || !node.data?.schemaRefreshWarning) {
           return node;
         }
-        const { schemaRefreshWarning, ...restData } = node.data;
+        const restData = { ...node.data };
+        delete restData.schemaRefreshWarning;
         didChange = true;
         return {
           ...node,
@@ -413,7 +426,7 @@ export function WorkflowCanvas({
         try {
           const errorBody = await response.json() as { detail?: string };
           detail = errorBody.detail || detail;
-        } catch (_) {
+        } catch {
           // Keep default error detail if response body is not JSON
         }
         throw new Error(detail);
@@ -493,7 +506,8 @@ export function WorkflowCanvas({
               return node;
             }
             didChange = true;
-            const { schemaRefreshWarning, ...restData } = node.data!;
+            const restData = { ...node.data! };
+            delete restData.schemaRefreshWarning;
             return { ...node, data: restData };
           }
 
@@ -532,7 +546,8 @@ export function WorkflowCanvas({
               return node;
             }
             didChange = true;
-            const { schemaRefreshWarning, ...restData } = node.data!;
+            const restData = { ...node.data! };
+            delete restData.schemaRefreshWarning;
             return {
               ...node,
               data: restData,
@@ -853,19 +868,19 @@ export function WorkflowCanvas({
       return;
     }
 
-    const loadedNodes = workflow.nodes.map(node => ({
-      id: node.nodeId,
-      type: node.type,
+    const loadedNodes = workflow.nodes.map((node, index) => ({
+      id: node.nodeId ?? node.id ?? `node-${index}`,
+      type: node.type ?? 'http-request',
       position: node.position,
       data: {
-        label: node.label,
-        config: node.config || {},
+        label: node.label ?? node.data?.label,
+        config: node.config ?? node.data?.config ?? {},
       },
     })) as Node<NodeData>[];
 
     const isDark = darkModeRef.current;
-    const loadedEdges = workflow.edges.map(edge => ({
-      id: edge.edgeId,
+    const loadedEdges = workflow.edges.map((edge, index) => ({
+      id: edge.edgeId ?? edge.id ?? `edge-${index}`,
       source: edge.source,
       target: edge.target,
       sourceHandle: edge.sourceHandle || null,
@@ -1070,16 +1085,6 @@ export function WorkflowCanvas({
 
     const nodeCount = workflowPayload.nodes.length;
     const edgeCount = workflowPayload.edges.length;
-    const variableCount = Object.keys(workflowPayload.variables || {}).length;
-
-    console.info('[workflow-save]', {
-      workflowId,
-      silent,
-      nodeCount,
-      edgeCount,
-      variableCount,
-    });
-
     if (silent && shouldBlockDestructiveAutosave(workflowPayload.nodes, workflowPayload.edges, hydratedBaselineRef.current)) {
       console.warn('[workflow-save-blocked]', {
         workflowId,

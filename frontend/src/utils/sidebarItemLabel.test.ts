@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getSidebarItemLabel } from './sidebarItemLabel.js';
+import { getSidebarItemLabel } from './sidebarItemLabel.ts';
 
 test('getSidebarItemLabel keeps short labels unchanged', () => {
   const result = getSidebarItemLabel('Checkout API');

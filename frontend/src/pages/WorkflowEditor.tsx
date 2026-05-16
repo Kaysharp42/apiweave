@@ -4,8 +4,9 @@ import { toast } from 'sonner';
 import WorkflowCanvas from '../components/WorkflowCanvas';
 import { Spinner } from '../components/atoms';
 import API_BASE_URL from '../utils/api';
+import type { WorkflowCanvasWorkflow } from '../components/WorkflowCanvas';
 
-interface Workflow {
+interface Workflow extends WorkflowCanvasWorkflow {
   id: string;
   [key: string]: unknown;
 }
@@ -51,7 +52,7 @@ const WorkflowEditor = () => {
 
   return (
     <div className="h-screen">
-      <WorkflowCanvas workflowId={workflowId} workflow={workflow} />
+      <WorkflowCanvas workflowId={workflowId} workflow={workflow ?? undefined} />
     </div>
   );
 };

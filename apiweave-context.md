@@ -233,6 +233,12 @@ After EVERY phase:
 4. Run `npm test` — all tests passing required
 5. Commit with phase-specific message (excluding `todo.md`, `progress/`)
 
+### Phase 10 Lessons Learned
+- TypeScript migration is not complete while `.js` tests remain under `frontend/src`; tests are part of the strict source tree and must be migrated alongside production files.
+- Fallback UI props should preserve the real component contract. Prefer conditional rendering over constructing incomplete placeholder objects for typed domain entities like `Environment`.
+- Canvas hydration must tolerate both backend workflow payloads (`nodeId`/`edgeId`) and in-memory ReactFlow snapshots (`id`/`data`) when tabs can store either shape.
+- Production debug output should be removed during final polish. Keep diagnostic logging limited to `console.warn`/`console.error` or guard verbose logs behind development-only checks.
+
 ---
 
 ## File Exclusion Rules (Commits)

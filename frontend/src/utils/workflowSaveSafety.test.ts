@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   isDefaultStartOnlyGraph,
   shouldBlockDestructiveAutosave,
-} from './workflowSaveSafety.js';
+} from './workflowSaveSafety.ts';
 
 test('isDefaultStartOnlyGraph returns true for canonical default graph', () => {
   const nodes = [
@@ -15,7 +15,7 @@ test('isDefaultStartOnlyGraph returns true for canonical default graph', () => {
       config: {},
     },
   ];
-  const edges = [];
+  const edges: unknown[] = [];
 
   assert.equal(isDefaultStartOnlyGraph(nodes, edges), true);
 });
@@ -32,7 +32,7 @@ test('isDefaultStartOnlyGraph returns false for larger graph', () => {
 
 test('shouldBlockDestructiveAutosave blocks when baseline is larger and payload is default', () => {
   const payloadNodes = [{ nodeId: 'start-1', type: 'start' }];
-  const payloadEdges = [];
+  const payloadEdges: unknown[] = [];
   const baseline = { nodeCount: 14, edgeCount: 13 };
 
   assert.equal(
@@ -43,7 +43,7 @@ test('shouldBlockDestructiveAutosave blocks when baseline is larger and payload 
 
 test('shouldBlockDestructiveAutosave allows default graph for new workflows', () => {
   const payloadNodes = [{ nodeId: 'start-1', type: 'start' }];
-  const payloadEdges = [];
+  const payloadEdges: unknown[] = [];
   const baseline = { nodeCount: 1, edgeCount: 0 };
 
   assert.equal(

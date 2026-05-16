@@ -356,7 +356,7 @@ const AssertionNode = ({ id, data, selected = false }: AssertionNodeProps) => {
                       {editingIndex === index ? (
                         <AssertionEditor
                           value={editDraft}
-                          onChange={(next: AssertionItem) => setEditDraft(next)}
+                          onChange={(next) => setEditDraft(next as AssertionItem)}
                           onCancel={() => {
                             setEditingIndex(-1);
                             setEditDraft(null);

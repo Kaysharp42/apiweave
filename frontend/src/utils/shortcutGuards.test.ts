@@ -4,9 +4,19 @@ import {
   getCanvasClipboardShortcutAction,
   hasSelectedText,
   isEditableKeyboardTarget,
-} from './shortcutGuards.js';
+} from './shortcutGuards.ts';
 
-const createSelectionDoc = ({ text = '', isCollapsed = false, rangeCount = 1 } = {}) => ({
+const asEventTarget = (target: unknown): EventTarget => target as EventTarget;
+const asKeyboardEvent = (event: unknown): KeyboardEvent => event as KeyboardEvent;
+const asDocument = (doc: unknown): Document => doc as Document;
+
+interface SelectionDocOptions {
+  text?: string;
+  isCollapsed?: boolean;
+  rangeCount?: number;
+}
+
+const createSelectionDoc = ({ text = '', isCollapsed = false, rangeCount = 1 }: SelectionDocOptions = {}): Document => asDocument({
   getSelection: () => ({
     rangeCount,
     isCollapsed,
@@ -15,17 +25,17 @@ const createSelectionDoc = ({ text = '', isCollapsed = false, rangeCount = 1 } =
 });
 
 test('isEditableKeyboardTarget detects input and textarea', () => {
-  assert.equal(isEditableKeyboardTarget({ tagName: 'input' }), true);
-  assert.equal(isEditableKeyboardTarget({ tagName: 'textarea' }), true);
+  assert.equal(isEditableKeyboardTarget(asEventTarget({ tagName: 'input' })), true);
+  assert.equal(isEditableKeyboardTarget(asEventTarget({ tagName: 'textarea' })), true);
 });
 
 test('isEditableKeyboardTarget detects contenteditable and rich editor wrappers', () => {
-  assert.equal(isEditableKeyboardTarget({ isContentEditable: true }), true);
+  assert.equal(isEditableKeyboardTarget(asEventTarget({ isContentEditable: true })), true);
 
   const richTarget = {
-    closest: (selector) => selector.includes('.monaco-editor') ? {} : null,
+    closest: (selector: string) => selector.includes('.monaco-editor') ? {} : null,
   };
-  assert.equal(isEditableKeyboardTarget(richTarget), true);
+  assert.equal(isEditableKeyboardTarget(asEventTarget(richTarget)), true);
 });
 
 test('hasSelectedText returns true only for non-empty user selections', () => {
@@ -37,7 +47,7 @@ test('hasSelectedText returns true only for non-empty user selections', () => {
 
 test('getCanvasClipboardShortcutAction blocks in editor overlays', () => {
   const action = getCanvasClipboardShortcutAction({
-    event: { key: 'c', ctrlKey: true, target: {} },
+    event: asKeyboardEvent({ key: 'c', ctrlKey: true, target: {} }),
     hasSelectedNode: true,
     isEditorOverlayOpen: true,
   });
@@ -53,7 +63,7 @@ test('getCanvasClipboardShortcutAction prioritizes text/editable contexts', () =
 
   assert.equal(
     getCanvasClipboardShortcutAction({
-      event: eventInInput,
+      event: asKeyboardEvent(eventInInput),
       hasSelectedNode: true,
       isEditorOverlayOpen: false,
     }),
@@ -68,7 +78,7 @@ test('getCanvasClipboardShortcutAction prioritizes text/editable contexts', () =
 
   assert.equal(
     getCanvasClipboardShortcutAction({
-      event: eventWithSelection,
+      event: asKeyboardEvent(eventWithSelection),
       hasSelectedNode: true,
       isEditorOverlayOpen: false,
     }),
@@ -78,33 +88,33 @@ test('getCanvasClipboardShortcutAction prioritizes text/editable contexts', () =
 
 test('getCanvasClipboardShortcutAction handles canvas copy/paste intent', () => {
   const copyAction = getCanvasClipboardShortcutAction({
-    event: {
+    event: asKeyboardEvent({
       key: 'c',
       ctrlKey: true,
       target: { ownerDocument: createSelectionDoc({ text: '', isCollapsed: true }) },
-    },
+    }),
     hasSelectedNode: true,
     isEditorOverlayOpen: false,
   });
   assert.equal(copyAction, 'copy');
 
   const copyWithoutSelection = getCanvasClipboardShortcutAction({
-    event: {
+    event: asKeyboardEvent({
       key: 'c',
       ctrlKey: true,
       target: { ownerDocument: createSelectionDoc({ text: '', isCollapsed: true }) },
-    },
+    }),
     hasSelectedNode: false,
     isEditorOverlayOpen: false,
   });
   assert.equal(copyWithoutSelection, null);
 
   const pasteAction = getCanvasClipboardShortcutAction({
-    event: {
+    event: asKeyboardEvent({
       key: 'v',
       metaKey: true,
       target: { ownerDocument: createSelectionDoc({ text: '', isCollapsed: true }) },
-    },
+    }),
     hasSelectedNode: false,
     isEditorOverlayOpen: false,
   });

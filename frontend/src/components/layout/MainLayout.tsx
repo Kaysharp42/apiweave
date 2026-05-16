@@ -118,12 +118,14 @@ export function MainLayout() {
       <HorizontalDivider />
       <MainFooter />
 
-      <SecretsPrompt
-        open={showSecretsPrompt && !!environmentWithSecrets}
-        environment={environmentWithSecrets ?? { isActive: false, environmentId: '', name: '', secrets: {} }}
-        onClose={() => setShowSecretsPrompt(false)}
-        onSecretsProvided={() => setShowSecretsPrompt(false)}
-      />
+      {environmentWithSecrets && (
+        <SecretsPrompt
+          isOpen={showSecretsPrompt}
+          environment={environmentWithSecrets}
+          onClose={() => setShowSecretsPrompt(false)}
+          onSecretsProvided={() => setShowSecretsPrompt(false)}
+        />
+      )}
     </>
   );
 }

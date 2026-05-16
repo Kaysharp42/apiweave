@@ -2,7 +2,7 @@ import { memo, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useReactFlow } from 'reactflow';
 import { useWorkflow } from '../../contexts/WorkflowContext';
 import { BaseNode } from '../atoms/flow/BaseNode';
-import FileUploadSection from '../FileUploadSection';
+import FileUploadSection, { type FileUpload } from '../FileUploadSection';
 import { Puzzle, Plus, Trash2, CheckCircle, ArrowRight, AlertTriangle, XCircle, ChevronDown, ChevronUp, Snowflake, ExternalLink, Clock3 } from 'lucide-react';
 import type { NodeStatus } from '../../types/NodeStatus';
 
@@ -12,11 +12,6 @@ interface SchemaWarning {
   text?: string;
   refreshedAt?: string;
   sourceUrl?: string;
-}
-
-interface FileUpload {
-  fieldName: string;
-  filePath: string;
 }
 
 interface HTTPRequestNodeData {
