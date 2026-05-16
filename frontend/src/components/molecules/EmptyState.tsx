@@ -2,7 +2,7 @@ import { Inbox } from 'lucide-react';
 import type { EmptyStateProps } from '../../types';
 
 export function EmptyState({
-  icon: Icon,
+  icon,
   title = 'Nothing here yet',
   description,
   action,
@@ -20,7 +20,7 @@ export function EmptyState({
         .join(' ')}
     >
       <div className="flex items-center justify-center">
-        {Icon ? <Icon className="w-12 h-12" /> : defaultIcon}
+        {icon ?? defaultIcon}
       </div>
       <h3 className="text-lg font-semibold font-display text-text-primary dark:text-text-primary-dark">
         {title}
