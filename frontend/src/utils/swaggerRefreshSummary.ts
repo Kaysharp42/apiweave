@@ -1,10 +1,23 @@
-export function buildSwaggerRefreshSummary(stats = {}, endpointCount = 0) {
+interface SwaggerRefreshStats {
+  totalEndpoints?: number;
+  definitionCount?: number;
+  failedDefinitionCount?: number;
+}
+
+interface SwaggerRefreshSummary {
+  successMessage: string;
+  warningMessage: string | null;
+  definitionCount: number;
+  failedDefinitionCount: number;
+}
+
+export function buildSwaggerRefreshSummary(stats: SwaggerRefreshStats = {}, endpointCount = 0): SwaggerRefreshSummary {
   const totalEndpoints = Number.isFinite(endpointCount)
     ? endpointCount
-    : Number(stats?.totalEndpoints || 0);
+    : Number(stats?.totalEndpoints ?? 0);
 
-  const definitionCount = Number(stats?.definitionCount || 0);
-  const failedDefinitionCount = Number(stats?.failedDefinitionCount || 0);
+  const definitionCount = Number(stats?.definitionCount ?? 0);
+  const failedDefinitionCount = Number(stats?.failedDefinitionCount ?? 0);
 
   const fromDefinitions = definitionCount > 0
     ? ` from ${definitionCount} definition${definitionCount === 1 ? '' : 's'}`

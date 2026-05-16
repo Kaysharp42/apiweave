@@ -1,9 +1,16 @@
+interface NodeFilterParams {
+  key?: string | undefined;
+  isModalOpen?: boolean;
+  isPaletteClosing?: boolean;
+  clearRequested?: boolean;
+}
+
 export const shouldClearNodeFilter = ({
   key,
   isModalOpen = false,
   isPaletteClosing = false,
   clearRequested = false,
-} = {}) => {
+}: NodeFilterParams = {}): boolean => {
   if (clearRequested || isModalOpen || isPaletteClosing) {
     return true;
   }
@@ -17,7 +24,7 @@ export const getNextNodeFilterValue = ({
   isModalOpen = false,
   isPaletteClosing = false,
   clearRequested = false,
-} = {}) => {
+}: NodeFilterParams & { currentValue?: string } = {}): string => {
   if (
     shouldClearNodeFilter({
       key,

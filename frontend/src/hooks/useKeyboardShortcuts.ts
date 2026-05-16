@@ -1,12 +1,32 @@
 import { useEffect, useRef } from 'react';
 import Mousetrap from 'mousetrap';
 
-/**
- * useKeyboardShortcuts — global keyboard shortcut bindings via mousetrap.
- *
- * Binds once on mount, unbinds on unmount.
- * All callbacks are stored in a ref so they can be updated without rebinding.
- */
+interface UseKeyboardShortcutsParams {
+  onNewWorkflow?: () => void;
+  onSave?: () => void;
+  onRun?: () => void;
+  onCloseTab?: () => void;
+  onNextTab?: () => void;
+  onPrevTab?: () => void;
+  onToggleEnvironmentManager?: () => void;
+  onToggleJsonEditor?: () => void;
+  onToggleSidebar?: () => void;
+  onShowShortcutsHelp?: () => void;
+}
+
+interface ShortcutCallbacks {
+  onNewWorkflow?: (() => void) | undefined;
+  onSave?: (() => void) | undefined;
+  onRun?: (() => void) | undefined;
+  onCloseTab?: (() => void) | undefined;
+  onNextTab?: (() => void) | undefined;
+  onPrevTab?: (() => void) | undefined;
+  onToggleEnvironmentManager?: (() => void) | undefined;
+  onToggleJsonEditor?: (() => void) | undefined;
+  onToggleSidebar?: (() => void) | undefined;
+  onShowShortcutsHelp?: (() => void) | undefined;
+}
+
 export default function useKeyboardShortcuts({
   onNewWorkflow,
   onSave,
@@ -18,10 +38,9 @@ export default function useKeyboardShortcuts({
   onToggleJsonEditor,
   onToggleSidebar,
   onShowShortcutsHelp,
-} = {}) {
-  const callbacks = useRef({});
+}: UseKeyboardShortcutsParams = {}) {
+  const callbacks = useRef<ShortcutCallbacks>({});
 
-  // Keep callbacks fresh without rebinding
   useEffect(() => {
     callbacks.current = {
       onNewWorkflow,
@@ -38,7 +57,7 @@ export default function useKeyboardShortcuts({
   });
 
   useEffect(() => {
-    const call = (name) => (e) => {
+    const call = (name: keyof ShortcutCallbacks) => (e: Mousetrap.ExtendedKeyboardEvent) => {
       e.preventDefault();
       callbacks.current[name]?.();
     };
@@ -50,9 +69,8 @@ export default function useKeyboardShortcuts({
     Mousetrap.bind('ctrl+e', call('onToggleEnvironmentManager'));
     Mousetrap.bind('ctrl+j', call('onToggleJsonEditor'));
     Mousetrap.bind('ctrl+b', call('onToggleSidebar'));
-    Mousetrap.bind('?', (e) => {
-      // Only fire if not typing in an input/textarea
-      const tag = e.target.tagName.toLowerCase();
+    Mousetrap.bind('?', (e: Mousetrap.ExtendedKeyboardEvent) => {
+      const tag = e.target ? (e.target as HTMLElement).tagName.toLowerCase() : '';
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       e.preventDefault();
       callbacks.current.onShowShortcutsHelp?.();

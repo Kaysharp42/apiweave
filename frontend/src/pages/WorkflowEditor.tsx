@@ -1,14 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+// @ts-expect-error - WorkflowCanvas is still .jsx, will be migrated in Phase 8
 import WorkflowCanvas from '../components/WorkflowCanvas';
 import { Spinner } from '../components/atoms';
 import API_BASE_URL from '../utils/api';
 
+interface Workflow {
+  id: string;
+  [key: string]: unknown;
+}
+
 const WorkflowEditor = () => {
-  const { workflowId } = useParams();
+  const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
-  const [workflow, setWorkflow] = useState(null);
+  const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,14 +22,13 @@ const WorkflowEditor = () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json() as Workflow;
           setWorkflow(data);
         } else {
           toast.error('Workflow not found');
           navigate('/');
         }
-      } catch (error) {
-        console.error('Error fetching workflow:', error);
+      } catch {
         toast.error('Error loading workflow');
         navigate('/');
       } finally {
@@ -40,7 +45,7 @@ const WorkflowEditor = () => {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3 bg-surface dark:bg-surface-dark" aria-label="Loading workflow">
         <Spinner size="lg" />
-        <span className="text-sm text-text-secondary dark:text-text-secondary-dark">Loading workflow…</span>
+        <span className="text-sm text-text-secondary dark:text-text-secondary-dark">Loading workflow&hellip;</span>
       </div>
     );
   }

@@ -1,5 +1,4 @@
 import { useContext, useState } from 'react';
-// @ts-expect-error App.jsx not yet migrated
 import { AppContext } from '../../App';
 // @ts-expect-error EnvironmentManager.jsx not yet migrated
 import EnvironmentManager from '../EnvironmentManager';

@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-// @ts-expect-error api.js not yet migrated
 import API_BASE_URL from '../utils/api';
 import type { Workflow } from '../types/Workflow';
 import type { Collection } from '../types/Collection';

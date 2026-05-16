@@ -1,6 +1,5 @@
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useReactFlow } from 'reactflow';
-// @ts-expect-error - WorkflowContext is still .jsx, will be migrated in Phase 7
 import { useWorkflow } from '../../contexts/WorkflowContext';
 import { BaseNode } from '../atoms/flow/BaseNode';
 // @ts-expect-error - FileUploadSection is still .jsx, will be migrated in Phase 8

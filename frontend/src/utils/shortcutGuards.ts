@@ -8,28 +8,29 @@ const EDITABLE_SELECTOR = [
   '.cm-editor',
 ].join(', ');
 
-const hasClosest = (value) => value && typeof value.closest === 'function';
+const hasClosest = (value: EventTarget | null): value is Element & { closest: Element['closest'] } =>
+  value !== null && typeof (value as Element).closest === 'function';
 
-export const isEditableKeyboardTarget = (target) => {
+export const isEditableKeyboardTarget = (target: EventTarget | null | undefined): boolean => {
   if (!target) return false;
 
   if (hasClosest(target) && target.closest(EDITABLE_SELECTOR)) {
     return true;
   }
 
-  const tagName = target.tagName?.toUpperCase();
+  const tagName = (target as HTMLElement).tagName?.toUpperCase?.();
   if (tagName === 'INPUT' || tagName === 'TEXTAREA') {
     return true;
   }
 
-  if (target.isContentEditable || target.contentEditable === 'true') {
+  if ((target as HTMLElement).isContentEditable || (target as HTMLElement).contentEditable === 'true') {
     return true;
   }
 
   return false;
 };
 
-export const hasSelectedText = (doc = globalThis.document) => {
+export const hasSelectedText = (doc: Document | null | undefined = globalThis.document): boolean => {
   const selection = doc?.getSelection?.();
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
     return false;
@@ -38,11 +39,17 @@ export const hasSelectedText = (doc = globalThis.document) => {
   return selection.toString().trim().length > 0;
 };
 
+type ClipboardAction = 'copy' | 'paste' | null;
+
 export const getCanvasClipboardShortcutAction = ({
   event,
   hasSelectedNode,
   isEditorOverlayOpen,
-}) => {
+}: {
+  event: KeyboardEvent | null | undefined;
+  hasSelectedNode: boolean;
+  isEditorOverlayOpen: boolean;
+}): ClipboardAction => {
   if (!event || event.defaultPrevented || isEditorOverlayOpen) {
     return null;
   }
@@ -57,7 +64,7 @@ export const getCanvasClipboardShortcutAction = ({
     return null;
   }
 
-  const doc = event.target?.ownerDocument || globalThis.document;
+  const doc = (event.target as Node | null)?.ownerDocument ?? globalThis.document;
   if (hasSelectedText(doc)) {
     return null;
   }

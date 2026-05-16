@@ -1,12 +1,4 @@
-// Centralized icon exports — change source here, updates everywhere
-// All icons sourced from lucide-react (modern, tree-shakeable, consistent)
-//
-// Naming convention: export the lucide name directly.
-// When a component needs an icon, import from this file:
-//   import { Play, Save, X } from '../utils/icons';
-
 export {
-  // Navigation & Layout
   Home,
   Settings,
   ChevronDown,
@@ -18,8 +10,6 @@ export {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-
-  // Actions
   Plus,
   X,
   Check,
@@ -34,8 +24,6 @@ export {
   GripVertical,
   ArrowLeft,
   ArrowRight,
-
-  // File & Folder
   File,
   FileText,
   FileJson,
@@ -43,8 +31,6 @@ export {
   FolderOpen,
   Package,
   Network,
-
-  // Media & Display
   Play,
   Square,
   History,
@@ -52,8 +38,6 @@ export {
   Timer,
   Zap,
   Image,
-
-  // Status & Feedback
   Info,
   AlertTriangle,
   AlertCircle,
@@ -63,24 +47,16 @@ export {
   Circle,
   Loader2,
   CircleDot,
-
-  // Code & Dev
   Code,
   Terminal,
   Sparkles,
   Puzzle,
   GitMerge,
   GitBranch,
-
-  // Visibility
   Eye,
   EyeOff,
-
-  // Theme
   Moon,
   Sun,
-
-  // Data & Content
   Type,
   Hash,
   Calendar,

@@ -13,7 +13,6 @@ import useNavigationStore from '../../stores/NavigationStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
 import { HorizontalDivider } from '../atoms';
-// @ts-expect-error api.js not yet migrated
 import API_BASE_URL from '../../utils/api';
 import type { Environment } from '../../types/Environment';
 

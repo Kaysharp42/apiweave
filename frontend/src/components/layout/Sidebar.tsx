@@ -16,7 +16,6 @@ import {
   Cog,
   Trash2,
 } from 'lucide-react';
-// @ts-expect-error api.js not yet migrated
 import API_BASE_URL from '../../utils/api';
 // @ts-expect-error WorkflowExportImport.jsx not yet migrated
 import WorkflowExportImport from '../WorkflowExportImport';
@@ -26,9 +25,7 @@ import { Badge, Spinner, Skeleton, Button } from '../atoms';
 import { ConfirmDialog, EmptyState, PromptDialog } from '../molecules';
 import useSidebarStore from '../../stores/SidebarStore';
 import useTabStore from '../../stores/TabStore';
-// @ts-expect-error sidebarItemLabel.js not yet migrated
 import { getSidebarItemLabel } from '../../utils/sidebarItemLabel';
-// @ts-expect-error sidebarDeletion.js not yet migrated
 import { requestCollectionDeletion, requestWorkflowDeletion } from '../../utils/sidebarDeletion';
 import type { SidebarProps } from '../../types/SidebarProps';
 import type { Workflow } from '../../types/Workflow';
@@ -376,6 +373,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
       if (!result.deleted) return;
 
       const workflowId = result.workflowId;
+      if (!workflowId) return;
 
       toast.success('Workflow deleted permanently');
       setSelectedWorkflowId((prev) => (prev === workflowId ? null : prev));
@@ -407,6 +405,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
       if (!result.deleted) return;
 
       const collectionId = result.collectionId;
+      if (!collectionId) return;
 
       toast.success('Collection deleted permanently');
       setCollections((prev) => prev.filter((c) => c.collectionId !== collectionId));

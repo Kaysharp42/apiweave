@@ -10,7 +10,6 @@ import VariablesPanel from '../VariablesPanel';
 import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
 // @ts-expect-error DynamicFunctionsHelper.jsx not yet migrated
 import DynamicFunctionsHelper from '../DynamicFunctionsHelper';
-// @ts-expect-error WorkflowContext.jsx not yet migrated
 import { WorkflowProvider } from '../../contexts/WorkflowContext';
 import { Settings, Sparkles, Package, PanelRightClose } from 'lucide-react';
 import { TabBar, KeyboardShortcutsHelp } from '../organisms';
@@ -19,9 +18,7 @@ import { IconButton } from '../atoms';
 import useTabStore from '../../stores/TabStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import useNavigationStore from '../../stores/NavigationStore';
-// @ts-expect-error useKeyboardShortcuts.js not yet migrated
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
-// @ts-expect-error api.js not yet migrated
 import API_BASE_URL from '../../utils/api';
 import type { WorkspaceProps } from '../../types/WorkspaceProps';
 import type { WorkspaceTab } from '../../types/WorkspaceTab';
@@ -135,7 +132,7 @@ export function Workspace({ onActiveTabChange }: WorkspaceProps) {
           <WorkflowProvider
             key={activeTab.id}
             workflowId={activeTab.id}
-            initialWorkflow={activeTab.workflow}
+            initialWorkflow={activeTab.workflow ?? undefined}
           >
             {activeTab.workflow?.environmentId && (
               <div className="px-3 py-2 bg-primary/5 dark:bg-primary/10 border-b border-primary/20 dark:border-primary/20 flex items-center gap-2 text-sm">

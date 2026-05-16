@@ -1,9 +1,22 @@
 import { useCallback } from 'react';
+import type { Node, XYPosition } from 'reactflow';
 
-/**
- * Default node configuration by type.
- */
-function getDefaultConfig(type) {
+interface NodeConfig {
+  method?: string;
+  url?: string;
+  queryParams?: string;
+  pathVariables?: string;
+  headers?: string;
+  cookies?: string;
+  body?: string;
+  timeout?: number;
+  assertions?: unknown[];
+  duration?: number;
+  mergeStrategy?: string;
+  conditions?: unknown[];
+}
+
+function getDefaultConfig(type: string): NodeConfig {
   switch (type) {
     case 'http-request':
       return {
@@ -27,24 +40,24 @@ function getDefaultConfig(type) {
   }
 }
 
-/**
- * useCanvasDrop — drag-and-drop handler for the ReactFlow canvas.
- *
- * Extracted from WorkflowCanvas to reduce complexity.
- *
- * @param {Object} params
- * @param {Object|null} params.reactFlowInstance
- * @param {Function}    params.setNodes
- * @returns {{ onDrop: Function, onDragOver: Function }}
- */
-export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }) {
-  const onDragOver = useCallback((event) => {
+interface UseCanvasDropParams {
+  reactFlowInstanceRef: React.MutableRefObject<{ screenToFlowPosition: (coords: { x: number; y: number }) => XYPosition } | null> | null;
+  setNodes: (updater: (nds: Node[]) => Node[]) => void;
+}
+
+interface UseCanvasDropResult {
+  onDrop: (event: React.DragEvent) => void;
+  onDragOver: (event: React.DragEvent) => void;
+}
+
+export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }: UseCanvasDropParams): UseCanvasDropResult {
+  const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
   const onDrop = useCallback(
-    (event) => {
+    (event: React.DragEvent) => {
       event.preventDefault();
 
       const type = event.dataTransfer.getData('application/reactflow');
@@ -52,12 +65,10 @@ export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }) {
       const templateJson = event.dataTransfer.getData('application/reactflow-node-template');
 
       if (!type) {
-        console.error('No type data in drop event');
         return;
       }
       const instance = reactFlowInstanceRef?.current;
       if (!instance) {
-        console.error('ReactFlow instance not initialized');
         return;
       }
 
@@ -67,10 +78,10 @@ export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }) {
       });
 
       let config = getDefaultConfig(type);
-      let labelFromTemplate = null;
+      let labelFromTemplate: string | null = null;
       if (templateJson) {
         try {
-          const parsed = JSON.parse(templateJson);
+          const parsed = JSON.parse(templateJson) as { type?: string; config?: NodeConfig; label?: string };
           if (parsed && parsed.type === type && parsed.config) {
             config = { ...config, ...parsed.config };
             if (parsed.label) labelFromTemplate = parsed.label;
@@ -80,18 +91,17 @@ export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }) {
         }
       }
 
-      // Override method if provided (for HTTP request nodes)
       if (method && type === 'http-request') {
         config.method = method;
       }
 
-      const newNode = {
+      const newNode: Node = {
         id: `${type}-${Date.now()}`,
         type,
         position,
         data: {
           label:
-            labelFromTemplate ||
+            labelFromTemplate ??
             type
               .replace('-', ' ')
               .replace(/\b\w/g, (l) => l.toUpperCase()),

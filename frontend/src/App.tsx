@@ -1,42 +1,44 @@
-import React, { useState, useEffect } from 'react'
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import Home from './pages/Home'
-import { PaletteProvider } from './contexts/PaletteContext'
+import { useState, useEffect, createContext } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Home from './pages/Home';
+import { PaletteProvider } from './contexts/PaletteContext';
 import { Toast } from './components/atoms/Toast';
 
-// Create contexts for global state with default values
-export const AppContext = React.createContext({
+interface AppContextValue {
+  darkMode: boolean;
+  setDarkMode: React.Dispatch<React.SetStateAction<boolean>>;
+  autoSaveEnabled: boolean;
+  setAutoSaveEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+export const AppContext = createContext<AppContextValue>({
   darkMode: false,
   setDarkMode: () => {},
   autoSaveEnabled: true,
-  setAutoSaveEnabled: () => {}
+  setAutoSaveEnabled: () => {},
 });
 
 function App() {
-  // Dark mode state (persisted globally)
   const [darkMode, setDarkMode] = useState(() => {
     try {
       const stored = localStorage.getItem('darkMode');
       if (stored !== null) return stored === 'true';
-      // default to system preference
       return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    } catch (err) {
+    } catch {
       return false;
     }
   });
 
-  // Auto-save state (persisted globally)
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
     try {
       const stored = localStorage.getItem('autoSaveEnabled');
       if (stored !== null) return stored === 'true';
-      return true; // default enabled
-    } catch (err) {
+      return true;
+    } catch {
       return true;
     }
   });
 
-  // Apply dark mode to document (Tailwind class + DaisyUI data-theme)
   useEffect(() => {
     try {
       if (darkMode) {
@@ -47,17 +49,16 @@ function App() {
         document.documentElement.setAttribute('data-theme', 'apiweave');
       }
       localStorage.setItem('darkMode', darkMode ? 'true' : 'false');
-    } catch (err) {
-      console.error('Error applying dark mode:', err);
+    } catch {
+      // ignore
     }
   }, [darkMode]);
 
-  // Persist auto-save preference
   useEffect(() => {
     try {
       localStorage.setItem('autoSaveEnabled', autoSaveEnabled ? 'true' : 'false');
-    } catch (err) {
-      console.error('Error saving auto-save preference:', err);
+    } catch {
+      // ignore
     }
   }, [autoSaveEnabled]);
 
@@ -72,7 +73,7 @@ function App() {
         <Toast />
       </PaletteProvider>
     </AppContext.Provider>
-  )
+  );
 }
 
-export default App
+export default App;

@@ -1,12 +1,18 @@
+interface SidebarItemLabelResult {
+  label: string;
+  fullLabel: string;
+  truncated: boolean;
+}
+
 const DEFAULT_FALLBACK = 'Untitled';
 
-const normalizeLabel = (value, fallback = DEFAULT_FALLBACK) => {
+const normalizeLabel = (value: unknown, fallback = DEFAULT_FALLBACK): string => {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : fallback;
 };
 
-export const getSidebarItemLabel = (value, maxLength = 42, fallback = DEFAULT_FALLBACK) => {
+export const getSidebarItemLabel = (value: unknown, maxLength = 42, fallback = DEFAULT_FALLBACK): SidebarItemLabelResult => {
   const fullLabel = normalizeLabel(value, fallback);
   const safeMax = Math.max(2, Number(maxLength) || 42);
 

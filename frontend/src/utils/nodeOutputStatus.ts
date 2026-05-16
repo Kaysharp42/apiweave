@@ -1,4 +1,4 @@
-export const getNodeOutputStatusClass = (statusCode) => {
+export const getNodeOutputStatusClass = (statusCode: number | undefined | null): string => {
   if (!statusCode) {
     return 'bg-surface-overlay text-text-secondary dark:bg-surface-dark-overlay dark:text-text-secondary-dark';
   }
@@ -14,7 +14,7 @@ export const getNodeOutputStatusClass = (statusCode) => {
   return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
 };
 
-export const formatNodeOutputDuration = (durationMs) => {
+export const formatNodeOutputDuration = (durationMs: number | undefined | null): string | null => {
   if (durationMs === undefined || durationMs === null || Number.isNaN(Number(durationMs))) {
     return null;
   }
