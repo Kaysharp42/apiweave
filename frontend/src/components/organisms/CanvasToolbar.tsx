@@ -1,8 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { Save, History, Play, Code, Upload, Loader2, RefreshCw, ChevronDown } from 'lucide-react';
-import { Button } from '../atoms';
+import { Button, IconButton } from '../atoms';
 import ButtonSelect from '../ButtonSelect';
 import type { CanvasToolbarProps } from '../../types/CanvasToolbarProps';
+
+export interface EnvironmentOption {
+  value: string;
+  label: string;
+}
+
+export function buildEnvironmentOptions(
+  environments: Array<{ environmentId: string; name: string }>,
+): EnvironmentOption[] {
+  return [
+    { value: '', label: 'No Environment' },
+    ...environments.map((environment) => ({
+      value: environment.environmentId,
+      label: environment.name,
+    })),
+  ];
+}
 
 export function CanvasToolbar({
   onSave,
@@ -68,10 +85,7 @@ export function CanvasToolbar({
 
       <ButtonSelect
         key={`env-select-${workflowId ?? ''}`}
-        options={[
-          { value: '', label: 'No Environment' },
-          ...environments.map((e) => ({ value: e.environmentId, label: e.name })),
-        ]}
+        options={buildEnvironmentOptions(environments)}
         value={selectedEnvironment || ''}
         onChange={onEnvironmentChange}
         placeholder="No Environment"
@@ -103,44 +117,47 @@ export function CanvasToolbar({
           {isRunning ? 'Running…' : 'Run'}
         </Button>
 
-        <button
+        <IconButton
           onClick={() => setIsRunMenuOpen((prev) => !prev)}
           disabled={isRunning}
+          tooltip="Run options"
+          variant="success"
+          size="sm"
           className={[
-            'flex items-center justify-center px-2 py-1.5 h-8 rounded-r-lg transition-colors',
+            'h-8 rounded-l-none rounded-r-lg transition-colors border-l border-black/10',
             isRunning
-              ? 'bg-status-running/20 text-status-running cursor-wait'
-              : 'bg-status-success text-white hover:brightness-110',
+              ? 'cursor-wait'
+              : 'hover:brightness-110',
           ].join(' ')}
-          aria-label="Run options"
-          title="Run options"
         >
           <ChevronDown className={`w-4 h-4 transition-transform ${isRunMenuOpen ? 'rotate-180' : ''}`} />
-        </button>
+        </IconButton>
 
         {isRunMenuOpen && (
           <div className="absolute top-9 right-0 min-w-[280px] max-w-[360px] rounded-lg border border-border-default dark:border-border-default-dark bg-surface-raised dark:bg-surface-dark-raised shadow-lg overflow-hidden z-50">
-            <button
+            <Button
               onClick={() => {
                 onRunFromLastFailed?.();
                 setIsRunMenuOpen(false);
               }}
               disabled={isRunning || !hasResumeOptions || isResumeLoading}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:text-text-muted dark:disabled:text-text-muted-dark disabled:cursor-not-allowed"
+              variant="ghost"
+              className="w-full rounded-none justify-start px-3 py-2 text-sm"
             >
               Run from last failed node
-            </button>
+            </Button>
 
-            <button
+            <Button
               onClick={() => {
                 onRunAllFailed?.();
                 setIsRunMenuOpen(false);
               }}
               disabled={isRunning || !hasResumeOptions || isResumeLoading}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:text-text-muted dark:disabled:text-text-muted-dark disabled:cursor-not-allowed"
+              variant="ghost"
+              className="w-full rounded-none justify-start px-3 py-2 text-sm"
             >
               Run all failed nodes and continue
-            </button>
+            </Button>
 
             <div className="w-full h-px bg-border-default dark:bg-border-default-dark" />
 
@@ -157,18 +174,19 @@ export function CanvasToolbar({
             )}
 
             {!isResumeLoading && hasResumeOptions && resumeOptions.map((opt) => (
-              <button
+              <Button
                 key={opt.nodeId}
                 onClick={() => {
                   onRunFromFailedNode?.(opt.nodeId);
                   setIsRunMenuOpen(false);
                 }}
                 disabled={isRunning}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:text-text-muted dark:disabled:text-text-muted-dark disabled:cursor-not-allowed"
+                variant="ghost"
+                className="w-full rounded-none justify-start px-3 py-2 text-sm"
                 title={opt.nodeId}
               >
                 {opt.label}
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -184,14 +202,16 @@ function ToolbarButton({ icon: Icon, label, onClick, tooltip }: {
   tooltip?: string;
 }) {
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       onClick={onClick}
-      className="flex items-center gap-1 px-2 py-1.5 text-sm font-medium rounded-lg text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark transition-colors h-8 whitespace-nowrap"
+      className="h-8 whitespace-nowrap text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark"
       title={tooltip || label}
       aria-label={label}
+      icon={<Icon className="w-4 h-4 flex-shrink-0" />}
     >
-      <Icon className="w-4 h-4 flex-shrink-0" />
       <span className="hidden lg:inline">{label}</span>
-    </button>
+    </Button>
   );
 }
