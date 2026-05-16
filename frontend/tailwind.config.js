@@ -11,7 +11,7 @@ export default {
       width: {
         'nav-collapsed': '56px',
         'nav-expanded': '180px',
-        'sidebar-default': '450px',
+        'sidebar-default': '380px',
         'node-compact': '200px',
       },
       minWidth: {
@@ -43,6 +43,8 @@ export default {
           dark: '#374151',      // gray-700 (dark borders)
           default: '#cbd5e1',   // alias for DEFAULT (used as border-border-default)
           'default-dark': '#374151', // alias for dark borders (used as border-border-default-dark)
+          focus: '#164e63',     // focus ring border (light)
+          'focus-dark': '#22d3ee', // focus ring border (dark)
         },
         'text-primary': {
           DEFAULT: '#111827',   // gray-900 (light text)

@@ -1,4 +1,8 @@
 // Molecules — composite components built from atoms
+export { Panel } from './Panel';
+export { PanelTabs } from './PanelTabs';
+export { FormField } from './FormField';
+export { Card } from './Card';
 export { default as ConfirmDialog } from './ConfirmDialog';
 export { default as EmptyState } from './EmptyState';
 export { default as KeyValueEditor } from './KeyValueEditor';
