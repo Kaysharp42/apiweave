@@ -5,7 +5,7 @@ import { Moon, Sun, Folder, Save, User } from 'lucide-react';
 import Tippy from '@tippyjs/react';
 // @ts-expect-error CSS import without types
 import 'tippy.js/dist/tippy.css';
-import { IconButton, Toggle } from '../atoms';
+import { Button, IconButton, IconSwitch } from '../atoms';
 import type { AppContextType } from '../../types/AppContextType';
 
 export function MainHeader() {
@@ -13,8 +13,8 @@ export function MainHeader() {
   const [showEnvManager, setShowEnvManager] = useState(false);
 
   return (
-    <header className="navbar h-header min-h-0 px-4 bg-surface-raised dark:bg-surface-dark-raised border-b border-border dark:border-border-dark transition-colors">
-      <div className="navbar-start gap-3">
+    <header className="navbar h-header min-h-0 w-full gap-3 px-4 bg-surface-raised dark:bg-surface-dark-raised border-b border-border dark:border-border-dark transition-colors">
+      <div className="navbar-start min-w-0 flex-shrink-0 gap-3">
         <img
           src="/public/apiweave.png"
           alt="APIWeave Logo"
@@ -25,44 +25,44 @@ export function MainHeader() {
         </h1>
       </div>
 
-      <div className="navbar-center" />
+      <div className="navbar-center min-w-0 flex-1" />
 
-      <div className="navbar-end gap-1">
-        <IconButton
-          tooltip="Manage Environments"
+      <div className="navbar-end min-w-0 flex-shrink gap-2 overflow-hidden">
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setShowEnvManager(true)}
+          title="Manage Environments"
+          className="min-w-0 max-w-[11rem] flex-shrink"
+          icon={<Folder className="w-4 h-4 flex-shrink-0" />}
         >
-          <Folder className="w-4 h-4" />
-          <span className="text-xs font-medium hidden sm:inline">Environments</span>
-        </IconButton>
+          <span className="hidden truncate text-xs font-medium sm:inline">Environments</span>
+        </Button>
 
         <Tippy content={autoSaveEnabled ? 'Auto-save enabled' : 'Auto-save disabled'} placement="bottom">
-          <div className="flex items-center">
-            <Toggle
+          <div className="flex flex-shrink-0 items-center rounded px-1">
+            <IconSwitch
               checked={autoSaveEnabled}
-              onChange={() => setAutoSaveEnabled(!autoSaveEnabled)}
-              variant="success"
-              size="sm"
-              aria-label="Toggle auto-save"
+              onCheckedChange={setAutoSaveEnabled}
+              checkedIcon={<Save className="h-3.5 w-3.5" />}
+              uncheckedIcon={<Save className="h-3.5 w-3.5" />}
+              checkedLabel="Disable auto-save"
+              uncheckedLabel="Enable auto-save"
+              intent="success"
             />
-            <Save className={`w-4 h-4 ${autoSaveEnabled ? 'text-status-success' : 'text-text-muted dark:text-text-muted-dark'}`} />
           </div>
         </Tippy>
 
         <Tippy content={darkMode ? 'Switch to Light mode' : 'Switch to Dark mode'} placement="bottom">
-          <div className="flex items-center">
-            <Toggle
+          <div className="flex flex-shrink-0 items-center rounded px-1">
+            <IconSwitch
               checked={darkMode}
-              onChange={() => setDarkMode(!darkMode)}
-              variant="primary"
-              size="sm"
-              aria-label="Toggle dark mode"
+              onCheckedChange={setDarkMode}
+              checkedIcon={<Moon className="h-3.5 w-3.5" />}
+              uncheckedIcon={<Sun className="h-3.5 w-3.5" />}
+              checkedLabel="Switch to light mode"
+              uncheckedLabel="Switch to dark mode"
             />
-            {darkMode ? (
-              <Moon className="w-4 h-4 text-cyan-400" />
-            ) : (
-              <Sun className="w-4 h-4 text-amber-500" />
-            )}
           </div>
         </Tippy>
 

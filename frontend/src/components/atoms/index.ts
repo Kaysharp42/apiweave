@@ -8,6 +8,7 @@ export { Divider } from './Divider';
 export { HorizontalDivider } from './HorizontalDivider';
 export { Tooltip } from './Tooltip';
 export { Toggle } from './Toggle';
+export { IconSwitch } from './IconSwitch';
 export { Spinner } from './Spinner';
 export { Skeleton } from './Skeleton';
 export { Toast } from './Toast';
