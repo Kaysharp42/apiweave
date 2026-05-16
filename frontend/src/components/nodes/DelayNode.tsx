@@ -1,12 +1,27 @@
-import React, { memo, useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { useReactFlow } from 'reactflow';
 import { Clock } from 'lucide-react';
 import { BaseNode } from '../atoms/flow/BaseNode';
+import type { NodeStatus } from '../../types/NodeStatus';
 
-const DelayNode = ({ id, data, selected }) => {
+interface DelayNodeData {
+  label?: string;
+  executionStatus?: NodeStatus;
+  config?: {
+    duration?: number;
+  };
+}
+
+interface DelayNodeProps {
+  id: string;
+  data: DelayNodeData;
+  selected?: boolean;
+}
+
+const DelayNode = ({ id, data, selected = false }: DelayNodeProps) => {
   const { setNodes } = useReactFlow();
 
-  const updateNodeData = useCallback((value) => {
+  const updateNodeData = useCallback((value: number) => {
     setNodes((nds) =>
       nds.map((node) =>
         node.id === id
@@ -16,14 +31,14 @@ const DelayNode = ({ id, data, selected }) => {
     );
   }, [id, setNodes]);
 
-  const duration = data.config?.duration || 1000;
+  const duration = data.config?.duration ?? 1000;
   const humanLabel = duration >= 1000 ? `${(duration / 1000).toFixed(1)}s` : `${duration}ms`;
 
   return (
     <BaseNode
-      title={data.label || 'Delay'}
+      title={data.label ?? 'Delay'}
       icon={<Clock className="w-4 h-4 text-yellow-700 dark:text-yellow-300" />}
-      status={data.executionStatus || 'idle'}
+      status={data.executionStatus ?? 'idle'}
       selected={selected}
       nodeId={id}
       handleLeft={{ type: 'target' }}

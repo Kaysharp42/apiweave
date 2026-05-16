@@ -1,12 +1,72 @@
-import React, { memo, useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Handle, Position, useReactFlow } from 'reactflow';
+import { memo, useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useReactFlow } from 'reactflow';
+// @ts-expect-error - WorkflowContext is still .jsx, will be migrated in Phase 7
 import { useWorkflow } from '../../contexts/WorkflowContext';
 import { BaseNode } from '../atoms/flow/BaseNode';
+// @ts-expect-error - FileUploadSection is still .jsx, will be migrated in Phase 8
 import FileUploadSection from '../FileUploadSection';
 import { Puzzle, Plus, Trash2, CheckCircle, ArrowRight, AlertTriangle, XCircle, ChevronDown, ChevronUp, Snowflake, ExternalLink, Clock3 } from 'lucide-react';
+import type { NodeStatus } from '../../types/NodeStatus';
 
-// — Method badge color map (design tokens) —
-const methodColors = {
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+
+interface SchemaWarning {
+  text?: string;
+  refreshedAt?: string;
+  sourceUrl?: string;
+}
+
+interface FileUpload {
+  fieldName: string;
+  filePath: string;
+}
+
+interface HTTPRequestNodeData {
+  label?: string;
+  executionStatus?: NodeStatus;
+  executionResult?: {
+    body?: string | Record<string, unknown>;
+    statusCode?: number;
+    duration?: number;
+    cookies?: Record<string, string>;
+    error?: string;
+  };
+  config?: {
+    method?: HttpMethod;
+    url?: string;
+    queryParams?: string;
+    pathVariables?: string;
+    headers?: string;
+    cookies?: string;
+    body?: string;
+    timeout?: number;
+    extractors?: Record<string, string>;
+    fileUploads?: FileUpload[];
+  };
+  schemaRefreshWarning?: SchemaWarning;
+  branchCount?: number;
+}
+
+interface HTTPRequestNodeProps {
+  id: string;
+  data: HTTPRequestNodeData;
+  selected?: boolean;
+}
+
+interface SchemaWarningBadgeProps {
+  warning: SchemaWarning;
+}
+
+interface ExtractorFormProps {
+  onAdd: (varName: string, varPath: string) => void;
+}
+
+interface ResponsePreviewProps {
+  result: HTTPRequestNodeData['executionResult'];
+  status: NodeStatus | undefined;
+}
+
+const methodColors: Record<HttpMethod, string> = {
   GET:    'bg-method-get text-white',
   POST:   'bg-method-post text-white',
   PUT:    'bg-method-put text-white',
@@ -14,7 +74,7 @@ const methodColors = {
   PATCH:  'bg-method-patch text-white',
 };
 
-const formatRefreshTime = (isoValue) => {
+const formatRefreshTime = (isoValue: string | undefined): string => {
   if (!isoValue) return 'Unavailable';
   const parsedDate = new Date(isoValue);
   if (Number.isNaN(parsedDate.getTime())) {
@@ -23,21 +83,21 @@ const formatRefreshTime = (isoValue) => {
   return parsedDate.toLocaleString();
 };
 
-const SchemaWarningBadge = ({ warning }) => {
+const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const wrapperRef = useRef(null);
-  const triggerRef = useRef(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!isOpen) return undefined;
 
-    const handleClickOutside = (event) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
 
-    const handleKeyDown = (event) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false);
         triggerRef.current?.focus();
@@ -55,10 +115,10 @@ const SchemaWarningBadge = ({ warning }) => {
     };
   }, [isOpen]);
 
-  const handleBlur = useCallback((event) => {
+  const handleBlur = useCallback((event: React.FocusEvent) => {
     const nextFocusedElement = event.relatedTarget;
     if (!nextFocusedElement) return;
-    if (wrapperRef.current && !wrapperRef.current.contains(nextFocusedElement)) {
+    if (wrapperRef.current && !wrapperRef.current.contains(nextFocusedElement as Node)) {
       setIsOpen(false);
     }
   }, []);
@@ -80,7 +140,7 @@ const SchemaWarningBadge = ({ warning }) => {
         ref={triggerRef}
         type="button"
         className="nodrag text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-200 font-semibold flex items-center gap-0.5 hover:bg-amber-200 dark:hover:bg-amber-900/80 focus:outline-none focus:ring-1 focus:ring-amber-400"
-        title={warning.text || 'Swagger docs changed. Verify this request.'}
+        title={warning.text ?? 'Swagger docs changed. Verify this request.'}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-label="Show Swagger warning details"
@@ -135,8 +195,7 @@ const SchemaWarningBadge = ({ warning }) => {
   );
 };
 
-// — Extractor form sub-component —
-const ExtractorForm = ({ onAdd }) => {
+const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
   const [varName, setVarName] = useState('');
   const [varPath, setVarPath] = useState('response.body.');
 
@@ -175,8 +234,7 @@ const ExtractorForm = ({ onAdd }) => {
   );
 };
 
-// — Inline response preview (compact) —
-const ResponsePreview = ({ result, status }) => {
+const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
   const [isBodyExpanded, setIsBodyExpanded] = useState(false);
 
   const bodyStr = useMemo(() => {
@@ -188,6 +246,7 @@ const ResponsePreview = ({ result, status }) => {
 
   const codeClass = (() => {
     const c = result.statusCode;
+    if (!c) return '';
     if (c >= 200 && c < 300) return 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300';
     if (c >= 300 && c < 400) return 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300';
     if (c >= 400 && c < 500) return 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300';
@@ -196,6 +255,7 @@ const ResponsePreview = ({ result, status }) => {
 
   const statusLabel = (() => {
     const c = result.statusCode;
+    if (!c) return null;
     if (c >= 200 && c < 300) return <><CheckCircle className="w-3 h-3" /> Success</>;
     if (c >= 300 && c < 400) return <><ArrowRight className="w-3 h-3" /> Redirect</>;
     if (c >= 400 && c < 500) return <><AlertTriangle className="w-3 h-3" /> Client Error</>;
@@ -212,16 +272,15 @@ const ResponsePreview = ({ result, status }) => {
           <span className="flex items-center gap-1 text-text-secondary dark:text-text-secondary-dark">{statusLabel}</span>
           {result.duration !== undefined && (
             <>
-              <span className="text-text-muted dark:text-text-muted-dark">•</span>
+              <span className="text-text-muted dark:text-text-muted-dark">&bull;</span>
               <span className="font-semibold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                ⏱ {result.duration >= 1000 ? `${(result.duration / 1000).toFixed(2)}s` : `${result.duration}ms`}
+                {result.duration >= 1000 ? `${(result.duration / 1000).toFixed(2)}s` : `${result.duration}ms`}
               </span>
             </>
           )}
         </div>
       )}
 
-      {/* Cookies */}
       {result.cookies && Object.keys(result.cookies).length > 0 && (
         <div className="mt-1 text-[10px] text-text-secondary dark:text-text-secondary-dark">
           <span className="font-semibold">Cookies:</span>
@@ -233,7 +292,6 @@ const ResponsePreview = ({ result, status }) => {
         </div>
       )}
 
-      {/* Body */}
       {result.body && (
         <div className={`mt-1 ${status === 'error' ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded' : ''}`}>
           <div className={`text-[10px] font-semibold mb-0.5 flex items-center justify-between ${status === 'error' ? 'text-red-700 dark:text-red-300' : 'text-text-secondary dark:text-text-secondary-dark'}`}>
@@ -265,12 +323,11 @@ const ResponsePreview = ({ result, status }) => {
   );
 };
 
-// — Main HTTP Request Node —
-const HTTPRequestNode = ({ id, data, selected }) => {
+const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) => {
   const { setNodes } = useReactFlow();
   const { variables } = useWorkflow();
 
-  const updateNodeData = useCallback((field, value) => {
+  const updateNodeData = useCallback((field: string, value: unknown) => {
     setNodes((nds) =>
       nds.map((node) =>
         node.id === id
@@ -280,19 +337,18 @@ const HTTPRequestNode = ({ id, data, selected }) => {
     );
   }, [id, setNodes]);
 
-  const method = data.config?.method || 'GET';
-  const methodBadge = methodColors[method] || methodColors.GET;
+  const method = (data.config?.method ?? 'GET') as HttpMethod;
+  const methodBadge = methodColors[method] ?? methodColors.GET;
 
-  // Count summary for collapsed state
-  const headerCount = (data.config?.headers || '').split('\n').filter(Boolean).length;
+  const headerCount = (data.config?.headers ?? '').split('\n').filter(Boolean).length;
   const extractorCount = data.config?.extractors ? Object.keys(data.config.extractors).length : 0;
-  const hasBody = data.config?.body && data.config.method !== 'GET';
+  const hasBody = data.config?.body && data.config?.method !== 'GET';
 
   return (
     <BaseNode
-      title={data.label || 'HTTP Request'}
+      title={data.label ?? 'HTTP Request'}
       icon={<span className={`inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-bold rounded mr-2 ${methodBadge} leading-none`}>{method}</span>}
-      status={data.executionStatus || 'idle'}
+      status={data.executionStatus ?? 'idle'}
       statusBadgeText={data.executionStatus && data.executionStatus !== 'idle' ? data.executionStatus : ''}
       selected={selected}
       nodeId={id}
@@ -306,7 +362,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
           {data.schemaRefreshWarning && (
             <SchemaWarningBadge warning={data.schemaRefreshWarning} />
           )}
-          {data.branchCount > 1 && (
+          {data.branchCount && data.branchCount > 1 && (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-200 font-semibold flex items-center gap-0.5" title={`${data.branchCount} parallel branches`}>
               <Snowflake className="w-3 h-3" /> {data.branchCount}x
             </span>
@@ -317,7 +373,6 @@ const HTTPRequestNode = ({ id, data, selected }) => {
     >
       {({ isExpanded }) => (
         <div className="p-2 space-y-1.5">
-          {/* Method & URL (always visible) */}
           <div className={`flex gap-1 ${isExpanded ? 'items-start' : 'items-center'}`}>
             <select
               className="nodrag px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
@@ -336,7 +391,7 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                 placeholder="Enter URL..."
                 rows={2}
                 className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-y min-h-[58px]"
-                value={data.config?.url || ''}
+                value={data.config?.url ?? ''}
                 onChange={(e) => updateNodeData('url', e.target.value)}
               />
             ) : (
@@ -344,13 +399,12 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                 type="text"
                 placeholder="Enter URL..."
                 className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                value={data.config?.url || ''}
+                value={data.config?.url ?? ''}
                 onChange={(e) => updateNodeData('url', e.target.value)}
               />
             )}
           </div>
 
-          {/* Compact summary when collapsed */}
           {!isExpanded && (headerCount > 0 || extractorCount > 0 || hasBody) && (
             <div className="flex gap-1.5 text-[9px] text-text-muted dark:text-text-muted-dark">
               {headerCount > 0 && <span className="px-1.5 py-0.5 bg-surface-overlay dark:bg-surface-dark-overlay rounded">{headerCount} header{headerCount > 1 ? 's' : ''}</span>}
@@ -359,10 +413,8 @@ const HTTPRequestNode = ({ id, data, selected }) => {
             </div>
           )}
 
-          {/* Expanded details */}
           {isExpanded && (
             <div className="space-y-1.5 pt-1 border-t border-border dark:border-border-dark">
-              {/* Query Params */}
               <div>
                 <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
                   Query Params <span className="font-normal text-text-muted dark:text-text-muted-dark">(key=value)</span>
@@ -371,12 +423,11 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                   className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
                   placeholder={'page=1\nlimit=10'}
-                  value={data.config?.queryParams || ''}
+                  value={data.config?.queryParams ?? ''}
                   onChange={(e) => updateNodeData('queryParams', e.target.value)}
                 />
               </div>
 
-              {/* Path Variables */}
               <div>
                 <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
                   Path Variables <span className="font-normal text-text-muted dark:text-text-muted-dark">(Use :varName in URL)</span>
@@ -385,12 +436,11 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                   className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
                   placeholder={'userId={{prev.response.body.id}}'}
-                  value={data.config?.pathVariables || ''}
+                  value={data.config?.pathVariables ?? ''}
                   onChange={(e) => updateNodeData('pathVariables', e.target.value)}
                 />
               </div>
 
-              {/* Headers */}
               <div>
                 <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
                   Headers <span className="font-normal text-text-muted dark:text-text-muted-dark">(key=value)</span>
@@ -399,12 +449,11 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                   className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
                   placeholder={'Content-Type=application/json\nAuthorization=Bearer {{variables.token}}'}
-                  value={data.config?.headers || ''}
+                  value={data.config?.headers ?? ''}
                   onChange={(e) => updateNodeData('headers', e.target.value)}
                 />
               </div>
 
-              {/* Cookies */}
               <div>
                 <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
                   Cookies <span className="font-normal text-text-muted dark:text-text-muted-dark">(key=value)</span>
@@ -413,12 +462,11 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                   className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
                   placeholder={'session={{prev.response.cookies.session}}'}
-                  value={data.config?.cookies || ''}
+                  value={data.config?.cookies ?? ''}
                   onChange={(e) => updateNodeData('cookies', e.target.value)}
                 />
               </div>
 
-              {/* Body */}
               {method !== 'GET' && (
                 <div>
                   <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">Body</label>
@@ -426,25 +474,23 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                     className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                     rows={3}
                     placeholder={'{\n  "key": "value"\n}'}
-                    value={data.config?.body || ''}
+                    value={data.config?.body ?? ''}
                     onChange={(e) => updateNodeData('body', e.target.value)}
                   />
                 </div>
               )}
 
-              {/* Timeout */}
               <div>
                 <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">Timeout (seconds)</label>
                 <input
                   type="number"
                   className="nodrag w-16 px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                  value={data.config?.timeout || 30}
+                  value={data.config?.timeout ?? 30}
                   onChange={(e) => updateNodeData('timeout', parseInt(e.target.value))}
                   min="1"
                 />
               </div>
 
-              {/* Extractors */}
               <div className="border-t border-border dark:border-border-dark pt-2 mt-2">
                 <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-1 flex items-center gap-1">
                   <Puzzle className="w-3.5 h-3.5" />
@@ -455,12 +501,12 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                     Object.entries(data.config.extractors).map(([varName, varPath]) => (
                       <div key={varName} className="flex gap-1 items-center text-[9px]">
                         <code className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-1.5 py-0.5 rounded flex-1">{varName}</code>
-                        <span className="text-text-muted dark:text-text-muted-dark">←</span>
+                        <span className="text-text-muted dark:text-text-muted-dark">&larr;</span>
                         <code className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded flex-1 truncate">{varPath}</code>
                         <button
                           className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 nodrag flex-shrink-0"
                           onClick={() => {
-                            const newExtractors = { ...data.config.extractors };
+                            const newExtractors = { ...data.config?.extractors };
                             delete newExtractors[varName];
                             updateNodeData('extractors', newExtractors);
                           }}
@@ -475,32 +521,30 @@ const HTTPRequestNode = ({ id, data, selected }) => {
                   )}
                 </div>
                 <ExtractorForm onAdd={(varName, varPath) => {
-                  const newExtractors = data.config?.extractors || {};
+                  const newExtractors = data.config?.extractors ?? {};
                   newExtractors[varName] = varPath;
                   updateNodeData('extractors', newExtractors);
                 }} />
               </div>
 
-              {/* File Uploads */}
               <FileUploadSection
-                fileUploads={data.config?.fileUploads || []}
-                onUpdate={(files) => updateNodeData('fileUploads', files)}
+                fileUploads={data.config?.fileUploads ?? []}
+                onUpdate={(files: FileUpload[]) => updateNodeData('fileUploads', files)}
                 variables={variables}
               />
 
-              {/* Variable Hint */}
               <div className="text-[9px] text-text-muted dark:text-text-muted-dark p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded space-y-0.5">
-                <div><strong>💡 Variable Reference:</strong></div>
+                <div><strong>Variable Reference:</strong></div>
                 <div className="pl-2 space-y-0.5">
-                  <div>• Body: <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{prev.response.body.token}}`}</code></div>
-                  <div>• Array: <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{prev.response.body.data[0].city}}`}</code></div>
-                  <div>• Header: <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{prev.response.headers.content-type}}`}</code></div>
-                  <div>• Cookie: <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{prev.response.cookies.session}}`}</code></div>
+                  <div>&bull; Body: <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{prev.response.body.token}}`}</code></div>
+                  <div>&bull; Array: <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{prev.response.body.data[0].city}}`}</code></div>
+                  <div>&bull; Header: <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{prev.response.headers.content-type}}`}</code></div>
+                  <div>&bull; Cookie: <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{prev.response.cookies.session}}`}</code></div>
                   {variables && Object.keys(variables).length > 0 && (
                     <div className="mt-1 space-y-0.5">
                       <div className="font-semibold text-green-700 dark:text-green-300">Workflow Variables:</div>
                       {Object.keys(variables).map(v => (
-                        <div key={v}>• <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{variables.${v}}}`}</code></div>
+                        <div key={v}>&bull; <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{`{{variables.${v}}}`}</code></div>
                       ))}
                     </div>
                   )}
@@ -509,7 +553,6 @@ const HTTPRequestNode = ({ id, data, selected }) => {
             </div>
           )}
 
-          {/* Execution result (always visible when available) */}
           <ResponsePreview result={data.executionResult} status={data.executionStatus} />
         </div>
       )}

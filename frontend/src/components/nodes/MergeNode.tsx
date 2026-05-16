@@ -1,14 +1,52 @@
-import React from 'react';
 import { GitMerge, CheckCircle, SquareCheckBig, Filter, AlertTriangle, Clock, ArrowRight, Sparkles } from 'lucide-react';
 import { BaseNode } from '../atoms/flow/BaseNode';
+import type { NodeStatus } from '../../types/NodeStatus';
 
-/* Reusable branch-mapping list */
-const BranchMapping = ({ branches }) => (
+interface BranchInfo {
+  index: number;
+  edgeLabel?: string;
+  label?: string;
+  nodeId?: string;
+  statusCode?: string;
+}
+
+interface MergeResult {
+  mergeStrategy?: string;
+  branchCount?: number;
+  warning?: string;
+  branches?: BranchInfo[];
+  mergedAt?: string;
+}
+
+interface MergeNodeData {
+  label?: string;
+  config?: {
+    mergeStrategy?: string;
+  };
+  executionStatus?: NodeStatus;
+  executionResult?: MergeResult;
+  status?: NodeStatus;
+  result?: MergeResult;
+  incomingBranchCount?: number;
+  incomingBranches?: BranchInfo[];
+}
+
+interface MergeNodeProps {
+  id: string;
+  data: MergeNodeData;
+  selected?: boolean;
+}
+
+interface BranchMappingProps {
+  branches: BranchInfo[];
+}
+
+const BranchMapping = ({ branches }: BranchMappingProps) => (
   <div className="mt-1 space-y-1">
     {branches.map((b) => (
       <div key={b.index} className="text-[10px] bg-surface dark:bg-surface-dark-raised p-1.5 rounded border border-border dark:border-border-dark">
         <span className="font-medium text-text-primary dark:text-text-primary-dark">
-          {b.edgeLabel || b.label || `Branch ${b.index}`}
+          {b.edgeLabel ?? b.label ?? `Branch ${b.index}`}
         </span>
         <span className="text-text-muted dark:text-text-muted-dark mx-1">{'\u2192'}</span>
         <code className="text-purple-600 dark:text-purple-400 font-mono">prev[{b.index}]</code>
@@ -29,40 +67,46 @@ const BranchMapping = ({ branches }) => (
   </div>
 );
 
+type MergeStrategy = 'all' | 'any' | 'first' | 'conditional';
 
-const MergeNode = ({ id, data, selected }) => {
+interface StrategyMeta {
+  icon: React.ReactNode;
+  desc: string;
+}
+
+const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
   const { label, config = {}, executionStatus, executionResult } = data;
-  const mergeStrategy = config.mergeStrategy || 'all';
-  const status = executionStatus || data.status || 'idle';
-  const result = executionResult || data.result;
+  const mergeStrategy = config.mergeStrategy ?? 'all';
+  const status = executionStatus ?? data.status ?? 'idle';
+  const result = executionResult ?? data.result;
 
-  const strategyMeta = {
+  const strategyMeta: Record<MergeStrategy, StrategyMeta> = {
     all:         { icon: <Clock className="w-3.5 h-3.5 flex-shrink-0" />, desc: 'Waits for all branches' },
     any:         { icon: <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />, desc: 'Continues when any completes' },
     first:       { icon: <ArrowRight className="w-3.5 h-3.5 flex-shrink-0" />, desc: 'Uses first completed branch' },
     conditional: { icon: <Filter className="w-3.5 h-3.5 flex-shrink-0" />, desc: 'Merges matching conditions' },
   };
 
-  const { icon: stratIcon, desc: stratDesc } = strategyMeta[mergeStrategy] || strategyMeta.all;
+  const { icon: stratIcon, desc: stratDesc } = strategyMeta[mergeStrategy as MergeStrategy] ?? strategyMeta.all;
 
   return (
     <BaseNode
-      title={label || 'Merge'}
+      title={label ?? 'Merge'}
       icon={<GitMerge className="w-4 h-4 text-purple-600 dark:text-purple-400" />}
       status={status}
       selected={selected}
       nodeId={id}
-      handleLeft={{ type: 'target', className: '!bg-purple-500 dark:!bg-purple-400 !w-2.5 !h-2.5' }}
-      handleRight={{ type: 'source', className: '!bg-purple-500 dark:!bg-purple-400 !w-2.5 !h-2.5' }}
+      handleLeft={{ type: 'target' }}
+      handleRight={{ type: 'source' }}
       collapsible={true}
       defaultExpanded={false}
       headerBg="bg-purple-50 dark:bg-purple-900/60"
       headerTextClass="text-purple-800 dark:text-purple-200"
       statusBadgeText={status !== 'idle' ? status.charAt(0).toUpperCase() + status.slice(1) : ''}
       titleExtra={
-        data.incomingBranchCount > 1 && (
+        data.incomingBranchCount && data.incomingBranchCount > 1 && (
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-200 dark:bg-purple-800 text-purple-700 dark:text-purple-200 font-semibold" title={`Merging ${data.incomingBranchCount} branches`}>
-            ⬅ {data.incomingBranchCount}x
+            &larr; {data.incomingBranchCount}x
           </span>
         )
       }
@@ -70,7 +114,6 @@ const MergeNode = ({ id, data, selected }) => {
     >
       {({ isExpanded }) => (
         <div className="p-2 space-y-2">
-          {/* Strategy summary — always visible */}
           <div className="flex items-center gap-1.5 text-[10px] text-text-secondary dark:text-text-secondary-dark italic">
             {stratIcon}
             <span>{stratDesc}</span>
@@ -78,7 +121,6 @@ const MergeNode = ({ id, data, selected }) => {
 
           {isExpanded && (
             <div className="space-y-2">
-              {/* Strategy selector (disabled — edit in modal) */}
               <div className="text-xs">
                 <label className="block mb-0.5 font-medium text-text-secondary dark:text-text-secondary-dark text-[10px]">
                   Merge Strategy:
@@ -97,11 +139,10 @@ const MergeNode = ({ id, data, selected }) => {
                   <option value="conditional">Conditional Merge</option>
                 </select>
                 <p className="text-[9px] text-text-muted dark:text-text-muted-dark mt-0.5 italic">
-                  💡 Double-click node to configure
+                  Double-click node to configure
                 </p>
               </div>
 
-              {/* Result Info */}
               {result && (
                 <div className="text-xs text-text-secondary dark:text-text-secondary-dark p-2
                   bg-surface dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark">
@@ -116,7 +157,6 @@ const MergeNode = ({ id, data, selected }) => {
                     </div>
                   )}
 
-                  {/* Strategy warning */}
                   {result.warning && (
                     <div className="mt-2 p-1.5 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded">
                       <div className="text-[10px] text-yellow-800 dark:text-yellow-200 flex items-center gap-1">
@@ -129,7 +169,6 @@ const MergeNode = ({ id, data, selected }) => {
                     </div>
                   )}
 
-                  {/* Branch mapping */}
                   {result.branches && result.branches.length > 0 && (
                     <BranchMapping branches={result.branches} />
                   )}
@@ -142,14 +181,13 @@ const MergeNode = ({ id, data, selected }) => {
                 </div>
               )}
 
-              {/* Pre-execution branch guide */}
-              {data.incomingBranchCount > 1 && !result && (
+              {data.incomingBranchCount && data.incomingBranchCount > 1 && !result && (
                 <div className="text-xs bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded p-2">
                   <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1 text-[10px] flex items-center gap-1">
                     <GitMerge className="w-3 h-3" />
-                    <span>Branch → Variable Mapping:</span>
+                    <span>Branch &rarr; Variable Mapping:</span>
                   </div>
-                  {data.incomingBranches?.length > 0 ? (
+                  {data.incomingBranches && data.incomingBranches.length > 0 ? (
                     <BranchMapping branches={data.incomingBranches} />
                   ) : (
                     <div className="text-[9px] text-text-secondary dark:text-text-secondary-dark space-y-0.5">

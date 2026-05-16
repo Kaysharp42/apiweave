@@ -1,86 +1,113 @@
-import React, { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback } from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { BaseNode } from '../atoms/flow/BaseNode';
+// @ts-expect-error - AssertionEditor is still .jsx, will be migrated in Phase 8
 import AssertionEditor from '../AssertionEditor';
-import Tooltip from '../Tooltip';
-import { CheckCircle, XCircle, Info, Pencil, Trash2, BadgeCheck } from 'lucide-react';
+import { XCircle, Info, Pencil, Trash2, BadgeCheck } from 'lucide-react';
+import type { NodeStatus } from '../../types/NodeStatus';
 
-// Assertion form component
-const AssertionForm = ({ onAdd }) => {
-  const [source, setSource] = useState('prev');
+type AssertionSource = 'prev' | 'variables' | 'status' | 'cookies' | 'headers';
+type AssertionOperator = 'equals' | 'notEquals' | 'contains' | 'notContains' | 'gt' | 'gte' | 'lt' | 'lte' | 'count' | 'exists' | 'notExists';
+
+interface AssertionItem {
+  source: AssertionSource;
+  path: string;
+  operator: AssertionOperator;
+  expectedValue: string;
+}
+
+interface AssertionStats {
+  passedCount: number;
+  failedCount: number;
+  totalCount: number;
+  passed?: { index: number }[];
+  failed?: { index: number; message: string }[];
+}
+
+interface AssertionNodeData {
+  label?: string;
+  executionStatus?: NodeStatus;
+  config?: {
+    assertions?: AssertionItem[];
+  };
+  assertionStats?: AssertionStats;
+  invalid?: boolean;
+}
+
+interface AssertionNodeProps {
+  id: string;
+  data: AssertionNodeData;
+  selected?: boolean;
+}
+
+interface AssertionFormProps {
+  onAdd: (assertion: AssertionItem) => void;
+}
+
+interface FormErrors {
+  path: string;
+  expectedValue: string;
+}
+
+const AssertionForm = ({ onAdd }: AssertionFormProps) => {
+  const [source, setSource] = useState<AssertionSource>('prev');
   const [path, setPath] = useState('');
-  const [operator, setOperator] = useState('equals');
+  const [operator, setOperator] = useState<AssertionOperator>('equals');
   const [expectedValue, setExpectedValue] = useState('');
-  const [errors, setErrors] = useState({ path: '', expectedValue: '' });
+  const [errors, setErrors] = useState<FormErrors>({ path: '', expectedValue: '' });
 
   const handleAdd = () => {
-    console.log('Add assertion button clicked');
-    console.log('Current values:', { source, path, operator, expectedValue });
-    // Reset errors
     setErrors({ path: '', expectedValue: '' });
 
-    // Validate based on source and operator
     if (source === 'status') {
-      // Status doesn't need a path
-      console.log('Adding status assertion');
       onAdd({
-        source: source.trim(),
+        source,
         path: '',
         operator,
         expectedValue: expectedValue.trim(),
       });
       setErrors({ path: '', expectedValue: '' });
     } else if (['exists', 'notExists'].includes(operator)) {
-      // Exists/NotExists don't need expected value
       if (path.trim()) {
-        console.log('Adding exists/notExists assertion');
         onAdd({
-          source: source.trim(),
+          source,
           path: path.trim(),
           operator,
           expectedValue: '',
         });
         setErrors({ path: '', expectedValue: '' });
       } else {
-        console.log('Path is required for this operator');
         setErrors({ path: 'Path is required', expectedValue: '' });
         return;
       }
     } else if (operator === 'count') {
-      // Count needs path and expected value
       if (path.trim() && expectedValue.trim()) {
-        console.log('Adding count assertion');
         onAdd({
-          source: source.trim(),
+          source,
           path: path.trim(),
           operator,
           expectedValue: expectedValue.trim(),
         });
         setErrors({ path: '', expectedValue: '' });
       } else {
-        console.log('Path and expectedValue are required for count');
         setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Count value required' });
         return;
       }
     } else {
-      // All others need path and expected value
       if (path.trim() && expectedValue.trim()) {
-        console.log('Adding standard assertion');
         onAdd({
-          source: source.trim(),
+          source,
           path: path.trim(),
           operator,
           expectedValue: expectedValue.trim(),
         });
         setErrors({ path: '', expectedValue: '' });
       } else {
-        console.log('Path and expectedValue are required');
         setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Expected value required' });
         return;
       }
     }
 
-    // Reset form
     setPath('');
     setExpectedValue('');
     setSource('prev');
@@ -89,14 +116,13 @@ const AssertionForm = ({ onAdd }) => {
 
   return (
     <div className="space-y-1.5 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
-      {/* Source Selection */}
       <div>
         <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
           Assert On
         </label>
         <select
           value={source}
-          onChange={(e) => setSource(e.target.value)}
+          onChange={(e) => setSource(e.target.value as AssertionSource)}
           className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="prev">Previous Node Result (prev.*)</option>
@@ -107,11 +133,10 @@ const AssertionForm = ({ onAdd }) => {
         </select>
       </div>
 
-      {/* Path/Field Selection */}
       {source !== 'status' && (
         <div>
           <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
-            {source === 'prev' ? 'JSONPath (e.g., body.status)' : 
+            {source === 'prev' ? 'JSONPath (e.g., body.status)' :
              source === 'variables' ? 'Variable name' :
              source === 'cookies' ? 'Cookie name' : 'Header name'}
           </label>
@@ -129,14 +154,13 @@ const AssertionForm = ({ onAdd }) => {
         </div>
       )}
 
-      {/* Operator Selection */}
       <div>
         <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
           Operator
         </label>
         <select
           value={operator}
-          onChange={(e) => setOperator(e.target.value)}
+          onChange={(e) => setOperator(e.target.value as AssertionOperator)}
           className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="equals">Equals (==)</option>
@@ -153,7 +177,6 @@ const AssertionForm = ({ onAdd }) => {
         </select>
       </div>
 
-      {/* Expected Value */}
       {!['exists', 'notExists'].includes(operator) && (
         <div>
           <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
@@ -173,7 +196,6 @@ const AssertionForm = ({ onAdd }) => {
         </div>
       )}
 
-      {/* Add Button */}
       <button
         onClick={handleAdd}
         className="w-full px-2 py-1 bg-status-success hover:bg-green-700 text-white text-[9px] font-semibold rounded nodrag transition-colors"
@@ -185,13 +207,13 @@ const AssertionForm = ({ onAdd }) => {
 };
 
 
-const AssertionNode = ({ id, data, selected }) => {
+const AssertionNode = ({ id, data, selected = false }: AssertionNodeProps) => {
   const { setNodes } = useReactFlow();
   const [editingIndex, setEditingIndex] = useState(-1);
-  const [editDraft, setEditDraft] = useState(null);
+  const [editDraft, setEditDraft] = useState<AssertionItem | null>(null);
 
   const updateNodeData = useCallback(
-    (key, value) => {
+    (key: string, value: unknown) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === id
@@ -203,25 +225,25 @@ const AssertionNode = ({ id, data, selected }) => {
     [id, setNodes]
   );
 
-  const handleAddAssertion = (assertion) => {
-    const assertions = data.config?.assertions || [];
+  const handleAddAssertion = (assertion: AssertionItem) => {
+    const assertions = data.config?.assertions ?? [];
     updateNodeData('assertions', [...assertions, assertion]);
   };
 
-  const handleDeleteAssertion = (index) => {
-    const assertions = data.config?.assertions || [];
+  const handleDeleteAssertion = (index: number) => {
+    const assertions = data.config?.assertions ?? [];
     updateNodeData('assertions', assertions.filter((_, i) => i !== index));
   };
 
   return (
     <BaseNode
-      title={data.label || 'Assertions'}
+      title={data.label ?? 'Assertions'}
       icon={
         data.executionStatus === 'error'
           ? <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
           : <BadgeCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
       }
-      status={data.executionStatus || 'idle'}
+      status={data.executionStatus ?? 'idle'}
       selected={selected}
       nodeId={id}
       handleLeft={{ type: 'target' }}
@@ -252,7 +274,6 @@ const AssertionNode = ({ id, data, selected }) => {
       }
       extraHandles={
         <>
-          {/* Pass handle — positioned at upper-center-right */}
           <div className="group absolute" style={{ top: '50%', right: 0, transform: 'translateY(-20px)' }}>
             <Handle
               type="source"
@@ -260,7 +281,7 @@ const AssertionNode = ({ id, data, selected }) => {
               id="pass"
               className="!bg-green-500 dark:!bg-green-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
               style={{ position: 'relative' }}
-              title="Pass — all assertions passed"
+              title="Pass &mdash; all assertions passed"
             />
             <div
               className="absolute text-[9px] font-semibold text-green-600 dark:text-green-400 pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity"
@@ -270,7 +291,6 @@ const AssertionNode = ({ id, data, selected }) => {
             </div>
           </div>
 
-          {/* Fail handle — positioned at lower-center-right */}
           <div className="group absolute" style={{ top: '50%', right: 0, transform: 'translateY(20px)' }}>
             <Handle
               type="source"
@@ -278,7 +298,7 @@ const AssertionNode = ({ id, data, selected }) => {
               id="fail"
               className="!bg-red-500 dark:!bg-red-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
               style={{ position: 'relative' }}
-              title="Fail — one or more assertions failed"
+              title="Fail &mdash; one or more assertions failed"
             />
             <div
               className="absolute text-[9px] font-semibold text-red-600 dark:text-red-400 pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity"
@@ -294,10 +314,9 @@ const AssertionNode = ({ id, data, selected }) => {
       {({ isExpanded }) => (
         <div className="p-2 space-y-1.5">
           <div className="text-[9px] text-text-muted dark:text-text-muted-dark">
-            {data.config?.assertions?.length || 0} assertion(s)
+            {data.config?.assertions?.length ?? 0} assertion(s)
           </div>
 
-          {/* Execution Results Summary */}
           {data.executionStatus && data.assertionStats && (
             <div className={`mt-1 p-1.5 rounded text-[9px] ${
               data.assertionStats.failedCount > 0
@@ -313,11 +332,11 @@ const AssertionNode = ({ id, data, selected }) => {
               </div>
               <div className="space-y-0.5">
                 <div className="text-green-700 dark:text-green-300">
-                  ✅ {data.assertionStats.passedCount} passed
+                  &check; {data.assertionStats.passedCount} passed
                 </div>
                 {data.assertionStats.failedCount > 0 && (
                   <div className="text-red-700 dark:text-red-300">
-                    ❌ {data.assertionStats.failedCount} failed
+                    &times; {data.assertionStats.failedCount} failed
                   </div>
                 )}
               </div>
@@ -326,11 +345,9 @@ const AssertionNode = ({ id, data, selected }) => {
 
           {isExpanded && (
             <div className="space-y-2 pt-1 border-t border-border dark:border-border-dark">
-              {/* Add Assertion Form */}
               <AssertionForm onAdd={handleAddAssertion} />
 
-              {/* Assertions List */}
-              {data.config?.assertions?.length > 0 ? (
+              {data.config?.assertions && data.config.assertions.length > 0 ? (
                 <div className="space-y-1.5">
                   {data.config.assertions.map((assertion, index) => (
                     <div
@@ -340,13 +357,13 @@ const AssertionNode = ({ id, data, selected }) => {
                       {editingIndex === index ? (
                         <AssertionEditor
                           value={editDraft}
-                          onChange={(next) => setEditDraft(next)}
+                          onChange={(next: AssertionItem) => setEditDraft(next)}
                           onCancel={() => {
                             setEditingIndex(-1);
                             setEditDraft(null);
                           }}
                           onSave={() => {
-                            const updated = (data.config?.assertions || []).map((a, i) =>
+                            const updated = (data.config?.assertions ?? []).map((a, i) =>
                               i === index ? { ...editDraft } : a
                             );
                             updateNodeData('assertions', updated);
@@ -359,12 +376,12 @@ const AssertionNode = ({ id, data, selected }) => {
                           <div className="flex-1">
                             {data.assertionStats?.passed?.some(p => p.index === index) && (
                               <div className="mb-1 text-[8px] text-green-700 dark:text-green-300 font-semibold">
-                                ✅ Passed
+                                &check; Passed
                               </div>
                             )}
                             {data.assertionStats?.failed?.some(f => f.index === index) && (
                               <div className="mb-1 text-[8px]">
-                                <div className="text-red-700 dark:text-red-300 font-semibold">❌ Failed</div>
+                                <div className="text-red-700 dark:text-red-300 font-semibold">&times; Failed</div>
                                 <div className="text-red-600 dark:text-red-400 mt-0.5">
                                   {data.assertionStats.failed.find(f => f.index === index)?.message}
                                 </div>
@@ -417,18 +434,17 @@ const AssertionNode = ({ id, data, selected }) => {
                 </div>
               )}
 
-              {/* Info */}
               <div className="text-[9px] text-text-muted dark:text-text-muted-dark space-y-1 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
                 <p className="flex items-center gap-1">
                   <Info className="w-3 h-3 flex-shrink-0" />
-                  <span><strong>Pass/Fail:</strong> Connect the green ✓ handle for all-pass, red ✗ for any-fail.</span>
+                  <span><strong>Pass/Fail:</strong> Connect the green handle for all-pass, red for any-fail.</span>
                 </p>
                 <p>
-                  Use <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">prev.*</code> to reference previous node results, 
+                  Use <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">prev.*</code> to reference previous node results,
                   or <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">variables.*</code> for workflow variables.
                 </p>
                 <p className="text-[8px]">
-                  <strong>JSONPath examples:</strong> <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">body.data[0].id</code>, 
+                  <strong>JSONPath examples:</strong> <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">body.data[0].id</code>,
                   <code className="bg-blue-100 dark:bg-blue-800/50 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded text-[9px] font-mono">response.user.email</code>
                 </p>
               </div>
