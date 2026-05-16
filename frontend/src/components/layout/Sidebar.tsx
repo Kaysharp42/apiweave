@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-// @ts-expect-error CollectionManager.jsx not yet migrated
 import CollectionManager from '../CollectionManager';
-// @ts-expect-error WebhookManager.jsx not yet migrated
 import WebhookManager from '../WebhookManager';
 import { SidebarHeader } from './SidebarHeader';
 import {
@@ -17,9 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import API_BASE_URL from '../../utils/api';
-// @ts-expect-error WorkflowExportImport.jsx not yet migrated
 import WorkflowExportImport from '../WorkflowExportImport';
-// @ts-expect-error CollectionExportImport.jsx not yet migrated
 import CollectionExportImport from '../CollectionExportImport';
 import { Badge, Spinner, Skeleton, Button } from '../atoms';
 import { ConfirmDialog, EmptyState, PromptDialog } from '../molecules';
@@ -686,7 +682,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
       {exportingWorkflowId && (
         <WorkflowExportImport
           workflowId={exportingWorkflowId}
-          workflowName={exportingWorkflowName ?? undefined}
+          {...(exportingWorkflowName && { workflowName: exportingWorkflowName })}
           initialTab="export"
           onClose={() => {
             setExportingWorkflowId(null);
@@ -698,7 +694,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
       {exportingCollectionId && (
         <CollectionExportImport
           collectionId={exportingCollectionId}
-          collectionName={exportingCollectionName ?? undefined}
+          {...(exportingCollectionName && { collectionName: exportingCollectionName })}
           isOpen={true}
           onClose={() => {
             setExportingCollectionId(null);

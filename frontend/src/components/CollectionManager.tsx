@@ -1,28 +1,60 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, type ChangeEvent, type DragEvent } from 'react';
 import { toast } from 'sonner';
 import { Trash2, Plus, X, GripVertical, Eye, EyeOff, ArrowLeft, Pencil, ListOrdered } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 import { Modal, ConfirmDialog } from './molecules';
 import { Button } from './atoms';
+import { IconButton } from './atoms/IconButton';
+import { Input } from './atoms/Input';
+import { TextArea } from './atoms/TextArea';
+import { Toggle } from './atoms/Toggle';
 import useSidebarStore from '../stores/SidebarStore';
+import type { Collection } from '../types/Collection';
+import type { Workflow } from '../types/Workflow';
 
-const CollectionManager = ({ open, onClose }) => {
-  const [collections, setCollections] = useState([]);
-  const [workflows, setWorkflows] = useState([]);
-  const [selectedCol, setSelectedCol] = useState(null);
+interface ExtendedCollection extends Collection {
+  color?: string;
+  workflowOrder?: Array<{ workflowId: string; order: number; enabled: boolean; continueOnFail: boolean }>;
+  continueOnFail?: boolean;
+  workflowCount?: number;
+}
+
+interface WorkflowOrderItem {
+  workflowId: string;
+  order: number;
+  enabled: boolean;
+  continueOnFail: boolean;
+  workflow: Workflow | undefined;
+}
+
+interface CollectionFormData {
+  name: string;
+  description: string;
+  color: string;
+}
+
+interface CollectionManagerProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+const PRESET_COLORS = [
+  '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
+  '#EC4899', '#06B6D4', '#6366F1', '#14B8A6', '#F97316',
+] as const;
+
+export function CollectionManager({ open, onClose }: CollectionManagerProps) {
+  const [collections, setCollections] = useState<ExtendedCollection[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [selectedCol, setSelectedCol] = useState<ExtendedCollection | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isManagingWorkflows, setIsManagingWorkflows] = useState(false);
-  const [workflowOrder, setWorkflowOrder] = useState([]);
-  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [workflowOrder, setWorkflowOrder] = useState<WorkflowOrderItem[]>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [continueOnFail, setContinueOnFail] = useState(true);
-  const [formData, setFormData] = useState({ name: '', description: '', color: '#3B82F6' });
+  const [formData, setFormData] = useState<CollectionFormData>({ name: '', description: '', color: '#3B82F6' });
   const [error, setError] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState(null);
-
-  const PRESET_COLORS = [
-    '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
-    '#EC4899', '#06B6D4', '#6366F1', '#14B8A6', '#F97316',
-  ];
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -35,11 +67,12 @@ const CollectionManager = ({ open, onClose }) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/workflows`);
       if (response.ok) {
-        const data = await response.json();
-        setWorkflows(Array.isArray(data) ? data : data.workflows || []);
+        const data: unknown = await response.json();
+        const workflowArray: Workflow[] = Array.isArray(data) ? data : (data as { workflows: Workflow[] }).workflows || [];
+        setWorkflows(workflowArray);
       }
-    } catch (error) {
-      console.error('Error fetching workflows:', error);
+    } catch (err: unknown) {
+      console.error('Error fetching workflows:', err);
     }
   };
 
@@ -47,11 +80,11 @@ const CollectionManager = ({ open, onClose }) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
-        const data = await response.json();
+        const data: ExtendedCollection[] = await response.json();
         setCollections(data);
       }
-    } catch (error) {
-      console.error('Error fetching collections:', error);
+    } catch (err: unknown) {
+      console.error('Error fetching collections:', err);
     }
   };
 
@@ -62,7 +95,7 @@ const CollectionManager = ({ open, onClose }) => {
     setError('');
   };
 
-  const handleEdit = (col) => {
+  const handleEdit = (col: ExtendedCollection) => {
     setIsEditing(true);
     setSelectedCol(col);
     setFormData({ name: col.name, description: col.description || '', color: col.color || '#3B82F6' });
@@ -94,11 +127,11 @@ const CollectionManager = ({ open, onClose }) => {
         setError('');
         useSidebarStore.getState().signalCollectionsRefresh();
       } else {
-        const errorData = await response.json();
+        const errorData: { detail?: string } = await response.json();
         setError(errorData.detail || 'Failed to save collection');
       }
-    } catch (error) {
-      console.error('Error saving collection:', error);
+    } catch (err: unknown) {
+      console.error('Error saving collection:', err);
       setError('Error saving collection');
     }
   };
@@ -118,11 +151,11 @@ const CollectionManager = ({ open, onClose }) => {
         }
         useSidebarStore.getState().signalCollectionsRefresh();
       } else {
-        const errorData = await response.json();
+        const errorData: { detail?: string } = await response.json();
         toast.error(errorData.detail || 'Failed to delete collection');
       }
-    } catch (error) {
-      console.error('Error deleting collection:', error);
+    } catch (err: unknown) {
+      console.error('Error deleting collection:', err);
       toast.error('Error deleting collection');
     } finally {
       setDeleteTarget(null);
@@ -135,16 +168,16 @@ const CollectionManager = ({ open, onClose }) => {
     setError('');
   };
 
-  const handleManageWorkflows = async (col) => {
+  const handleManageWorkflows = (col: ExtendedCollection) => {
     setSelectedCol(col);
     setIsManagingWorkflows(true);
     setContinueOnFail(col.continueOnFail !== undefined ? col.continueOnFail : true);
     const collectionWorkflows = workflows.filter(w => w.collectionId === col.collectionId);
     if (col.workflowOrder && col.workflowOrder.length > 0) {
-      const orderedWorkflows = col.workflowOrder
-        .sort((a, b) => a.order - b.order)
-        .map(wo => ({ ...wo, workflow: collectionWorkflows.find(w => w.workflowId === wo.workflowId) }))
-        .filter(wo => wo.workflow);
+      const sorted = [...col.workflowOrder].sort((a: { order: number }, b: { order: number }) => a.order - b.order);
+      const orderedWorkflows: WorkflowOrderItem[] = sorted
+        .map((wo: { workflowId: string; order: number; enabled: boolean; continueOnFail: boolean }) => ({ ...wo, workflow: collectionWorkflows.find(w => w.workflowId === wo.workflowId) }))
+        .filter((wo: WorkflowOrderItem) => wo.workflow !== undefined);
       setWorkflowOrder(orderedWorkflows);
     } else {
       setWorkflowOrder(collectionWorkflows.map((workflow, index) => ({
@@ -178,34 +211,59 @@ const CollectionManager = ({ open, onClose }) => {
         setWorkflowOrder([]);
         useSidebarStore.getState().signalCollectionsRefresh();
       } else {
-        const errorData = await response.json();
+        const errorData: { detail?: string } = await response.json();
         toast.error(errorData.detail || 'Failed to save workflow order');
       }
-    } catch (error) {
-      console.error('Error saving workflow order:', error);
+    } catch (err: unknown) {
+      console.error('Error saving workflow order:', err);
       toast.error('Error saving workflow order');
     }
   };
 
-  const handleDragStart = (index) => setDraggedIndex(index);
-  const handleDragOver = (e, index) => {
+  const handleDragStart = (index: number) => setDraggedIndex(index);
+  const handleDragOver = (e: DragEvent<HTMLDivElement>, index: number) => {
     e.preventDefault();
     if (draggedIndex === null || draggedIndex === index) return;
     const newOrder = [...workflowOrder];
-    const draggedItem = newOrder[draggedIndex];
+    const draggedItem = newOrder[draggedIndex]!;
     newOrder.splice(draggedIndex, 1);
     newOrder.splice(index, 0, draggedItem);
     setWorkflowOrder(newOrder);
     setDraggedIndex(index);
   };
   const handleDragEnd = () => setDraggedIndex(null);
-  const toggleWorkflowEnabled = (i) => { const n = [...workflowOrder]; n[i].enabled = !n[i].enabled; setWorkflowOrder(n); };
-  const toggleWorkflowContinueOnFail = (i) => { const n = [...workflowOrder]; n[i].continueOnFail = !n[i].continueOnFail; setWorkflowOrder(n); };
-  const removeWorkflowFromOrder = (i) => { const n = [...workflowOrder]; n.splice(i, 1); setWorkflowOrder(n); };
-  const addWorkflowToOrder = (workflowId) => {
+
+  const toggleWorkflowEnabled = (i: number) => {
+    const n = [...workflowOrder];
+    const item = n[i]!;
+    n[i] = { workflowId: item.workflowId, order: item.order, enabled: !item.enabled, continueOnFail: item.continueOnFail, workflow: item.workflow };
+    setWorkflowOrder(n);
+  };
+
+  const toggleWorkflowContinueOnFail = (i: number) => {
+    const n = [...workflowOrder];
+    const item = n[i]!;
+    n[i] = { workflowId: item.workflowId, order: item.order, enabled: item.enabled, continueOnFail: !item.continueOnFail, workflow: item.workflow };
+    setWorkflowOrder(n);
+  };
+
+  const removeWorkflowFromOrder = (i: number) => {
+    const n = [...workflowOrder];
+    n.splice(i, 1);
+    setWorkflowOrder(n);
+  };
+
+  const addWorkflowToOrder = (workflowId: string) => {
     const workflow = workflows.find(w => w.workflowId === workflowId);
     if (!workflow) return;
     setWorkflowOrder([...workflowOrder, { workflowId: workflow.workflowId, order: workflowOrder.length, enabled: true, continueOnFail: true, workflow }]);
+  };
+
+  const handleSelectChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    if (e.target.value) {
+      addWorkflowToOrder(e.target.value);
+      e.target.value = '';
+    }
   };
 
   const availableWorkflows = workflows.filter(
@@ -220,25 +278,22 @@ const CollectionManager = ({ open, onClose }) => {
 
   return (
     <>
-      <Modal open={open} onClose={onClose} title={modalTitle} size="lg">
+      <Modal isOpen={open} onClose={onClose} title={modalTitle} size="lg">
         <div className="p-5 overflow-auto" style={{ maxHeight: '70vh' }}>
           {isManagingWorkflows ? (
             <div className="space-y-4">
-              {/* Back button */}
-              <button onClick={handleBackFromWorkflows} className="flex items-center gap-1 text-sm text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark">
+              <Button variant="ghost" size="sm" onClick={handleBackFromWorkflows} className="flex items-center gap-1 text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark">
                 <ArrowLeft className="w-4 h-4" /> Back to collections
-              </button>
+              </Button>
 
-              {/* Continue on Fail */}
               <div className="p-3 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded">
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={continueOnFail} onChange={(e) => setContinueOnFail(e.target.checked)} className="toggle toggle-sm toggle-primary" />
+                  <Toggle checked={continueOnFail} onChange={(e) => setContinueOnFail(e.target.checked)} variant="primary" size="sm" />
                   <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">Continue on Failure (Collection-wide)</span>
                 </label>
                 <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">When enabled, execution continues even if a workflow fails</p>
               </div>
 
-              {/* Workflow Order List */}
               <div>
                 <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark mb-2">Execution Order (drag to reorder)</h3>
                 {workflowOrder.length === 0 ? (
@@ -264,31 +319,52 @@ const CollectionManager = ({ open, onClose }) => {
                           <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">{wo.workflow?.name || wo.workflowId}</div>
                           <div className="text-xs text-text-muted dark:text-text-muted-dark">{wo.workflow?.nodes?.length || 0} nodes</div>
                         </div>
-                        <button onClick={() => toggleWorkflowEnabled(index)} className={`p-1.5 rounded transition-colors ${wo.enabled ? 'text-status-success hover:bg-status-success/10' : 'text-text-muted hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'}`} title={wo.enabled ? 'Enabled' : 'Disabled'}>
+                        <IconButton
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => toggleWorkflowEnabled(index)}
+                          className={wo.enabled ? 'text-status-success hover:bg-status-success/10' : 'text-text-muted hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'}
+                          tooltip={wo.enabled ? 'Enabled' : 'Disabled'}
+                        >
                           {wo.enabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                        </button>
-                        <button onClick={() => toggleWorkflowContinueOnFail(index)} className={`px-2 py-1 text-xs rounded transition-colors ${wo.continueOnFail ? 'bg-primary/10 text-primary' : 'bg-status-error/10 text-status-error'}`} title={wo.continueOnFail ? 'Continue on fail' : 'Stop on fail'}>
+                        </IconButton>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => toggleWorkflowContinueOnFail(index)}
+                          className={wo.continueOnFail ? 'bg-primary/10 text-primary' : 'bg-status-error/10 text-status-error'}
+                          title={wo.continueOnFail ? 'Continue on fail' : 'Stop on fail'}
+                        >
                           {wo.continueOnFail ? 'Continue' : 'Stop'}
-                        </button>
-                        <button onClick={() => removeWorkflowFromOrder(index)} className="p-1 text-status-error hover:bg-status-error/10 rounded transition-colors" title="Remove"><X className="w-4 h-4" /></button>
+                        </Button>
+                        <IconButton
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => removeWorkflowFromOrder(index)}
+                          className="text-status-error hover:bg-status-error/10"
+                          tooltip="Remove"
+                        >
+                          <X className="w-4 h-4" />
+                        </IconButton>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Add Workflows */}
               {availableWorkflows.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark mb-2">Add More Workflows</h3>
-                  <select onChange={(e) => { if (e.target.value) { addWorkflowToOrder(e.target.value); e.target.value = ''; } }} className="select select-bordered select-sm w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark">
+                  <select
+                    onChange={handleSelectChange}
+                    className="w-full rounded border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
                     <option value="">Select a workflow to add...</option>
                     {availableWorkflows.map((w) => <option key={w.workflowId} value={w.workflowId}>{w.name}</option>)}
                   </select>
                 </div>
               )}
 
-              {/* Save/Cancel */}
               <div className="flex gap-2 justify-end pt-4 border-t border-border dark:border-border-dark">
                 <Button variant="ghost" size="sm" onClick={handleBackFromWorkflows}>Cancel</Button>
                 <Button variant="primary" size="sm" onClick={handleSaveWorkflowOrder}>Save Order</Button>
@@ -301,19 +377,38 @@ const CollectionManager = ({ open, onClose }) => {
               )}
               <div>
                 <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Collection Name *</label>
-                <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="input input-bordered input-sm w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark" placeholder="e.g., Staging Tests" />
+                <Input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  size="sm"
+                  className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                  placeholder="e.g., Staging Tests"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Description</label>
-                <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="textarea textarea-bordered textarea-sm w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark resize-none" placeholder="Optional description..." rows="3" />
+                <TextArea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  size="sm"
+                  className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark resize-none"
+                  placeholder="Optional description..."
+                  rows={3}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">Collection Color</label>
                 <div className="flex gap-2 flex-wrap">
                   {PRESET_COLORS.map((color) => (
-                    <button key={color} onClick={() => setFormData({ ...formData, color })}
-                      className={`w-8 h-8 rounded-full border-2 transition-all ${formData.color === color ? 'border-text-primary dark:border-text-primary-dark scale-110' : 'border-border dark:border-border-dark'}`}
-                      style={{ backgroundColor: color }} title={color} />
+                    <button
+                      key={color}
+                      onClick={() => setFormData({ ...formData, color })}
+                      className={`w-8 h-8 rounded-full border-2 transition-all p-0 ${formData.color === color ? 'border-text-primary dark:border-text-primary-dark scale-110' : 'border-border dark:border-border-dark'}`}
+                      style={{ backgroundColor: color }}
+                      title={color}
+                      aria-label={`Select color ${color}`}
+                    />
                   ))}
                 </div>
               </div>
@@ -344,14 +439,21 @@ const CollectionManager = ({ open, onClose }) => {
                       <div className="flex gap-1.5 flex-shrink-0">
                         <Button variant="ghost" size="xs" onClick={() => handleManageWorkflows(col)} title="Manage workflow order"><ListOrdered className="w-3.5 h-3.5" /></Button>
                         <Button variant="ghost" size="xs" onClick={() => handleEdit(col)} title="Edit collection"><Pencil className="w-3.5 h-3.5" /></Button>
-                        <button onClick={() => setDeleteTarget(col.collectionId)} className="p-1 text-status-error hover:bg-status-error/10 rounded transition-colors" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <IconButton
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => setDeleteTarget(col.collectionId)}
+                          className="text-status-error hover:bg-status-error/10"
+                          tooltip="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </IconButton>
                       </div>
                     </div>
                   </div>
                 ))
               )}
 
-              {/* Footer — New Collection button */}
               <div className="pt-4 border-t border-border dark:border-border-dark">
                 <Button variant="primary" size="sm" onClick={handleCreate}><Plus className="w-4 h-4 mr-1" /> New Collection</Button>
               </div>
@@ -371,6 +473,6 @@ const CollectionManager = ({ open, onClose }) => {
       />
     </>
   );
-};
+}
 
 export default CollectionManager;

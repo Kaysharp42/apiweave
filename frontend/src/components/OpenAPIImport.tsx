@@ -1,21 +1,84 @@
-import React, { useState } from 'react';
+import { useState, type ChangeEvent, type DragEvent } from 'react';
 import { FileText, X, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
+import { Button } from './atoms/Button';
+import { IconButton } from './atoms/IconButton';
+import { Input } from './atoms/Input';
 
-const OpenAPIImport = ({ onClose, onImportSuccess }) => {
-  const [openapiFile, setOpenapiFile] = useState(null);
-  const [openapiJson, setOpenapiJson] = useState(null);
-  const [baseUrl, setBaseUrl] = useState('');
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [sanitize, setSanitize] = useState(true);
-  const [preview, setPreview] = useState(null);
-  const [error, setError] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [groupTitle, setGroupTitle] = useState('');
+interface OpenAPIImportProps {
+  onClose: () => void;
+  onImportSuccess?: () => void;
+}
+
+interface PreviewNode {
+  type?: string;
+  label?: string;
+  config?: {
+    method?: string;
+    url?: string;
+    headers?: string;
+    cookies?: string;
+    queryParams?: string;
+    pathVariables?: string;
+    body?: string;
+    timeout?: number;
+  };
+}
+
+interface PreviewStats {
+  apiTitle?: string;
+  apiVersion?: string;
+  totalEndpoints?: number;
+}
+
+interface PreviewWorkflow {
+  nodeCount?: number;
+}
+
+interface PreviewServer {
+  url: string;
+  description?: string;
+}
+
+interface PreviewTag {
+  name: string;
+  description?: string;
+}
+
+interface PreviewData {
+  nodes?: PreviewNode[];
+  stats?: PreviewStats;
+  workflow?: PreviewWorkflow;
+  availableServers?: PreviewServer[];
+  availableTags?: PreviewTag[];
+}
+
+interface ImportedItem {
+  label: string | undefined;
+  method: string;
+  url: string;
+  headers: string;
+  cookies: string;
+  queryParams: string;
+  pathVariables: string;
+  body: string;
+  timeout: number;
+}
+
+export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) {
+  const [openapiFile, setOpenapiFile] = useState<File | null>(null);
+  const [openapiJson, setOpenapiJson] = useState<Record<string, unknown> | null>(null);
+  const [baseUrl, setBaseUrl] = useState<string>('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [sanitize, setSanitize] = useState<boolean>(true);
+  const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [groupTitle, setGroupTitle] = useState<string>('');
   const { addImportedGroup } = usePalette();
 
-  const handleFileUpload = (file) => {
+  const handleFileUpload = (file: File | undefined) => {
     if (!file) return;
     
     if (!file.name.endsWith('.json')) {
@@ -26,25 +89,26 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
     setError(null);
     setOpenapiFile(file);
     
-    // Read and parse the file
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const parsed = JSON.parse(e.target.result);
+        const parsed = JSON.parse(e.target?.result as string) as Record<string, unknown>;
         setOpenapiJson(parsed);
         
-        // Auto-populate base URL from servers if available
-        if (!baseUrl && parsed.servers && parsed.servers.length > 0) {
-          setBaseUrl(parsed.servers[0].url);
+        if (!baseUrl && parsed.servers && Array.isArray(parsed.servers) && parsed.servers.length > 0) {
+          const firstServer = parsed.servers[0] as Record<string, unknown>;
+          if (typeof firstServer.url === 'string') {
+            setBaseUrl(firstServer.url);
+          }
         }
-      } catch (err) {
+      } catch {
         setError('Invalid JSON format');
       }
     };
     reader.readAsText(file);
   };
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
   };
@@ -53,7 +117,7 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
     setIsDragging(false);
   };
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
     
@@ -77,7 +141,7 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
       const params = new URLSearchParams();
       if (baseUrl) params.append('base_url', baseUrl);
       if (selectedTags.length > 0) params.append('tag_filter', selectedTags.join(','));
-      params.append('sanitize', sanitize);
+      params.append('sanitize', String(sanitize));
 
       const response = await fetch(`/api/workflows/import/openapi/dry-run?${params}`, {
         method: 'POST',
@@ -85,14 +149,15 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to preview OpenAPI file');
+        const errorData = await response.json() as Record<string, unknown>;
+        throw new Error((errorData.detail as string) || 'Failed to preview OpenAPI file');
       }
 
-      const data = await response.json();
+      const data = await response.json() as PreviewData;
       setPreview(data);
-    } catch (err) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -109,8 +174,8 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
     }
 
     try {
-      const items = (preview.nodes || [])
-        .filter(n => n.type === 'http-request')
+      const items: ImportedItem[] = (preview.nodes || [])
+        .filter((n): n is PreviewNode => n.type === 'http-request')
         .map(n => ({
           label: n.label,
           method: n.config?.method || 'GET',
@@ -123,35 +188,41 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
           timeout: n.config?.timeout || 30,
         }));
 
-      // Determine title: user input > filename with count
       const itemCount = items.length;
       let finalTitle = groupTitle && groupTitle.trim() 
         ? `${groupTitle.trim()} (${itemCount})`
         : `@${openapiFile.name.replace(/\.(json|yaml|yml)$/i, '')} (${itemCount})`;
 
       addImportedGroup({
+        id: `grp-${Date.now()}`,
         title: finalTitle,
         items,
       });
 
       onClose();
-    } catch (err) {
-      setError(err.message);
+      onImportSuccess?.();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(message);
     }
   };
 
-  const handleServerSelect = (serverUrl) => {
+  const handleServerSelect = (serverUrl: string) => {
     setBaseUrl(serverUrl);
   };
 
-  const handleTagToggle = (tagName) => {
+  const handleTagToggle = (tagName: string) => {
     setSelectedTags(prev => {
       if (prev.includes(tagName)) {
         return prev.filter(t => t !== tagName);
-      } else {
-        return [...prev, tagName];
       }
+      return [...prev, tagName];
     });
+  };
+
+  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    handleFileUpload(file);
   };
 
   return (
@@ -163,21 +234,23 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
         }
       }}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+        <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
           <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <FileText className="w-5 h-5 text-primary dark:text-primary-dark" />
+            <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
               Import OpenAPI/Swagger
             </h2>
           </div>
-          <button
+          <IconButton
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            variant="ghost"
+            size="sm"
+            className="text-text-muted dark:text-text-muted-dark hover:text-text-secondary dark:hover:text-text-secondary-dark"
           >
             <X className="w-5 h-5" />
-          </button>
+          </IconButton>
         </div>
 
         {/* Content */}
@@ -189,29 +262,29 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
             onDrop={handleDrop}
             className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
               isDragging
-                ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
-                : 'border-gray-300 dark:border-gray-600'
+                ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
+                : 'border-border dark:border-border-dark'
             }`}
           >
-            <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+            <Upload className="w-12 h-12 mx-auto mb-4 text-text-muted dark:text-text-muted-dark" />
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-2">
               Drag & drop your OpenAPI/Swagger JSON file here, or click to browse
             </p>
             <input
               type="file"
               accept=".json"
-              onChange={(e) => handleFileUpload(e.target.files[0])}
+              onChange={handleFileInputChange}
               className="hidden"
               id="openapi-file-input"
             />
             <label
               htmlFor="openapi-file-input"
-              className="inline-block px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 cursor-pointer"
+              className="inline-block px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover cursor-pointer"
             >
               Choose File
             </label>
             {openapiFile && (
-              <p className="mt-2 text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
+              <p className="mt-2 text-sm text-status-success dark:text-status-success-dark flex items-center gap-1 justify-center">
                 <CheckCircle className="w-4 h-4" />
                 <span>{openapiFile.name}</span>
               </p>
@@ -224,13 +297,13 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
               {/* Server Selection */}
               {preview?.availableServers && preview.availableServers.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                     Base URL (Server)
                   </label>
                   <select
                     value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    onChange={(e) => handleServerSelect(e.target.value)}
+                    className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                   >
                     <option value="">-- Select Server --</option>
                     {preview.availableServers.map((server, idx) => (
@@ -244,42 +317,39 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
 
               {/* Custom Base URL */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Custom Base URL (optional)
                 </label>
-                <input
+                <Input
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder="https://api.example.com"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
 
               {/* Tag Filter */}
               {preview?.availableTags && preview.availableTags.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                     Filter by Tags (select to import only specific tags)
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {preview.availableTags.map((tag, idx) => (
-                      <button
+                      <Button
                         key={idx}
                         onClick={() => handleTagToggle(tag.name)}
-                        className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                          selectedTags.includes(tag.name)
-                            ? 'bg-cyan-600 text-white'
-                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-                        }`}
+                        variant={selectedTags.includes(tag.name) ? 'primary' : 'secondary'}
+                        size="xs"
+                        className="rounded-full"
                         title={tag.description}
                       >
                         {tag.name}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                   {selectedTags.length === 0 && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
                       No tags selected - all endpoints will be imported
                     </p>
                   )}
@@ -295,22 +365,21 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
                   onChange={(e) => setSanitize(e.target.checked)}
                   className="w-4 h-4"
                 />
-                <label htmlFor="sanitize-openapi" className="text-sm text-gray-700 dark:text-gray-300">
+                <label htmlFor="sanitize-openapi" className="text-sm text-text-primary dark:text-text-primary-dark">
                   Sanitize sensitive headers (Authorization, API keys)
                 </label>
               </div>
 
               {/* Group Title */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Palette Group Title (optional)
                 </label>
-                <input
+                <Input
                   type="text"
                   value={groupTitle}
                   onChange={(e) => setGroupTitle(e.target.value)}
                   placeholder={openapiFile?.name || 'My API Group'}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
             </div>
@@ -319,42 +388,42 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
           {/* Error Display */}
           {error && (
             <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark flex-shrink-0 mt-0.5" />
               <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
             </div>
           )}
 
           {/* Preview Display */}
           {preview && (
-            <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
+            <div className="border border-border dark:border-border-dark rounded-lg p-4 bg-surface dark:bg-surface-dark">
               <div className="flex items-center gap-2 mb-3">
-                <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Preview</h3>
+                <CheckCircle className="w-5 h-5 text-status-success dark:text-status-success-dark" />
+                <h3 className="font-semibold text-text-primary dark:text-text-primary-dark">Preview</h3>
               </div>
               
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">API:</span>
-                  <span className="font-medium text-gray-900 dark:text-gray-100">
+                  <span className="text-text-secondary dark:text-text-secondary-dark">API:</span>
+                  <span className="font-medium text-text-primary dark:text-text-primary-dark">
                     {preview.stats?.apiTitle} (v{preview.stats?.apiVersion})
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Endpoints:</span>
-                  <span className="font-medium text-gray-900 dark:text-gray-100">
+                  <span className="text-text-secondary dark:text-text-secondary-dark">Endpoints:</span>
+                  <span className="font-medium text-text-primary dark:text-text-primary-dark">
                     {preview.stats?.totalEndpoints}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Total Nodes:</span>
-                  <span className="font-medium text-gray-900 dark:text-gray-100">
+                  <span className="text-text-secondary dark:text-text-secondary-dark">Total Nodes:</span>
+                  <span className="font-medium text-text-primary dark:text-text-primary-dark">
                     {preview.workflow?.nodeCount}
                   </span>
                 </div>
                 {selectedTags.length > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Selected Tags:</span>
-                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                    <span className="text-text-secondary dark:text-text-secondary-dark">Selected Tags:</span>
+                    <span className="font-medium text-text-primary dark:text-text-primary-dark">
                       {selectedTags.join(', ')}
                     </span>
                   </div>
@@ -364,19 +433,19 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
               {/* Node Preview */}
               {preview.nodes && preview.nodes.length > 2 && (
                 <div className="mt-4">
-                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  <h4 className="text-xs font-semibold text-text-primary dark:text-text-primary-dark mb-2">
                     Sample Endpoints (first 5):
                   </h4>
                   <div className="space-y-1">
                     {preview.nodes.slice(1, 6).map((node, idx) => (
                       <div
                         key={idx}
-                        className="text-xs px-2 py-1 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700"
+                        className="text-xs px-2 py-1 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark"
                       >
-                        <span className="font-mono text-cyan-600 dark:text-cyan-400">
+                        <span className="font-mono text-primary dark:text-primary-dark">
                           {node.config?.method}
                         </span>{' '}
-                        <span className="text-gray-700 dark:text-gray-300">{node.label}</span>
+                        <span className="text-text-primary dark:text-text-primary-dark">{node.label}</span>
                       </div>
                     ))}
                   </div>
@@ -387,34 +456,36 @@ const OpenAPIImport = ({ onClose, onImportSuccess }) => {
         </div>
 
         {/* Footer Actions */}
-        <div className="border-t dark:border-gray-700 p-4 flex justify-between">
-          <button
+        <div className="border-t border-border dark:border-border-dark p-4 flex justify-between">
+          <Button
             onClick={onClose}
-            className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            variant="ghost"
             disabled={isLoading}
           >
             Cancel
-          </button>
+          </Button>
           <div className="flex gap-2">
-            <button
+            <Button
               onClick={handlePreview}
+              variant="secondary"
               disabled={!openapiFile || isLoading}
-              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              loading={isLoading}
             >
               {isLoading ? 'Loading...' : 'Preview'}
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleImport}
+              variant="primary"
               disabled={!preview || isLoading}
-              className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              loading={isLoading}
             >
               {isLoading ? 'Adding...' : 'Add to Nodes'}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
     </div>
   );
-};
+}
 
 export default OpenAPIImport;

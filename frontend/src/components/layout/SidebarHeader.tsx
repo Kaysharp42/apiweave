@@ -8,15 +8,10 @@ import {
   ChevronRight,
   User,
 } from 'lucide-react';
-// @ts-expect-error WorkflowExportImport.jsx not yet migrated
 import WorkflowExportImport from '../WorkflowExportImport';
-// @ts-expect-error HARImport.jsx not yet migrated
 import HARImport from '../HARImport';
-// @ts-expect-error OpenAPIImport.jsx not yet migrated
 import OpenAPIImport from '../OpenAPIImport';
-// @ts-expect-error CurlImport.jsx not yet migrated
 import CurlImport from '../CurlImport';
-// @ts-expect-error CollectionExportImport.jsx not yet migrated
 import CollectionExportImport from '../CollectionExportImport';
 import { Spinner, Button } from '../atoms';
 import { SearchInput } from '../molecules';
@@ -38,7 +33,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
   const [showCurlImport, setShowCurlImport] = useState(false);
   const [showImportMenu, setShowImportMenu] = useState(false);
   const [showCollectionImportExport, setShowCollectionImportExport] = useState(false);
-  const [collectionImportMode, setCollectionImportMode] = useState<string | null>(null);
+  const [collectionImportMode, setCollectionImportMode] = useState<'export' | 'import-collection' | 'import-workflows' | 'import-har' | 'import-openapi' | 'import-curl' | null>(null);
   const importMenuRef = useRef<HTMLDivElement>(null);
 
   const searchQuery = useSidebarStore((s) => s.searchQuery);
@@ -167,7 +162,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
       {showCurlImport && <CurlImport onClose={() => setShowCurlImport(false)} />}
       {showCollectionImportExport && (
         <CollectionExportImport
-          mode={collectionImportMode ?? undefined}
+          {...(collectionImportMode && { mode: collectionImportMode })}
           isOpen={true}
           onClose={() => {
             setShowCollectionImportExport(false);

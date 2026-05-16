@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Save, History, Play, Code, Upload, Loader2, RefreshCw, ChevronDown } from 'lucide-react';
 import { Button } from '../atoms';
-// @ts-expect-error ButtonSelect.jsx not yet migrated
 import ButtonSelect from '../ButtonSelect';
 import type { CanvasToolbarProps } from '../../types/CanvasToolbarProps';
 

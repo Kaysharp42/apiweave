@@ -1,22 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, type ChangeEvent, type DragEvent } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, X, Copy, Trash2 } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 import useCanvasStore from '../stores/CanvasStore';
+import { Button } from './atoms/Button';
+import { TextArea } from './atoms/TextArea';
+import { IconButton } from './atoms/IconButton';
 
-const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
-  const [curlInput, setCurlInput] = useState('');
-  const [sanitize, setSanitize] = useState(true);
-  const [dryRunResult, setDryRunResult] = useState(null);
-  const [importing, setImporting] = useState(false);
-  const [error, setError] = useState(null);
-  const [importResult, setImportResult] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [workflows, setWorkflows] = useState([]);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState(currentWorkflowId || '');
-  const [loadingWorkflows, setLoadingWorkflows] = useState(true);
+interface Workflow {
+  workflowId: string;
+  name: string;
+  nodes?: unknown[];
+}
 
-  // Fetch available workflows on mount
+interface DryRunResult {
+  stats: {
+    totalRequests: number;
+  };
+  workflow: {
+    name: string;
+    nodeCount: number;
+    edgeCount: number;
+  };
+}
+
+interface CurlImportProps {
+  onClose: () => void;
+  onImportSuccess?: (workflowId: string) => void;
+  currentWorkflowId?: string;
+}
+
+export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: CurlImportProps) {
+  const [curlInput, setCurlInput] = useState<string>('');
+  const [sanitize, setSanitize] = useState<boolean>(true);
+  const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null);
+  const [importing, setImporting] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(currentWorkflowId || '');
+  const [loadingWorkflows, setLoadingWorkflows] = useState<boolean>(true);
+
   useEffect(() => {
     const fetchWorkflows = async () => {
       try {
@@ -34,7 +58,7 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
     fetchWorkflows();
   }, []);
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
@@ -44,41 +68,48 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
     setIsDragging(false);
   };
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
 
     const file = e.dataTransfer.files[0];
     if (file) {
-      // Read file content
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
-          const content = event.target.result;
-          setCurlInput(content);
+          const content = event.target?.result;
+          if (typeof content === 'string') {
+            setCurlInput(content);
+          }
           setError(null);
           setDryRunResult(null);
         } catch (err) {
-          setError('Failed to read file: ' + err.message);
+          if (err instanceof Error) {
+            setError('Failed to read file: ' + err.message);
+          }
         }
       };
       reader.readAsText(file);
     }
   };
 
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
+  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
-          const content = event.target.result;
-          setCurlInput(content);
+          const content = event.target?.result;
+          if (typeof content === 'string') {
+            setCurlInput(content);
+          }
           setError(null);
           setDryRunResult(null);
         } catch (err) {
-          setError('Failed to read file: ' + err.message);
+          if (err instanceof Error) {
+            setError('Failed to read file: ' + err.message);
+          }
         }
       };
       reader.readAsText(file);
@@ -98,7 +129,7 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
     try {
       const params = new URLSearchParams();
       params.append('curl_command', curlInput);
-      params.append('sanitize', sanitize);
+      params.append('sanitize', String(sanitize));
 
       const response = await fetch(`${API_BASE_URL}/api/workflows/import/curl/dry-run?${params}`, {
         method: 'POST',
@@ -113,7 +144,9 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
       setDryRunResult(result);
     } catch (err) {
       console.error('Preview error:', err);
-      setError(err.message);
+      if (err instanceof Error) {
+        setError(err.message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -127,12 +160,11 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
 
     setError(null);
     setImporting(true);
-    setImportResult(null);
 
     try {
       const params = new URLSearchParams();
       params.append('curl_command', curlInput);
-      params.append('sanitize', sanitize);
+      params.append('sanitize', String(sanitize));
       if (selectedWorkflowId) {
         params.append('workflowId', selectedWorkflowId);
       }
@@ -147,22 +179,20 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
       }
 
       const data = await response.json();
-      setImportResult(data);
 
-      // If appending to existing workflow, trigger a reload event
       if (selectedWorkflowId) {
-        // Signal the canvas to reload the current workflow from server
         useCanvasStore.getState().signalWorkflowReload(data.workflowId);
       }
 
-      // Notify parent and close
       if (onImportSuccess) {
         onImportSuccess(data.workflowId);
       }
       onClose();
     } catch (err) {
       console.error('Import error:', err);
-      setError(err.message);
+      if (err instanceof Error) {
+        setError(err.message);
+      }
     } finally {
       setImporting(false);
     }
@@ -192,28 +222,29 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
         }
       }}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+        <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
           <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <FileText className="w-5 h-5 text-primary dark:text-primary-dark" />
+            <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
               Import curl Commands
             </h2>
           </div>
-          <button
+          <IconButton
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            tooltip="Close"
+            variant="ghost"
           >
             <X className="w-5 h-5" />
-          </button>
+          </IconButton>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Info */}
           <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
               Import curl commands to automatically create API test workflows. Supports single or multiple commands (one per line or separated by &&).
             </p>
           </div>
@@ -225,24 +256,24 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
             onDrop={handleDrop}
             className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
               isDragging
-                ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
-                : 'border-gray-300 dark:border-gray-600'
+                ? 'border-primary/20 dark:border-primary/30 bg-primary/5 dark:bg-primary/10'
+                : 'border-border dark:border-border-dark'
             }`}
           >
-            <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+            <Upload className="w-12 h-12 mx-auto mb-4 text-text-muted dark:text-text-muted-dark" />
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-2">
               Drag & drop a text file with curl commands here, or click to browse
             </p>
             <input
               type="file"
               accept=".txt,.sh,.curl"
-              onChange={(e) => handleFileSelect(e.target.files[0])}
+              onChange={handleFileSelect}
               className="hidden"
               id="curl-file-input"
             />
             <label
               htmlFor="curl-file-input"
-              className="inline-block px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 cursor-pointer"
+              className="inline-block px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover cursor-pointer"
             >
               Choose File
             </label>
@@ -250,10 +281,10 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
 
           {/* Text Input Area */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
               Or paste curl commands here:
             </label>
-            <textarea
+            <TextArea
               value={curlInput}
               onChange={(e) => setCurlInput(e.target.value)}
               placeholder={`curl -X GET "https://api.example.com/users" \\
@@ -263,40 +294,43 @@ const CurlImport = ({ onClose, onImportSuccess, currentWorkflowId }) => {
 curl -X POST "https://api.example.com/users" \\
   -H "Content-Type: application/json" \\
   -d '{"name":"John","email":"john@example.com"}'`}
-              className="w-full h-40 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full h-40 font-mono text-sm"
             />
             <div className="mt-2 flex gap-2">
-              <button
+              <Button
                 onClick={handleClear}
                 disabled={!curlInput}
-                className="flex items-center gap-1 px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                variant="secondary"
+                size="sm"
+                icon={<Trash2 className="w-4 h-4" />}
               >
-                <Trash2 className="w-4 h-4" />
                 Clear
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handlePasteSample}
-                className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                variant="secondary"
+                intent="info"
+                size="sm"
+                icon={<Copy className="w-4 h-4" />}
               >
-                <Copy className="w-4 h-4" />
                 Paste Sample
-              </button>
+              </Button>
             </div>
           </div>
 
           {/* Options */}
           {curlInput && (
-            <div className="space-y-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+            <div className="space-y-3 p-3 bg-surface dark:bg-surface-dark rounded-lg">
               {/* Workflow Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Destination Workflow
                 </label>
                 <select
                   value={selectedWorkflowId}
                   onChange={(e) => setSelectedWorkflowId(e.target.value)}
                   disabled={loadingWorkflows}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <option value="">
                     {loadingWorkflows ? 'Loading workflows...' : '+ Create New Workflow'}
@@ -307,10 +341,10 @@ curl -X POST "https://api.example.com/users" \\
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 flex items-center gap-1">
+                <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-1 flex items-center gap-1">
                   {selectedWorkflowId ? (
                     <>
-                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      <CheckCircle className="w-4 h-4 text-status-success dark:text-status-success-dark" />
                       <span>Will append to selected workflow</span>
                     </>
                   ) : (
@@ -327,9 +361,9 @@ curl -X POST "https://api.example.com/users" \\
                   type="checkbox"
                   checked={sanitize}
                   onChange={(e) => setSanitize(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 border-border dark:border-border-dark rounded focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-700 dark:text-gray-300">
+                <span className="text-sm text-text-primary dark:text-text-primary-dark">
                   Sanitize sensitive headers (API keys, tokens, etc.)
                 </span>
               </label>
@@ -340,8 +374,8 @@ curl -X POST "https://api.example.com/users" \\
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
               <div className="flex items-start">
-                <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mr-2 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+                <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-status-error dark:text-status-error-dark">{error}</p>
               </div>
             </div>
           )}
@@ -367,51 +401,38 @@ curl -X POST "https://api.example.com/users" \\
         </div>
 
         {/* Footer */}
-        <div className="flex space-x-3 p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-          <button
+        <div className="flex space-x-3 p-4 border-t border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+          <Button
             onClick={handlePreview}
             disabled={!curlInput || isLoading}
-            className="flex-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+            variant="secondary"
+            fullWidth
+            loading={isLoading}
+            icon={!isLoading ? <FileText className="w-4 h-4" /> : undefined}
           >
-            {isLoading ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-800 dark:border-white border-t-transparent mr-2" />
-                Previewing...
-              </>
-            ) : (
-              <>
-                <FileText className="w-4 h-4 mr-2" />
-                Preview
-              </>
-            )}
-          </button>
-          <button
+            {isLoading ? 'Previewing...' : 'Preview'}
+          </Button>
+          <Button
             onClick={handleImport}
             disabled={importing || !curlInput}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+            variant="primary"
+            intent="info"
+            fullWidth
+            loading={importing}
+            icon={!importing ? <Upload className="w-4 h-4" /> : undefined}
           >
-            {importing ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
-                Importing...
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4 mr-2" />
-                Import as Workflow
-              </>
-            )}
-          </button>
-          <button
+            {importing ? 'Importing...' : 'Import as Workflow'}
+          </Button>
+          <Button
             onClick={onClose}
-            className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            variant="secondary"
           >
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>
   );
-};
+}
 
 export default CurlImport;

@@ -1,34 +1,75 @@
-import React, { useState } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle, X, List, GitBranch } from 'lucide-react';
+import { useState, type ChangeEvent, type DragEvent, type MouseEvent } from 'react';
+import { Upload, FileText, AlertCircle, X, List, GitBranch } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
+import { Button } from './atoms/Button';
+import { IconButton } from './atoms/IconButton';
+import { Input } from './atoms/Input';
 
-const HARImport = ({ onClose, onImportSuccess }) => {
-  const [harFile, setHarFile] = useState(null);
-  const [harJson, setHarJson] = useState(null);
-  const [importMode, setImportMode] = useState('linear');
+interface HARPreviewEntry {
+  method: string;
+  url: string;
+  headers?: string;
+  body?: string;
+  time?: number;
+}
+
+interface HARImportDryRunStats {
+  totalEntries?: number;
+  nodes?: number;
+  edges?: number;
+}
+
+interface HARImportDryRunResult {
+  stats: HARImportDryRunStats;
+  preview: HARPreviewEntry[];
+}
+
+interface HARImportProps {
+  onClose: () => void;
+  onImportSuccess?: (result: HARImportDryRunResult) => void;
+}
+
+type ImportMode = 'linear' | 'grouped';
+
+function getMethodBadgeClasses(method: string): string {
+  switch (method) {
+    case 'GET':
+      return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300';
+    case 'POST':
+      return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+    case 'PUT':
+      return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300';
+    case 'DELETE':
+      return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300';
+    default:
+      return 'bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark';
+  }
+}
+
+export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
+  const [harFile, setHarFile] = useState<File | null>(null);
+  const [harJson, setHarJson] = useState<Record<string, unknown> | null>(null);
+  const [importMode, setImportMode] = useState<ImportMode>('linear');
   const [sanitize, setSanitize] = useState(true);
-  const [dryRunResult, setDryRunResult] = useState(null);
-  const [importing, setImporting] = useState(false);
-  const [error, setError] = useState(null);
-  const [importResult, setImportResult] = useState(null);
+  const [dryRunResult, setDryRunResult] = useState<HARImportDryRunResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [groupTitle, setGroupTitle] = useState('');
   const { addImportedGroup } = usePalette();
 
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
+  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
       setHarFile(file);
       setError(null);
       setDryRunResult(null);
 
-      // Read and parse HAR file
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
-          const json = JSON.parse(event.target.result);
+          const json = JSON.parse(event.target?.result as string);
           setHarJson(json);
         } catch (err) {
-          setError('Invalid HAR file: ' + err.message);
+          setError('Invalid HAR file: ' + (err as Error).message);
           setHarJson(null);
         }
       };
@@ -36,20 +77,19 @@ const HARImport = ({ onClose, onImportSuccess }) => {
     }
   };
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
   };
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
     const file = e.dataTransfer.files[0];
     if (file) {
-      // Simulate file input change
-      const event = { target: { files: [file] } };
-      handleFileSelect(event);
+      const syntheticEvent = { target: { files: [file] } } as unknown as ChangeEvent<HTMLInputElement>;
+      handleFileSelect(syntheticEvent);
     }
   };
 
@@ -66,7 +106,7 @@ const HARImport = ({ onClose, onImportSuccess }) => {
       const formData = new FormData();
       formData.append('file', harFile);
       formData.append('import_mode', importMode);
-      formData.append('sanitize', sanitize);
+      formData.append('sanitize', String(sanitize));
 
       const response = await fetch('/api/workflows/import/har/dry-run', {
         method: 'POST',
@@ -74,15 +114,15 @@ const HARImport = ({ onClose, onImportSuccess }) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json() as { detail?: string };
         throw new Error(errorData.detail || 'Preview failed');
       }
 
-      const result = await response.json();
+      const result = (await response.json()) as HARImportDryRunResult;
       setDryRunResult(result);
     } catch (err) {
       console.error('Preview error:', err);
-      setError(err.message);
+      setError((err as Error).message);
     }
   };
 
@@ -109,44 +149,44 @@ const HARImport = ({ onClose, onImportSuccess }) => {
         timeout: 30,
       }));
 
-      // Determine title: user input > filename with count
       const itemCount = items.length;
-      let finalTitle = groupTitle && groupTitle.trim() 
+      const finalTitle = groupTitle && groupTitle.trim()
         ? `${groupTitle.trim()} (${itemCount})`
         : `@${harFile.name.replace(/\.(har|json)$/i, '')} (${itemCount})`;
 
       addImportedGroup({
+        id: `grp-${Date.now()}`,
         title: finalTitle,
         items,
       });
 
+      onImportSuccess?.(dryRunResult);
       onClose();
     } catch (err) {
-      setError(err.message);
+      setError((err as Error).message);
+    }
+  };
+
+  const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      onClose();
     }
   };
 
   return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={handleOverlayClick}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+        <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
+          <h2 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
             Import HAR File
           </h2>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-          >
-            <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-          </button>
+          <IconButton onClick={onClose} tooltip="Close" size="sm">
+            <X className="w-5 h-5" />
+          </IconButton>
         </div>
 
         {/* Content */}
@@ -154,7 +194,7 @@ const HARImport = ({ onClose, onImportSuccess }) => {
           <div className="space-y-6">
             {/* Info */}
             <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
                 Import HTTP Archive (HAR) files to automatically create API test workflows from
                 recorded browser sessions or API calls.
               </p>
@@ -162,16 +202,16 @@ const HARImport = ({ onClose, onImportSuccess }) => {
 
             {/* File Upload */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                 HAR File
               </label>
               <div
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
-                className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer"
+                className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-8 text-center hover:border-primary dark:hover:border-primary transition-colors cursor-pointer"
               >
-                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                <Upload className="w-12 h-12 text-text-muted dark:text-text-muted-dark mx-auto mb-4" />
+                <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-2">
                   Drag and drop your HAR file here, or click to browse
                 </p>
                 <input
@@ -183,12 +223,12 @@ const HARImport = ({ onClose, onImportSuccess }) => {
                 />
                 <label
                   htmlFor="har-file-input"
-                  className="inline-block bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded cursor-pointer"
+                  className="inline-block bg-primary hover:bg-primary-hover text-white text-sm font-medium py-2 px-4 rounded cursor-pointer"
                 >
                   Select File
                 </label>
                 {harFile && (
-                  <p className="mt-3 text-sm text-green-600 dark:text-green-400">
+                  <p className="mt-3 text-sm text-status-success dark:text-status-success-dark">
                     ✓ {harFile.name}
                   </p>
                 )}
@@ -199,7 +239,7 @@ const HARImport = ({ onClose, onImportSuccess }) => {
             {harJson && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                     Import Mode
                   </label>
                   <div className="flex space-x-4">
@@ -208,25 +248,25 @@ const HARImport = ({ onClose, onImportSuccess }) => {
                         type="radio"
                         value="linear"
                         checked={importMode === 'linear'}
-                        onChange={(e) => setImportMode(e.target.value)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        onChange={(e) => setImportMode(e.target.value as ImportMode)}
+                        className="w-4 h-4 text-primary border-border focus:ring-primary"
                       />
-                      <List className="w-4 h-4 text-gray-500" />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                      <List className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
+                      <span className="text-sm text-text-primary dark:text-text-primary-dark">
                         Linear (Sequential)
                       </span>
                     </label>
-                    <label className="flex items-center space-x-2 cursor-pointer opacity-50 cursor-not-allowed">
+                    <label className="flex items-center space-x-2 opacity-50 cursor-not-allowed">
                       <input
                         type="radio"
                         value="grouped"
                         checked={importMode === 'grouped'}
-                        onChange={(e) => setImportMode(e.target.value)}
+                        onChange={(e) => setImportMode(e.target.value as ImportMode)}
                         disabled
-                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        className="w-4 h-4 text-primary border-border focus:ring-primary"
                       />
-                      <GitBranch className="w-4 h-4 text-gray-500" />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                      <GitBranch className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
+                      <span className="text-sm text-text-primary dark:text-text-primary-dark">
                         Grouped (Parallel) - Coming Soon
                       </span>
                     </label>
@@ -238,9 +278,9 @@ const HARImport = ({ onClose, onImportSuccess }) => {
                     type="checkbox"
                     checked={sanitize}
                     onChange={(e) => setSanitize(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-primary border-border rounded focus:ring-primary"
                   />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="text-sm text-text-primary dark:text-text-primary-dark">
                     Sanitize sensitive headers (Authorization, API keys, etc.)
                   </span>
                 </label>
@@ -249,9 +289,9 @@ const HARImport = ({ onClose, onImportSuccess }) => {
 
             {/* Preview Result */}
             {dryRunResult && (
-              <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                <div className="bg-gray-50 dark:bg-gray-900 px-4 py-3 border-b dark:border-gray-700">
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white">
+              <div className="border border-border dark:border-border-dark rounded-lg overflow-hidden">
+                <div className="bg-surface dark:bg-surface-dark px-4 py-3 border-b border-border dark:border-border-dark">
+                  <h3 className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
                     Preview
                   </h3>
                 </div>
@@ -262,47 +302,41 @@ const HARImport = ({ onClose, onImportSuccess }) => {
                       <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                         {dryRunResult.stats?.totalEntries || 0}
                       </p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">Total Requests</p>
+                      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Total Requests</p>
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                      <p className="text-2xl font-bold text-status-success dark:text-status-success-dark">
                         {dryRunResult.stats?.nodes || 0}
                       </p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">Nodes</p>
+                      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Nodes</p>
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                         {dryRunResult.stats?.edges || 0}
                       </p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">Edges</p>
+                      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Edges</p>
                     </div>
                   </div>
 
                   {/* Entry Preview */}
                   {dryRunResult.preview && dryRunResult.preview.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <p className="text-xs font-medium text-text-primary dark:text-text-primary-dark mb-2">
                         First {dryRunResult.preview.length} requests:
                       </p>
                       <div className="space-y-2 max-h-48 overflow-y-auto">
                         {dryRunResult.preview.map((entry, idx) => (
                           <div
                             key={idx}
-                            className="flex items-center space-x-3 text-xs bg-gray-50 dark:bg-gray-900 p-2 rounded"
+                            className="flex items-center space-x-3 text-xs bg-surface dark:bg-surface-dark p-2 rounded"
                           >
-                            <span className={`font-medium px-2 py-0.5 rounded ${
-                              entry.method === 'GET' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
-                              entry.method === 'POST' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                              entry.method === 'PUT' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' :
-                              entry.method === 'DELETE' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
-                              'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-                            }`}>
+                            <span className={`font-medium px-2 py-0.5 rounded ${getMethodBadgeClasses(entry.method)}`}>
                               {entry.method}
                             </span>
-                            <span className="flex-1 text-gray-600 dark:text-gray-400 truncate">
+                            <span className="flex-1 text-text-secondary dark:text-text-secondary-dark truncate">
                               {entry.url}
                             </span>
-                            <span className="text-gray-500 dark:text-gray-500">
+                            <span className="text-text-muted dark:text-text-muted-dark">
                               {entry.time}ms
                             </span>
                           </div>
@@ -317,15 +351,12 @@ const HARImport = ({ onClose, onImportSuccess }) => {
             {/* Group Title */}
             {harJson && (
               <div className="mt-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Palette Group Title (optional)
-                </label>
-                <input
-                  type="text"
+                <Input
                   value={groupTitle}
                   onChange={(e) => setGroupTitle(e.target.value)}
                   placeholder={harFile?.name || 'My HAR Group'}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  label="Palette Group Title (optional)"
+                  size="sm"
                 />
               </div>
             )}
@@ -334,36 +365,39 @@ const HARImport = ({ onClose, onImportSuccess }) => {
             {error && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                 <div className="flex items-start">
-                  <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mr-2" />
+                  <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2" />
                   <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
                 </div>
               </div>
             )}
 
             {/* Action Buttons */}
-            <div className="flex space-x-3 pt-4 border-t dark:border-gray-700">
-              <button
+            <div className="flex space-x-3 pt-4 border-t border-border dark:border-border-dark">
+              <Button
                 onClick={handlePreview}
                 disabled={!harJson}
-                className="flex-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                variant="secondary"
+                icon={<FileText className="w-4 h-4" />}
+                fullWidth
               >
-                <FileText className="w-4 h-4 mr-2" />
                 Preview
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleImport}
                 disabled={!harJson}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                variant="primary"
+                intent="info"
+                icon={<Upload className="w-4 h-4" />}
+                fullWidth
               >
-                <Upload className="w-4 h-4 mr-2" />
                 Add to Nodes
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       </div>
     </div>
   );
-};
+}
 
 export default HARImport;

@@ -1,6 +1,5 @@
 import { useContext, useState } from 'react';
 import { AppContext } from '../../App';
-// @ts-expect-error EnvironmentManager.jsx not yet migrated
 import EnvironmentManager from '../EnvironmentManager';
 import { Moon, Sun, Folder, Save, User } from 'lucide-react';
 import Tippy from '@tippyjs/react';

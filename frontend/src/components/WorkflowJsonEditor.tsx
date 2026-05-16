@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { Button } from './atoms/Button';
@@ -6,8 +6,8 @@ import { Button } from './atoms/Button';
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows
  */
-function buildAIPrompt(currentWorkflowJson, includeWorkflow) {
-  const hasWorkflow = includeWorkflow && currentWorkflowJson?.nodes?.length > 0;
+function buildAIPrompt(currentWorkflowJson: unknown, includeWorkflow: boolean): string {
+  const hasWorkflow = includeWorkflow && (currentWorkflowJson as Record<string, unknown>[])?.length > 0;
 
   const existingSection = hasWorkflow
     ? `
@@ -128,7 +128,7 @@ Makes an API call. The most commonly used node.
 | body | string | \`null\` | Request body (usually JSON string). Set to \`null\` for GET/DELETE |
 | timeout | int | \`30\` | Request timeout in seconds |
 | followRedirects | bool | \`true\` | Whether to follow HTTP redirects |
-| extractors | object | \`{}\` | Extract values from response into workflow variables. Key = variable name, Value = JSONPath |
+| extractors | object | \`{}\` | Extract values from responses into workflow variables. Key = variable name, Value = JSONPath |
 
 **Extractor paths:**
 - \`response.body.field\` — JSON body field
@@ -450,25 +450,38 @@ Create multiple edges from one node to fan out. Use a Merge node to rejoin.
 `;
 }
 
+export interface WorkflowJsonEditorProps {
+  open: boolean;
+  workflowJson: Record<string, unknown> | null;
+  onApply: (json: Record<string, unknown>) => void;
+  onClose: () => void;
+}
+
+type ViewMode = 'json' | 'ai-prompt';
+
 /**
  * WorkflowJsonEditor — Full-screen modal that shows the raw JSON of the
  * current workflow (nodes, edges, variables, settings).  Users can read,
  * copy, edit, and apply changes.  Invalid JSON is rejected gracefully.
  */
-const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
-  const [value, setValue] = useState('');
-  const [error, setError] = useState(null);
-  const [copied, setCopied] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
-  const [viewMode, setViewMode] = useState('json'); // 'json' or 'ai-prompt'
-  const [includeWorkflow, setIncludeWorkflow] = useState(
-    workflowJson?.nodes?.length > 0
+export function WorkflowJsonEditor({
+  open,
+  workflowJson,
+  onApply,
+  onClose,
+}: WorkflowJsonEditorProps) {
+  const [value, setValue] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<boolean>(false);
+  const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('json');
+  const [includeWorkflow, setIncludeWorkflow] = useState<boolean>(
+    Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length)
   );
-  const textareaRef = useRef(null);
-  const promptRef = useRef(null);
-  const seededForOpenRef = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const promptRef = useRef<HTMLDivElement>(null);
+  const seededForOpenRef = useRef<boolean>(false);
 
-  // Seed editor with pretty-printed JSON once per open cycle
   useEffect(() => {
     if (!open) {
       seededForOpenRef.current = false;
@@ -481,7 +494,7 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
       setValue(pretty);
       setError(null);
       setIsDirty(false);
-      setIncludeWorkflow(workflowJson?.nodes?.length > 0);
+      setIncludeWorkflow(Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length));
     } catch {
       setValue('{}');
       setIncludeWorkflow(false);
@@ -489,28 +502,26 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
     seededForOpenRef.current = true;
   }, [open, workflowJson]);
 
-  // Focus textarea on mount
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
 
-  const handleChange = useCallback((e) => {
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
     setIsDirty(true);
     setError(null);
   }, []);
 
   const handleCopy = useCallback(async () => {
-    const textToCopy = viewMode === 'json' 
-      ? value 
+    const textToCopy = viewMode === 'json'
+      ? value
       : buildAIPrompt(workflowJson, includeWorkflow);
-    
+
     try {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      // Fallback
       if (viewMode === 'json') {
         textareaRef.current?.select();
         document.execCommand('copy');
@@ -529,9 +540,8 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
 
   const handleApply = useCallback(() => {
     try {
-      const parsed = JSON.parse(value);
+      const parsed = JSON.parse(value) as Record<string, unknown>;
 
-      // Basic shape validation
       if (!parsed.nodes || !Array.isArray(parsed.nodes)) {
         setError('"nodes" must be an array.');
         return;
@@ -543,13 +553,12 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
 
       onApply(parsed);
     } catch (e) {
-      setError(`Invalid JSON: ${e.message}`);
+      setError(`Invalid JSON: ${(e as Error).message}`);
     }
   }, [value, onApply]);
 
-  // Keyboard shortcuts
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
       }
@@ -562,11 +571,10 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, handleApply]);
 
-  // Count lines for line numbers
   const lineCount = value.split('\n').length;
 
   return (
-    <Transition show={open} as={React.Fragment}>
+    <Transition show={open} as={Fragment}>
       <Dialog onClose={onClose} className="relative z-50">
         <TransitionChild
           enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
@@ -595,8 +603,10 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
           <div className="flex items-center gap-2">
             {/* View mode tabs */}
             <div className="flex items-center gap-1 mr-2 bg-surface-raised dark:bg-surface-dark-raised rounded-md p-0.5">
-              <button
+              <Button
                 onClick={() => setViewMode('json')}
+                variant="ghost"
+                size="xs"
                 className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
                   viewMode === 'json'
                     ? 'bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark shadow-sm'
@@ -605,9 +615,11 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
               >
                 <Pencil className="w-3.5 h-3.5" />
                 Edit JSON
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setViewMode('ai-prompt')}
+                variant="ghost"
+                size="xs"
                 className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
                   viewMode === 'ai-prompt'
                     ? 'bg-surface dark:bg-surface-dark text-primary shadow-sm'
@@ -616,16 +628,16 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 AI Prompt
-              </button>
+              </Button>
             </div>
-            
+
             <Button
               onClick={handleCopy}
               variant="ghost"
               size="sm"
               title={viewMode === 'json' ? 'Copy JSON to clipboard' : 'Copy AI prompt to clipboard'}
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? <Check className="w-3.5 h-3.5 text-status-success dark:text-status-success-dark" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? 'Copied!' : 'Copy'}
             </Button>
             {viewMode === 'json' && (
@@ -660,13 +672,13 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
         )}
 
         {/* Include workflow toggle (only in AI prompt mode) */}
-        {viewMode === 'ai-prompt' && workflowJson?.nodes?.length > 0 && (
-          <div className="flex items-center gap-3 px-5 py-2 border-b border-border dark:border-border-dark bg-primary/5">
+        {viewMode === 'ai-prompt' && Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length) && (
+          <div className="flex items-center gap-3 px-5 py-2 border-b border-border dark:border-border-dark bg-primary/5 dark:bg-primary/10">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={includeWorkflow}
-                onChange={(e) => setIncludeWorkflow(e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIncludeWorkflow(e.target.checked)}
                 className="checkbox checkbox-sm checkbox-primary"
               />
               <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">
@@ -731,6 +743,6 @@ const WorkflowJsonEditor = ({ open, workflowJson, onApply, onClose }) => {
       </Dialog>
     </Transition>
   );
-};
+}
 
 export default WorkflowJsonEditor;

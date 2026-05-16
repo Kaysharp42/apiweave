@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-// @ts-expect-error - WorkflowCanvas is still .jsx, will be migrated in Phase 8
 import WorkflowCanvas from '../components/WorkflowCanvas';
 import { Spinner } from '../components/atoms';
 import API_BASE_URL from '../utils/api';

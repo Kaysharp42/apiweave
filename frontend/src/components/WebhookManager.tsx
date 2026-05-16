@@ -1,29 +1,70 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Copy, Trash2, RefreshCw, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal, ConfirmDialog } from './molecules';
 import { Button } from './atoms/Button';
+import { Badge } from './atoms/Badge';
 import API_BASE_URL from '../utils/api';
+import type { Workflow } from '../types/Workflow';
+import type { Collection } from '../types/Collection';
+import type { Environment } from '../types/Environment';
 
-const WebhookManager = () => {
-  const [webhooks, setWebhooks] = useState([]);
-  const [workflows, setWorkflows] = useState([]);
-  const [collections, setCollections] = useState([]);
-  const [environments, setEnvironments] = useState([]);
+interface Webhook {
+  webhookId: string;
+  resourceType: 'workflow' | 'collection';
+  resourceId: string;
+  environmentId?: string;
+  description?: string;
+  enabled: boolean;
+  url: string;
+  usageCount: number;
+  lastUsed?: string;
+  lastStatus?: 'success' | 'failed' | 'pending';
+}
+
+interface WebhookCredentials {
+  url: string;
+  token: string;
+  hmacSecret: string;
+}
+
+interface WebhookLog {
+  logId: string;
+  status: 'success' | 'failed' | 'pending';
+  timestamp?: string;
+  duration?: number;
+  errorMessage?: string;
+  runId?: string;
+}
+
+interface NewWebhookFormData {
+  resourceType: 'workflow' | 'collection';
+  resourceId: string;
+  environmentId: string;
+  description: string;
+}
+
+type CopySuccessState = Record<string, boolean>;
+
+export function WebhookManager() {
+  const [webhooks, setWebhooks] = useState<Webhook[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
-  const [newWebhookData, setNewWebhookData] = useState({
+  const [newWebhookData, setNewWebhookData] = useState<NewWebhookFormData>({
     resourceType: 'workflow', resourceId: '', environmentId: '', description: '',
   });
-  const [webhookCredentials, setWebhookCredentials] = useState(null);
-  const [selectedWebhook, setSelectedWebhook] = useState(null);
+  const [webhookCredentials, setWebhookCredentials] = useState<WebhookCredentials | null>(null);
+  const [selectedWebhook, setSelectedWebhook] = useState<Webhook | null>(null);
   const [showLogsModal, setShowLogsModal] = useState(false);
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
-  const [webhookToRegenerate, setWebhookToRegenerate] = useState(null);
-  const [webhookLogs, setWebhookLogs] = useState([]);
-  const [copySuccess, setCopySuccess] = useState({});
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [webhookToRegenerate, setWebhookToRegenerate] = useState<Webhook | null>(null);
+  const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
+  const [copySuccess, setCopySuccess] = useState<CopySuccessState>({});
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   useEffect(() => { loadAllData(); }, []);
 
@@ -32,7 +73,8 @@ const WebhookManager = () => {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [wf, col, env] = await Promise.all([fetchWorkflows(), fetchCollections(), fetchEnvironments()]);
+      const [wf, col] = await Promise.all([fetchWorkflows(), fetchCollections()]);
+      fetchEnvironments().catch(() => undefined);
       await fetchAllWebhooksWithData(wf || [], col || []);
     } catch (error) {
       console.error('Error loading webhook data:', error);
@@ -44,7 +86,7 @@ const WebhookManager = () => {
   const fetchWorkflows = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/workflows`);
-      if (res.ok) { const d = await res.json(); const list = Array.isArray(d) ? d : d.workflows || []; setWorkflows(list); return list; }
+      if (res.ok) { const d = await res.json(); const list: Workflow[] = Array.isArray(d) ? d : d.workflows || []; setWorkflows(list); return list; }
     } catch (e) { console.error('Error fetching workflows:', e); }
     return [];
   };
@@ -52,7 +94,7 @@ const WebhookManager = () => {
   const fetchCollections = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/collections`);
-      if (res.ok) { const d = await res.json(); const list = Array.isArray(d) ? d : []; setCollections(list); return list; }
+      if (res.ok) { const d = await res.json(); const list: Collection[] = Array.isArray(d) ? d : []; setCollections(list); return list; }
     } catch (e) { console.error('Error fetching collections:', e); }
     return [];
   };
@@ -60,14 +102,14 @@ const WebhookManager = () => {
   const fetchEnvironments = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/environments`);
-      if (res.ok) { const d = await res.json(); const list = Array.isArray(d) ? d : []; setEnvironments(list); return list; }
+      if (res.ok) { const d = await res.json(); const list: Environment[] = Array.isArray(d) ? d : []; setEnvironments(list); return list; }
     } catch (e) { console.error('Error fetching environments:', e); }
     return [];
   };
 
-  const fetchAllWebhooksWithData = async (wfList, colList) => {
+  const fetchAllWebhooksWithData = async (wfList: Workflow[], colList: Collection[]) => {
     try {
-      const all = [];
+      const all: Webhook[] = [];
       for (const w of wfList) {
         const res = await fetch(`${API_BASE_URL}/api/webhooks/workflows/${w.workflowId}`);
         if (res.ok) { const d = await res.json(); all.push(...(Array.isArray(d) ? d : [])); }
@@ -115,7 +157,7 @@ const WebhookManager = () => {
     finally { setDeleteTarget(null); }
   };
 
-  const toggleWebhook = async (webhook) => {
+  const toggleWebhook = async (webhook: Webhook) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !webhook.enabled }),
@@ -144,13 +186,13 @@ const WebhookManager = () => {
       }
     } catch (e) {
       console.error('Error regenerating credentials:', e);
-      toast.error(`Error regenerating credentials: ${e.message}`);
+      toast.error(`Error regenerating credentials: ${(e as Error).message}`);
       setShowRegenerateModal(false);
       setWebhookToRegenerate(null);
     }
   };
 
-  const viewLogs = async (webhook) => {
+  const viewLogs = async (webhook: Webhook) => {
     setSelectedWebhook(webhook);
     setShowLogsModal(true);
     try {
@@ -159,7 +201,7 @@ const WebhookManager = () => {
     } catch (e) { console.error('Error fetching webhook logs:', e); }
   };
 
-  const copyToClipboard = async (text, key) => {
+  const copyToClipboard = async (text: string, key: string) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopySuccess((prev) => ({ ...prev, [key]: true }));
@@ -169,21 +211,23 @@ const WebhookManager = () => {
 
   /* ---------- Helpers ---------- */
 
-  const getResourceName = (wh) => {
+  const getResourceName = (wh: Webhook) => {
     if (wh.resourceType === 'workflow') return (workflows || []).find(w => w.workflowId === wh.resourceId)?.name || wh.resourceId;
     return (collections || []).find(c => c.collectionId === wh.resourceId)?.name || wh.resourceId;
   };
 
-  const getEnvironmentName = (envId) => {
+  const getEnvironmentName = (envId: string | undefined) => {
     if (!envId) return 'None';
     return (environments || []).find(e => e.environmentId === envId)?.name || envId;
   };
 
-  const formatDate = (d) => d ? new Date(d).toLocaleString() : 'Never';
+  const formatDate = (d: string | undefined) => d ? new Date(d).toLocaleString() : 'Never';
 
-  const statusBadge = (s) => ({
-    success: 'badge-success', failed: 'badge-error', pending: 'badge-warning',
-  }[s] || 'badge-warning');
+  const statusBadgeVariant = (s: string): 'success' | 'error' | 'warning' => {
+    if (s === 'success') return 'success';
+    if (s === 'failed') return 'error';
+    return 'warning';
+  };
 
   /* ---------- Render ---------- */
 
@@ -218,10 +262,15 @@ const WebhookManager = () => {
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="font-medium text-sm text-text-primary dark:text-text-primary-dark">{getResourceName(wh)}</span>
-                  <span className={`badge badge-sm ${wh.resourceType === 'workflow' ? 'badge-info' : 'badge-secondary'}`}>{wh.resourceType}</span>
-                  <button onClick={() => toggleWebhook(wh)} className={`badge badge-sm cursor-pointer ${wh.enabled ? 'badge-success' : 'badge-ghost'}`}>
+                  <Badge variant={wh.resourceType === 'workflow' ? 'info' : 'secondary'} size="sm">{wh.resourceType}</Badge>
+                  <Button
+                    onClick={() => toggleWebhook(wh)}
+                    variant="ghost"
+                    size="xs"
+                    className={`cursor-pointer ${wh.enabled ? 'text-status-success' : 'text-text-muted'}`}
+                  >
                     {wh.enabled ? 'Enabled' : 'Disabled'}
-                  </button>
+                  </Button>
                 </div>
                 {wh.description && <p className="text-xs text-text-muted dark:text-text-muted-dark">{wh.description}</p>}
               </div>
@@ -233,7 +282,7 @@ const WebhookManager = () => {
               <div className="flex items-center gap-2"><span className="font-medium">Last Used:</span><span>{formatDate(wh.lastUsed)}</span></div>
               <div className="flex items-center gap-2">
                 <span className="font-medium">Usage:</span><span>{wh.usageCount}</span>
-                {wh.lastStatus && <span className={`badge badge-xs ${statusBadge(wh.lastStatus)}`}>{wh.lastStatus}</span>}
+                {wh.lastStatus && <Badge variant={statusBadgeVariant(wh.lastStatus)} size="xs">{wh.lastStatus}</Badge>}
               </div>
             </div>
 
@@ -241,7 +290,7 @@ const WebhookManager = () => {
             <div className="mb-2">
               <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">Webhook URL:</span>
               <div className="flex items-center gap-2 mt-1">
-                <input type="text" readOnly value={wh.url} className="input input-bordered input-sm flex-1 font-mono text-xs" />
+                <input type="text" readOnly value={wh.url} className="input input-bordered input-sm flex-1 font-mono text-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
                 <Button onClick={() => copyToClipboard(wh.url, `url-${wh.webhookId}`)} variant="ghost" size="xs" title="Copy URL">
                   {copySuccess[`url-${wh.webhookId}`] ? <Check className="w-3.5 h-3.5 text-status-success" /> : <Copy className="w-3.5 h-3.5" />}
                 </Button>
@@ -265,19 +314,19 @@ const WebhookManager = () => {
       {/* ---- Sub-Modals ---- */}
 
       {/* Create Webhook */}
-      <Modal open={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Webhook" size="sm"
+      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Webhook" size="sm"
         footer={<div className="flex gap-3 w-full"><Button onClick={() => setShowCreateModal(false)} variant="ghost" fullWidth>Cancel</Button><Button onClick={createWebhook} variant="primary" fullWidth>Create</Button></div>}>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Resource Type</label>
-            <select value={newWebhookData.resourceType} onChange={(e) => setNewWebhookData({ ...newWebhookData, resourceType: e.target.value, resourceId: '' })} className="select select-bordered w-full">
+            <select value={newWebhookData.resourceType} onChange={(e) => setNewWebhookData({ ...newWebhookData, resourceType: e.target.value as 'workflow' | 'collection', resourceId: '' })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
               <option value="workflow">Workflow</option>
               <option value="collection">Collection</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">{newWebhookData.resourceType === 'workflow' ? 'Workflow' : 'Collection'}</label>
-            <select value={newWebhookData.resourceId} onChange={(e) => setNewWebhookData({ ...newWebhookData, resourceId: e.target.value })} className="select select-bordered w-full">
+            <select value={newWebhookData.resourceId} onChange={(e) => setNewWebhookData({ ...newWebhookData, resourceId: e.target.value })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
               <option value="">Select {newWebhookData.resourceType}\u2026</option>
               {newWebhookData.resourceType === 'workflow'
                 ? (workflows || []).map(w => <option key={w.workflowId} value={w.workflowId}>{w.name}</option>)
@@ -286,33 +335,33 @@ const WebhookManager = () => {
           </div>
           <div>
             <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Environment (Optional)</label>
-            <select value={newWebhookData.environmentId} onChange={(e) => setNewWebhookData({ ...newWebhookData, environmentId: e.target.value })} className="select select-bordered w-full">
+            <select value={newWebhookData.environmentId} onChange={(e) => setNewWebhookData({ ...newWebhookData, environmentId: e.target.value })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
               <option value="">None</option>
               {(environments || []).map(env => <option key={env.environmentId} value={env.environmentId}>{env.name}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Description (Optional)</label>
-            <input type="text" value={newWebhookData.description} onChange={(e) => setNewWebhookData({ ...newWebhookData, description: e.target.value })} placeholder="e.g., Production deployment webhook" className="input input-bordered w-full" />
+            <input type="text" value={newWebhookData.description} onChange={(e) => setNewWebhookData({ ...newWebhookData, description: e.target.value })} placeholder="e.g., Production deployment webhook" className="input input-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark" />
           </div>
         </div>
       </Modal>
 
       {/* Credentials Modal */}
-      <Modal open={showCredentialsModal && !!webhookCredentials} onClose={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} title="Webhook Credentials" size="md"
+      <Modal isOpen={showCredentialsModal && !!webhookCredentials} onClose={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} title="Webhook Credentials" size="md"
         footer={<Button onClick={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} variant="primary" fullWidth>I've Saved the Credentials</Button>}>
         <div className="space-y-4">
           <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
             <p className="text-sm text-text-primary dark:text-text-primary-dark">\u26a0\ufe0f <strong>Important:</strong> Copy these credentials now. They will not be shown again!</p>
           </div>
-          {webhookCredentials && ['url', 'token', 'hmacSecret'].map((field) => {
-            const labels = { url: 'Webhook URL', token: 'Webhook Token (X-Webhook-Token header)', hmacSecret: 'HMAC Secret (for signature validation)' };
+          {webhookCredentials && (['url', 'token', 'hmacSecret'] as const).map((field) => {
+            const labels: Record<string, string> = { url: 'Webhook URL', token: 'Webhook Token (X-Webhook-Token header)', hmacSecret: 'HMAC Secret (for signature validation)' };
             const key = `cred-${field}`;
             return (
               <div key={field}>
                 <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">{labels[field]}</label>
                 <div className="flex items-center gap-2">
-                  <input type="text" readOnly value={webhookCredentials[field]} className="input input-bordered flex-1 font-mono text-sm" />
+                  <input type="text" readOnly value={webhookCredentials[field]} className="input input-bordered flex-1 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
                   <Button onClick={() => copyToClipboard(webhookCredentials[field], key)} variant="primary" size="sm">
                     {copySuccess[key] ? <Check className="w-4 h-4" /> : 'Copy'}
                   </Button>
@@ -335,7 +384,7 @@ const WebhookManager = () => {
       </Modal>
 
       {/* Logs Modal */}
-      <Modal open={showLogsModal && !!selectedWebhook} onClose={() => { setShowLogsModal(false); setSelectedWebhook(null); setWebhookLogs([]); }} title="Webhook Execution Logs" size="lg">
+      <Modal isOpen={showLogsModal && !!selectedWebhook} onClose={() => { setShowLogsModal(false); setSelectedWebhook(null); setWebhookLogs([]); }} title="Webhook Execution Logs" size="lg">
         {webhookLogs.length === 0 ? (
           <div className="text-center py-8 text-text-muted dark:text-text-muted-dark">No execution logs yet</div>
         ) : (
@@ -343,7 +392,7 @@ const WebhookManager = () => {
             {webhookLogs.map((log) => (
               <div key={log.logId} className="border border-border dark:border-border-dark rounded-lg p-3 bg-surface-raised dark:bg-surface-dark-raised">
                 <div className="flex items-center justify-between mb-2">
-                  <span className={`badge badge-sm ${statusBadge(log.status)}`}>{log.status}</span>
+                  <Badge variant={statusBadgeVariant(log.status)} size="sm">{log.status}</Badge>
                   <span className="text-xs text-text-muted dark:text-text-muted-dark">{formatDate(log.timestamp)}</span>
                 </div>
                 {log.duration && <div className="text-xs text-text-secondary dark:text-text-secondary-dark">Duration: {(log.duration / 1000).toFixed(2)}s</div>}
@@ -359,11 +408,11 @@ const WebhookManager = () => {
       <ConfirmDialog
         open={showRegenerateModal && !!webhookToRegenerate}
         title="Regenerate Credentials?"
-        message={`Are you sure you want to regenerate credentials? The old credentials will be invalidated immediately. Any systems using the old token or HMAC secret will stop working.`}
+        message="Are you sure you want to regenerate credentials? The old credentials will be invalidated immediately. Any systems using the old token or HMAC secret will stop working."
         confirmLabel="Regenerate"
-        variant="warning"
+        intent="warning"
         onConfirm={confirmRegenerate}
-        onCancel={() => { setShowRegenerateModal(false); setWebhookToRegenerate(null); }}
+        onClose={() => { setShowRegenerateModal(false); setWebhookToRegenerate(null); }}
       />
 
       {/* Delete Confirmation */}
@@ -372,12 +421,12 @@ const WebhookManager = () => {
         title="Delete Webhook?"
         message="Are you sure you want to delete this webhook? This action cannot be undone."
         confirmLabel="Delete"
-        variant="danger"
+        intent="error"
         onConfirm={confirmDeleteWebhook}
-        onCancel={() => setDeleteTarget(null)}
+        onClose={() => setDeleteTarget(null)}
       />
     </div>
   );
-};
+}
 
 export default WebhookManager;

@@ -1,19 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Plus, Trash2, Copy, Pencil, Lock, X, Link2 } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 import { Modal, ConfirmDialog } from './molecules';
-import { Button, Input, TextArea, Badge } from './atoms';
+import { Button, IconButton, Input, TextArea } from './atoms';
 import SecretsPanel from './SecretsPanel';
 import useSidebarStore from '../stores/SidebarStore';
+import type { Environment } from '../types';
 
-const EnvironmentManager = ({ open, onClose }) => {
-  const [environments, setEnvironments] = useState([]);
-  const [selectedEnv, setSelectedEnv] = useState(null);
+export interface EnvironmentManagerProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export interface EnvironmentFormData {
+  name: string;
+  description: string;
+  swaggerDocUrl: string;
+  variables: Record<string, string>;
+}
+
+export interface EnvironmentListItem {
+  id: string;
+  environmentId: string;
+  name: string;
+  description?: string;
+  swaggerDocUrl?: string;
+  variables: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+  isDefault?: boolean;
+  isActive?: boolean;
+  secrets?: Record<string, string>;
+}
+
+export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
+  const [environments, setEnvironments] = useState<EnvironmentListItem[]>([]);
+  const [selectedEnv, setSelectedEnv] = useState<EnvironmentListItem | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [showSecretsPanel, setShowSecretsPanel] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [formData, setFormData] = useState({
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [formData, setFormData] = useState<EnvironmentFormData>({
     name: '',
     description: '',
     swaggerDocUrl: '',
@@ -26,25 +53,25 @@ const EnvironmentManager = ({ open, onClose }) => {
     if (open) fetchEnvironments();
   }, [open]);
 
-  const fetchEnvironments = async () => {
+  const fetchEnvironments = async (): Promise<void> => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as EnvironmentListItem[];
         setEnvironments(data);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error fetching environments:', error);
     }
   };
 
-  const handleCreate = () => {
+  const handleCreate = (): void => {
     setIsEditing(true);
     setSelectedEnv(null);
     setFormData({ name: '', description: '', swaggerDocUrl: '', variables: {} });
   };
 
-  const handleEdit = (env) => {
+  const handleEdit = (env: EnvironmentListItem): void => {
     setIsEditing(true);
     setSelectedEnv(env);
     setFormData({
@@ -55,7 +82,7 @@ const EnvironmentManager = ({ open, onClose }) => {
     });
   };
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     try {
       const url = selectedEnv
         ? `${API_BASE_URL}/api/environments/${selectedEnv.environmentId}`
@@ -75,13 +102,13 @@ const EnvironmentManager = ({ open, onClose }) => {
         setSelectedEnv(null);
         useSidebarStore.getState().signalEnvironmentsRefresh();
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error saving environment:', error);
       toast.error('Failed to save environment');
     }
   };
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = async (): Promise<void> => {
     if (!deleteTarget) return;
     try {
       const response = await fetch(`${API_BASE_URL}/api/environments/${deleteTarget}`, {
@@ -97,10 +124,10 @@ const EnvironmentManager = ({ open, onClose }) => {
         }
         useSidebarStore.getState().signalEnvironmentsRefresh();
       } else {
-        const error = await response.json();
+        const error = await response.json() as { detail?: string };
         toast.error(error.detail || 'Failed to delete environment');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error deleting environment:', error);
       toast.error('Error deleting environment');
     } finally {
@@ -108,7 +135,7 @@ const EnvironmentManager = ({ open, onClose }) => {
     }
   };
 
-  const handleDuplicate = async (envId) => {
+  const handleDuplicate = async (envId: string): Promise<void> => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/environments/${envId}/duplicate`, {
         method: 'POST'
@@ -119,13 +146,13 @@ const EnvironmentManager = ({ open, onClose }) => {
         await fetchEnvironments();
         useSidebarStore.getState().signalEnvironmentsRefresh();
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error duplicating environment:', error);
       toast.error('Failed to duplicate environment');
     }
   };
 
-  const handleAddVariable = () => {
+  const handleAddVariable = (): void => {
     if (newVarKey && newVarValue) {
       setFormData({
         ...formData,
@@ -136,13 +163,14 @@ const EnvironmentManager = ({ open, onClose }) => {
     }
   };
 
-  const handleRemoveVariable = (key) => {
+  const handleRemoveVariable = (key: string): void => {
     const updatedVars = { ...formData.variables };
     delete updatedVars[key];
     setFormData({ ...formData, variables: updatedVars });
   };
 
-  const handleSecretsChange = async (secrets) => {
+  const handleSecretsChange = async (secrets: Record<string, string>): Promise<void> => {
+    if (!selectedEnv) return;
     try {
       const url = `${API_BASE_URL}/api/environments/${selectedEnv.environmentId}`;
       const response = await fetch(url, {
@@ -157,7 +185,7 @@ const EnvironmentManager = ({ open, onClose }) => {
         setShowSecretsPanel(false);
         useSidebarStore.getState().signalEnvironmentsRefresh();
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error updating secrets:', error);
       toast.error('Failed to update secrets');
     }
@@ -165,7 +193,7 @@ const EnvironmentManager = ({ open, onClose }) => {
 
   return (
     <>
-      <Modal open={open} onClose={onClose} title="Environment Manager" size="lg">
+      <Modal isOpen={open} onClose={onClose} title="Environment Manager" size="lg">
         <div className="flex h-[70vh]">
           {/* Environment List */}
           <div className="w-1/3 border-r border-border dark:border-border-dark overflow-auto">
@@ -219,11 +247,12 @@ const EnvironmentManager = ({ open, onClose }) => {
                   <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">
                     Name
                   </label>
-                  <input
+                  <Input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="input input-bordered input-sm w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
+                    size="sm"
+                    className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                     placeholder="Development, Staging, Production..."
                   />
                 </div>
@@ -232,10 +261,11 @@ const EnvironmentManager = ({ open, onClose }) => {
                   <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">
                     Description
                   </label>
-                  <textarea
+                  <TextArea
                     value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="textarea textarea-bordered textarea-sm w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
+                    size="sm"
+                    className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                     rows={2}
                     placeholder="Optional description..."
                   />
@@ -245,11 +275,12 @@ const EnvironmentManager = ({ open, onClose }) => {
                   <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">
                     Swagger / OpenAPI URL
                   </label>
-                  <input
+                  <Input
                     type="url"
                     value={formData.swaggerDocUrl}
-                    onChange={(e) => setFormData({ ...formData, swaggerDocUrl: e.target.value })}
-                    className="input input-bordered input-sm w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, swaggerDocUrl: e.target.value })}
+                    size="sm"
+                    className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                     placeholder="https://api.example.com/webjars/swagger-ui/index.html"
                   />
                   <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
@@ -269,32 +300,36 @@ const EnvironmentManager = ({ open, onClose }) => {
                         <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">{key}</span>
                         <span className="text-text-muted dark:text-text-muted-dark">=</span>
                         <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark flex-1 truncate">{value}</span>
-                        <button
+                        <IconButton
                           onClick={() => handleRemoveVariable(key)}
-                          className="p-1 text-status-error hover:bg-status-error/10 rounded transition-colors"
+                          variant="error"
+                          size="xs"
+                          tooltip="Remove variable"
                         >
                           <X className="w-4 h-4" />
-                        </button>
+                        </IconButton>
                       </div>
                     ))}
                   </div>
 
                   {/* Add Variable */}
                   <div className="flex gap-2">
-                    <input
+                    <Input
                       type="text"
                       value={newVarKey}
-                      onChange={(e) => setNewVarKey(e.target.value)}
-                      className="input input-bordered input-sm flex-1 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewVarKey(e.target.value)}
+                      size="sm"
+                      className="flex-1 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                       placeholder="Variable name"
                     />
-                    <input
+                    <Input
                       type="text"
                       value={newVarValue}
-                      onChange={(e) => setNewVarValue(e.target.value)}
-                      className="input input-bordered input-sm flex-1 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewVarValue(e.target.value)}
+                      size="sm"
+                      className="flex-1 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                       placeholder="Value"
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddVariable()}
+                      onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleAddVariable()}
                     />
                     <Button variant="ghost" size="sm" onClick={handleAddVariable}>Add</Button>
                   </div>
@@ -400,7 +435,7 @@ const EnvironmentManager = ({ open, onClose }) => {
                   <Button variant="ghost" size="sm" onClick={() => handleDuplicate(selectedEnv.environmentId)}>
                     <Copy className="w-3.5 h-3.5 mr-1" /> Duplicate
                   </Button>
-                  <Button variant="error" size="sm" onClick={() => setDeleteTarget(selectedEnv.environmentId)}>
+                  <Button variant="primary" size="sm" intent="error" onClick={() => setDeleteTarget(selectedEnv.environmentId)}>
                     <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
                   </Button>
                 </div>
@@ -427,13 +462,13 @@ const EnvironmentManager = ({ open, onClose }) => {
 
       {/* Secrets Panel Modal */}
       <SecretsPanel
-        open={showSecretsPanel && !!selectedEnv}
-        environment={selectedEnv || {}}
+        isOpen={showSecretsPanel && !!selectedEnv}
+        environment={selectedEnv as Environment | null}
         onSecretsChange={handleSecretsChange}
         onClose={() => setShowSecretsPanel(false)}
       />
     </>
   );
-};
+}
 
 export default EnvironmentManager;

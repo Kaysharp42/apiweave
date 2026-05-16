@@ -1,18 +1,165 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment, type ChangeEvent } from 'react';
 import AssertionEditor from './AssertionEditor';
 import FileUploadSection from './FileUploadSection';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
 import { Button } from './atoms/Button';
+import { Input, TextArea } from './atoms';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { getNodeModalTypeName } from '../utils/nodeModalMeta';
 import { formatNodeOutputDuration, getNodeOutputStatusClass } from '../utils/nodeOutputStatus';
 
-const NodeModal = ({ open, node, onClose, onSave }) => {
-  // Use ref to store working data - NEVER update during editing
-  const workingDataRef = useRef({ ...node.data });
+type ModalNodeType = 'http-request' | 'assertion' | 'delay' | 'merge' | 'start' | 'end';
 
-  // Reset working data when node changes
+interface NodeModalNode {
+  id: string;
+  type: ModalNodeType;
+  position: { x: number; y: number };
+  data: NodeModalData;
+}
+
+interface NodeModalData {
+  label: string;
+  config: Record<string, unknown>;
+  executionResult?: Record<string, unknown> | null;
+}
+
+import type { FileUpload } from './FileUploadSection';
+
+interface HTTPRequestConfigType {
+  url?: string;
+  method?: string;
+  queryParams?: string;
+  headers?: string;
+  cookies?: string;
+  body?: string;
+  timeout?: number;
+  fileUploads?: FileUpload[];
+}
+
+interface AssertionItem {
+  source: string;
+  path: string;
+  operator: string;
+  expectedValue: string;
+}
+
+interface MergeConditionType {
+  branchIndex: number;
+  field: string;
+  operator: string;
+  value: string;
+}
+
+interface MergeConfigType {
+  mergeStrategy: string;
+  conditions: MergeConditionType[];
+  conditionLogic: string;
+}
+
+interface HTTPRequestConfigProps {
+  initialConfig: HTTPRequestConfigType;
+  workingDataRef: React.MutableRefObject<Record<string, unknown>>;
+}
+
+interface OutputPanelProps {
+  node: NodeModalNode;
+  initialConfig: HTTPRequestConfigType;
+  output: Record<string, unknown> | null;
+}
+
+interface AssertionFormModalProps {
+  onAdd: (assertion: AssertionItem) => void;
+}
+
+interface AssertionConfigProps {
+  initialConfig: { assertions?: AssertionItem[] };
+  workingDataRef: React.MutableRefObject<Record<string, unknown>>;
+}
+
+interface DelayConfigProps {
+  initialConfig: { duration?: number };
+  workingDataRef: React.MutableRefObject<Record<string, unknown>>;
+}
+
+interface MergeConfigProps {
+  initialConfig: MergeConfigType;
+  workingDataRef: React.MutableRefObject<Record<string, unknown>>;
+}
+
+interface NodeModalProps {
+  open: boolean;
+  node: NodeModalNode;
+  onClose: () => void;
+  onSave: (node: NodeModalNode) => void;
+}
+
+interface FormFieldProps {
+  label: string;
+  children: React.ReactNode;
+  hint?: string | undefined;
+}
+
+interface TabButtonProps {
+  id: string;
+  label: string;
+  activeTab: string;
+  setActiveTab: (id: string) => void;
+  colorScheme?: 'default' | 'purple';
+}
+
+const getNodeIcon = (type: ModalNodeType): React.ReactNode => {
+  const iconProps = { className: 'w-6 h-6' };
+  switch (type) {
+    case 'http-request':
+      return <Globe {...iconProps} />;
+    case 'assertion':
+      return <BadgeCheck {...iconProps} />;
+    case 'delay':
+      return <Timer {...iconProps} />;
+    case 'merge':
+      return <GitMerge {...iconProps} />;
+    case 'start':
+      return <Circle {...iconProps} />;
+    case 'end':
+      return <Square {...iconProps} />;
+    default:
+      return <Circle {...iconProps} />;
+  }
+};
+
+const TabButton = ({ id, label, activeTab, setActiveTab, colorScheme = 'default' }: TabButtonProps) => {
+  const isActive = activeTab === id;
+  const activeBorder = colorScheme === 'purple' ? 'border-purple-500' : 'border-primary';
+  const activeText = colorScheme === 'purple' ? 'text-purple-600 dark:text-purple-400' : 'text-primary';
+
+  return (
+    <button
+      onClick={() => setActiveTab(id)}
+      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+        isActive
+          ? `${activeBorder} ${activeText}`
+          : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
+      }`}
+    >
+      {label}
+    </button>
+  );
+};
+
+const FormField = ({ label, children, hint }: FormFieldProps) => (
+  <div className="mb-4">
+    <label className="block text-xs font-medium text-text-muted dark:text-text-muted-dark mb-1.5 uppercase tracking-wide">
+      {label}
+    </label>
+    {children}
+    {hint && <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">{hint}</p>}
+  </div>
+);
+
+export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
+  const workingDataRef = useRef<Record<string, unknown>>({ ...node.data });
+
   useEffect(() => {
     if (node) workingDataRef.current = { ...node.data };
   }, [node?.id]);
@@ -22,39 +169,18 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
   };
 
   const handleSave = () => {
-    onSave({ ...node, data: workingDataRef.current });
+    onSave({ ...node, data: workingDataRef.current as unknown as NodeModalData });
     handleClose();
   };
 
-  const handleLabelChange = (newLabel) => {
+  const handleLabelChange = (newLabel: string) => {
     workingDataRef.current = { ...workingDataRef.current, label: newLabel };
-  };
-
-  // Get node type info - memoize to prevent recreation
-  const getNodeIcon = (type) => {
-    const iconProps = { className: 'w-6 h-6' };
-    switch (type) {
-      case 'http-request':
-        return <Globe {...iconProps} />;
-      case 'assertion':
-        return <BadgeCheck {...iconProps} />;
-      case 'delay':
-        return <Timer {...iconProps} />;
-      case 'merge':
-        return <GitMerge {...iconProps} />;
-      case 'start':
-        return <Circle {...iconProps} />;
-      case 'end':
-        return <Square {...iconProps} />;
-      default:
-        return <Circle {...iconProps} />;
-    }
   };
 
   const nodeInfo = { name: getNodeModalTypeName(node.type) };
 
   return (
-    <Transition show={open} as={React.Fragment}>
+    <Transition show={open} as={Fragment}>
       <Dialog onClose={handleClose} className="relative z-50">
         <TransitionChild
           enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
@@ -69,10 +195,8 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
           >
             <Dialog.Panel className="h-[90vh] w-[96vw] max-w-[1800px]">
               <div className="grid h-full grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-                {/* Left Card - Configuration */}
                 <div className="min-h-0 overflow-hidden rounded-2xl border border-border dark:border-border-dark bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised shadow-xl">
                   <div className="flex h-full min-h-0 flex-col p-5 sm:p-6">
-                    {/* Header */}
                     <div className="mb-5 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="rounded-xl bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark">
@@ -96,44 +220,42 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
                       </Button>
                     </div>
 
-                    {/* Node Name Card */}
                     <div className="mb-4 rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-4 shadow-sm">
                       <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
                         Node Name
                       </label>
-                      <input
+                      <Input
                         type="text"
                         defaultValue={node.data.label || ''}
-                        onChange={(e) => handleLabelChange(e.target.value)}
-                        className="w-full rounded-md border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark px-3 py-2 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => handleLabelChange(e.target.value)}
+                        className="font-mono"
                         placeholder="Enter node name"
                       />
                     </div>
 
-                    {/* Configuration Card */}
                     <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark shadow-inner">
                       <div className="h-full overflow-y-auto p-4">
                         {node.type === 'http-request' && (
                           <HTTPRequestConfig
-                            initialConfig={node.data.config || {}}
+                            initialConfig={(node.data.config || {}) as HTTPRequestConfigType}
                             workingDataRef={workingDataRef}
                           />
                         )}
                         {node.type === 'assertion' && (
                           <AssertionConfig
-                            initialConfig={node.data.config || {}}
+                            initialConfig={(node.data.config || {}) as { assertions?: AssertionItem[] }}
                             workingDataRef={workingDataRef}
                           />
                         )}
                         {node.type === 'delay' && (
                           <DelayConfig
-                            initialConfig={node.data.config || {}}
+                            initialConfig={(node.data.config || {}) as { duration?: number }}
                             workingDataRef={workingDataRef}
                           />
                         )}
                         {node.type === 'merge' && (
                           <MergeConfig
-                            initialConfig={node.data.config || {}}
+                            initialConfig={(node.data.config || {}) as unknown as MergeConfigType}
                             workingDataRef={workingDataRef}
                           />
                         )}
@@ -147,7 +269,6 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
                       </div>
                     </div>
 
-                    {/* Footer Actions */}
                     <div className="mt-5 flex flex-shrink-0 justify-end gap-3">
                       <Button onClick={handleClose} variant="ghost">Cancel</Button>
                       <Button onClick={handleSave} variant="primary">Save</Button>
@@ -155,13 +276,12 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
                   </div>
                 </div>
 
-                {/* Right Card - Response Output */}
                 <div className="min-h-0 overflow-hidden rounded-2xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark shadow-xl">
                   <div className="h-full">
                     <OutputPanel
                       node={node}
-                      initialConfig={node.data.config || {}}
-                      output={node.data?.executionResult || null}
+                      initialConfig={(node.data.config || {}) as HTTPRequestConfigType}
+                      output={(node.data?.executionResult as Record<string, unknown> | null) || null}
                     />
                   </div>
                 </div>
@@ -172,14 +292,12 @@ const NodeModal = ({ open, node, onClose, onSave }) => {
       </Dialog>
     </Transition>
   );
-};
+}
 
-// HTTP Request Configuration Component
-const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
+const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigProps) => {
   const [activeTab, setActiveTab] = useState('parameters');
   const { variables } = useWorkflow();
-  
-  // Use refs for all inputs to avoid re-renders on every keystroke
+
   const urlRef = useRef(initialConfig.url || '');
   const methodRef = useRef(initialConfig.method || 'GET');
   const queryParamsRef = useRef(initialConfig.queryParams || '');
@@ -188,10 +306,10 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
   const bodyRef = useRef(initialConfig.body || '');
   const timeoutRef = useRef(initialConfig.timeout || 30);
   const fileUploadsRef = useRef(initialConfig.fileUploads || []);
-  const [fileUploads, setFileUploads] = useState(initialConfig.fileUploads || []);
+  const [fileUploads, setFileUploads] = useState<FileUpload[]>(initialConfig.fileUploads || []);
 
   const updateRef = () => {
-    const newConfig = {
+    const newConfig: HTTPRequestConfigType = {
       ...initialConfig,
       url: urlRef.current,
       method: methodRef.current,
@@ -200,150 +318,123 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
       cookies: cookiesRef.current,
       body: bodyRef.current,
       timeout: timeoutRef.current,
-      fileUploads: fileUploadsRef.current
+      fileUploads: fileUploadsRef.current,
     };
     if (workingDataRef) {
       workingDataRef.current = { ...workingDataRef.current, config: newConfig };
     }
   };
 
-  const handleFileUploadsUpdate = (files) => {
+  const handleFileUploadsUpdate = (files: FileUpload[]) => {
     fileUploadsRef.current = files;
     setFileUploads(files);
     updateRef();
   };
 
-  const TabButton = ({ id, label }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-          activeTab === id
-            ? 'border-primary text-primary'
-            : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
-        }`}
-    >
-      {label}
-    </button>
-  );
-
-  const FormField = ({ label, children, hint }) => (
-    <div className="mb-4">
-      <label className="block text-xs font-medium text-text-muted dark:text-text-muted-dark mb-1.5 uppercase tracking-wide">
-        {label}
-      </label>
-      {children}
-      {hint && <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">{hint}</p>}
-    </div>
-  );
-
   return (
     <div className="flex flex-col h-full">
-      {/* Tabs */}
       <div className="flex-shrink-0 flex border-b border-border dark:border-border-dark px-4">
-        <TabButton id="parameters" label="Parameters" />
-        <TabButton id="settings" label="Settings" />
+        <TabButton id="parameters" label="Parameters" activeTab={activeTab} setActiveTab={setActiveTab} />
+        <TabButton id="settings" label="Settings" activeTab={activeTab} setActiveTab={setActiveTab} />
       </div>
 
-      {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'parameters' && (
           <div className="space-y-4">
             <FormField label="HTTP Method">
               <div className="flex gap-2">
                 {['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].map((method) => (
-                  <button
+                  <Button
                     key={method}
                     onClick={() => {
                       methodRef.current = method;
                       updateRef();
                     }}
-                    className={`px-3 py-1.5 text-xs font-medium rounded border transition-colors ${
-                      methodRef.current === method
-                        ? 'bg-cyan-600 text-white border-cyan-700'
-                        : 'bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
-                    }`}
+                    variant={methodRef.current === method ? 'primary' : 'ghost'}
+                    size="xs"
+                    className={methodRef.current === method ? '' : ''}
                   >
                     {method}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </FormField>
 
-            <FormField 
-              label="URL" 
+            <FormField
+              label="URL"
               hint="Supports variables: {{prev.response.body.id}} or {{variables.baseUrl}}"
             >
-              <input
+              <Input
                 type="text"
                 defaultValue={initialConfig.url || ''}
                 onBlur={() => updateRef()}
-                onChange={(e) => {
+                onChange={(e: ChangeEvent<HTMLInputElement>) => {
                   urlRef.current = e.target.value;
                 }}
-                className="w-full px-3 py-2 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent font-mono"
+                className="font-mono"
                 placeholder="https://api.example.com/endpoint"
               />
             </FormField>
 
-            <FormField 
-              label="Query Parameters" 
+            <FormField
+              label="Query Parameters"
               hint="One per line: key=value"
             >
-              <textarea
+              <TextArea
                 defaultValue={initialConfig.queryParams || ''}
                 onBlur={() => updateRef()}
-                onChange={(e) => {
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                   queryParamsRef.current = e.target.value;
                 }}
-                className="w-full px-3 py-2 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent font-mono"
+                className="font-mono"
                 placeholder="page=1&#10;limit=10"
                 rows={3}
               />
             </FormField>
 
-            <FormField 
-              label="Headers" 
+            <FormField
+              label="Headers"
               hint="One per line: key=value"
             >
-              <textarea
+              <TextArea
                 defaultValue={initialConfig.headers || ''}
                 onBlur={() => updateRef()}
-                onChange={(e) => {
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                   headersRef.current = e.target.value;
                 }}
-                className="w-full px-3 py-2 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent font-mono"
+                className="font-mono"
                 placeholder="Content-Type=application/json&#10;Authorization=Bearer {{variables.token}}"
                 rows={3}
               />
             </FormField>
 
-            <FormField 
-              label="Cookies" 
+            <FormField
+              label="Cookies"
               hint="One per line: key=value"
             >
-              <textarea
+              <TextArea
                 defaultValue={initialConfig.cookies || ''}
                 onBlur={() => updateRef()}
-                onChange={(e) => {
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                   cookiesRef.current = e.target.value;
                 }}
-                className="w-full px-3 py-2 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent font-mono"
+                className="font-mono"
                 placeholder="session={{variables.sessionId}}"
                 rows={2}
               />
             </FormField>
 
-            <FormField 
-              label="Request Body" 
+            <FormField
+              label="Request Body"
               hint="JSON format supported"
             >
-              <textarea
+              <TextArea
                 defaultValue={initialConfig.body || ''}
                 onBlur={() => updateRef()}
-                onChange={(e) => {
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                   bodyRef.current = e.target.value;
                 }}
-                className="w-full px-3 py-2 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent font-mono"
+                className="font-mono"
                 placeholder='{"key": "{{variables.value}}"}'
                 rows={6}
               />
@@ -355,14 +446,14 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
           <div className="space-y-4">
             <FormField label="Request Timeout" hint="Maximum time to wait for response">
               <div className="flex items-center gap-2">
-                <input
+                <Input
                   type="number"
                   defaultValue={initialConfig.timeout || 30}
                   onBlur={() => updateRef()}
-                  onChange={(e) => {
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
                     timeoutRef.current = parseInt(e.target.value) || 30;
                   }}
-                  className="w-24 px-3 py-2 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                  className="w-24"
                   min="1"
                   max="300"
                 />
@@ -372,7 +463,7 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
 
             <FormField label="Extract Variables" hint="Save response values as workflow variables">
               <div className="text-xs text-text-muted dark:text-text-muted-dark">
-                Configure in the node's extractors field or Variables Panel
+                Configure in the node&apos;s extractors field or Variables Panel
               </div>
             </FormField>
 
@@ -380,7 +471,7 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
               <FileUploadSection
                 fileUploads={fileUploads}
                 onUpdate={handleFileUploadsUpdate}
-                variables={variables || {}}
+                variables={(variables || {}) as Record<string, string>}
               />
               <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
                 Add files here to send this request as multipart/form-data.
@@ -391,34 +482,20 @@ const HTTPRequestConfig = React.memo(({ initialConfig, workingDataRef }) => {
       </div>
     </div>
   );
-});
+};
 HTTPRequestConfig.displayName = 'HTTPRequestConfig';
 
-// Output Panel Component
-const OutputPanel = React.memo(({ node, initialConfig, output }) => {
+const OutputPanel = ({ node, initialConfig, output }: OutputPanelProps) => {
   const [activeTab, setActiveTab] = useState('body');
 
-  const statusCode = output?.statusCode;
-  const headers = output?.headers || {};
-  const cookies = output?.cookies || {};
+  const statusCode = output?.statusCode as number | undefined;
+  const headers = (output?.headers as Record<string, unknown>) || {};
+  const cookies = (output?.cookies as Record<string, unknown>) || {};
   const body = output?.body;
   const statusColor = getNodeOutputStatusClass(statusCode);
-  const durationLabel = formatNodeOutputDuration(output?.duration);
+  const durationLabel = formatNodeOutputDuration((output?.duration) as number | undefined);
 
-  const TabButton = ({ id, label }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
-        activeTab === id
-          ? 'bg-primary text-white shadow-sm'
-          : 'bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay/80 dark:hover:bg-surface-dark-overlay/80'
-      }`}
-    >
-      {label}
-    </button>
-  );
-
-  const CodeBlock = ({ value }) => (
+  const CodeBlock = ({ value }: { value: unknown }) => (
     <pre className="w-full h-full overflow-auto p-4 text-xs text-text-secondary dark:text-text-secondary-dark font-mono bg-surface dark:bg-surface-dark border-0 leading-relaxed">
       {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
     </pre>
@@ -426,7 +503,6 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
 
   return (
     <div className="h-full flex flex-col bg-surface dark:bg-surface-dark">
-      {/* Header */}
       <div className="flex-shrink-0 px-4 py-4 border-b border-border dark:border-border-dark flex items-center justify-between bg-surface-raised dark:bg-surface-dark-raised">
         <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark flex items-center gap-2">
           <FileText className="w-4 h-4" />
@@ -439,14 +515,13 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
             </span>
             {durationLabel && (
               <span className="text-xs font-semibold px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
-                ⏱ {durationLabel}
+                {durationLabel}
               </span>
             )}
           </div>
         )}
       </div>
 
-      {/* Empty State */}
       {!output && (
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
@@ -458,30 +533,50 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
         </div>
       )}
 
-      {/* Output Content for HTTP Request */}
       {output && node.type === 'http-request' && (
         <>
-          {/* Method & URL */}
           <div className="flex-shrink-0 px-4 py-3 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark">
             <div className="flex items-center gap-2 text-xs">
               <span className="font-semibold px-2 py-1 rounded bg-primary/15 dark:bg-primary-dark/25 text-primary dark:text-primary-dark">
                 {initialConfig.method || 'GET'}
               </span>
               <span className="text-text-secondary dark:text-text-secondary-dark truncate font-mono text-xs">
-                {initialConfig.url || '—'}
+                {initialConfig.url || '\u2014'}
               </span>
             </div>
           </div>
 
-          {/* Tabs */}
           <div className="flex-shrink-0 px-4 py-2 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark flex gap-1 overflow-x-auto">
-            <TabButton id="body" label="Body" />
-            <TabButton id="headers" label={`Headers (${Object.keys(headers).length})`} />
-            <TabButton id="cookies" label={`Cookies (${Object.keys(cookies).length})`} />
-            <TabButton id="raw" label="Raw" />
+            <Button
+              onClick={() => setActiveTab('body')}
+              variant={activeTab === 'body' ? 'primary' : 'ghost'}
+              size="xs"
+            >
+              Body
+            </Button>
+            <Button
+              onClick={() => setActiveTab('headers')}
+              variant={activeTab === 'headers' ? 'primary' : 'ghost'}
+              size="xs"
+            >
+              Headers ({Object.keys(headers).length})
+            </Button>
+            <Button
+              onClick={() => setActiveTab('cookies')}
+              variant={activeTab === 'cookies' ? 'primary' : 'ghost'}
+              size="xs"
+            >
+              Cookies ({Object.keys(cookies).length})
+            </Button>
+            <Button
+              onClick={() => setActiveTab('raw')}
+              variant={activeTab === 'raw' ? 'primary' : 'ghost'}
+              size="xs"
+            >
+              Raw
+            </Button>
           </div>
 
-          {/* Content */}
           <div className="flex-1 overflow-auto bg-surface dark:bg-surface-dark">
             {activeTab === 'body' && <CodeBlock value={body ?? '(empty)'} />}
             {activeTab === 'headers' && <CodeBlock value={headers} />}
@@ -491,7 +586,6 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
         </>
       )}
 
-      {/* Output Content for Other Nodes */}
       {output && node.type !== 'http-request' && (
         <div className="flex-1 overflow-auto bg-surface dark:bg-surface-dark p-4">
           <CodeBlock value={output} />
@@ -499,11 +593,10 @@ const OutputPanel = React.memo(({ node, initialConfig, output }) => {
       )}
     </div>
   );
-});
+};
 OutputPanel.displayName = 'OutputPanel';
 
-// Assertion Form Component for Modal
-const AssertionFormModal = ({ onAdd }) => {
+const AssertionFormModal = ({ onAdd }: AssertionFormModalProps) => {
   const [source, setSource] = useState('prev');
   const [path, setPath] = useState('');
   const [operator, setOperator] = useState('equals');
@@ -511,9 +604,7 @@ const AssertionFormModal = ({ onAdd }) => {
   const [errors, setErrors] = useState({ path: '', expectedValue: '' });
 
   const handleAdd = () => {
-    // Validate based on source and operator
     if (source === 'status') {
-      // Status doesn't need a path
       onAdd({
         source: source.trim(),
         path: '',
@@ -521,7 +612,6 @@ const AssertionFormModal = ({ onAdd }) => {
         expectedValue: expectedValue.trim(),
       });
     } else if (['exists', 'notExists'].includes(operator)) {
-      // Exists/NotExists don't need expected value
       if (path.trim()) {
         onAdd({
           source: source.trim(),
@@ -535,7 +625,6 @@ const AssertionFormModal = ({ onAdd }) => {
         return;
       }
     } else if (operator === 'count') {
-      // Count operator needs path and expected value
       if (path.trim() && expectedValue.trim()) {
         onAdd({
           source: source.trim(),
@@ -549,7 +638,6 @@ const AssertionFormModal = ({ onAdd }) => {
         return;
       }
     } else {
-      // All others need path and expected value
       if (path.trim() && expectedValue.trim()) {
         onAdd({
           source: source.trim(),
@@ -563,8 +651,7 @@ const AssertionFormModal = ({ onAdd }) => {
         return;
       }
     }
-    
-    // Reset form
+
     setPath('');
     setExpectedValue('');
     setSource('prev');
@@ -573,7 +660,6 @@ const AssertionFormModal = ({ onAdd }) => {
 
   return (
     <div className="space-y-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-      {/* Source Selection */}
       <div>
         <label className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
           Assert On
@@ -591,28 +677,25 @@ const AssertionFormModal = ({ onAdd }) => {
         </select>
       </div>
 
-      {/* Path/Field Selection */}
       {source !== 'status' && (
         <div>
           <label className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
-            {source === 'prev' ? 'JSONPath (e.g., body.status)' : 
+            {source === 'prev' ? 'JSONPath (e.g., body.status)' :
              source === 'variables' ? 'Variable name' :
              source === 'cookies' ? 'Cookie name' : 'Header name'}
           </label>
           <div>
-            <input
+            <Input
               type="text"
               placeholder={source === 'prev' ? 'body.status' : source === 'variables' ? 'tokenId' : 'Set-Cookie'}
               value={path}
-              onChange={(e) => { setPath(e.target.value); setErrors({ ...errors, path: '' }); }}
-              className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary ${errors.path ? 'border-red-500 dark:border-red-400' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => { setPath(e.target.value); setErrors({ ...errors, path: '' }); }}
+              {...(errors.path ? { error: errors.path } : {})}
             />
-            {errors.path && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.path}</div>}
           </div>
         </div>
       )}
 
-      {/* Operator Selection */}
       <div>
         <label className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
           Operator
@@ -636,26 +719,24 @@ const AssertionFormModal = ({ onAdd }) => {
         </select>
       </div>
 
-      {/* Expected Value */}
       {!['exists', 'notExists'].includes(operator) && (
         <div>
           <label className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
             {operator === 'count' ? 'Expected Count' : 'Expected Value'}
           </label>
           <div>
-            <input
+            <Input
               type="text"
               placeholder={operator === 'count' ? '5' : '200'}
               value={expectedValue}
-              onChange={(e) => { setExpectedValue(e.target.value); setErrors({ ...errors, expectedValue: '' }); }}
-              className={`w-full px-3 py-2 border rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary ${errors.expectedValue ? 'border-red-500 dark:border-red-400' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => { setExpectedValue(e.target.value); setErrors({ ...errors, expectedValue: '' }); }}
+              {...(errors.expectedValue ? { error: errors.expectedValue } : {})}
+              className="font-mono"
             />
-            {errors.expectedValue && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.expectedValue}</div>}
           </div>
         </div>
       )}
 
-      {/* Add Button */}
       <Button onClick={handleAdd} variant="primary" intent="success" size="sm" fullWidth>
         Add Assertion
       </Button>
@@ -663,72 +744,52 @@ const AssertionFormModal = ({ onAdd }) => {
   );
 };
 
-// Assertion Configuration Component
-const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
+const AssertionConfig = ({ initialConfig, workingDataRef }: AssertionConfigProps) => {
   const [activeTab, setActiveTab] = useState('parameters');
-  const [assertions, setAssertions] = useState(initialConfig.assertions || []);
-  // Editing state for inline modification of existing assertions
+  const [assertions, setAssertions] = useState<AssertionItem[]>(initialConfig.assertions || []);
   const [editingIndex, setEditingIndex] = useState(-1);
-  const [editDraft, setEditDraft] = useState(null);
+  const [editDraft, setEditDraft] = useState<AssertionItem | null>(null);
 
-  const handleAddAssertion = (assertion) => {
+  const handleAddAssertion = (assertion: AssertionItem) => {
     const updated = [...assertions, assertion];
     setAssertions(updated);
-    
-    // Update working data ref
+
     if (workingDataRef) {
       workingDataRef.current = {
         ...workingDataRef.current,
         config: {
-          ...workingDataRef.current.config,
+          ...(workingDataRef.current.config as Record<string, unknown>),
           assertions: updated
         }
       };
     }
   };
 
-  const handleDeleteAssertion = (index) => {
+  const handleDeleteAssertion = (index: number) => {
     const updated = assertions.filter((_, i) => i !== index);
     setAssertions(updated);
-    
-    // Update working data ref
+
     if (workingDataRef) {
       workingDataRef.current = {
         ...workingDataRef.current,
         config: {
-          ...workingDataRef.current.config,
+          ...(workingDataRef.current.config as Record<string, unknown>),
           assertions: updated
         }
       };
     }
   };
-
-  const TabButton = ({ id, label }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-          activeTab === id
-            ? 'border-primary text-primary'
-            : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
-        }`}
-    >
-      {label}
-    </button>
-  );
 
   return (
     <div className="flex flex-col h-full">
-      {/* Tabs */}
       <div className="flex-shrink-0 flex border-b border-border dark:border-border-dark px-4">
-        <TabButton id="parameters" label="Assertions" />
-        <TabButton id="settings" label="Settings" />
+        <TabButton id="parameters" label="Assertions" activeTab={activeTab} setActiveTab={setActiveTab} />
+        <TabButton id="settings" label="Settings" activeTab={activeTab} setActiveTab={setActiveTab} />
       </div>
 
-      {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'parameters' && (
           <div className="space-y-4">
-            {/* Info Banner */}
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
               <p className="font-medium mb-1 flex items-center gap-2">
                 <Info className="w-4 h-4" />
@@ -742,10 +803,8 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
               </p>
             </div>
 
-            {/* Add Assertion Form */}
             <AssertionFormModal onAdd={handleAddAssertion} />
 
-            {/* Assertions List */}
             {assertions.length > 0 ? (
               <div className="space-y-3">
                 <h4 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark">
@@ -756,25 +815,23 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
                     key={index}
                     className="p-3 bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded-lg space-y-2"
                   >
-                    {/* If this assertion is being edited show shared AssertionEditor */}
                     {editingIndex === index ? (
                       <AssertionEditor
-                        value={editDraft}
-                        onChange={(next) => setEditDraft(next)}
+                        value={editDraft as AssertionItem}
+                        onChange={(next: AssertionItem) => setEditDraft(next)}
                         onCancel={() => {
                           setEditingIndex(-1);
                           setEditDraft(null);
                         }}
                         onSave={() => {
-                          const updatedAssertion = { ...editDraft };
+                          const updatedAssertion = { ...editDraft } as AssertionItem;
                           const updated = assertions.map((a, i) => (i === index ? updatedAssertion : a));
                           setAssertions(updated);
-                          // Update working data ref
                           if (workingDataRef) {
                             workingDataRef.current = {
                               ...workingDataRef.current,
                               config: {
-                                ...workingDataRef.current.config,
+                                ...(workingDataRef.current.config as Record<string, unknown>),
                                 assertions: updated
                               }
                             };
@@ -787,7 +844,7 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 text-sm">
                           <div className="text-green-700 dark:text-green-300 font-semibold font-mono">
-                            {assertion.source === 'prev' ? '{{prev.' : 
+                            {assertion.source === 'prev' ? '{{prev.' :
                              assertion.source === 'variables' ? '{{variables.' :
                              assertion.source === 'status' ? 'status' :
                              assertion.source === 'cookies' ? 'Cookie: ' :
@@ -799,15 +856,14 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
                             <span className="font-medium">{assertion.operator}</span>
                             {assertion.expectedValue && (
                               <>
-                                 {' '}<code className="bg-surface dark:bg-surface-dark-raised px-1.5 py-0.5 rounded">{assertion.expectedValue}</code>
-                               </>
-                             )}
-                           </div>
-                         </div>
+                                {' '}<code className="bg-surface dark:bg-surface-dark-raised px-1.5 py-0.5 rounded">{assertion.expectedValue}</code>
+                              </>
+                            )}
+                          </div>
+                        </div>
                         <div className="flex flex-col gap-2 min-w-[92px]">
                           <Button
                             onClick={() => {
-                              // Start editing: seed draft with current assertion
                               setEditingIndex(index);
                               setEditDraft({ ...assertion });
                             }}
@@ -841,11 +897,10 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
               </div>
             )}
 
-            {/* Help Text */}
             <div className="text-xs text-text-muted dark:text-text-muted-dark space-y-1 p-3 bg-surface-overlay dark:bg-surface-dark-overlay rounded-lg border border-border dark:border-border-dark">
               <p><strong>Tips:</strong></p>
               <ul className="list-disc list-inside space-y-0.5 ml-2">
-                <li>Use <code className="bg-surface dark:bg-surface-dark-raised px-1">prev.*</code> to reference the previous node's response</li>
+                <li>Use <code className="bg-surface dark:bg-surface-dark-raised px-1">prev.*</code> to reference the previous node&apos;s response</li>
                 <li>Use <code className="bg-surface dark:bg-surface-dark-raised px-1">variables.*</code> to reference workflow variables</li>
                 <li>JSONPath example: <code className="bg-surface dark:bg-surface-dark-raised px-1">body.data[0].id</code></li>
               </ul>
@@ -863,13 +918,12 @@ const AssertionConfig = React.memo(({ initialConfig, workingDataRef }) => {
       </div>
     </div>
   );
-});
+};
 AssertionConfig.displayName = 'AssertionConfig';
 
-// Delay Configuration Component
-const DelayConfig = React.memo(({ initialConfig, workingDataRef }) => {
+const DelayConfig = ({ initialConfig, workingDataRef }: DelayConfigProps) => {
   const [activeTab, setActiveTab] = useState('parameters');
-  
+
   const durationRef = useRef(initialConfig.duration || 1000);
 
   const updateRef = () => {
@@ -881,51 +935,26 @@ const DelayConfig = React.memo(({ initialConfig, workingDataRef }) => {
     }
   };
 
-  const TabButton = ({ id, label }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-          activeTab === id
-            ? 'border-primary text-primary'
-            : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
-        }`}
-    >
-      {label}
-    </button>
-  );
-
-  const FormField = ({ label, children, hint }) => (
-    <div className="mb-4">
-      <label className="block text-xs font-medium text-text-muted dark:text-text-muted-dark mb-1.5 uppercase tracking-wide">
-        {label}
-      </label>
-      {children}
-      {hint && <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">{hint}</p>}
-    </div>
-  );
-
   return (
     <div className="flex flex-col h-full">
-      {/* Tabs */}
       <div className="flex-shrink-0 flex border-b border-border dark:border-border-dark px-4">
-        <TabButton id="parameters" label="Parameters" />
+        <TabButton id="parameters" label="Parameters" activeTab={activeTab} setActiveTab={setActiveTab} />
       </div>
 
-      {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        <FormField 
-          label="Duration" 
+        <FormField
+          label="Duration"
           hint={`${(durationRef.current || 1000) / 1000} second${(durationRef.current || 1000) !== 1000 ? 's' : ''}`}
         >
           <div className="flex items-center gap-2">
-            <input
+            <Input
               type="number"
               defaultValue={initialConfig.duration || 1000}
               onBlur={() => updateRef()}
-              onChange={(e) => {
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
                 durationRef.current = parseInt(e.target.value) || 1000;
               }}
-              className="w-32 px-3 py-2 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              className="w-32"
               min="100"
               step="100"
             />
@@ -935,22 +964,21 @@ const DelayConfig = React.memo(({ initialConfig, workingDataRef }) => {
       </div>
     </div>
   );
-});
+};
 DelayConfig.displayName = 'DelayConfig';
 
-// Merge Configuration Component
-const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
+const MergeConfig = ({ initialConfig, workingDataRef }: MergeConfigProps) => {
   const [activeTab, setActiveTab] = useState('parameters');
   const [currentStrategy, setCurrentStrategy] = useState(initialConfig.mergeStrategy || 'all');
-  const [conditions, setConditions] = useState(initialConfig.conditions || []);
+  const [conditions, setConditions] = useState<MergeConditionType[]>(initialConfig.conditions || []);
   const [conditionLogic, setConditionLogic] = useState(initialConfig.conditionLogic || 'OR');
-  
+
   const strategyRef = useRef(initialConfig.mergeStrategy || 'all');
-  const conditionsRef = useRef(initialConfig.conditions || []);
+  const conditionsRef = useRef<MergeConditionType[]>(initialConfig.conditions || []);
   const conditionLogicRef = useRef(initialConfig.conditionLogic || 'OR');
 
   const updateRef = () => {
-    const newConfig = {
+    const newConfig: MergeConfigType = {
       mergeStrategy: strategyRef.current,
       conditions: conditionsRef.current,
       conditionLogic: conditionLogicRef.current
@@ -960,30 +988,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
     }
   };
 
-  const TabButton = ({ id, label }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/40 ${
-          activeTab === id
-            ? 'border-purple-500 text-purple-600 dark:text-purple-400'
-            : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
-        }`}
-    >
-      {label}
-    </button>
-  );
-
-  const FormField = ({ label, children, hint }) => (
-    <div className="mb-4">
-      <label className="block text-xs font-medium text-text-muted dark:text-text-muted-dark mb-1.5 uppercase tracking-wide">
-        {label}
-      </label>
-      {children}
-      {hint && <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1 italic">{hint}</p>}
-    </div>
-  );
-
-  const strategyDescriptions = {
+  const strategyDescriptions: Record<string, string> = {
     all: 'Waits for all incoming branches to complete before continuing (AND logic).',
     any: 'Continues as soon as any branch completes (OR logic).',
     first: 'Uses the first branch that completes and ignores the rest.',
@@ -991,47 +996,45 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
   };
 
   const addCondition = () => {
-    const newConditions = [
+    const newConditions: MergeConditionType[] = [
       ...conditionsRef.current,
       { branchIndex: 0, field: 'statusCode', operator: 'equals', value: '200' }
     ];
     conditionsRef.current = newConditions;
-    setConditions(newConditions); // Trigger re-render
+    setConditions(newConditions);
     updateRef();
   };
 
-  const removeCondition = (index) => {
+  const removeCondition = (index: number) => {
     const newConditions = conditionsRef.current.filter((_, i) => i !== index);
     conditionsRef.current = newConditions;
-    setConditions(newConditions); // Trigger re-render
+    setConditions(newConditions);
     updateRef();
   };
 
-  const updateCondition = (index, updates) => {
+  const updateCondition = (index: number, updates: Partial<MergeConditionType>) => {
     const newConditions = conditionsRef.current.map((cond, i) =>
       i === index ? { ...cond, ...updates } : cond
     );
     conditionsRef.current = newConditions;
-    setConditions(newConditions); // Trigger re-render
+    setConditions(newConditions);
     updateRef();
   };
 
   return (
     <div className="flex flex-col h-full">
-      {/* Tabs */}
       <div className="flex-shrink-0 flex border-b border-border dark:border-border-dark px-4">
-        <TabButton id="parameters" label="Merge Strategy" />
+        <TabButton id="parameters" label="Merge Strategy" activeTab={activeTab} setActiveTab={setActiveTab} colorScheme="purple" />
         {currentStrategy === 'conditional' && (
-          <TabButton id="conditions" label="Conditions" />
+          <TabButton id="conditions" label="Conditions" activeTab={activeTab} setActiveTab={setActiveTab} colorScheme="purple" />
         )}
       </div>
 
-      {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'parameters' && (
           <>
-            <FormField 
-              label="Wait Strategy" 
+            <FormField
+              label="Wait Strategy"
               hint={strategyDescriptions[currentStrategy] || strategyDescriptions.all}
             >
               <select
@@ -1041,7 +1044,6 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                   strategyRef.current = newStrategy;
                   setCurrentStrategy(newStrategy);
                   updateRef();
-                  // Switch to conditions tab if conditional selected
                   if (newStrategy === 'conditional') {
                     setActiveTab('conditions');
                   }
@@ -1055,17 +1057,16 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
               </select>
             </FormField>
 
-            {/* Info Box */}
             <div className="mt-6 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg">
               <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-200 mb-2">How Merge Works</h4>
               <ul className="text-xs text-purple-800 dark:text-purple-300 space-y-1">
-                <li>• Multiple edges leading to this node create parallel branches</li>
-                <li>• Access branch results using: <code className="bg-surface dark:bg-surface-dark px-1 py-0.5 rounded">{'{{prev[0].response}}'}</code></li>
-                <li>• Index [0], [1], [2]... corresponds to branch execution order</li>
-                <li>• Use <code className="bg-surface dark:bg-surface-dark px-1 py-0.5 rounded">{'{{prev.response}}'}</code> for single predecessor (backward compatible)</li>
+                <li> Multiple edges leading to this node create parallel branches</li>
+                <li> Access branch results using: <code className="bg-surface dark:bg-surface-dark px-1 py-0.5 rounded">{'{{prev[0].response}}'}</code></li>
+                <li> Index [0], [1], [2]... corresponds to branch execution order</li>
+                <li> Use <code className="bg-surface dark:bg-surface-dark px-1 py-0.5 rounded">{'{{prev.response}}'}</code> for single predecessor (backward compatible)</li>
                 {currentStrategy === 'conditional' && (
                   <li className="mt-2 pt-2 border-t border-purple-300 dark:border-purple-700">
-                    • <strong>Conditional:</strong> Define conditions to filter which branches to merge
+                    <strong>Conditional:</strong> Define conditions to filter which branches to merge
                   </li>
                 )}
               </ul>
@@ -1089,7 +1090,6 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
               </Button>
             </div>
 
-            {/* Condition Logic Selector */}
             {conditions.length > 1 && (
               <div className="mb-4 p-3 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-lg">
                 <label className="block text-xs font-medium text-text-secondary dark:text-text-secondary-dark mb-2">
@@ -1136,8 +1136,8 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                 <p className="text-xs text-text-muted dark:text-text-muted-dark mt-2 flex items-center gap-1">
                   <CheckCircle className="w-4 h-4 text-green-600" />
                   <span>
-                    {conditionLogic === 'OR' 
-                      ? 'A branch is merged if it matches at least one condition' 
+                    {conditionLogic === 'OR'
+                      ? 'A branch is merged if it matches at least one condition'
                       : 'A branch is merged only if it matches all conditions'}
                   </span>
                 </p>
@@ -1146,7 +1146,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
 
             {conditions.length === 0 ? (
               <div className="text-sm text-text-muted dark:text-text-muted-dark text-center py-8 border-2 border-dashed border-border dark:border-border-dark rounded-lg">
-                No conditions defined. Click "Add Condition" to start.
+                No conditions defined. Click &quot;Add Condition&quot; to start.
               </div>
             ) : (
               <div className="space-y-3">
@@ -1163,28 +1163,28 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                           </span>
                         )}
                       </span>
-                      <button
+                      <Button
                         onClick={() => removeCondition(index)}
-                        className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        variant="ghost"
+                        size="xs"
+                        className="!p-1 !min-w-0 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                       >
                         <X className="w-4 h-4" />
-                      </button>
+                      </Button>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
-                      {/* Branch Index */}
                       <div>
                         <label className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">Branch</label>
-                        <input
+                        <Input
                           type="number"
                           value={condition.branchIndex}
-                          onChange={(e) => updateCondition(index, { branchIndex: parseInt(e.target.value) || 0 })}
-                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => updateCondition(index, { branchIndex: parseInt(e.target.value) || 0 })}
+                          className="w-full"
                           min="0"
                         />
                       </div>
 
-                      {/* Field */}
                       <div>
                         <label className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">
                           Field
@@ -1192,11 +1192,11 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                             (supports variables)
                           </span>
                         </label>
-                        <input
+                        <Input
                           type="text"
                           value={condition.field}
-                          onChange={(e) => updateCondition(index, { field: e.target.value })}
-                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark font-mono"
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => updateCondition(index, { field: e.target.value })}
+                          className="w-full font-mono"
                           placeholder="statusCode or {{prev[0].response.body.name}}"
                         />
                         <div className="mt-0.5 text-[9px] text-text-muted dark:text-text-muted-dark">
@@ -1204,7 +1204,6 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                         </div>
                       </div>
 
-                      {/* Operator */}
                       <div>
                         <label className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">Operator</label>
                         <select
@@ -1221,7 +1220,6 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                         </select>
                       </div>
 
-                      {/* Value */}
                       <div>
                         <label className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">
                           Value
@@ -1229,19 +1227,18 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
                             (supports variables)
                           </span>
                         </label>
-                        <input
+                        <Input
                           type="text"
                           value={condition.value}
-                          onChange={(e) => updateCondition(index, { value: e.target.value })}
-                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark font-mono"
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => updateCondition(index, { value: e.target.value })}
+                          className="w-full font-mono"
                           placeholder="200 or {{prev[0].id}}"
                         />
                       </div>
                     </div>
-                    
-                    {/* Variable hint for this condition */}
+
                     <div className="mt-2 text-[10px] text-text-muted dark:text-text-muted-dark bg-surface-overlay dark:bg-surface-dark-overlay rounded p-1.5">
-                      Examples: <code className="text-purple-600 dark:text-purple-400">200</code>, 
+                      Examples: <code className="text-purple-600 dark:text-purple-400">200</code>,
                       <code className="ml-1 text-purple-600 dark:text-purple-400">{'{{prev[0].response.body.status}}'}</code>,
                       <code className="ml-1 text-purple-600 dark:text-purple-400">{'{{variables.expectedCode}}'}</code>
                     </div>
@@ -1250,11 +1247,10 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
               </div>
             )}
 
-            {/* Hint */}
             <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
               <p className="text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2">
-                <span><strong>How it works:</strong> {conditionLogic === 'OR' 
-                  ? 'Each branch is evaluated independently. If a branch matches ANY condition, it passes.' 
+                <span><strong>How it works:</strong> {conditionLogic === 'OR'
+                  ? 'Each branch is evaluated independently. If a branch matches ANY condition, it passes.'
                   : 'Each branch is evaluated independently. A branch passes ONLY if it matches ALL conditions.'}</span>
               </p>
               <p className="text-xs text-red-700 dark:text-red-400 mt-2 font-semibold flex items-start gap-2">
@@ -1270,7 +1266,7 @@ const MergeConfig = React.memo(({ initialConfig, workingDataRef }) => {
       </div>
     </div>
   );
-});
+};
 MergeConfig.displayName = 'MergeConfig';
 
 export default NodeModal;

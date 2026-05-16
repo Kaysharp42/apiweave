@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type DragEvent, type ChangeEvent } from 'react';
 import useSidebarStore from '../stores/SidebarStore';
 import {
   X,
@@ -7,7 +7,6 @@ import {
   AlertCircle,
   CheckCircle,
   Info,
-  FileJson,
   FileText,
   Package,
   Network,
@@ -16,73 +15,149 @@ import {
   Terminal,
 } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
+import { Button } from './atoms/Button';
+import { IconButton } from './atoms/IconButton';
+import { Input } from './atoms/Input';
+import { TextArea } from './atoms/TextArea';
+import type { Collection } from '../types/Collection';
 
-const CollectionExportImport = ({
+interface CollectionWithWorkflowCount extends Collection {
+  workflowCount?: number;
+}
+
+interface MessageState {
+  type: 'success' | 'warning' | 'error';
+  title: string;
+  text: string;
+}
+
+interface ValidationError {
+  loc?: string[];
+  msg: string;
+}
+
+interface ValidationStats {
+  workflowCount?: number;
+  environmentCount?: number;
+  secretCount?: number;
+  nodeCount?: number;
+}
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings?: string[];
+  stats?: ValidationStats;
+}
+
+interface ImportResult {
+  workflowCount: number;
+  collectionId: string;
+}
+
+interface CollectionExportImportProps {
+  collectionId?: string;
+  collectionName?: string;
+  isOpen: boolean;
+  onClose: () => void;
+  mode?: 'export' | 'import-collection' | 'import-workflows' | 'import-har' | 'import-openapi' | 'import-curl';
+  onImportSuccess?: (collectionId: string) => void;
+}
+
+type TabId = 'export' | 'import-collection' | 'import-workflows' | 'import-har' | 'import-openapi' | 'import-curl';
+
+type ImportModeType = 'linear' | 'parallel';
+
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface WorkflowNode {
+  nodeId: string;
+  type: string;
+  label: string;
+  data: Record<string, unknown>;
+  position: Position;
+}
+
+interface WorkflowEdge {
+  edgeId: string;
+  source: string;
+  target: string;
+}
+
+interface CreateWorkflowPayload {
+  name: string;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  nodeTemplates: Record<string, unknown>[];
+  collectionId: string;
+  variables: Record<string, unknown>;
+  tags: string[];
+}
+
+export function CollectionExportImport({
   collectionId,
   collectionName,
   isOpen,
   onClose,
-  mode = 'export', // 'export', 'import-collection', 'import-workflows'
+  mode = 'export',
   onImportSuccess = () => {},
-}) => {
-  const [activeTab, setActiveTab] = useState(mode);
-  const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState(null);
-  const [uploadedFile, setUploadedFile] = useState(null);
-  const [pastedJson, setPastedJson] = useState('');
-  const [validation, setValidation] = useState(null);
-  const [includeEnvironments, setIncludeEnvironments] = useState(true);
-  const [importMode, setImportMode] = useState('linear'); // for HAR/OpenAPI
-  const fileInputRef = useRef(null);
-  const [createNewCollection, setCreateNewCollection] = useState(true);
-  const [newCollectionName, setNewCollectionName] = useState('');
-  const [collections, setCollections] = useState([]);
-  const [selectedTargetCollection, setSelectedTargetCollection] = useState(null);
-  const [sanitize, setSanitize] = useState(true);
+}: CollectionExportImportProps) {
+  const [activeTab, setActiveTab] = useState<TabId>(mode);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [message, setMessage] = useState<MessageState | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<string | null>(null);
+  const [pastedJson, setPastedJson] = useState<string>('');
+  const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [includeEnvironments, setIncludeEnvironments] = useState<boolean>(true);
+  const [importMode] = useState<ImportModeType>('linear');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [createNewCollection, setCreateNewCollection] = useState<boolean>(true);
+  const [newCollectionName, setNewCollectionName] = useState<string>('');
+  const [collections, setCollections] = useState<CollectionWithWorkflowCount[]>([]);
+  const [selectedTargetCollection, setSelectedTargetCollection] = useState<string | null>(null);
+  const [sanitize, setSanitize] = useState<boolean>(true);
 
-  // Update activeTab when mode prop changes
   useEffect(() => {
     setActiveTab(mode);
   }, [mode]);
 
-  // Fetch collections when importing workflows
   useEffect(() => {
     if (activeTab === 'import-workflows' || activeTab === 'import-har' || activeTab === 'import-openapi' || activeTab === 'import-curl') {
       fetchCollections();
     }
   }, [activeTab]);
 
-  // Helper function to format error messages from backend
-  const formatErrorMessage = (error) => {
+  const formatErrorMessage = (error: unknown): string => {
     if (typeof error === 'string') {
       return error;
     }
     if (Array.isArray(error)) {
-      // Pydantic validation errors are arrays of objects
-      return error.map(err => {
-        if (typeof err === 'object' && err.msg) {
-          const location = err.loc ? err.loc.join(' -> ') : '';
-          return location ? `${location}: ${err.msg}` : err.msg;
+      return error.map((err: unknown) => {
+        if (typeof err === 'object' && err !== null && 'msg' in err) {
+          const errObj = err as ValidationError;
+          const location = errObj.loc ? errObj.loc.join(' -> ') : '';
+          return location ? `${location}: ${errObj.msg}` : errObj.msg;
         }
         return JSON.stringify(err);
       }).join('; ');
     }
-    if (typeof error === 'object' && error.msg) {
-      // Single validation error object
-      const location = error.loc ? error.loc.join(' -> ') : '';
-      return location ? `${location}: ${error.msg}` : error.msg;
+    if (typeof error === 'object' && error !== null && 'msg' in error) {
+      const errObj = error as ValidationError;
+      const location = errObj.loc ? errObj.loc.join(' -> ') : '';
+      return location ? `${location}: ${errObj.msg}` : errObj.msg;
     }
     return 'An unknown error occurred';
   };
 
-  // Fetch collections for import
-  const fetchCollections = async () => {
+  const fetchCollections = async (): Promise<void> => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
-        const data = await response.json();
-        // Exclude current collection from import target list
-        const filtered = data.filter(c => c.collectionId !== collectionId);
+        const data: CollectionWithWorkflowCount[] = await response.json();
+        const filtered = data.filter((c: CollectionWithWorkflowCount) => c.collectionId !== collectionId);
         setCollections(filtered);
       }
     } catch (error) {
@@ -90,8 +165,7 @@ const CollectionExportImport = ({
     }
   };
 
-  // Export collection
-  const handleExport = async () => {
+  const handleExport = async (): Promise<void> => {
     setIsLoading(true);
     setMessage(null);
 
@@ -101,15 +175,14 @@ const CollectionExportImport = ({
       );
 
       if (response.ok) {
-        const bundle = await response.json();
+        const bundle: Record<string, unknown> = await response.json();
 
-        // Download as .awecollection file
         const dataStr = JSON.stringify(bundle, null, 2);
         const dataBlob = new Blob([dataStr], { type: 'application/json' });
         const url = URL.createObjectURL(dataBlob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${collectionName.replace(/\s+/g, '_')}.awecollection`;
+        link.download = `${(collectionName ?? 'collection').replace(/\s+/g, '_')}.awecollection`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -121,35 +194,35 @@ const CollectionExportImport = ({
           text: `Collection "${collectionName}" exported successfully.`,
         });
       } else {
-        const error = await response.json();
+        const error: { detail?: unknown } = await response.json();
         setMessage({
           type: 'error',
           title: 'Export Failed',
           text: formatErrorMessage(error.detail) || 'Failed to export collection',
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const err = error as Error;
       setMessage({
         type: 'error',
         title: 'Export Error',
-        text: error.message,
+        text: err.message,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Validate collection import
-  const handleValidateCollectionImport = async () => {
+  const handleValidateCollectionImport = async (): Promise<void> => {
     setIsLoading(true);
     setMessage(null);
 
     try {
-      let bundleData;
+      let bundleData: Record<string, unknown>;
       if (pastedJson) {
-        bundleData = JSON.parse(pastedJson);
+        bundleData = JSON.parse(pastedJson) as Record<string, unknown>;
       } else if (uploadedFile) {
-        bundleData = JSON.parse(uploadedFile);
+        bundleData = JSON.parse(uploadedFile) as Record<string, unknown>;
       } else {
         setMessage({
           type: 'error',
@@ -174,7 +247,7 @@ const CollectionExportImport = ({
       );
 
       if (response.ok) {
-        const result = await response.json();
+        const result: ValidationResult = await response.json();
         setValidation(result);
         if (!result.valid) {
           setMessage({
@@ -184,35 +257,35 @@ const CollectionExportImport = ({
           });
         }
       } else {
-        const error = await response.json();
+        const error: { detail?: unknown } = await response.json();
         setMessage({
           type: 'error',
           title: 'Validation Failed',
           text: formatErrorMessage(error.detail) || 'Failed to validate bundle',
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const err = error as Error;
       setMessage({
         type: 'error',
         title: 'Parse Error',
-        text: error.message,
+        text: err.message,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Import collection
-  const handleImportCollection = async () => {
+  const handleImportCollection = async (): Promise<void> => {
     setIsLoading(true);
     setMessage(null);
 
     try {
-      let bundleData;
+      let bundleData: Record<string, unknown>;
       if (pastedJson) {
-        bundleData = JSON.parse(pastedJson);
+        bundleData = JSON.parse(pastedJson) as Record<string, unknown>;
       } else if (uploadedFile) {
-        bundleData = JSON.parse(uploadedFile);
+        bundleData = JSON.parse(uploadedFile) as Record<string, unknown>;
       } else {
         setMessage({
           type: 'error',
@@ -231,7 +304,7 @@ const CollectionExportImport = ({
           body: JSON.stringify({
             bundle: bundleData,
             createNewCollection,
-            newCollectionName: newCollectionName || bundleData.collection?.name,
+            newCollectionName: newCollectionName || (bundleData.collection as Record<string, unknown> | undefined)?.name,
             targetCollectionId: selectedTargetCollection,
             environmentMapping: {},
           }),
@@ -239,48 +312,45 @@ const CollectionExportImport = ({
       );
 
       if (response.ok) {
-        const result = await response.json();
+        const result: ImportResult = await response.json();
         setMessage({
           type: 'success',
           title: 'Import Successful',
           text: `Imported ${result.workflowCount} workflow(s) into collection.`,
         });
 
-        // Reset form
         setUploadedFile(null);
         setPastedJson('');
         setValidation(null);
         setNewCollectionName('');
 
-        // Refresh collections
         useSidebarStore.getState().signalCollectionsRefresh();
 
-        // Call callback
         setTimeout(() => {
           onImportSuccess(result.collectionId);
           onClose();
         }, 2000);
       } else {
-        const error = await response.json();
+        const error: { detail?: unknown } = await response.json();
         setMessage({
           type: 'error',
           title: 'Import Failed',
           text: formatErrorMessage(error.detail) || 'Failed to import collection',
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const err = error as Error;
       setMessage({
         type: 'error',
         title: 'Import Error',
-        text: error.message,
+        text: err.message,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Import workflow to collection
-  const handleImportWorkflowToCollection = async () => {
+  const handleImportWorkflowToCollection = async (): Promise<void> => {
     setIsLoading(true);
     setMessage(null);
 
@@ -295,14 +365,14 @@ const CollectionExportImport = ({
         return;
       }
 
-      let bundleData;
-      let fileContent;
-      
+      let bundleData: Record<string, unknown>;
+      let fileContent: string;
+
       if (pastedJson) {
-        bundleData = JSON.parse(pastedJson);
+        bundleData = JSON.parse(pastedJson) as Record<string, unknown>;
         fileContent = pastedJson;
       } else if (uploadedFile) {
-        bundleData = JSON.parse(uploadedFile);
+        bundleData = JSON.parse(uploadedFile) as Record<string, unknown>;
         fileContent = uploadedFile;
       } else {
         setMessage({
@@ -314,20 +384,17 @@ const CollectionExportImport = ({
         return;
       }
 
-      // Detect import type from bundle structure
-      let detectedType = 'workflow';
+      let detectedType: 'workflow' | 'openapi' | 'har' = 'workflow';
       if (bundleData.swagger || bundleData.openapi) {
         detectedType = 'openapi';
-      } else if (bundleData.log?.entries) {
+      } else if ((bundleData.log as Record<string, unknown> | undefined)?.entries) {
         detectedType = 'har';
       }
 
-      // Parse import file to get node templates (without creating workflow)
-      let parseResponse;
+      let parseResponse: Response;
       const formData = new FormData();
-      
+
       if (detectedType === 'workflow') {
-        // For workflow JSON, use existing import (already creates workflow)
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'workflow.json');
         parseResponse = await fetch(
@@ -337,10 +404,9 @@ const CollectionExportImport = ({
             body: formData,
           }
         );
-        
-        // For workflow imports, old behavior: assign to collection
+
         if (parseResponse.ok) {
-          const importResult = await parseResponse.json();
+          const importResult: { workflowId: string } = await parseResponse.json();
           const workflowId = importResult.workflowId;
 
           const assignResponse = await fetch(
@@ -358,13 +424,11 @@ const CollectionExportImport = ({
               text: `Workflow imported and assigned to collection.`,
             });
 
-            // Reset form
             setUploadedFile(null);
             setPastedJson('');
             setValidation(null);
             setSelectedTargetCollection(null);
 
-            // Refresh
             useSidebarStore.getState().signalWorkflowsRefresh();
 
             setTimeout(() => {
@@ -378,7 +442,7 @@ const CollectionExportImport = ({
             });
           }
         } else {
-          const error = await parseResponse.json();
+          const error: { detail?: unknown } = await parseResponse.json();
           setMessage({
             type: 'error',
             title: 'Import Failed',
@@ -388,7 +452,6 @@ const CollectionExportImport = ({
         setIsLoading(false);
         return;
       } else if (detectedType === 'openapi') {
-        // Use OpenAPI endpoint with parse_only to get node templates
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'openapi.json');
         parseResponse = await fetch(
@@ -398,8 +461,7 @@ const CollectionExportImport = ({
             body: formData,
           }
         );
-      } else if (detectedType === 'har') {
-        // Use HAR endpoint with parse_only to get node templates
+      } else {
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'har.json');
         parseResponse = await fetch(
@@ -411,24 +473,22 @@ const CollectionExportImport = ({
         );
       }
 
-      // For OpenAPI/HAR: Create workflow with templates but empty canvas
       if (parseResponse.ok) {
-        const parseResult = await parseResponse.json();
+        const parseResult: { nodes?: Record<string, unknown>[] } = await parseResponse.json();
         const nodeTemplates = parseResult.nodes || [];
 
-        // Generate start and end nodes for empty canvas
         const startNodeId = `start_${Date.now()}`;
         const endNodeId = `end_${Date.now()}`;
-        
-        const startNode = {
+
+        const startNode: WorkflowNode = {
           nodeId: startNodeId,
           type: 'start',
           label: 'Start',
           data: {},
           position: { x: 100, y: 100 }
         };
-        
-        const endNode = {
+
+        const endNode: WorkflowNode = {
           nodeId: endNodeId,
           type: 'end',
           label: 'End',
@@ -436,29 +496,30 @@ const CollectionExportImport = ({
           position: { x: 100, y: 300 }
         };
 
-        // Create workflow with templates
-        const workflowName = detectedType === 'openapi' 
+        const workflowName = detectedType === 'openapi'
           ? `Imported OpenAPI - ${new Date().toLocaleString()}`
           : `Imported HAR - ${new Date().toLocaleString()}`;
+
+        const payload: CreateWorkflowPayload = {
+          name: workflowName,
+          nodes: [startNode, endNode],
+          edges: [{
+            edgeId: `edge_${Date.now()}`,
+            source: startNodeId,
+            target: endNodeId
+          }],
+          nodeTemplates: nodeTemplates,
+          collectionId: selectedTargetCollection,
+          variables: {},
+          tags: ['imported']
+        };
 
         const createResponse = await fetch(
           `${API_BASE_URL}/api/workflows`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: workflowName,
-              nodes: [startNode, endNode],
-              edges: [{
-                edgeId: `edge_${Date.now()}`,
-                source: startNodeId,
-                target: endNodeId
-              }],
-              nodeTemplates: nodeTemplates,
-              collectionId: selectedTargetCollection,
-              variables: {},
-              tags: ['imported']
-            })
+            body: JSON.stringify(payload),
           }
         );
 
@@ -469,20 +530,18 @@ const CollectionExportImport = ({
             text: `Workflow created in collection with ${nodeTemplates.length} imported templates.`,
           });
 
-          // Reset form
           setUploadedFile(null);
           setPastedJson('');
           setValidation(null);
           setSelectedTargetCollection(null);
 
-          // Refresh
           useSidebarStore.getState().signalWorkflowsRefresh();
 
           setTimeout(() => {
             onClose();
           }, 2000);
         } else {
-          const error = await createResponse.json();
+          const error: { detail?: unknown } = await createResponse.json();
           setMessage({
             type: 'error',
             title: 'Create Failed',
@@ -490,25 +549,26 @@ const CollectionExportImport = ({
           });
         }
       } else {
-        const error = await parseResponse.json();
+        const error: { detail?: unknown } = await parseResponse.json();
         setMessage({
           type: 'error',
           title: 'Parse Failed',
           text: formatErrorMessage(error.detail) || 'Failed to parse import file',
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const err = error as Error;
       setMessage({
         type: 'error',
         title: 'Import Error',
-        text: error.message,
+        text: err.message,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleImportCurlToCollection = async () => {
+  const handleImportCurlToCollection = async (): Promise<void> => {
     setIsLoading(true);
     setMessage(null);
 
@@ -535,7 +595,7 @@ const CollectionExportImport = ({
 
       const params = new URLSearchParams();
       params.append('curl_command', pastedJson);
-      params.append('sanitize', sanitize);
+      params.append('sanitize', String(sanitize));
       params.append('workflowId', selectedTargetCollection);
 
       const response = await fetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
@@ -543,11 +603,11 @@ const CollectionExportImport = ({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData: { detail?: string } = await response.json();
         throw new Error(errorData.detail || 'Import failed');
       }
 
-      const data = await response.json();
+      await response.json();
 
       setMessage({
         type: 'success',
@@ -555,71 +615,83 @@ const CollectionExportImport = ({
         text: `cURL command imported and assigned to collection.`,
       });
 
-      // Reset form
       setPastedJson('');
       setValidation(null);
       setSelectedTargetCollection(null);
 
-      // Refresh
       useSidebarStore.getState().signalCollectionsRefresh();
 
       setTimeout(() => {
         onClose();
       }, 2000);
-    } catch (error) {
+    } catch (error: unknown) {
+      const err = error as Error;
       setMessage({
         type: 'error',
         title: 'Import Error',
-        text: error.message,
+        text: err.message,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle file drop
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: DragEvent<HTMLDivElement>): void => {
     e.preventDefault();
     e.currentTarget.classList.add('border-blue-500', 'bg-blue-50');
   };
 
-  const handleDragLeave = (e) => {
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>): void => {
     e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
   };
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: DragEvent<HTMLDivElement>): void => {
     e.preventDefault();
     e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
 
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      handleFileSelect(files[0]);
+      handleFileSelect(files[0] as File);
     }
   };
 
-  // Handle file selection
-  const handleFileSelect = (file) => {
+  const handleFileSelect = (file: File): void => {
     const reader = new FileReader();
-    reader.onload = (e) => {
-      setUploadedFile(e.target.result);
-      setPastedJson('');
-      setValidation(null);
+    reader.onload = (e: ProgressEvent<FileReader>) => {
+      if (e.target?.result) {
+        setUploadedFile(e.target.result as string);
+        setPastedJson('');
+        setValidation(null);
+      }
     };
     reader.readAsText(file);
   };
 
-  const handleFileInputChange = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      handleFileSelect(e.target.files[0]);
+  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileSelect(file);
     }
   };
 
+  const tabButtonClasses = (tab: TabId): string => {
+    const base = 'flex-1 px-4 py-3 font-medium text-center transition-colors flex items-center justify-center gap-2';
+    if (activeTab === tab) {
+      return `${base} border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-surface-raised dark:bg-surface-dark-raised`;
+    }
+    return `${base} text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark`;
+  };
+
+  if (!isOpen) {
+    return null;
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
+      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
         {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b dark:border-gray-700">
-          <h2 className="text-2xl font-bold dark:text-white">
+        <div className="flex justify-between items-center p-6 border-b border-border dark:border-border-dark">
+          <h2 className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
             {activeTab === 'export' && `Export Collection: ${collectionName}`}
             {activeTab === 'import-collection' && `Import Collection`}
             {activeTab === 'import-workflows' && `Import Workflow to Collection`}
@@ -627,27 +699,24 @@ const CollectionExportImport = ({
             {activeTab === 'import-openapi' && `Import OpenAPI to Collection`}
             {activeTab === 'import-curl' && `Import cURL to Collection`}
           </h2>
-          <button
+          <IconButton
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            tooltip="Close"
+            variant="ghost"
           >
             <X size={24} />
-          </button>
+          </IconButton>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+        <div className="flex border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
           <button
             onClick={() => {
               setActiveTab('export');
               setMessage(null);
               setValidation(null);
             }}
-            className={`flex-1 px-4 py-3 font-medium text-center transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'export'
-                ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-900'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
+            className={tabButtonClasses('export')}
           >
             <Download className="w-4 h-4" />
             Export Collection
@@ -659,11 +728,7 @@ const CollectionExportImport = ({
               setValidation(null);
               fetchCollections();
             }}
-            className={`flex-1 px-4 py-3 font-medium text-center transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'import-collection'
-                ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-900'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
+            className={tabButtonClasses('import-collection')}
           >
             <Upload className="w-4 h-4" />
             Import Collection
@@ -674,11 +739,7 @@ const CollectionExportImport = ({
               setMessage(null);
               setValidation(null);
             }}
-            className={`flex-1 px-4 py-3 font-medium text-center transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'import-workflows'
-                ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-900'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
+            className={tabButtonClasses('import-workflows')}
           >
             <FileText className="w-4 h-4" />
             Import Workflows
@@ -689,11 +750,7 @@ const CollectionExportImport = ({
               setMessage(null);
               setValidation(null);
             }}
-            className={`flex-1 px-4 py-3 font-medium text-center transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'import-har'
-                ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-900'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
+            className={tabButtonClasses('import-har')}
           >
             <Upload className="w-4 h-4" />
             HAR File
@@ -704,11 +761,7 @@ const CollectionExportImport = ({
               setMessage(null);
               setValidation(null);
             }}
-            className={`flex-1 px-4 py-3 font-medium text-center transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'import-openapi'
-                ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-900'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
+            className={tabButtonClasses('import-openapi')}
           >
             <Upload className="w-4 h-4" />
             OpenAPI
@@ -719,11 +772,7 @@ const CollectionExportImport = ({
               setMessage(null);
               setValidation(null);
             }}
-            className={`flex-1 px-4 py-3 font-medium text-center transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'import-curl'
-                ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-900'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
+            className={tabButtonClasses('import-curl')}
           >
             <Terminal className="w-4 h-4" />
             cURL
@@ -756,8 +805,8 @@ const CollectionExportImport = ({
           {/* Export Tab */}
           {activeTab === 'export' && (
             <div className="space-y-4">
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+              <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
+                <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
                   Export this collection with all workflows and environments
                 </p>
               </div>
@@ -767,21 +816,21 @@ const CollectionExportImport = ({
                   <input
                     type="checkbox"
                     checked={includeEnvironments}
-                    onChange={(e) => setIncludeEnvironments(e.target.checked)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setIncludeEnvironments(e.target.checked)}
                     className="w-4 h-4 rounded"
                   />
-                  <span className="dark:text-gray-300">Include Environments</span>
+                  <span className="text-text-primary dark:text-text-primary-dark">Include Environments</span>
                 </label>
               </div>
 
-              <button
+              <Button
                 onClick={handleExport}
                 disabled={isLoading}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                fullWidth
+                icon={<Download size={18} />}
               >
-                <Download size={18} />
                 {isLoading ? 'Exporting...' : 'Download Collection Bundle'}
-              </button>
+              </Button>
             </div>
           )}
 
@@ -793,12 +842,12 @@ const CollectionExportImport = ({
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Upload size={32} className="mx-auto mb-2 text-gray-400" />
-                <p className="font-medium dark:text-gray-300">Drag & drop collection bundle</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">or click to browse</p>
+                <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
+                <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop collection bundle</p>
+                <p className="text-sm text-text-muted dark:text-text-muted-dark">or click to browse</p>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -809,7 +858,7 @@ const CollectionExportImport = ({
               </div>
 
               {uploadedFile && (
-                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-green-800 dark:text-green-200">
+                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
                   <CheckCircle size={18} />
                   <span className="text-sm">File loaded successfully</span>
                 </div>
@@ -817,41 +866,42 @@ const CollectionExportImport = ({
 
               {/* Paste JSON */}
               <div>
-                <label className="block text-sm font-medium mb-2 dark:text-gray-300">
+                <label className="block text-sm font-medium mb-2 text-text-primary dark:text-text-primary-dark">
                   Or paste JSON:
                 </label>
-                <textarea
+                <TextArea
                   value={pastedJson}
-                  onChange={(e) => {
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                     setPastedJson(e.target.value);
                     setUploadedFile(null);
                   }}
                   placeholder="Paste collection JSON here..."
-                  className="w-full h-32 px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white resize-none"
+                  className="w-full h-32 resize-none"
+                  rows={6}
                 />
               </div>
 
               {/* Validation */}
               {validation && (
-                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg space-y-2">
-                  <h4 className="font-medium dark:text-white">Validation Results</h4>
+                <div className="bg-surface dark:bg-surface-dark p-4 rounded-lg space-y-2">
+                  <h4 className="font-medium text-text-primary dark:text-text-primary-dark">Validation Results</h4>
                   {validation.valid ? (
-                    <p className="text-green-600 dark:text-green-400 text-sm flex items-center gap-2">
+                    <p className="text-status-success dark:text-status-success-dark text-sm flex items-center gap-2">
                       <CheckCircle size={16} /> Valid collection bundle
                     </p>
                   ) : (
                     <div className="space-y-1">
-                      {validation.errors.map((err, i) => (
-                        <p key={i} className="text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
+                      {validation.errors.map((err: string, i: number) => (
+                        <p key={i} className="text-status-error dark:text-status-error-dark text-sm flex items-center gap-2">
                           <AlertCircle size={14} /> {err}
                         </p>
                       ))}
                     </div>
                   )}
 
-                  {validation.warnings?.length > 0 && (
+                  {validation.warnings && validation.warnings.length > 0 && (
                     <div className="space-y-1">
-                      {validation.warnings.map((warn, i) => (
+                      {validation.warnings.map((warn: string, i: number) => (
                         <p key={i} className="text-yellow-600 dark:text-yellow-400 text-sm flex items-center gap-2">
                           <Info size={14} /> {warn}
                         </p>
@@ -859,7 +909,7 @@ const CollectionExportImport = ({
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2 mt-3 text-xs text-gray-600 dark:text-gray-400">
+                  <div className="grid grid-cols-2 gap-2 mt-3 text-xs text-text-secondary dark:text-text-secondary-dark">
                     <p className="flex items-center gap-1">
                       <Package className="w-3 h-3" /> Workflows: {validation.stats?.workflowCount || 0}
                     </p>
@@ -885,16 +935,16 @@ const CollectionExportImport = ({
                     onChange={() => setCreateNewCollection(true)}
                     className="w-4 h-4"
                   />
-                  <span className="dark:text-gray-300">Create New Collection</span>
+                  <span className="text-text-primary dark:text-text-primary-dark">Create New Collection</span>
                 </label>
 
                 {createNewCollection && (
-                  <input
+                  <Input
                     type="text"
                     value={newCollectionName}
-                    onChange={(e) => setNewCollectionName(e.target.value)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setNewCollectionName(e.target.value)}
                     placeholder="Collection name..."
-                    className="ml-7 w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white"
+                    className="ml-7"
                   />
                 )}
 
@@ -905,17 +955,17 @@ const CollectionExportImport = ({
                     onChange={() => setCreateNewCollection(false)}
                     className="w-4 h-4"
                   />
-                  <span className="dark:text-gray-300">Import to Existing Collection</span>
+                  <span className="text-text-primary dark:text-text-primary-dark">Import to Existing Collection</span>
                 </label>
 
                 {!createNewCollection && (
                   <select
                     value={selectedTargetCollection || ''}
-                    onChange={(e) => setSelectedTargetCollection(e.target.value)}
-                    className="ml-7 w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white"
+                    onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value)}
+                    className="ml-7 w-full px-3 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                   >
                     <option value="">Select collection...</option>
-                    {collections.map((c) => (
+                    {collections.map((c: CollectionWithWorkflowCount) => (
                       <option key={c.collectionId} value={c.collectionId}>
                         {c.name}
                       </option>
@@ -926,23 +976,25 @@ const CollectionExportImport = ({
 
               {/* Action buttons */}
               <div className="flex gap-2">
-                <button
+                <Button
                   onClick={handleValidateCollectionImport}
                   disabled={isLoading || (!uploadedFile && !pastedJson)}
-                  className="flex-1 bg-gray-300 hover:bg-gray-400 disabled:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                  variant="secondary"
+                  className="flex-1"
                 >
                   Validate
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={handleImportCollection}
                   disabled={
                     isLoading || !validation?.valid || (!createNewCollection && !selectedTargetCollection)
                   }
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  variant="primary"
+                  icon={<Upload size={18} />}
+                  className="flex-1"
                 >
-                  <Upload size={18} />
                   {isLoading ? 'Importing...' : 'Import Collection'}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -950,24 +1002,24 @@ const CollectionExportImport = ({
           {/* Import Workflows Tab */}
           {activeTab === 'import-workflows' && (
             <div className="space-y-4">
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+              <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
+                <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
                   Import individual workflows, HAR files, or OpenAPI specs to this collection
                 </p>
               </div>
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
                   value={selectedTargetCollection || ''}
-                  onChange={(e) => setSelectedTargetCollection(e.target.value || null)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
+                  className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">-- Choose a collection --</option>
-                  {collections.map((col) => (
+                  {collections.map((col: CollectionWithWorkflowCount) => (
                     <option key={col.collectionId} value={col.collectionId}>
                       {col.name} ({col.workflowCount} workflows)
                     </option>
@@ -985,12 +1037,12 @@ const CollectionExportImport = ({
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Upload size={32} className="mx-auto mb-2 text-gray-400" />
-                <p className="font-medium dark:text-gray-300">Drag & drop file or click to browse</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
+                <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop file or click to browse</p>
+                <p className="text-xs text-text-muted dark:text-text-muted-dark">
                   Supports: .json (workflow/OpenAPI), .har (HAR files)
                 </p>
                 <input
@@ -1003,7 +1055,7 @@ const CollectionExportImport = ({
               </div>
 
               {uploadedFile && (
-                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-green-800 dark:text-green-200">
+                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
                   <CheckCircle size={18} />
                   <span className="text-sm">File loaded successfully</span>
                 </div>
@@ -1015,47 +1067,48 @@ const CollectionExportImport = ({
                   <input
                     type="checkbox"
                     checked={sanitize}
-                    onChange={(e) => setSanitize(e.target.checked)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setSanitize(e.target.checked)}
                     className="w-4 h-4 rounded"
                   />
-                  <span className="dark:text-gray-300">Sanitize sensitive headers</span>
+                  <span className="text-text-primary dark:text-text-primary-dark">Sanitize sensitive headers</span>
                 </label>
               </div>
 
               {/* Action button */}
-              <button
+              <Button
                 onClick={handleImportWorkflowToCollection}
                 disabled={isLoading || !uploadedFile || !selectedTargetCollection}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                fullWidth
+                variant="primary"
+                icon={<Upload size={18} />}
                 title={!selectedTargetCollection ? 'Please select a collection' : ''}
               >
-                <Upload size={18} />
                 {isLoading ? 'Importing...' : 'Import to Collection'}
-              </button>
+              </Button>
             </div>
           )}
 
           {/* Import HAR Tab */}
           {activeTab === 'import-har' && (
             <div className="space-y-4">
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+              <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
+                <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
                   Import individual workflows, HAR files, or OpenAPI specs to this collection
                 </p>
               </div>
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
                   value={selectedTargetCollection || ''}
-                  onChange={(e) => setSelectedTargetCollection(e.target.value || null)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
+                  className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">-- Choose a collection --</option>
-                  {collections.map((col) => (
+                  {collections.map((col: CollectionWithWorkflowCount) => (
                     <option key={col.collectionId} value={col.collectionId}>
                       {col.name} ({col.workflowCount} workflows)
                     </option>
@@ -1073,12 +1126,12 @@ const CollectionExportImport = ({
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Upload size={32} className="mx-auto mb-2 text-gray-400" />
-                <p className="font-medium dark:text-gray-300">Drag & drop file or click to browse</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
+                <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop file or click to browse</p>
+                <p className="text-xs text-text-muted dark:text-text-muted-dark">
                   Supports: .json (workflow/OpenAPI), .har (HAR files)
                 </p>
                 <input
@@ -1091,7 +1144,7 @@ const CollectionExportImport = ({
               </div>
 
               {uploadedFile && (
-                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-green-800 dark:text-green-200">
+                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
                   <CheckCircle size={18} />
                   <span className="text-sm">File loaded successfully</span>
                 </div>
@@ -1103,47 +1156,48 @@ const CollectionExportImport = ({
                   <input
                     type="checkbox"
                     checked={sanitize}
-                    onChange={(e) => setSanitize(e.target.checked)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setSanitize(e.target.checked)}
                     className="w-4 h-4 rounded"
                   />
-                  <span className="dark:text-gray-300">Sanitize sensitive headers</span>
+                  <span className="text-text-primary dark:text-text-primary-dark">Sanitize sensitive headers</span>
                 </label>
               </div>
 
               {/* Action button */}
-              <button
+              <Button
                 onClick={handleImportWorkflowToCollection}
                 disabled={isLoading || !uploadedFile || !selectedTargetCollection}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                fullWidth
+                variant="primary"
+                icon={<Upload size={18} />}
                 title={!selectedTargetCollection ? 'Please select a collection' : ''}
               >
-                <Upload size={18} />
                 {isLoading ? 'Importing...' : 'Import to Collection'}
-              </button>
+              </Button>
             </div>
           )}
 
           {/* Import OpenAPI Tab */}
           {activeTab === 'import-openapi' && (
             <div className="space-y-4">
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+              <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
+                <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
                   Import individual workflows, HAR files, or OpenAPI specs to this collection
                 </p>
               </div>
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
                   value={selectedTargetCollection || ''}
-                  onChange={(e) => setSelectedTargetCollection(e.target.value || null)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
+                  className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">-- Choose a collection --</option>
-                  {collections.map((col) => (
+                  {collections.map((col: CollectionWithWorkflowCount) => (
                     <option key={col.collectionId} value={col.collectionId}>
                       {col.name} ({col.workflowCount} workflows)
                     </option>
@@ -1161,12 +1215,12 @@ const CollectionExportImport = ({
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Upload size={32} className="mx-auto mb-2 text-gray-400" />
-                <p className="font-medium dark:text-gray-300">Drag & drop file or click to browse</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
+                <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop file or click to browse</p>
+                <p className="text-xs text-text-muted dark:text-text-muted-dark">
                   Supports: .json (workflow/OpenAPI), .har (HAR files)
                 </p>
                 <input
@@ -1179,7 +1233,7 @@ const CollectionExportImport = ({
               </div>
 
               {uploadedFile && (
-                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-green-800 dark:text-green-200">
+                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
                   <CheckCircle size={18} />
                   <span className="text-sm">File loaded successfully</span>
                 </div>
@@ -1191,47 +1245,48 @@ const CollectionExportImport = ({
                   <input
                     type="checkbox"
                     checked={sanitize}
-                    onChange={(e) => setSanitize(e.target.checked)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setSanitize(e.target.checked)}
                     className="w-4 h-4 rounded"
                   />
-                  <span className="dark:text-gray-300">Sanitize sensitive headers</span>
+                  <span className="text-text-primary dark:text-text-primary-dark">Sanitize sensitive headers</span>
                 </label>
               </div>
 
               {/* Action button */}
-              <button
+              <Button
                 onClick={handleImportWorkflowToCollection}
                 disabled={isLoading || !uploadedFile || !selectedTargetCollection}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                fullWidth
+                variant="primary"
+                icon={<Upload size={18} />}
                 title={!selectedTargetCollection ? 'Please select a collection' : ''}
               >
-                <Upload size={18} />
                 {isLoading ? 'Importing...' : 'Import to Collection'}
-              </button>
+              </Button>
             </div>
           )}
 
           {/* Import cURL Tab */}
           {activeTab === 'import-curl' && (
             <div className="space-y-4">
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+              <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
+                <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
                   Import cURL commands to create API test workflows in this collection
                 </p>
               </div>
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
                   value={selectedTargetCollection || ''}
-                  onChange={(e) => setSelectedTargetCollection(e.target.value || null)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
+                  className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">-- Choose a collection --</option>
-                  {collections.map((col) => (
+                  {collections.map((col: CollectionWithWorkflowCount) => (
                     <option key={col.collectionId} value={col.collectionId}>
                       {col.name} ({col.workflowCount} workflows)
                     </option>
@@ -1246,15 +1301,15 @@ const CollectionExportImport = ({
 
               {/* cURL Input */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   cURL Command(s)
                 </label>
-                <textarea
+                <TextArea
                   value={pastedJson}
-                  onChange={(e) => setPastedJson(e.target.value)}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setPastedJson(e.target.value)}
                   placeholder="Paste your cURL command here (single or multiple commands separated by &&)"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                  rows="6"
+                  className="font-mono text-sm"
+                  rows={6}
                 />
               </div>
 
@@ -1264,29 +1319,30 @@ const CollectionExportImport = ({
                   <input
                     type="checkbox"
                     checked={sanitize}
-                    onChange={(e) => setSanitize(e.target.checked)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setSanitize(e.target.checked)}
                     className="w-4 h-4 rounded"
                   />
-                  <span className="dark:text-gray-300">Sanitize sensitive headers</span>
+                  <span className="text-text-primary dark:text-text-primary-dark">Sanitize sensitive headers</span>
                 </label>
               </div>
 
               {/* Action button */}
-              <button
+              <Button
                 onClick={handleImportCurlToCollection}
                 disabled={isLoading || !pastedJson.trim() || !selectedTargetCollection}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                fullWidth
+                variant="primary"
+                icon={<Upload size={18} />}
                 title={!selectedTargetCollection ? 'Please select a collection' : ''}
               >
-                <Upload size={18} />
                 {isLoading ? 'Importing...' : 'Import to Collection'}
-              </button>
+              </Button>
             </div>
           )}
         </div>
       </div>
     </div>
   );
-};
+}
 
 export default CollectionExportImport;

@@ -7,7 +7,6 @@ import { Sidebar } from './Sidebar';
 import { Workspace } from './Workspace';
 import { MainHeader } from './MainHeader';
 import { MainFooter } from './MainFooter';
-// @ts-expect-error SecretsPrompt.jsx not yet migrated
 import SecretsPrompt from '../SecretsPrompt';
 import useNavigationStore from '../../stores/NavigationStore';
 import useSidebarStore from '../../stores/SidebarStore';

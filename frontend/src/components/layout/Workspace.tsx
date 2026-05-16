@@ -2,13 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { Allotment } from 'allotment';
 // @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
-// @ts-expect-error WorkflowCanvas.jsx not yet migrated
 import WorkflowCanvas from '../WorkflowCanvas';
-// @ts-expect-error VariablesPanel.jsx not yet migrated
 import VariablesPanel from '../VariablesPanel';
-// @ts-expect-error WorkflowSettingsPanel.jsx not yet migrated
 import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
-// @ts-expect-error DynamicFunctionsHelper.jsx not yet migrated
 import DynamicFunctionsHelper from '../DynamicFunctionsHelper';
 import { WorkflowProvider } from '../../contexts/WorkflowContext';
 import { Settings, Sparkles, Package, PanelRightClose } from 'lucide-react';

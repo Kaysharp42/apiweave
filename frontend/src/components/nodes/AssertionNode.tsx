@@ -1,7 +1,6 @@
 import { memo, useState, useCallback } from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { BaseNode } from '../atoms/flow/BaseNode';
-// @ts-expect-error - AssertionEditor is still .jsx, will be migrated in Phase 8
 import AssertionEditor from '../AssertionEditor';
 import { XCircle, Info, Pencil, Trash2, BadgeCheck } from 'lucide-react';
 import type { NodeStatus } from '../../types/NodeStatus';

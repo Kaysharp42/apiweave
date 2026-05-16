@@ -1,13 +1,20 @@
-import React, { useState, useCallback, useRef, useEffect, useContext, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect, useContext, useMemo, type MutableRefObject } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
   Background,
+  BackgroundVariant,
   useNodesState,
   useEdgesState,
   addEdge,
   Panel,
+  type Node,
+  type Edge,
+  type NodeTypes,
+  type EdgeTypes,
+  type ReactFlowInstance,
 } from 'reactflow';
+// @ts-expect-error reactflow CSS import has no type declarations
 import 'reactflow/dist/style.css';
 
 import HTTPRequestNode from './nodes/HTTPRequestNode';
@@ -38,21 +45,78 @@ import API_BASE_URL from '../utils/api';
 import { shouldBlockDestructiveAutosave } from '../utils/workflowSaveSafety';
 import { buildSwaggerRefreshSummary } from '../utils/swaggerRefreshSummary';
 import { getCanvasClipboardShortcutAction } from '../utils/shortcutGuards';
+import type { Environment } from '../types';
 
-const nodeTypes = {
-  'http-request': HTTPRequestNode,
-  'assertion': AssertionNode,
-  'delay': DelayNode,
-  'start': StartNode,
-  'end': EndNode,
-  'merge': MergeNode,
+interface NodeData {
+  label?: string;
+  config?: Record<string, unknown>;
+  executionStatus?: string;
+  executionResult?: unknown;
+  executionTimestamp?: number;
+  parentNodeId?: string;
+  branchCount?: number;
+  incomingBranchCount?: number;
+  incomingBranches?: Array<{
+    index: number;
+    nodeId: string;
+    label: string;
+    edgeLabel: string;
+  }>;
+  invalid?: boolean;
+  schemaRefreshWarning?: {
+    text: string;
+    sourceUrl: string;
+    refreshedAt: string;
+    endpointFingerprint: string | null;
+  };
+  extractors?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+interface EdgeData {
+  label?: string | null;
+  [key: string]: unknown;
+}
+
+interface WorkflowCanvasProps {
+  workflowId: string | undefined;
+  workflow: {
+    environmentId?: string;
+    nodes?: Array<{
+      nodeId: string;
+      type: string;
+      position: { x: number; y: number };
+      label?: string;
+      config?: Record<string, unknown>;
+    }>;
+    edges?: Array<{
+      edgeId: string;
+      source: string;
+      target: string;
+      sourceHandle?: string | null;
+      targetHandle?: string | null;
+      label?: string;
+    }>;
+  } | undefined;
+  isPanelOpen?: boolean;
+  showVariablesPanel?: boolean;
+  onShowVariablesPanel?: (show: boolean) => void;
+}
+
+const nodeTypes: NodeTypes = {
+  'http-request': HTTPRequestNode as NodeTypes[string],
+  'assertion': AssertionNode as NodeTypes[string],
+  'delay': DelayNode as NodeTypes[string],
+  'start': StartNode as NodeTypes[string],
+  'end': EndNode as NodeTypes[string],
+  'merge': MergeNode as NodeTypes[string],
 };
 
-const edgeTypes = {
-  'custom': CustomEdge,
+const edgeTypes: EdgeTypes = {
+  'custom': CustomEdge as EdgeTypes[string],
 };
 
-const initialNodes = [
+const initialNodes: Node<NodeData>[] = [
   {
     id: 'start-1',
     type: 'start',
@@ -61,32 +125,79 @@ const initialNodes = [
   },
 ];
 
-const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariablesPanel = false, onShowVariablesPanel = () => {} }) => {
-  // Get global state from context
+interface EnvironmentWithSwagger extends Environment {
+  swaggerDocUrl?: string;
+}
+
+interface ImportedItem {
+  label: string;
+  url: string;
+  method: string;
+  headers: string;
+  body: string;
+  queryParams: string;
+  pathVariables: string;
+  cookies: string;
+  timeout: number;
+  openapiMeta: unknown;
+}
+
+interface SwaggerRefreshResult {
+  skipped?: boolean;
+  reason?: string;
+  endpointCount?: number;
+  error?: string;
+}
+
+interface WorkflowJsonData {
+  nodes: Array<{
+    nodeId: string;
+    type: string;
+    label?: string;
+    position: { x: number; y: number };
+    config?: Record<string, unknown>;
+  }>;
+  edges: Array<{
+    edgeId: string;
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+    label?: string | null;
+  }>;
+  variables: Record<string, unknown>;
+}
+
+interface HydratedBaseline {
+  nodeCount: number;
+  edgeCount: number;
+}
+
+export function WorkflowCanvas({
+  workflowId,
+  workflow,
+  showVariablesPanel = false,
+  onShowVariablesPanel = () => {},
+}: WorkflowCanvasProps) {
   const context = useContext(AppContext);
   const { darkMode, autoSaveEnabled } = context || { darkMode: false, autoSaveEnabled: true };
-  
-  // Use ref to track darkMode for MiniMap callbacks (prevents infinite re-renders)
+
   const darkModeRef = useRef(darkMode);
   useEffect(() => {
     darkModeRef.current = darkMode;
   }, [darkMode]);
-  
-  // Get workflow state from WorkflowContext (ONLY variables and settings)
+
   const {
     variables: workflowVariables,
     registerExtractors,
-    deleteVariable: contextDeleteVariable,
     updateVariable,
     onVariablesDeletedRef,
   } = useWorkflow();
   const { addImportedGroup, removeImportedGroup } = usePalette();
-  
-  // Use ReactFlow's built-in hooks for nodes and edges (local to WorkflowCanvas)
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // Keep refs for frequently changing values to stabilize ReactFlow handlers
+  const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<EdgeData>([]);
+
   const nodesRef = useRef(nodes);
   useEffect(() => {
     nodesRef.current = nodes;
@@ -111,62 +222,51 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   useEffect(() => {
     workflowVariablesRef.current = workflowVariables;
   }, [workflowVariables]);
-  
-  const [selectedNode, setSelectedNode] = useState(null);
+
+  const [selectedNode, setSelectedNode] = useState<Node<NodeData> | null>(null);
   const [isDraggingNode, setIsDraggingNode] = useState(false);
   const [isWorkflowHydrated, setIsWorkflowHydrated] = useState(false);
-  const reactFlowInstanceRef = useRef(null);
-  const [modalNode, setModalNode] = useState(null);
+  const reactFlowInstanceRef = useRef<ReactFlowInstance<NodeData, EdgeData> | null>(null) as MutableRefObject<ReactFlowInstance<NodeData, EdgeData> | null>;
+  const [modalNode, setModalNode] = useState<Node<NodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
-  const [jsonEditorInitialValue, setJsonEditorInitialValue] = useState(null);
-  const [environments, setEnvironments] = useState([]);
+  const [environments, setEnvironments] = useState<EnvironmentWithSwagger[]>([]);
   const [isSwaggerRefreshing, setIsSwaggerRefreshing] = useState(false);
   const swaggerRefreshSignatureRef = useRef('');
   const swaggerRefreshRequestIdRef = useRef(0);
-  const hydratedBaselineRef = useRef(null);
+  const hydratedBaselineRef = useRef<HydratedBaseline | null>(null);
   const envSwaggerGroupId = `env-openapi-${workflowId}`;
-  
-  // Initialize selectedEnvironment from localStorage if available
-  // Also check global default if workflow-specific one doesn't exist
-  const [selectedEnvironment, setSelectedEnvironment] = useState(() => {
-    // First try workflow-specific setting
+
+  const [selectedEnvironment, setSelectedEnvironment] = useState<string | null>(() => {
     const workflowSpecific = localStorage.getItem(`selectedEnvironment_${workflowId}`);
     if (workflowSpecific) {
       return workflowSpecific;
     }
 
-    // Fall back to workflow-level default environment from backend
     if (workflow?.environmentId) {
       return workflow.environmentId;
     }
-    
-    // Fall back to global default environment
+
     const globalDefault = localStorage.getItem('defaultEnvironment');
     if (globalDefault) {
       return globalDefault;
     }
-    
+
     return null;
   });
-  
-  // Save selectedEnvironment to localStorage when it changes
+
   useEffect(() => {
     if (selectedEnvironment) {
-      // Save workflow-specific setting
       localStorage.setItem(`selectedEnvironment_${workflowId}`, selectedEnvironment);
-      // Also save as global default so new workflows use it
       localStorage.setItem('defaultEnvironment', selectedEnvironment);
     } else {
       localStorage.removeItem(`selectedEnvironment_${workflowId}`);
     }
   }, [selectedEnvironment, workflowId]);
 
-  // --- Workflow run + adaptive polling via extracted hook ---
   const {
     isRunning,
-    currentRunId,
     runWorkflow,
     runFromLastFailed,
     runAllFailed,
@@ -188,13 +288,10 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     reactFlowInstanceRef,
   });
 
+  const newDuplicateNodeRef = useRef<string | null>(null);
 
-  // Track newly duplicated node IDs to prevent auto-selection
-  const newDuplicateNodeRef = useRef(null);
-
-  // Sync extractors from nodes to context - ALWAYS send current state
   useEffect(() => {
-    const extractorsFromNodes = {};
+    const extractorsFromNodes: Record<string, unknown> = {};
     nodes.forEach(node => {
       if (node.type === 'http-request' && node.data?.config?.extractors) {
         Object.assign(extractorsFromNodes, node.data.config.extractors);
@@ -203,22 +300,17 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     registerExtractors(extractorsFromNodes);
   }, [nodes, registerExtractors]);
 
-  // Handle variable deletions from VariablesPanel — clean up extractors in nodes
-  // This replaces the old `window.addEventListener('variableDeleted', ...)` pattern.
-  // WorkflowContext exposes a ref that we set here; VariablesPanel calls
-  // `deleteVariablesWithCleanup()` which invokes this callback.
   useEffect(() => {
-    onVariablesDeletedRef.current = (deletedVars) => {
+    onVariablesDeletedRef.current = (deletedVars: string[]) => {
       if (!deletedVars || deletedVars.length === 0) return;
       setNodes(currentNodes => currentNodes.map(node => {
         if (node.type === 'http-request' && node.data?.config?.extractors) {
-          const updatedExtractors = { ...node.data.config.extractors };
+          const updatedExtractors = { ...node.data.config.extractors } as Record<string, unknown>;
           let modified = false;
           deletedVars.forEach(varName => {
             if (varName in updatedExtractors) {
               delete updatedExtractors[varName];
               modified = true;
-
             }
           });
           if (modified) {
@@ -237,12 +329,11 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     return () => { onVariablesDeletedRef.current = null; };
   }, [setNodes, onVariablesDeletedRef]);
 
-  // Fetch environments
   const fetchEnvironments = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as Environment[];
         setEnvironments(data);
       }
     } catch (error) {
@@ -252,7 +343,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
 
   useEffect(() => { fetchEnvironments(); }, [fetchEnvironments]);
 
-  // React to environment version changes from SidebarStore
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);
   useEffect(() => {
     if (environmentVersion > 0) fetchEnvironments();
@@ -276,7 +366,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     });
   }, [setNodes]);
 
-  const refreshSwaggerTemplates = useCallback(async ({ force = false, showSuccessToast = false } = {}) => {
+  const refreshSwaggerTemplates = useCallback(async ({ force = false, showSuccessToast = false } = {}): Promise<SwaggerRefreshResult> => {
     const selectedEnvId = selectedEnvironment && selectedEnvironment.trim()
       ? selectedEnvironment.trim()
       : null;
@@ -321,7 +411,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       if (!response.ok) {
         let detail = 'Failed to load Swagger/OpenAPI URL';
         try {
-          const errorBody = await response.json();
+          const errorBody = await response.json() as { detail?: string };
           detail = errorBody.detail || detail;
         } catch (_) {
           // Keep default error detail if response body is not JSON
@@ -329,24 +419,27 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         throw new Error(detail);
       }
 
-      const result = await response.json();
+      const result = await response.json() as { nodes?: Array<{ label?: string; config?: Record<string, unknown> }>; stats?: Record<string, unknown> };
       if (requestId !== swaggerRefreshRequestIdRef.current) {
         return { skipped: true, reason: 'superseded' };
       }
 
       const apiNodes = result.nodes || [];
-      const items = apiNodes.map((node) => ({
-        label: node.label || node.config?.url || 'Request',
-        url: node.config?.url || '',
-        method: node.config?.method || 'GET',
-        headers: node.config?.headers || '',
-        body: node.config?.body || '',
-        queryParams: node.config?.queryParams || '',
-        pathVariables: node.config?.pathVariables || '',
-        cookies: node.config?.cookies || '',
-        timeout: node.config?.timeout || 30,
-        openapiMeta: node.config?.openapiMeta || null,
-      }));
+      const items: ImportedItem[] = apiNodes.map((node) => {
+        const config = node.config || {};
+        return {
+          label: node.label || (config.url as string) || 'Request',
+          url: (config.url as string) || '',
+          method: (config.method as string) || 'GET',
+          headers: (config.headers as string) || '',
+          body: (config.body as string) || '',
+          queryParams: (config.queryParams as string) || '',
+          pathVariables: (config.pathVariables as string) || '',
+          cookies: (config.cookies as string) || '',
+          timeout: (config.timeout as number) || 30,
+          openapiMeta: (config.openapiMeta as unknown) || null,
+        };
+      });
 
       addImportedGroup({
         title: `Swagger: ${selectedEnvObject?.name || 'Environment'}`,
@@ -354,20 +447,20 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         items,
       });
 
-      const latestFingerprintSet = new Set();
-      const latestMethodPathSet = new Set();
-      const latestMethodsByPath = new Map();
-      const latestByOperationId = new Map();
+      const latestFingerprintSet = new Set<string>();
+      const latestMethodPathSet = new Set<string>();
+      const latestMethodsByPath = new Map<string, Set<string>>();
+      const latestByOperationId = new Map<string, Record<string, unknown>>();
 
       apiNodes.forEach((apiNode) => {
-        const meta = apiNode?.config?.openapiMeta;
+        const meta = (apiNode.config as Record<string, unknown> | undefined)?.openapiMeta as Record<string, unknown> | undefined;
         if (!meta || meta.source !== 'openapi') return;
 
-        const definitionScope = (meta.definitionScope || '').trim();
-        const method = (meta.method || '').toUpperCase();
-        const path = meta.path || '';
-        const fingerprint = meta.fingerprint || '';
-        const operationId = (meta.operationId || '').trim();
+        const definitionScope = ((meta.definitionScope as string) || '').trim();
+        const method = ((meta.method as string) || '').toUpperCase();
+        const path = (meta.path as string) || '';
+        const fingerprint = (meta.fingerprint as string) || '';
+        const operationId = ((meta.operationId as string) || '').trim();
 
         if (fingerprint) latestFingerprintSet.add(fingerprint);
         if (method && path) latestMethodPathSet.add(`${definitionScope}|${method}|${path}`);
@@ -377,7 +470,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           if (!latestMethodsByPath.has(pathScopeKey)) {
             latestMethodsByPath.set(pathScopeKey, new Set());
           }
-          latestMethodsByPath.get(pathScopeKey).add(method);
+          latestMethodsByPath.get(pathScopeKey)!.add(method);
         }
 
         if (operationId) {
@@ -393,38 +486,38 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           }
 
           const existingWarning = node.data?.schemaRefreshWarning;
-          const nodeMeta = node.data?.config?.openapiMeta;
+          const nodeMeta = node.data?.config?.openapiMeta as Record<string, unknown> | undefined;
 
           if (!nodeMeta || nodeMeta.source !== 'openapi') {
             if (!existingWarning) {
               return node;
             }
             didChange = true;
-            const { schemaRefreshWarning, ...restData } = node.data;
+            const { schemaRefreshWarning, ...restData } = node.data!;
             return { ...node, data: restData };
           }
 
-          const metaMethod = (nodeMeta.method || '').toUpperCase();
-          const metaPath = nodeMeta.path || '';
-          const metaFingerprint = nodeMeta.fingerprint || '';
-          const metaScope = (nodeMeta.definitionScope || '').trim();
-          const metaDefinitionName = (nodeMeta.definitionName || '').trim();
-          const metaOperationId = (nodeMeta.operationId || '').trim();
+          const metaMethod = ((nodeMeta.method as string) || '').toUpperCase();
+          const metaPath = (nodeMeta.path as string) || '';
+          const metaFingerprint = (nodeMeta.fingerprint as string) || '';
+          const metaScope = ((nodeMeta.definitionScope as string) || '').trim();
+          const metaDefinitionName = ((nodeMeta.definitionName as string) || '').trim();
+          const metaOperationId = ((nodeMeta.operationId as string) || '').trim();
           const methodPathKey = metaMethod && metaPath ? `${metaScope}|${metaMethod}|${metaPath}` : '';
           const operationScopeKey = metaOperationId ? `${metaScope}|${metaOperationId}` : '';
           const pathScopeKey = metaPath ? `${metaScope}|${metaPath}` : '';
 
-          let warningText = null;
+          let warningText: string | null = null;
 
           if (metaFingerprint && latestFingerprintSet.has(metaFingerprint)) {
             warningText = null;
           } else if (methodPathKey && latestMethodPathSet.has(methodPathKey)) {
             warningText = null;
           } else if (operationScopeKey && latestByOperationId.has(operationScopeKey)) {
-            const latestMeta = latestByOperationId.get(operationScopeKey);
+            const latestMeta = latestByOperationId.get(operationScopeKey)!;
             warningText = `Endpoint changed in Swagger docs (${metaMethod} ${metaPath} -> ${latestMeta.method} ${latestMeta.path}).`;
           } else if (pathScopeKey && latestMethodsByPath.has(pathScopeKey)) {
-            const availableMethods = Array.from(latestMethodsByPath.get(pathScopeKey)).join(', ');
+            const availableMethods = Array.from(latestMethodsByPath.get(pathScopeKey)!).join(', ');
             warningText = `Method mismatch for ${metaPath}. Available method(s): ${availableMethods}.`;
           } else {
             warningText = `Endpoint no longer found in Swagger docs (${metaMethod} ${metaPath}).`;
@@ -439,7 +532,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
               return node;
             }
             didChange = true;
-            const { schemaRefreshWarning, ...restData } = node.data;
+            const { schemaRefreshWarning, ...restData } = node.data!;
             return {
               ...node,
               data: restData,
@@ -487,8 +580,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       if (requestId === swaggerRefreshRequestIdRef.current) {
         removeImportedGroup(envSwaggerGroupId);
       }
-      toast.error(error.message || 'Failed to refresh nodes from environment Swagger URL');
-      return { error: error.message || 'Failed to refresh nodes from environment Swagger URL' };
+      const errorMessage = error instanceof Error ? error.message : 'Failed to refresh nodes from environment Swagger URL';
+      toast.error(errorMessage);
+      return { error: errorMessage };
     } finally {
       if (requestId === swaggerRefreshRequestIdRef.current) {
         setIsSwaggerRefreshing(false);
@@ -505,7 +599,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     clearSwaggerWarningOnCanvas,
   ]);
 
-  // Ensure environment Swagger group is cleaned up when workflow unmounts/switches
   useEffect(() => {
     return () => {
       swaggerRefreshRequestIdRef.current += 1;
@@ -513,7 +606,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     };
   }, [envSwaggerGroupId, removeImportedGroup]);
 
-  // Auto-refresh Add Nodes from selected environment Swagger/OpenAPI URL
   useEffect(() => {
     refreshSwaggerTemplates();
   }, [refreshSwaggerTemplates]);
@@ -522,27 +614,29 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     refreshSwaggerTemplates({ force: true, showSuccessToast: true });
   }, [refreshSwaggerTemplates]);
 
-  // React to workflow reload signals from CanvasStore (e.g., from CurlImport append)
   const reloadVersion = useCanvasStore((s) => s.reloadVersion);
   const reloadWorkflowId = useCanvasStore((s) => s.reloadWorkflowId);
   useEffect(() => {
     if (reloadVersion > 0 && reloadWorkflowId === workflowId) {
-
       (async () => {
         try {
           const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
           if (response.ok) {
-            const data = await response.json();
+            const data = await response.json() as {
+              nodes?: Array<{ nodeId: string; type: string; position: { x: number; y: number }; config?: Record<string, unknown>; label?: string }>;
+              edges?: Array<{ edgeId: string; source: string; target: string; sourceHandle?: string; targetHandle?: string; label?: string }>;
+            };
+            const isDark = darkModeRef.current;
             const newNodes = (data.nodes || []).map(node => ({
               id: node.nodeId,
               type: node.type,
               position: node.position,
               data: {
-                config: node.config,
+                config: node.config || {},
                 label: node.label,
               },
-            }));
-            const newEdges = (data.edges || []).map(edge => ({
+            })) as Node<NodeData>[];
+            const newEdges: Edge<EdgeData>[] = (data.edges || []).map(edge => ({
               id: edge.edgeId,
               source: edge.source,
               target: edge.target,
@@ -554,19 +648,19 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
                 animated: true,
                 style: {
                   stroke: edge.sourceHandle === 'pass'
-                    ? (darkMode ? '#4ade80' : '#16a34a')
-                    : (darkMode ? '#f87171' : '#dc2626'),
+                    ? (isDark ? '#4ade80' : '#16a34a')
+                    : (isDark ? '#f87171' : '#dc2626'),
                   strokeWidth: 2,
                 },
                 labelStyle: {
                   fill: edge.sourceHandle === 'pass'
-                    ? (darkMode ? '#4ade80' : '#16a34a')
-                    : (darkMode ? '#f87171' : '#dc2626'),
+                    ? (isDark ? '#4ade80' : '#16a34a')
+                    : (isDark ? '#f87171' : '#dc2626'),
                   fontWeight: 700,
                   fontSize: 11,
                 },
                 labelBgStyle: {
-                  fill: darkMode ? '#1f2937' : '#ffffff',
+                  fill: isDark ? '#1f2937' : '#ffffff',
                   fillOpacity: 0.95,
                 },
                 labelBgPadding: [6, 4],
@@ -575,17 +669,14 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
             }));
             setNodes(newNodes);
             setEdges(newEdges);
-
           }
         } catch (err) {
           console.error('Error reloading workflow:', err);
         }
       })();
     }
-  }, [reloadVersion, reloadWorkflowId, workflowId, setNodes, setEdges, darkMode]);
+  }, [reloadVersion, reloadWorkflowId, workflowId, setNodes, setEdges]);
 
-  // ---------- Node actions via CanvasStore (replaces window events) ----------
-  // React to pendingAction from CanvasStore (BaseNode menu triggers these)
   const pendingAction = useCanvasStore((s) => s.pendingAction);
   useEffect(() => {
     if (!pendingAction) return;
@@ -594,7 +685,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     if (type === 'duplicate' && nodeId) {
       const nodeToClone = nodes.find((n) => n.id === nodeId);
       if (nodeToClone) {
-        const newNode = {
+        const newNode: Node<NodeData> = {
           ...nodeToClone,
           id: `${nodeToClone.id}-${Date.now()}`,
           position: {
@@ -617,7 +708,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           type: nodeToClone.type,
           data: JSON.parse(JSON.stringify(nodeToClone.data)),
         };
-        useCanvasStore.getState().setClipboardNode(cloneData);
+        useCanvasStore.getState().setClipboardNode(cloneData as unknown as import('../types').ClipboardNodeData);
       }
     } else if (type === 'paste') {
       const cloneData = sessionStorage.getItem('copiedNode');
@@ -625,29 +716,29 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         toast.error('No node in clipboard');
       } else {
         try {
-          const { type: nodeType, data } = JSON.parse(cloneData);
+          const { type: nodeType, data } = JSON.parse(cloneData) as { type: string; data: Record<string, unknown> };
           let newPosition = { x: 400, y: 300 };
           if (selectedNode) {
             newPosition = { x: selectedNode.position.x + 200, y: selectedNode.position.y + 150 };
           } else if (nodes.length > 0) {
-            const lastNode = nodes[nodes.length - 1];
+            const lastNode = nodes[nodes.length - 1]!;
             newPosition = { x: lastNode.position.x + 150, y: lastNode.position.y + 150 };
           }
           setNodes((nds) => [...nds, { id: `node-${Date.now()}`, type: nodeType, position: newPosition, data }]);
           toast.success('Node pasted successfully');
         } catch (err) {
-          toast.error('Error pasting node: ' + err.message);
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          toast.error('Error pasting node: ' + errorMessage);
         }
       }
     }
     useCanvasStore.getState().clearPendingAction();
   }, [pendingAction, nodes, setNodes, selectedNode]);
 
-  // ---------- Keyboard shortcuts (Ctrl+C / Ctrl+V) ----------
   useEffect(() => {
     const isEditorOverlayOpen = !!modalNode || showJsonEditor || showImportToNodes || showHistory || showSecretsPrompt;
 
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       const action = getCanvasClipboardShortcutAction({
         event: e,
         hasSelectedNode: !!selectedNode,
@@ -671,32 +762,32 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedNode, modalNode, showJsonEditor, showImportToNodes, showHistory, showSecretsPrompt]);
 
-  // Detect parallel branches and update node data with branch counts
   useEffect(() => {
-    // Count outgoing edges per node
-    const branchCounts = {};
+    const branchCounts: Record<string, number> = {};
     edges.forEach(edge => {
       branchCounts[edge.source] = (branchCounts[edge.source] || 0) + 1;
     });
 
-    // Count incoming edges per node (for merge detection)
-    const incomingCounts = {};
-    const incomingEdges = {}; // Store actual incoming edges for merge nodes
+    const incomingCounts: Record<string, number> = {};
+    const incomingEdgesMap: Record<string, Edge<EdgeData>[]> = {};
     edges.forEach(edge => {
       incomingCounts[edge.target] = (incomingCounts[edge.target] || 0) + 1;
-      if (!incomingEdges[edge.target]) {
-        incomingEdges[edge.target] = [];
+      if (!incomingEdgesMap[edge.target]) {
+        incomingEdgesMap[edge.target] = [];
       }
-      incomingEdges[edge.target].push(edge);
+      incomingEdgesMap[edge.target]!.push(edge);
     });
 
-    const branchesEqual = (left, right) => {
+    const branchesEqual = (
+      left: Array<{ index: number; nodeId: string; label: string; edgeLabel: string }> | undefined,
+      right: Array<{ index: number; nodeId: string; label: string; edgeLabel: string }> | undefined,
+    ): boolean => {
       if (left === right) return true;
       if (!left || !right) return false;
       if (left.length !== right.length) return false;
       for (let i = 0; i < left.length; i += 1) {
-        const l = left[i];
-        const r = right[i];
+        const l = left[i]!;
+        const r = right[i]!;
         if (
           l.index !== r.index ||
           l.nodeId !== r.nodeId ||
@@ -709,7 +800,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       return true;
     };
 
-    // Update nodes with branch info
     setNodes(nds => {
       let didChange = false;
       const nextNodes = nds.map(node => {
@@ -720,14 +810,14 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         let nextIncomingBranches = prevData.incomingBranches;
         let incomingBranchesChanged = false;
 
-        if (node.type === 'merge' && incomingEdges[node.id]) {
-          nextIncomingBranches = incomingEdges[node.id].map((edge, idx) => {
+        if (node.type === 'merge' && incomingEdgesMap[node.id]) {
+          nextIncomingBranches = incomingEdgesMap[node.id]!.map((edge, idx) => {
             const sourceNode = nds.find(n => n.id === edge.source);
             return {
               index: idx,
               nodeId: edge.source,
               label: sourceNode?.data?.label || edge.source,
-              edgeLabel: edge.label || `Branch ${idx}`
+              edgeLabel: (edge.label as string) || `Branch ${idx}`
             };
           });
           incomingBranchesChanged = !branchesEqual(prevData.incomingBranches, nextIncomingBranches);
@@ -757,8 +847,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     });
   }, [edges, setNodes]);
 
-  // Load workflow data when available
-  React.useEffect(() => {
+  useEffect(() => {
     if (!workflow || !Array.isArray(workflow.nodes) || !Array.isArray(workflow.edges)) {
       setIsWorkflowHydrated(false);
       return;
@@ -772,8 +861,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         label: node.label,
         config: node.config || {},
       },
-    }));
-    
+    })) as Node<NodeData>[];
+
+    const isDark = darkModeRef.current;
     const loadedEdges = workflow.edges.map(edge => ({
       id: edge.edgeId,
       source: edge.source,
@@ -782,31 +872,30 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       targetHandle: edge.targetHandle || null,
       label: edge.label,
       type: 'custom',
-      // Restore assertion edge styling on load
       ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
         animated: true,
         style: {
           stroke: edge.sourceHandle === 'pass'
-            ? (darkMode ? '#4ade80' : '#16a34a')
-            : (darkMode ? '#f87171' : '#dc2626'),
+            ? (isDark ? '#4ade80' : '#16a34a')
+            : (isDark ? '#f87171' : '#dc2626'),
           strokeWidth: 2,
         },
         labelStyle: {
           fill: edge.sourceHandle === 'pass'
-            ? (darkMode ? '#4ade80' : '#16a34a')
-            : (darkMode ? '#f87171' : '#dc2626'),
+            ? (isDark ? '#4ade80' : '#16a34a')
+            : (isDark ? '#f87171' : '#dc2626'),
           fontWeight: 700,
           fontSize: 11,
         },
         labelBgStyle: {
-          fill: darkMode ? '#1f2937' : '#ffffff',
+          fill: isDark ? '#1f2937' : '#ffffff',
           fillOpacity: 0.95,
         },
         labelBgPadding: [6, 4],
         labelBgBorderRadius: 4,
       } : {}),
-    }));
-    
+    })) as Edge<EdgeData>[];
+
     setNodes(loadedNodes);
     setEdges(loadedEdges);
     setIsWorkflowHydrated(true);
@@ -814,27 +903,25 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       nodeCount: loadedNodes.length,
       edgeCount: loadedEdges.length,
     };
-    
-    // Note: workflow.variables are loaded via WorkflowContext initialWorkflow prop
-  }, [workflow, darkMode, setNodes, setEdges]);
+  }, [workflow, setNodes, setEdges]);
 
   const onConnect = useCallback(
-    (params) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (params: any) => {
       setEdges((eds) => {
         const currentNodes = nodesRef.current;
         const isDark = darkModeRef.current;
 
-        // Detect if source is an assertion node — auto-label Pass/Fail edges
         const sourceNode = currentNodes.find(n => n.id === params.source);
         const isAssertionSource = sourceNode?.type === 'assertion';
-        
+
         if (isAssertionSource && params.sourceHandle) {
           const isPass = params.sourceHandle === 'pass';
           const label = isPass ? 'Pass' : 'Fail';
           const color = isPass
             ? (isDark ? '#4ade80' : '#16a34a')
             : (isDark ? '#f87171' : '#dc2626');
-          
+
           const newEdge = {
             id: `reactflow__edge-${params.source}${params.sourceHandle || ''}-${params.target}${params.targetHandle || ''}`,
             ...params,
@@ -853,34 +940,28 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
             },
             labelBgPadding: [6, 4],
             labelBgBorderRadius: 4,
-          };
+          } as Edge<EdgeData>;
           return [...eds, newEdge];
         }
-        
-        const newEdge = addEdge({ ...params, type: 'custom' }, eds)[eds.length];
-        
-        // Check if this creates parallel branches (multiple edges from same source)
+
+        const newEdge = addEdge({ ...params, type: 'custom' } as Parameters<typeof addEdge>[0], eds)[eds.length];
+
         const parallelEdges = eds.filter(e => e.source === params.source);
-        
+
         if (parallelEdges.length > 0) {
-          // Get source node label for better edge labels
-          const sourceNode = currentNodes.find(n => n.id === params.source);
-          const sourceLabel = sourceNode?.data?.label || sourceNode?.id || 'Node';
-          
-          // Multiple edges from same node - mark as parallel branches
-          return eds.map(e => {
+          const updatedEdges = eds.map((e): Edge<EdgeData> => {
             if (e.source === params.source) {
               const branchIndex = parallelEdges.findIndex(pe => pe.id === e.id);
               return {
-                ...e, 
-                animated: true, 
-                style: { 
-                  stroke: isDark ? '#a78bfa' : '#8b5cf6', 
-                  strokeWidth: 2 
+                ...e,
+                animated: true,
+                style: {
+                  stroke: isDark ? '#a78bfa' : '#8b5cf6',
+                  strokeWidth: 2
                 },
                 label: `Branch ${branchIndex}`,
-                labelStyle: { 
-                  fill: isDark ? '#e9d5ff' : '#5b21b6', 
+                labelStyle: {
+                  fill: isDark ? '#e9d5ff' : '#5b21b6',
                   fontWeight: 600,
                   fontSize: 11
                 },
@@ -890,20 +971,20 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
                 },
                 labelBgPadding: [6, 4],
                 labelBgBorderRadius: 4
-              };
+              } as Edge<EdgeData>;
             }
             return e;
           }).concat([{
             ...newEdge,
             type: 'custom',
             animated: true,
-            style: { 
-              stroke: isDark ? '#a78bfa' : '#8b5cf6', 
-              strokeWidth: 2 
+            style: {
+              stroke: isDark ? '#a78bfa' : '#8b5cf6',
+              strokeWidth: 2
             },
             label: `Branch ${parallelEdges.length}`,
-            labelStyle: { 
-              fill: isDark ? '#e9d5ff' : '#5b21b6', 
+            labelStyle: {
+              fill: isDark ? '#e9d5ff' : '#5b21b6',
               fontWeight: 600,
               fontSize: 11
             },
@@ -913,32 +994,31 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
             },
             labelBgPadding: [6, 4],
             labelBgBorderRadius: 4
-          }]);
+          } as Edge<EdgeData>]);
+          return updatedEdges as Edge<EdgeData>[];
         }
-        
-        return addEdge({ ...params, type: 'custom' }, eds);
+
+        return addEdge({ ...params, type: 'custom' } as Parameters<typeof addEdge>[0], eds) as Edge<EdgeData>[];
       });
     },
     [setEdges]
   );
 
-  // Wrap onNodesChange to prevent new duplicate nodes from being auto-selected
-  const handleNodesChange = useCallback((changes) => {
-    // Filter out selection changes for newly duplicated nodes
+  const handleNodesChange = useCallback((changes: Parameters<typeof onNodesChange>[0]) => {
     const filteredChanges = changes.filter((change) => {
       if (change.type === 'select' && newDuplicateNodeRef.current === change.id) {
-        return false; // Ignore selection of newly duplicated node
+        return false;
       }
       return true;
     });
     onNodesChangeRef.current(filteredChanges);
   }, []);
 
-  const handleEdgesChange = useCallback((changes) => {
+  const handleEdgesChange = useCallback((changes: Parameters<typeof onEdgesChange>[0]) => {
     onEdgesChangeRef.current(changes);
   }, []);
 
-  const onNodeClick = useCallback((event, node) => {
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node<NodeData>) => {
     setSelectedNode(node);
   }, []);
 
@@ -954,72 +1034,25 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     setIsDraggingNode(false);
   }, []);
 
-  const onNodeDoubleClick = useCallback((event, node) => {
-    // Don't open modal for start/end nodes
+  const onNodeDoubleClick = useCallback((_event: React.MouseEvent, node: Node<NodeData>) => {
     if (node.type !== 'start' && node.type !== 'end') {
       setModalNode(node);
     }
   }, []);
 
-  const handleModalSave = useCallback((updatedNode) => {
+  const handleModalSave = useCallback((updatedNode: Node<NodeData>) => {
     setNodes((nds) =>
       nds.map((n) => (n.id === updatedNode.id ? updatedNode : n))
     );
   }, [setNodes]);
 
-  const handleDuplicateNode = useCallback((nodeId) => {
-    let newNodeId = null;
-    setNodes((nds) => {
-      const nodeToClone = nds.find((n) => n.id === nodeId);
-      if (!nodeToClone) return nds;
-
-      // Determine the parent node ID (either the node itself or its parent)
-      const parentNodeId = nodeToClone.data?.parentNodeId || nodeId;
-
-      // Count how many nodes have this parent (including the parent itself)
-      const siblingCount = nds.filter((n) => 
-        (n.data?.parentNodeId === parentNodeId) || n.id === parentNodeId
-      ).length;
-
-      // Create a new node with same config but different ID
-      // Deep copy the entire data object to avoid shared references
-      newNodeId = `${nodeId}-dup-${Date.now()}`;
-      const newNode = {
-        ...nodeToClone,
-        id: newNodeId,
-        position: {
-          x: nodeToClone.position.x + (siblingCount * 150), // Cascade horizontally
-          y: nodeToClone.position.y + (siblingCount * 150), // Cascade vertically
-        },
-        data: {
-          ...JSON.parse(JSON.stringify(nodeToClone.data)), // Deep copy entire data object
-          parentNodeId: parentNodeId, // Track the original node
-        },
-        selected: false, // Ensure new node is NOT selected
-      };
-
-      return [...nds, newNode];
-    });
-    
-    // Mark this node so onNodesChange can ignore selection events for it
-    if (newNodeId) {
-      newDuplicateNodeRef.current = newNodeId;
-      setTimeout(() => {
-        newDuplicateNodeRef.current = null;
-      }, 100);
-    }
-  }, []);
-
-
-  // --- Drag-and-drop via extracted hook ---
   const { onDrop, onDragOver } = useCanvasDrop({ reactFlowInstanceRef, setNodes });
 
-  // Save workflow; when `silent` is true do not show alerts (used for autosave)
   const saveWorkflow = useCallback(async (silent = false) => {
     const workflowPayload = {
       nodes: nodesRef.current.map(node => ({
         nodeId: node.id,
-        type: node.type,
+        type: node.type ?? '',
         label: node.data.label,
         position: node.position,
         config: node.data.config || {},
@@ -1028,9 +1061,9 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         edgeId: edge.id,
         source: edge.source,
         target: edge.target,
-        sourceHandle: edge.sourceHandle || null,
-        targetHandle: edge.targetHandle || null,
-        label: edge.label || null,
+        sourceHandle: edge.sourceHandle ?? null,
+        targetHandle: edge.targetHandle ?? null,
+        label: typeof edge.label === 'string' ? edge.label : null,
       })),
       variables: workflowVariablesRef.current,
     };
@@ -1064,10 +1097,10 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(workflowPayload),
       });
-      
+
       if (response.ok) {
         hydratedBaselineRef.current = { nodeCount, edgeCount };
-        useTabStore.getState().markClean(workflowId);
+        useTabStore.getState().markClean(workflowId ?? '');
       } else {
         console.error('Failed to save workflow');
       }
@@ -1076,12 +1109,11 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     }
   }, [workflowId, workflow]);
 
-  // Build JSON for the JSON editor from live state (not stale refs)
-  const workflowJsonMemo = useMemo(() => ({
+  const workflowJsonMemo = useMemo((): WorkflowJsonData => ({
     nodes: nodes.map(node => ({
       nodeId: node.id,
-      type: node.type,
-      label: node.data.label,
+      type: node.type ?? '',
+      ...(node.data.label ? { label: node.data.label } : {}),
       position: node.position,
       config: node.data.config || {},
     })),
@@ -1089,17 +1121,18 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       edgeId: edge.id,
       source: edge.source,
       target: edge.target,
-      sourceHandle: edge.sourceHandle || null,
-      targetHandle: edge.targetHandle || null,
-      label: edge.label || null,
+      ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+      ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+      ...(typeof edge.label === 'string' ? { label: edge.label } : {}),
     })),
     variables: workflowVariables,
   }), [nodes, edges, workflowVariables]);
 
-  // Apply changes from the JSON editor back to the canvas
-  const handleJsonApply = useCallback(async (parsed) => {
-    // Rebuild ReactFlow nodes from the JSON
-    const newNodes = (parsed.nodes || []).map(node => ({
+  const handleJsonApply = useCallback(async (parsed: Record<string, unknown>) => {
+    const parsedNodes = (parsed.nodes || []) as Array<{ nodeId: string; type: string; position: { x: number; y: number }; label?: string; config?: Record<string, unknown> }>;
+    const parsedEdges = (parsed.edges || []) as Array<{ edgeId: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null; label?: string }>;
+
+    const newNodes = parsedNodes.map(node => ({
       id: node.nodeId,
       type: node.type,
       position: node.position,
@@ -1107,42 +1140,41 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         label: node.label,
         config: node.config || {},
       },
-    }));
+    })) as Node<NodeData>[];
 
-    const newEdges = (parsed.edges || []).map(edge => ({
+    const isDark = darkModeRef.current;
+    const newEdges = parsedEdges.map(edge => ({
       id: edge.edgeId,
       source: edge.source,
       target: edge.target,
-      sourceHandle: edge.sourceHandle || null,
-      targetHandle: edge.targetHandle || null,
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null,
       label: edge.label,
       type: 'custom',
-      // Restore assertion edge styling
       ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
         animated: true,
         style: {
           stroke: edge.sourceHandle === 'pass'
-            ? (darkMode ? '#4ade80' : '#16a34a')
-            : (darkMode ? '#f87171' : '#dc2626'),
+            ? (isDark ? '#4ade80' : '#16a34a')
+            : (isDark ? '#f87171' : '#dc2626'),
           strokeWidth: 2,
         },
         labelStyle: {
           fill: edge.sourceHandle === 'pass'
-            ? (darkMode ? '#4ade80' : '#16a34a')
-            : (darkMode ? '#f87171' : '#dc2626'),
+            ? (isDark ? '#4ade80' : '#16a34a')
+            : (isDark ? '#f87171' : '#dc2626'),
           fontWeight: 700,
           fontSize: 11,
         },
         labelBgStyle: {
-          fill: darkMode ? '#1f2937' : '#ffffff',
+          fill: isDark ? '#1f2937' : '#ffffff',
           fillOpacity: 0.95,
         },
         labelBgPadding: [6, 4],
         labelBgBorderRadius: 4,
       } : {}),
-    }));
+    })) as Edge<EdgeData>[];
 
-    // Save to backend FIRST — only update canvas if save succeeds
     try {
       const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
         method: 'PUT',
@@ -1158,20 +1190,19 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
           nodeCount: Array.isArray(parsed.nodes) ? parsed.nodes.length : 0,
           edgeCount: Array.isArray(parsed.edges) ? parsed.edges.length : 0,
         };
-        // Save succeeded — apply to canvas and close editor
         setNodes(newNodes);
         setEdges(newEdges);
 
-        if (parsed.variables && typeof parsed.variables === 'object') {
-          Object.entries(parsed.variables).forEach(([k, v]) => updateVariable(k, v));
+        const parsedVars = parsed.variables as Record<string, unknown> | undefined;
+        if (parsedVars && typeof parsedVars === 'object') {
+          Object.entries(parsedVars).forEach(([k, v]) => updateVariable(k, v));
         }
 
         setShowJsonEditor(false);
         toast.success('Workflow updated from JSON editor');
       } else {
-        // Parse validation errors from the backend
         try {
-          const errBody = await response.json();
+          const errBody = await response.json() as { detail?: string | Array<{ loc?: string[]; msg?: string }> };
           if (errBody.detail && Array.isArray(errBody.detail)) {
             const messages = errBody.detail.map(d => {
               const loc = d.loc ? d.loc.slice(1).join(' → ') : '';
@@ -1179,7 +1210,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
             });
             toast.error(messages.join('\n'));
           } else {
-            toast.error(errBody.detail || `Save failed (${response.status})`);
+            toast.error((errBody.detail as string) || `Save failed (${response.status})`);
           }
         } catch {
           toast.error(`Save failed with status ${response.status}`);
@@ -1189,9 +1220,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
       console.error('JSON editor save error:', err);
       toast.error('Network error — see console');
     }
-  }, [setNodes, setEdges, workflowId, workflowVariables, darkMode, updateVariable, workflow]);
+  }, [setNodes, setEdges, workflowId, workflowVariables, updateVariable, workflow]);
 
-  // --- Debounced auto-save via extracted hook ---
   useAutoSave({
     workflowId,
     autoSaveEnabled: autoSaveEnabled && !isDraggingNode && !isRunning && !isSwaggerRefreshing,
@@ -1202,15 +1232,12 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     saveWorkflow,
   });
 
-  // --- Memoized MiniMap callbacks to prevent infinite re-renders ---
-  const getNodeColor = useCallback((n) => {
+  const getNodeColor = useCallback((n: Node<NodeData>) => {
     const isDark = darkModeRef.current;
-    // Execution status colors take precedence
     if (n.data?.executionStatus === 'running') return isDark ? '#3b82f6' : '#2563eb';
     if (n.data?.executionStatus === 'success') return isDark ? '#22c55e' : '#16a34a';
     if (n.data?.executionStatus === 'error') return isDark ? '#ef4444' : '#dc2626';
 
-    // Node type colors
     if (n.type === 'start') return isDark ? '#06b6d4' : '#0891b2';
     if (n.type === 'end') return isDark ? '#f87171' : '#dc2626';
     if (n.type === 'httpRequest') return isDark ? '#818cf8' : '#6366f1';
@@ -1221,7 +1248,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     return isDark ? '#64748b' : '#94a3b8';
   }, []);
 
-  const getNodeStrokeColor = useCallback((n) => {
+  const getNodeStrokeColor = useCallback((n: Node<NodeData>) => {
     const isDark = darkModeRef.current;
     if (n.data?.executionStatus === 'error') return isDark ? '#dc2626' : '#b91c1c';
     return isDark ? '#374151' : '#cbd5e1';
@@ -1241,7 +1268,7 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
   );
 
   const defaultEdgeOptions = useMemo(
-    () => ({ type: 'custom', animated: true }),
+    () => ({ type: 'custom' as const, animated: true }),
     [],
   );
 
@@ -1259,6 +1286,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
     [],
   );
 
+  const rfInstanceRef = useRef<Parameters<NonNullable<Parameters<typeof ReactFlow>[0]['onInit']>>[0] | null>(null);
+
   return (
     <div className="w-full h-full min-h-0 relative bg-surface dark:bg-surface-dark transition-colors" role="main" aria-label="Workflow canvas">
       <ReactFlow
@@ -1274,7 +1303,8 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
         onInit={(instance) => {
-          reactFlowInstanceRef.current = instance;
+          rfInstanceRef.current = instance;
+          (reactFlowInstanceRef as React.MutableRefObject<unknown>).current = instance;
         }}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -1288,21 +1318,19 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Control"
       >
-        <Background 
-          variant="dots" 
-          gap={12} 
-          size={1} 
-          color={darkMode ? "#444" : "#aaa"}
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={12}
+          size={1}
+          color={darkMode ? '#444' : '#aaa'}
         />
-        
-        {/* Zoom controls — bottom-left */}
-        <Controls 
+
+        <Controls
           position="bottom-left"
           fitViewOptions={fitViewOptions}
           className="border border-border-default dark:border-border-default-dark shadow-md rounded-lg"
         />
-        
-        {/* MiniMap — bottom-right */}
+
         <Panel position="bottom-right" style={{ bottom: 10, right: 10 }}>
           <MiniMap
             nodeColor={getNodeColor}
@@ -1316,7 +1344,6 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
         </Panel>
       </ReactFlow>
 
-      {/* Canvas Toolbar */}
       <CanvasToolbar
         onSave={() => saveWorkflow(false)}
         onHistory={() => setShowHistory(true)}
@@ -1325,81 +1352,85 @@ const WorkflowCanvas = ({ workflowId, workflow, isPanelOpen = false, showVariabl
             toast.info('Workflow is still loading. Try JSON again in a moment.');
             return;
           }
-          setJsonEditorInitialValue(workflowJsonMemo);
           setShowJsonEditor(true);
         }}
         onImport={() => setShowImportToNodes(true)}
         onRun={runWorkflow}
         onRunFromLastFailed={runFromLastFailed}
         onRunAllFailed={runAllFailed}
-        onRunFromFailedNode={(nodeId) => runFromFailedNodes([nodeId], resumeSourceRunId, 'single')}
+        onRunFromFailedNode={(nodeId) => {
+          if (resumeSourceRunId) {
+            runFromFailedNodes([nodeId], resumeSourceRunId, 'single');
+          }
+        }}
         isRunning={isRunning}
         environments={environments}
-        selectedEnvironment={selectedEnvironment}
+        {...(selectedEnvironment ? { selectedEnvironment } : {})}
         onRefreshSwagger={handleManualSwaggerRefresh}
         isSwaggerRefreshing={isSwaggerRefreshing}
         resumeOptions={resumeOptions}
         isResumeLoading={isResumeLoading}
         onEnvironmentChange={(val) => {
           const processed = (val && val.trim()) ? val.trim() : null;
-          const selectedEnv = environments.find(e => e.environmentId === processed);
+          const selectedEnv = processed ? environments.find(e => e.environmentId === processed) : undefined;
           const envName = selectedEnv ? selectedEnv.name : 'No Environment';
           setSelectedEnvironment(processed);
           toast.success(`Environment: ${envName}`);
         }}
-        workflowId={workflowId}
+        workflowId={workflowId ?? ''}
       />
 
-      {/* Add Nodes Panel - OUTSIDE ReactFlow */}
-      <AddNodesPanel isModalOpen={!!modalNode} isPanelOpen={isPanelOpen} showVariablesPanel={showVariablesPanel} onShowVariablesPanel={onShowVariablesPanel} />
+      <AddNodesPanel showVariablesPanel={showVariablesPanel} onShowVariablesPanel={onShowVariablesPanel} />
 
-      {/* Node Modal */}
       <NodeModal
         open={!!modalNode}
-        node={modalNode || { data: {}, type: 'start' }}
+        node={modalNode ? {
+          id: modalNode.id,
+          type: modalNode.type as 'http-request' | 'assertion' | 'delay' | 'merge' | 'start' | 'end',
+          position: { x: modalNode.position.x, y: modalNode.position.y },
+          data: {
+            label: String(modalNode.data.label || ''),
+            config: (modalNode.data.config as Record<string, unknown>) || {},
+          },
+        } : { id: 'start-1', type: 'start' as const, position: { x: 0, y: 0 }, data: { label: 'Start', config: {} } }}
         onClose={() => setModalNode(null)}
-        onSave={handleModalSave}
+        onSave={(node) => handleModalSave(node as Node<NodeData>)}
       />
 
-      {/* History Modal */}
       {showHistory && (
         <HistoryModal
-          workflowId={workflowId}
+          workflowId={workflowId ?? ''}
           onClose={() => setShowHistory(false)}
           onSelectRun={loadHistoricalRun}
         />
       )}
 
-      {/* Import to Nodes Panel */}
       {showImportToNodes && (
         <ImportToNodesPanel
           isOpen={showImportToNodes}
           onClose={() => setShowImportToNodes(false)}
-          workflowId={workflowId}
+          workflowId={workflowId ?? ''}
         />
       )}
 
-      {/* JSON Workflow Editor */}
       <WorkflowJsonEditor
         open={showJsonEditor}
-        workflowJson={showJsonEditor ? jsonEditorInitialValue : null}
+        workflowJson={showJsonEditor ? (workflowJsonMemo as unknown as Record<string, unknown>) : null}
         onApply={handleJsonApply}
         onClose={() => {
           setShowJsonEditor(false);
-          setJsonEditorInitialValue(null);
         }}
       />
 
-      {/* Secrets Prompt — shown when run is triggered and environment has unfilled secrets */}
       <SecretsPrompt
-        open={showSecretsPrompt && !!environments.find(e => e.environmentId === (selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null))}
-        environment={environments.find(e => e.environmentId === (selectedEnvironment && selectedEnvironment.trim() ? selectedEnvironment.trim() : null)) || {}}
-        onClose={() => { setShowSecretsPrompt(false); pendingRunRef.current = false; }}
+        isOpen={showSecretsPrompt && !!selectedEnvironment?.trim() && !!environments.find(e => e.environmentId === selectedEnvironment.trim())}
+        environment={selectedEnvironment?.trim() ? (environments.find(e => e.environmentId === selectedEnvironment.trim()) ?? null) : null}
+        onClose={() => { setShowSecretsPrompt(false); pendingRunRef.current = null; }}
         onSecretsProvided={handleSecretsProvided}
       />
-      
+
     </div>
   );
-};
+}
 
 export default WorkflowCanvas;
