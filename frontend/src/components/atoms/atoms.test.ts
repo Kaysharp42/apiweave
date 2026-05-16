@@ -42,7 +42,7 @@ test('Button renders typed variants, loading state, icon state, and dark mode cl
 
   assertIncludes(primaryMarkup, 'type="button"');
   assertIncludes(primaryMarkup, 'px-6 py-3 text-base');
-  assertIncludes(primaryMarkup, 'dark:bg-[#22d3ee]');
+  assertIncludes(primaryMarkup, 'dark:bg-primary-light');
   assertIncludes(primaryMarkup, 'w-full');
   assertIncludes(primaryMarkup, 'Save');
 

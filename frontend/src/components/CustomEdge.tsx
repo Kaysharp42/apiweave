@@ -45,7 +45,7 @@ export default function CustomEdge({
         markerEnd={markerEnd ?? ''}
         style={{
           strokeWidth: 2,
-          stroke: isRunning ? 'var(--color-primary, #6366f1)' : undefined,
+          stroke: isRunning ? 'var(--aw-primary)' : undefined,
           ...(isRunning ? { strokeDasharray: '5,5' } : {}),
           ...style,
         }}

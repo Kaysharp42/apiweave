@@ -32,7 +32,7 @@ function findComponentFiles(dir: string): string[] {
 
 const HEX_PATTERN = /#[0-9a-fA-F]{3,8}/g;
 
-test('no hardcoded hex colors in component files', { skip: 'Existing components will be migrated to use design tokens in Phases 3-8' }, () => {
+test('no hardcoded hex colors in component files', () => {
   const files = findComponentFiles(SRC_DIR);
 
   const violations = [];

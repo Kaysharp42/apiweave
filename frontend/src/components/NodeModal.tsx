@@ -8,8 +8,10 @@ import { Input, TextArea } from './atoms';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { getNodeModalTypeName } from '../utils/nodeModalMeta';
 import { formatNodeOutputDuration, getNodeOutputStatusClass } from '../utils/nodeOutputStatus';
+import type { HttpMethod } from '../types/HttpMethod';
 
 type ModalNodeType = 'http-request' | 'assertion' | 'delay' | 'merge' | 'start' | 'end';
+const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
 interface NodeModalNode {
   id: string;
@@ -21,7 +23,7 @@ interface NodeModalNode {
 interface NodeModalData {
   label: string;
   config: Record<string, unknown>;
-  executionResult?: Record<string, unknown> | null;
+  executionResult?: unknown;
 }
 
 import type { FileUpload } from './FileUploadSection';
@@ -343,7 +345,7 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
           <div className="space-y-4">
             <FormField label="HTTP Method">
               <div className="flex gap-2">
-                {['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].map((method) => (
+                {HTTP_METHODS.map((method) => (
                   <Button
                     key={method}
                     onClick={() => {

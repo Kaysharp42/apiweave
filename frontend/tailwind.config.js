@@ -71,6 +71,8 @@ export default {
           put: '#ea580c',       // orange-600
           patch: '#7c3aed',     // violet-600
           delete: '#dc2626',    // red-600
+          head: '#0e7490',      // cyan-700
+          options: '#7c3aed',   // violet-600
         },
       },
       fontFamily: {

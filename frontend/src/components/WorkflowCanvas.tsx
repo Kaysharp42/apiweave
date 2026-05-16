@@ -185,6 +185,13 @@ interface HydratedBaseline {
   edgeCount: number;
 }
 
+const assertionEdgeColor = (sourceHandle: string | null | undefined): string =>
+  sourceHandle === 'pass' ? 'var(--aw-status-success)' : 'var(--aw-status-error)';
+
+const branchEdgeColor = 'var(--aw-branch-edge)';
+const branchLabelColor = 'var(--aw-branch-label)';
+const edgeLabelBackground = 'var(--aw-surface-raised)';
+
 export function WorkflowCanvas({
   workflowId,
   workflow,
@@ -641,7 +648,6 @@ export function WorkflowCanvas({
               nodes?: Array<{ nodeId: string; type: string; position: { x: number; y: number }; config?: Record<string, unknown>; label?: string }>;
               edges?: Array<{ edgeId: string; source: string; target: string; sourceHandle?: string; targetHandle?: string; label?: string }>;
             };
-            const isDark = darkModeRef.current;
             const newNodes = (data.nodes || []).map(node => ({
               id: node.nodeId,
               type: node.type,
@@ -663,19 +669,19 @@ export function WorkflowCanvas({
                 animated: true,
                 style: {
                   stroke: edge.sourceHandle === 'pass'
-                    ? (isDark ? '#4ade80' : '#16a34a')
-                    : (isDark ? '#f87171' : '#dc2626'),
+                    ? assertionEdgeColor('pass')
+                    : assertionEdgeColor('fail'),
                   strokeWidth: 2,
                 },
                 labelStyle: {
                   fill: edge.sourceHandle === 'pass'
-                    ? (isDark ? '#4ade80' : '#16a34a')
-                    : (isDark ? '#f87171' : '#dc2626'),
+                    ? assertionEdgeColor('pass')
+                    : assertionEdgeColor('fail'),
                   fontWeight: 700,
                   fontSize: 11,
                 },
                 labelBgStyle: {
-                  fill: isDark ? '#1f2937' : '#ffffff',
+                  fill: edgeLabelBackground,
                   fillOpacity: 0.95,
                 },
                 labelBgPadding: [6, 4],
@@ -878,7 +884,6 @@ export function WorkflowCanvas({
       },
     })) as Node<NodeData>[];
 
-    const isDark = darkModeRef.current;
     const loadedEdges = workflow.edges.map((edge, index) => ({
       id: edge.edgeId ?? edge.id ?? `edge-${index}`,
       source: edge.source,
@@ -891,19 +896,19 @@ export function WorkflowCanvas({
         animated: true,
         style: {
           stroke: edge.sourceHandle === 'pass'
-            ? (isDark ? '#4ade80' : '#16a34a')
-            : (isDark ? '#f87171' : '#dc2626'),
+            ? assertionEdgeColor('pass')
+            : assertionEdgeColor('fail'),
           strokeWidth: 2,
         },
         labelStyle: {
           fill: edge.sourceHandle === 'pass'
-            ? (isDark ? '#4ade80' : '#16a34a')
-            : (isDark ? '#f87171' : '#dc2626'),
+            ? assertionEdgeColor('pass')
+            : assertionEdgeColor('fail'),
           fontWeight: 700,
           fontSize: 11,
         },
         labelBgStyle: {
-          fill: isDark ? '#1f2937' : '#ffffff',
+          fill: edgeLabelBackground,
           fillOpacity: 0.95,
         },
         labelBgPadding: [6, 4],
@@ -925,17 +930,13 @@ export function WorkflowCanvas({
     (params: any) => {
       setEdges((eds) => {
         const currentNodes = nodesRef.current;
-        const isDark = darkModeRef.current;
-
         const sourceNode = currentNodes.find(n => n.id === params.source);
         const isAssertionSource = sourceNode?.type === 'assertion';
 
         if (isAssertionSource && params.sourceHandle) {
           const isPass = params.sourceHandle === 'pass';
           const label = isPass ? 'Pass' : 'Fail';
-          const color = isPass
-            ? (isDark ? '#4ade80' : '#16a34a')
-            : (isDark ? '#f87171' : '#dc2626');
+          const color = assertionEdgeColor(params.sourceHandle);
 
           const newEdge = {
             id: `reactflow__edge-${params.source}${params.sourceHandle || ''}-${params.target}${params.targetHandle || ''}`,
@@ -950,7 +951,7 @@ export function WorkflowCanvas({
               fontSize: 11,
             },
             labelBgStyle: {
-              fill: isDark ? '#1f2937' : '#ffffff',
+              fill: edgeLabelBackground,
               fillOpacity: 0.95,
             },
             labelBgPadding: [6, 4],
@@ -971,17 +972,17 @@ export function WorkflowCanvas({
                 ...e,
                 animated: true,
                 style: {
-                  stroke: isDark ? '#a78bfa' : '#8b5cf6',
+                  stroke: branchEdgeColor,
                   strokeWidth: 2
                 },
                 label: `Branch ${branchIndex}`,
                 labelStyle: {
-                  fill: isDark ? '#e9d5ff' : '#5b21b6',
+                  fill: branchLabelColor,
                   fontWeight: 600,
                   fontSize: 11
                 },
                 labelBgStyle: {
-                  fill: isDark ? '#1f2937' : '#ffffff',
+                  fill: edgeLabelBackground,
                   fillOpacity: 0.95
                 },
                 labelBgPadding: [6, 4],
@@ -994,17 +995,17 @@ export function WorkflowCanvas({
             type: 'custom',
             animated: true,
             style: {
-              stroke: isDark ? '#a78bfa' : '#8b5cf6',
+              stroke: branchEdgeColor,
               strokeWidth: 2
             },
             label: `Branch ${parallelEdges.length}`,
             labelStyle: {
-              fill: isDark ? '#e9d5ff' : '#5b21b6',
+              fill: branchLabelColor,
               fontWeight: 600,
               fontSize: 11
             },
             labelBgStyle: {
-              fill: isDark ? '#1f2937' : '#ffffff',
+              fill: edgeLabelBackground,
               fillOpacity: 0.95
             },
             labelBgPadding: [6, 4],
@@ -1147,7 +1148,6 @@ export function WorkflowCanvas({
       },
     })) as Node<NodeData>[];
 
-    const isDark = darkModeRef.current;
     const newEdges = parsedEdges.map(edge => ({
       id: edge.edgeId,
       source: edge.source,
@@ -1160,19 +1160,19 @@ export function WorkflowCanvas({
         animated: true,
         style: {
           stroke: edge.sourceHandle === 'pass'
-            ? (isDark ? '#4ade80' : '#16a34a')
-            : (isDark ? '#f87171' : '#dc2626'),
+            ? assertionEdgeColor('pass')
+            : assertionEdgeColor('fail'),
           strokeWidth: 2,
         },
         labelStyle: {
           fill: edge.sourceHandle === 'pass'
-            ? (isDark ? '#4ade80' : '#16a34a')
-            : (isDark ? '#f87171' : '#dc2626'),
+            ? assertionEdgeColor('pass')
+            : assertionEdgeColor('fail'),
           fontWeight: 700,
           fontSize: 11,
         },
         labelBgStyle: {
-          fill: isDark ? '#1f2937' : '#ffffff',
+          fill: edgeLabelBackground,
           fillOpacity: 0.95,
         },
         labelBgPadding: [6, 4],
@@ -1238,34 +1238,32 @@ export function WorkflowCanvas({
   });
 
   const getNodeColor = useCallback((n: Node<NodeData>) => {
-    const isDark = darkModeRef.current;
-    if (n.data?.executionStatus === 'running') return isDark ? '#3b82f6' : '#2563eb';
-    if (n.data?.executionStatus === 'success') return isDark ? '#22c55e' : '#16a34a';
-    if (n.data?.executionStatus === 'error') return isDark ? '#ef4444' : '#dc2626';
+    if (n.data?.executionStatus === 'running') return 'var(--aw-status-info)';
+    if (n.data?.executionStatus === 'success') return 'var(--aw-status-success)';
+    if (n.data?.executionStatus === 'error') return 'var(--aw-status-error)';
 
-    if (n.type === 'start') return isDark ? '#06b6d4' : '#0891b2';
-    if (n.type === 'end') return isDark ? '#f87171' : '#dc2626';
-    if (n.type === 'httpRequest') return isDark ? '#818cf8' : '#6366f1';
-    if (n.type === 'assertion') return isDark ? '#4ade80' : '#22c55e';
-    if (n.type === 'delay') return isDark ? '#fbbf24' : '#f59e0b';
-    if (n.type === 'merge') return isDark ? '#a78bfa' : '#8b5cf6';
+    if (n.type === 'start') return 'var(--aw-primary-light)';
+    if (n.type === 'end') return 'var(--aw-status-error)';
+    if (n.type === 'httpRequest' || n.type === 'http-request') return 'var(--aw-status-info)';
+    if (n.type === 'assertion') return 'var(--aw-status-success)';
+    if (n.type === 'delay') return 'var(--aw-status-warning)';
+    if (n.type === 'merge') return 'var(--aw-branch-edge)';
 
-    return isDark ? '#64748b' : '#94a3b8';
+    return 'var(--aw-text-muted)';
   }, []);
 
   const getNodeStrokeColor = useCallback((n: Node<NodeData>) => {
-    const isDark = darkModeRef.current;
-    if (n.data?.executionStatus === 'error') return isDark ? '#dc2626' : '#b91c1c';
-    return isDark ? '#374151' : '#cbd5e1';
+    if (n.data?.executionStatus === 'error') return 'var(--aw-status-error)';
+    return 'var(--aw-border)';
   }, []);
 
   const miniMapStyle = useMemo(() => ({
-    backgroundColor: darkMode ? '#1f2937' : 'white',
-    border: darkMode ? '2px solid #374151' : '2px solid #0e7490',
+    backgroundColor: 'var(--aw-surface-raised)',
+    border: '2px solid var(--aw-border-focus)',
     borderRadius: '8px',
     width: 220,
     height: 150,
-  }), [darkMode]);
+  }), []);
 
   const miniMapMaskColor = useMemo(
     () => (darkMode ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.05)'),
@@ -1327,7 +1325,7 @@ export function WorkflowCanvas({
           variant={BackgroundVariant.Dots}
           gap={12}
           size={1}
-          color={darkMode ? '#444' : '#aaa'}
+          color="var(--aw-text-muted)"
         />
 
         <Controls
@@ -1385,15 +1383,15 @@ export function WorkflowCanvas({
         workflowId={workflowId ?? ''}
       />
 
-      <AddNodesPanel showVariablesPanel={showVariablesPanel} onShowVariablesPanel={onShowVariablesPanel} />
+      <AddNodesPanel isModalOpen={!!modalNode} showVariablesPanel={showVariablesPanel} onShowVariablesPanel={onShowVariablesPanel} />
 
       <NodeModal
         open={!!modalNode}
         node={modalNode ? {
-          id: modalNode.id,
+          ...modalNode,
           type: modalNode.type as 'http-request' | 'assertion' | 'delay' | 'merge' | 'start' | 'end',
-          position: { x: modalNode.position.x, y: modalNode.position.y },
           data: {
+            ...modalNode.data,
             label: String(modalNode.data.label || ''),
             config: (modalNode.data.config as Record<string, unknown>) || {},
           },

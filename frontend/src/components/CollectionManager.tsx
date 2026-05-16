@@ -9,6 +9,7 @@ import { Input } from './atoms/Input';
 import { TextArea } from './atoms/TextArea';
 import { Toggle } from './atoms/Toggle';
 import useSidebarStore from '../stores/SidebarStore';
+import { DefaultCollectionColor, PresetCollectionColors } from '../constants/CollectionColors';
 import type { Collection } from '../types/Collection';
 import type { Workflow } from '../types/Workflow';
 
@@ -38,11 +39,6 @@ interface CollectionManagerProps {
   onClose: () => void;
 }
 
-const PRESET_COLORS = [
-  '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
-  '#EC4899', '#06B6D4', '#6366F1', '#14B8A6', '#F97316',
-] as const;
-
 export function CollectionManager({ open, onClose }: CollectionManagerProps) {
   const [collections, setCollections] = useState<ExtendedCollection[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -52,7 +48,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
   const [workflowOrder, setWorkflowOrder] = useState<WorkflowOrderItem[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [continueOnFail, setContinueOnFail] = useState(true);
-  const [formData, setFormData] = useState<CollectionFormData>({ name: '', description: '', color: '#3B82F6' });
+  const [formData, setFormData] = useState<CollectionFormData>({ name: '', description: '', color: DefaultCollectionColor });
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
@@ -91,14 +87,14 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
   const handleCreate = () => {
     setIsEditing(true);
     setSelectedCol(null);
-    setFormData({ name: '', description: '', color: '#3B82F6' });
+    setFormData({ name: '', description: '', color: DefaultCollectionColor });
     setError('');
   };
 
   const handleEdit = (col: ExtendedCollection) => {
     setIsEditing(true);
     setSelectedCol(col);
-    setFormData({ name: col.name, description: col.description || '', color: col.color || '#3B82F6' });
+    setFormData({ name: col.name, description: col.description || '', color: col.color || DefaultCollectionColor });
     setError('');
   };
 
@@ -400,7 +396,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
               <div>
                 <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">Collection Color</label>
                 <div className="flex gap-2 flex-wrap">
-                  {PRESET_COLORS.map((color) => (
+                  {PresetCollectionColors.map((color) => (
                     <button
                       key={color}
                       onClick={() => setFormData({ ...formData, color })}

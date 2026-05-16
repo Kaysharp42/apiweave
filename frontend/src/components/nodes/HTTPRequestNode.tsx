@@ -5,8 +5,9 @@ import { BaseNode } from '../atoms/flow/BaseNode';
 import FileUploadSection, { type FileUpload } from '../FileUploadSection';
 import { Puzzle, Plus, Trash2, CheckCircle, ArrowRight, AlertTriangle, XCircle, ChevronDown, ChevronUp, Snowflake, ExternalLink, Clock3 } from 'lucide-react';
 import type { NodeStatus } from '../../types/NodeStatus';
+import type { HttpMethod } from '../../types/HttpMethod';
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
 interface SchemaWarning {
   text?: string;
@@ -65,6 +66,8 @@ const methodColors: Record<HttpMethod, string> = {
   PUT:    'bg-method-put text-white',
   DELETE: 'bg-method-delete text-white',
   PATCH:  'bg-method-patch text-white',
+  HEAD:   'bg-method-head text-white',
+  OPTIONS: 'bg-method-options text-white',
 };
 
 const formatRefreshTime = (isoValue: string | undefined): string => {
@@ -372,11 +375,9 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
               value={method}
               onChange={(e) => updateNodeData('method', e.target.value)}
             >
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="DELETE">DEL</option>
-              <option value="PATCH">PATCH</option>
+              {HTTP_METHODS.map((httpMethod) => (
+                <option key={httpMethod} value={httpMethod}>{httpMethod === 'DELETE' ? 'DEL' : httpMethod}</option>
+              ))}
             </select>
 
             {isExpanded ? (

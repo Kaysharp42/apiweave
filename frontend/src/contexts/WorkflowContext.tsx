@@ -182,7 +182,7 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }: Work
   }, []);
 
   const updateSettings = useCallback((newSettings: WorkflowSettings) => {
-    setVariables((prev) => ({
+    setSettings((prev) => ({
       ...prev,
       ...newSettings,
     }));
