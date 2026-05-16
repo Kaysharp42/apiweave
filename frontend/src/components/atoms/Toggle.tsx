@@ -1,14 +1,16 @@
 import React, { useId } from 'react';
 
-/**
- * Toggle — DaisyUI `toggle` for boolean settings.
- *
- * Replaces custom checkbox/switch patterns with a consistent toggle UI.
- *
- * @param {'primary'|'secondary'|'success'|'error'|'warning'} variant
- * @param {'xs'|'sm'|'md'|'lg'} size
- */
-export default function Toggle({
+export interface ToggleProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
+  label?: string;
+  checked?: boolean;
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
+  variant?: 'primary' | 'secondary' | 'success' | 'error' | 'warning';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  disabled?: boolean;
+  id?: string;
+}
+
+export function Toggle({
   label,
   checked,
   onChange,
@@ -18,24 +20,24 @@ export default function Toggle({
   className = '',
   id: externalId,
   ...rest
-}) {
+}: ToggleProps) {
   const autoId = useId();
   const id = externalId ?? autoId;
 
-  const variantClass = {
+  const variantClass: Record<string, string> = {
     primary: 'toggle-primary',
     secondary: 'toggle-secondary',
     success: 'toggle-success',
     error: 'toggle-error',
     warning: 'toggle-warning',
-  }[variant] ?? 'toggle-primary';
+  };
 
-  const sizeClass = {
+  const sizeClass: Record<string, string> = {
     xs: 'toggle-xs',
     sm: 'toggle-sm',
     md: '',
     lg: 'toggle-lg',
-  }[size] ?? 'toggle-sm';
+  };
 
   return (
     <div className="form-control">
@@ -48,7 +50,7 @@ export default function Toggle({
         <input
           id={id}
           type="checkbox"
-          className={['toggle', variantClass, sizeClass, className].filter(Boolean).join(' ')}
+          className={['toggle', variantClass[variant] ?? 'toggle-primary', sizeClass[size] ?? 'toggle-sm', className].filter(Boolean).join(' ')}
           checked={checked}
           onChange={onChange}
           disabled={disabled}

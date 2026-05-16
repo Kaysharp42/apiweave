@@ -1,7 +1,7 @@
 import React, { memo, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { useWorkflow } from '../../contexts/WorkflowContext';
-import BaseNode from '../atoms/flow/BaseNode';
+import { BaseNode } from '../atoms/flow/BaseNode';
 import FileUploadSection from '../FileUploadSection';
 import { Puzzle, Plus, Trash2, CheckCircle, ArrowRight, AlertTriangle, XCircle, ChevronDown, ChevronUp, Snowflake, ExternalLink, Clock3 } from 'lucide-react';
 

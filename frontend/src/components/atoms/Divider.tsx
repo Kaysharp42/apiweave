@@ -1,19 +1,16 @@
 import React from 'react';
 
-/**
- * Divider — Horizontal or vertical divider.
- *
- * Uses DaisyUI's `divider` class for consistent styling.
- *
- * @param {'horizontal'|'vertical'} direction
- * @param {string} text — optional inline label
- */
-export default function Divider({
+export interface DividerProps extends React.HTMLAttributes<HTMLDivElement> {
+  direction?: 'horizontal' | 'vertical';
+  text?: string;
+}
+
+export function Divider({
   direction = 'horizontal',
   text,
   className = '',
   ...rest
-}) {
+}: DividerProps) {
   if (direction === 'vertical') {
     return (
       <div

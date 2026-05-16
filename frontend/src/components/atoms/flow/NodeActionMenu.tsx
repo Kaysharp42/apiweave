@@ -1,18 +1,28 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronsDownUp, Copy, Files, MoreHorizontal } from 'lucide-react';
+import { ChevronsDownUp, Copy, Files, MoreHorizontal, type LucideIcon } from 'lucide-react';
 import {
   buildNodeActionMenuItems,
   getNextNodeActionMenuFocusIndex,
   getNextNodeExpandedState,
 } from '../../../utils/nodeActionMenu';
 
-const ACTION_ICONS = {
+const ACTION_ICONS: Record<string, LucideIcon> = {
   duplicate: Files,
   copy: Copy,
   'toggle-expand': ChevronsDownUp,
 };
 
-export default function NodeActionMenu({
+export interface NodeActionMenuProps {
+  nodeId: string;
+  collapsible?: boolean;
+  isExpanded?: boolean;
+  onDuplicate?: (nodeId: string) => void;
+  onCopy?: (nodeId: string) => void;
+  onToggleExpand?: (nextExpanded: boolean) => void;
+  triggerClassName?: string;
+}
+
+export function NodeActionMenu({
   nodeId,
   collapsible = false,
   isExpanded = false,
@@ -20,11 +30,11 @@ export default function NodeActionMenu({
   onCopy,
   onToggleExpand,
   triggerClassName = '',
-}) {
+}: NodeActionMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const wrapperRef = useRef(null);
-  const triggerRef = useRef(null);
-  const itemRefs = useRef([]);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const menuItems = useMemo(
     () => buildNodeActionMenuItems({ collapsible, isExpanded }),
@@ -34,13 +44,13 @@ export default function NodeActionMenu({
   useEffect(() => {
     if (!menuOpen) return undefined;
 
-    const handleOutsideClick = (event) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+    const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
       }
     };
 
-    const handleEscape = (event) => {
+    const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMenuOpen(false);
         triggerRef.current?.focus();
@@ -48,19 +58,19 @@ export default function NodeActionMenu({
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick as EventListener);
     document.addEventListener('keydown', handleEscape);
 
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('touchstart', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick as EventListener);
       document.removeEventListener('keydown', handleEscape);
     };
   }, [menuOpen]);
 
   if (!nodeId) return null;
 
-  const focusMenuItem = (index) => {
+  const focusMenuItem = (index: number) => {
     const safeIndex = Math.max(0, Math.min(index, menuItems.length - 1));
     itemRefs.current[safeIndex]?.focus();
   };
@@ -70,7 +80,7 @@ export default function NodeActionMenu({
     requestAnimationFrame(() => focusMenuItem(0));
   };
 
-  const handleMenuAction = (actionKey, event) => {
+  const handleMenuAction = (actionKey: string, event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
 
     if (actionKey === 'duplicate') {
@@ -85,14 +95,14 @@ export default function NodeActionMenu({
     triggerRef.current?.focus();
   };
 
-  const handleTriggerKeyDown = (event) => {
+  const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       openMenuAndFocusFirst();
     }
   };
 
-  const handleMenuItemKeyDown = (event, index) => {
+  const handleMenuItemKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       event.preventDefault();
       const nextIndex = getNextNodeActionMenuFocusIndex({

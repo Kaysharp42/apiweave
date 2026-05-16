@@ -1,15 +1,16 @@
 import React from 'react';
 import Tippy from '@tippyjs/react';
-import 'tippy.js/dist/tippy.css';
 
-/**
- * Tooltip — Wrapper around Tippy.js with consistent APIWeave styling.
- *
- * @param {string} content   — tooltip text or JSX
- * @param {'top'|'bottom'|'left'|'right'} placement
- * @param {number} delay     — show delay in ms
- */
-export default function Tooltip({
+export interface TooltipProps {
+  children: React.ReactElement;
+  content?: string | React.ReactNode;
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  delay?: number;
+  disabled?: boolean;
+  className?: string;
+}
+
+export function Tooltip({
   children,
   content,
   placement = 'top',
@@ -17,7 +18,7 @@ export default function Tooltip({
   disabled = false,
   className = '',
   ...rest
-}) {
+}: TooltipProps) {
   if (!content || disabled) return children;
 
   return (

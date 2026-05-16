@@ -1,14 +1,14 @@
 import React, { useId } from 'react';
 
-/**
- * Input — DaisyUI `input` with label, error state, and helper text.
- *
- * @param {'xs'|'sm'|'md'|'lg'} size
- * @param {string} label       — optional label text
- * @param {string} error       — error message (turns border red)
- * @param {string} helperText  — helper text below the input
- */
-export default function Input({
+export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
+  label?: string;
+  error?: string;
+  helperText?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  id?: string;
+}
+
+export function Input({
   label,
   error,
   helperText,
@@ -16,16 +16,16 @@ export default function Input({
   className = '',
   id: externalId,
   ...rest
-}) {
+}: InputProps) {
   const autoId = useId();
   const id = externalId ?? autoId;
 
-  const sizeClass = {
+  const sizeClass: Record<string, string> = {
     xs: 'input-xs',
     sm: 'input-sm',
     md: '',
     lg: 'input-lg',
-  }[size] ?? '';
+  };
 
   return (
     <div className="form-control w-full">
@@ -38,7 +38,7 @@ export default function Input({
         id={id}
         className={[
           'input input-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
-          sizeClass,
+          sizeClass[size] ?? '',
           error && 'input-error',
           className,
         ]

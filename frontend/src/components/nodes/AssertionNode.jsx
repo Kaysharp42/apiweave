@@ -1,6 +1,6 @@
 import React, { memo, useState, useCallback } from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
-import BaseNode from '../atoms/flow/BaseNode';
+import { BaseNode } from '../atoms/flow/BaseNode';
 import AssertionEditor from '../AssertionEditor';
 import Tooltip from '../Tooltip';
 import { CheckCircle, XCircle, Info, Pencil, Trash2, BadgeCheck } from 'lucide-react';

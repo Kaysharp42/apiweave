@@ -3,7 +3,7 @@ import AssertionEditor from './AssertionEditor';
 import FileUploadSection from './FileUploadSection';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
-import Button from './atoms/Button';
+import { Button } from './atoms/Button';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { getNodeModalTypeName } from '../utils/nodeModalMeta';
 import { formatNodeOutputDuration, getNodeOutputStatusClass } from '../utils/nodeOutputStatus';

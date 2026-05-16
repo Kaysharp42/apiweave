@@ -1,7 +1,7 @@
 import React, { Fragment, useRef } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { AlertTriangle } from 'lucide-react';
-import Button from '../atoms/Button';
+import { Button } from '../atoms/Button';
 import {
   resolveConfirmDialogIntent,
   runConfirmDialogAction,

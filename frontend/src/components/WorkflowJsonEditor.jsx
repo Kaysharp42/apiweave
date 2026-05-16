@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
-import Button from './atoms/Button';
+import { Button } from './atoms/Button';
 
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows

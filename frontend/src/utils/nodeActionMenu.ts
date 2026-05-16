@@ -1,5 +1,10 @@
-export const buildNodeActionMenuItems = ({ collapsible = false, isExpanded = false } = {}) => {
-  const items = [
+export interface NodeActionMenuItem {
+  key: string;
+  label: string;
+}
+
+export const buildNodeActionMenuItems = ({ collapsible = false, isExpanded = false } = {}): NodeActionMenuItem[] => {
+  const items: NodeActionMenuItem[] = [
     { key: 'duplicate', label: 'Duplicate' },
     { key: 'copy', label: 'Copy' },
   ];
@@ -14,9 +19,9 @@ export const buildNodeActionMenuItems = ({ collapsible = false, isExpanded = fal
   return items;
 };
 
-export const getNextNodeExpandedState = (currentState) => !Boolean(currentState);
+export const getNextNodeExpandedState = (currentState: boolean): boolean => !Boolean(currentState);
 
-export const getNextNodeActionMenuFocusIndex = ({ currentIndex = 0, total = 0, key } = {}) => {
+export const getNextNodeActionMenuFocusIndex = ({ currentIndex = 0, total = 0, key }: { currentIndex?: number; total?: number; key: string }): number => {
   if (!Number.isInteger(total) || total <= 0) return 0;
 
   if (key === 'ArrowDown') {

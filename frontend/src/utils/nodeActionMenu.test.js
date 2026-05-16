@@ -4,7 +4,7 @@ import {
   buildNodeActionMenuItems,
   getNextNodeActionMenuFocusIndex,
   getNextNodeExpandedState,
-} from './nodeActionMenu.js';
+} from './nodeActionMenu.ts';
 
 test('buildNodeActionMenuItems always includes duplicate and copy', () => {
   const items = buildNodeActionMenuItems({ collapsible: false });

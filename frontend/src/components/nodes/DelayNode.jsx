@@ -1,7 +1,7 @@
 import React, { memo, useCallback } from 'react';
 import { useReactFlow } from 'reactflow';
 import { Clock } from 'lucide-react';
-import BaseNode from '../atoms/flow/BaseNode';
+import { BaseNode } from '../atoms/flow/BaseNode';
 
 const DelayNode = ({ id, data, selected }) => {
   const { setNodes } = useReactFlow();

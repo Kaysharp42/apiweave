@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Copy, Trash2, RefreshCw, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal, ConfirmDialog } from './molecules';
-import Button from './atoms/Button';
+import { Button } from './atoms/Button';
 import API_BASE_URL from '../utils/api';
 
 const WebhookManager = () => {

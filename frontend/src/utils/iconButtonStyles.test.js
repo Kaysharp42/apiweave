@@ -4,7 +4,7 @@ import {
   buildIconButtonClassName,
   resolveIconButtonSizeClass,
   resolveIconButtonVariantClass,
-} from './iconButtonStyles.js';
+} from './iconButtonStyles.ts';
 
 test('resolveIconButtonSizeClass falls back to small size', () => {
   assert.equal(resolveIconButtonSizeClass('md'), 'h-9 w-9');

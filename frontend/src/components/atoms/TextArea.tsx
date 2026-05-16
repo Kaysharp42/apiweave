@@ -1,12 +1,17 @@
 import React, { useId, useRef, useEffect } from 'react';
 
-/**
- * TextArea — DaisyUI `textarea` with optional auto-resize.
- *
- * @param {'xs'|'sm'|'md'|'lg'} size
- * @param {boolean} autoResize — grow height to fit content
- */
-export default function TextArea({
+export interface TextAreaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'size'> {
+  label?: string;
+  error?: string;
+  helperText?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  autoResize?: boolean;
+  id?: string;
+  value?: string;
+  onChange?: React.ChangeEventHandler<HTMLTextAreaElement>;
+}
+
+export function TextArea({
   label,
   error,
   helperText,
@@ -17,17 +22,17 @@ export default function TextArea({
   value,
   onChange,
   ...rest
-}) {
+}: TextAreaProps) {
   const autoId = useId();
   const id = externalId ?? autoId;
-  const ref = useRef(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
 
-  const sizeClass = {
+  const sizeClass: Record<string, string> = {
     xs: 'textarea-xs',
     sm: 'textarea-sm',
     md: '',
     lg: 'textarea-lg',
-  }[size] ?? '';
+  };
 
   useEffect(() => {
     if (autoResize && ref.current) {
@@ -50,7 +55,7 @@ export default function TextArea({
         onChange={onChange}
         className={[
           'textarea textarea-bordered w-full',
-          sizeClass,
+          sizeClass[size] ?? '',
           error && 'textarea-error',
           autoResize && 'resize-none overflow-hidden',
           className,

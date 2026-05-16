@@ -2,7 +2,7 @@ import React, { memo, useState } from 'react';
 import { Handle, Position } from 'reactflow';
 import { Play } from 'lucide-react';
 import useCanvasStore from '../../stores/CanvasStore';
-import NodeActionMenu from '../atoms/flow/NodeActionMenu';
+import { NodeActionMenu } from '../atoms/flow/NodeActionMenu';
 
 const StartNode = ({ id, selected }) => {
   const [isExpanded, setIsExpanded] = useState(false);

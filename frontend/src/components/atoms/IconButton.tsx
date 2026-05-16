@@ -1,19 +1,16 @@
 import React from 'react';
 import Tippy from '@tippyjs/react';
-import 'tippy.js/dist/tippy.css';
 import { buildIconButtonClassName } from '../../utils/iconButtonStyles';
 
-/**
- * IconButton — Icon-only button with tooltip.
- *
- * Replaces the scattered `<button onClick><Icon /></button>` patterns
- * with a consistent, accessible, tooltip-bearing component.
- *
- * @param {string} tooltip     — tooltip text (required for a11y)
- * @param {'xs'|'sm'|'md'|'lg'} size
- * @param {'ghost'|'primary'|'error'|'warning'|'success'} variant
- */
-export default function IconButton({
+export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  tooltip?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  variant?: 'ghost' | 'primary' | 'error' | 'warning' | 'success';
+  disabled?: boolean;
+  children: React.ReactNode;
+}
+
+export function IconButton({
   children,
   tooltip,
   size = 'sm',
@@ -22,7 +19,7 @@ export default function IconButton({
   disabled = false,
   onClick,
   ...rest
-}) {
+}: IconButtonProps) {
   const buttonClassName = buildIconButtonClassName({
     size,
     variant,

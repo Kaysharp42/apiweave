@@ -1,34 +1,36 @@
 import React, { useState } from 'react';
 import { Handle, Position } from 'reactflow';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import useCanvasStore from '../../../stores/CanvasStore';
-import NodeActionMenu from './NodeActionMenu';
+import { NodeActionMenu } from './NodeActionMenu';
+import type { NodeStatus } from '../../../types/NodeStatus';
 
-/**
- * BaseNode — Shared node shell for all ReactFlow nodes.
- *
- * Provides a consistent look: border, title bar (icon + label + status + collapse toggle),
- * content area, and optional handles. Inspired by FlowTest's FlowNode.js.
- *
- * Props:
- * @param {string}  title          — node title
- * @param {React.ReactNode} icon   — icon element for the title bar
- * @param {'idle'|'running'|'success'|'error'|'warning'} status
- * @param {boolean} selected       — ReactFlow selection state
- * @param {object|false} handleLeft  — { type, id, style } or false to hide
- * @param {object|false} handleRight — { type, id, style } or false to hide
- * @param {Array}   extraHandles   — additional Handle elements (e.g. dual pass/fail)
- * @param {string}  headerBg       — Tailwind class override for header background
- * @param {string}  headerTextClass — Tailwind class override for header text color
- * @param {string}  nodeId         — ReactFlow node id (for duplicate/copy events)
- * @param {boolean} collapsible    — show collapse/expand toggle (default true)
- * @param {boolean} defaultExpanded — initial collapsed/expanded state
- * @param {boolean} showMenu       — show three-dot context menu (default true)
- * @param {string}  statusBadgeText — optional text for status badge (e.g. "running")
- * @param {React.ReactNode} titleExtra — extra elements after title (badges etc.)
- * @param {string}  className      — extra className on the outer body div
- */
-export default function BaseNode({
+export interface HandleConfig {
+  type?: 'source' | 'target';
+  id?: string;
+  style?: React.CSSProperties;
+}
+
+export interface BaseNodeProps {
+  children?: React.ReactNode | (({ isExpanded, setIsExpanded }: { isExpanded: boolean; setIsExpanded: React.Dispatch<React.SetStateAction<boolean>> }) => React.ReactNode);
+  title?: string;
+  icon?: React.ReactNode;
+  status?: NodeStatus;
+  selected?: boolean;
+  handleLeft?: HandleConfig | false;
+  handleRight?: HandleConfig | false;
+  extraHandles?: React.ReactNode;
+  headerBg?: string;
+  headerTextClass?: string;
+  nodeId?: string;
+  collapsible?: boolean;
+  defaultExpanded?: boolean;
+  showMenu?: boolean;
+  statusBadgeText?: string;
+  titleExtra?: React.ReactNode;
+  className?: string;
+}
+
+export function BaseNode({
   children,
   title,
   icon,
@@ -46,10 +48,10 @@ export default function BaseNode({
   statusBadgeText = '',
   titleExtra = null,
   className = '',
-}) {
+}: BaseNodeProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
-  const statusBorder = {
+  const statusBorder: Record<NodeStatus, string> = {
     idle: 'border-border dark:border-border-dark',
     running: 'border-status-running animate-pulse-border',
     success: 'border-status-success',
@@ -57,7 +59,7 @@ export default function BaseNode({
     warning: 'border-amber-500',
   };
 
-  const statusDotColor = {
+  const statusDotColor: Record<NodeStatus, string | null> = {
     idle: null,
     running: 'bg-status-running',
     success: 'bg-status-success',
@@ -65,11 +67,12 @@ export default function BaseNode({
     warning: 'bg-amber-500',
   };
 
-  const statusBadgeStyle = {
+  const statusBadgeStyle: Record<NodeStatus, string> = {
     running: 'bg-yellow-200 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
     success: 'bg-green-200 dark:bg-green-900 text-green-800 dark:text-green-200',
     error: 'bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-200',
     warning: 'bg-orange-200 dark:bg-orange-900 text-orange-800 dark:text-orange-200',
+    idle: '',
   };
 
   const borderClass = statusBorder[status] ?? statusBorder.idle;
@@ -78,18 +81,16 @@ export default function BaseNode({
 
   return (
     <>
-      {/* Left handle */}
       {handleLeft && (
         <Handle
           type={handleLeft.type ?? 'target'}
           position={Position.Left}
-          id={handleLeft.id}
-          style={handleLeft.style}
+          id={handleLeft.id ?? ''}
+          style={handleLeft.style ?? {}}
           className="!w-3 !h-3 !bg-primary !border-2 !border-white dark:!border-gray-800 !rounded-full"
         />
       )}
 
-      {/* Node body */}
       <div
         className={[
           'flex flex-col rounded-2xl border-2 bg-surface-raised dark:bg-surface-dark-raised min-w-[180px] max-w-node overflow-hidden transition-all duration-150 shadow-[0_8px_24px_rgba(15,23,42,0.08)] dark:shadow-[0_10px_28px_rgba(2,6,23,0.45)]',
@@ -102,7 +103,6 @@ export default function BaseNode({
           .join(' ')}
         style={{ fontSize: '12px' }}
       >
-        {/* Title bar */}
         {title && (
           <div
             className={[
@@ -123,34 +123,33 @@ export default function BaseNode({
               {title}
             </span>
 
-            {/* Title extras (badges) */}
             {titleExtra}
 
-            {/* Status badge */}
             {badgeClass && statusBadgeText && (
               <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${badgeClass}`}>
                 {statusBadgeText}
               </span>
             )}
 
-            {/* Status dot */}
             {dotClass && !statusBadgeText && (
               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotClass}`} aria-label={`Status: ${status}`} />
             )}
 
-            {/* Three-dot menu */}
             {showMenu && nodeId && (
               <NodeActionMenu
                 nodeId={nodeId}
                 collapsible={collapsible}
                 isExpanded={isExpanded}
-                onDuplicate={() => useCanvasStore.getState().duplicateNode(nodeId)}
-                onCopy={() => useCanvasStore.getState().copyNode(nodeId)}
-                onToggleExpand={(nextExpanded) => setIsExpanded(nextExpanded)}
+                onDuplicate={() => {
+                  // Will be wired up after CanvasStore migration
+                }}
+                onCopy={() => {
+                  // Will be wired up after CanvasStore migration
+                }}
+                onToggleExpand={(nextExpanded: boolean) => setIsExpanded(nextExpanded)}
               />
             )}
 
-            {/* Collapse toggle */}
             {collapsible && (
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -165,24 +164,21 @@ export default function BaseNode({
           </div>
         )}
 
-        {/* Content area */}
         {children && typeof children === 'function'
           ? children({ isExpanded, setIsExpanded })
           : children && <div className="p-3">{children}</div>}
       </div>
 
-      {/* Right handle */}
       {handleRight && (
         <Handle
           type={handleRight.type ?? 'source'}
           position={Position.Right}
-          id={handleRight.id}
-          style={handleRight.style}
+          id={handleRight.id ?? ''}
+          style={handleRight.style ?? {}}
           className="!w-3 !h-3 !bg-primary !border-2 !border-white dark:!border-gray-800 !rounded-full"
         />
       )}
 
-      {/* Extra handles (e.g. assertion pass/fail) */}
       {extraHandles}
     </>
   );

@@ -1,6 +1,6 @@
 import React from 'react';
 import { GitMerge, CheckCircle, SquareCheckBig, Filter, AlertTriangle, Clock, ArrowRight, Sparkles } from 'lucide-react';
-import BaseNode from '../atoms/flow/BaseNode';
+import { BaseNode } from '../atoms/flow/BaseNode';
 
 /* Reusable branch-mapping list */
 const BranchMapping = ({ branches }) => (
