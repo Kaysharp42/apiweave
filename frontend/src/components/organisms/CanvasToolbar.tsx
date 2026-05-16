@@ -1,8 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Save, History, Play, Code, Upload, Loader2, RefreshCw, ChevronDown } from 'lucide-react';
+import { Button } from '../atoms';
+// @ts-expect-error ButtonSelect.jsx not yet migrated
 import ButtonSelect from '../ButtonSelect';
+import type { CanvasToolbarProps } from '../../types/CanvasToolbarProps';
 
-export default function CanvasToolbar({
+export function CanvasToolbar({
   onSave,
   onHistory,
   onJsonEditor,
@@ -20,22 +23,22 @@ export default function CanvasToolbar({
   workflowId,
   resumeOptions = [],
   isResumeLoading = false,
-}) {
+}: CanvasToolbarProps) {
   const [isRunMenuOpen, setIsRunMenuOpen] = useState(false);
-  const runMenuRef = useRef(null);
+  const runMenuRef = useRef<HTMLDivElement>(null);
 
   const hasResumeOptions = resumeOptions.length > 0;
 
   useEffect(() => {
     if (!isRunMenuOpen) return undefined;
 
-    const onDocClick = (event) => {
-      if (!runMenuRef.current?.contains(event.target)) {
+    const onDocClick = (event: MouseEvent) => {
+      if (!runMenuRef.current?.contains(event.target as Node)) {
         setIsRunMenuOpen(false);
       }
     };
 
-    const onEscape = (event) => {
+    const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsRunMenuOpen(false);
       }
@@ -65,7 +68,7 @@ export default function CanvasToolbar({
       <div className="w-px h-6 bg-border-default dark:bg-border-default-dark mx-0.5" aria-hidden="true" />
 
       <ButtonSelect
-        key={`env-select-${workflowId}`}
+        key={`env-select-${workflowId ?? ''}`}
         options={[
           { value: '', label: 'No Environment' },
           ...environments.map((e) => ({ value: e.environmentId, label: e.name })),
@@ -76,44 +79,30 @@ export default function CanvasToolbar({
         buttonClass="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay text-text-primary dark:text-text-primary-dark border border-border-default dark:border-border-default-dark hover:bg-border-default dark:hover:bg-border-default-dark transition-colors h-8 whitespace-nowrap"
       />
 
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={onRefreshSwagger}
         disabled={!onRefreshSwagger || isSwaggerRefreshing}
-        className={[
-          'flex items-center gap-1 px-2 py-1.5 text-sm font-medium rounded-lg transition-colors h-8 whitespace-nowrap',
-          !onRefreshSwagger || isSwaggerRefreshing
-            ? 'text-text-muted dark:text-text-muted-dark bg-surface dark:bg-surface-dark cursor-not-allowed'
-            : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark',
-        ].join(' ')}
-        title="Refresh Swagger templates now"
-        aria-label={isSwaggerRefreshing ? 'Refreshing Swagger templates' : 'Refresh Swagger templates'}
+        className="h-8 whitespace-nowrap"
+        icon={<RefreshCw className={`w-4 h-4 flex-shrink-0 ${isSwaggerRefreshing ? 'animate-spin' : ''}`} />}
       >
-        <RefreshCw className={`w-4 h-4 flex-shrink-0 ${isSwaggerRefreshing ? 'animate-spin' : ''}`} />
         <span className="hidden lg:inline">{isSwaggerRefreshing ? 'Refreshing' : 'Refresh'}</span>
-      </button>
+      </Button>
 
       <div className="w-px h-6 bg-border-default dark:bg-border-default-dark mx-0.5" aria-hidden="true" />
 
       <div className="relative flex" ref={runMenuRef}>
-        <button
+        <Button
+          intent={isRunning ? 'warning' : 'success'}
+          size="sm"
           onClick={onRun}
           disabled={isRunning}
-          className={[
-            'flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-l-lg transition-colors h-8 whitespace-nowrap border-r border-black/10',
-            isRunning
-              ? 'bg-status-running/20 text-status-running cursor-wait'
-              : 'bg-status-success text-white hover:brightness-110',
-          ].join(' ')}
-          aria-label={isRunning ? 'Workflow running' : 'Run workflow'}
-          title="Run workflow (Ctrl+R)"
+          className="rounded-r-none h-8 whitespace-nowrap border-r border-black/10"
+          icon={isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
         >
-          {isRunning ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Play className="w-4 h-4" />
-          )}
-          <span>{isRunning ? 'Running…' : 'Run'}</span>
-        </button>
+          {isRunning ? 'Running…' : 'Run'}
+        </Button>
 
         <button
           onClick={() => setIsRunMenuOpen((prev) => !prev)}
@@ -189,7 +178,12 @@ export default function CanvasToolbar({
   );
 }
 
-function ToolbarButton({ icon: Icon, label, onClick, tooltip }) {
+function ToolbarButton({ icon: Icon, label, onClick, tooltip }: {
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  label: string;
+  onClick: () => void;
+  tooltip?: string;
+}) {
   return (
     <button
       onClick={onClick}

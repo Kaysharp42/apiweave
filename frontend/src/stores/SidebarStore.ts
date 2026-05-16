@@ -1,63 +1,66 @@
 import { create } from 'zustand';
+// @ts-expect-error api.js not yet migrated
 import API_BASE_URL from '../utils/api';
+import type { Workflow } from '../types/Workflow';
+import type { Collection } from '../types/Collection';
+import type { Environment } from '../types/Environment';
+import type { PaginationState } from '../types/PaginationState';
 
-/**
- * SidebarStore — Zustand store for sidebar data and refresh state.
- *
- * Replaces the fragile `window.dispatchEvent('workflowsNeedRefresh')`
- * and `window.dispatchEvent('collectionsChanged')` patterns used
- * by Sidebar, SidebarHeader, CollectionManager, etc.
- *
- * Components call `useSidebarStore.getState().refreshWorkflows()` instead
- * of firing a custom DOM event.
- */
-const useSidebarStore = create((set, get) => ({
-  // --- Data ---
+interface PaginatedWorkflowResponse {
+  workflows: Workflow[];
+  total: number;
+}
+
+interface SidebarState {
+  workflows: Workflow[];
+  collections: Collection[];
+  environments: Environment[];
+  pagination: PaginationState;
+  isRefreshing: boolean;
+  isLoadingMore: boolean;
+  searchQuery: string;
+  workflowVersion: number;
+  collectionVersion: number;
+  environmentVersion: number;
+  setSearchQuery: (q: string) => void;
+  signalWorkflowsRefresh: () => void;
+  signalCollectionsRefresh: () => void;
+  signalEnvironmentsRefresh: () => void;
+  fetchWorkflows: (skip?: number, append?: boolean, limit?: number, endpoint?: string) => Promise<void>;
+  fetchCollections: () => Promise<void>;
+  fetchEnvironments: () => Promise<void>;
+  refreshAll: (selectedNav: string) => Promise<void>;
+  setIsRefreshing: (v: boolean) => void;
+  setIsLoadingMore: (v: boolean) => void;
+  resetPagination: () => void;
+}
+
+const useSidebarStore = create<SidebarState>()((set, get) => ({
   workflows: [],
   collections: [],
   environments: [],
 
-  // --- Pagination (workflows view) ---
   pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
 
-  // --- UI state ---
   isRefreshing: false,
   isLoadingMore: false,
   searchQuery: '',
 
-  // --- Refresh version counter (subscribers react to changes) ---
   workflowVersion: 0,
   collectionVersion: 0,
   environmentVersion: 0,
 
-  // --- Actions ---
+  setSearchQuery: (q: string) => set({ searchQuery: q }),
 
-  setSearchQuery: (q) => set({ searchQuery: q }),
-
-  /**
-   * Trigger a workflows refresh. Components that hold workflow data
-   * should subscribe to `workflowVersion` and re-fetch accordingly.
-   * This avoids broadcasting a DOM event — a Zustand state bump
-   * causes a targeted re-render only in subscribing components.
-   */
   signalWorkflowsRefresh: () =>
     set((s) => ({ workflowVersion: s.workflowVersion + 1 })),
 
-  /**
-   * Trigger a collections refresh.
-   */
   signalCollectionsRefresh: () =>
     set((s) => ({ collectionVersion: s.collectionVersion + 1 })),
 
-  /**
-   * Trigger an environments refresh. Components that display environment
-   * data (EnvironmentSelector, Workspace, WorkflowCanvas) subscribe to
-   * `environmentVersion` and re-fetch accordingly.
-   */
   signalEnvironmentsRefresh: () =>
     set((s) => ({ environmentVersion: s.environmentVersion + 1 })),
 
-  /** Fetch workflows from API. */
   fetchWorkflows: async (skip = 0, append = false, limit = 20, endpoint = 'unattached') => {
     try {
       const url =
@@ -67,7 +70,7 @@ const useSidebarStore = create((set, get) => ({
 
       const response = await fetch(url);
       if (response.ok) {
-        const data = await response.json();
+        const data: PaginatedWorkflowResponse = await response.json();
         const prev = get().workflows;
         const newWorkflows = append ? [...prev, ...data.workflows] : data.workflows;
         set({
@@ -88,12 +91,11 @@ const useSidebarStore = create((set, get) => ({
     }
   },
 
-  /** Fetch collections from API. */
   fetchCollections: async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
-        const data = await response.json();
+        const data: Collection[] = await response.json();
         set({ collections: data, isRefreshing: false });
       }
     } catch (err) {
@@ -102,19 +104,17 @@ const useSidebarStore = create((set, get) => ({
     }
   },
 
-  /** Fetch environments from API. */
   fetchEnvironments: async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
-        const data = await response.json();
+        const data: Environment[] = await response.json();
         set({ environments: data });
       }
     } catch { /* silent */ }
   },
 
-  /** Convenience: full refresh for workflows + collections. */
-  refreshAll: async (selectedNav) => {
+  refreshAll: async (selectedNav: string) => {
     set({ isRefreshing: true });
     const { fetchWorkflows, fetchCollections, fetchEnvironments } = get();
     await fetchEnvironments();
@@ -126,8 +126,8 @@ const useSidebarStore = create((set, get) => ({
     }
   },
 
-  setIsRefreshing: (v) => set({ isRefreshing: v }),
-  setIsLoadingMore: (v) => set({ isLoadingMore: v }),
+  setIsRefreshing: (v: boolean) => set({ isRefreshing: v }),
+  setIsLoadingMore: (v: boolean) => set({ isLoadingMore: v }),
   resetPagination: () => set({ pagination: { skip: 0, limit: 20, total: 0, hasMore: false } }),
 }));
 

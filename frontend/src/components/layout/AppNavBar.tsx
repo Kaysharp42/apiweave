@@ -2,19 +2,31 @@ import React from 'react';
 import { Home, Settings, Webhook, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Transition } from '@headlessui/react';
 import Tippy from '@tippyjs/react';
+// @ts-expect-error CSS import without types
 import 'tippy.js/dist/tippy.css';
+import { IconButton } from '../atoms';
 import useNavigationStore from '../../stores/NavigationStore';
 import { AppNavBarItems, AppNavBarStyles } from '../../constants/AppNavBar';
+import type { NavSection } from '../../types/NavSection';
 
-const navItems = [
+type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
+
+interface NavItemConfig {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  disabled?: boolean;
+}
+
+const navItems: NavItemConfig[] = [
   {
-    id: AppNavBarItems.workflows.value,
-    label: AppNavBarItems.workflows.displayValue,
+    id: AppNavBarItems.workflows!.value,
+    label: AppNavBarItems.workflows!.displayValue,
     icon: Home,
   },
   {
-    id: AppNavBarItems.collections.value,
-    label: AppNavBarItems.collections.displayValue,
+    id: AppNavBarItems.collections!.value,
+    label: AppNavBarItems.collections!.displayValue,
     icon: LayoutGrid,
   },
   {
@@ -23,14 +35,14 @@ const navItems = [
     icon: Webhook,
   },
   {
-    id: AppNavBarItems.settings.value,
-    label: AppNavBarItems.settings.displayValue,
+    id: AppNavBarItems.settings!.value,
+    label: AppNavBarItems.settings!.displayValue,
     icon: Settings,
     disabled: true,
   },
 ];
 
-const AppNavBar = () => {
+export function AppNavBar() {
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
   const updateNavigationSelectedValue = useNavigationStore((state) => state.setNavState);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
@@ -46,12 +58,11 @@ const AppNavBar = () => {
       ].join(' ')}
       style={{
         width: isNavBarCollapsed
-          ? AppNavBarStyles.collapsedNavBarWidth.absolute + 'px'
-          : AppNavBarStyles.expandedNavBarWidth.absolute + 'px',
+          ? AppNavBarStyles.collapsedNavBarWidth!.absolute
+          : AppNavBarStyles.expandedNavBarWidth!.absolute,
       }}
       aria-label="Main navigation"
     >
-      {/* Navigation Items */}
       <div className="flex-1 pt-1">
         {navItems.map(({ id, label, icon: Icon, disabled }) => {
           const isSelected = navigationSelectedValue === id;
@@ -60,10 +71,9 @@ const AppNavBar = () => {
             <button
               key={id}
               className="relative w-full"
-              onClick={() => !disabled && updateNavigationSelectedValue(id)}
+              onClick={() => !disabled && updateNavigationSelectedValue(id as NavSection)}
               disabled={disabled}
             >
-              {/* Active indicator — 4px left border bar */}
               {isSelected && (
                 <span className="absolute left-0 top-0 h-full w-1 bg-primary dark:bg-cyan-400 rounded-r-sm" />
               )}
@@ -91,7 +101,6 @@ const AppNavBar = () => {
                     {label}
                   </span>
                 </Transition>
-                {/* "Soon" badge for disabled items */}
                 {disabled && !isNavBarCollapsed && (
                   <span className="badge badge-ghost badge-xs ml-auto text-xxs">Soon</span>
                 )}
@@ -99,7 +108,6 @@ const AppNavBar = () => {
             </button>
           );
 
-          // Wrap in tooltip when collapsed
           return isNavBarCollapsed ? (
             <Tippy
               key={id}
@@ -114,15 +122,14 @@ const AppNavBar = () => {
         })}
       </div>
 
-      {/* Collapse Toggle Button */}
-      <button
+      <IconButton
+        tooltip={isNavBarCollapsed ? 'Expand Navigation' : 'Collapse Navigation'}
+        size="sm"
         onClick={toggleNavBarCollapse}
-        className="flex items-center justify-center p-3 text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark transition-colors duration-200 border-t border-border dark:border-border-dark"
+        className="w-full rounded-none border-t border-border dark:border-border-dark justify-start"
       >
         {isNavBarCollapsed ? (
-          <Tippy content="Expand Navigation" placement="right">
-            <ChevronRight className="w-4 h-4" />
-          </Tippy>
+          <ChevronRight className="w-4 h-4" />
         ) : (
           <div className="flex items-center gap-2">
             <ChevronLeft className="w-4 h-4" />
@@ -139,9 +146,7 @@ const AppNavBar = () => {
             </Transition>
           </div>
         )}
-      </button>
+      </IconButton>
     </nav>
   );
-};
-
-export default AppNavBar;
+}

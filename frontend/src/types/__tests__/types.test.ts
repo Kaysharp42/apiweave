@@ -121,6 +121,7 @@ const _mockVariable: Variable = {
 
 const _mockEnvironment: Environment = {
   id: 'env-1',
+  environmentId: 'env-1',
   name: 'Production',
   variables: [_mockVariable],
   createdAt: '2026-01-01T00:00:00Z',
@@ -133,6 +134,7 @@ const _mockEnvironment: Environment = {
 
 const _mockCollection: Collection = {
   id: 'col-1',
+  collectionId: 'col-1',
   name: 'API Tests',
   workflowIds: ['wf-1', 'wf-2'],
   createdAt: '2026-01-01T00:00:00Z',

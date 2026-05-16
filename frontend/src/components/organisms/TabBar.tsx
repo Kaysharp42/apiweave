@@ -1,26 +1,22 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { IconButton } from '../atoms';
 import useTabStore from '../../stores/TabStore';
+import type { WorkspaceTab } from '../../types/WorkspaceTab';
 
-/**
- * TabBar — workspace tab strip for switching between open workflows.
- *
- * Features:
- * - Active tab highlight with primary accent
- * - Dirty (unsaved) indicator (•)
- * - Close button per tab (×)
- * - Middle-click to close
- * - Right-click context menu: Close, Close Others, Close All
- * - Horizontal scroll overflow with chevron buttons
- */
-export default function TabBar() {
+interface ContextMenuState {
+  x: number;
+  y: number;
+  tabId: string;
+}
+
+export function TabBar() {
   const { tabs, activeTabId, setActive, closeTab, closeOthers, closeAll } = useTabStore();
-  const scrollRef = useRef(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
-  const [contextMenu, setContextMenu] = useState(null); // { x, y, tabId }
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
-  // ---------- scroll overflow detection ----------
   const checkOverflow = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -42,17 +38,15 @@ export default function TabBar() {
     }
   }, [checkOverflow, tabs.length]);
 
-  const scroll = (dir) => {
+  const scroll = (dir: number) => {
     scrollRef.current?.scrollBy({ left: dir * 160, behavior: 'smooth' });
   };
 
-  // ---------- context menu ----------
-  const handleContextMenu = (e, tabId) => {
+  const handleContextMenu = (e: React.MouseEvent, tabId: string) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, tabId });
   };
 
-  // Close context menu on click anywhere
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
@@ -60,8 +54,7 @@ export default function TabBar() {
     return () => window.removeEventListener('click', close);
   }, [contextMenu]);
 
-  // ---------- middle-click close ----------
-  const handleMouseDown = (e, tabId) => {
+  const handleMouseDown = (e: React.MouseEvent, tabId: string) => {
     if (e.button === 1) {
       e.preventDefault();
       closeTab(tabId);
@@ -72,23 +65,22 @@ export default function TabBar() {
 
   return (
     <div className="relative flex items-stretch bg-surface-raised dark:bg-surface-dark-raised border-b border-border dark:border-border-dark select-none min-h-[36px]">
-      {/* Left scroll chevron */}
       {canScrollLeft && (
-        <button
+        <IconButton
+          tooltip="Scroll tabs left"
+          size="xs"
           onClick={() => scroll(-1)}
-          className="sticky left-0 z-10 flex items-center px-1 bg-surface-raised dark:bg-surface-dark-raised border-r border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
-          aria-label="Scroll tabs left"
+          className="sticky left-0 z-10 rounded-none border-r border-border dark:border-border-dark"
         >
-          <ChevronLeft className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
-        </button>
+          <ChevronLeft className="w-4 h-4" />
+        </IconButton>
       )}
 
-      {/* Scrollable tab strip */}
       <div
         ref={scrollRef}
         className="flex-1 flex items-stretch overflow-x-auto scrollbar-none"
       >
-        {tabs.map((tab) => {
+        {tabs.map((tab: WorkspaceTab) => {
           const isActive = tab.id === activeTabId;
           return (
             <button
@@ -100,19 +92,17 @@ export default function TabBar() {
                 'group relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors',
                 'border-r border-border dark:border-border-dark',
                 isActive
-                  ? 'bg-surface dark:bg-surface-dark text-primary dark:text-[#22d3ee] font-medium'
+                  ? 'bg-surface dark:bg-surface-dark text-primary dark:text-cyan-400 font-medium'
                   : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
               ]
                 .filter(Boolean)
                 .join(' ')}
               title={tab.name}
             >
-              {/* Active indicator — bottom accent bar */}
               {isActive && (
-                <span className="absolute bottom-0 inset-x-0 h-0.5 bg-primary dark:bg-[#22d3ee]" />
+                <span className="absolute bottom-0 inset-x-0 h-0.5 bg-primary dark:bg-cyan-400" />
               )}
 
-              {/* Tab name + dirty dot */}
               <span className="max-w-[160px] truncate">
                 {tab.isDirty && (
                   <span className="text-status-warning mr-0.5" aria-label="Unsaved changes">•</span>
@@ -120,7 +110,6 @@ export default function TabBar() {
                 {tab.name}
               </span>
 
-              {/* Close button — visible on hover or when active */}
               <span
                 role="button"
                 tabIndex={-1}
@@ -130,7 +119,7 @@ export default function TabBar() {
                 }}
                 className={[
                   'ml-1 p-0.5 rounded transition-colors',
-                  isActive || 'opacity-0 group-hover:opacity-100',
+                  isActive ? '' : 'opacity-0 group-hover:opacity-100',
                   'hover:bg-status-error/20 hover:text-status-error',
                 ].join(' ')}
                 aria-label={`Close ${tab.name}`}
@@ -142,18 +131,17 @@ export default function TabBar() {
         })}
       </div>
 
-      {/* Right scroll chevron */}
       {canScrollRight && (
-        <button
+        <IconButton
+          tooltip="Scroll tabs right"
+          size="xs"
           onClick={() => scroll(1)}
-          className="sticky right-0 z-10 flex items-center px-1 bg-surface-raised dark:bg-surface-dark-raised border-l border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
-          aria-label="Scroll tabs right"
+          className="sticky right-0 z-10 rounded-none border-l border-border dark:border-border-dark"
         >
-          <ChevronRight className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
-        </button>
+          <ChevronRight className="w-4 h-4" />
+        </IconButton>
       )}
 
-      {/* Context menu */}
       {contextMenu && (
         <div
           className="fixed z-50 min-w-[160px] rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-lg py-1 text-sm"

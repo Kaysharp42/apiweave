@@ -1,5 +1,6 @@
 export interface Collection {
   id: string;
+  collectionId: string;
   name: string;
   description?: string;
   workflowIds: string[];

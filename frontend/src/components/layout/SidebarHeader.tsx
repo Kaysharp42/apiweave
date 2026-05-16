@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Upload,
   Plus,
@@ -8,32 +8,45 @@ import {
   ChevronRight,
   User,
 } from 'lucide-react';
+// @ts-expect-error WorkflowExportImport.jsx not yet migrated
 import WorkflowExportImport from '../WorkflowExportImport';
+// @ts-expect-error HARImport.jsx not yet migrated
 import HARImport from '../HARImport';
+// @ts-expect-error OpenAPIImport.jsx not yet migrated
 import OpenAPIImport from '../OpenAPIImport';
+// @ts-expect-error CurlImport.jsx not yet migrated
 import CurlImport from '../CurlImport';
+// @ts-expect-error CollectionExportImport.jsx not yet migrated
 import CollectionExportImport from '../CollectionExportImport';
-import { Spinner } from '../atoms';
+import { Spinner, Button } from '../atoms';
 import { SearchInput } from '../molecules';
 import useSidebarStore from '../../stores/SidebarStore';
+import type { SidebarHeaderProps } from '../../types/SidebarHeaderProps';
 
-const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
+type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
+
+interface ImportMenuItem {
+  label: string;
+  icon: LucideIcon;
+  action: () => void;
+}
+
+export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: SidebarHeaderProps) {
   const [showWorkflowImportExport, setShowWorkflowImportExport] = useState(false);
   const [showHARImport, setShowHARImport] = useState(false);
   const [showOpenAPIImport, setShowOpenAPIImport] = useState(false);
   const [showCurlImport, setShowCurlImport] = useState(false);
   const [showImportMenu, setShowImportMenu] = useState(false);
   const [showCollectionImportExport, setShowCollectionImportExport] = useState(false);
-  const [collectionImportMode, setCollectionImportMode] = useState(null);
-  const importMenuRef = useRef(null);
+  const [collectionImportMode, setCollectionImportMode] = useState<string | null>(null);
+  const importMenuRef = useRef<HTMLDivElement>(null);
 
   const searchQuery = useSidebarStore((s) => s.searchQuery);
   const setSearchQuery = useSidebarStore((s) => s.setSearchQuery);
 
-  // Close menu when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (importMenuRef.current && !importMenuRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (importMenuRef.current && !importMenuRef.current.contains(event.target as Node)) {
         setShowImportMenu(false);
       }
     };
@@ -44,7 +57,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
     }
   }, [showImportMenu]);
 
-  const getNavLabel = () => {
+  const getNavLabel = (): string => {
     switch (selectedNav) {
       case 'workflows': return 'Workflows';
       case 'collections': return 'Collections';
@@ -54,15 +67,14 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
     }
   };
 
-  // --- Import menu items per nav ---
-  const workflowImportItems = [
+  const workflowImportItems: ImportMenuItem[] = [
     { label: 'Workflow', icon: Download, action: () => { setShowWorkflowImportExport(true); setShowImportMenu(false); } },
     { label: 'HAR File', icon: Upload, action: () => { setShowHARImport(true); setShowImportMenu(false); } },
     { label: 'OpenAPI', icon: Upload, action: () => { setShowOpenAPIImport(true); setShowImportMenu(false); } },
     { label: 'cURL', icon: Terminal, action: () => { setShowCurlImport(true); setShowImportMenu(false); } },
   ];
 
-  const collectionImportItems = [
+  const collectionImportItems: ImportMenuItem[] = [
     { label: 'Collection', icon: FolderOpen, action: () => { setCollectionImportMode('import-collection'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
     { label: 'HAR File', icon: Upload, action: () => { setCollectionImportMode('import-har'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
     { label: 'OpenAPI', icon: Upload, action: () => { setCollectionImportMode('import-openapi'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
@@ -76,7 +88,6 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
   return (
     <>
       <div className="flex flex-col border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
-        {/* Breadcrumb header */}
         <div className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-1 text-sm min-w-0">
             <User className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
@@ -89,25 +100,29 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
           </div>
         </div>
 
-        {/* Action buttons */}
         {showActions && (
           <div className="flex items-center gap-1 px-3 pb-2">
-            <button
+            <Button
+              variant="ghost"
+              intent="default"
+              size="sm"
               onClick={onCreateNew}
-              className="btn btn-ghost btn-sm gap-1.5 text-primary dark:text-primary-light hover:bg-primary/10 dark:hover:bg-primary-light/10 flex-1"
+              icon={<Plus className="w-4 h-4" />}
+              className="flex-1"
             >
-              <Plus className="w-4 h-4" />
               <span>{selectedNav === 'collections' ? 'Create' : 'New'}</span>
-            </button>
+            </Button>
 
             <div className="relative flex-1" ref={importMenuRef}>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowImportMenu(!showImportMenu)}
-                className="btn btn-ghost btn-sm gap-1.5 text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay w-full"
+                icon={<Upload className="w-4 h-4" />}
+                className="w-full"
               >
-                <Upload className="w-4 h-4" />
                 <span>Import</span>
-              </button>
+              </Button>
 
               {showImportMenu && (
                 <ul className="menu menu-sm bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg shadow-lg absolute top-full left-0 mt-1 z-20 min-w-[140px] p-1">
@@ -125,7 +140,6 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
           </div>
         )}
 
-        {/* Search input */}
         {showSearch && (
           <div className="px-3 pb-2.5">
             <SearchInput
@@ -138,7 +152,6 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
         )}
       </div>
 
-      {/* Modals — rendered outside the header layout */}
       {showWorkflowImportExport && (
         <WorkflowExportImport
           onClose={() => setShowWorkflowImportExport(false)}
@@ -154,7 +167,7 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
       {showCurlImport && <CurlImport onClose={() => setShowCurlImport(false)} />}
       {showCollectionImportExport && (
         <CollectionExportImport
-          mode={collectionImportMode}
+          mode={collectionImportMode ?? undefined}
           isOpen={true}
           onClose={() => {
             setShowCollectionImportExport(false);
@@ -169,6 +182,4 @@ const SidebarHeader = ({ selectedNav, onCreateNew, isRefreshing }) => {
       )}
     </>
   );
-};
-
-export default SidebarHeader;
+}

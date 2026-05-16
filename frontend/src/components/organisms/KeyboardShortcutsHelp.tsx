@@ -1,7 +1,9 @@
-import React from 'react';
+import { Fragment } from 'react';
 import { Modal } from '../molecules';
+import type { ShortcutGroup } from '../../types/ShortcutGroup';
+import type { KeyboardShortcutsHelpProps } from '../../types/KeyboardShortcutsHelpProps';
 
-const shortcutGroups = [
+const shortcutGroups: ShortcutGroup[] = [
   {
     title: 'General',
     shortcuts: [
@@ -39,9 +41,9 @@ const shortcutGroups = [
   },
 ];
 
-export default function KeyboardShortcutsHelp({ open, onClose }) {
+export function KeyboardShortcutsHelp({ open, onClose }: KeyboardShortcutsHelpProps) {
   return (
-    <Modal open={open} onClose={onClose} title="Keyboard Shortcuts" size="md">
+    <Modal isOpen={open} onClose={onClose} title="Keyboard Shortcuts" size="md">
       <div className="space-y-5 py-2">
         <p className="text-xs text-text-muted dark:text-text-muted-dark">
           Node copy/paste shortcuts are context-aware. When typing or selecting text in editors/modals,
@@ -63,14 +65,14 @@ export default function KeyboardShortcutsHelp({ open, onClose }) {
                   </span>
                   <div className="flex items-center gap-1">
                     {shortcut.keys.map((key, kIdx) => (
-                      <React.Fragment key={kIdx}>
+                      <Fragment key={kIdx}>
                         {kIdx > 0 && (
                           <span className="text-xs text-text-muted dark:text-text-muted-dark">+</span>
                         )}
                         <kbd className="kbd kbd-sm text-xs min-w-[24px] text-center">
                           {key}
                         </kbd>
-                      </React.Fragment>
+                      </Fragment>
                     ))}
                   </div>
                 </div>

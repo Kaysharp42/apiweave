@@ -1,41 +1,42 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Allotment } from 'allotment';
+// @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
-import AppNavBar from './AppNavBar';
-import Sidebar from './Sidebar';
-import Workspace from './Workspace';
-import MainHeader from './MainHeader';
-import MainFooter from './MainFooter';
+import { AppNavBar } from './AppNavBar';
+import { Sidebar } from './Sidebar';
+import { Workspace } from './Workspace';
+import { MainHeader } from './MainHeader';
+import { MainFooter } from './MainFooter';
+// @ts-expect-error SecretsPrompt.jsx not yet migrated
 import SecretsPrompt from '../SecretsPrompt';
 import useNavigationStore from '../../stores/NavigationStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
 import { HorizontalDivider } from '../atoms';
+// @ts-expect-error api.js not yet migrated
 import API_BASE_URL from '../../utils/api';
+import type { Environment } from '../../types/Environment';
 
-const MainLayout = () => {
+export function MainLayout() {
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
-  const [currentWorkflowId, setCurrentWorkflowId] = useState(null);
-  const [environmentWithSecrets, setEnvironmentWithSecrets] = useState(null);
+  const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
+  const [environmentWithSecrets, setEnvironmentWithSecrets] = useState<Environment | null>(null);
   const [showSecretsPrompt, setShowSecretsPrompt] = useState(false);
 
-  // Check for environments with secrets on mount
   useEffect(() => {
     const checkEnvironmentSecrets = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/environments`);
         if (response.ok) {
-          const environments = await response.json();
-          
-          // Find first environment with secrets that hasn't been entered yet
+          const environments: Environment[] = await response.json();
+
           for (const env of environments) {
             if (env.secrets && Object.keys(env.secrets).length > 0) {
-              // Check if secrets for this environment have been entered
               const secretsEntered = Object.keys(env.secrets).every((key) =>
                 sessionStorage.getItem(`secret_${key}`)
               );
-              
+
               if (!secretsEntered) {
                 setEnvironmentWithSecrets(env);
                 setShowSecretsPrompt(true);
@@ -52,7 +53,6 @@ const MainLayout = () => {
     checkEnvironmentSecrets();
   }, []);
 
-  // Re-check secrets when environments change (via Zustand store)
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);
   useEffect(() => {
     if (environmentVersion > 0) {
@@ -60,7 +60,7 @@ const MainLayout = () => {
         try {
           const response = await fetch(`${API_BASE_URL}/api/environments`);
           if (response.ok) {
-            const envs = await response.json();
+            const envs: Environment[] = await response.json();
             for (const env of envs) {
               if (env.isActive && env.secrets) {
                 for (const [, val] of Object.entries(env.secrets)) {
@@ -80,8 +80,7 @@ const MainLayout = () => {
     }
   }, [environmentVersion]);
 
-  // Collapsed: just the nav bar width. Expanded: nav bar + sidebar.
-  const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth.absolute;
+  const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth!.absolute;
   const expandedPreferred = 450;
   const expandedMin = 450;
   const expandedMax = 600;
@@ -93,7 +92,6 @@ const MainLayout = () => {
 
       <main className="flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
         <Allotment>
-          {/* Left: AppNavBar + Sidebar */}
           <Allotment.Pane
             preferredSize={isNavBarCollapsed ? collapsedWidth : expandedPreferred}
             minSize={isNavBarCollapsed ? collapsedWidth : expandedMin}
@@ -113,7 +111,6 @@ const MainLayout = () => {
             </div>
           </Allotment.Pane>
 
-          {/* Right: Workspace */}
           <Allotment.Pane>
             <Workspace onActiveTabChange={setCurrentWorkflowId} />
           </Allotment.Pane>
@@ -123,16 +120,14 @@ const MainLayout = () => {
       <HorizontalDivider />
       <MainFooter />
 
-      {/* Secrets Prompt */}
       <SecretsPrompt
         open={showSecretsPrompt && !!environmentWithSecrets}
-        environment={environmentWithSecrets || {}}
+        environment={environmentWithSecrets ?? { isActive: false, environmentId: '', name: '', secrets: {} }}
         onClose={() => setShowSecretsPrompt(false)}
         onSecretsProvided={() => setShowSecretsPrompt(false)}
       />
     </>
   );
-};
+}
 
 export default MainLayout;
-

@@ -1,45 +1,61 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Allotment } from 'allotment';
+// @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
+// @ts-expect-error WorkflowCanvas.jsx not yet migrated
 import WorkflowCanvas from '../WorkflowCanvas';
+// @ts-expect-error VariablesPanel.jsx not yet migrated
 import VariablesPanel from '../VariablesPanel';
+// @ts-expect-error WorkflowSettingsPanel.jsx not yet migrated
 import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
+// @ts-expect-error DynamicFunctionsHelper.jsx not yet migrated
 import DynamicFunctionsHelper from '../DynamicFunctionsHelper';
+// @ts-expect-error WorkflowContext.jsx not yet migrated
 import { WorkflowProvider } from '../../contexts/WorkflowContext';
-import { Settings, Sparkles, Package } from 'lucide-react';
+import { Settings, Sparkles, Package, PanelRightClose } from 'lucide-react';
 import { TabBar, KeyboardShortcutsHelp } from '../organisms';
-import { WorkspaceEmptyState, PromptDialog } from '../molecules';
+import { WorkspaceEmptyState, PromptDialog, Panel, PanelTabs } from '../molecules';
+import { IconButton } from '../atoms';
 import useTabStore from '../../stores/TabStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import useNavigationStore from '../../stores/NavigationStore';
+// @ts-expect-error useKeyboardShortcuts.js not yet migrated
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
+// @ts-expect-error api.js not yet migrated
 import API_BASE_URL from '../../utils/api';
+import type { WorkspaceProps } from '../../types/WorkspaceProps';
+import type { WorkspaceTab } from '../../types/WorkspaceTab';
+import type { TabItem } from '../../types/TabItem';
 
-const Workspace = ({ onActiveTabChange }) => {
+const panelTabs: TabItem[] = [
+  { key: 'variables', icon: Package, label: 'Variables' },
+  { key: 'dynamic', icon: Sparkles, label: 'Functions' },
+  { key: 'settings', icon: Settings, label: 'Settings' },
+];
+
+export function Workspace({ onActiveTabChange }: WorkspaceProps) {
   const { tabs, activeTabId, openTab, closeTab, activateNextTab, activatePrevTab } = useTabStore();
   const [showVariablesPanel, setShowVariablesPanel] = useState(false);
   const [activePanelTab, setActivePanelTab] = useState('variables');
-  const [environmentNames, setEnvironmentNames] = useState({});
+  const [environmentNames, setEnvironmentNames] = useState<Record<string, string>>({});
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showNewWorkflowPrompt, setShowNewWorkflowPrompt] = useState(false);
 
-  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const activeTab: WorkspaceTab | undefined = tabs.find((t) => t.id === activeTabId);
 
-  // Notify parent when activeTabId changes
   useEffect(() => {
     if (onActiveTabChange) {
       onActiveTabChange(activeTabId);
     }
   }, [activeTabId, onActiveTabChange]);
 
-  // ---------- environment names ----------
   useEffect(() => {
     const fetchEnvironments = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/environments`);
         if (response.ok) {
-          const envs = await response.json();
-          const namesMap = {};
+          const envs: Array<{ environmentId: string; name: string }> = await response.json();
+          const namesMap: Record<string, string> = {};
           envs.forEach((env) => {
             namesMap[env.environmentId] = env.name;
           });
@@ -52,9 +68,6 @@ const Workspace = ({ onActiveTabChange }) => {
     fetchEnvironments();
   }, []);
 
-  // (openWorkflow bridge removed — all callers now use useTabStore.openTab() directly)
-
-  // ---------- React to environment version changes from SidebarStore ----------
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);
   useEffect(() => {
     if (environmentVersion > 0) {
@@ -62,8 +75,8 @@ const Workspace = ({ onActiveTabChange }) => {
         try {
           const response = await fetch(`${API_BASE_URL}/api/environments`);
           if (response.ok) {
-            const envs = await response.json();
-            const namesMap = {};
+            const envs: Array<{ environmentId: string; name: string }> = await response.json();
+            const namesMap: Record<string, string> = {};
             envs.forEach((env) => {
               namesMap[env.environmentId] = env.name;
             });
@@ -77,12 +90,11 @@ const Workspace = ({ onActiveTabChange }) => {
     }
   }, [environmentVersion]);
 
-  // ---------- empty-state handler: create new workflow ----------
   const handleNewWorkflow = useCallback(() => {
     setShowNewWorkflowPrompt(true);
   }, []);
 
-  const handleCreateWorkflow = useCallback(async (name) => {
+  const handleCreateWorkflow = useCallback(async (name: string) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/workflows`, {
         method: 'POST',
@@ -98,7 +110,6 @@ const Workspace = ({ onActiveTabChange }) => {
       if (response.ok) {
         const workflow = await response.json();
         openTab(workflow);
-        // Signal sidebar to refresh via Zustand store
         useSidebarStore.getState().signalWorkflowsRefresh();
       }
     } catch (error) {
@@ -106,7 +117,6 @@ const Workspace = ({ onActiveTabChange }) => {
     }
   }, [openTab]);
 
-  // ---------- keyboard shortcuts via mousetrap ----------
   useKeyboardShortcuts({
     onNewWorkflow: handleNewWorkflow,
     onCloseTab: () => { if (activeTabId) closeTab(activeTabId); },
@@ -114,15 +124,12 @@ const Workspace = ({ onActiveTabChange }) => {
     onPrevTab: activatePrevTab,
     onToggleSidebar: () => useNavigationStore.getState().toggleNavBarCollapse(),
     onShowShortcutsHelp: () => setShowShortcutsHelp(true),
-    // onSave, onRun, onToggleJsonEditor, onToggleEnvironmentManager are handled by WorkflowCanvas
   });
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-surface dark:bg-surface-dark">
-      {/* Tab Bar */}
       <TabBar />
 
-      {/* Workspace Content */}
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
         {activeTab ? (
           <WorkflowProvider
@@ -130,20 +137,17 @@ const Workspace = ({ onActiveTabChange }) => {
             workflowId={activeTab.id}
             initialWorkflow={activeTab.workflow}
           >
-            {/* Environment Context Bar */}
             {activeTab.workflow?.environmentId && (
-              <div className="px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 flex items-center gap-2 text-sm">
-                <span className="text-blue-700 dark:text-blue-300">Running in environment:</span>
-                <span className="font-semibold text-blue-900 dark:text-blue-200">
-                  {environmentNames[activeTab.workflow.environmentId] || 'Loading...'}
+              <div className="px-3 py-2 bg-primary/5 dark:bg-primary/10 border-b border-primary/20 dark:border-primary/20 flex items-center gap-2 text-sm">
+                <span className="text-primary dark:text-cyan-400">Running in environment:</span>
+                <span className="font-semibold text-text-primary dark:text-text-primary-dark">
+                  {environmentNames[activeTab.workflow.environmentId] ?? 'Loading...'}
                 </span>
               </div>
             )}
 
-            {/* Main Layout */}
             <div className="flex-1 overflow-hidden">
               <Allotment className="h-full">
-                {/* Left: Canvas */}
                 <Allotment.Pane>
                   <div className="h-full w-full">
                     <WorkflowCanvas
@@ -156,58 +160,32 @@ const Workspace = ({ onActiveTabChange }) => {
                   </div>
                 </Allotment.Pane>
 
-                {/* Right: Variables & Settings Panel (Conditional) */}
                 {showVariablesPanel && (
                   <Allotment.Pane preferredSize={320} minSize={280}>
-                    <div className="flex flex-col h-full bg-surface-raised dark:bg-surface-dark-raised border-l border-border-default dark:border-border-default-dark">
-                      {/* Panel Header with Tabs */}
-                      <div className="bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border-default dark:border-border-default-dark flex flex-col">
-                        <div className="flex items-center justify-between px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setShowVariablesPanel(false)}
-                              className="p-1.5 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay rounded transition-colors flex-shrink-0"
-                              title="Collapse panel"
-                              aria-label="Collapse panel"
-                            >
-                              <svg width="16" height="16" viewBox="0 0 20 20" focusable="false" aria-hidden="true" fill="currentColor" className="text-text-secondary dark:text-text-secondary-dark">
-                                <path d="M16 16V4h2v12h-2zM6 9l2.501-2.5-1.5-1.5-5 5 5 5 1.5-1.5-2.5-2.5h8V9H6z" />
-                              </svg>
-                            </button>
-
-                            <div className="flex gap-1 overflow-x-auto scrollbar-thin">
-                            {[
-                              { key: 'variables', icon: Package, label: 'Variables' },
-                              { key: 'dynamic', icon: Sparkles, label: 'Functions' },
-                              { key: 'settings', icon: Settings, label: 'Settings' },
-                            ].map(({ key, icon: Icon, label }) => (
-                              <button
-                                key={key}
-                                onClick={() => setActivePanelTab(key)}
-                                className={[
-                                  'px-2 py-1 text-xs font-medium rounded transition-colors flex items-center gap-1 whitespace-nowrap',
-                                  activePanelTab === key
-                                    ? 'bg-primary dark:bg-primary-dark text-white'
-                                    : 'bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark hover:bg-border-default dark:hover:bg-border-default-dark',
-                                ].join(' ')}
-                                title={`Workflow ${label}`}
-                              >
-                                <Icon className="w-4 h-4" />
-                                {label}
-                              </button>
-                            ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Panel Content based on active tab */}
+                    <Panel
+                      title=""
+                      collapsible={false}
+                      headerActions={
+                        <IconButton
+                          tooltip="Collapse panel"
+                          size="xs"
+                          onClick={() => setShowVariablesPanel(false)}
+                        >
+                          <PanelRightClose className="w-4 h-4" />
+                        </IconButton>
+                      }
+                    >
+                      <PanelTabs
+                        tabs={panelTabs}
+                        activeTab={activePanelTab}
+                        onTabChange={setActivePanelTab}
+                      />
                       <div className="flex-1 overflow-hidden">
                         {activePanelTab === 'variables' && <VariablesPanel />}
                         {activePanelTab === 'dynamic' && <DynamicFunctionsHelper />}
                         {activePanelTab === 'settings' && <WorkflowSettingsPanel />}
                       </div>
-                    </div>
+                    </Panel>
                   </Allotment.Pane>
                 )}
               </Allotment>
@@ -229,6 +207,4 @@ const Workspace = ({ onActiveTabChange }) => {
       />
     </div>
   );
-};
-
-export default Workspace;
+}
