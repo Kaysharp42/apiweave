@@ -5,6 +5,7 @@ import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
 import { Button } from './atoms/Button';
 import { Input, TextArea } from './atoms';
+import { BeautifyButton } from './molecules';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { getNodeModalTypeName } from '../utils/nodeModalMeta';
 import { formatNodeOutputDuration, getNodeOutputStatusClass } from '../utils/nodeOutputStatus';
@@ -306,6 +307,7 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
   const headersRef = useRef(initialConfig.headers || '');
   const cookiesRef = useRef(initialConfig.cookies || '');
   const bodyRef = useRef(initialConfig.body || '');
+  const [bodyValue, setBodyValue] = useState(initialConfig.body || '');
   const timeoutRef = useRef(initialConfig.timeout || 30);
   const fileUploadsRef = useRef(initialConfig.fileUploads || []);
   const [fileUploads, setFileUploads] = useState<FileUpload[]>(initialConfig.fileUploads || []);
@@ -430,16 +432,29 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
               label="Request Body"
               hint="JSON format supported"
             >
-              <TextArea
-                defaultValue={initialConfig.body || ''}
-                onBlur={() => updateRef()}
-                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
-                  bodyRef.current = e.target.value;
-                }}
-                className="font-mono"
-                placeholder='{"key": "{{variables.value}}"}'
-                rows={6}
-              />
+              <div className="relative">
+                <TextArea
+                  value={bodyValue}
+                  onBlur={() => { bodyRef.current = bodyValue; updateRef(); }}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
+                    setBodyValue(e.target.value);
+                    bodyRef.current = e.target.value;
+                  }}
+                  className="font-mono"
+                  placeholder='{"key": "{{variables.value}}"}'
+                  rows={6}
+                />
+                <div className="absolute top-2 right-2 z-10">
+                  <BeautifyButton
+                    value={bodyValue}
+                    onChange={(val) => {
+                      setBodyValue(val);
+                      bodyRef.current = val;
+                      updateRef();
+                    }}
+                  />
+                </div>
+              </div>
             </FormField>
           </div>
         )}
@@ -489,6 +504,7 @@ HTTPRequestConfig.displayName = 'HTTPRequestConfig';
 
 const OutputPanel = ({ node, initialConfig, output }: OutputPanelProps) => {
   const [activeTab, setActiveTab] = useState('body');
+  const [beautifyBody, setBeautifyBody] = useState(true);
 
   const statusCode = output?.statusCode as number | undefined;
   const headers = (output?.headers as Record<string, unknown>) || {};
@@ -497,9 +513,21 @@ const OutputPanel = ({ node, initialConfig, output }: OutputPanelProps) => {
   const statusColor = getNodeOutputStatusClass(statusCode);
   const durationLabel = formatNodeOutputDuration((output?.duration) as number | undefined);
 
+  const formatBodyValue = (value: unknown): string => {
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return beautifyBody ? JSON.stringify(parsed, null, 2) : JSON.stringify(parsed);
+      } catch {
+        return value;
+      }
+    }
+    return beautifyBody ? JSON.stringify(value, null, 2) : JSON.stringify(value);
+  };
+
   const CodeBlock = ({ value }: { value: unknown }) => (
     <pre className="w-full h-full overflow-auto p-4 text-xs text-text-secondary dark:text-text-secondary-dark font-mono bg-surface dark:bg-surface-dark border-0 leading-relaxed">
-      {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
+      {activeTab === 'body' ? formatBodyValue(value) : (typeof value === 'string' ? value : JSON.stringify(value, null, 2))}
     </pre>
   );
 
@@ -548,35 +576,46 @@ const OutputPanel = ({ node, initialConfig, output }: OutputPanelProps) => {
             </div>
           </div>
 
-          <div className="flex-shrink-0 px-4 py-2 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark flex gap-1 overflow-x-auto">
-            <Button
-              onClick={() => setActiveTab('body')}
-              variant={activeTab === 'body' ? 'primary' : 'ghost'}
-              size="xs"
-            >
-              Body
-            </Button>
-            <Button
-              onClick={() => setActiveTab('headers')}
-              variant={activeTab === 'headers' ? 'primary' : 'ghost'}
-              size="xs"
-            >
-              Headers ({Object.keys(headers).length})
-            </Button>
-            <Button
-              onClick={() => setActiveTab('cookies')}
-              variant={activeTab === 'cookies' ? 'primary' : 'ghost'}
-              size="xs"
-            >
-              Cookies ({Object.keys(cookies).length})
-            </Button>
-            <Button
-              onClick={() => setActiveTab('raw')}
-              variant={activeTab === 'raw' ? 'primary' : 'ghost'}
-              size="xs"
-            >
-              Raw
-            </Button>
+          <div className="flex-shrink-0 px-4 py-2 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark flex items-center justify-between">
+            <div className="flex gap-1 overflow-x-auto">
+              <Button
+                onClick={() => setActiveTab('body')}
+                variant={activeTab === 'body' ? 'primary' : 'ghost'}
+                size="xs"
+              >
+                Body
+              </Button>
+              <Button
+                onClick={() => setActiveTab('headers')}
+                variant={activeTab === 'headers' ? 'primary' : 'ghost'}
+                size="xs"
+              >
+                Headers ({Object.keys(headers).length})
+              </Button>
+              <Button
+                onClick={() => setActiveTab('cookies')}
+                variant={activeTab === 'cookies' ? 'primary' : 'ghost'}
+                size="xs"
+              >
+                Cookies ({Object.keys(cookies).length})
+              </Button>
+              <Button
+                onClick={() => setActiveTab('raw')}
+                variant={activeTab === 'raw' ? 'primary' : 'ghost'}
+                size="xs"
+              >
+                Raw
+              </Button>
+            </div>
+            {activeTab === 'body' && body !== undefined && body !== null && (
+              <button
+                onClick={() => setBeautifyBody((prev) => !prev)}
+                className="text-xs px-2 py-1 rounded hover:bg-surface dark:hover:bg-surface-dark transition-colors text-text-secondary dark:text-text-secondary-dark"
+                title={beautifyBody ? 'Minify JSON' : 'Beautify JSON'}
+              >
+                {beautifyBody ? '{ }' : '{}'}
+              </button>
+            )}
           </div>
 
           <div className="flex-1 overflow-auto bg-surface dark:bg-surface-dark">

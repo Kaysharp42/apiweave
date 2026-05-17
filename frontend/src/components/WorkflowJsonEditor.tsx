@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { Button } from './atoms/Button';
+import { BeautifyButton } from './molecules';
 
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows
@@ -726,10 +727,15 @@ export function WorkflowJsonEditor({
         {/* Footer / hint */}
         <div className="flex items-center justify-between px-5 py-2 border-t border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-[10px] text-text-muted dark:text-text-muted-dark">
           {viewMode === 'json' ? (
-            <>
+            <div className="flex items-center gap-3 w-full">
               <span>{lineCount} lines</span>
+              <div className="flex-1" />
+              <BeautifyButton
+                value={value}
+                onChange={setValue}
+              />
               <span>Ctrl+S to apply &middot; Esc to close</span>
-            </>
+            </div>
           ) : (
             <>
               <span>{buildAIPrompt(workflowJson, includeWorkflow).length.toLocaleString()} characters</span>

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Copy, Trash2, RefreshCw, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
-import { Modal, ConfirmDialog } from './molecules';
-import { Button } from './atoms/Button';
+import { Modal, ConfirmDialog, FormField } from './molecules';
+import { Button, Input, IconButton } from './atoms';
 import { Badge } from './atoms/Badge';
 import API_BASE_URL from '../utils/api';
 import type { Workflow } from '../types/Workflow';
@@ -291,20 +291,20 @@ export function WebhookManager() {
               <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">Webhook URL:</span>
               <div className="flex items-center gap-2 mt-1">
                 <input type="text" readOnly value={wh.url} className="input input-bordered input-sm flex-1 font-mono text-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
-                <Button onClick={() => copyToClipboard(wh.url, `url-${wh.webhookId}`)} variant="ghost" size="xs" title="Copy URL">
-                  {copySuccess[`url-${wh.webhookId}`] ? <Check className="w-3.5 h-3.5 text-status-success" /> : <Copy className="w-3.5 h-3.5" />}
-                </Button>
+                <IconButton onClick={() => copyToClipboard(wh.url, `url-${wh.webhookId}`)} variant="ghost" size="sm" title="Copy URL">
+                  {copySuccess[`url-${wh.webhookId}`] ? <Check className="w-4 h-4 text-status-success" /> : <Copy className="w-4 h-4" />}
+                </IconButton>
               </div>
             </div>
 
             {/* Actions */}
             <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-border-dark">
-              <Button onClick={() => viewLogs(wh)} variant="ghost" size="xs">View Logs</Button>
-              <Button onClick={() => { setWebhookToRegenerate(wh); setShowRegenerateModal(true); }} variant="ghost" size="xs" intent="warning">
-                <RefreshCw className="w-3 h-3" /> Regenerate
+              <Button onClick={() => viewLogs(wh)} variant="ghost" size="sm">View Logs</Button>
+              <Button onClick={() => { setWebhookToRegenerate(wh); setShowRegenerateModal(true); }} variant="ghost" size="sm" intent="warning">
+                <RefreshCw className="w-3.5 h-3.5" /> Regenerate
               </Button>
-              <Button onClick={() => setDeleteTarget(wh.webhookId)} variant="ghost" size="xs" intent="error">
-                <Trash2 className="w-3 h-3" /> Delete
+              <Button onClick={() => setDeleteTarget(wh.webhookId)} variant="ghost" size="sm" intent="error">
+                <Trash2 className="w-3.5 h-3.5" /> Delete
               </Button>
             </div>
           </div>
@@ -316,69 +316,63 @@ export function WebhookManager() {
       {/* Create Webhook */}
       <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Webhook" size="sm"
         footer={<div className="flex gap-3 w-full"><Button onClick={() => setShowCreateModal(false)} variant="ghost" fullWidth>Cancel</Button><Button onClick={createWebhook} variant="primary" fullWidth>Create</Button></div>}>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Resource Type</label>
+        <div className="space-y-4 p-5">
+          <FormField label="Resource Type">
             <select value={newWebhookData.resourceType} onChange={(e) => setNewWebhookData({ ...newWebhookData, resourceType: e.target.value as 'workflow' | 'collection', resourceId: '' })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
               <option value="workflow">Workflow</option>
               <option value="collection">Collection</option>
             </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">{newWebhookData.resourceType === 'workflow' ? 'Workflow' : 'Collection'}</label>
+          </FormField>
+          <FormField label={newWebhookData.resourceType === 'workflow' ? 'Workflow' : 'Collection'}>
             <select value={newWebhookData.resourceId} onChange={(e) => setNewWebhookData({ ...newWebhookData, resourceId: e.target.value })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
-              <option value="">Select {newWebhookData.resourceType}\u2026</option>
+              <option value="">Select {newWebhookData.resourceType}…</option>
               {newWebhookData.resourceType === 'workflow'
                 ? (workflows || []).map(w => <option key={w.workflowId} value={w.workflowId}>{w.name}</option>)
                 : (collections || []).map(c => <option key={c.collectionId} value={c.collectionId}>{c.name}</option>)}
             </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Environment (Optional)</label>
+          </FormField>
+          <FormField label="Environment (Optional)">
             <select value={newWebhookData.environmentId} onChange={(e) => setNewWebhookData({ ...newWebhookData, environmentId: e.target.value })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
               <option value="">None</option>
               {(environments || []).map(env => <option key={env.environmentId} value={env.environmentId}>{env.name}</option>)}
             </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Description (Optional)</label>
-            <input type="text" value={newWebhookData.description} onChange={(e) => setNewWebhookData({ ...newWebhookData, description: e.target.value })} placeholder="e.g., Production deployment webhook" className="input input-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark" />
-          </div>
+          </FormField>
+          <FormField label="Description (Optional)">
+            <Input type="text" value={newWebhookData.description} onChange={(e) => setNewWebhookData({ ...newWebhookData, description: e.target.value })} placeholder="e.g., Production deployment webhook" className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark" />
+          </FormField>
         </div>
       </Modal>
 
       {/* Credentials Modal */}
       <Modal isOpen={showCredentialsModal && !!webhookCredentials} onClose={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} title="Webhook Credentials" size="md"
         footer={<Button onClick={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} variant="primary" fullWidth>I've Saved the Credentials</Button>}>
-        <div className="space-y-4">
+        <div className="space-y-4 p-5">
           <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
-            <p className="text-sm text-text-primary dark:text-text-primary-dark">\u26a0\ufe0f <strong>Important:</strong> Copy these credentials now. They will not be shown again!</p>
+            <p className="text-sm text-text-primary dark:text-text-primary-dark">⚠️ <strong>Important:</strong> Copy these credentials now. They will not be shown again!</p>
           </div>
           {webhookCredentials && (['url', 'token', 'hmacSecret'] as const).map((field) => {
             const labels: Record<string, string> = { url: 'Webhook URL', token: 'Webhook Token (X-Webhook-Token header)', hmacSecret: 'HMAC Secret (for signature validation)' };
             const key = `cred-${field}`;
             return (
-              <div key={field}>
-                <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">{labels[field]}</label>
+              <FormField key={field} label={labels[field] ?? ''}>
                 <div className="flex items-center gap-2">
                   <input type="text" readOnly value={webhookCredentials[field]} className="input input-bordered flex-1 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
-                  <Button onClick={() => copyToClipboard(webhookCredentials[field], key)} variant="primary" size="sm">
+                  <IconButton onClick={() => copyToClipboard(webhookCredentials[field], key)} variant="primary" size="sm">
                     {copySuccess[key] ? <Check className="w-4 h-4" /> : 'Copy'}
-                  </Button>
+                  </IconButton>
                 </div>
-              </div>
+              </FormField>
             );
           })}
           {webhookCredentials && (
-            <div>
-              <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">cURL Example</label>
+            <FormField label="cURL Example">
               <pre className="text-xs bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg p-3 overflow-x-auto font-mono">
 {`curl -X POST "${webhookCredentials.url}" \\
   -H "X-Webhook-Token: ${webhookCredentials.token}" \\
   -H "Content-Type: application/json" \\
   -d '{}'`}
               </pre>
-            </div>
+            </FormField>
           )}
         </div>
       </Modal>

@@ -62,7 +62,14 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
     }
 
     if (variant === 'ghost') {
-      return 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay';
+      const intentMap: Record<ButtonIntent, string> = {
+        default: 'text-text-secondary dark:text-white hover:bg-surface-overlay dark:hover:bg-white/10',
+        success: 'text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30',
+        error: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30',
+        warning: 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30',
+        info: 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30',
+      };
+      return intentMap[intent];
     }
 
     return '';

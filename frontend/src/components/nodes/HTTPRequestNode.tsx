@@ -4,6 +4,7 @@ import { useWorkflow } from '../../contexts/WorkflowContext';
 import { BaseNode } from '../atoms/flow/BaseNode';
 import FileUploadSection, { type FileUpload } from '../FileUploadSection';
 import { Puzzle, Plus, Trash2, CheckCircle, ArrowRight, AlertTriangle, XCircle, ChevronDown, ChevronUp, Snowflake, ExternalLink, Clock3 } from 'lucide-react';
+import { BeautifyButton } from '../molecules';
 import type { NodeStatus } from '../../types/NodeStatus';
 import type { HttpMethod } from '../../types/HttpMethod';
 
@@ -232,11 +233,24 @@ const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
 
 const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
   const [isBodyExpanded, setIsBodyExpanded] = useState(false);
+  const [isBodyBeautified, setIsBodyBeautified] = useState(true);
 
   const bodyStr = useMemo(() => {
     if (!result?.body) return '';
-    return typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2);
-  }, [result?.body]);
+    const raw = typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2);
+    if (!isBodyBeautified) {
+      try {
+        return JSON.stringify(JSON.parse(raw));
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  }, [result?.body, isBodyBeautified]);
+
+  const handleToggleBodyFormat = useCallback(() => {
+    setIsBodyBeautified((prev) => !prev);
+  }, []);
 
   if (!result) return null;
 
@@ -292,13 +306,22 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
         <div className={`mt-1 ${status === 'error' ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded' : ''}`}>
           <div className={`text-[10px] font-semibold mb-0.5 flex items-center justify-between ${status === 'error' ? 'text-red-700 dark:text-red-300' : 'text-text-secondary dark:text-text-secondary-dark'}`}>
             <span>Body{status === 'error' ? ' (Error)' : ''}</span>
-            <button
-              onClick={() => setIsBodyExpanded(!isBodyExpanded)}
-              className="p-0.5 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay rounded transition-colors nodrag"
-              title={isBodyExpanded ? 'Collapse' : 'Expand'}
-            >
-              {isBodyExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={handleToggleBodyFormat}
+                className="p-0.5 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay rounded transition-colors nodrag"
+                title={isBodyBeautified ? 'Minify JSON' : 'Beautify JSON'}
+              >
+                <Puzzle className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setIsBodyExpanded(!isBodyExpanded)}
+                className="p-0.5 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay rounded transition-colors nodrag"
+                title={isBodyExpanded ? 'Collapse' : 'Expand'}
+              >
+                {isBodyExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+            </div>
           </div>
           <textarea
             className={`w-full px-1.5 py-1 border text-[10px] font-mono nodrag rounded overflow-y-auto ${status === 'error' ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
@@ -464,13 +487,21 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
               {method !== 'GET' && (
                 <div>
                   <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">Body</label>
-                  <textarea
-                    className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                    rows={3}
-                    placeholder={'{\n  "key": "value"\n}'}
-                    value={data.config?.body ?? ''}
-                    onChange={(e) => updateNodeData('body', e.target.value)}
-                  />
+                  <div className="relative">
+                    <textarea
+                      className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                      rows={3}
+                      placeholder={'{\n  "key": "value"\n}'}
+                      value={data.config?.body ?? ''}
+                      onChange={(e) => updateNodeData('body', e.target.value)}
+                    />
+                    <div className="absolute top-1 right-1">
+                      <BeautifyButton
+                        value={data.config?.body ?? ''}
+                        onChange={(val) => updateNodeData('body', val)}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 

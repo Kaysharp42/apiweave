@@ -1,4 +1,5 @@
 // Molecules — composite components built from atoms
+export { BeautifyButton } from './BeautifyButton';
 export { Panel } from './Panel';
 export { PanelTabs } from './PanelTabs';
 export { FormField } from './FormField';
