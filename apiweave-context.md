@@ -249,6 +249,74 @@ These files MUST NEVER be included in commits:
 
 ---
 
+## MCP Architecture
+
+APIWeave exposes an MCP (Model Context Protocol) server so AI agents can manage workflows, environments, collections, and executions programmatically.
+
+### Transport Strategy
+
+| Transport | Use Case | Entry Point |
+|-----------|----------|-------------|
+| **stdio** | Local CLI/desktop agents | `backend/mcp_stdio.py` |
+| **Streamable HTTP** | IDE/browser/remote agents | Mounted at `/mcp` in `backend/app/main.py` |
+
+### File Structure
+
+```
+backend/
+  app/
+    mcp/
+      __init__.py
+      server.py              FastMCP server instance and tool registration
+      transport.py           stdio and Streamable HTTP helpers
+      auth.py                Streamable HTTP auth and Origin checks
+      database.py            Lazy database initialization for stdio
+      schemas/               Pydantic input/output models
+      tools/                 Thin MCP adapters grouped by resource
+    services/
+      workflow_service.py    Workflow CRUD, export/import orchestration
+      run_service.py         Run creation, status, results, cancellation
+      environment_service.py Environment CRUD with secret-safe DTOs
+      collection_service.py  Collection CRUD and workflow membership
+      import_service.py      OpenAPI, HAR, curl parsing/import workflows
+      secret_utils.py        Secret detection and sanitization helpers
+  mcp_stdio.py               Standalone stdio entry point
+```
+
+### Architecture Rules
+
+- MCP tools MUST NOT call FastAPI route functions directly
+- MCP tools MUST NOT make HTTP calls back into the same backend
+- Shared business logic belongs in `backend/app/services/`
+- Both FastAPI routes and MCP tools call the same service functions
+- Secrets are NEVER returned by MCP read/export tools
+- Runtime secrets are accepted only for `workflow_run` and are never persisted
+- Stdio transport MUST NOT write non-MCP data to stdout
+
+### Tool Inventory
+
+| Domain | Tools |
+|--------|-------|
+| Server Info | `server_info` |
+| Workflows | `workflow_list`, `workflow_get`, `workflow_create`, `workflow_update`, `workflow_export`, `workflow_import`, `workflow_import_dry_run`, `workflow_delete`, `workflow_attach_collection`, `workflow_set_environment` |
+| Environments | `environment_list`, `environment_get_active`, `environment_create`, `environment_get`, `environment_update`, `environment_delete`, `environment_activate` |
+| Collections | `collection_list`, `collection_list_workflows`, `collection_create`, `collection_get`, `collection_update`, `collection_delete`, `collection_export`, `collection_import`, `collection_import_dry_run`, `collection_add_workflow`, `collection_remove_workflow` |
+| Runs | `workflow_run`, `run_get_status`, `run_get_results`, `run_get_node_result`, `run_latest_failed`, `run_list`, `run_cancel` |
+| Imports | `import_openapi_url`, `import_openapi`, `import_openapi_dry_run`, `import_har`, `import_har_dry_run`, `import_curl` |
+
+**Total: 42 tools**
+
+### Testing/Verification Baseline
+
+After MCP changes:
+1. Run backend tests: `cd backend && python -m pytest`
+2. Run type checks: `cd backend && python -m mypy app`
+3. Run lint checks: `cd backend && python -m ruff check app tests`
+4. Test stdio manually with MCP Inspector or a minimal Python MCP client
+5. Test Streamable HTTP manually when `MCP_HTTP_ENABLED=true`
+
+---
+
 ## Tech Stack Reference
 - **React** 18.2 — UI framework
 - **TypeScript** — strict mode, no `any`
