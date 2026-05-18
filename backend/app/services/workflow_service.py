@@ -173,6 +173,8 @@ async def export_workflow(
         env_doc = await EnvironmentRepository.get_by_id(env_id)
         if env_doc:
             environment = serialize_document_for_export(env_doc)
+            # Remove persisted secrets entirely from exported environment
+            environment.pop("secrets", None)
             if environment.get("createdAt"):
                 environment["createdAt"] = environment["createdAt"].isoformat()
             if environment.get("updatedAt"):

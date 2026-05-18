@@ -26,7 +26,10 @@ async def run_stdio(server: FastMCP) -> None:
 async def streamable_http_lifespan(server: FastMCP) -> AsyncGenerator[None, None]:
     """Context manager for Streamable HTTP session lifecycle."""
     logger.info("MCP Streamable HTTP session starting")
-    try:
-        yield
-    finally:
-        logger.info("MCP Streamable HTTP session ending")
+    # Initialize the Streamable HTTP app before starting the session manager
+    server.streamable_http_app()
+    async with server.session_manager.run():
+        try:
+            yield
+        finally:
+            logger.info("MCP Streamable HTTP session ending")

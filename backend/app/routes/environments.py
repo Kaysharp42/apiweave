@@ -20,6 +20,7 @@ from app.services import (
     activate_environment as svc_activate_environment,
     duplicate_environment as svc_duplicate_environment,
 )
+from app.services.exceptions import ConflictError
 
 router = APIRouter(prefix="/api/environments", tags=["environments"])
 
@@ -68,6 +69,8 @@ async def delete_environment(environment_id: str):
     """Delete an environment"""
     try:
         await svc_delete_environment(environment_id)
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 

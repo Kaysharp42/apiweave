@@ -27,6 +27,7 @@ from app.services.secret_utils import (
     detect_secrets_in_value,
     sanitize_secrets_in_dict,
 )
+from app.services.exceptions import ConflictError
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
@@ -66,6 +67,8 @@ async def delete_collection(collection_id: str):
     """Delete a collection"""
     try:
         await svc_delete_collection(collection_id)
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return None

@@ -14,6 +14,7 @@ mcp_server = FastMCP(
     name="APIWeave",
     stateless_http=True,
     json_response=True,
+    streamable_http_path="",
 )
 
 

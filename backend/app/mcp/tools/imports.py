@@ -23,6 +23,7 @@ from app.services.import_service import (
     parse_har_to_workflow,
     parse_openapi_to_workflow,
 )
+from app.utils.openapi_import_limits import MAX_IMPORTED_OPENAPI_ENDPOINTS
 
 
 async def import_openapi_url(
@@ -112,6 +113,12 @@ async def import_openapi(
         sanitize,
     )
     http_nodes = [n for n in workflow_data["nodes"] if n["type"] == "http-request"]
+
+    if len(http_nodes) > MAX_IMPORTED_OPENAPI_ENDPOINTS:
+        raise ValueError(
+            f"Imported endpoint count ({len(http_nodes)}) exceeded safety limit "
+            f"({MAX_IMPORTED_OPENAPI_ENDPOINTS})."
+        )
 
     api_title = openapi_data.get("info", {}).get("title", "API")
 
@@ -204,6 +211,12 @@ async def import_openapi_dry_run(
         node_count = sum(
             1 for n in workflow_data["nodes"] if n["type"] == "http-request"
         )
+        if node_count > MAX_IMPORTED_OPENAPI_ENDPOINTS:
+            errors.append(
+                f"Imported endpoint count ({node_count}) exceeded safety limit "
+                f"({MAX_IMPORTED_OPENAPI_ENDPOINTS})."
+            )
+            node_count = 0
     except Exception as exc:
         errors.append(str(exc))
         node_count = 0

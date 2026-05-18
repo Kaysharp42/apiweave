@@ -3,6 +3,7 @@ Workflow API routes
 CRUD operations for workflows
 Now using Beanie ODM with repository pattern for enhanced security
 """
+import logging
 from fastapi import APIRouter, HTTPException, status, Query, UploadFile, File
 from typing import List, Optional, Dict, Any
 from datetime import datetime, UTC

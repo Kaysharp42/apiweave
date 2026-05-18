@@ -17,6 +17,7 @@ from app.database import get_database
 from app.models import Run, RunCreate
 from app.repositories import EnvironmentRepository, RunRepository, WorkflowRepository
 from app.runner.executor import WorkflowExecutor
+from app.services.exceptions import ConflictError
 
 logger = logging.getLogger(__name__)
 VALID_RESUME_MODES = {"single", "all-failed"}
@@ -248,12 +249,15 @@ async def get_run(run_id: str) -> Run:
 
 
 async def cancel_run(run_id: str) -> dict[str, str]:
-    """Cancel a pending or running run. Raises ValueError if invalid."""
+    """Cancel a pending or running run.
+
+    Raises ValueError if not found, ConflictError if invalid state.
+    """
     run = await RunRepository.get_by_id(run_id)
     if not run:
         raise ValueError(f"Run {run_id} not found")
     if run.status not in ("pending", "running"):
-        raise ValueError(f"Cannot cancel run with status {run.status}")
+        raise ConflictError(f"Cannot cancel run with status {run.status}")
 
     cancel_event = _get_cancel_event(run_id)
     if cancel_event:

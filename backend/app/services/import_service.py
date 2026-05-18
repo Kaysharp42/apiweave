@@ -134,12 +134,22 @@ def parse_curl_to_workflow(
                             cookie = cookie.strip()
                             if "=" in cookie:
                                 k, v = cookie.split("=", 1)
-                                cookies[k.strip()] = v.strip()
+                                k = k.strip()
+                                v = v.strip()
+                                if sanitize and (
+                                    detect_secrets_in_value(f"{k}={v}")
+                                    or detect_secrets_in_value(v)
+                                ):
+                                    cookies[k] = "[FILTERED]"
+                                else:
+                                    cookies[k] = v
                         i += 2
                         continue
                 elif token in ("-d", "--data", "--data-raw"):
                     if i + 1 < len(tokens):
                         body = tokens[i + 1]
+                        if sanitize and detect_secrets_in_value(body):
+                            body = "[FILTERED]"
                         if method == "GET":
                             method = "POST"
                         i += 2
@@ -303,10 +313,15 @@ def parse_har_to_workflow(
         for ck in request.get("cookies", []):
             k = ck.get("name", "")
             v = ck.get("value", "")
-            cookies[k] = v
+            if sanitize and (detect_secrets_in_value(f"{k}={v}") or detect_secrets_in_value(v)):
+                cookies[k] = "[FILTERED]"
+            else:
+                cookies[k] = v
 
         post_data = request.get("postData", {})
         body = post_data.get("text", "") if post_data else None
+        if sanitize and body and detect_secrets_in_value(body):
+            body = "[FILTERED]"
 
         example_response = {
             "statusCode": response.get("status", 0),

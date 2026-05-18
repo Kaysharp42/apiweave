@@ -20,6 +20,7 @@ from app.services import (
     get_run_results as svc_get_run_results,
     get_latest_failed_run as svc_get_latest_failed_run,
 )
+from app.services.exceptions import ConflictError
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -58,6 +59,8 @@ async def cancel_run(run_id: str):
     """Cancel a pending or running run"""
     try:
         await svc_cancel_run(run_id)
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return None

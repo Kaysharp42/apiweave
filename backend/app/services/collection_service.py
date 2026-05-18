@@ -7,6 +7,7 @@ from typing import Any
 
 from app.models import Collection, CollectionCreate, CollectionUpdate
 from app.repositories import CollectionRepository, WorkflowRepository
+from app.services.exceptions import ConflictError
 from app.services.secret_utils import sanitize_secrets_in_dict
 
 
@@ -47,13 +48,13 @@ async def update_collection(
 
 
 async def delete_collection(collection_id: str) -> None:
-    """Delete a collection. Raises ValueError if not found or has workflows."""
+    """Delete a collection. Raises ValueError if not found, ConflictError if has workflows."""
     col = await CollectionRepository.get_by_id(collection_id)
     if not col:
         raise ValueError(f"Collection {collection_id} not found")
     count = await WorkflowRepository.count_by_collection(collection_id)
     if count > 0:
-        raise ValueError(
+        raise ConflictError(
             f"Cannot delete collection. {count} workflow(s) are still in it."
         )
     await CollectionRepository.delete(collection_id)

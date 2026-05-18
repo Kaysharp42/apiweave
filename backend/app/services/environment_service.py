@@ -6,6 +6,7 @@ from typing import Any
 
 from app.models import Environment, EnvironmentCreate, EnvironmentUpdate
 from app.repositories import EnvironmentRepository
+from app.services.exceptions import ConflictError
 from app.services.secret_utils import sanitize_secrets_in_dict
 
 
@@ -49,7 +50,7 @@ async def update_environment(
 
 
 async def delete_environment(environment_id: str) -> None:
-    """Delete an environment. Raises ValueError if not found or referenced."""
+    """Delete an environment. Raises ValueError if not found, ConflictError if referenced."""
     env = await EnvironmentRepository.get_by_id(environment_id)
     if not env:
         raise ValueError(f"Environment {environment_id} not found")
@@ -58,7 +59,7 @@ async def delete_environment(environment_id: str) -> None:
 
     count = await Workflow.find(Workflow.environmentId == environment_id).count()
     if count > 0:
-        raise ValueError(
+        raise ConflictError(
             f"Cannot delete environment. {count} workflow(s) are still attached to it."
         )
 
