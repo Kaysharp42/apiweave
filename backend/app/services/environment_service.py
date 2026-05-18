@@ -121,3 +121,40 @@ async def get_environment_redacted(environment_id: str) -> dict[str, Any]:
     """Get an environment by ID with secrets redacted."""
     env = await get_environment(environment_id)
     return redact_environment_for_export(env)
+
+
+async def set_environment_secret(
+    environment_id: str, key: str, value: str
+) -> Environment:
+    """Set a single secret key on an environment. Write-only — value is never returned."""
+    env = await EnvironmentRepository.get_by_id(environment_id)
+    if not env:
+        raise ValueError(f"Environment {environment_id} not found")
+
+    secrets = dict(env.secrets or {})
+    secrets[key] = value
+    update_data = EnvironmentUpdate(secrets=secrets)
+    updated = await EnvironmentRepository.update(environment_id, update_data)
+    if not updated:
+        raise ValueError(f"Failed to update environment {environment_id}")
+    return updated
+
+
+async def delete_environment_secret(
+    environment_id: str, key: str
+) -> Environment:
+    """Delete a single secret key from an environment."""
+    env = await EnvironmentRepository.get_by_id(environment_id)
+    if not env:
+        raise ValueError(f"Environment {environment_id} not found")
+
+    secrets = dict(env.secrets or {})
+    if key not in secrets:
+        raise ValueError(f"Secret key '{key}' not found on environment {environment_id}")
+
+    secrets.pop(key)
+    update_data = EnvironmentUpdate(secrets=secrets)
+    updated = await EnvironmentRepository.update(environment_id, update_data)
+    if not updated:
+        raise ValueError(f"Failed to update environment {environment_id}")
+    return updated

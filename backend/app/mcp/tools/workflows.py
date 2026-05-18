@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.mcp.database import ensure_mcp_database
+from app.mcp.datetime_utils import utc_datetime
 from app.mcp.schemas.workflows import (
     WorkflowAttachCollectionRequest,
     WorkflowAttachCollectionResponse,
@@ -90,8 +91,8 @@ def workflow_to_summary(workflow: Any) -> WorkflowSummary:
         node_count=len(nodes),
         edge_count=len(edges),
         template_count=len(templates),
-        created_at=getattr(workflow, "createdAt"),
-        updated_at=getattr(workflow, "updatedAt"),
+        created_at=utc_datetime(getattr(workflow, "createdAt")),
+        updated_at=utc_datetime(getattr(workflow, "updatedAt")),
         version=getattr(workflow, "version", 1),
     )
 

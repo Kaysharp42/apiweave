@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Settings, Webhook, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Home, Settings, Webhook, LayoutGrid, ChevronLeft, ChevronRight, Server } from 'lucide-react';
 import { Transition } from '@headlessui/react';
 import Tippy from '@tippyjs/react';
 // @ts-expect-error CSS import without types
@@ -33,6 +33,11 @@ const navItems: NavItemConfig[] = [
     id: 'webhooks',
     label: 'Webhooks',
     icon: Webhook,
+  },
+  {
+    id: 'mcp',
+    label: 'MCP',
+    icon: Server,
   },
   {
     id: AppNavBarItems.settings!.value,

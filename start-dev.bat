@@ -23,6 +23,12 @@ start "Worker" cmd /k "cd backend && venv\Scripts\activate && python -m app.work
 
 timeout /t 2 /nobreak > NUL
 
+REM Start MCP Server (stdio mode)
+echo Starting MCP Server (stdio)...
+start "MCP Server" cmd /k "cd backend && venv\Scripts\activate && python mcp_stdio.py"
+
+timeout /t 2 /nobreak > NUL
+
 REM Start Frontend
 echo Starting Frontend...
 start "Frontend" cmd /k "cd frontend && npm run dev"
@@ -35,4 +41,9 @@ echo.
 echo Frontend:  http://localhost:3000
 echo Backend:   http://localhost:8000
 echo API Docs:  http://localhost:8000/docs
+echo MCP:       stdio (see MCP Server window)
+echo.
+echo To connect an MCP client:
+echo   Claude Desktop / Cursor / opencode: configure stdio with command 'python mcp_stdio.py' in backend/
+echo   HTTP transport: enable MCP_HTTP_ENABLED=true in backend/.env, then connect to http://localhost:8000/mcp
 echo.

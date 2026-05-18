@@ -1,13 +1,13 @@
 """
 MCP run execution and monitoring tools.
 """
-from datetime import datetime
 from typing import Annotated, Any, Literal, cast
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from app.mcp.database import ensure_mcp_database
+from app.mcp.datetime_utils import optional_utc_datetime, utc_datetime
 from app.mcp.schemas.runs import (
     FailedNodeSummary,
     NodeStatusSummary,
@@ -114,9 +114,9 @@ def _run_to_status_response(run: Any) -> RunStatusResponse:
         resume_from_run_id=cast(str | None, getattr(run, "resumeFromRunId", None)),
         resume_from_node_ids=cast(list[str] | None, getattr(run, "resumeFromNodeIds", None)),
         resume_mode=cast(str | None, getattr(run, "resumeMode", None)),
-        created_at=cast(datetime, getattr(run, "createdAt")),
-        started_at=cast(datetime | None, getattr(run, "startedAt", None)),
-        completed_at=cast(datetime | None, getattr(run, "completedAt", None)),
+        created_at=utc_datetime(getattr(run, "createdAt")),
+        started_at=optional_utc_datetime(getattr(run, "startedAt", None)),
+        completed_at=optional_utc_datetime(getattr(run, "completedAt", None)),
         duration_ms=cast(int | None, getattr(run, "duration", None)),
         error=cast(str | None, getattr(run, "error", None)),
         failure_message=cast(str | None, getattr(run, "failureMessage", None)),
@@ -335,7 +335,7 @@ async def run_latest_failed(
         failed_nodes=failed_nodes,
         failed_node_ids=list(result.get("failedNodeIds", [])),
         failed_count=int(result.get("failedCount", len(failed_nodes))),
-        created_at=cast(datetime | None, result.get("createdAt")),
+        created_at=optional_utc_datetime(result.get("createdAt")),
     )
 
 
@@ -377,7 +377,7 @@ async def run_list(
             status=str(getattr(run, "status")),
             trigger=str(getattr(run, "trigger")),
             environment_id=cast(str | None, getattr(run, "environmentId", None)),
-            created_at=cast(datetime, getattr(run, "createdAt")),
+            created_at=utc_datetime(getattr(run, "createdAt")),
             duration_ms=cast(int | None, getattr(run, "duration", None)),
             error=cast(str | None, getattr(run, "error", None)),
         )

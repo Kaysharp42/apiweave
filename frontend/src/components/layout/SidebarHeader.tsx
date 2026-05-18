@@ -57,6 +57,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
       case 'workflows': return 'Workflows';
       case 'collections': return 'Collections';
       case 'webhooks': return 'Webhooks';
+      case 'mcp': return 'MCP';
       case 'settings': return 'Settings';
       default: return 'APIWeave';
     }

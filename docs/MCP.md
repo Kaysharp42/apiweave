@@ -203,6 +203,157 @@ See `mcp-configs/cursor_mcp.json` for the format.
 
 See `mcp-configs/vscode_mcp.json` for a complete example.
 
+### GitHub Copilot CLI
+
+1. Open GitHub Copilot CLI
+2. Run the interactive command: `/mcp add apiweave`
+3. Select **Local or STDIO** as the server type
+4. Enter the command: `python mcp_stdio.py`
+5. Set the working directory to your `backend` folder
+6. Press `Ctrl+S` to save
+
+Alternatively, edit `~/.copilot/mcp-config.json` directly:
+
+```json
+{
+  "mcpServers": {
+    "apiweave": {
+      "type": "local",
+      "command": "python",
+      "args": ["mcp_stdio.py"],
+      "cwd": "/path/to/apiweave/backend",
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+For HTTP transport, use:
+```json
+{
+  "mcpServers": {
+    "apiweave": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY"
+      },
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+**Managing servers in Copilot CLI:**
+- `/mcp show` — list all configured servers
+- `/mcp show apiweave` — view server details and tools
+- `/mcp edit apiweave` — edit configuration
+- `/mcp disable apiweave` — temporarily disable
+- `/mcp enable apiweave` — re-enable
+
+### GitHub Copilot (VS Code)
+
+1. Create `.vscode/mcp.json` in your workspace root
+2. Add the server configuration:
+
+```json
+{
+  "servers": {
+    "apiweave": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["mcp_stdio.py"],
+      "cwd": "${workspaceFolder}/backend"
+    }
+  }
+}
+```
+
+For HTTP transport:
+```json
+{
+  "servers": {
+    "apiweave": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Alternatively, add to your VS Code `settings.json`:
+```json
+{
+  "chat.mcp.discovery.enabled": true
+}
+```
+
+See `mcp-configs/vscode_mcp.json` for a complete example.
+
+### OpenAI Codex (CLI, VS Code, Desktop)
+
+Codex uses TOML configuration files. All three interfaces (CLI, VS Code extension, macOS Desktop app) share the same config.
+
+**Configuration locations:**
+
+| Scope | Windows | macOS/Linux |
+|-------|---------|-------------|
+| User (global) | `%USERPROFILE%\.codex\config.toml` | `~/.codex/config.toml` |
+| Project | `.codex\config.toml` | `.codex/config.toml` |
+
+**Quick setup via CLI:**
+```bash
+# Add stdio server
+codex mcp add apiweave -- python mcp_stdio.py
+
+# Add with working directory
+codex mcp add apiweave --cwd /path/to/apiweave/backend -- python mcp_stdio.py
+
+# Add HTTP server
+codex mcp add apiweave --url http://localhost:8000/mcp --bearer-token-env-var MCP_API_KEY
+```
+
+**Manual config (`~/.codex/config.toml` or `.codex/config.toml`):**
+
+```toml
+[mcp_servers.apiweave]
+command = "python"
+args = ["mcp_stdio.py"]
+cwd = "/path/to/apiweave/backend"
+enabled = true
+```
+
+For HTTP transport:
+```toml
+[mcp_servers.apiweave]
+url = "http://localhost:8000/mcp"
+bearer_token_env_var = "MCP_API_KEY"
+enabled = true
+```
+
+**Tool control (optional):**
+```toml
+[mcp_servers.apiweave]
+command = "python"
+args = ["mcp_stdio.py"]
+cwd = "/path/to/apiweave/backend"
+enabled = true
+enabled_tools = ["workflow_list", "workflow_run", "run_get_status"]
+# Or deny specific tools:
+# disabled_tools = ["workflow_delete", "environment_delete"]
+```
+
+**Managing servers in Codex CLI:**
+```bash
+codex mcp list              # List all servers
+codex mcp get apiweave      # Show server details
+codex mcp remove apiweave   # Remove server
+codex mcp login apiweave    # OAuth login (if server supports it)
+```
+
 ### opencode
 
 Add to your `opencode.json` or `opencode.jsonc`:
@@ -215,6 +366,21 @@ Add to your `opencode.json` or `opencode.jsonc`:
       "command": "python",
       "args": ["mcp_stdio.py"],
       "cwd": "${workspaceFolder}/backend"
+    }
+  }
+}
+```
+
+For HTTP transport:
+```json
+{
+  "mcp": {
+    "apiweave": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY"
+      }
     }
   }
 }

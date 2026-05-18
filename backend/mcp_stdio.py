@@ -39,10 +39,12 @@ def main() -> None:
     load_dotenv(backend_dir / ".env")
 
     from app.database import close_db
-    from app.mcp.server import mcp_server, register_tools
+    from app.mcp.server import mcp_server, register_prompts, register_resources, register_tools
     from app.mcp.transport import run_stdio
 
     register_tools()
+    register_resources()
+    register_prompts()
     logger.info("APIWeave MCP server starting in stdio mode")
 
     async def run() -> None:

@@ -1,13 +1,13 @@
 """
 MCP environment tools.
 """
-from datetime import datetime
 from typing import Annotated, Any, cast
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from app.mcp.database import ensure_mcp_database
+from app.mcp.datetime_utils import utc_datetime
 from app.mcp.schemas.environments import (
     EnvironmentActivateRequest,
     EnvironmentActivateResponse,
@@ -57,8 +57,8 @@ def environment_from_dict(environment: dict[str, Any]) -> EnvironmentSummary:
         variables=cast(dict[str, Any], environment.get("variables", {})),
         secrets=cast(dict[str, str], environment.get("secrets", {})),
         is_active=bool(environment.get("isActive", False)),
-        created_at=cast(datetime, environment.get("createdAt")),
-        updated_at=cast(datetime, environment.get("updatedAt")),
+        created_at=utc_datetime(environment.get("createdAt")),
+        updated_at=utc_datetime(environment.get("updatedAt")),
     )
 
 

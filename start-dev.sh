@@ -41,6 +41,16 @@ fi
 
 sleep 2
 
+# Start MCP Server (stdio mode)
+echo "Starting MCP Server (stdio)..."
+if [ -d "$ROOT_DIR/backend/venv" ]; then
+  nohup bash -lc "source '$ROOT_DIR/backend/venv/bin/activate' && cd '$ROOT_DIR/backend' && python mcp_stdio.py" > "$LOG_DIR/mcp_stdio.log" 2>&1 &
+else
+  nohup bash -lc "cd '$ROOT_DIR/backend' && python mcp_stdio.py" > "$LOG_DIR/mcp_stdio.log" 2>&1 &
+fi
+
+sleep 1
+
 # Start Frontend (Vite)
 echo "Starting Frontend..."
 if [ -d "$ROOT_DIR/frontend" ]; then
@@ -54,5 +64,10 @@ echo "All services started (logs in $LOG_DIR)"
 echo "Frontend:  http://localhost:3000"
 echo "Backend:   http://localhost:8000"
 echo "API Docs:  http://localhost:8000/docs"
+echo "MCP:       stdio (see logs/mcp_stdio.log)"
+echo
+echo "To connect an MCP client:"
+echo "  Claude Desktop / Cursor / opencode: configure stdio with command 'python mcp_stdio.py' in backend/"
+echo "  HTTP transport: enable MCP_HTTP_ENABLED=true in backend/.env, then connect to http://localhost:8000/mcp"
 
 exit 0

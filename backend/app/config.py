@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     MCP_API_KEY: str | None = None
     MCP_ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     MCP_REQUIRE_API_KEY: bool = True
+    MCP_ALLOW_SECRET_WRITES: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

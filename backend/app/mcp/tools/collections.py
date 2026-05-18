@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from app.mcp.database import ensure_mcp_database
+from app.mcp.datetime_utils import utc_datetime
 from app.mcp.schemas.collections import (
     CollectionAddWorkflowRequest,
     CollectionAddWorkflowResponse,
@@ -75,8 +76,8 @@ def collection_to_summary(collection: Any) -> CollectionSummary:
         description=getattr(collection, "description", None),
         color=getattr(collection, "color", None),
         workflow_count=getattr(collection, "workflowCount", 0),
-        created_at=getattr(collection, "createdAt"),
-        updated_at=getattr(collection, "updatedAt"),
+        created_at=utc_datetime(getattr(collection, "createdAt")),
+        updated_at=utc_datetime(getattr(collection, "updatedAt")),
     )
 
 

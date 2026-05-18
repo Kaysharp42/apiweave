@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import connect_db, close_db
 from app.config import settings
-from app.routes import workflows, runs, environments, collections, webhooks
+from app.routes import workflows, runs, environments, collections, webhooks, mcp_config
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +20,12 @@ async def lifespan(app: FastAPI):
     await connect_db()
 
     if settings.MCP_ENABLED and settings.MCP_HTTP_ENABLED:
-        from app.mcp.server import mcp_server, register_tools
+        from app.mcp.server import mcp_server, register_prompts, register_resources, register_tools
         from app.mcp.transport import streamable_http_lifespan
 
         register_tools()
+        register_resources()
+        register_prompts()
         async with streamable_http_lifespan(mcp_server):
             logger.info("MCP Streamable HTTP mounted at /mcp")
             yield
@@ -55,13 +57,16 @@ app.include_router(runs.router)
 app.include_router(environments.router)
 app.include_router(collections.router)
 app.include_router(webhooks.router)
+app.include_router(mcp_config.router)
 
 # MCP Streamable HTTP mount
 if settings.MCP_ENABLED and settings.MCP_HTTP_ENABLED:
     from app.mcp.auth import auth_middleware
-    from app.mcp.server import mcp_server, register_tools
+    from app.mcp.server import mcp_server, register_prompts, register_resources, register_tools
 
     register_tools()
+    register_resources()
+    register_prompts()
 
     app.middleware("http")(auth_middleware)
 

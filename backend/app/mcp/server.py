@@ -14,7 +14,7 @@ mcp_server = FastMCP(
     name="APIWeave",
     stateless_http=True,
     json_response=True,
-    streamable_http_path="",
+    streamable_http_path="/",
 )
 
 
@@ -40,6 +40,7 @@ def register_tools() -> None:
     from app.mcp.tools.environments import register_environment_tools
     from app.mcp.tools.imports import register_import_tools
     from app.mcp.tools.runs import register_run_tools
+    from app.mcp.tools.secrets import register_secret_tools
     from app.mcp.tools.workflows import register_workflow_tools
 
     register_workflow_tools(mcp_server)
@@ -47,6 +48,31 @@ def register_tools() -> None:
     register_collection_tools(mcp_server)
     register_run_tools(mcp_server)
     register_import_tools(mcp_server)
+    register_secret_tools(mcp_server)
 
     _tools_registered = True
     logger.info("MCP tools registered")
+
+
+def register_resources() -> None:
+    """Register all MCP resources from resource modules."""
+    from app.mcp.resources.environments import register_environment_resources
+    from app.mcp.resources.runs import register_run_resources
+    from app.mcp.resources.workflows import register_workflow_resources
+
+    register_workflow_resources(mcp_server)
+    register_environment_resources(mcp_server)
+    register_run_resources(mcp_server)
+
+    logger.info("MCP resources registered")
+
+
+def register_prompts() -> None:
+    """Register all MCP prompts from prompt modules."""
+    from app.mcp.prompts.debug import register_debug_prompts
+    from app.mcp.prompts.workflow import register_workflow_prompts
+
+    register_workflow_prompts(mcp_server)
+    register_debug_prompts(mcp_server)
+
+    logger.info("MCP prompts registered")

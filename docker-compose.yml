@@ -22,11 +22,35 @@ services:
       - MONGODB_URL=mongodb://mongodb:27017
       - MONGODB_DB_NAME=apiweave
       - DEBUG=true
+      - MCP_ENABLED=true
+      - MCP_HTTP_ENABLED=true
+      - MCP_API_KEY=dev-api-key-change-in-production
+      - MCP_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - MCP_REQUIRE_API_KEY=false
     depends_on:
       - mongodb
     volumes:
       - ./backend/app:/app/app
       - ./backend/artifacts:/app/artifacts
+
+  mcp-stdio:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: apiweave-mcp-stdio
+    command: python mcp_stdio.py
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DB_NAME=apiweave
+      - MCP_ENABLED=true
+      - MCP_HTTP_ENABLED=false
+    depends_on:
+      - mongodb
+      - backend
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/artifacts:/app/artifacts
+      - ./backend/mcp_stdio.py:/app/mcp_stdio.py
 
   worker:
     build:
