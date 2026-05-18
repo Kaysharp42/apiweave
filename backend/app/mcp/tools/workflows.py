@@ -9,7 +9,11 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.mcp.database import ensure_mcp_database
 from app.mcp.schemas.workflows import (
+    WorkflowAttachCollectionRequest,
+    WorkflowAttachCollectionResponse,
     WorkflowCreateRequest,
+    WorkflowDeleteRequest,
+    WorkflowDeleteResponse,
     WorkflowDetail,
     WorkflowExportRequest,
     WorkflowExportResponse,
@@ -20,13 +24,21 @@ from app.mcp.schemas.workflows import (
     WorkflowImportResponse,
     WorkflowListRequest,
     WorkflowListResponse,
+    WorkflowSetEnvironmentRequest,
+    WorkflowSetEnvironmentResponse,
     WorkflowSummary,
     WorkflowUpdateRequest,
 )
 from app.models import Edge, Node, WorkflowCreate, WorkflowUpdate
 from app.services.secret_utils import sanitize_secrets_in_dict
 from app.services.workflow_service import (
+    attach_to_collection as svc_attach_to_collection,
+)
+from app.services.workflow_service import (
     create_workflow as svc_create_workflow,
+)
+from app.services.workflow_service import (
+    delete_workflow as svc_delete_workflow,
 )
 from app.services.workflow_service import (
     export_workflow as svc_export_workflow,
@@ -42,6 +54,9 @@ from app.services.workflow_service import (
 )
 from app.services.workflow_service import (
     list_workflows as svc_list_workflows,
+)
+from app.services.workflow_service import (
+    set_environment as svc_set_environment,
 )
 from app.services.workflow_service import (
     update_workflow as svc_update_workflow,
@@ -324,8 +339,72 @@ async def workflow_import_dry_run(
     )
 
 
+async def workflow_delete(
+    workflow_id: Annotated[str, Field(description="Workflow ID to delete.")],
+) -> WorkflowDeleteResponse:
+    """Delete a workflow. This action is destructive and cannot be undone."""
+    await ensure_mcp_database()
+    request = WorkflowDeleteRequest(workflow_id=workflow_id)
+    try:
+        await svc_delete_workflow(request.workflow_id)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    return WorkflowDeleteResponse(
+        message="Workflow deleted successfully",
+        workflow_id=request.workflow_id,
+    )
+
+
+async def workflow_attach_collection(
+    workflow_id: Annotated[str, Field(description="Workflow ID to modify.")],
+    collection_id: Annotated[
+        str | None,
+        Field(description="Collection ID to attach to, or null to detach."),
+    ] = None,
+) -> WorkflowAttachCollectionResponse:
+    """Attach or detach a workflow to/from a collection."""
+    await ensure_mcp_database()
+    request = WorkflowAttachCollectionRequest(
+        workflow_id=workflow_id,
+        collection_id=collection_id,
+    )
+    try:
+        updated = await svc_attach_to_collection(request.workflow_id, request.collection_id)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    return WorkflowAttachCollectionResponse(
+        message="Workflow collection assignment updated",
+        workflow_id=request.workflow_id,
+        collection_id=getattr(updated, "collectionId", None),
+    )
+
+
+async def workflow_set_environment(
+    workflow_id: Annotated[str, Field(description="Workflow ID to modify.")],
+    environment_id: Annotated[
+        str | None,
+        Field(description="Environment ID to assign, or null to clear."),
+    ] = None,
+) -> WorkflowSetEnvironmentResponse:
+    """Assign or clear the default environment for a workflow."""
+    await ensure_mcp_database()
+    request = WorkflowSetEnvironmentRequest(
+        workflow_id=workflow_id,
+        environment_id=environment_id,
+    )
+    try:
+        updated = await svc_set_environment(request.workflow_id, request.environment_id)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    return WorkflowSetEnvironmentResponse(
+        message="Workflow environment updated",
+        workflow_id=request.workflow_id,
+        environment_id=getattr(updated, "environmentId", None),
+    )
+
+
 def register_workflow_tools(server: FastMCP) -> None:
-    """Register Phase 2 workflow tools."""
+    """Register workflow tools."""
     server.tool(
         name="workflow_list",
         description=(
@@ -359,3 +438,15 @@ def register_workflow_tools(server: FastMCP) -> None:
         name="workflow_import_dry_run",
         description="Validate a workflow import bundle without creating or updating records.",
     )(workflow_import_dry_run)
+    server.tool(
+        name="workflow_delete",
+        description="Delete a workflow permanently. This action cannot be undone.",
+    )(workflow_delete)
+    server.tool(
+        name="workflow_attach_collection",
+        description="Attach or detach a workflow to/from a collection.",
+    )(workflow_attach_collection)
+    server.tool(
+        name="workflow_set_environment",
+        description="Assign or clear the default environment for a workflow.",
+    )(workflow_set_environment)

@@ -114,3 +114,9 @@ async def get_active_environment_redacted() -> dict[str, Any]:
     """Get active environment with secrets redacted."""
     env = await get_active_environment()
     return redact_environment_for_export(env)
+
+
+async def get_environment_redacted(environment_id: str) -> dict[str, Any]:
+    """Get an environment by ID with secrets redacted."""
+    env = await get_environment(environment_id)
+    return redact_environment_for_export(env)

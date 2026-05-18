@@ -105,6 +105,22 @@ async def list_by_collection(collection_id: str) -> list[Workflow]:
     return workflows
 
 
+async def set_environment(workflow_id: str, environment_id: str | None) -> Workflow:
+    """Set or clear the default environment for a workflow."""
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
+    if not workflow:
+        raise ValueError(f"Workflow {workflow_id} not found")
+    if environment_id:
+        env = await EnvironmentRepository.get_by_id(environment_id)
+        if not env:
+            raise ValueError(f"Environment {environment_id} not found")
+    workflow.environmentId = environment_id
+    from datetime import UTC, datetime
+    workflow.updatedAt = datetime.now(UTC)
+    await workflow.save()
+    return workflow
+
+
 async def export_workflow(
     workflow_id: str,
     include_environment: bool = True,

@@ -167,3 +167,52 @@ class WorkflowImportDryRunResponse(BaseModel):
     errors: list[str] = Field(default_factory=list, description="Validation errors.")
     warnings: list[str] = Field(default_factory=list, description="Validation warnings.")
     stats: dict[str, Any] = Field(default_factory=dict, description="Bundle summary statistics.")
+
+
+class WorkflowDeleteRequest(BaseModel):
+    """Input for workflow_delete."""
+
+    workflow_id: str = Field(description="Workflow ID to delete.")
+
+
+class WorkflowDeleteResponse(BaseModel):
+    """Output for workflow_delete."""
+
+    message: str = Field(description="Deletion confirmation message.")
+    workflow_id: str = Field(description="Deleted workflow ID.")
+
+
+class WorkflowAttachCollectionRequest(BaseModel):
+    """Input for workflow_attach_collection."""
+
+    workflow_id: str = Field(description="Workflow ID to modify.")
+    collection_id: str | None = Field(
+        default=None,
+        description="Collection ID to attach to, or null to detach.",
+    )
+
+
+class WorkflowAttachCollectionResponse(BaseModel):
+    """Output for workflow_attach_collection."""
+
+    message: str = Field(description="Operation confirmation message.")
+    workflow_id: str = Field(description="Workflow ID.")
+    collection_id: str | None = Field(description="Collection ID assigned, or null if detached.")
+
+
+class WorkflowSetEnvironmentRequest(BaseModel):
+    """Input for workflow_set_environment."""
+
+    workflow_id: str = Field(description="Workflow ID to modify.")
+    environment_id: str | None = Field(
+        default=None,
+        description="Environment ID to assign, or null to clear.",
+    )
+
+
+class WorkflowSetEnvironmentResponse(BaseModel):
+    """Output for workflow_set_environment."""
+
+    message: str = Field(description="Operation confirmation message.")
+    workflow_id: str = Field(description="Workflow ID.")
+    environment_id: str | None = Field(description="Environment ID assigned, or null if cleared.")

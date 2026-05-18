@@ -18,6 +18,9 @@ from app.mcp.schemas.runs import (
     RunGetStatusRequest,
     RunLatestFailedRequest,
     RunLatestFailedResponse,
+    RunListItem,
+    RunListRequest,
+    RunListResponse,
     RunNodeResultResponse,
     RunResultNodeSummary,
     RunResultsResponse,
@@ -29,6 +32,7 @@ from app.services.run_service import get_latest_failed_run as svc_get_latest_fai
 from app.services.run_service import get_node_result as svc_get_node_result
 from app.services.run_service import get_run as svc_get_run
 from app.services.run_service import get_run_results as svc_get_run_results
+from app.services.run_service import list_runs as svc_list_runs
 from app.services.run_service import trigger_workflow_run as svc_trigger_workflow_run
 from app.services.secret_utils import detect_secrets_in_value
 
@@ -332,8 +336,59 @@ async def run_latest_failed(
     )
 
 
+async def run_list(
+    workflow_id: Annotated[
+        str | None,
+        Field(description="Optional workflow ID filter."),
+    ] = None,
+    status_filter: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Optional status filter (pending, running, completed, "
+                "failed, cancelled)."
+            ),
+        ),
+    ] = None,
+    skip: Annotated[int, Field(ge=0, description="Number of runs to skip.")] = 0,
+    limit: Annotated[int, Field(ge=1, le=100, description="Maximum runs to return.")] = 20,
+) -> RunListResponse:
+    """List runs with optional workflow/status filters and pagination."""
+    await ensure_mcp_database()
+    request = RunListRequest(
+        workflow_id=workflow_id,
+        status_filter=status_filter,
+        skip=skip,
+        limit=limit,
+    )
+    runs = await svc_list_runs(
+        workflow_id=request.workflow_id,
+        status_filter=request.status_filter,
+        skip=request.skip,
+        limit=request.limit,
+    )
+    items = [
+        RunListItem(
+            run_id=str(getattr(run, "runId")),
+            workflow_id=str(getattr(run, "workflowId")),
+            status=str(getattr(run, "status")),
+            trigger=str(getattr(run, "trigger")),
+            environment_id=cast(str | None, getattr(run, "environmentId", None)),
+            created_at=cast(datetime, getattr(run, "createdAt")),
+            duration_ms=cast(int | None, getattr(run, "duration", None)),
+            error=cast(str | None, getattr(run, "error", None)),
+        )
+        for run in runs
+    ]
+    return RunListResponse(
+        runs=items,
+        total=len(items),
+        has_more=len(items) == request.limit,
+    )
+
+
 def register_run_tools(server: FastMCP) -> None:
-    """Register Phase 3 execution and monitoring tools."""
+    """Register execution and monitoring tools."""
     server.tool(
         name="workflow_run",
         description=(
@@ -366,3 +421,10 @@ def register_run_tools(server: FastMCP) -> None:
         name="run_latest_failed",
         description="Get latest failed run metadata and failed nodes for resume workflows.",
     )(run_latest_failed)
+    server.tool(
+        name="run_list",
+        description=(
+            "List runs with optional workflow or status filters and pagination. "
+            "Returns compact run metadata without full node results."
+        ),
+    )(run_list)

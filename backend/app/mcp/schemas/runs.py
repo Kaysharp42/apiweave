@@ -204,3 +204,39 @@ class RunLatestFailedResponse(BaseModel):
     failed_node_ids: list[str] = Field(default_factory=list, description="Failed node IDs.")
     failed_count: int = Field(default=0, description="Number of failed nodes.")
     created_at: datetime | None = Field(default=None, description="Failed run creation timestamp.")
+
+
+class RunListRequest(BaseModel):
+    """Input for run_list."""
+
+    workflow_id: str | None = Field(
+        default=None,
+        description="Optional workflow ID filter.",
+    )
+    status_filter: str | None = Field(
+        default=None,
+        description="Optional status filter (pending, running, completed, failed, cancelled).",
+    )
+    skip: int = Field(default=0, ge=0, description="Number of runs to skip.")
+    limit: int = Field(default=20, ge=1, le=100, description="Maximum runs to return.")
+
+
+class RunListItem(BaseModel):
+    """Compact run metadata for list responses."""
+
+    run_id: str = Field(description="Run ID.")
+    workflow_id: str = Field(description="Workflow ID.")
+    status: str = Field(description="Run status.")
+    trigger: str = Field(description="Run trigger source.")
+    environment_id: str | None = Field(default=None, description="Environment ID used.")
+    created_at: datetime = Field(description="Run creation timestamp.")
+    duration_ms: int | None = Field(default=None, description="Run duration in milliseconds.")
+    error: str | None = Field(default=None, description="Run-level error message.")
+
+
+class RunListResponse(BaseModel):
+    """Output for run_list."""
+
+    runs: list[RunListItem] = Field(description="Run summaries.")
+    total: int = Field(description="Number of runs returned.")
+    has_more: bool = Field(description="Whether another page is available.")
