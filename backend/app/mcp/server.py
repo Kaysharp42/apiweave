@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+_tools_registered = False
 
 mcp_server = FastMCP(
     name="APIWeave",
@@ -30,13 +31,17 @@ async def server_info() -> dict:
 
 def register_tools() -> None:
     """Register all MCP tools from tool modules."""
-    # Phase 2 tools — imported and registered when that phase is implemented
-    # from app.mcp.tools.workflows import register_workflow_tools
-    # register_workflow_tools(mcp_server)
-    # from app.mcp.tools.environments import register_environment_tools
-    # register_environment_tools(mcp_server)
-    # from app.mcp.tools.collections import register_collection_tools
-    # register_collection_tools(mcp_server)
+    global _tools_registered
+    if _tools_registered:
+        return
+
+    from app.mcp.tools.collections import register_collection_tools
+    from app.mcp.tools.environments import register_environment_tools
+    from app.mcp.tools.workflows import register_workflow_tools
+
+    register_workflow_tools(mcp_server)
+    register_environment_tools(mcp_server)
+    register_collection_tools(mcp_server)
 
     # Phase 3 tools
     # from app.mcp.tools.runs import register_run_tools
@@ -46,4 +51,5 @@ def register_tools() -> None:
     # from app.mcp.tools.imports import register_import_tools
     # register_import_tools(mcp_server)
 
-    logger.info("MCP tools registered (placeholder — Phase 2+ tools pending)")
+    _tools_registered = True
+    logger.info("MCP tools registered")

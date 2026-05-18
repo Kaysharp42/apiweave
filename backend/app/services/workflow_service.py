@@ -23,9 +23,10 @@ async def list_workflows(
     skip: int = 0,
     limit: int = 20,
     tag: str | None = None,
+    name: str | None = None,
 ) -> PaginatedWorkflows:
-    """List workflows with pagination and optional tag filter."""
-    workflows, total = await WorkflowRepository.list_all(skip, limit, tag)
+    """List workflows with pagination and optional tag/name filters."""
+    workflows, total = await WorkflowRepository.list_all(skip, limit, tag, name)
     has_more = (skip + len(workflows)) < total
     return PaginatedWorkflows(
         workflows=workflows,
@@ -100,7 +101,8 @@ async def list_by_collection(collection_id: str) -> list[Workflow]:
     collection = await CollectionRepository.get_by_id(collection_id)
     if not collection:
         raise ValueError(f"Collection {collection_id} not found")
-    return await WorkflowRepository.list_by_collection(collection_id)
+    workflows, _ = await WorkflowRepository.list_by_collection(collection_id, skip=0, limit=1000)
+    return workflows
 
 
 async def export_workflow(

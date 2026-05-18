@@ -2,6 +2,7 @@
 Workflow Repository
 Handles all database operations for workflows with proper security and validation
 """
+import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime, UTC
 import uuid
@@ -43,16 +44,19 @@ class WorkflowRepository:
     async def list_all(
         skip: int = 0,
         limit: int = 20,
-        tag: Optional[str] = None
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
     ) -> tuple[List[Workflow], int]:
         """
-        List workflows with pagination and optional tag filter
+        List workflows with pagination and optional tag/name filters
         Returns (workflows, total_count)
         """
         # Build query filters - Beanie prevents injection
-        query_filters = []
+        query_filters: list[Any] = []
         if tag:
             query_filters.append(In(tag, Workflow.tags))
+        if name:
+            query_filters.append({"name": {"$regex": re.escape(name), "$options": "i"}})
         
         # Get total count
         if query_filters:

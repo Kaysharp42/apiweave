@@ -38,14 +38,21 @@ def main() -> None:
     # Load .env from the backend working directory
     load_dotenv(backend_dir / ".env")
 
+    from app.database import close_db
     from app.mcp.server import mcp_server, register_tools
     from app.mcp.transport import run_stdio
 
     register_tools()
     logger.info("APIWeave MCP server starting in stdio mode")
 
+    async def run() -> None:
+        try:
+            await run_stdio(mcp_server)
+        finally:
+            await close_db()
+
     try:
-        asyncio.run(run_stdio(mcp_server))
+        asyncio.run(run())
     except KeyboardInterrupt:
         logger.info("MCP stdio server interrupted")
     except Exception:

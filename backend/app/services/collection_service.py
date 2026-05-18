@@ -91,7 +91,12 @@ async def list_collection_workflows(collection_id: str) -> list[Any]:
     col = await CollectionRepository.get_by_id(collection_id)
     if not col:
         raise ValueError(f"Collection {collection_id} not found")
-    return await WorkflowRepository.list_by_collection(collection_id)
+    workflows, _ = await WorkflowRepository.list_by_collection(
+        collection_id,
+        skip=0,
+        limit=1000,
+    )
+    return workflows
 
 
 async def export_collection(
