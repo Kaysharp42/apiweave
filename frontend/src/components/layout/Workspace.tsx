@@ -173,7 +173,7 @@ export function Workspace({ onActiveTabChange }: WorkspaceProps) {
                         activeTab={activePanelTab}
                         onTabChange={setActivePanelTab}
                       />
-                      <div className="flex-1 overflow-hidden">
+                      <div className="flex-1 overflow-auto">
                         {activePanelTab === 'variables' && <VariablesPanel />}
                         {activePanelTab === 'dynamic' && <DynamicFunctionsHelper />}
                         {activePanelTab === 'settings' && <WorkflowSettingsPanel />}

@@ -12,9 +12,9 @@ const VARIANT_CLASS_MAP: Record<IconButtonVariant, string> = {
   ghost:
     'border border-transparent text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark',
   primary:
-    'bg-primary dark:bg-[#22d3ee] text-white border border-primary dark:border-[#22d3ee] hover:bg-primary-hover dark:hover:bg-cyan-400 shadow-sm hover:shadow-md',
+    'bg-primary dark:bg-[#22d3ee] text-white border border-primary dark:border-[#22d3ee] hover:bg-primary-hover dark:hover:bg-cyan-400 active:bg-primary-hover dark:active:bg-cyan-400 shadow-sm hover:shadow-md',
   error:
-    'bg-red-600 border border-red-600 text-white hover:bg-red-700 shadow-sm hover:shadow-md',
+    'bg-red-600 border border-red-600 text-white hover:bg-red-700 active:bg-red-700 shadow-sm hover:shadow-md',
   warning:
     'bg-yellow-600 border border-yellow-600 text-white hover:bg-yellow-700 shadow-sm hover:shadow-md',
   success:
