@@ -17,6 +17,29 @@ from app.models import Workflow, WorkflowCreate, WorkflowUpdate, PaginatedWorkfl
 from app.database import get_database
 from app.config import settings
 from app.repositories import WorkflowRepository, CollectionRepository, RunRepository, EnvironmentRepository
+from app.services import (
+    list_workflows as svc_list_workflows,
+    list_unattached_workflows as svc_list_unattached,
+    get_workflow as svc_get_workflow,
+    create_workflow as svc_create_workflow,
+    update_workflow as svc_update_workflow,
+    delete_workflow as svc_delete_workflow,
+    export_workflow as svc_export_workflow,
+    import_workflow as svc_import_workflow,
+    import_workflow_dry_run as svc_import_dry_run,
+    attach_to_collection as svc_attach_to_collection,
+    list_by_collection as svc_list_by_collection,
+)
+from app.services.secret_utils import (
+    detect_secrets_in_value,
+    sanitize_secrets_in_dict,
+    serialize_document_for_export,
+)
+from app.services.import_service import (
+    parse_curl_to_workflow,
+    parse_har_to_workflow,
+    parse_openapi_to_workflow,
+)
 from app.utils.swagger_discovery import (
     parse_swagger_ui_query_hints,
     extract_swagger_ui_hints_from_html,
@@ -82,838 +105,54 @@ def _derive_failed_node_ids(run: Any) -> List[str]:
     ]
 
 
-# Helper functions for export/import
-
-def detect_secrets_in_value(value: str) -> bool:
-    """Detect if a value might be a secret based on patterns"""
-    if not isinstance(value, str):
-        return False
-    
-    secret_patterns = [
-        r'bearer\s+[a-zA-Z0-9_\-\.]+',  # Bearer tokens
-        r'api[_-]?key',  # API keys
-        r'secret',  # Secret keywords
-        r'token',  # Token keywords
-        r'password',  # Password keywords
-        r'sk_live_',  # Stripe live keys
-        r'pk_live_',  # Stripe public keys
-    ]
-    
-    for pattern in secret_patterns:
-        if re.search(pattern, value, re.IGNORECASE):
-            return True
-    
-    return False
-
-
-def sanitize_secrets_in_dict(data: Dict[str, Any], secret_refs: List[str], path: str = "") -> Dict[str, Any]:
-    """
-    Recursively replace potential secret values with <SECRET> placeholder
-    and track their paths in secret_refs list
-    """
-    if not isinstance(data, dict):
-        return data
-    
-    sanitized = {}
-    for key, value in data.items():
-        current_path = f"{path}.{key}" if path else key
-        
-        if isinstance(value, dict):
-            sanitized[key] = sanitize_secrets_in_dict(value, secret_refs, current_path)
-        elif isinstance(value, str) and detect_secrets_in_value(value):
-            sanitized[key] = "<SECRET>"
-            secret_refs.append(current_path)
-        else:
-            sanitized[key] = value
-    
-    return sanitized
-
-
-def serialize_document_for_export(document: Any) -> Dict[str, Any]:
-    """Convert Beanie documents into JSON-safe dictionaries for exports."""
-    serialized = document.model_dump(by_alias=True)
-    serialized.pop("_id", None)
-    serialized.pop("id", None)
-    return serialized
-
-
-def parse_curl_to_workflow(curl_commands: str, sanitize: bool = True) -> Dict[str, Any]:
-    """
-    Convert curl command(s) to APIWeave workflow format
-    
-    Args:
-        curl_commands: Single curl command or multiple commands (one per line, or separated by &&)
-        sanitize: Whether to filter sensitive headers
-        
-    Returns:
-        Workflow dict ready for import
-    """
-    from urllib.parse import urlparse, parse_qs
-    import shlex
-    
-    def normalize_curl_command(cmd_text: str) -> str:
-        """
-        Normalize curl command by handling line continuations (backslashes)
-        and ensuring it's a single line
-        """
-        # Remove line continuations (backslash at end of line)
-        normalized = re.sub(r'\\\s*\n\s*', ' ', cmd_text)
-        return normalized.strip()
-    
-    # First, split multiple commands intelligently
-    # Look for lines that START with 'curl' to identify command boundaries
-    commands = []
-    current_cmd = []
-    
-    for line in curl_commands.split('\n'):
-        stripped = line.strip()
-        
-        # If line is empty, skip it
-        if not stripped:
-            continue
-        
-        # If line starts with 'curl', it's a new command
-        if stripped.startswith('curl'):
-            if current_cmd:
-                # Save previous command
-                full_cmd = '\n'.join(current_cmd)
-                normalized = normalize_curl_command(full_cmd)
-                if normalized:
-                    commands.append(normalized)
-            current_cmd = [line]
-        else:
-            # Continuation of current command
-            current_cmd.append(line)
-    
-    # Don't forget the last command
-    if current_cmd:
-        full_cmd = '\n'.join(current_cmd)
-        normalized = normalize_curl_command(full_cmd)
-        if normalized:
-            commands.append(normalized)
-    
-    if not commands:
-        raise ValueError("No valid curl commands found")
-    
-    nodes = []
-    edges = []
-    
-    # Create start node
-    start_node_id = str(uuid.uuid4())
-    nodes.append({
-        "nodeId": start_node_id,
-        "type": "start",
-        "label": "Start",
-        "position": {"x": 100, "y": 100},
-        "config": {}
-    })
-    
-    # Grid layout for curl commands
-    nodes_per_row = 8
-    x_spacing = 400
-    y_spacing = 200
-    start_x = 600
-    start_y = 100
-    
-    for idx, curl_cmd in enumerate(commands):
-        node_id = str(uuid.uuid4())
-        
-        try:
-            # Parse curl command
-            # Remove 'curl' prefix
-            if curl_cmd.startswith('curl '):
-                curl_cmd = curl_cmd[5:].strip()
-            
-            # Simple curl parser - handles most common cases
-            method = 'GET'
-            url = None
-            headers = {}
-            cookies = {}
-            body = None
-            
-            # Tokenize the command while respecting quotes
-            try:
-                tokens = shlex.split(curl_cmd)
-            except ValueError as e:
-                print(f"Shlex parsing failed for command {idx}, trying simple split: {e}")
-                # Fallback to manual parsing
-                tokens = []
-                in_quotes = False
-                current_token = []
-                for char in curl_cmd:
-                    if char == "'" or char == '"':
-                        in_quotes = not in_quotes
-                    elif char in (' ', '\t') and not in_quotes:
-                        if current_token:
-                            tokens.append(''.join(current_token))
-                            current_token = []
-                    else:
-                        current_token.append(char)
-                if current_token:
-                    tokens.append(''.join(current_token))
-            
-            i = 0
-            while i < len(tokens):
-                token = tokens[i]
-                
-                # Skip empty tokens
-                if not token:
-                    i += 1
-                    continue
-                
-                # Method flags
-                if token == '-X' or token == '--request':
-                    if i + 1 < len(tokens):
-                        method = tokens[i + 1].upper()
-                        i += 2
-                        continue
-                
-                # URL (first non-flag argument or after -url)
-                elif token == '-u' or token == '--url':
-                    if i + 1 < len(tokens):
-                        url = tokens[i + 1]
-                        i += 2
-                        continue
-                
-                # Headers
-                elif token == '-H' or token == '--header':
-                    if i + 1 < len(tokens):
-                        header_str = tokens[i + 1]
-                        if ':' in header_str:
-                            key, val = header_str.split(':', 1)
-                            key = key.strip()
-                            val = val.strip()
-                            if sanitize and detect_secrets_in_value(f"{key}:{val}"):
-                                headers[key] = "[FILTERED]"
-                            else:
-                                headers[key] = val
-                        i += 2
-                        continue
-                
-                # Cookies
-                elif token == '-b' or token == '--cookie':
-                    if i + 1 < len(tokens):
-                        cookie_str = tokens[i + 1]
-                        for cookie in cookie_str.split(';'):
-                            cookie = cookie.strip()
-                            if '=' in cookie:
-                                k, v = cookie.split('=', 1)
-                                cookies[k.strip()] = v.strip()
-                        i += 2
-                        continue
-                
-                # Data/Body
-                elif token == '-d' or token == '--data' or token == '--data-raw':
-                    if i + 1 < len(tokens):
-                        body = tokens[i + 1]
-                        if method == 'GET':
-                            method = 'POST'  # -d implies POST
-                        i += 2
-                        continue
-                
-                # If token doesn't start with -, it might be the URL
-                elif not token.startswith('-') and url is None:
-                    url = token
-                    i += 1
-                    continue
-                
-                i += 1
-            
-            # If no URL found, skip this command
-            if not url:
-                print(f"No URL found in command {idx}, skipping")
-                continue
-            
-            # Parse URL
-            parsed = urlparse(url)
-            host = parsed.netloc
-            path = parsed.path or "/"
-            query = parsed.query
-            
-            # Extract query params from URL
-            query_params = {}
-            if query:
-                parsed_qs_result = parse_qs(query, keep_blank_values=True)
-                for k, v_list in parsed_qs_result.items():
-                    query_params[k] = v_list[0] if v_list else ""
-            
-            # Build label
-            path_display = path if len(path) <= 40 else path[:37] + "..."
-            label = f"[{method}] {host}{path_display}"
-            
-            # Convert to string format
-            headers_str = "\n".join([f"{k}={v}" for k, v in headers.items()]) if headers else ""
-            query_params_str = "\n".join([f"{k}={v}" for k, v in query_params.items()]) if query_params else ""
-            cookies_str = "\n".join([f"{k}={v}" for k, v in cookies.items()]) if cookies else ""
-            
-            # Calculate position
-            row = idx // nodes_per_row
-            col = idx % nodes_per_row
-            x_position = start_x + col * x_spacing
-            y_position = start_y + row * y_spacing
-            
-            # Create node
-            node_config = {
-                "method": method,
-                "url": url,
-                "headers": headers_str,
-                "queryParams": query_params_str,
-                "cookies": cookies_str,
-                "body": body,
-                "timeout": 30,
-                "followRedirects": True,
-                "extractors": {},
-            }
-            
-            node = {
-                "nodeId": node_id,
-                "type": "http-request",
-                "label": label,
-                "position": {"x": x_position, "y": y_position},
-                "config": node_config
-            }
-            
-            nodes.append(node)
-        
-        except Exception as e:
-            # Log error but continue with other commands
-            print(f"Error parsing curl command {idx}: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            continue
-    
-    # Create end node
-    total_rows = (len(nodes) + nodes_per_row - 1) // nodes_per_row
-    end_x = start_x + (nodes_per_row // 2) * x_spacing
-    end_y = start_y + total_rows * y_spacing + y_spacing
-    
-    end_node_id = str(uuid.uuid4())
-    nodes.append({
-        "nodeId": end_node_id,
-        "type": "end",
-        "label": "End",
-        "position": {"x": end_x, "y": end_y},
-        "config": {}
-    })
-    
-    # Connect start to end
-    edges.append({
-        "edgeId": str(uuid.uuid4()),
-        "source": start_node_id,
-        "target": end_node_id,
-        "label": None
-    })
-    
-    workflow = {
-        "name": f"Imported from curl - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
-        "description": f"Imported {len(nodes) - 2} HTTP requests from curl commands",
-        "nodes": nodes,
-        "edges": edges,
-        "variables": {},
-        "tags": ["curl-import"]
-    }
-    
-    return workflow
-
-
-def parse_har_to_workflow(har_data: Dict[str, Any], import_mode: str = "linear", sanitize: bool = True) -> Dict[str, Any]:
-    """
-    Convert HAR file to APIWeave workflow format
-    
-    Args:
-        har_data: Parsed HAR JSON
-        import_mode: "linear" (sequential) or "grouped" (parallel)
-        sanitize: Whether to filter sensitive headers
-        
-    Returns:
-        Workflow dict ready for import
-    """
-    entries = har_data.get("log", {}).get("entries", [])
-    
-    if not entries:
-        raise ValueError("HAR file contains no entries")
-    
-    nodes = []
-    edges = []
-
-    # Create start node
-    start_node_id = str(uuid.uuid4())
-    nodes.append({
-        "nodeId": start_node_id,
-        "type": "start",
-        "label": "Start",
-        "position": {"x": 100, "y": 100},
-        "config": {}
-    })
-
-    # Smart grid layout: arrange nodes in rows to prevent sprawling too far
-    nodes_per_row = 8
-    x_spacing = 400  # Horizontal spacing between nodes
-    y_spacing = 200  # Vertical spacing between rows
-    start_x = 600    # Starting X position (after Start node)
-    start_y = 100    # Starting Y position
-
-    for idx, entry in enumerate(entries):
-        request = entry.get("request", {})
-        response = entry.get("response", {})
-
-        node_id = str(uuid.uuid4())
-
-        # Extract method and URL
-        method = request.get("method", "GET")
-        url = request.get("url", "")
-
-        # Parse URL for host/path/query
-        from urllib.parse import urlparse, parse_qs, urlunparse
-        parsed = urlparse(url)
-        host = parsed.netloc
-        path = parsed.path or "/"
-        query = parsed.query
-        
-        # Extract query params - prioritize HAR queryString, fallback to URL parsing
-        query_params = {}
-        har_query_string = request.get("queryString", [])
-        if har_query_string:
-            # Use HAR queryString if available
-            for qp in har_query_string:
-                k = qp.get("name", "")
-                v = qp.get("value", "")
-                query_params[k] = v
-        elif query:
-            # Fallback: parse from URL query string
-            parsed_qs = parse_qs(query, keep_blank_values=True)
-            for k, v_list in parsed_qs.items():
-                query_params[k] = v_list[0] if v_list else ""
-        
-        # Build label: [METHOD] host/path (truncate long paths)
-        path_display = path if len(path) <= 40 else path[:37] + "..."
-        label = f"[{method}] {host}{path_display}"
-
-        # Extract headers (as key-value)
-        headers = {}
-        for header in request.get("headers", []):
-            header_name = header.get("name", "")
-            header_value = header.get("value", "")
-            if sanitize and detect_secrets_in_value(f"{header_name}:{header_value}"):
-                headers[header_name] = "[FILTERED]"
-            else:
-                headers[header_name] = header_value
-
-        # Extract cookies
-        cookies = {}
-        for ck in request.get("cookies", []):
-            k = ck.get("name", "")
-            v = ck.get("value", "")
-            cookies[k] = v
-
-        # Extract body
-        post_data = request.get("postData", {})
-        body = post_data.get("text", "") if post_data else None
-
-        # Create example response metadata
-        example_response = {
-            "statusCode": response.get("status", 0),
-            "statusText": response.get("statusText", ""),
-            "headers": {h.get("name", ""): h.get("value", "") for h in response.get("headers", [])},
-            "bodySize": response.get("bodySize", 0),
-            "isExample": True
-        }
-
-        # Convert objects to string format expected by frontend
-        # Format: key=value\nkey2=value2
-        headers_str = "\n".join([f"{k}={v}" for k, v in headers.items()]) if headers else ""
-        query_params_str = "\n".join([f"{k}={v}" for k, v in query_params.items()]) if query_params else ""
-        cookies_str = "\n".join([f"{k}={v}" for k, v in cookies.items()]) if cookies else ""
-
-        # Calculate grid position
-        row = idx // nodes_per_row
-        col = idx % nodes_per_row
-        x_position = start_x + col * x_spacing
-        y_position = start_y + row * y_spacing
-
-        # Create HTTP request node
-        node_config = {
-            "method": method,
-            "url": url,
-            "headers": headers_str,
-            "queryParams": query_params_str,
-            "cookies": cookies_str,
-            "body": body,
-            "timeout": 30,
-            "followRedirects": True,
-            "extractors": {},
-            "exampleResponse": example_response
-        }
-
-        node = {
-            "nodeId": node_id,
-            "type": "http-request",
-            "label": label,
-            "position": {"x": x_position, "y": y_position},
-            "config": node_config
-        }
-
-        nodes.append(node)
-        # No auto-linking between nodes
-
-    # Create end node positioned below the grid
-    total_rows = (len(entries) + nodes_per_row - 1) // nodes_per_row  # Ceiling division
-    end_x = start_x + (nodes_per_row // 2) * x_spacing  # Center horizontally
-    end_y = start_y + total_rows * y_spacing + y_spacing  # Below last row
-    
-    end_node_id = str(uuid.uuid4())
-    nodes.append({
-        "nodeId": end_node_id,
-        "type": "end",
-        "label": "End",
-        "position": {"x": end_x, "y": end_y},
-        "config": {}
-    })
-
-    # Only connect Start to End (no HTTP node edges)
-    edges.append({
-        "edgeId": str(uuid.uuid4()),
-        "source": start_node_id,
-        "target": end_node_id,
-        "label": None
-    })
-
-    workflow = {
-        "name": f"Imported from HAR - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
-        "description": f"Imported {len(entries)} HTTP requests from HAR file",
-        "nodes": nodes,
-        "edges": edges,
-        "variables": {},
-        "tags": ["har-import"]
-    }
-
-    return workflow
-
-
-def resolve_openapi_schema_ref(ref_path: str, openapi_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Compatibility wrapper; implementation lives in app.utils.openapi_examples."""
-    return resolve_openapi_schema_ref_helper(ref_path, openapi_data)
-
-
-def generate_example_from_schema(schema: Dict[str, Any], openapi_data: Dict[str, Any]) -> Any:
-    """Compatibility wrapper; implementation lives in app.utils.openapi_examples."""
-    return generate_example_from_schema_helper(schema, openapi_data)
-
-
-def normalize_openapi_path(path: str) -> str:
-    """Normalize OpenAPI path for stable endpoint matching."""
-    if not path:
-        return "/"
-
-    normalized = path.strip()
-    if not normalized.startswith("/"):
-        normalized = f"/{normalized}"
-
-    normalized = re.sub(r"//+", "/", normalized)
-    return normalized
-
-
-def build_openapi_endpoint_fingerprint(method: str, path: str, operation_id: str = "", scope: str = "") -> str:
-    """Build deterministic endpoint fingerprint for OpenAPI request nodes."""
-    method_upper = (method or "GET").upper()
-    normalized_path = normalize_openapi_path(path)
-    operation_value = (operation_id or "").strip()
-    scope_value = (scope or "").strip()
-    return f"{scope_value}|{method_upper}|{normalized_path}|{operation_value}"
-
-
-def parse_openapi_to_workflow(
-    openapi_data: Dict[str, Any],
-    base_url: str = "",
-    tag_filter: Optional[List[str]] = None,
-    sanitize: bool = True,
-    source_context: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Convert OpenAPI/Swagger spec to APIWeave workflow format
-    
-    Args:
-        openapi_data: Parsed OpenAPI/Swagger JSON
-        base_url: Base URL to prepend to paths (from servers or user input)
-        tag_filter: Optional list of tags to filter endpoints (if None, import all)
-        sanitize: Whether to filter sensitive headers
-        
-    Returns:
-        Workflow dict ready for import
-    """
-    paths = openapi_data.get("paths", {})
-    
-    if not paths:
-        raise ValueError("OpenAPI spec contains no paths")
-    
-    # Get base URL from servers if not provided
-    if not base_url:
-        servers = openapi_data.get("servers", [])
-        if servers and servers[0].get("url"):
-            base_url = servers[0]["url"]
-        else:
-            base_url = ""
-    
-    nodes = []
-    edges = []
-    
-    # Create start node
-    start_node_id = str(uuid.uuid4())
-    nodes.append({
-        "nodeId": start_node_id,
-        "type": "start",
-        "label": "Start",
-        "position": {"x": 100, "y": 100},
-        "config": {}
-    })
-    
-    # Smart grid layout: arrange nodes in rows to prevent sprawling too far
-    # Strategy: Create a grid with ~8 nodes per row for balance
-    nodes_per_row = 8
-    x_spacing = 400  # Horizontal spacing between nodes
-    y_spacing = 200  # Vertical spacing between rows
-    start_x = 600    # Starting X position (after Start node)
-    start_y = 100    # Starting Y position
-    
-    idx = 0
-    for path, path_item in paths.items():
-        for method in ["get", "post", "put", "patch", "delete", "head", "options"]:
-            if method not in path_item:
-                continue
-            
-            operation = path_item[method]
-            
-            # Filter by tags if specified
-            operation_tags = operation.get("tags", [])
-            if tag_filter and not any(tag in tag_filter for tag in operation_tags):
-                continue
-            
-            node_id = str(uuid.uuid4())
-            
-            # Build full URL
-            full_url = f"{base_url}{path}" if base_url else path
-            normalized_path = normalize_openapi_path(path)
-            
-            # Extract query parameters from parameters list
-            query_params = {}
-            path_params = {}
-            headers = {}
-            
-            for param in operation.get("parameters", []):
-                param_name = param.get("name", "")
-                param_in = param.get("in", "")
-                param_required = param.get("required", False)
-                param_schema = param.get("schema", {})
-                param_example = param_schema.get("example", "")
-                
-                if param_in == "query":
-                    query_params[param_name] = str(param_example) if param_example else ""
-                elif param_in == "path":
-                    path_params[param_name] = str(param_example) if param_example else f"{{{param_name}}}"
-                elif param_in == "header":
-                    if sanitize and detect_secrets_in_value(f"{param_name}:{param_example}"):
-                        headers[param_name] = "[FILTERED]"
-                    else:
-                        headers[param_name] = str(param_example) if param_example else ""
-            
-            # Extract request body
-            body = ""
-            request_body = operation.get("requestBody", {})
-            if request_body:
-                content = request_body.get("content", {})
-                # Try to get JSON content first
-                if "application/json" in content:
-                    schema = content["application/json"].get("schema", {})
-                    # Generate example from schema (handles $ref resolution)
-                    example_data = generate_example_from_schema(schema, openapi_data)
-                    if example_data:
-                        body = json.dumps(example_data, indent=2)
-                    headers["Content-Type"] = "application/json"
-            
-            # Convert to string format
-            headers_str = "\n".join([f"{k}={v}" for k, v in headers.items()]) if headers else ""
-            query_params_str = "\n".join([f"{k}={v}" for k, v in query_params.items()]) if query_params else ""
-            
-            # Build label: [METHOD] /path - operationId
-            operation_id = operation.get("operationId", "")
-            summary = operation.get("summary", "")
-            label_text = operation_id or summary or path
-            if len(label_text) > 40:
-                label_text = label_text[:37] + "..."
-            label = f"[{method.upper()}] {label_text}"
-
-            context = source_context or {}
-            definition_scope = context.get("definitionScope") or ""
-
-            openapi_meta = {
-                "source": "openapi",
-                "method": method.upper(),
-                "path": normalized_path,
-                "operationId": operation_id or None,
-                "fingerprint": build_openapi_endpoint_fingerprint(
-                    method.upper(),
-                    normalized_path,
-                    operation_id,
-                    definition_scope,
-                ),
-            }
-
-            for key in ("definitionName", "definitionSpecUrl", "definitionScope", "sourceUiUrl"):
-                value = context.get(key)
-                if value:
-                    openapi_meta[key] = value
-            
-            # Calculate grid position
-            row = idx // nodes_per_row
-            col = idx % nodes_per_row
-            x_position = start_x + col * x_spacing
-            y_position = start_y + row * y_spacing
-            
-            # Create HTTP request node
-            node_config = {
-                "method": method.upper(),
-                "url": full_url,
-                "headers": headers_str,
-                "queryParams": query_params_str,
-                "cookies": "",
-                "body": body if body else None,
-                "timeout": 30,
-                "followRedirects": True,
-                "extractors": {},
-                "openapiMeta": openapi_meta,
-            }
-            
-            node = {
-                "nodeId": node_id,
-                "type": "http-request",
-                "label": label,
-                "position": {"x": x_position, "y": y_position},
-                "config": node_config
-            }
-            
-            nodes.append(node)
-            idx += 1
-    
-    # Create end node positioned below the grid
-    total_rows = (idx + nodes_per_row - 1) // nodes_per_row  # Ceiling division
-    end_x = start_x + (nodes_per_row // 2) * x_spacing  # Center horizontally
-    end_y = start_y + total_rows * y_spacing + y_spacing  # Below last row
-    
-    end_node_id = str(uuid.uuid4())
-    nodes.append({
-        "nodeId": end_node_id,
-        "type": "end",
-        "label": "End",
-        "position": {"x": end_x, "y": end_y},
-        "config": {}
-    })
-    
-    # Only connect Start to End
-    edges.append({
-        "edgeId": str(uuid.uuid4()),
-        "source": start_node_id,
-        "target": end_node_id,
-        "label": None
-    })
-    
-    api_title = openapi_data.get("info", {}).get("title", "API")
-    workflow = {
-        "name": f"Imported from OpenAPI - {api_title} - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
-        "description": f"Imported {idx} endpoints from OpenAPI specification",
-        "nodes": nodes,
-        "edges": edges,
-        "variables": {},
-        "tags": ["openapi-import"]
-    }
-    
-    return workflow
+# Helper functions for export/import — now in app.services.secret_utils
+# and app.services.import_service. Kept here only for backward compatibility
+# with endpoints that still use local parse_* calls.
 
 
 @router.post("", response_model=Workflow, status_code=status.HTTP_201_CREATED)
 async def create_workflow(workflow: WorkflowCreate):
-    """Create a new workflow using repository (SQL injection safe)"""
-    # Use repository for type-safe, injection-protected creation
-    created_workflow = await WorkflowRepository.create(workflow)
-    return created_workflow
+    """Create a new workflow using shared service layer"""
+    return await svc_create_workflow(workflow)
 
 
 @router.get("", response_model=PaginatedWorkflows)
 async def list_workflows(skip: int = 0, limit: int = 20, tag: Optional[str] = None):
-    """List workflows with pagination (SQL injection safe)"""
-    # Use repository for type-safe, injection-protected queries
-    workflows, total = await WorkflowRepository.list_all(skip, limit, tag)
-    
-    # Calculate if there are more results
-    has_more = (skip + len(workflows)) < total
-    
-    return PaginatedWorkflows(
-        workflows=workflows,
-        total=total,
-        skip=skip,
-        limit=limit,
-        hasMore=has_more
-    )
+    """List workflows with pagination using shared service layer"""
+    return await svc_list_workflows(skip, limit, tag)
 
 
 @router.get("/unattached", response_model=PaginatedWorkflows)
 async def list_unattached_workflows(skip: int = 0, limit: int = 20):
-    """Get all workflows not attached to any collection (SQL injection safe)"""
-    # Use repository for type-safe queries
-    workflows, total = await WorkflowRepository.list_unattached(skip, limit)
-    
-    # Calculate if there are more results
-    has_more = (skip + len(workflows)) < total
-    
-    return PaginatedWorkflows(
-        workflows=workflows,
-        total=total,
-        skip=skip,
-        limit=limit,
-        hasMore=has_more
-    )
+    """Get all workflows not attached to any collection"""
+    return await svc_list_unattached(skip, limit)
 
 
 @router.get("/{workflow_id}", response_model=Workflow)
 async def get_workflow(workflow_id: str):
-    """Get a workflow by ID (SQL injection safe)"""
-    # Use repository for type-safe query
-    workflow = await WorkflowRepository.get_by_id(workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Workflow {workflow_id} not found"
-        )
-    
-    return workflow
+    """Get a workflow by ID"""
+    try:
+        return await svc_get_workflow(workflow_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.put("/{workflow_id}", response_model=Workflow)
 async def update_workflow(workflow_id: str, update: WorkflowUpdate):
-    """Update a workflow (SQL injection safe)"""
-    # Use repository for type-safe update
-    updated_workflow = await WorkflowRepository.update(workflow_id, update)
-    
-    if not updated_workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Workflow {workflow_id} not found"
-        )
-    
-    return updated_workflow
+    """Update a workflow"""
+    try:
+        return await svc_update_workflow(workflow_id, update)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_workflow(workflow_id: str):
-    """Delete a workflow (SQL injection safe)"""
-    # Use repository for type-safe deletion
-    deleted = await WorkflowRepository.delete(workflow_id)
-    
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Workflow {workflow_id} not found"
-        )
-    
+    """Delete a workflow"""
+    try:
+        await svc_delete_workflow(workflow_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return None
 
 
@@ -1321,88 +560,21 @@ async def get_node_result(workflow_id: str, run_id: str, node_id: str):
 
 @router.get("/{workflow_id}/export")
 async def export_workflow(workflow_id: str, include_environment: bool = Query(True)):
-    """
-    Export a complete workflow bundle as JSON
-    Includes workflow, referenced environment (without secrets), and metadata
-    Secrets are replaced with <SECRET> placeholders
-    """
+    """Export a complete workflow bundle as JSON"""
     try:
-        # Fetch workflow using repository
-        workflow_doc = await WorkflowRepository.get_by_id(workflow_id)
-        if not workflow_doc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Workflow {workflow_id} not found"
-            )
-        
-        # Convert Beanie Document to dict
-        workflow = serialize_document_for_export(workflow_doc)
-        
-        # Convert datetime objects to ISO strings
-        if workflow.get("createdAt"):
-            workflow["createdAt"] = workflow["createdAt"].isoformat()
-        if workflow.get("updatedAt"):
-            workflow["updatedAt"] = workflow["updatedAt"].isoformat()
-        
-        # Track secret references
-        secret_refs = []
-        
-        # Sanitize secrets in workflow variables
-        if workflow.get("variables"):
-            workflow["variables"] = sanitize_secrets_in_dict(workflow["variables"], secret_refs, "variables")
-        
-        # Sanitize secrets in node configs
-        for node in workflow.get("nodes", []):
-            if node.get("config"):
-                node["config"] = sanitize_secrets_in_dict(node["config"], secret_refs, f"nodes.{node['nodeId']}.config")
-        
-        # Build export bundle
-        export_bundle = {
-            "workflow": workflow,
-            "environments": [],
-            "secretReferences": secret_refs,
-            "metadata": {
-                "exportedAt": datetime.now(UTC).isoformat(),
-                "apiweaveVersion": settings.VERSION,
-                "sourceHost": None
-            }
-        }
-        
-        # Include environment if requested and workflow has one
-        if include_environment and workflow.get("environmentId"):
-            env_id = workflow["environmentId"]
-            environment_doc = await EnvironmentRepository.get_by_id(env_id)
-            
-            if environment_doc:
-                # Convert Beanie Document to dict
-                environment = serialize_document_for_export(environment_doc)
-                
-                # Convert datetime objects to ISO strings
-                if environment.get("createdAt"):
-                    environment["createdAt"] = environment["createdAt"].isoformat()
-                if environment.get("updatedAt"):
-                    environment["updatedAt"] = environment["updatedAt"].isoformat()
-                
-                # Sanitize secrets in environment variables
-                if environment.get("variables"):
-                    environment["variables"] = sanitize_secrets_in_dict(
-                        environment["variables"], 
-                        secret_refs, 
-                        f"environments.{env_id}.variables"
-                    )
-                export_bundle["environments"].append(environment)
-        
-        return export_bundle
-        
-    except HTTPException:
-        raise
+        return await svc_export_workflow(
+            workflow_id,
+            include_environment=include_environment,
+            app_version=settings.VERSION,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
-        import traceback
-        print(f"Export error: {str(e)}")
-        print(traceback.format_exc())
+        logger = logging.getLogger(__name__)
+        logger.exception("Export error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Export failed: {str(e)}"
+            detail=f"Export failed: {str(e)}",
         )
 
 
@@ -1411,185 +583,24 @@ async def import_workflow(
     bundle: Dict[str, Any],
     environment_mapping: Optional[Dict[str, str]] = None,
     create_missing_environments: bool = True,
-    sanitize: bool = False
+    sanitize: bool = False,
 ):
-    """
-    Import a workflow bundle
-    Validates structure, handles environment mapping, optionally creates missing environments
-    """
-    # Validate bundle structure
-    if "workflow" not in bundle:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid bundle: missing 'workflow' key"
+    """Import a workflow bundle"""
+    try:
+        return await svc_import_workflow(
+            bundle,
+            environment_mapping=environment_mapping,
+            create_missing_environments=create_missing_environments,
+            sanitize=sanitize,
         )
-    
-    workflow_data = bundle["workflow"]
-    environments = bundle.get("environments", [])
-    
-    # Validate required workflow fields
-    required_fields = ["name", "nodes", "edges"]
-    for field in required_fields:
-        if field not in workflow_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid workflow: missing '{field}' field"
-            )
-    
-    # Handle environment mapping
-    old_env_id = workflow_data.get("environmentId")
-    new_env_id = None
-    
-    if old_env_id:
-        # Check if there's a mapping provided
-        if environment_mapping and old_env_id in environment_mapping:
-            new_env_id = environment_mapping[old_env_id]
-            
-            # Verify mapped environment exists using repository
-            existing_env = await EnvironmentRepository.get_by_id(new_env_id)
-            if not existing_env:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Mapped environment {new_env_id} not found"
-                )
-        elif create_missing_environments and environments:
-            # Try to find the environment in the bundle and create it
-            env_data = next((e for e in environments if e.get("environmentId") == old_env_id), None)
-            if env_data:
-                # Create new environment with new ID using repository
-                from app.models import EnvironmentCreate
-
-                env_create = EnvironmentCreate(
-                    name=env_data.get("name", "Imported Environment"),
-                    description=env_data.get("description"),
-                    swaggerDocUrl=env_data.get("swaggerDocUrl"),
-                    variables=env_data.get("variables", {}),
-                    secrets={},  # Secrets not included in exports
-                )
-
-                new_env = await EnvironmentRepository.create(env_create)
-                new_env_id = new_env.environmentId
-        else:
-            # No mapping and can't create - set to null
-            new_env_id = None
-    
-    # Optionally sanitize again (belt and suspenders)
-    if sanitize:
-        if workflow_data.get("variables"):
-            secret_refs = []
-            workflow_data["variables"] = sanitize_secrets_in_dict(workflow_data["variables"], secret_refs)
-        
-        for node in workflow_data.get("nodes", []):
-            if node.get("config"):
-                secret_refs = []
-                node["config"] = sanitize_secrets_in_dict(node["config"], secret_refs)
-    
-    workflow_create = WorkflowCreate(
-        name=workflow_data["name"],
-        description=workflow_data.get("description"),
-        nodes=workflow_data["nodes"],
-        edges=workflow_data["edges"],
-        variables=workflow_data.get("variables", {}),
-        tags=workflow_data.get("tags", []),
-        collectionId=None,
-        nodeTemplates=workflow_data.get("nodeTemplates", [])
-    )
-
-    created_workflow = await WorkflowRepository.create(workflow_create)
-    if new_env_id:
-        created_workflow.environmentId = new_env_id
-        created_workflow.updatedAt = datetime.now(UTC)
-        await created_workflow.save()
-    
-    return {
-        "message": "Workflow imported successfully",
-        "workflowId": created_workflow.workflowId,
-        "environmentId": new_env_id,
-        "secretReferences": bundle.get("secretReferences", [])
-    }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/import/dry-run")
 async def import_workflow_dry_run(bundle: Dict[str, Any]):
-    """
-    Validate a workflow bundle without persisting
-    Returns summary of what would be created/modified
-    """
-    # Validate bundle structure
-    errors = []
-    warnings = []
-    
-    if "workflow" not in bundle:
-        errors.append("Missing 'workflow' key in bundle")
-        return {"valid": False, "errors": errors, "warnings": warnings}
-    
-    workflow_data = bundle["workflow"]
-    
-    # Validate required workflow fields
-    required_fields = ["name", "nodes", "edges"]
-    for field in required_fields:
-        if field not in workflow_data:
-            errors.append(f"Missing required field: '{field}'")
-    
-    # Validate nodes
-    if "nodes" in workflow_data:
-        node_ids = set()
-        for idx, node in enumerate(workflow_data["nodes"]):
-            if "nodeId" not in node:
-                errors.append(f"Node at index {idx} missing 'nodeId'")
-            else:
-                if node["nodeId"] in node_ids:
-                    errors.append(f"Duplicate node ID: {node['nodeId']}")
-                node_ids.add(node["nodeId"])
-            
-            if "type" not in node:
-                errors.append(f"Node {node.get('nodeId', idx)} missing 'type'")
-    
-    # Validate edges
-    if "edges" in workflow_data and "nodes" in workflow_data:
-        node_ids = {node["nodeId"] for node in workflow_data["nodes"]}
-        for idx, edge in enumerate(workflow_data["edges"]):
-            if "source" not in edge or "target" not in edge:
-                errors.append(f"Edge at index {idx} missing 'source' or 'target'")
-            else:
-                if edge["source"] not in node_ids:
-                    errors.append(f"Edge references non-existent source node: {edge['source']}")
-                if edge["target"] not in node_ids:
-                    errors.append(f"Edge references non-existent target node: {edge['target']}")
-    
-    # Check for environment references using repository
-    old_env_id = workflow_data.get("environmentId")
-    if old_env_id:
-        env_exists = await EnvironmentRepository.get_by_id(old_env_id)
-        if not env_exists:
-            # Check if environment is in bundle
-            environments = bundle.get("environments", [])
-            env_in_bundle = any(e.get("environmentId") == old_env_id for e in environments)
-            
-            if env_in_bundle:
-                warnings.append(f"Environment {old_env_id} will be created from bundle")
-            else:
-                warnings.append(f"Environment {old_env_id} not found - workflow will be unattached")
-    
-    # Check for secret references
-    secret_refs = bundle.get("secretReferences", [])
-    if secret_refs:
-        warnings.append(f"Workflow contains {len(secret_refs)} secret references that must be re-entered")
-    
-    summary = {
-        "valid": len(errors) == 0,
-        "errors": errors,
-        "warnings": warnings,
-        "stats": {
-            "nodes": len(workflow_data.get("nodes", [])),
-            "edges": len(workflow_data.get("edges", [])),
-            "variables": len(workflow_data.get("variables", {})),
-            "secretReferences": len(secret_refs),
-            "environmentsIncluded": len(bundle.get("environments", []))
-        }
-    }
-    
-    return summary
+    """Validate a workflow bundle without persisting"""
+    return await svc_import_dry_run(bundle)
 
 
 @router.post("/import/har")
@@ -2423,41 +1434,20 @@ async def import_curl_dry_run(
 
 @router.put("/{workflow_id}/collection")
 async def attach_workflow_to_collection(workflow_id: str, collection_id: Optional[str] = Query(None)):
-    """
-    Attach or detach a workflow to/from a collection (SQL injection safe).
-    
-    If collection_id is null, workflow becomes unattached.
-    Multiple workflows can be attached to the same collection.
-    """
-    # Verify workflow exists using repository
-    workflow = await WorkflowRepository.get_by_id(workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Workflow {workflow_id} not found"
-        )
-    
-    # If attaching, verify collection exists using repository
-    if collection_id:
-        collection = await CollectionRepository.get_by_id(collection_id)
-        if not collection:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Collection {collection_id} not found"
-            )
-    
-    # Update workflow using repository
-    updated_workflow = await WorkflowRepository.update_collection_assignment(workflow_id, collection_id)
-    
-    return updated_workflow
+    """Attach or detach a workflow to/from a collection"""
+    try:
+        return await svc_attach_to_collection(workflow_id, collection_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.get("/by-collection/{collection_id}")
 async def list_workflows_by_collection(collection_id: str):
-    """Get all workflows attached to a collection (SQL injection safe)"""
-    # Use repository for type-safe query
-    workflows, _ = await WorkflowRepository.list_by_collection(collection_id, skip=0, limit=1000)
-    return workflows
+    """Get all workflows attached to a collection"""
+    try:
+        return await svc_list_by_collection(collection_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Visual API Test Workflows Made Simple"
 authors = [{name = "Ahmed KHIARI"}]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 license = {text = "MIT"}
 
 dependencies = [
@@ -24,6 +24,7 @@ dependencies = [
     "jinja2>=3.1.2",
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.6",
+    "mcp>=1.2.0,<2.0",
 ]
 
 [project.optional-dependencies]
@@ -46,11 +47,11 @@ packages = ["app"]
 
 [tool.black]
 line-length = 100
-target-version = ['py313']
+target-version = ['py312']
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py312"
 select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.pytest.ini_options]
@@ -59,7 +60,7 @@ asyncio_mode = "auto"
 addopts = "--cov=app --cov-report=html --cov-report=term-missing"
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
