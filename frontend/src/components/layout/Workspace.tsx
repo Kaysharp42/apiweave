@@ -156,6 +156,7 @@ export function Workspace({ onActiveTabChange }: WorkspaceProps) {
                 {showVariablesPanel && (
                   <Allotment.Pane preferredSize={320} minSize={280}>
                     <Panel
+                      className="h-full border-0 rounded-none"
                       title=""
                       collapsible={false}
                       headerActions={
@@ -173,11 +174,9 @@ export function Workspace({ onActiveTabChange }: WorkspaceProps) {
                         activeTab={activePanelTab}
                         onTabChange={setActivePanelTab}
                       />
-                      <div className="flex-1 overflow-auto">
-                        {activePanelTab === 'variables' && <VariablesPanel />}
-                        {activePanelTab === 'dynamic' && <DynamicFunctionsHelper />}
-                        {activePanelTab === 'settings' && <WorkflowSettingsPanel />}
-                      </div>
+                      {activePanelTab === 'variables' && <VariablesPanel />}
+                      {activePanelTab === 'dynamic' && <DynamicFunctionsHelper />}
+                      {activePanelTab === 'settings' && <WorkflowSettingsPanel />}
                     </Panel>
                   </Allotment.Pane>
                 )}

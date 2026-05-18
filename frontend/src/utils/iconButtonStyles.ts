@@ -10,15 +10,15 @@ const SIZE_CLASS_MAP: Record<ButtonSize, string> = {
 
 const VARIANT_CLASS_MAP: Record<IconButtonVariant, string> = {
   ghost:
-    'border border-transparent text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark',
+    'border border-transparent text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark focus:bg-surface-overlay dark:focus:bg-surface-dark-overlay focus:text-text-primary dark:focus:text-text-primary-dark active:bg-surface-overlay dark:active:bg-surface-dark-overlay active:text-text-primary dark:active:text-text-primary-dark',
   primary:
-    'bg-primary dark:bg-[#22d3ee] text-white border border-primary dark:border-[#22d3ee] hover:bg-primary-hover dark:hover:bg-cyan-400 active:bg-primary-hover dark:active:bg-cyan-400 shadow-sm hover:shadow-md',
+    'bg-primary dark:bg-[#22d3ee] text-white border border-primary dark:border-[#22d3ee] hover:bg-primary-hover dark:hover:bg-cyan-400 active:bg-primary/80 dark:active:bg-cyan-400/80 shadow-sm hover:shadow-md',
   error:
-    'bg-red-600 border border-red-600 text-white hover:bg-red-700 active:bg-red-700 shadow-sm hover:shadow-md',
+    'bg-red-600 border border-red-600 text-white hover:bg-red-700 active:bg-red-500 shadow-sm hover:shadow-md',
   warning:
-    'bg-yellow-600 border border-yellow-600 text-white hover:bg-yellow-700 shadow-sm hover:shadow-md',
+    'bg-yellow-600 border border-yellow-600 text-white hover:bg-yellow-700 active:bg-yellow-500 shadow-sm hover:shadow-md',
   success:
-    'bg-green-600 border border-green-600 text-white hover:bg-green-700 shadow-sm hover:shadow-md',
+    'bg-green-600 border border-green-600 text-white hover:bg-green-700 active:bg-green-500 shadow-sm hover:shadow-md',
 };
 
 export const resolveIconButtonSizeClass = (size: ButtonSize): string => SIZE_CLASS_MAP[size] || SIZE_CLASS_MAP.sm;

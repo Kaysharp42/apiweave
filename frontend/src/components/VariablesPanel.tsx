@@ -46,7 +46,7 @@ export default function VariablesPanel() {
   };
 
   return (
-    <div className="w-full min-w-0 bg-white dark:bg-gray-800 overflow-hidden h-full flex flex-col">
+    <div className="w-full min-w-0 bg-white dark:bg-gray-800 h-full flex flex-col">
       <div className="sticky top-0 bg-slate-50 dark:bg-gray-900 border-b dark:border-gray-700 p-3 z-10">
         <div className="relative mb-2">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />

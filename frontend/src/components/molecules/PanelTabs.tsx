@@ -29,7 +29,7 @@ export function PanelTabs({
             className={[
               'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
               isActive
-                ? 'border-primary dark:border-primary text-primary dark:text-primary-dark'
+                ? 'border-primary dark:border-cyan-400 text-primary dark:text-cyan-400'
                 : 'border-transparent text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:border-border dark:hover:border-border-dark',
             ].join(' ')}
             role="tab"

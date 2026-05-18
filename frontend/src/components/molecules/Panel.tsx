@@ -30,7 +30,7 @@ export function Panel({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   return (
-    <div className={`flex flex-col border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised overflow-hidden ${className}`}>
+    <div className={`flex flex-col h-full border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
         <div className="flex items-center gap-2 min-w-0">
@@ -59,7 +59,7 @@ export function Panel({
 
       {/* Body */}
       {isExpanded && (
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-hidden">
           {children}
         </div>
       )}

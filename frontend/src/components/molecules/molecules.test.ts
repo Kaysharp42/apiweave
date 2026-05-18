@@ -92,7 +92,7 @@ test('PanelTabs and FormField render accessible panel form abstractions', () => 
   assertIncludes(tabsMarkup, 'role="tab"');
   assertIncludes(tabsMarkup, 'aria-selected="true"');
   assertIncludes(tabsMarkup, 'aria-controls="panel-tab-config"');
-  assertIncludes(tabsMarkup, 'border-primary dark:border-primary');
+  assertIncludes(tabsMarkup, 'border-primary dark:border-cyan-400');
   assertIncludes(tabsMarkup, 'Output');
 
   const fieldMarkup = renderMarkup(
