@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "apiweave-stdio": {
+      "command": "python",
+      "args": ["mcp_stdio.py"],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "MCP_ENABLED": "true",
+        "MCP_HTTP_ENABLED": "false"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "apiweave-http": {
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY"
+      },
+      "disabled": true,
+      "autoApprove": []
+    }
+  }
+}
