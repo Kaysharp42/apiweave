@@ -2,15 +2,24 @@
 Run service — shared business logic for run creation, status, results, and node results.
 Called by both FastAPI routes and MCP tools.
 """
+import asyncio
 import json
+import logging
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
+from app import models
 from app.database import get_database
 from app.models import Run, RunCreate
-from app.repositories import RunRepository, WorkflowRepository
+from app.repositories import EnvironmentRepository, RunRepository, WorkflowRepository
+from app.runner.executor import WorkflowExecutor
+
+logger = logging.getLogger(__name__)
+VALID_RESUME_MODES = {"single", "all-failed"}
 
 
 async def create_run(run_request: RunCreate) -> Run:
@@ -25,6 +34,162 @@ async def create_run(run_request: RunCreate) -> Run:
     run_request.variables = variables
 
     return await RunRepository.create(run_request)
+
+
+async def _execute_workflow_background(
+    run_id: str,
+    workflow_id: str,
+    runtime_secrets: dict[str, str],
+    start_node_ids: list[str] | None,
+    resume_from_run_id: str | None,
+) -> None:
+    """Run the workflow executor as a background task."""
+    try:
+        executor = WorkflowExecutor(
+            run_id,
+            workflow_id,
+            runtime_secrets=runtime_secrets,
+            start_node_ids=start_node_ids,
+            resume_from_run_id=resume_from_run_id,
+        )
+        await executor.execute()
+    except Exception:
+        logger.exception("Background workflow execution failed for run %s", run_id)
+
+
+def _resume_value(
+    resume: dict[str, Any] | None,
+    snake_name: str,
+    camel_name: str,
+) -> Any:
+    if not resume:
+        return None
+    if snake_name in resume:
+        return resume[snake_name]
+    return resume.get(camel_name)
+
+
+def _normalize_start_node_ids(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [node_id for node_id in value if isinstance(node_id, str) and node_id]
+    return []
+
+
+async def trigger_workflow_run(
+    workflow_id: str,
+    environment_id: str | None = None,
+    runtime_secrets: dict[str, str] | None = None,
+    resume: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Trigger workflow execution and return run metadata without persisting secrets."""
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
+    if not workflow:
+        raise ValueError(f"Workflow {workflow_id} not found")
+
+    runtime_secret_values = dict(runtime_secrets or {})
+    resume_mode = _resume_value(resume, "mode", "mode")
+    resume_from_run_id = _resume_value(resume, "source_run_id", "sourceRunId")
+    start_node_ids = _normalize_start_node_ids(
+        _resume_value(resume, "start_node_ids", "startNodeIds")
+    )
+
+    if resume_mode is not None and resume_mode not in VALID_RESUME_MODES:
+        raise ValueError("Invalid resume mode. Expected 'single' or 'all-failed'.")
+
+    node_ids = {_node_id(node) for node in workflow.nodes}
+    node_ids.discard(None)
+
+    if resume_mode in VALID_RESUME_MODES:
+        if not resume_from_run_id:
+            latest_failed = await RunRepository.get_latest_failed_run(workflow_id)
+            if not latest_failed:
+                raise ValueError("No failed run found to resume from")
+            resume_from_run_id = latest_failed.runId
+            if not start_node_ids:
+                start_node_ids = _derive_failed_node_ids(latest_failed)
+
+        source_run = await RunRepository.get_by_id(resume_from_run_id)
+        if not source_run or source_run.workflowId != workflow_id:
+            raise ValueError("Invalid resume source run")
+
+        if not start_node_ids:
+            start_node_ids = _derive_failed_node_ids(source_run)
+
+        if resume_mode == "single" and len(start_node_ids) > 1:
+            start_node_ids = [start_node_ids[0]]
+
+        invalid_node_ids = [node_id for node_id in start_node_ids if node_id not in node_ids]
+        if invalid_node_ids:
+            raise ValueError(f"Invalid resume node(s): {invalid_node_ids}")
+
+        if not start_node_ids:
+            raise ValueError("No failed nodes found to resume from")
+    elif resume_from_run_id or start_node_ids:
+        raise ValueError("Resume source and start nodes require a resume mode.")
+
+    if environment_id:
+        environment = await EnvironmentRepository.get_by_id(environment_id)
+        if not environment:
+            raise ValueError(f"Environment {environment_id} not found")
+
+    run_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    workflow_variables = workflow.variables.copy() if workflow.variables else {}
+    run = models.Run(
+        runId=run_id,
+        workflowId=workflow_id,
+        environmentId=environment_id,
+        status="pending",
+        trigger="manual",
+        variables=workflow_variables,
+        resumeFromRunId=resume_from_run_id,
+        resumeFromNodeIds=start_node_ids or None,
+        resumeMode=resume_mode if resume_mode in VALID_RESUME_MODES else None,
+        callbackUrl=None,
+        results=[],
+        createdAt=now,
+        startedAt=None,
+        completedAt=None,
+        duration=None,
+        error=None,
+    )
+    await run.insert()
+
+    asyncio.create_task(
+        _execute_workflow_background(
+            run_id,
+            workflow_id,
+            runtime_secret_values,
+            start_node_ids or None,
+            resume_from_run_id,
+        )
+    )
+
+    return {
+        "message": "Workflow run triggered",
+        "runId": run_id,
+        "workflowId": workflow_id,
+        "environmentId": environment_id,
+        "resumeMode": resume_mode if resume_mode in VALID_RESUME_MODES else None,
+        "resumeFromRunId": resume_from_run_id,
+        "startNodeIds": start_node_ids or None,
+        "status": "pending",
+        "runtimeSecretCount": len(runtime_secret_values),
+        "polling": {
+            "tool": "run_get_status",
+            "recommendedIntervalSeconds": 1,
+            "instructions": (
+                "Call run_get_status with this workflow_id and run_id until status is "
+                "completed, failed, or cancelled. Use run_get_results for a summary and "
+                "run_get_node_result only when a full node payload is needed."
+            ),
+            "terminalStatuses": ["completed", "failed", "cancelled"],
+        },
+    }
 
 
 async def list_runs(

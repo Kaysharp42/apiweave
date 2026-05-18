@@ -37,15 +37,13 @@ def register_tools() -> None:
 
     from app.mcp.tools.collections import register_collection_tools
     from app.mcp.tools.environments import register_environment_tools
+    from app.mcp.tools.runs import register_run_tools
     from app.mcp.tools.workflows import register_workflow_tools
 
     register_workflow_tools(mcp_server)
     register_environment_tools(mcp_server)
     register_collection_tools(mcp_server)
-
-    # Phase 3 tools
-    # from app.mcp.tools.runs import register_run_tools
-    # register_run_tools(mcp_server)
+    register_run_tools(mcp_server)
 
     # Phase 4 tools
     # from app.mcp.tools.imports import register_import_tools

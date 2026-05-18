@@ -29,6 +29,7 @@ from app.services import (
     import_workflow_dry_run as svc_import_dry_run,
     attach_to_collection as svc_attach_to_collection,
     list_by_collection as svc_list_by_collection,
+    trigger_workflow_run as svc_trigger_workflow_run,
 )
 from app.services.secret_utils import (
     detect_secrets_in_value,
@@ -171,139 +172,22 @@ async def run_workflow(
     environment document so that real values are substituted at execution
     time without ever being persisted to the database.
     """
-    from app.runner.executor import WorkflowExecutor
-    from app.repositories import EnvironmentRepository
-    import asyncio
-    
     runtime_secrets = (body or {}).get('secrets', {}) if body else {}
     resume_payload = (body or {}).get('resume', {}) if body else {}
-    resume_mode = resume_payload.get('mode')
-    resume_from_run_id = resume_payload.get('sourceRunId')
-    start_node_ids = resume_payload.get('startNodeIds') or []
-    
-    # Verify workflow exists using repository
-    workflow = await WorkflowRepository.get_by_id(workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Workflow {workflow_id} not found"
+    try:
+        return await svc_trigger_workflow_run(
+            workflow_id,
+            environment_id=environmentId,
+            runtime_secrets=runtime_secrets,
+            resume=resume_payload,
         )
-
-    node_ids = {_node_id(node) for node in workflow.nodes}
-    node_ids.discard(None)
-
-    # Resolve and validate resume mode (optional)
-    if resume_mode in {"single", "all-failed"}:
-        if not resume_from_run_id:
-            latest_failed = await RunRepository.get_latest_failed_run(workflow_id)
-            if not latest_failed:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="No failed run found to resume from"
-                )
-            resume_from_run_id = latest_failed.runId
-            if not start_node_ids:
-                start_node_ids = _derive_failed_node_ids(latest_failed)
-
-        source_run = await RunRepository.get_by_id(resume_from_run_id)
-        if not source_run or source_run.workflowId != workflow_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid resume source run"
-            )
-
-        if not start_node_ids:
-            start_node_ids = _derive_failed_node_ids(source_run)
-
-        if resume_mode == "single" and len(start_node_ids) > 1:
-            start_node_ids = [start_node_ids[0]]
-
-        invalid_node_ids = [node_id for node_id in start_node_ids if node_id not in node_ids]
-        if invalid_node_ids:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid resume node(s): {invalid_node_ids}"
-            )
-
-        if not start_node_ids:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="No failed nodes found to resume from"
-            )
-    
-    # Verify environment exists if provided
-    if environmentId:
-        environment = await EnvironmentRepository.get_by_id(environmentId)
-        if not environment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Environment {environmentId} not found"
-            )
-    
-    run_id = str(uuid.uuid4())
-    now = datetime.now(UTC)
-    
-    # Create run using repository (type-safe)
-    from app.models import RunCreate
-    run_request = RunCreate(
-        workflowId=workflow_id,
-        variables=workflow.variables.copy() if workflow.variables else {}
-    )
-    
-    # Create run document with all required fields
-    run_doc_data = {
-        "runId": run_id,
-        "workflowId": workflow_id,
-        "environmentId": environmentId,  # Store which environment to use for this run
-        "status": "pending",
-        "trigger": "manual",
-        "variables": run_request.variables,
-        "resumeFromRunId": resume_from_run_id,
-        "resumeFromNodeIds": start_node_ids if start_node_ids else None,
-        "resumeMode": resume_mode if resume_mode in {"single", "all-failed"} else None,
-        "callbackUrl": None,
-        "results": [],
-        "createdAt": now,
-        "startedAt": None,
-        "completedAt": None,
-        "duration": None,
-        "error": None
-    }
-    
-    # Insert run directly using Beanie (repository create doesn't support custom runId)
-    from app.models import Run
-    run = Run(**run_doc_data)
-    await run.insert()
-    
-    # Trigger workflow execution as a background task
-    # This allows immediate response while execution happens in background
-    async def execute_workflow():
-        try:
-            executor = WorkflowExecutor(
-                run_id,
-                workflow_id,
-                runtime_secrets=runtime_secrets,
-                start_node_ids=start_node_ids if start_node_ids else None,
-                resume_from_run_id=resume_from_run_id,
-            )
-            await executor.execute()
-        except Exception as e:
-            # Error is already logged in executor
-            pass
-    
-    # Schedule the execution as a background task (non-blocking)
-    asyncio.create_task(execute_workflow())
-    
-    return {
-        "message": "Workflow run triggered",
-        "runId": run_id,
-        "workflowId": workflow_id,
-        "environmentId": environmentId,
-        "resumeMode": resume_mode if resume_mode in {"single", "all-failed"} else None,
-        "resumeFromRunId": resume_from_run_id,
-        "startNodeIds": start_node_ids if start_node_ids else None,
-        "status": "pending"
-    }
+    except ValueError as e:
+        message = str(e)
+        if "not found" in message:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
+        if message.startswith("No failed"):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
 
 @router.get("/{workflow_id}/runs")

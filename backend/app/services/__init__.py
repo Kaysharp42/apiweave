@@ -39,6 +39,7 @@ from app.services.run_service import (
     get_run_results,
     get_run_with_node_results,
     list_runs,
+    trigger_workflow_run,
 )
 from app.services.secret_utils import (
     detect_secrets_in_value,
@@ -79,6 +80,7 @@ __all__ = [
     "get_node_result",
     "get_run_results",
     "get_latest_failed_run",
+    "trigger_workflow_run",
     "list_environments",
     "get_environment",
     "get_active_environment",
