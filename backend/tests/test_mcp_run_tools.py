@@ -241,4 +241,36 @@ def test_register_run_tools_registers_phase_3_tool_names() -> None:
         "run_get_results",
         "run_get_node_result",
         "run_latest_failed",
+        "run_list",
+        "run_cancel",
     ]
+
+
+@pytest.mark.asyncio
+async def test_run_cancel_returns_cancellation_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_cancel_run(run_id: str) -> dict[str, str]:
+        assert run_id == "run-to-cancel"
+        return {"message": f"Run {run_id} cancelled", "runId": run_id, "status": "cancelled"}
+
+    monkeypatch.setattr(run_tools, "ensure_mcp_database", _noop_database)
+    monkeypatch.setattr(run_tools, "svc_cancel_run", fake_cancel_run)
+
+    response = await run_tools.run_cancel("run-to-cancel")
+
+    assert response.message == "Run run-to-cancel cancelled"
+    assert response.run_id == "run-to-cancel"
+    assert response.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_run_cancel_raises_on_invalid_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_cancel_run(run_id: str) -> dict[str, str]:
+        raise ValueError(f"Run {run_id} not found")
+
+    monkeypatch.setattr(run_tools, "ensure_mcp_database", _noop_database)
+    monkeypatch.setattr(run_tools, "svc_cancel_run", fake_cancel_run)
+
+    with pytest.raises(ValueError, match="Run missing-run not found"):
+        await run_tools.run_cancel("missing-run")

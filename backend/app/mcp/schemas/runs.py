@@ -240,3 +240,17 @@ class RunListResponse(BaseModel):
     runs: list[RunListItem] = Field(description="Run summaries.")
     total: int = Field(description="Number of runs returned.")
     has_more: bool = Field(description="Whether another page is available.")
+
+
+class RunCancelRequest(BaseModel):
+    """Input for run_cancel."""
+
+    run_id: str = Field(description="Run ID to cancel.")
+
+
+class RunCancelResponse(BaseModel):
+    """Output for run_cancel."""
+
+    message: str = Field(description="Cancellation result message.")
+    run_id: str = Field(description="Cancelled run ID.")
+    status: str = Field(description="Updated run status.")

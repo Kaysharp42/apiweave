@@ -13,6 +13,8 @@ from app.mcp.schemas.runs import (
     NodeStatusSummary,
     PollingHint,
     ResumeRunRequest,
+    RunCancelRequest,
+    RunCancelResponse,
     RunGetNodeResultRequest,
     RunGetResultsRequest,
     RunGetStatusRequest,
@@ -28,6 +30,7 @@ from app.mcp.schemas.runs import (
     WorkflowRunRequest,
     WorkflowRunResponse,
 )
+from app.services.run_service import cancel_run as svc_cancel_run
 from app.services.run_service import get_latest_failed_run as svc_get_latest_failed_run
 from app.services.run_service import get_node_result as svc_get_node_result
 from app.services.run_service import get_run as svc_get_run
@@ -387,6 +390,26 @@ async def run_list(
     )
 
 
+async def run_cancel(
+    run_id: Annotated[str, Field(description="Run ID to cancel.")],
+) -> RunCancelResponse:
+    """Cancel a pending or running workflow execution.
+
+    Only works for runs in pending or running status.
+    """
+    await ensure_mcp_database()
+    request = RunCancelRequest(run_id=run_id)
+    try:
+        result = await svc_cancel_run(request.run_id)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    return RunCancelResponse(
+        message=str(result.get("message", "Run cancelled")),
+        run_id=str(result.get("runId", request.run_id)),
+        status=str(result.get("status", "cancelled")),
+    )
+
+
 def register_run_tools(server: FastMCP) -> None:
     """Register execution and monitoring tools."""
     server.tool(
@@ -428,3 +451,10 @@ def register_run_tools(server: FastMCP) -> None:
             "Returns compact run metadata without full node results."
         ),
     )(run_list)
+    server.tool(
+        name="run_cancel",
+        description=(
+            "Cancel a pending or running workflow execution. Only works for runs "
+            "in pending or running status. Terminal runs cannot be cancelled."
+        ),
+    )(run_cancel)

@@ -63,12 +63,14 @@ class WorkflowExecutor:
         runtime_secrets: Dict[str, str] = None,
         start_node_ids: Optional[List[str]] = None,
         resume_from_run_id: Optional[str] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ):
         self.run_id = run_id
         self.workflow_id = workflow_id
-        self.runtime_secrets = runtime_secrets or {}  # Secret values provided at run time (never persisted)
+        self.runtime_secrets = runtime_secrets or {}
         self.start_node_ids = start_node_ids or []
         self.resume_from_run_id = resume_from_run_id
+        self.cancel_event = cancel_event or asyncio.Event()
         self.results = {}
         self.context = {}  # Stores variables and results from previous nodes
         self.workflow_variables = {}  # Workflow-level variables that persist across nodes
@@ -84,6 +86,18 @@ class WorkflowExecutor:
         self.has_failures = False  # Track if any node has failed during execution
         self.failed_nodes = []  # List of node IDs that failed
         self.first_error_message = None  # Store the first error message for the run
+    
+    def cancel(self) -> None:
+        """Signal the executor to stop at the next safe point."""
+        self.cancel_event.set()
+        self.logger.info("Cancellation requested for run %s", self.run_id)
+    
+    async def _check_cancelled(self) -> bool:
+        """Check if cancellation has been requested. Returns True if cancelled."""
+        if self.cancel_event.is_set():
+            self.logger.info("Run %s cancelled at checkpoint", self.run_id)
+            return True
+        return False
         
     async def execute(self):
         """Execute the workflow using Beanie repositories (SQL injection safe)"""
@@ -162,6 +176,11 @@ class WorkflowExecutor:
             entry_node_ids = [start_node['nodeId']]
         
         try:
+            # Check for cancellation before starting execution
+            if await self._check_cancelled():
+                await RunRepository.update_status(self.run_id, "cancelled")
+                return
+
             # Execute from one or more entry nodes
             if len(entry_node_ids) == 1:
                 await self._execute_from_node(entry_node_ids[0], nodes, edges, db)
@@ -325,6 +344,9 @@ class WorkflowExecutor:
         """Execute starting from a specific node"""
         node = nodes.get(node_id)
         if not node:
+            return
+        
+        if await self._check_cancelled():
             return
         
         self.logger.info(f"\n{'='*60}")
@@ -1357,7 +1379,15 @@ class WorkflowExecutor:
         config = node.get('config', {})
         duration = config.get('duration', 1000) / 1000  # Convert ms to seconds
         
-        await asyncio.sleep(duration)
+        try:
+            await asyncio.wait_for(self.cancel_event.wait(), timeout=duration)
+            return {
+                "status": "cancelled",
+                "duration": duration,
+                "message": "Delay cancelled"
+            }
+        except asyncio.TimeoutError:
+            pass
         
         return {
             "status": "success",
@@ -1554,6 +1584,8 @@ class WorkflowExecutor:
                 elapsed = 0
                 
                 while missing_predecessors and elapsed < max_wait:
+                    if await self._check_cancelled():
+                        return {"status": "cancelled", "message": "Merge cancelled while waiting for predecessors"}
                     await asyncio.sleep(wait_interval)
                     elapsed += wait_interval
                     missing_predecessors = [pred_id for pred_id in predecessor_node_ids 
@@ -1592,6 +1624,8 @@ class WorkflowExecutor:
                 elapsed = 0
                 
                 while not completed_predecessors and elapsed < max_wait:
+                    if await self._check_cancelled():
+                        return {"status": "cancelled", "message": "Merge cancelled while waiting for predecessors"}
                     await asyncio.sleep(wait_interval)
                     elapsed += wait_interval
                     completed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.results]
@@ -1622,6 +1656,8 @@ class WorkflowExecutor:
                 elapsed = 0
                 
                 while missing_predecessors and elapsed < max_wait:
+                    if await self._check_cancelled():
+                        return {"status": "cancelled", "message": "Merge cancelled while waiting for predecessors"}
                     await asyncio.sleep(wait_interval)
                     elapsed += wait_interval
                     missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]

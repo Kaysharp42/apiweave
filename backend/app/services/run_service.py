@@ -21,6 +21,29 @@ from app.runner.executor import WorkflowExecutor
 logger = logging.getLogger(__name__)
 VALID_RESUME_MODES = {"single", "all-failed"}
 
+_active_executors: dict[str, WorkflowExecutor] = {}
+_active_cancel_events: dict[str, asyncio.Event] = {}
+
+
+def _register_executor(
+    run_id: str, executor: WorkflowExecutor, cancel_event: asyncio.Event,
+) -> None:
+    _active_executors[run_id] = executor
+    _active_cancel_events[run_id] = cancel_event
+
+
+def _unregister_executor(run_id: str) -> None:
+    _active_executors.pop(run_id, None)
+    _active_cancel_events.pop(run_id, None)
+
+
+def _get_executor(run_id: str) -> WorkflowExecutor | None:
+    return _active_executors.get(run_id)
+
+
+def _get_cancel_event(run_id: str) -> asyncio.Event | None:
+    return _active_cancel_events.get(run_id)
+
 
 async def create_run(run_request: RunCreate) -> Run:
     """Create a run, merging workflow variables."""
@@ -42,19 +65,24 @@ async def _execute_workflow_background(
     runtime_secrets: dict[str, str],
     start_node_ids: list[str] | None,
     resume_from_run_id: str | None,
+    cancel_event: asyncio.Event,
 ) -> None:
     """Run the workflow executor as a background task."""
+    executor = WorkflowExecutor(
+        run_id,
+        workflow_id,
+        runtime_secrets=runtime_secrets,
+        start_node_ids=start_node_ids,
+        resume_from_run_id=resume_from_run_id,
+        cancel_event=cancel_event,
+    )
+    _register_executor(run_id, executor, cancel_event)
     try:
-        executor = WorkflowExecutor(
-            run_id,
-            workflow_id,
-            runtime_secrets=runtime_secrets,
-            start_node_ids=start_node_ids,
-            resume_from_run_id=resume_from_run_id,
-        )
         await executor.execute()
     except Exception:
         logger.exception("Background workflow execution failed for run %s", run_id)
+    finally:
+        _unregister_executor(run_id)
 
 
 def _resume_value(
@@ -159,6 +187,7 @@ async def trigger_workflow_run(
     )
     await run.insert()
 
+    cancel_event = asyncio.Event()
     asyncio.create_task(
         _execute_workflow_background(
             run_id,
@@ -166,6 +195,7 @@ async def trigger_workflow_run(
             runtime_secret_values,
             start_node_ids or None,
             resume_from_run_id,
+            cancel_event,
         )
     )
 
@@ -217,14 +247,24 @@ async def get_run(run_id: str) -> Run:
     return run
 
 
-async def cancel_run(run_id: str) -> None:
+async def cancel_run(run_id: str) -> dict[str, str]:
     """Cancel a pending or running run. Raises ValueError if invalid."""
     run = await RunRepository.get_by_id(run_id)
     if not run:
         raise ValueError(f"Run {run_id} not found")
     if run.status not in ("pending", "running"):
         raise ValueError(f"Cannot cancel run with status {run.status}")
+
+    cancel_event = _get_cancel_event(run_id)
+    if cancel_event:
+        cancel_event.set()
+        executor = _get_executor(run_id)
+        if executor:
+            executor.cancel()
+        logger.info("Signalled cancellation for running run %s", run_id)
+
     await RunRepository.update_status(run_id, "cancelled")
+    return {"message": f"Run {run_id} cancelled", "runId": run_id, "status": "cancelled"}
 
 
 async def get_run_with_node_results(run_id: str, workflow_id: str) -> dict[str, Any]:
