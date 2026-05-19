@@ -6,6 +6,7 @@ from typing import Annotated, Any, cast
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
+from app.config import settings
 from app.mcp.database import ensure_mcp_database
 from app.mcp.datetime_utils import utc_datetime
 from app.mcp.schemas.environments import (

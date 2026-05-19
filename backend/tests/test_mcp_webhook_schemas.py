@@ -1,11 +1,8 @@
 """Tests for webhook MCP schemas — verify credential redaction and DTO shapes."""
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
-from app.mcp.contracts import REDACTION_PLACEHOLDER
 from app.mcp.schemas.webhooks import (
     WebhookCredentialResponse,
-    WebhookDetail,
-    WebhookLogEntry,
     WebhookSummary,
     webhook_log_to_entry,
     webhook_to_detail,

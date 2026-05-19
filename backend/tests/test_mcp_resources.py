@@ -1,8 +1,7 @@
 """
 Tests for MCP resources — workflow, environment, and run snapshots.
 """
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -105,8 +104,10 @@ async def test_environment_resource_returns_json():
     """Environment resource returns valid JSON with redacted secrets."""
     mock_env = MockEnvironment()
 
-    with patch("app.mcp.resources.environments.ensure_mcp_database", new_callable=AsyncMock), \
-         patch("app.mcp.resources.environments.get_environment", new_callable=AsyncMock) as mock_get:
+    with (
+        patch("app.mcp.resources.environments.ensure_mcp_database", new_callable=AsyncMock),
+        patch("app.mcp.resources.environments.get_environment", new_callable=AsyncMock) as mock_get,
+    ):
         mock_get.return_value = mock_env
 
         from mcp.server.fastmcp import FastMCP

@@ -1,11 +1,10 @@
 """Tests for shared MCP contract utilities."""
-import pytest
 
 from app.mcp.contracts import (
+    REDACTION_PLACEHOLDER,
     LargeResultMetadata,
     McpErrorEnvelope,
     PaginationMetadata,
-    REDACTION_PLACEHOLDER,
     make_config_disabled_error,
     make_conflict_error,
     make_not_found_error,

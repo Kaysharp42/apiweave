@@ -3,7 +3,7 @@ MCP webhook lifecycle tools — CRUD, credential rotation, and logs.
 
 Uses shared contracts for structured errors and webhook schemas for redacted DTOs.
 """
-from typing import Annotated
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -148,7 +148,7 @@ async def webhook_update(
     """Update webhook configuration. Cannot change token/HMAC — use rotate endpoint."""
     await ensure_mcp_database()
 
-    update_data = {}
+    update_data: dict[str, Any] = {}
     if environment_id is not None:
         update_data["environmentId"] = environment_id
     if enabled is not None:
