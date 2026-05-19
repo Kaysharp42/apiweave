@@ -64,7 +64,7 @@ The MCP endpoint will be available at `http://localhost:8000/mcp` when `MCP_HTTP
 
 ## Tool Inventory
 
-The MCP server exposes **51 tools** organized by domain, plus **5 resources** and **4 prompts**. All read/export tools redact persisted secrets. Runtime secrets are accepted only for `workflow_run` and are never persisted or echoed back.
+The MCP server exposes **56 tools** organized by domain, plus **5 resources** and **4 prompts**. All read/export tools redact persisted secrets. Runtime secrets are accepted only for `workflow_run` and are never persisted or echoed back.
 
 ### Server Info
 
@@ -98,6 +98,8 @@ The MCP server exposes **51 tools** organized by domain, plus **5 resources** an
 | `environment_update` | Update environment metadata/variables (no secrets) |
 | `environment_delete` | Delete an environment (blocked if workflows reference it) |
 | `environment_activate` | Set an environment as active (deactivates others) |
+| `environment_duplicate` | Duplicate an environment. Variables copied; secrets redacted in response |
+| `mcp_get_config_summary` | Get MCP server configuration summary. Capability flags only — no secrets |
 
 ### Collection Tools (11)
 
@@ -158,6 +160,16 @@ These tools require `MCP_ALLOW_SECRET_WRITES=true` in server configuration. They
 | `webhook_delete` | Delete a webhook. Destructive — cannot be undone. |
 | `webhook_regenerate_credentials` | Regenerate webhook token and HMAC secret. Invalidates old credentials. |
 | `webhook_get_logs` | Get webhook execution logs with pagination. Sensitive fields redacted. |
+
+### Collection-Run Read Tools (3)
+
+Read-only tools based on backend readiness gate. Execution tools deferred until backend collection execution is stable.
+
+| Tool | Description |
+|------|-------------|
+| `collection_run_list` | List collection runs for a collection with pagination. Read-only. |
+| `collection_run_get` | Get a collection run by ID. Read-only. |
+| `collection_run_latest` | Get the latest collection run for a collection. Read-only. |
 
 ### Resources (5)
 
@@ -558,11 +570,10 @@ Values matching patterns like `sk-`, `key_`, `secret`, `password`, `token`, `api
 
 The following are not currently implemented but may be added in future phases:
 
-- **MCP Resources**: Expose workflow snapshots, environment snapshots, or run histories as MCP resources for agent context
-- **MCP Prompts**: Pre-built prompt templates for common workflows (e.g., "create a test for this endpoint", "debug this failed run")
-- **Expanded management tools**: Additional destructive tools with explicit confirmation requirements
-- **Optional secret write tools**: Config-gated tools for writing persisted environment secrets (write-only, no readback)
-- **Webhook management tools**: CRUD for webhook endpoints and secret rotation
+- **Collection execution trigger**: Backend collection webhook execution is a placeholder; MCP exposure deferred until backend execution is stable
+- **Advanced run creation with callback URLs**: SSRF-safe callback validation needed before exposure
+- **Workflow bulk collection attachment**: Requires stable service-layer atomicity guarantees
+- **Template marketplace / scheduling / notifications**: Out of scope for MCP parity phase
 
 ---
 

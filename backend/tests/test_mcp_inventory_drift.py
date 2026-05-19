@@ -35,6 +35,8 @@ EXPECTED_TOOLS = sorted([
     "environment_update",
     "environment_delete",
     "environment_activate",
+    "environment_duplicate",
+    "mcp_get_config_summary",
     # Collection tools (11)
     "collection_list",
     "collection_list_workflows",
@@ -73,6 +75,10 @@ EXPECTED_TOOLS = sorted([
     "webhook_delete",
     "webhook_regenerate_credentials",
     "webhook_get_logs",
+    # Collection-run read tools (3)
+    "collection_run_list",
+    "collection_run_get",
+    "collection_run_latest",
 ])
 
 EXPECTED_RESOURCES = sorted([
@@ -89,7 +95,7 @@ EXPECTED_PROMPTS = sorted([
     "resume_failed_workflow",
 ])
 
-EXPECTED_TOOL_COUNT = len(EXPECTED_TOOLS)  # 51
+EXPECTED_TOOL_COUNT = len(EXPECTED_TOOLS)  # 56
 EXPECTED_RESOURCE_COUNT = len(EXPECTED_RESOURCES)  # 5
 EXPECTED_PROMPT_COUNT = len(EXPECTED_PROMPTS)  # 4
 
