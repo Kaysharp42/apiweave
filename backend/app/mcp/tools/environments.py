@@ -34,6 +34,9 @@ from app.services.environment_service import (
     delete_environment as svc_delete_environment,
 )
 from app.services.environment_service import (
+    duplicate_environment as svc_duplicate_environment,
+)
+from app.services.environment_service import (
     get_active_environment_redacted as svc_get_active_environment_redacted,
 )
 from app.services.environment_service import (
@@ -229,6 +232,41 @@ async def environment_activate(
     )
 
 
+async def environment_duplicate(
+    environment_id: Annotated[str, Field(description="Environment ID to duplicate.")],
+) -> EnvironmentCreateResponse:
+    """Duplicate an environment. Variables are copied; secrets metadata copied but no raw values returned."""
+    await ensure_mcp_database()
+    duplicated = await svc_duplicate_environment(environment_id)
+    redacted = {
+        "environmentId": duplicated.environmentId,
+        "name": duplicated.name,
+        "description": duplicated.description,
+        "swaggerDocUrl": duplicated.swaggerDocUrl,
+        "variables": duplicated.variables or {},
+        "secrets": {k: "<SECRET>" for k in (duplicated.secrets or {})},
+        "isActive": duplicated.isActive,
+        "createdAt": duplicated.createdAt,
+        "updatedAt": duplicated.updatedAt,
+    }
+    return EnvironmentCreateResponse(
+        message="Environment duplicated successfully",
+        environment=environment_from_dict(redacted),
+    )
+
+
+async def mcp_get_config_summary() -> dict:
+    """Get MCP server configuration summary. Returns capability flags only."""
+    return {
+        "mcp_enabled": settings.MCP_ENABLED,
+        "http_enabled": settings.MCP_HTTP_ENABLED,
+        "secret_writes_enabled": settings.MCP_ALLOW_SECRET_WRITES,
+        "require_api_key": getattr(settings, "MCP_REQUIRE_API_KEY", False),
+        "version": settings.VERSION,
+        "note": "No API keys, database URLs, or secret values are returned.",
+    }
+
+
 def register_environment_tools(server: FastMCP) -> None:
     """Register environment tools."""
     server.tool(
@@ -267,3 +305,13 @@ def register_environment_tools(server: FastMCP) -> None:
         name="environment_activate",
         description="Set an environment as active. Deactivates any previously active environment.",
     )(environment_activate)
+
+    server.tool(
+        name="environment_duplicate",
+        description="Duplicate an environment. Variables are copied; secrets are copied as metadata only (no raw values).",
+    )(environment_duplicate)
+
+    server.tool(
+        name="mcp_get_config_summary",
+        description="Get MCP server configuration summary. Returns capability flags only — no secrets, API keys, or database URLs.",
+    )(mcp_get_config_summary)
