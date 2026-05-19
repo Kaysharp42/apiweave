@@ -41,6 +41,7 @@ def register_tools() -> None:
     from app.mcp.tools.imports import register_import_tools
     from app.mcp.tools.runs import register_run_tools
     from app.mcp.tools.secrets import register_secret_tools
+    from app.mcp.tools.webhooks import register_webhook_tools
     from app.mcp.tools.workflows import register_workflow_tools
 
     register_workflow_tools(mcp_server)
@@ -49,6 +50,7 @@ def register_tools() -> None:
     register_run_tools(mcp_server)
     register_import_tools(mcp_server)
     register_secret_tools(mcp_server)
+    register_webhook_tools(mcp_server)
 
     _tools_registered = True
     logger.info("MCP tools registered")

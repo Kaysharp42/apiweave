@@ -65,6 +65,14 @@ EXPECTED_TOOLS = sorted([
     # Secret tools (2) — config-gated, but SHIPPED
     "environment_set_secret",
     "environment_delete_secret",
+    # Webhook tools (7)
+    "webhook_list",
+    "webhook_get",
+    "webhook_create",
+    "webhook_update",
+    "webhook_delete",
+    "webhook_regenerate_credentials",
+    "webhook_get_logs",
 ])
 
 EXPECTED_RESOURCES = sorted([
@@ -81,7 +89,7 @@ EXPECTED_PROMPTS = sorted([
     "resume_failed_workflow",
 ])
 
-EXPECTED_TOOL_COUNT = len(EXPECTED_TOOLS)  # 44
+EXPECTED_TOOL_COUNT = len(EXPECTED_TOOLS)  # 51
 EXPECTED_RESOURCE_COUNT = len(EXPECTED_RESOURCES)  # 5
 EXPECTED_PROMPT_COUNT = len(EXPECTED_PROMPTS)  # 4
 

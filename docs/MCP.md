@@ -64,7 +64,7 @@ The MCP endpoint will be available at `http://localhost:8000/mcp` when `MCP_HTTP
 
 ## Tool Inventory
 
-The MCP server exposes **44 tools** organized by domain, plus **5 resources** and **4 prompts**. All read/export tools redact persisted secrets. Runtime secrets are accepted only for `workflow_run` and are never persisted or echoed back.
+The MCP server exposes **51 tools** organized by domain, plus **5 resources** and **4 prompts**. All read/export tools redact persisted secrets. Runtime secrets are accepted only for `workflow_run` and are never persisted or echoed back.
 
 ### Server Info
 
@@ -146,6 +146,18 @@ These tools require `MCP_ALLOW_SECRET_WRITES=true` in server configuration. They
 |------|-------------|
 | `environment_set_secret` | Set a persisted secret on an environment (write-only, never returned). Requires `MCP_ALLOW_SECRET_WRITES=true`. |
 | `environment_delete_secret` | Delete a persisted secret from an environment. Requires `MCP_ALLOW_SECRET_WRITES=true`. |
+
+### Webhook Tools (7)
+
+| Tool | Description |
+|------|-------------|
+| `webhook_list` | List webhooks with optional resource filter and pagination |
+| `webhook_get` | Get webhook details with credentials redacted |
+| `webhook_create` | Create a webhook. Returns one-time credentials — save immediately! |
+| `webhook_update` | Update webhook configuration (environment, enabled, description) |
+| `webhook_delete` | Delete a webhook. Destructive — cannot be undone. |
+| `webhook_regenerate_credentials` | Regenerate webhook token and HMAC secret. Invalidates old credentials. |
+| `webhook_get_logs` | Get webhook execution logs with pagination. Sensitive fields redacted. |
 
 ### Resources (5)
 
