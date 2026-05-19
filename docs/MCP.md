@@ -64,7 +64,7 @@ The MCP endpoint will be available at `http://localhost:8000/mcp` when `MCP_HTTP
 
 ## Tool Inventory
 
-The MCP server exposes **42 tools** organized by domain. All read/export tools redact persisted secrets. Runtime secrets are accepted only for `workflow_run` and are never persisted or echoed back.
+The MCP server exposes **44 tools** organized by domain, plus **5 resources** and **4 prompts**. All read/export tools redact persisted secrets. Runtime secrets are accepted only for `workflow_run` and are never persisted or echoed back.
 
 ### Server Info
 
@@ -137,6 +137,37 @@ The MCP server exposes **42 tools** organized by domain. All read/export tools r
 | `import_har` | Import HTTP requests from HAR file content |
 | `import_har_dry_run` | Preview HAR import (validates without creating) |
 | `import_curl` | Import one or more curl commands as request nodes |
+
+### Environment Secret Tools (2) — Config-Gated
+
+These tools require `MCP_ALLOW_SECRET_WRITES=true` in server configuration. They are shipped but disabled by default for safety.
+
+| Tool | Description |
+|------|-------------|
+| `environment_set_secret` | Set a persisted secret on an environment (write-only, never returned). Requires `MCP_ALLOW_SECRET_WRITES=true`. |
+| `environment_delete_secret` | Delete a persisted secret from an environment. Requires `MCP_ALLOW_SECRET_WRITES=true`. |
+
+### Resources (5)
+
+Resources are read-only context that agents can reference. They do not perform actions.
+
+| Resource URI | Description |
+|--------------|-------------|
+| `environment://{environment_id}` | Read-only snapshot of an environment with secrets redacted |
+| `environments://list` | List all environments as read-only reference |
+| `run://{run_id}` | Read-only snapshot of a workflow run status and metadata |
+| `workflow://{workflow_id}` | Read-only snapshot of a workflow definition with secrets redacted |
+
+### Prompts (4)
+
+Prompts are user-invoked templates that guide agents through common workflows.
+
+| Prompt | Description |
+|--------|-------------|
+| `create_test_from_openapi` | Generate a test workflow from an OpenAPI/Swagger specification |
+| `create_test_from_curl` | Generate a test workflow from curl commands |
+| `debug_failed_run` | Structured plan for debugging a failed workflow run |
+| `resume_failed_workflow` | Structured plan for resuming a failed workflow from failed nodes |
 
 ---
 
