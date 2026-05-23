@@ -446,7 +446,7 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
       className="max-w-[320px]"
     >
       {({ isExpanded }) => (
-        <div className="p-2 space-y-1.5">
+        <div className="p-3 space-y-1.5">
           <div className={`flex gap-1 ${isExpanded ? 'items-start' : 'items-center'}`}>
             <select
               className="nodrag px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"

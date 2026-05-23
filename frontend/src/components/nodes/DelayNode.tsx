@@ -55,7 +55,7 @@ const DelayNode = ({ id, data, selected = false }: DelayNodeProps) => {
       className="min-w-[180px]"
     >
       {() => (
-        <div className="p-2 space-y-1.5">
+        <div className="p-3 space-y-1.5">
           <div className="text-[10px] text-text-muted dark:text-text-muted-dark">
             Wait before next step
           </div>

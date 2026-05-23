@@ -54,7 +54,7 @@ export function TextArea({
         value={value}
         onChange={onChange}
         className={[
-          'textarea textarea-bordered w-full',
+          'textarea textarea-bordered w-full px-3 py-2 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
           sizeClass[size] ?? '',
           error && 'textarea-error',
           autoResize && 'resize-none overflow-hidden',

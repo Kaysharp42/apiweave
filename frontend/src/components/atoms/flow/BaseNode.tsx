@@ -113,7 +113,7 @@ export function BaseNode({
               .join(' ')}
           >
             {icon && (
-              <span className={`flex-shrink-0 w-4 h-4 ${headerTextClass || 'text-text-secondary dark:text-text-secondary-dark'}`}>
+              <span className={`flex-shrink-0 flex items-center justify-center ${headerTextClass || 'text-text-secondary dark:text-text-secondary-dark'}`}>
                 {icon}
               </span>
             )}
