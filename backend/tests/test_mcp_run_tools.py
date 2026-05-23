@@ -177,6 +177,69 @@ async def test_run_get_node_result_redacts_secret_like_values(
         "result.request.headers.Authorization",
         "result.response.body.access_token",
     ]
+    assert response.response_size_bytes is None
+    assert response.content_type is None
+    assert response.body_format is None
+    assert response.response_time_ms is None
+    assert response.cookie_count is None
+    assert response.redirect_count is None
+    serialized = response.model_dump()
+    assert serialized["responseSizeBytes"] is None
+    assert serialized["contentType"] is None
+    assert serialized["bodyFormat"] is None
+    assert serialized["responseTimeMs"] is None
+    assert serialized["cookieCount"] is None
+    assert serialized["redirectCount"] is None
+    assert "response_size_bytes" not in serialized
+    assert "content_type" not in serialized
+    assert "body_format" not in serialized
+    assert "response_time_ms" not in serialized
+    assert "cookie_count" not in serialized
+    assert "redirect_count" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_run_get_node_result_maps_optional_response_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_node_result(run_id: str, workflow_id: str, node_id: str) -> dict[str, Any]:
+        assert (run_id, workflow_id, node_id) == ("run-1", "wf-1", "node-1")
+        return {
+            "nodeId": node_id,
+            "runId": run_id,
+            "status": "success",
+            "timestamp": "2026-05-18T00:00:00Z",
+            "result": {
+                "responseSizeBytes": 2048,
+                "contentType": "application/json",
+                "bodyFormat": "json",
+                "responseTimeMs": 123,
+                "cookieCount": 2,
+                "redirectCount": 1,
+                "response": {"body": {"safe": "ok"}},
+            },
+            "metadata": {"stored_in_gridfs": False},
+        }
+
+    monkeypatch.setattr(run_tools, "ensure_mcp_database", _noop_database)
+    monkeypatch.setattr(run_tools, "svc_get_node_result", fake_get_node_result)
+
+    response = await run_tools.run_get_node_result("wf-1", "run-1", "node-1")
+
+    assert response.response_size_bytes == 2048
+    assert response.content_type == "application/json"
+    assert response.body_format == "json"
+    assert response.response_time_ms == 123
+    assert response.cookie_count == 2
+    assert response.redirect_count == 1
+    serialized = response.model_dump()
+    assert serialized["responseSizeBytes"] == 2048
+    assert serialized["contentType"] == "application/json"
+    assert serialized["bodyFormat"] == "json"
+    assert serialized["responseTimeMs"] == 123
+    assert serialized["cookieCount"] == 2
+    assert serialized["redirectCount"] == 1
+    assert "response_size_bytes" not in serialized
 
 
 @pytest.mark.asyncio

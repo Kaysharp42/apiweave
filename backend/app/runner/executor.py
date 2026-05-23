@@ -1152,6 +1152,7 @@ class WorkflowExecutor:
         url = config.get('url', '')
         headers_text = config.get('headers', '')
         body = config.get('body', '')
+        body_type = config.get('bodyType', None)
         timeout = config.get('timeout', 30)
         query_params_text = config.get('queryParams', '')
         path_variables_text = config.get('pathVariables', '')
@@ -1214,8 +1215,42 @@ class WorkflowExecutor:
         
         try:
             # Prepare request data
-            data = None
-            json_payload = None
+            data: Any = None
+            json_payload: Any = None
+
+            def set_content_type(content_type: str) -> None:
+                for header_name in list(headers.keys()):
+                    if header_name.lower() == 'content-type':
+                        headers[header_name] = content_type
+                        return
+                headers['Content-Type'] = content_type
+
+            def get_content_type() -> str:
+                for header_name, header_value in headers.items():
+                    if header_name.lower() == 'content-type':
+                        return str(header_value).lower()
+                return ''
+
+            def remove_content_headers() -> None:
+                for header_name in list(headers.keys()):
+                    if header_name.lower() in {'content-type', 'content-length'}:
+                        headers.pop(header_name)
+
+            def active_entries(config_key: str) -> list[dict[str, Any]]:
+                entries = config.get(config_key, [])
+                if not isinstance(entries, list):
+                    return []
+                return [
+                    entry
+                    for entry in entries
+                    if isinstance(entry, dict) and entry.get('active', True)
+                ]
+
+            def decode_base64_payload(payload: str) -> bytes:
+                _, separator, encoded_payload = payload.partition(',')
+                return base64.b64decode(encoded_payload if separator else payload)
+
+            normalized_body_type = str(body_type).strip().lower() if body_type is not None else None
             if has_files:
                 # Use multipart/form-data for file uploads
                 form_data = aiohttp.FormData()
@@ -1252,36 +1287,79 @@ class WorkflowExecutor:
                 data = form_data
             else:
                 # Regular request without files
-                if body and method != 'GET':
-                    content_type_value = ''
-                    for header_name, header_value in headers.items():
-                        if header_name.lower() == 'content-type':
-                            content_type_value = str(header_value).lower()
-                            break
-
-                    body_stripped = body.strip()
-                    looks_like_json = body_stripped.startswith('{') or body_stripped.startswith('[')
-
-                    if 'application/json' in content_type_value:
-                        try:
-                            json_payload = json.loads(body)
-                        except Exception:
-                            # Keep raw body if JSON parsing fails; server will validate.
-                            data = body
-                    elif not content_type_value and looks_like_json:
-                        headers['Content-Type'] = 'application/json'
-                        try:
-                            json_payload = json.loads(body)
-                            self.logger.info(
-                                "Auto-detected JSON body and set Content-Type=application/json"
-                            )
-                        except Exception:
-                            self.logger.warning(
-                                "JSON-like body detected but parsing failed; sending raw body with Content-Type=application/json"
-                            )
-                            data = body
-                    else:
+                if method != 'GET':
+                    if normalized_body_type == 'json' and body:
+                        set_content_type('application/json')
+                        json_payload = json.loads(body)
+                    elif normalized_body_type == 'raw' and body:
+                        if not get_content_type():
+                            headers['Content-Type'] = 'text/plain'
                         data = body
+                    elif normalized_body_type == 'form-data':
+                        form_data = aiohttp.FormData()
+                        for entry in active_entries('formDataEntries'):
+                            key = str(entry.get('key', ''))
+                            if not key:
+                                continue
+
+                            if entry.get('type') == 'file':
+                                file_data = str(entry.get('fileData', ''))
+                                file_bytes = decode_base64_payload(file_data) if file_data else b''
+                                form_data.add_field(
+                                    key,
+                                    file_bytes,
+                                    filename=str(entry.get('fileName') or key),
+                                    content_type=str(entry.get('contentType') or 'application/octet-stream')
+                                )
+                            else:
+                                value = self._substitute_variables(str(entry.get('value', '')))
+                                form_data.add_field(key, value, content_type='text/plain')
+
+                        remove_content_headers()
+                        data = form_data
+                    elif normalized_body_type == 'x-www-form-urlencoded':
+                        form_values: list[tuple[str, str]] = []
+                        for entry in active_entries('urlEncodedEntries'):
+                            key = str(entry.get('key', ''))
+                            if key:
+                                form_values.append(
+                                    (key, self._substitute_variables(str(entry.get('value', ''))))
+                                )
+
+                        set_content_type('application/x-www-form-urlencoded')
+                        data = urlencode(form_values)
+                    elif normalized_body_type == 'binary' and body:
+                        set_content_type('application/octet-stream')
+                        data = decode_base64_payload(body)
+                    elif normalized_body_type in {'xml', 'html'} and body:
+                        set_content_type('application/xml' if normalized_body_type == 'xml' else 'text/html')
+                        data = body
+                    elif body:
+                        content_type_value = get_content_type()
+
+                        body_stripped = body.strip()
+                        looks_like_json = body_stripped.startswith('{') or body_stripped.startswith('[')
+
+                        if 'application/json' in content_type_value:
+                            try:
+                                json_payload = json.loads(body)
+                            except Exception:
+                                # Keep raw body if JSON parsing fails; server will validate.
+                                data = body
+                        elif not content_type_value and looks_like_json:
+                            headers['Content-Type'] = 'application/json'
+                            try:
+                                json_payload = json.loads(body)
+                                self.logger.info(
+                                    "Auto-detected JSON body and set Content-Type=application/json"
+                                )
+                            except Exception:
+                                self.logger.warning(
+                                    "JSON-like body detected but parsing failed; sending raw body with Content-Type=application/json"
+                                )
+                                data = body
+                        else:
+                            data = body
             
             async with aiohttp.ClientSession() as session:
                 async with session.request(
@@ -1299,20 +1377,52 @@ class WorkflowExecutor:
                     end_time = time.time()
                     duration_ms = int(round((end_time - start_time) * 1000))  # Convert to int milliseconds
                     
+                    response_size_bytes = len(response_text.encode('utf-8'))
+                    content_type = response.headers.get('Content-Type', '')
+                    content_type_lower = content_type.lower()
+                    if 'application/json' in content_type_lower:
+                        body_format = 'json'
+                    elif 'application/xml' in content_type_lower or 'text/xml' in content_type_lower:
+                        body_format = 'xml'
+                    elif 'text/html' in content_type_lower:
+                        body_format = 'html'
+                    elif content_type_lower.startswith('image/'):
+                        body_format = 'image'
+                    elif content_type_lower.startswith('text/'):
+                        body_format = 'text'
+                    else:
+                        body_format = 'binary'
+
                     # Try to parse response as JSON
                     try:
                         response_body = json.loads(response_text)
                     except:
                         response_body = response_text
-                    
+                     
                     # Extract cookies from response
-                    response_cookies = {}
-                    if 'Set-Cookie' in response.headers:
-                        cookie_header = response.headers.get('Set-Cookie', '')
-                        for cookie in cookie_header.split(';'):
-                            if '=' in cookie:
-                                k, v = cookie.split('=', 1)
-                                response_cookies[k.strip()] = v.strip()
+                    response_cookies: List[Dict[str, Any]] = []
+                    set_cookie_headers = response.headers.getall('Set-Cookie', [])
+                    for cookie_header in set_cookie_headers:
+                        cookie_parts = [part.strip() for part in cookie_header.split(';')]
+                        if not cookie_parts or '=' not in cookie_parts[0]:
+                            continue
+
+                        cookie_name, cookie_value = cookie_parts[0].split('=', 1)
+                        attributes: Dict[str, Any] = {}
+                        for attribute in cookie_parts[1:]:
+                            if not attribute:
+                                continue
+                            if '=' in attribute:
+                                attribute_name, attribute_value = attribute.split('=', 1)
+                                attributes[attribute_name.strip()] = attribute_value.strip()
+                            else:
+                                attributes[attribute.strip()] = True
+
+                        response_cookies.append({
+                            "name": cookie_name.strip(),
+                            "value": cookie_value.strip(),
+                            "attributes": attributes,
+                        })
                     
                     # Determine status based on HTTP status code
                     if status_code >= 200 and status_code < 300:
@@ -1327,6 +1437,7 @@ class WorkflowExecutor:
                         status = "unknown"
                     
                     # Structure response for easy variable access
+                    redirect_count = len(getattr(response, 'history', []))
                     result = {
                         "status": status,
                         "statusCode": status_code,
@@ -1334,6 +1445,12 @@ class WorkflowExecutor:
                         "body": response_body,  # Parsed JSON or raw text
                         "cookies": response_cookies,
                         "duration": duration_ms,  # Request duration in milliseconds
+                        "responseSizeBytes": response_size_bytes,
+                        "contentType": content_type,
+                        "bodyFormat": body_format,
+                        "responseTimeMs": duration_ms,
+                        "cookieCount": len(set_cookie_headers),
+                        "redirectCount": redirect_count,
                         "method": method,
                         "url": url
                     }

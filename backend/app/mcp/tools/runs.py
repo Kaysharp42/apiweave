@@ -165,6 +165,26 @@ def _sanitize_result_value(value: Any, secret_refs: list[str], path: str = "resu
     return value
 
 
+def _optional_int_metadata(result: Any, *keys: str) -> int | None:
+    if not isinstance(result, dict):
+        return None
+    for key in keys:
+        value = result.get(key)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _optional_str_metadata(result: Any, *keys: str) -> str | None:
+    if not isinstance(result, dict):
+        return None
+    for key in keys:
+        value = result.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
 def _failed_node_summary(data: dict[str, Any]) -> FailedNodeSummary:
     return FailedNodeSummary(
         node_id=str(data.get("nodeId")),
@@ -300,12 +320,27 @@ async def run_get_node_result(
         raise ValueError(str(exc)) from exc
 
     secret_refs: list[str] = []
-    sanitized_result = _sanitize_result_value(node_result.get("result"), secret_refs)
+    raw_result = node_result.get("result")
+    sanitized_result = _sanitize_result_value(raw_result, secret_refs)
     return RunNodeResultResponse(
         node_id=str(node_result.get("nodeId")),
         run_id=str(node_result.get("runId")),
         status=cast(str | None, node_result.get("status")),
         timestamp=cast(str | None, node_result.get("timestamp")),
+        response_size_bytes=_optional_int_metadata(
+            raw_result,
+            "response_size_bytes",
+            "responseSizeBytes",
+        ),
+        content_type=_optional_str_metadata(raw_result, "content_type", "contentType"),
+        body_format=_optional_str_metadata(raw_result, "body_format", "bodyFormat"),
+        response_time_ms=_optional_int_metadata(
+            raw_result,
+            "response_time_ms",
+            "responseTimeMs",
+        ),
+        cookie_count=_optional_int_metadata(raw_result, "cookie_count", "cookieCount"),
+        redirect_count=_optional_int_metadata(raw_result, "redirect_count", "redirectCount"),
         result=sanitized_result,
         metadata=cast(dict[str, Any], node_result.get("metadata", {})),
         redacted_secret_references=secret_refs,

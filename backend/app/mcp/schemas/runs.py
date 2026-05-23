@@ -4,7 +4,7 @@ MCP run tool input and output schemas.
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class ResumeRunRequest(BaseModel):
@@ -166,10 +166,48 @@ class RunGetNodeResultRequest(BaseModel):
 class RunNodeResultResponse(BaseModel):
     """Output for run_get_node_result."""
 
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
     node_id: str = Field(description="Workflow node ID.")
     run_id: str = Field(description="Run ID.")
     status: str | None = Field(default=None, description="Node execution status.")
     timestamp: str | None = Field(default=None, description="Result timestamp.")
+    response_size_bytes: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("response_size_bytes", "responseSizeBytes"),
+        serialization_alias="responseSizeBytes",
+        description="Response body size in bytes.",
+    )
+    content_type: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("content_type", "contentType"),
+        serialization_alias="contentType",
+        description="Response Content-Type header value.",
+    )
+    body_format: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("body_format", "bodyFormat"),
+        serialization_alias="bodyFormat",
+        description="Inferred body format: json, xml, html, text, image, binary, unknown.",
+    )
+    response_time_ms: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("response_time_ms", "responseTimeMs"),
+        serialization_alias="responseTimeMs",
+        description="Response time in milliseconds.",
+    )
+    cookie_count: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("cookie_count", "cookieCount"),
+        serialization_alias="cookieCount",
+        description="Number of Set-Cookie headers received.",
+    )
+    redirect_count: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("redirect_count", "redirectCount"),
+        serialization_alias="redirectCount",
+        description="Number of redirects followed.",
+    )
     result: Any = Field(description="Full node result with secret-like values redacted.")
     metadata: dict[str, Any] = Field(description="Result storage metadata.")
     redacted_secret_references: list[str] = Field(

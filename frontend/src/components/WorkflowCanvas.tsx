@@ -10,6 +10,7 @@ import ReactFlow, {
   Panel,
   type Node,
   type Edge,
+  type Connection,
   type NodeTypes,
   type EdgeTypes,
   type ReactFlowInstance,
@@ -926,8 +927,7 @@ export function WorkflowCanvas({
   }, [workflow, setNodes, setEdges]);
 
   const onConnect = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (params: any) => {
+    (params: Connection) => {
       setEdges((eds) => {
         const currentNodes = nodesRef.current;
         const sourceNode = currentNodes.find(n => n.id === params.source);
