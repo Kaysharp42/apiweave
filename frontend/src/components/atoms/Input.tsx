@@ -37,7 +37,7 @@ export function Input({
       <input
         id={id}
         className={[
-          'input input-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
+          'input input-bordered w-full px-3 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
           sizeClass[size] ?? '',
           error && 'input-error',
           className,

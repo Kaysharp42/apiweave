@@ -5,7 +5,7 @@ import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
 import { Button } from './atoms/Button';
 import { Input, TextArea } from './atoms';
-import { BeautifyButton } from './molecules';
+import { BeautifyButton, FormField, PanelTabs } from './molecules';
 import { ResponseInspector } from './molecules/ResponseInspector';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { getNodeModalTypeName } from '../utils/nodeModalMeta';
@@ -103,19 +103,7 @@ interface NodeModalProps {
   onSave: (node: NodeModalNode) => void;
 }
 
-interface FormFieldProps {
-  label: string;
-  children: React.ReactNode;
-  hint?: string | undefined;
-}
 
-interface TabButtonProps {
-  id: string;
-  label: string;
-  activeTab: string;
-  setActiveTab: (id: string) => void;
-  colorScheme?: 'default' | 'purple';
-}
 
 const getNodeIcon = (type: ModalNodeType): React.ReactNode => {
   const iconProps = { className: 'w-6 h-6' };
@@ -137,34 +125,7 @@ const getNodeIcon = (type: ModalNodeType): React.ReactNode => {
   }
 };
 
-const TabButton = ({ id, label, activeTab, setActiveTab, colorScheme = 'default' }: TabButtonProps) => {
-  const isActive = activeTab === id;
-  const activeBorder = colorScheme === 'purple' ? 'border-purple-500' : 'border-primary';
-  const activeText = colorScheme === 'purple' ? 'text-purple-600 dark:text-purple-400' : 'text-primary';
 
-  return (
-    <button
-      onClick={() => setActiveTab(id)}
-      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-        isActive
-          ? `${activeBorder} ${activeText}`
-          : 'border-transparent text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
-      }`}
-    >
-      {label}
-    </button>
-  );
-};
-
-const FormField = ({ label, children, hint }: FormFieldProps) => (
-  <div className="mb-4">
-    <label className="block text-xs font-medium text-text-muted dark:text-text-muted-dark mb-1.5 uppercase tracking-wide">
-      {label}
-    </label>
-    {children}
-    {hint && <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">{hint}</p>}
-  </div>
-);
 
 export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
   const workingDataRef = useRef<Record<string, unknown>>({ ...node.data });
@@ -202,47 +163,36 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
             enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
             leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="h-[90vh] w-[96vw] max-w-[1800px]">
-              <div className="flex h-full flex-col gap-4 xl:flex-row">
-                <div className="min-h-0 overflow-hidden rounded-2xl border border-border dark:border-border-dark bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised shadow-xl xl:basis-[56%] xl:min-w-0">
-                  <div className="flex h-full min-h-0 flex-col p-5 sm:p-6">
-                    <div className="mb-5 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-xl bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark">
+            <Dialog.Panel className="h-[90vh] w-[96vw] max-w-[1800px] shadow-[0_24px_50px_-12px_rgba(0,0,0,0.25)] rounded-2xl overflow-hidden border border-border/40 dark:border-border-dark/40 bg-surface dark:bg-surface-dark flex flex-col">
+              <div className="flex h-full w-full flex-col xl:flex-row backdrop-blur-md">
+                <div className="flex h-full min-h-0 flex-col xl:basis-[56%] xl:min-w-0 border-r border-border/40 dark:border-border-dark/40 bg-surface-raised/60 dark:bg-surface-dark-raised/60">
+                  <div className="flex h-full min-h-0 flex-col p-4 sm:p-5">
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="flex flex-col gap-2 w-full pr-4">
+                        <div className="flex items-center gap-2 text-xs font-medium text-text-muted dark:text-text-muted-dark uppercase tracking-widest">
                           {getNodeIcon(node.type)}
+                          <span>{nodeInfo.name}</span>
                         </div>
-                        <div>
-                          <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
-                            {nodeInfo.name}
-                          </h2>
-                          <p className="text-xs text-text-muted dark:text-text-muted-dark">Configure node</p>
-                        </div>
+                        <Input
+                          type="text"
+                          defaultValue={node.data.label || ''}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => handleLabelChange(e.target.value)}
+                          className="text-lg font-semibold border-transparent bg-transparent hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus:bg-surface-overlay dark:focus:bg-surface-dark-overlay px-2 py-1 focus:ring-0 shadow-none -ml-2 w-full transition-colors rounded-md"
+                          placeholder="Enter node name"
+                        />
                       </div>
                       <Button
                         onClick={handleClose}
                         variant="ghost"
                         size="sm"
-                        className="!p-2 !min-w-0"
+                        className="!p-1.5 !min-w-0 text-text-muted hover:text-text-primary transition-colors"
                         title="Close"
                       >
-                        <X className="w-6 h-6" />
+                        <X className="w-5 h-5" />
                       </Button>
                     </div>
 
-                    <div className="mb-4 rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-4 shadow-sm">
-                      <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
-                        Node Name
-                      </label>
-                      <Input
-                        type="text"
-                        defaultValue={node.data.label || ''}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => handleLabelChange(e.target.value)}
-                        className="font-mono"
-                        placeholder="Enter node name"
-                      />
-                    </div>
-
-                    <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark shadow-inner">
+                    <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border/50 dark:border-border-dark/50 bg-surface dark:bg-surface-dark shadow-inner">
                       <div className="h-full overflow-y-auto p-4">
                         {node.type === 'http-request' && (
                           <HTTPRequestConfig
@@ -285,7 +235,7 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
                   </div>
                 </div>
 
-                <div className="min-h-0 overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl dark:border-border-dark dark:bg-surface-dark-raised xl:basis-[44%] xl:min-w-0">
+                <div className="flex h-full min-h-0 flex-col xl:basis-[44%] xl:min-w-0 bg-surface/50 dark:bg-surface-dark/50">
                   <div className="flex h-full min-h-0 flex-col">
                     {node.type === 'http-request' ? (
                       <HttpRequestOutputPanel
@@ -356,31 +306,46 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-shrink-0 flex border-b border-border dark:border-border-dark px-4">
-        <TabButton id="parameters" label="Parameters" activeTab={activeTab} setActiveTab={setActiveTab} />
-        <TabButton id="settings" label="Settings" activeTab={activeTab} setActiveTab={setActiveTab} />
-      </div>
+      <PanelTabs
+        tabs={[
+          { key: 'parameters', label: 'Parameters' },
+          { key: 'settings', label: 'Settings' }
+        ]}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'parameters' && (
           <div className="space-y-4">
             <FormField label="HTTP Method">
               <div className="flex gap-2">
-                {HTTP_METHODS.map((method) => (
-                  <Button
-                    key={method}
-                    onClick={() => {
-                      methodRef.current = method;
-                      setMethodValue(method);
-                      updateRef();
-                    }}
-                    variant={methodValue === method ? 'primary' : 'ghost'}
-                    size="xs"
-                    className={methodValue === method ? '' : ''}
-                  >
-                    {method}
-                  </Button>
-                ))}
+                {HTTP_METHODS.map((method) => {
+                  const isActive = methodValue === method;
+                  return (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => {
+                        methodRef.current = method;
+                        setMethodValue(method);
+                        updateRef();
+                      }}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all duration-150 active:scale-[0.98] ${
+                        isActive
+                          ? method === 'GET' ? 'bg-[#16a34a] text-white shadow-sm'
+                            : method === 'POST' ? 'bg-[#2563eb] text-white shadow-sm'
+                            : method === 'PUT' ? 'bg-[#ea580c] text-white shadow-sm'
+                            : method === 'PATCH' ? 'bg-[#7c3aed] text-white shadow-sm'
+                            : method === 'DELETE' ? 'bg-[#dc2626] text-white shadow-sm'
+                            : 'bg-primary text-white shadow-sm'
+                          : 'text-text-secondary hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
+                      }`}
+                    >
+                      {method}
+                    </button>
+                  );
+                })}
               </div>
             </FormField>
 
@@ -532,9 +497,9 @@ const HttpRequestOutputPanel = ({ node, initialConfig, output }: HttpRequestOutp
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
-      <div className="flex flex-shrink-0 items-center justify-between border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised px-4 py-4">
-        <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark flex items-center gap-2">
-          <FileText className="w-4 h-4" />
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-border/30 dark:border-border-dark/30 bg-surface/50 dark:bg-surface-dark/50 px-5 py-4 backdrop-blur-sm">
+        <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2 tracking-wide uppercase text-xs">
+          <FileText className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
           Response Output
         </h3>
         {node.type === 'http-request' && statusCode && (
@@ -564,12 +529,12 @@ const HttpRequestOutputPanel = ({ node, initialConfig, output }: HttpRequestOutp
 
       {output && node.type === 'http-request' && (
         <>
-          <div className="flex-shrink-0 border-b border-border bg-surface-overlay px-4 py-3 dark:border-border-dark dark:bg-surface-dark-overlay">
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-semibold px-2 py-1 rounded bg-primary/15 dark:bg-primary-dark/25 text-primary dark:text-primary-dark">
+          <div className="flex-shrink-0 border-b border-border/30 bg-surface-raised/30 px-5 py-3 dark:border-border-dark/30 dark:bg-surface-dark-raised/30">
+            <div className="flex items-center gap-3 text-xs">
+              <span className="font-bold px-2 py-0.5 rounded bg-primary/10 dark:bg-primary-dark/20 text-primary dark:text-cyan-400">
                 {initialConfig.method || 'GET'}
               </span>
-              <span className="text-text-secondary dark:text-text-secondary-dark truncate font-mono text-xs">
+              <span className="text-text-primary dark:text-text-primary-dark truncate font-mono text-xs opacity-90">
                 {initialConfig.url || '\u2014'}
               </span>
             </div>
@@ -599,9 +564,9 @@ const NodeOutputPanel = ({ output }: NodeOutputPanelProps) => {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
-      <div className="flex flex-shrink-0 items-center justify-between border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised px-4 py-4">
-        <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark flex items-center gap-2">
-          <FileText className="w-4 h-4" />
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-border/30 dark:border-border-dark/30 bg-surface/50 dark:bg-surface-dark/50 px-5 py-4 backdrop-blur-sm">
+        <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2 tracking-wide uppercase text-xs">
+          <FileText className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
           Node Output
         </h3>
       </div>
@@ -956,10 +921,14 @@ const AssertionConfig = ({ initialConfig, workingDataRef }: AssertionConfigProps
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-shrink-0 flex border-b border-border dark:border-border-dark px-4">
-        <TabButton id="parameters" label="Assertions" activeTab={activeTab} setActiveTab={setActiveTab} />
-        <TabButton id="settings" label="Settings" activeTab={activeTab} setActiveTab={setActiveTab} />
-      </div>
+      <PanelTabs
+        tabs={[
+          { key: 'parameters', label: 'Assertions' },
+          { key: 'settings', label: 'Settings' }
+        ]}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'parameters' && (
@@ -1111,9 +1080,13 @@ const DelayConfig = ({ initialConfig, workingDataRef }: DelayConfigProps) => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-shrink-0 flex border-b border-border dark:border-border-dark px-4">
-        <TabButton id="parameters" label="Parameters" activeTab={activeTab} setActiveTab={setActiveTab} />
-      </div>
+      <PanelTabs
+        tabs={[
+          { key: 'parameters', label: 'Parameters' }
+        ]}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
       <div className="flex-1 overflow-y-auto p-4">
         <FormField
@@ -1197,19 +1170,21 @@ const MergeConfig = ({ initialConfig, workingDataRef }: MergeConfigProps) => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-shrink-0 flex border-b border-border dark:border-border-dark px-4">
-        <TabButton id="parameters" label="Merge Strategy" activeTab={activeTab} setActiveTab={setActiveTab} colorScheme="purple" />
-        {currentStrategy === 'conditional' && (
-          <TabButton id="conditions" label="Conditions" activeTab={activeTab} setActiveTab={setActiveTab} colorScheme="purple" />
-        )}
-      </div>
+      <PanelTabs
+        tabs={[
+          { key: 'parameters', label: 'Merge Strategy' },
+          ...(currentStrategy === 'conditional' ? [{ key: 'conditions', label: 'Conditions' }] : [])
+        ]}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'parameters' && (
           <>
             <FormField
               label="Wait Strategy"
-              hint={strategyDescriptions[currentStrategy] || strategyDescriptions.all}
+              hint={(strategyDescriptions[currentStrategy] || strategyDescriptions.all) as string}
             >
               <select
                 value={currentStrategy}

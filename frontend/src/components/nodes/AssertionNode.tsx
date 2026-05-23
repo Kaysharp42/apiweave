@@ -311,7 +311,7 @@ const AssertionNode = ({ id, data, selected = false }: AssertionNodeProps) => {
       className={`min-w-[250px] ${data?.invalid ? 'ring-2 ring-red-500 animate-pulse' : ''}`}
     >
       {({ isExpanded }) => (
-        <div className="p-2 space-y-1.5">
+        <div className="p-3 space-y-1.5">
           <div className="text-[9px] text-text-muted dark:text-text-muted-dark">
             {data.config?.assertions?.length ?? 0} assertion(s)
           </div>

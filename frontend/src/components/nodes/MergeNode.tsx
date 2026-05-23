@@ -113,7 +113,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
       className={`min-w-[200px] ${status === 'running' ? 'animate-pulse' : ''}`}
     >
       {({ isExpanded }) => (
-        <div className="p-2 space-y-2">
+        <div className="p-3 space-y-2">
           <div className="flex items-center gap-1.5 text-[10px] text-text-secondary dark:text-text-secondary-dark italic">
             {stratIcon}
             <span>{stratDesc}</span>
