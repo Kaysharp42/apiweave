@@ -1,1 +1,1 @@
-export type NavSection = 'workflows' | 'collections' | 'webhooks' | 'settings';
+export type NavSection = 'workflows' | 'collections' | 'webhooks' | 'mcp' | 'settings';

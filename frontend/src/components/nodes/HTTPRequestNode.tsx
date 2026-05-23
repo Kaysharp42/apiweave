@@ -4,9 +4,10 @@ import { useWorkflow } from '../../contexts/WorkflowContext';
 import { BaseNode } from '../atoms/flow/BaseNode';
 import FileUploadSection, { type FileUpload } from '../FileUploadSection';
 import { Puzzle, Plus, Trash2, CheckCircle, ArrowRight, AlertTriangle, XCircle, ChevronDown, ChevronUp, Snowflake, ExternalLink, Clock3 } from 'lucide-react';
-import { BeautifyButton } from '../molecules';
+import { BeautifyButton, StatusBadge } from '../molecules';
 import type { NodeStatus } from '../../types/NodeStatus';
 import type { HttpMethod } from '../../types/HttpMethod';
+import type { HttpRequestConfig } from '../../types/HttpRequestConfig';
 
 const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
@@ -23,6 +24,10 @@ interface HTTPRequestNodeData {
     body?: string | Record<string, unknown>;
     statusCode?: number;
     duration?: number;
+    responseTimeMs?: number;
+    responseSizeBytes?: number;
+    contentType?: string;
+    bodyFormat?: string;
     cookies?: Record<string, string>;
     error?: string;
   };
@@ -34,6 +39,7 @@ interface HTTPRequestNodeData {
     headers?: string;
     cookies?: string;
     body?: string;
+    bodyType?: HttpRequestConfig['bodyType'];
     timeout?: number;
     extractors?: Record<string, string>;
     fileUploads?: FileUpload[];
@@ -78,6 +84,23 @@ const formatRefreshTime = (isoValue: string | undefined): string => {
     return isoValue;
   }
   return parsedDate.toLocaleString();
+};
+
+const formatResponseDuration = (milliseconds: number): string => (
+  milliseconds >= 1000 ? `${(milliseconds / 1000).toFixed(2)}s` : `${milliseconds}ms`
+);
+
+const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  const kilobytes = bytes / 1024;
+  if (kilobytes < 1024) return `${kilobytes.toFixed(1)} KB`;
+  return `${(kilobytes / 1024).toFixed(1)} MB`;
+};
+
+const getBodyPreview = (body: string | undefined): string => {
+  const normalizedBody = body?.trim().replace(/\s+/g, ' ') ?? '';
+  if (!normalizedBody) return '';
+  return normalizedBody.length > 50 ? `${normalizedBody.slice(0, 50)}...` : normalizedBody;
 };
 
 const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
@@ -272,6 +295,14 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
     return <><XCircle className="w-3 h-3" /> Server Error</>;
   })();
 
+  const responseTime = result.responseTimeMs ?? result.duration;
+  const responseMetadata = [
+    responseTime !== undefined && !result.statusCode ? formatResponseDuration(responseTime) : undefined,
+    result.responseSizeBytes !== undefined ? formatBytes(result.responseSizeBytes) : undefined,
+    result.contentType,
+    result.bodyFormat ? `body: ${result.bodyFormat}` : undefined,
+  ].filter((metadata): metadata is string => Boolean(metadata));
+
   return (
     <div className="mt-2 pt-2 border-t border-border dark:border-border-dark">
       <div className="text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-1">Response</div>
@@ -280,14 +311,24 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
         <div className="flex items-center gap-2 flex-wrap text-[10px]">
           <span className={`font-semibold px-1.5 py-0.5 rounded ${codeClass}`}>{result.statusCode}</span>
           <span className="flex items-center gap-1 text-text-secondary dark:text-text-secondary-dark">{statusLabel}</span>
-          {result.duration !== undefined && (
+          {responseTime !== undefined && (
             <>
               <span className="text-text-muted dark:text-text-muted-dark">&bull;</span>
               <span className="font-semibold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                {result.duration >= 1000 ? `${(result.duration / 1000).toFixed(2)}s` : `${result.duration}ms`}
+                {formatResponseDuration(responseTime)}
               </span>
             </>
           )}
+        </div>
+      )}
+
+      {responseMetadata.length > 0 && (
+        <div className="mt-1 flex items-center gap-1 flex-wrap text-[9px] text-text-secondary dark:text-text-secondary-dark">
+          {responseMetadata.map((metadata) => (
+            <span key={metadata} className="px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay">
+              {metadata}
+            </span>
+          ))}
         </div>
       )}
 
@@ -362,11 +403,25 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
   const headerCount = (data.config?.headers ?? '').split('\n').filter(Boolean).length;
   const extractorCount = data.config?.extractors ? Object.keys(data.config.extractors).length : 0;
   const hasBody = data.config?.body && data.config?.method !== 'GET';
+  const bodyFormat = data.config?.bodyType ?? 'raw';
+  const bodyPreview = getBodyPreview(data.config?.body);
 
   return (
     <BaseNode
       title={data.label ?? 'HTTP Request'}
-      icon={<span className={`inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-bold rounded mr-2 ${methodBadge} leading-none`}>{method}</span>}
+      icon={(
+        <span className="mr-2 inline-flex items-center gap-1">
+          <span className={`inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-bold rounded ${methodBadge} leading-none`}>{method}</span>
+          {hasBody && (
+            <StatusBadge
+              status="info"
+              size="xs"
+              label={`body: ${bodyFormat}`}
+              className="nodrag whitespace-nowrap"
+            />
+          )}
+        </span>
+      )}
       status={data.executionStatus ?? 'idle'}
       statusBadgeText={data.executionStatus && data.executionStatus !== 'idle' ? data.executionStatus : ''}
       selected={selected}
@@ -425,8 +480,13 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
           {!isExpanded && (headerCount > 0 || extractorCount > 0 || hasBody) && (
             <div className="flex gap-1.5 text-[9px] text-text-muted dark:text-text-muted-dark">
               {headerCount > 0 && <span className="px-1.5 py-0.5 bg-surface-overlay dark:bg-surface-dark-overlay rounded">{headerCount} header{headerCount > 1 ? 's' : ''}</span>}
-              {hasBody && <span className="px-1.5 py-0.5 bg-surface-overlay dark:bg-surface-dark-overlay rounded">body</span>}
               {extractorCount > 0 && <span className="px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded">{extractorCount} extractor{extractorCount > 1 ? 's' : ''}</span>}
+            </div>
+          )}
+
+          {!isExpanded && bodyPreview && (
+            <div className="text-[9px] text-text-secondary dark:text-text-secondary-dark bg-surface-overlay dark:bg-surface-dark-overlay rounded px-1.5 py-1 font-mono truncate" title={data.config?.body}>
+              {bodyPreview}
             </div>
           )}
 

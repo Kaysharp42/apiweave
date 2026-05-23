@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     def get_allowed_origins_list(self) -> List[str]:
         """Parse ALLOWED_ORIGINS from comma-separated string"""
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    def get_mcp_allowed_origins_list(self) -> List[str]:
+        """Parse MCP_ALLOWED_ORIGINS from comma-separated string"""
+        return [origin.strip() for origin in self.MCP_ALLOWED_ORIGINS.split(",") if origin.strip()]
     
     # API Keys
     API_KEY_HEADER: str = "Authorization"
@@ -38,7 +42,15 @@ class Settings(BaseSettings):
     
     # Secrets (for encryption)
     SECRET_KEY: str
-    
+
+    # MCP (Model Context Protocol)
+    MCP_ENABLED: bool = False
+    MCP_HTTP_ENABLED: bool = False
+    MCP_API_KEY: str | None = None
+    MCP_ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    MCP_REQUIRE_API_KEY: bool = True
+    MCP_ALLOW_SECRET_WRITES: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

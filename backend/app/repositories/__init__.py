@@ -7,11 +7,13 @@ from app.repositories.run_repository import RunRepository
 from app.repositories.environment_repository import EnvironmentRepository
 from app.repositories.collection_repository import CollectionRepository
 from app.repositories.webhook_repository import WebhookRepository
+from app.repositories.collection_run_repository import CollectionRunRepository
 
 __all__ = [
     "WorkflowRepository",
     "RunRepository",
     "EnvironmentRepository",
     "CollectionRepository",
-    "WebhookRepository"
+    "WebhookRepository",
+    "CollectionRunRepository",
 ]

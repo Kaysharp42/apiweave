@@ -63,12 +63,14 @@ class WorkflowExecutor:
         runtime_secrets: Dict[str, str] = None,
         start_node_ids: Optional[List[str]] = None,
         resume_from_run_id: Optional[str] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ):
         self.run_id = run_id
         self.workflow_id = workflow_id
-        self.runtime_secrets = runtime_secrets or {}  # Secret values provided at run time (never persisted)
+        self.runtime_secrets = runtime_secrets or {}
         self.start_node_ids = start_node_ids or []
         self.resume_from_run_id = resume_from_run_id
+        self.cancel_event = cancel_event or asyncio.Event()
         self.results = {}
         self.context = {}  # Stores variables and results from previous nodes
         self.workflow_variables = {}  # Workflow-level variables that persist across nodes
@@ -84,6 +86,18 @@ class WorkflowExecutor:
         self.has_failures = False  # Track if any node has failed during execution
         self.failed_nodes = []  # List of node IDs that failed
         self.first_error_message = None  # Store the first error message for the run
+    
+    def cancel(self) -> None:
+        """Signal the executor to stop at the next safe point."""
+        self.cancel_event.set()
+        self.logger.info("Cancellation requested for run %s", self.run_id)
+    
+    async def _check_cancelled(self) -> bool:
+        """Check if cancellation has been requested. Returns True if cancelled."""
+        if self.cancel_event.is_set():
+            self.logger.info("Run %s cancelled at checkpoint", self.run_id)
+            return True
+        return False
         
     async def execute(self):
         """Execute the workflow using Beanie repositories (SQL injection safe)"""
@@ -162,6 +176,11 @@ class WorkflowExecutor:
             entry_node_ids = [start_node['nodeId']]
         
         try:
+            # Check for cancellation before starting execution
+            if await self._check_cancelled():
+                await RunRepository.update_status(self.run_id, "cancelled")
+                return
+
             # Execute from one or more entry nodes
             if len(entry_node_ids) == 1:
                 await self._execute_from_node(entry_node_ids[0], nodes, edges, db)
@@ -183,6 +202,12 @@ class WorkflowExecutor:
             # Determine final status based on failures
             final_status = "failed" if self.has_failures else "completed"
             
+            # Check if run was cancelled during execution — do not overwrite
+            run_doc = await RunRepository.get_by_id(self.run_id)
+            if run_doc and run_doc.status == "cancelled":
+                self.logger.info("Run %s was cancelled during execution, skipping status update", self.run_id)
+                return
+            
             # Mark run as completed using repository
             try:
                 update_data = {
@@ -203,13 +228,12 @@ class WorkflowExecutor:
                 await RunRepository.update_fields(self.run_id, **update_data)
                 
                 if self.has_failures:
-                    print(f"⚠️  Workflow completed with failures: {len(self.failed_nodes)} node(s) failed")
+                    self.logger.error(f"⚠️  Workflow completed with failures: {len(self.failed_nodes)} node(s) failed")
                     for node_id in self.failed_nodes:
-                        print(f"   - {node_id}")
-                        
+                        self.logger.info(f"   - {node_id}")
             except Exception as update_error:
-                print(f"⚠️  Failed to update run completion status: {str(update_error)}")
-                print(f"   Run completed, but status update failed")
+                self.logger.error(f"⚠️  Failed to update run completion status: {str(update_error)}")
+                self.logger.info(f"   Run completed, but status update failed")
                 # Don't fail the run just because status update failed
             
         except Exception as e:
@@ -217,9 +241,8 @@ class WorkflowExecutor:
             if "document too large" not in str(e).lower():
                 await self._fail_run(str(e))
             else:
-                print(f"⚠️  Run completed but encountered document size issue: {str(e)}")
-                print(f"   All results are safely stored in node_results collection")
-
+                self.logger.error(f"⚠️  Run completed but encountered document size issue: {str(e)}")
+                self.logger.info(f"   All results are safely stored in node_results collection")
     async def _hydrate_resume_context(self, db, nodes: Dict, edges: List):
         """Hydrate execution context from a previous run for resume support."""
         source_run = await RunRepository.get_by_id(self.resume_from_run_id)
@@ -327,6 +350,9 @@ class WorkflowExecutor:
         if not node:
             return
         
+        if await self._check_cancelled():
+            return
+        
         self.logger.info(f"\n{'='*60}")
         self.logger.info(f"Executing node: {node_id} ({node.get('type', 'unknown')})")
         self.logger.info(f"{'='*60}")
@@ -351,13 +377,13 @@ class WorkflowExecutor:
                         self.logger.info(f"📍 Setting branch context for {node_id}")
                         self.logger.info(f"   Source: merge node {pred_id}")
                         self.logger.info(f"   Branches: {branch_node_ids}")
-                        print(f"📍 Setting branch context for {node_id}: {len(self.current_branch_context)} branches from merge {pred_id}")
+                        self.logger.info(f"📍 Setting branch context for {node_id}: {len(self.current_branch_context)} branches from merge {pred_id}")
                     else:
                         # This node is linear (single edge out) - clear branch context
                         # The merge has been handled, now execute linearly
                         self.current_branch_context = []
                         self.logger.info(f"🔀 Clearing branch context for linear node {node_id} after merge {pred_id}")
-                        print(f"🔀 Clearing branch context after merge - executing {node_id} linearly")
+                        self.logger.info(f"🔀 Clearing branch context after merge - executing {node_id} linearly")
                     break
         
         # Skip start node execution
@@ -385,8 +411,7 @@ class WorkflowExecutor:
                 if not self.continue_on_fail:
                     raise
                 # If continue_on_fail is True, log the error and continue
-                print(f"⚠️  Node {node_id} failed but continuing due to 'continueOnFail' setting: {str(e)}")
-        
+                self.logger.error(f"⚠️  Node {node_id} failed but continuing due to 'continueOnFail' setting: {str(e)}")
         # Find next nodes (outgoing edges from this node)
         next_edges = [e for e in edges if e['source'] == node_id]
         
@@ -408,11 +433,11 @@ class WorkflowExecutor:
                 if matching:
                     next_edges = matching
                     self.logger.info(f"🔀 Assertion {node_id} outcome='{outcome}' → routing to {len(matching)} edge(s)")
-                    print(f"🔀 Assertion {node_id} outcome='{outcome}' → routing to {len(matching)} edge(s)")
+                    self.logger.info(f"🔀 Assertion {node_id} outcome='{outcome}' → routing to {len(matching)} edge(s)")
                 else:
                     # No matching handle edge — no downstream path for this outcome
                     self.logger.info(f"🔀 Assertion {node_id} outcome='{outcome}' — no '{outcome}' edge connected, stopping branch")
-                    print(f"🔀 Assertion {node_id} outcome='{outcome}' — no '{outcome}' edge connected")
+                    self.logger.info(f"🔀 Assertion {node_id} outcome='{outcome}' — no '{outcome}' edge connected")
                     # If assertions failed and there's no fail path, still mark as failure
                     if outcome == 'fail':
                         self.has_failures = True
@@ -429,26 +454,23 @@ class WorkflowExecutor:
                         self.failed_nodes.append(node_id)
                     if not self.continue_on_fail:
                         raise Exception(error_msg)
-                    print(f"⚠️  Assertion {node_id} failed (legacy mode) but continuing: {error_msg}")
+                    self.logger.error(f"⚠️  Assertion {node_id} failed (legacy mode) but continuing: {error_msg}")
                 next_edges = legacy_edges
         
         # If multiple edges (branching), execute in parallel
         if len(next_edges) > 1:
             self.logger.info(f"🌳 Branching detected from node {node_id}: {len(next_edges)} branches")
-            print(f"🌳 Branching detected from node {node_id}: {len(next_edges)} branches")
-            
+            self.logger.info(f"🌳 Branching detected from node {node_id}: {len(next_edges)} branches")
             # Only clear branch context if NOT branching from a merge node
             # Branches from a merge should inherit the merge's branch context
             if node['type'] != 'merge':
                 self.current_branch_context = []
                 self.logger.info(f"   Cleared branch context - starting fresh branches from {node['type']}")
-                print(f"   Cleared branch context - starting fresh branches from {node['type']}")
+                self.logger.info(f"   Cleared branch context - starting fresh branches from {node['type']}")
             else:
                 branch_node_ids = [nid for nid, _ in self.current_branch_context]
                 self.logger.info(f"   Keeping branch context from merge node: {branch_node_ids}")
-                print(f"   Keeping branch context from merge node ({len(self.current_branch_context)} branches)")
-
-            
+                self.logger.info(f"   Keeping branch context from merge node ({len(self.current_branch_context)} branches)")
             # Create tasks for parallel execution
             tasks = []
             for edge in next_edges:
@@ -472,8 +494,7 @@ class WorkflowExecutor:
                         branch_edge = next_edges[i]
                         branch_node_id = branch_edge['target']
                         self.logger.warning(f"⚠️  Branch {i} (starting at {branch_node_id}) failed: {str(result)}")
-                        print(f"⚠️  Branch {i} (starting at {branch_node_id}) failed: {str(result)}")
-                        
+                        self.logger.error(f"⚠️  Branch {i} (starting at {branch_node_id}) failed: {str(result)}")
                         # Mark as failure but don't stop other branches
                         self.has_failures = True
                         if branch_node_id not in self.failed_nodes:
@@ -487,15 +508,13 @@ class WorkflowExecutor:
                 if failed_branches and len(failed_branches) == len(tasks):
                     error_msg = f"All {len(tasks)} branches failed"
                     self.logger.error(error_msg)
-                    print(f"❌ {error_msg}")
+                    self.logger.error(f"❌ {error_msg}")
                     if not self.continue_on_fail:
                         raise Exception(error_msg)
                 elif failed_branches:
                     success_count = len(tasks) - len(failed_branches)
                     self.logger.info(f"✅ {success_count}/{len(tasks)} branches succeeded, {len(failed_branches)} failed")
-                    print(f"✅ {success_count}/{len(tasks)} branches succeeded, {len(failed_branches)} failed")
-
-        
+                    self.logger.info(f"✅ {success_count}/{len(tasks)} branches succeeded, {len(failed_branches)} failed")
         else:
             # Single edge - sequential execution (original behavior)
             edge = next_edges[0]
@@ -523,11 +542,10 @@ class WorkflowExecutor:
                     if not self.continue_on_fail:
                         raise
                     # If continue_on_fail is True, log the error and continue
-                    print(f"⚠️  Node {next_node_id} failed but continuing due to 'continueOnFail' setting: {str(e)}")
-    
+                    self.logger.error(f"⚠️  Node {next_node_id} failed but continuing due to 'continueOnFail' setting: {str(e)}")
     async def _execute_branch(self, node_id: str, nodes: Dict, edges: List, db):
         """Execute a branch (for parallel execution)"""
-        print(f"🔀 Executing branch starting from node {node_id}")
+        self.logger.info(f"🔀 Executing branch starting from node {node_id}")
         await self._execute_from_node(node_id, nodes, edges, db)
     
     async def _execute_node(self, node: Dict, edges: List, db):
@@ -535,8 +553,7 @@ class WorkflowExecutor:
         node_id = node['nodeId']
         node_type = node['type']
         
-        print(f"🔄 Executing node: {node_id} ({node_type})")
-        
+        self.logger.info(f"🔄 Executing node: {node_id} ({node_type})")
         # Update node status to running
         await self._update_node_status(db, node_id, "running", None)
         
@@ -548,7 +565,7 @@ class WorkflowExecutor:
                     self.logger.debug(f"[DIAG] Executing HTTP node {node_id}. current_branch_context size={len(self.current_branch_context)}")
                     self.logger.debug(f"[DIAG] current_branch_context IDs={[nid for nid, _ in self.current_branch_context]}")
                     self.logger.debug(f"[DIAG] branch_results keys={list(self.branch_results.keys())}")
-                    print(f"[DIAG] HTTP {node_id} - branch_context={len(self.current_branch_context)} keys={list(self.branch_results.keys())}")
+                    self.logger.info(f"[DIAG] HTTP {node_id} - branch_context={len(self.current_branch_context)} keys={list(self.branch_results.keys())}")
                 except Exception:
                     # Ensure diagnostics never break execution
                     pass
@@ -573,9 +590,9 @@ class WorkflowExecutor:
                 if node_id not in self.failed_nodes:
                     self.failed_nodes.append(node_id)
                 if result.get('statusCode'):
-                    print(f"⚠️  HTTP request failed: {node_id} returned status code {result.get('statusCode')}")
+                    self.logger.error(f"⚠️  HTTP request failed: {node_id} returned status code {result.get('statusCode')}")
                 else:
-                    print(f"⚠️  Node failed: {node_id} - {result.get('error', 'Unknown error')}")
+                    self.logger.error(f"⚠️  Node failed: {node_id} - {result.get('error', 'Unknown error')}")
             elif execution_status == "redirect":
                 execution_status = "warning"
             elif execution_status == "failed" and node_type == 'assertion':
@@ -583,7 +600,7 @@ class WorkflowExecutor:
                 # The routing logic in _execute_from_node will handle pass/fail branching.
                 execution_status = "error"
                 self.logger.info(f"⚠️  Assertion {node_id} has failures — routing will decide path")
-                print(f"⚠️  Assertion {node_id} has failures — routing will decide path")
+                self.logger.error(f"⚠️  Assertion {node_id} has failures — routing will decide path")
             elif execution_status == "success":
                 execution_status = "success"
             else:
@@ -619,7 +636,7 @@ class WorkflowExecutor:
                 if node_id not in self.failed_nodes:
                     self.failed_nodes.append(node_id)
                 # Log that we're stopping this branch
-                print(f"🛑 Stopping branch at {node_id} due to failure (continue_on_fail=False)")
+                self.logger.error(f"🛑 Stopping branch at {node_id} due to failure (continue_on_fail=False)")
                 self.logger.error(f"🛑 Stopping branch at {node_id}: {error_msg}")
                 # Raise a specific exception type that won't be caught by our error handler
                 raise StopIteration(error_msg)  # Use StopIteration to signal intentional stop
@@ -834,11 +851,11 @@ class WorkflowExecutor:
                         if self.current_branch_context:
                             # We're executing after a merge - use the merged branch results
                             self.logger.info(f"🔍 Looking up prev[{branch_index}] from branch context ({len(self.current_branch_context)} branches)")
-                            print(f"🔍 Looking up prev[{branch_index}] from branch context ({len(self.current_branch_context)} branches)")
+                            self.logger.info(f"🔍 Looking up prev[{branch_index}] from branch context ({len(self.current_branch_context)} branches)")
                             if 0 <= branch_index < len(self.current_branch_context):
                                 node_id, prev_result = self.current_branch_context[branch_index]
                                 self.logger.info(f"   ✓ Found branch {branch_index}: {node_id}")
-                                print(f"   ✓ Found branch {branch_index}: {node_id}")
+                                self.logger.info(f"   ✓ Found branch {branch_index}: {node_id}")
                                 self.logger.debug(f"   Result keys: {prev_result.keys() if isinstance(prev_result, dict) else type(prev_result)}")
                                 path_parts = path_after_index.split('.')
                                 
@@ -861,12 +878,12 @@ class WorkflowExecutor:
                                             else:
                                                 msg = f"{key} is not a list or index out of range"
                                                 self.logger.warning(f"   ✗ {msg}")
-                                                print(f"   ✗ {msg}")
+                                                self.logger.info(f"   ✗ {msg}")
                                                 return str(match.group(0))
                                         else:
                                             msg = f"Key '{key}' not found in dict"
                                             self.logger.warning(f"   ✗ {msg}")
-                                            print(f"   ✗ {msg}")
+                                            self.logger.info(f"   ✗ {msg}")
                                             return str(match.group(0))
                                     elif isinstance(value, dict):
                                         value = value.get(part)
@@ -877,9 +894,9 @@ class WorkflowExecutor:
                             else:
                                 error_msg = f"Branch index {branch_index} out of range (only {len(self.current_branch_context)} branch(es) available)"
                                 self.logger.error(f"   ❌ {error_msg}")
-                                print(f"   ❌ {error_msg}")
-                                print(f"   💡 TIP: Using 'any' or 'first' merge strategy? Not all branches may be available!")
-                                print(f"   💡 Available branches: {[nid for nid, _ in self.current_branch_context]}")
+                                self.logger.error(f"   ❌ {error_msg}")
+                                self.logger.info(f"   💡 TIP: Using 'any' or 'first' merge strategy? Not all branches may be available!")
+                                self.logger.info(f"   💡 Available branches: {[nid for nid, _ in self.current_branch_context]}")
                                 # Return the placeholder unchanged - this will likely cause an API error
                                 # which is better than silently failing
                                 return str(match.group(0))
@@ -987,12 +1004,11 @@ class WorkflowExecutor:
                 
                 if value is not None:
                     self.workflow_variables[var_name] = value
-                    print(f"✅ Extracted variable: {var_name} = {value}")
+                    self.logger.info(f"✅ Extracted variable: {var_name} = {value}")
                 else:
-                    print(f"⚠️  Extracted variable {var_name} is None from path: {var_path}")
+                    self.logger.error(f"⚠️  Extracted variable {var_name} is None from path: {var_path}")
             except Exception as e:
-                print(f"❌ Error extracting variable {var_name} from {var_path}: {str(e)}")
-
+                self.logger.error(f"❌ Error extracting variable {var_name} from {var_path}: {str(e)}")
     async def _get_file_content(self, file_ref: Dict[str, str]) -> tuple[bytes, str, str]:
         """
         Get file content based on reference type and return (bytes, filename, mime_type)
@@ -1136,6 +1152,7 @@ class WorkflowExecutor:
         url = config.get('url', '')
         headers_text = config.get('headers', '')
         body = config.get('body', '')
+        body_type = config.get('bodyType', None)
         timeout = config.get('timeout', 30)
         query_params_text = config.get('queryParams', '')
         path_variables_text = config.get('pathVariables', '')
@@ -1198,8 +1215,42 @@ class WorkflowExecutor:
         
         try:
             # Prepare request data
-            data = None
-            json_payload = None
+            data: Any = None
+            json_payload: Any = None
+
+            def set_content_type(content_type: str) -> None:
+                for header_name in list(headers.keys()):
+                    if header_name.lower() == 'content-type':
+                        headers[header_name] = content_type
+                        return
+                headers['Content-Type'] = content_type
+
+            def get_content_type() -> str:
+                for header_name, header_value in headers.items():
+                    if header_name.lower() == 'content-type':
+                        return str(header_value).lower()
+                return ''
+
+            def remove_content_headers() -> None:
+                for header_name in list(headers.keys()):
+                    if header_name.lower() in {'content-type', 'content-length'}:
+                        headers.pop(header_name)
+
+            def active_entries(config_key: str) -> list[dict[str, Any]]:
+                entries = config.get(config_key, [])
+                if not isinstance(entries, list):
+                    return []
+                return [
+                    entry
+                    for entry in entries
+                    if isinstance(entry, dict) and entry.get('active', True)
+                ]
+
+            def decode_base64_payload(payload: str) -> bytes:
+                _, separator, encoded_payload = payload.partition(',')
+                return base64.b64decode(encoded_payload if separator else payload)
+
+            normalized_body_type = str(body_type).strip().lower() if body_type is not None else None
             if has_files:
                 # Use multipart/form-data for file uploads
                 form_data = aiohttp.FormData()
@@ -1236,36 +1287,79 @@ class WorkflowExecutor:
                 data = form_data
             else:
                 # Regular request without files
-                if body and method != 'GET':
-                    content_type_value = ''
-                    for header_name, header_value in headers.items():
-                        if header_name.lower() == 'content-type':
-                            content_type_value = str(header_value).lower()
-                            break
-
-                    body_stripped = body.strip()
-                    looks_like_json = body_stripped.startswith('{') or body_stripped.startswith('[')
-
-                    if 'application/json' in content_type_value:
-                        try:
-                            json_payload = json.loads(body)
-                        except Exception:
-                            # Keep raw body if JSON parsing fails; server will validate.
-                            data = body
-                    elif not content_type_value and looks_like_json:
-                        headers['Content-Type'] = 'application/json'
-                        try:
-                            json_payload = json.loads(body)
-                            self.logger.info(
-                                "Auto-detected JSON body and set Content-Type=application/json"
-                            )
-                        except Exception:
-                            self.logger.warning(
-                                "JSON-like body detected but parsing failed; sending raw body with Content-Type=application/json"
-                            )
-                            data = body
-                    else:
+                if method != 'GET':
+                    if normalized_body_type == 'json' and body:
+                        set_content_type('application/json')
+                        json_payload = json.loads(body)
+                    elif normalized_body_type == 'raw' and body:
+                        if not get_content_type():
+                            headers['Content-Type'] = 'text/plain'
                         data = body
+                    elif normalized_body_type == 'form-data':
+                        form_data = aiohttp.FormData()
+                        for entry in active_entries('formDataEntries'):
+                            key = str(entry.get('key', ''))
+                            if not key:
+                                continue
+
+                            if entry.get('type') == 'file':
+                                file_data = str(entry.get('fileData', ''))
+                                file_bytes = decode_base64_payload(file_data) if file_data else b''
+                                form_data.add_field(
+                                    key,
+                                    file_bytes,
+                                    filename=str(entry.get('fileName') or key),
+                                    content_type=str(entry.get('contentType') or 'application/octet-stream')
+                                )
+                            else:
+                                value = self._substitute_variables(str(entry.get('value', '')))
+                                form_data.add_field(key, value, content_type='text/plain')
+
+                        remove_content_headers()
+                        data = form_data
+                    elif normalized_body_type == 'x-www-form-urlencoded':
+                        form_values: list[tuple[str, str]] = []
+                        for entry in active_entries('urlEncodedEntries'):
+                            key = str(entry.get('key', ''))
+                            if key:
+                                form_values.append(
+                                    (key, self._substitute_variables(str(entry.get('value', ''))))
+                                )
+
+                        set_content_type('application/x-www-form-urlencoded')
+                        data = urlencode(form_values)
+                    elif normalized_body_type == 'binary' and body:
+                        set_content_type('application/octet-stream')
+                        data = decode_base64_payload(body)
+                    elif normalized_body_type in {'xml', 'html'} and body:
+                        set_content_type('application/xml' if normalized_body_type == 'xml' else 'text/html')
+                        data = body
+                    elif body:
+                        content_type_value = get_content_type()
+
+                        body_stripped = body.strip()
+                        looks_like_json = body_stripped.startswith('{') or body_stripped.startswith('[')
+
+                        if 'application/json' in content_type_value:
+                            try:
+                                json_payload = json.loads(body)
+                            except Exception:
+                                # Keep raw body if JSON parsing fails; server will validate.
+                                data = body
+                        elif not content_type_value and looks_like_json:
+                            headers['Content-Type'] = 'application/json'
+                            try:
+                                json_payload = json.loads(body)
+                                self.logger.info(
+                                    "Auto-detected JSON body and set Content-Type=application/json"
+                                )
+                            except Exception:
+                                self.logger.warning(
+                                    "JSON-like body detected but parsing failed; sending raw body with Content-Type=application/json"
+                                )
+                                data = body
+                        else:
+                            data = body
             
             async with aiohttp.ClientSession() as session:
                 async with session.request(
@@ -1283,20 +1377,52 @@ class WorkflowExecutor:
                     end_time = time.time()
                     duration_ms = int(round((end_time - start_time) * 1000))  # Convert to int milliseconds
                     
+                    response_size_bytes = len(response_text.encode('utf-8'))
+                    content_type = response.headers.get('Content-Type', '')
+                    content_type_lower = content_type.lower()
+                    if 'application/json' in content_type_lower:
+                        body_format = 'json'
+                    elif 'application/xml' in content_type_lower or 'text/xml' in content_type_lower:
+                        body_format = 'xml'
+                    elif 'text/html' in content_type_lower:
+                        body_format = 'html'
+                    elif content_type_lower.startswith('image/'):
+                        body_format = 'image'
+                    elif content_type_lower.startswith('text/'):
+                        body_format = 'text'
+                    else:
+                        body_format = 'binary'
+
                     # Try to parse response as JSON
                     try:
                         response_body = json.loads(response_text)
                     except:
                         response_body = response_text
-                    
+                     
                     # Extract cookies from response
-                    response_cookies = {}
-                    if 'Set-Cookie' in response.headers:
-                        cookie_header = response.headers.get('Set-Cookie', '')
-                        for cookie in cookie_header.split(';'):
-                            if '=' in cookie:
-                                k, v = cookie.split('=', 1)
-                                response_cookies[k.strip()] = v.strip()
+                    response_cookies: List[Dict[str, Any]] = []
+                    set_cookie_headers = response.headers.getall('Set-Cookie', [])
+                    for cookie_header in set_cookie_headers:
+                        cookie_parts = [part.strip() for part in cookie_header.split(';')]
+                        if not cookie_parts or '=' not in cookie_parts[0]:
+                            continue
+
+                        cookie_name, cookie_value = cookie_parts[0].split('=', 1)
+                        attributes: Dict[str, Any] = {}
+                        for attribute in cookie_parts[1:]:
+                            if not attribute:
+                                continue
+                            if '=' in attribute:
+                                attribute_name, attribute_value = attribute.split('=', 1)
+                                attributes[attribute_name.strip()] = attribute_value.strip()
+                            else:
+                                attributes[attribute.strip()] = True
+
+                        response_cookies.append({
+                            "name": cookie_name.strip(),
+                            "value": cookie_value.strip(),
+                            "attributes": attributes,
+                        })
                     
                     # Determine status based on HTTP status code
                     if status_code >= 200 and status_code < 300:
@@ -1311,6 +1437,7 @@ class WorkflowExecutor:
                         status = "unknown"
                     
                     # Structure response for easy variable access
+                    redirect_count = len(getattr(response, 'history', []))
                     result = {
                         "status": status,
                         "statusCode": status_code,
@@ -1318,6 +1445,12 @@ class WorkflowExecutor:
                         "body": response_body,  # Parsed JSON or raw text
                         "cookies": response_cookies,
                         "duration": duration_ms,  # Request duration in milliseconds
+                        "responseSizeBytes": response_size_bytes,
+                        "contentType": content_type,
+                        "bodyFormat": body_format,
+                        "responseTimeMs": duration_ms,
+                        "cookieCount": len(set_cookie_headers),
+                        "redirectCount": redirect_count,
                         "method": method,
                         "url": url
                     }
@@ -1341,8 +1474,7 @@ class WorkflowExecutor:
             # Return an error result that can be handled downstream
             error_msg = str(e)
             self.logger.error(f"HTTP request failed for {url}: {error_msg}")
-            print(f"❌ HTTP request error: {error_msg}")
-            
+            self.logger.error(f"❌ HTTP request error: {error_msg}")
             return {
                 "status": "error",
                 "error": error_msg,
@@ -1357,7 +1489,15 @@ class WorkflowExecutor:
         config = node.get('config', {})
         duration = config.get('duration', 1000) / 1000  # Convert ms to seconds
         
-        await asyncio.sleep(duration)
+        try:
+            await asyncio.wait_for(self.cancel_event.wait(), timeout=duration)
+            return {
+                "status": "cancelled",
+                "duration": duration,
+                "message": "Delay cancelled"
+            }
+        except asyncio.TimeoutError:
+            pass
         
         return {
             "status": "success",
@@ -1532,7 +1672,7 @@ class WorkflowExecutor:
         # Check if already completed BEFORE acquiring lock (fast path)
         if node_id in self.merge_completed:
             self.logger.info(f"⏭️  Merge node {node_id} already completed, skipping")
-            print(f"⏭️  Merge node {node_id} already completed by another branch")
+            self.logger.info(f"⏭️  Merge node {node_id} already completed by another branch")
             # Return a marker that indicates merge was completed by another branch
             return { 'mergedByOther': True, 'result': self.results.get(node_id) }
         
@@ -1547,13 +1687,14 @@ class WorkflowExecutor:
                                    if pred_id not in self.results and pred_id not in self.failed_nodes]
             if missing_predecessors:
                 self.logger.info(f"⏳ [ALL] Branch waiting for {len(missing_predecessors)} predecessors: {missing_predecessors}")
-                print(f"⏳ [ALL strategy] Branch waiting for {len(missing_predecessors)} predecessors before merge")
-                
+                self.logger.info(f"⏳ [ALL strategy] Branch waiting for {len(missing_predecessors)} predecessors before merge")
                 max_wait = 30  # seconds
                 wait_interval = 0.1  # seconds
                 elapsed = 0
                 
                 while missing_predecessors and elapsed < max_wait:
+                    if await self._check_cancelled():
+                        return {"status": "cancelled", "message": "Merge cancelled while waiting for predecessors"}
                     await asyncio.sleep(wait_interval)
                     elapsed += wait_interval
                     missing_predecessors = [pred_id for pred_id in predecessor_node_ids 
@@ -1569,12 +1710,11 @@ class WorkflowExecutor:
                 if failed_predecessors:
                     error_msg = f"Cannot merge: {len(failed_predecessors)} predecessor(s) failed: {failed_predecessors}"
                     self.logger.error(f"❌ {error_msg}")
-                    print(f"❌ [ALL strategy] {error_msg}")
+                    self.logger.error(f"❌ [ALL strategy] {error_msg}")
                     raise Exception(error_msg)
                 
                 self.logger.info(f"✓ All predecessors completed, proceeding to merge")
-                print(f"✓ All {len(predecessor_node_ids)} predecessors completed")
-        
+                self.logger.info(f"✓ All {len(predecessor_node_ids)} predecessors completed")
         elif merge_strategy in ['any', 'first']:
             # For ANY/FIRST: Continue as soon as at least ONE predecessor completes successfully
             # No waiting needed - first successful branch to arrive triggers merge
@@ -1584,14 +1724,15 @@ class WorkflowExecutor:
             if not completed_predecessors:
                 # No successful predecessors yet
                 self.logger.warning(f"⚠️  [ANY/FIRST] No predecessors completed successfully yet ({len(failed_predecessors)} failed)")
-                print(f"⚠️  [ANY/FIRST strategy] No successful predecessors ready, waiting...")
-                
+                self.logger.error(f"⚠️  [ANY/FIRST strategy] No successful predecessors ready, waiting...")
                 # Wait for at least one successful completion
                 max_wait = 30
                 wait_interval = 0.1
                 elapsed = 0
                 
                 while not completed_predecessors and elapsed < max_wait:
+                    if await self._check_cancelled():
+                        return {"status": "cancelled", "message": "Merge cancelled while waiting for predecessors"}
                     await asyncio.sleep(wait_interval)
                     elapsed += wait_interval
                     completed_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id in self.results]
@@ -1604,24 +1745,24 @@ class WorkflowExecutor:
                 if not completed_predecessors:
                     error_msg = f"All {len(predecessor_node_ids)} branches failed or timed out"
                     self.logger.error(f"❌ {error_msg}")
-                    print(f"❌ [ANY/FIRST strategy] {error_msg}")
+                    self.logger.error(f"❌ [ANY/FIRST strategy] {error_msg}")
                     raise Exception(error_msg)
             
             self.logger.info(f"⚡ [{merge_strategy.upper()}] {len(completed_predecessors)}/{len(predecessor_node_ids)} predecessors completed ({len(failed_predecessors)} failed), proceeding")
-            print(f"⚡ [{merge_strategy.upper()} strategy] Proceeding with {len(completed_predecessors)} successful branch(es), {len(failed_predecessors)} failed")
-        
+            self.logger.info(f"⚡ [{merge_strategy.upper()} strategy] Proceeding with {len(completed_predecessors)} successful branch(es), {len(failed_predecessors)} failed")
         elif merge_strategy == 'conditional':
             # For CONDITIONAL: Wait for all like 'all' strategy, but FAIL if any predecessor failed
             missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
             if missing_predecessors:
                 self.logger.info(f"⏳ [CONDITIONAL] Waiting for {len(missing_predecessors)} predecessors")
-                print(f"⏳ [CONDITIONAL strategy] Waiting for all branches to evaluate conditions")
-                
+                self.logger.info(f"⏳ [CONDITIONAL strategy] Waiting for all branches to evaluate conditions")
                 max_wait = 30
                 wait_interval = 0.1
                 elapsed = 0
                 
                 while missing_predecessors and elapsed < max_wait:
+                    if await self._check_cancelled():
+                        return {"status": "cancelled", "message": "Merge cancelled while waiting for predecessors"}
                     await asyncio.sleep(wait_interval)
                     elapsed += wait_interval
                     missing_predecessors = [pred_id for pred_id in predecessor_node_ids if pred_id not in self.results]
@@ -1636,7 +1777,7 @@ class WorkflowExecutor:
             if failed_predecessors:
                 error_msg = f"Cannot merge: {len(failed_predecessors)} predecessor(s) failed: {failed_predecessors}"
                 self.logger.error(f"❌ {error_msg}")
-                print(f"❌ [CONDITIONAL strategy] {error_msg}")
+                self.logger.error(f"❌ [CONDITIONAL strategy] {error_msg}")
                 raise Exception(error_msg)
         
         # Now acquire lock to execute merge logic
@@ -1644,13 +1785,12 @@ class WorkflowExecutor:
             # Double-check if completed (another branch may have finished while we waited)
             if node_id in self.merge_completed:
                 self.logger.info(f"⏭️  Merge node {node_id} completed by another branch")
-                print(f"⏭️  Merge node {node_id} completed by another branch")
+                self.logger.info(f"⏭️  Merge node {node_id} completed by another branch")
                 # Return marker to prevent downstream execution from this branch
                 return { 'mergedByOther': True, 'result': self.results.get(node_id) }
             
             self.logger.info(f"🔀 Merge node {node_id} executing with {len(predecessor_node_ids)} predecessors")
-            print(f"🔀 Merge node {node_id} has {len(predecessor_node_ids)} predecessors: {predecessor_node_ids}")
-            
+            self.logger.info(f"🔀 Merge node {node_id} has {len(predecessor_node_ids)} predecessors: {predecessor_node_ids}")
             # Get only the predecessor results (not ALL results)
             # For each predecessor, find the nearest data-producing ancestor
             all_predecessor_results = []
@@ -1668,11 +1808,11 @@ class WorkflowExecutor:
                         if result.get('status') == 'error':
                             failed_results.append((data_node_id, result))
                             self.logger.warning(f"   Branch from {pred_id} → data node {data_node_id} FAILED (status: error)")
-                            print(f"   ❌ Branch from {pred_id} → data node {data_node_id} FAILED (error result)")
+                            self.logger.error(f"   ❌ Branch from {pred_id} → data node {data_node_id} FAILED (error result)")
                         else:
                             all_predecessor_results.append((data_node_id, result))
                             self.logger.info(f"   Branch from {pred_id} → data node: {data_node_id}")
-                            print(f"   ✓ Branch from {pred_id} → data node: {data_node_id}")
+                            self.logger.info(f"   ✓ Branch from {pred_id} → data node: {data_node_id}")
                     else:
                         self.logger.warning(f"   Branch from {pred_id} → no data node found (type: {result.get('type')})")
                 else:
@@ -1683,7 +1823,7 @@ class WorkflowExecutor:
                 failed_node_ids = [nid for nid, _ in failed_results]
                 error_msg = f"Cannot merge: {len(failed_results)} branch(es) failed: {failed_node_ids}"
                 self.logger.error(f"❌ {error_msg}")
-                print(f"❌ [{merge_strategy.upper()} strategy] {error_msg}")
+                self.logger.error(f"❌ [{merge_strategy.upper()} strategy] {error_msg}")
                 self.merge_completed[node_id] = True
                 raise Exception(error_msg)
             
@@ -1696,7 +1836,7 @@ class WorkflowExecutor:
                                      key=lambda x: x[1].get('duration', 0) if x[1].get('duration') else float('inf'))
                     predecessor_results = [first_branch]
                     self.logger.info(f"🏃 [FIRST] Selected fastest branch: {first_branch[0]}")
-                    print(f"🏃 [FIRST strategy] Using fastest branch: {first_branch[0]}")
+                    self.logger.info(f"🏃 [FIRST strategy] Using fastest branch: {first_branch[0]}")
                 else:
                     predecessor_results = []
             
@@ -1704,8 +1844,7 @@ class WorkflowExecutor:
                 # ANY: Use all completed branches (may be subset if not all completed yet)
                 predecessor_results = all_predecessor_results
                 self.logger.info(f"⚡ [ANY] Using {len(predecessor_results)} completed branch(es)")
-                print(f"⚡ [ANY strategy] Using {len(predecessor_results)} completed branch(es)")
-            
+                self.logger.info(f"⚡ [ANY strategy] Using {len(predecessor_results)} completed branch(es)")
             else:
                 # ALL or CONDITIONAL: Use all branches
                 predecessor_results = all_predecessor_results
@@ -1730,8 +1869,7 @@ class WorkflowExecutor:
                 failed_branches = []  # Track branches that failed conditions
                 
                 self.logger.info(f"🎯 Evaluating conditions with {condition_logic} logic")
-                print(f"🎯 Evaluating {len(conditions)} condition(s) with {condition_logic} logic")
-                
+                self.logger.info(f"🎯 Evaluating {len(conditions)} condition(s) with {condition_logic} logic")
                 # Track which branches have conditions defined
                 branches_with_conditions = set(cond.get('branchIndex', 0) for cond in conditions)
                 
@@ -1766,10 +1904,10 @@ class WorkflowExecutor:
                             
                             if matches:
                                 self.logger.info(f"  ✓ Branch {branch_idx} ({pred_node_id}) matched condition {cond_idx + 1}: {field} {operator} {expected_value}")
-                                print(f"  ✓ Branch {branch_idx} ({pred_node_id}) matched: {field} {operator} {expected_value}")
+                                self.logger.info(f"  ✓ Branch {branch_idx} ({pred_node_id}) matched: {field} {operator} {expected_value}")
                             else:
                                 self.logger.info(f"  ✗ Branch {branch_idx} ({pred_node_id}) did NOT match condition {cond_idx + 1}: {field} {operator} {expected_value} (got {actual_value})")
-                                print(f"  ✗ Branch {branch_idx} ({pred_node_id}) did NOT match: {field} {operator} {expected_value} (got {actual_value})")
+                                self.logger.info(f"  ✗ Branch {branch_idx} ({pred_node_id}) did NOT match: {field} {operator} {expected_value} (got {actual_value})")
                                 failed_condition_details.append({
                                     'field': field,
                                     'operator': operator,
@@ -1785,7 +1923,7 @@ class WorkflowExecutor:
                             if all(branch_matches):
                                 merged_branches.append(branch_idx)
                                 self.logger.info(f"  ✅ Branch {branch_idx} PASSED (matched ALL conditions)")
-                                print(f"  ✅ Branch {branch_idx} PASSED (matched ALL conditions)")
+                                self.logger.info(f"  ✅ Branch {branch_idx} PASSED (matched ALL conditions)")
                             else:
                                 failed_branches.append({
                                     'index': branch_idx,
@@ -1794,13 +1932,13 @@ class WorkflowExecutor:
                                     'failures': failed_condition_details
                                 })
                                 self.logger.info(f"  ❌ Branch {branch_idx} FAILED (did not match ALL conditions)")
-                                print(f"  ❌ Branch {branch_idx} FAILED (did not match ALL conditions)")
+                                self.logger.error(f"  ❌ Branch {branch_idx} FAILED (did not match ALL conditions)")
                         else:  # OR
                             # OR: At least one condition for this branch must match
                             if any(branch_matches):
                                 merged_branches.append(branch_idx)
                                 self.logger.info(f"  ✅ Branch {branch_idx} PASSED (matched at least ONE condition)")
-                                print(f"  ✅ Branch {branch_idx} PASSED (matched at least ONE condition)")
+                                self.logger.info(f"  ✅ Branch {branch_idx} PASSED (matched at least ONE condition)")
                             else:
                                 failed_branches.append({
                                     'index': branch_idx,
@@ -1809,21 +1947,19 @@ class WorkflowExecutor:
                                     'failures': failed_condition_details
                                 })
                                 self.logger.info(f"  ❌ Branch {branch_idx} FAILED (did not match ANY conditions)")
-                                print(f"  ❌ Branch {branch_idx} FAILED (did not match ANY conditions)")
+                                self.logger.error(f"  ❌ Branch {branch_idx} FAILED (did not match ANY conditions)")
                     else:
                         # This branch has NO conditions - include it by default
                         merged_branches.append(branch_idx)
                         self.logger.info(f"  ✅ Branch {branch_idx} PASSED (no conditions defined)")
-                        print(f"  ✅ Branch {branch_idx} PASSED (no conditions defined)")
-                
+                        self.logger.info(f"  ✅ Branch {branch_idx} PASSED (no conditions defined)")
                 merged_count = len(merged_branches)
                 failed_count = len(failed_branches)
                 
                 # If ANY branch failed conditions, the merge FAILS (like an assertion)
                 if failed_count > 0:
                     self.logger.error(f"❌ Conditional merge FAILED: {failed_count} branch(es) did not meet conditions")
-                    print(f"❌ Conditional merge FAILED: {failed_count}/{branch_count} branch(es) did not meet conditions")
-                    
+                    self.logger.error(f"❌ Conditional merge FAILED: {failed_count}/{branch_count} branch(es) did not meet conditions")
                     # Build detailed error message
                     error_details = []
                     for failure in failed_branches:
@@ -1839,8 +1975,7 @@ class WorkflowExecutor:
                     # Raise exception to fail the workflow (unless continueOnFail)
                     raise Exception(error_message)
                 
-                print(f"✅ Conditional merge PASSED: All {branch_count} branches matched conditions using {condition_logic} logic")
-                
+                self.logger.info(f"✅ Conditional merge PASSED: All {branch_count} branches matched conditions using {condition_logic} logic")
                 # Store ALL branch results (not filtered, since all passed)
                 self.branch_results[node_id] = predecessor_results
                 
@@ -1848,7 +1983,7 @@ class WorkflowExecutor:
                 try:
                     self.logger.debug(f"[DIAG] merge {node_id} stored branch_results keys={list(self.branch_results.keys())}")
                     self.logger.debug(f"[DIAG] merge {node_id} branch_result_ids={[nid for nid, _ in predecessor_results]}")
-                    print(f"[DIAG] merge {node_id} -> stored branches: {[nid for nid, _ in predecessor_results]}")
+                    self.logger.info(f"[DIAG] merge {node_id} -> stored branches: {[nid for nid, _ in predecessor_results]}")
                 except Exception:
                     pass
 
@@ -1868,8 +2003,7 @@ class WorkflowExecutor:
                     "mergedAt": datetime.now(UTC).isoformat()
                 }
             
-            print(f"🔀 Merge node executed with strategy '{merge_strategy}': {branch_count} branches merged")
-            
+            self.logger.info(f"🔀 Merge node executed with strategy '{merge_strategy}': {branch_count} branches merged")
             # Store branch results for this merge node (for downstream nodes to use in prev[N])
             self.branch_results[node_id] = predecessor_results
             
@@ -1880,8 +2014,7 @@ class WorkflowExecutor:
             warning = None
             if merge_strategy in ['any', 'first'] and len(predecessor_node_ids) > branch_count:
                 warning = f"⚠️ Using '{merge_strategy}' strategy: Only {branch_count} of {len(predecessor_node_ids)} branch(es) available. Downstream nodes using prev[N] may fail if N >= {branch_count}."
-                print(warning)
-            
+                self.logger.info(warning)
             result = {
                 "status": "success",
                 "message": f"Merged {branch_count} branches using '{merge_strategy}' strategy",
@@ -2057,8 +2190,7 @@ class WorkflowExecutor:
                 
                 # If result is larger than 14MB, store in GridFS instead of regular collection
                 if size_mb > 14:
-                    print(f"📦 Large result detected ({size_mb:.2f} MB), storing in GridFS...")
-                    
+                    self.logger.info(f"📦 Large result detected ({size_mb:.2f} MB), storing in GridFS...")
                     # Store in GridFS
                     gridfs_bucket = AsyncIOMotorGridFSBucket(db)
                     file_id = await gridfs_bucket.upload_from_stream(
@@ -2073,7 +2205,13 @@ class WorkflowExecutor:
                         }
                     )
                     
-                    # Store reference to GridFS file
+                    # Store reference to GridFS file with metadata inside result dict
+                    gridfs_meta = {
+                        "stored_in_gridfs": True,
+                        "gridfs_file_id": str(file_id),
+                        "size_mb": size_mb,
+                    }
+                    result_with_meta = {**gridfs_meta, **result}
                     await db.node_results.update_one(
                         {"runId": self.run_id, "nodeId": node_id},
                         {
@@ -2081,15 +2219,13 @@ class WorkflowExecutor:
                                 "runId": self.run_id,
                                 "nodeId": node_id,
                                 "status": status,
-                                "gridfs_file_id": str(file_id),
-                                "size_mb": size_mb,
-                                "stored_in_gridfs": True,
+                                "result": result_with_meta,
                                 "timestamp": datetime.now(UTC).isoformat()
                             }
                         },
                         upsert=True
                     )
-                    print(f"✓ Stored large result in GridFS (file_id: {file_id})")
+                    self.logger.info("Stored large result in GridFS (file_id: %s)", file_id)
                 else:
                     # Store normally in node_results collection
                     await db.node_results.update_one(
@@ -2100,16 +2236,13 @@ class WorkflowExecutor:
                                 "nodeId": node_id,
                                 "status": status,
                                 "result": result,  # Full result stored here
-                                "size_mb": size_mb,
-                                "stored_in_gridfs": False,
                                 "timestamp": datetime.now(UTC).isoformat()
                             }
                         },
                         upsert=True
                     )
             except Exception as e:
-                print(f"⚠️  Failed to store full result for {node_id}: {str(e)}")
-        
+                self.logger.error(f"⚠️  Failed to store full result for {node_id}: {str(e)}")
         # Store ONLY status reference in runs document (no result data at all)
         # Full results are in node_results collection or GridFS
         try:
@@ -2126,8 +2259,8 @@ class WorkflowExecutor:
                 }
             )
         except Exception as e:
-            print(f"⚠️  Failed to update runs document for {node_id}: {str(e)}")
-            print(f"   Full result is still available in node_results collection")
+            self.logger.error(f"⚠️  Failed to update runs document for {node_id}: {str(e)}")
+            self.logger.info(f"   Full result is still available in node_results collection")
             # Don't raise - the full result is safely stored in node_results
     
     def _create_result_summary(self, result: Any, max_preview_size: int = 500) -> Any:

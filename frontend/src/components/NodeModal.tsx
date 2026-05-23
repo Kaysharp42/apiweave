@@ -6,9 +6,11 @@ import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerg
 import { Button } from './atoms/Button';
 import { Input, TextArea } from './atoms';
 import { BeautifyButton } from './molecules';
+import { ResponseInspector } from './molecules/ResponseInspector';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { getNodeModalTypeName } from '../utils/nodeModalMeta';
 import { formatNodeOutputDuration, getNodeOutputStatusClass } from '../utils/nodeOutputStatus';
+import type { ApiResponse, NodeResultMetadata, ResponseCookie } from '../types';
 import type { HttpMethod } from '../types/HttpMethod';
 
 type ModalNodeType = 'http-request' | 'assertion' | 'delay' | 'merge' | 'start' | 'end';
@@ -65,9 +67,13 @@ interface HTTPRequestConfigProps {
   workingDataRef: React.MutableRefObject<Record<string, unknown>>;
 }
 
-interface OutputPanelProps {
+interface HttpRequestOutputPanelProps {
   node: NodeModalNode;
   initialConfig: HTTPRequestConfigType;
+  output: Record<string, unknown> | null;
+}
+
+interface NodeOutputPanelProps {
   output: Record<string, unknown> | null;
 }
 
@@ -197,8 +203,8 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
             leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
           >
             <Dialog.Panel className="h-[90vh] w-[96vw] max-w-[1800px]">
-              <div className="grid h-full grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-                <div className="min-h-0 overflow-hidden rounded-2xl border border-border dark:border-border-dark bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised shadow-xl">
+              <div className="flex h-full flex-col gap-4 xl:flex-row">
+                <div className="min-h-0 overflow-hidden rounded-2xl border border-border dark:border-border-dark bg-gradient-to-br from-surface-raised to-surface dark:from-surface-dark dark:to-surface-dark-raised shadow-xl xl:basis-[56%] xl:min-w-0">
                   <div className="flex h-full min-h-0 flex-col p-5 sm:p-6">
                     <div className="mb-5 flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -279,13 +285,19 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
                   </div>
                 </div>
 
-                <div className="min-h-0 overflow-hidden rounded-2xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark shadow-xl">
-                  <div className="h-full">
-                    <OutputPanel
-                      node={node}
-                      initialConfig={(node.data.config || {}) as HTTPRequestConfigType}
-                      output={(node.data?.executionResult as Record<string, unknown> | null) || null}
-                    />
+                <div className="min-h-0 overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl dark:border-border-dark dark:bg-surface-dark-raised xl:basis-[44%] xl:min-w-0">
+                  <div className="flex h-full min-h-0 flex-col">
+                    {node.type === 'http-request' ? (
+                      <HttpRequestOutputPanel
+                        node={node}
+                        initialConfig={(node.data.config || {}) as HTTPRequestConfigType}
+                        output={(node.data?.executionResult as Record<string, unknown> | null) || null}
+                      />
+                    ) : (
+                      <NodeOutputPanel
+                        output={(node.data?.executionResult as Record<string, unknown> | null) || null}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -303,6 +315,7 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
 
   const urlRef = useRef(initialConfig.url || '');
   const methodRef = useRef(initialConfig.method || 'GET');
+  const [methodValue, setMethodValue] = useState(initialConfig.method || 'GET');
   const queryParamsRef = useRef(initialConfig.queryParams || '');
   const headersRef = useRef(initialConfig.headers || '');
   const cookiesRef = useRef(initialConfig.cookies || '');
@@ -311,6 +324,12 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
   const timeoutRef = useRef(initialConfig.timeout || 30);
   const fileUploadsRef = useRef(initialConfig.fileUploads || []);
   const [fileUploads, setFileUploads] = useState<FileUpload[]>(initialConfig.fileUploads || []);
+
+  useEffect(() => {
+    const nextMethod = initialConfig.method || 'GET';
+    methodRef.current = nextMethod;
+    setMethodValue(nextMethod);
+  }, [initialConfig.method]);
 
   const updateRef = () => {
     const newConfig: HTTPRequestConfigType = {
@@ -352,11 +371,12 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
                     key={method}
                     onClick={() => {
                       methodRef.current = method;
+                      setMethodValue(method);
                       updateRef();
                     }}
-                    variant={methodRef.current === method ? 'primary' : 'ghost'}
+                    variant={methodValue === method ? 'primary' : 'ghost'}
                     size="xs"
-                    className={methodRef.current === method ? '' : ''}
+                    className={methodValue === method ? '' : ''}
                   >
                     {method}
                   </Button>
@@ -502,38 +522,17 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
 };
 HTTPRequestConfig.displayName = 'HTTPRequestConfig';
 
-const OutputPanel = ({ node, initialConfig, output }: OutputPanelProps) => {
-  const [activeTab, setActiveTab] = useState('body');
-  const [beautifyBody, setBeautifyBody] = useState(true);
-
-  const statusCode = output?.statusCode as number | undefined;
-  const headers = (output?.headers as Record<string, unknown>) || {};
-  const cookies = (output?.cookies as Record<string, unknown>) || {};
-  const body = output?.body;
+const HttpRequestOutputPanel = ({ node, initialConfig, output }: HttpRequestOutputPanelProps) => {
+  const response = output ? createInspectorResponse(output) : null;
+  const metadata = output ? createInspectorMetadata(output, response) : undefined;
+  const rawBody = output ? getRawBody(output) : undefined;
+  const statusCode = response?.status;
   const statusColor = getNodeOutputStatusClass(statusCode);
-  const durationLabel = formatNodeOutputDuration((output?.duration) as number | undefined);
-
-  const formatBodyValue = (value: unknown): string => {
-    if (typeof value === 'string') {
-      try {
-        const parsed = JSON.parse(value);
-        return beautifyBody ? JSON.stringify(parsed, null, 2) : JSON.stringify(parsed);
-      } catch {
-        return value;
-      }
-    }
-    return beautifyBody ? JSON.stringify(value, null, 2) : JSON.stringify(value);
-  };
-
-  const CodeBlock = ({ value }: { value: unknown }) => (
-    <pre className="w-full h-full overflow-auto p-4 text-xs text-text-secondary dark:text-text-secondary-dark font-mono bg-surface dark:bg-surface-dark border-0 leading-relaxed">
-      {activeTab === 'body' ? formatBodyValue(value) : (typeof value === 'string' ? value : JSON.stringify(value, null, 2))}
-    </pre>
-  );
+  const durationLabel = formatNodeOutputDuration(metadata?.responseTimeMs ?? getNumberValue(output ?? undefined, 'duration'));
 
   return (
-    <div className="h-full flex flex-col bg-surface dark:bg-surface-dark">
-      <div className="flex-shrink-0 px-4 py-4 border-b border-border dark:border-border-dark flex items-center justify-between bg-surface-raised dark:bg-surface-dark-raised">
+    <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised px-4 py-4">
         <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark flex items-center gap-2">
           <FileText className="w-4 h-4" />
           Response Output
@@ -565,7 +564,7 @@ const OutputPanel = ({ node, initialConfig, output }: OutputPanelProps) => {
 
       {output && node.type === 'http-request' && (
         <>
-          <div className="flex-shrink-0 px-4 py-3 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark">
+          <div className="flex-shrink-0 border-b border-border bg-surface-overlay px-4 py-3 dark:border-border-dark dark:bg-surface-dark-overlay">
             <div className="flex items-center gap-2 text-xs">
               <span className="font-semibold px-2 py-1 rounded bg-primary/15 dark:bg-primary-dark/25 text-primary dark:text-primary-dark">
                 {initialConfig.method || 'GET'}
@@ -576,66 +575,200 @@ const OutputPanel = ({ node, initialConfig, output }: OutputPanelProps) => {
             </div>
           </div>
 
-          <div className="flex-shrink-0 px-4 py-2 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark flex items-center justify-between">
-            <div className="flex gap-1 overflow-x-auto">
-              <Button
-                onClick={() => setActiveTab('body')}
-                variant={activeTab === 'body' ? 'primary' : 'ghost'}
-                size="xs"
-              >
-                Body
-              </Button>
-              <Button
-                onClick={() => setActiveTab('headers')}
-                variant={activeTab === 'headers' ? 'primary' : 'ghost'}
-                size="xs"
-              >
-                Headers ({Object.keys(headers).length})
-              </Button>
-              <Button
-                onClick={() => setActiveTab('cookies')}
-                variant={activeTab === 'cookies' ? 'primary' : 'ghost'}
-                size="xs"
-              >
-                Cookies ({Object.keys(cookies).length})
-              </Button>
-              <Button
-                onClick={() => setActiveTab('raw')}
-                variant={activeTab === 'raw' ? 'primary' : 'ghost'}
-                size="xs"
-              >
-                Raw
-              </Button>
-            </div>
-            {activeTab === 'body' && body !== undefined && body !== null && (
-              <button
-                onClick={() => setBeautifyBody((prev) => !prev)}
-                className="text-xs px-2 py-1 rounded hover:bg-surface dark:hover:bg-surface-dark transition-colors text-text-secondary dark:text-text-secondary-dark"
-                title={beautifyBody ? 'Minify JSON' : 'Beautify JSON'}
-              >
-                {beautifyBody ? '{ }' : '{}'}
-              </button>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-auto bg-surface dark:bg-surface-dark">
-            {activeTab === 'body' && <CodeBlock value={body ?? '(empty)'} />}
-            {activeTab === 'headers' && <CodeBlock value={headers} />}
-            {activeTab === 'cookies' && <CodeBlock value={cookies} />}
-            {activeTab === 'raw' && <CodeBlock value={output} />}
+          <div className="min-h-0 flex-1 overflow-hidden bg-surface p-4 dark:bg-surface-dark">
+            <ResponseInspector
+              response={response}
+              {...(metadata ? { metadata } : {})}
+              {...(rawBody !== undefined ? { rawBody } : {})}
+            />
           </div>
         </>
       )}
 
-      {output && node.type !== 'http-request' && (
-        <div className="flex-1 overflow-auto bg-surface dark:bg-surface-dark p-4">
+    </div>
+  );
+};
+HttpRequestOutputPanel.displayName = 'HttpRequestOutputPanel';
+
+const NodeOutputPanel = ({ output }: NodeOutputPanelProps) => {
+  const CodeBlock = ({ value }: { value: unknown }) => (
+    <pre className="h-full w-full overflow-auto rounded-lg border border-border/70 bg-surface p-4 font-mono text-xs leading-relaxed text-text-secondary dark:border-border-dark/70 dark:bg-surface-dark dark:text-text-secondary-dark">
+      {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
+    </pre>
+  );
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised px-4 py-4">
+        <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark flex items-center gap-2">
+          <FileText className="w-4 h-4" />
+          Node Output
+        </h3>
+      </div>
+
+      {!output ? (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center">
+            <FileText className="w-16 h-16 mx-auto mb-4 text-text-muted dark:text-text-muted-dark/70" />
+            <p className="text-sm text-text-muted dark:text-text-muted-dark mb-2">
+              Execute this node to view data
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-hidden bg-surface p-4 dark:bg-surface-dark">
           <CodeBlock value={output} />
         </div>
       )}
     </div>
   );
 };
-OutputPanel.displayName = 'OutputPanel';
+NodeOutputPanel.displayName = 'NodeOutputPanel';
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+
+const getRecordValue = (source: Record<string, unknown>, key: string): Record<string, unknown> | undefined => {
+  const value = source[key];
+  return isRecord(value) ? value : undefined;
+};
+
+const getStringValue = (source: Record<string, unknown> | undefined, key: string): string | undefined => {
+  const value = source?.[key];
+  return typeof value === 'string' ? value : undefined;
+};
+
+const getNumberValue = (source: Record<string, unknown> | undefined, key: string): number | undefined => {
+  const value = source?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+};
+
+const stringifyForRawBody = (value: unknown): string | undefined => {
+  if (typeof value === 'string') return value;
+  if (value === undefined || value === null) return undefined;
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
+const toStringRecord = (value: unknown): Record<string, string> => {
+  if (!isRecord(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, unknown] => entry[1] !== undefined && entry[1] !== null)
+      .map(([key, entryValue]) => [key, String(entryValue)]),
+  );
+};
+
+const getCaseInsensitiveHeader = (headers: Record<string, string>, headerName: string): string | undefined => {
+  const normalizedHeaderName = headerName.toLowerCase();
+  return Object.entries(headers).find(([key]) => key.toLowerCase() === normalizedHeaderName)?.[1];
+};
+
+const getRawBody = (output: Record<string, unknown>): string | undefined => {
+  const rawBody = getStringValue(output, 'rawBody') ?? getStringValue(output, 'raw_body');
+  return rawBody ?? stringifyForRawBody(output.body);
+};
+
+const parseJsonBodyIfNeeded = (body: unknown, contentType: string): unknown => {
+  if (typeof body !== 'string' || !contentType.toLowerCase().includes('json')) return body;
+
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return body;
+  }
+};
+
+const inferBodyFormat = (contentType: string, body: unknown): string => {
+  const normalizedContentType = contentType.toLowerCase();
+  if (normalizedContentType.includes('json') || typeof body === 'object') return 'json';
+  if (normalizedContentType.includes('text/html')) return 'html';
+  if (normalizedContentType.startsWith('image/')) return 'image';
+  if (normalizedContentType.startsWith('text/') || normalizedContentType.includes('xml')) return 'text';
+  if (normalizedContentType.includes('octet-stream')) return 'binary';
+  return 'text';
+};
+
+const isResponseCookie = (value: unknown): value is ResponseCookie => {
+  if (!isRecord(value)) return false;
+
+  const { name, value: cookieValue, attributes } = value;
+
+  return typeof name === 'string'
+    && typeof cookieValue === 'string'
+    && isRecord(attributes)
+    && Object.values(attributes).every((attributeValue) => typeof attributeValue === 'string' || typeof attributeValue === 'boolean');
+};
+
+const getResponseCookies = (source: Record<string, unknown> | undefined): ResponseCookie[] | undefined => {
+  if (!source) return undefined;
+
+  const cookies = source.cookies;
+  if (!Array.isArray(cookies)) return undefined;
+
+  const parsedCookies = cookies.filter(isResponseCookie);
+  return parsedCookies.length > 0 ? parsedCookies : undefined;
+};
+
+const countCookies = (output: Record<string, unknown>, headers: Record<string, string>): number => {
+  const responseCookies = getResponseCookies(output) ?? getResponseCookies(getRecordValue(output, 'response'));
+  if (responseCookies) return responseCookies.length;
+
+  const setCookieHeader = getCaseInsensitiveHeader(headers, 'set-cookie');
+  if (!setCookieHeader) return 0;
+  return setCookieHeader.split(/,(?=\s*[^;,=]+=[^;,]+)/).filter(Boolean).length;
+};
+
+const createInspectorResponse = (output: Record<string, unknown>): ApiResponse => {
+  const nestedResponse = getRecordValue(output, 'response');
+  const headers = toStringRecord(output.headers ?? nestedResponse?.headers);
+  const status = getNumberValue(output, 'statusCode') ?? getNumberValue(output, 'status') ?? getNumberValue(nestedResponse, 'status') ?? 0;
+  const responseTime = getNumberValue(output, 'duration')
+    ?? getNumberValue(output, 'responseTimeMs')
+    ?? getNumberValue(output, 'responseTime')
+    ?? getNumberValue(nestedResponse, 'responseTime')
+    ?? 0;
+  const contentType = getStringValue(getRecordValue(output, 'metadata'), 'contentType')
+    ?? getStringValue(output, 'contentType')
+    ?? getCaseInsensitiveHeader(headers, 'content-type')
+    ?? '';
+  const body = parseJsonBodyIfNeeded(output.body ?? nestedResponse?.body, contentType);
+  const cookies = getResponseCookies(output) ?? getResponseCookies(nestedResponse);
+
+  return {
+    status,
+    headers,
+    body,
+    responseTime,
+    ...(cookies ? { cookies } : {}),
+  };
+};
+
+const createInspectorMetadata = (output: Record<string, unknown>, response: ApiResponse | null): NodeResultMetadata | undefined => {
+  if (!response) return undefined;
+
+  const rawMetadata = getRecordValue(output, 'metadata');
+  const rawBody = getRawBody(output) ?? '';
+  const contentType = getStringValue(rawMetadata, 'contentType')
+    ?? getStringValue(output, 'contentType')
+    ?? getCaseInsensitiveHeader(response.headers, 'content-type')
+    ?? '';
+
+  return {
+    responseSizeBytes: getNumberValue(rawMetadata, 'responseSizeBytes') ?? getNumberValue(output, 'responseSizeBytes') ?? new TextEncoder().encode(rawBody).length,
+    contentType,
+    bodyFormat: getStringValue(rawMetadata, 'bodyFormat') ?? getStringValue(output, 'bodyFormat') ?? inferBodyFormat(contentType, response.body),
+    responseTimeMs: getNumberValue(rawMetadata, 'responseTimeMs') ?? getNumberValue(output, 'responseTimeMs') ?? getNumberValue(output, 'duration') ?? response.responseTime,
+    cookieCount: getNumberValue(rawMetadata, 'cookieCount') ?? getNumberValue(output, 'cookieCount') ?? countCookies(output, response.headers),
+    redirectCount: getNumberValue(rawMetadata, 'redirectCount') ?? getNumberValue(output, 'redirectCount') ?? 0,
+  };
+};
 
 const AssertionFormModal = ({ onAdd }: AssertionFormModalProps) => {
   const [source, setSource] = useState('prev');

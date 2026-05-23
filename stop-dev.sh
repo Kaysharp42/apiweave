@@ -6,6 +6,14 @@ cd "$ROOT_DIR"
 
 echo "Stopping APIWeave services..."
 
+# Kill MCP stdio server
+if pgrep -f "python mcp_stdio.py" >/dev/null 2>&1; then
+  echo "Stopping MCP stdio server"
+  pkill -15 -f "python mcp_stdio.py" || true
+  sleep 1
+  pkill -9 -f "python mcp_stdio.py" || true
+fi
+
 # Kill processes listening on port 8000 and 3000 if any
 if command -v fuser >/dev/null 2>&1; then
   echo "Killing processes on port 8000 and 3000 (if any)"

@@ -1,0 +1,314 @@
+from datetime import datetime, UTC
+from types import SimpleNamespace
+from unittest.mock import patch, AsyncMock
+import asyncio
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.models import Node
+
+
+client = TestClient(app)
+
+
+WORKFLOW_ID = "fc87c260-e0b8-4b63-a762-47169f04f690"
+ENV_ID = "10ab043b-f164-4745-8274-dbd1e8312a7a"
+
+
+class _DummyRunInsert:
+    def __init__(self, **kwargs):
+        self.payload = kwargs
+
+    async def insert(self):
+        return None
+
+
+def _close_scheduled_coroutine(coro):
+    coro.close()
+    return None
+
+
+def _workflow_with_example_nodes():
+    return SimpleNamespace(
+        workflowId=WORKFLOW_ID,
+        variables={"catID": "response.body.id"},
+        nodes=[
+            Node(nodeId="start-1", type="start", label="Start", position={"x": 0, "y": 0}, config={}),
+            Node(nodeId="http-request-1761432741713", type="http-request", label="Http Request  NB3", position={"x": 1, "y": 1}, config={}),
+            Node(nodeId="http-request-1761477525560", type="http-request", label="Http Request NB4", position={"x": 2, "y": 2}, config={}),
+            Node(nodeId="delay-1770749505484", type="delay", label="Delay", position={"x": 3, "y": 3}, config={}),
+        ],
+    )
+
+
+def _run(run_id: str, status: str, failed_nodes=None, node_statuses=None):
+    return SimpleNamespace(
+        runId=run_id,
+        workflowId=WORKFLOW_ID,
+        status=status,
+        failedNodes=failed_nodes,
+        nodeStatuses=node_statuses or {},
+        createdAt=datetime.now(UTC),
+    )
+
+
+def test_latest_failed_endpoint_returns_none_when_latest_run_is_success_even_if_older_failed_exists():
+    workflow = _workflow_with_example_nodes()
+    latest_success = _run("run-success", "completed")
+
+    with (
+        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.routes.workflows.RunRepository.get_latest_run", return_value=latest_success),
+    ):
+        response = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hasFailedRun"] is False
+    assert body["failedNodes"] == []
+
+
+def test_latest_failed_endpoint_uses_latest_failed_when_latest_run_failed():
+    workflow = _workflow_with_example_nodes()
+    latest_failed = _run(
+        "run-failed-1",
+        "failed",
+        failed_nodes=["http-request-1761432741713"],
+        node_statuses={
+            "http-request-1761432741713": {"status": "error", "timestamp": "2026-02-22T10:00:00Z"}
+        },
+    )
+
+    with (
+        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.routes.workflows.RunRepository.get_latest_run", return_value=latest_failed),
+    ):
+        response = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hasFailedRun"] is True
+    assert body["runId"] == "run-failed-1"
+    assert body["failedCount"] == 1
+    assert body["failedNodes"][0]["nodeId"] == "http-request-1761432741713"
+
+
+def test_latest_failed_endpoint_falls_back_to_node_statuses_when_failed_nodes_missing():
+    workflow = _workflow_with_example_nodes()
+    latest_failed = _run(
+        "run-failed-2",
+        "failed",
+        failed_nodes=None,
+        node_statuses={
+            "http-request-1761477525560": {"status": "error", "timestamp": "2026-02-22T10:00:01Z"},
+            "http-request-1761432741713": {"status": "error", "timestamp": "2026-02-22T10:00:02Z"},
+            "delay-1770749505484": {"status": "success", "timestamp": "2026-02-22T10:00:03Z"},
+        },
+    )
+
+    with (
+        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.routes.workflows.RunRepository.get_latest_run", return_value=latest_failed),
+    ):
+        response = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hasFailedRun"] is True
+    assert body["failedNodeIds"] == [
+        "http-request-1761477525560",
+        "http-request-1761432741713",
+    ]
+
+
+def test_resume_run_accepts_workflow_nodes_as_pydantic_models_regression_for_node_get_error():
+    workflow = _workflow_with_example_nodes()
+    latest_failed = _run(
+        "run-source",
+        "failed",
+        failed_nodes=["http-request-1761432741713", "http-request-1761477525560"],
+    )
+
+    with (
+        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
+        patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=latest_failed),
+        patch("app.routes.workflows.RunRepository.get_by_id", return_value=latest_failed),
+        patch("app.models.Run", _DummyRunInsert),
+        patch("app.routes.workflows.asyncio.create_task", side_effect=_close_scheduled_coroutine),
+    ):
+        response = client.post(
+            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            json={
+                "resume": {
+                    "mode": "all-failed",
+                    "sourceRunId": "run-source",
+                    "startNodeIds": [
+                        "http-request-1761432741713",
+                        "http-request-1761477525560",
+                    ],
+                }
+            },
+        )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["resumeMode"] == "all-failed"
+    assert body["startNodeIds"] == [
+        "http-request-1761432741713",
+        "http-request-1761477525560",
+    ]
+
+
+def test_resume_run_uses_node_status_fallback_when_source_failed_nodes_empty():
+    workflow = _workflow_with_example_nodes()
+    source_run = _run(
+        "run-source-2",
+        "failed",
+        failed_nodes=None,
+        node_statuses={
+            "http-request-1761432741713": {"status": "error", "timestamp": "2026-02-22T10:00:01Z"},
+            "http-request-1761477525560": {"status": "error", "timestamp": "2026-02-22T10:00:02Z"},
+        },
+    )
+
+    with (
+        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
+        patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=source_run),
+        patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
+        patch("app.models.Run", _DummyRunInsert),
+        patch("app.routes.workflows.asyncio.create_task", side_effect=_close_scheduled_coroutine),
+    ):
+        response = client.post(
+            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            json={
+                "resume": {
+                    "mode": "all-failed",
+                    "sourceRunId": "run-source-2",
+                }
+            },
+        )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["startNodeIds"] == [
+        "http-request-1761432741713",
+        "http-request-1761477525560",
+    ]
+
+
+def test_resume_run_returns_409_when_no_failed_run_exists_for_auto_resume():
+    workflow = _workflow_with_example_nodes()
+
+    with (
+        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
+        patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=None),
+    ):
+        response = client.post(
+            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            json={"resume": {"mode": "single"}},
+        )
+
+    assert response.status_code == 409
+    assert "No failed run found" in response.json()["detail"]
+
+
+def test_resume_run_returns_400_for_invalid_resume_node_ids():
+    workflow = _workflow_with_example_nodes()
+    source_run = _run("run-source-3", "failed", failed_nodes=["http-request-1761432741713"])
+
+    with (
+        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
+        patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
+    ):
+        response = client.post(
+            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            json={
+                "resume": {
+                    "mode": "all-failed",
+                    "sourceRunId": "run-source-3",
+                    "startNodeIds": ["does-not-exist"],
+                }
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Invalid resume node" in response.json()["detail"]
+
+
+def test_resume_single_mode_trims_multiple_failed_nodes_to_first():
+    workflow = _workflow_with_example_nodes()
+    source_run = _run(
+        "run-source-4",
+        "failed",
+        failed_nodes=["http-request-1761432741713", "http-request-1761477525560"],
+    )
+
+    with (
+        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
+        patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
+        patch("app.models.Run", _DummyRunInsert),
+        patch("app.routes.workflows.asyncio.create_task", side_effect=_close_scheduled_coroutine),
+    ):
+        response = client.post(
+            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            json={
+                "resume": {
+                    "mode": "single",
+                    "sourceRunId": "run-source-4",
+                    "startNodeIds": [
+                        "http-request-1761432741713",
+                        "http-request-1761477525560",
+                    ],
+                }
+            },
+        )
+
+    assert response.status_code == 202
+    assert response.json()["startNodeIds"] == ["http-request-1761432741713"]
+
+
+def test_latest_failed_endpoint_follows_latest_run_transitions_failed_then_success():
+    workflow = _workflow_with_example_nodes()
+    latest_failed = _run(
+        "run-failed-transition",
+        "failed",
+        failed_nodes=["http-request-1761432741713"],
+        node_statuses={"http-request-1761432741713": {"status": "error", "timestamp": "2026-02-22T10:00:00Z"}},
+    )
+    latest_success = _run("run-success-transition", "completed")
+
+    with (
+        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.routes.workflows.RunRepository.get_latest_run", side_effect=[latest_failed, latest_success]),
+    ):
+        first = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
+        second = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
+
+    assert first.status_code == 200
+    assert first.json()["hasFailedRun"] is True
+    assert second.status_code == 200
+    assert second.json()["hasFailedRun"] is False
+
+
+def test_fail_run_persists_variables_and_failed_nodes_for_followup_resume_attempts():
+    from app.runner.executor import WorkflowExecutor
+
+    executor = WorkflowExecutor("run-fail-persist", WORKFLOW_ID)
+    executor.start_time = None
+    executor.workflow_variables = {"catID": "abc123"}
+    executor.failed_nodes = ["http-request-1761477525560"]
+
+    with patch("app.runner.executor.RunRepository.update_fields", new=AsyncMock()) as update_fields:
+        asyncio.run(executor._fail_run("boom"))
+
+    update_fields.assert_awaited_once()
+    _, kwargs = update_fields.await_args
+    assert kwargs["status"] == "failed"
+    assert kwargs["variables"] == {"catID": "abc123"}
+    assert kwargs["failedNodes"] == ["http-request-1761477525560"]

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import CollectionManager from '../CollectionManager';
 import WebhookManager from '../WebhookManager';
+import MCPManager from '../MCPManager';
 import { SidebarHeader } from './SidebarHeader';
 import {
   Download,
@@ -674,6 +675,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
         {selectedNav === 'workflows' && renderWorkflowsContent()}
         {selectedNav === 'collections' && renderCollectionsContent()}
         {selectedNav === 'webhooks' && renderWebhooksContent()}
+        {selectedNav === 'mcp' && <MCPManager className="h-full" />}
         {selectedNav === 'settings' && renderSettingsContent()}
       </div>
 

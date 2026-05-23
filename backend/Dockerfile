@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -e .
 
 # Copy application
 COPY app/ ./app/
+COPY mcp_stdio.py .
 
 # Expose port
 EXPOSE 8000
