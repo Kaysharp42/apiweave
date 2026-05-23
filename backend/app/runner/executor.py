@@ -1402,50 +1402,7 @@ class WorkflowExecutor:
             return value
         except Exception:
             return None
-    
-        """Extract values from response and store as workflow variables
-        
-        extractors format: {
-            "token": "response.body.token",
-            "userId": "response.body.user.id",
-            "sessionId": "response.cookies.session",
-            "contentType": "response.headers.content-type"
-        }
-        """
-        for var_name, var_path in extractors.items():
-            try:
-                # Navigate through the response to get the value
-                parts = var_path.split('.')
-                value = response
-                
-                for part in parts:
-                    # Handle array indexing: data[0], items[1], etc.
-                    array_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$', part)
-                    if array_match:
-                        key = array_match.group(1)
-                        index = int(array_match.group(2))
-                        if isinstance(value, dict):
-                            value = value.get(key)
-                        if isinstance(value, list) and 0 <= index < len(value):
-                            value = value[index]
-                        else:
-                            print(f"⚠️  Cannot extract {var_path}: index out of range")
-                            continue
-                    elif isinstance(value, dict):
-                        value = value.get(part)
-                    else:
-                        print(f"⚠️  Cannot extract {var_path}: {part} not found")
-                        break
-                
-                # Store the extracted value
-                if value is not None:
-                    self.workflow_variables[var_name] = value
-                    print(f"✅ Extracted variable: {var_name} = {value}")
-                else:
-                    print(f"⚠️  Extracted variable {var_name} is None")
-            except Exception as e:
-                print(f"❌ Error extracting variable {var_name} from {var_path}: {str(e)}")
-    
+
     async def _execute_assertion(self, node: Dict) -> Dict[str, Any]:
         """Execute assertion node - validates all assertions.
         
