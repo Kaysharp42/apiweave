@@ -82,16 +82,6 @@ async def _run_workflow_and_update_webhook(
         except Exception:  # noqa: BLE001
             pass
 
-        try:
-            log_doc.status = terminal_status  # type: ignore[assignment]
-            log_doc.duration = duration_ms
-            log_doc.runId = run_id
-            if error_message:
-                log_doc.errorMessage = error_message
-            await log_doc.save()
-        except Exception:  # noqa: BLE001
-            pass
-
 
 async def verify_admin_key(authorization: Optional[str] = Header(None)) -> None:
     admin_key = settings.APIWEAVE_ADMIN_KEY
@@ -689,10 +679,9 @@ async def execute_workflow_webhook(
 
     # ── 12. Log success ───────────────────────────────────────────────────────
     triggered_at = datetime.now(UTC)
-    log_id = f"log-{uuid.uuid4().hex[:12]}"
     payload_str = json.dumps(payload)
-    await WebhookLog(
-        logId=log_id,
+    webhook_log = WebhookLog(
+        logId=f"log-{uuid.uuid4().hex[:12]}",
         webhookId=webhook_id,
         timestamp=triggered_at,
         status="success",
@@ -701,12 +690,13 @@ async def execute_workflow_webhook(
         responseStatus=202,
         runId=run.runId,
         requestBody=payload_str if len(payload_str) < 10000 else '{"_truncated": true}',
-    ).insert()
+    )
+    await webhook_log.insert()
 
     # ── 13. Fire background execution ─────────────────────────────────────────
     executor = WorkflowExecutor(run.runId, webhook.resourceId)
     asyncio.create_task(
-        _run_workflow_and_update_webhook(executor, webhook_id, log_id, triggered_at)
+        _run_workflow_and_update_webhook(executor, webhook_id, webhook_log, triggered_at)
     )
 
     # ── 14. Update usage stats ────────────────────────────────────────────────

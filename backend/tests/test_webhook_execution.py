@@ -430,19 +430,25 @@ def test_webhook_execute_collection():
     with (
         patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock_webhook,
         patch("app.routes.webhooks.CollectionRepository.get_by_id") as mock_col,
+        patch("app.routes.webhooks.CollectionRunRepository.create") as mock_create,
+        patch("app.routes.webhooks.asyncio.create_task") as mock_task,
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
-        patch("app.routes.webhooks.WebhookRepository.update"),
     ):
         mock_webhook_obj = MagicMock()
         mock_webhook_obj.enabled = True
         mock_webhook_obj.resourceId = "col-123"
         mock_webhook_obj.token = "test-token"
+        mock_webhook_obj.environmentId = "env-test"
         mock_webhook_obj.usageCount = 0
         mock_webhook_obj.save = AsyncMock()
         mock_webhook.return_value = mock_webhook_obj
 
         mock_col_obj = MagicMock()
+        mock_col_obj.collectionId = "col-123"
+        mock_col_obj.name = "Regression Suite"
+        mock_col_obj.workflowOrder = []
         mock_col.return_value = mock_col_obj
+        mock_create.return_value = SimpleNamespace(collectionRunId="crun-real-123", collectionId="col-123")
 
         response = client.post(
             "/api/webhooks/collections/webhook-123/execute",
@@ -453,3 +459,125 @@ def test_webhook_execute_collection():
         assert response.status_code == 202
         data = response.json()
         assert data["status"] == "accepted"
+        assert data["collectionRunId"] == "crun-real-123"
+        assert not data["collectionRunId"].startswith("crun-fake")
+        mock_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_collection_webhook_executes_enabled_workflows_in_order():
+    execution_order = []
+    statuses_by_run_id = {}
+
+    class FakeExecutor:
+        def __init__(self, run_id, workflow_id):
+            self.run_id = run_id
+            self.workflow_id = workflow_id
+
+        async def execute(self):
+            execution_order.append(self.workflow_id)
+            statuses_by_run_id[self.run_id] = SimpleNamespace(
+                status="completed",
+                error=None,
+                failureMessage=None,
+            )
+
+    collection = SimpleNamespace(
+        collectionId="col-123",
+        workflowOrder=[
+            WorkflowOrderItem(workflowId="wf-2", order=2, enabled=True),
+            WorkflowOrderItem(workflowId="wf-disabled", order=1, enabled=False),
+            WorkflowOrderItem(workflowId="wf-1", order=0, enabled=True),
+        ],
+        continueOnFail=True,
+    )
+
+    with (
+        patch("app.routes.webhooks.CollectionRunRepository.get_by_id", AsyncMock(return_value=SimpleNamespace(collectionId="col-123", environmentId="env-test"))),
+        patch("app.routes.webhooks.CollectionRunRepository.update_fields", AsyncMock()),
+        patch("app.routes.webhooks.CollectionRunRepository.add_workflow_result", AsyncMock()) as add_result,
+        patch("app.routes.webhooks.CollectionRunRepository.complete", AsyncMock()) as complete,
+        patch("app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)),
+        patch("app.routes.webhooks.WorkflowRepository.get_by_id", AsyncMock(side_effect=lambda workflow_id: SimpleNamespace(workflowId=workflow_id, name=workflow_id))),
+        patch("app.routes.webhooks.RunRepository.get_by_id", AsyncMock(side_effect=lambda run_id: statuses_by_run_id[run_id])),
+        patch("app.routes.webhooks.Run", side_effect=lambda **_: SimpleNamespace(insert=AsyncMock())),
+        patch("app.routes.webhooks.WorkflowExecutor", FakeExecutor),
+        patch("app.routes.webhooks.WebhookRepository.update_usage", AsyncMock()),
+        patch("app.routes.webhooks.WebhookLog.find_one", AsyncMock(return_value=None)),
+    ):
+        await _run_collection_and_update_webhook("crun-123", "wh-123", "log-123", {}, datetime.now(UTC))
+
+    assert execution_order == ["wf-1", "wf-2"]
+    assert [call.args[1]["workflowId"] for call in add_result.call_args_list] == ["wf-1", "wf-2"]
+    assert complete.call_args.args[1] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_collection_webhook_continue_on_fail_false_stops_after_first_failure():
+    execution_order = []
+    statuses_by_run_id = {}
+
+    class FakeExecutor:
+        def __init__(self, run_id, workflow_id):
+            self.run_id = run_id
+            self.workflow_id = workflow_id
+
+        async def execute(self):
+            execution_order.append(self.workflow_id)
+            status = "failed" if self.workflow_id == "wf-1" else "completed"
+            statuses_by_run_id[self.run_id] = SimpleNamespace(
+                status=status,
+                error="boom" if status == "failed" else None,
+                failureMessage=None,
+            )
+
+    collection = SimpleNamespace(
+        collectionId="col-123",
+        workflowOrder=[
+            WorkflowOrderItem(workflowId="wf-1", order=0, enabled=True, continueOnFail=False),
+            WorkflowOrderItem(workflowId="wf-2", order=1, enabled=True, continueOnFail=True),
+        ],
+        continueOnFail=False,
+    )
+
+    with (
+        patch("app.routes.webhooks.CollectionRunRepository.get_by_id", AsyncMock(return_value=SimpleNamespace(collectionId="col-123", environmentId="env-test"))),
+        patch("app.routes.webhooks.CollectionRunRepository.update_fields", AsyncMock()),
+        patch("app.routes.webhooks.CollectionRunRepository.add_workflow_result", AsyncMock()) as add_result,
+        patch("app.routes.webhooks.CollectionRunRepository.complete", AsyncMock()) as complete,
+        patch("app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)),
+        patch("app.routes.webhooks.WorkflowRepository.get_by_id", AsyncMock(side_effect=lambda workflow_id: SimpleNamespace(workflowId=workflow_id, name=workflow_id))),
+        patch("app.routes.webhooks.RunRepository.get_by_id", AsyncMock(side_effect=lambda run_id: statuses_by_run_id[run_id])),
+        patch("app.routes.webhooks.Run", side_effect=lambda **_: SimpleNamespace(insert=AsyncMock())),
+        patch("app.routes.webhooks.WorkflowExecutor", FakeExecutor),
+        patch("app.routes.webhooks.WebhookRepository.update_usage", AsyncMock()) as update_usage,
+        patch("app.routes.webhooks.WebhookLog.find_one", AsyncMock(return_value=None)),
+    ):
+        await _run_collection_and_update_webhook("crun-123", "wh-123", "log-123", {}, datetime.now(UTC))
+
+    assert execution_order == ["wf-1"]
+    assert add_result.call_count == 1
+    assert complete.call_args.args[1] == "failed"
+    update_usage.assert_awaited_once_with("wh-123", "failure")
+
+
+@pytest.mark.asyncio
+async def test_collection_webhook_empty_collection_completes_immediately():
+    collection = SimpleNamespace(collectionId="col-empty", workflowOrder=[], continueOnFail=False)
+
+    with (
+        patch("app.routes.webhooks.CollectionRunRepository.get_by_id", AsyncMock(return_value=SimpleNamespace(collectionId="col-empty", environmentId="env-test"))),
+        patch("app.routes.webhooks.CollectionRunRepository.update_fields", AsyncMock()),
+        patch("app.routes.webhooks.CollectionRunRepository.add_workflow_result", AsyncMock()) as add_result,
+        patch("app.routes.webhooks.CollectionRunRepository.complete", AsyncMock()) as complete,
+        patch("app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)),
+        patch("app.routes.webhooks.WorkflowExecutor") as executor,
+        patch("app.routes.webhooks.WebhookRepository.update_usage", AsyncMock()) as update_usage,
+        patch("app.routes.webhooks.WebhookLog.find_one", AsyncMock(return_value=None)),
+    ):
+        await _run_collection_and_update_webhook("crun-empty", "wh-123", "log-123", {}, datetime.now(UTC))
+
+    add_result.assert_not_called()
+    executor.assert_not_called()
+    assert complete.call_args.args[1] == "completed"
+    update_usage.assert_awaited_once_with("wh-123", "success")
