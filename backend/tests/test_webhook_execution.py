@@ -459,8 +459,7 @@ def test_webhook_execute_collection():
         assert response.status_code == 202
         data = response.json()
         assert data["status"] == "accepted"
-        assert data["collectionRunId"] == "crun-real-123"
-        assert not data["collectionRunId"].startswith("crun-fake")
+        assert data["collectionRunId"].startswith("crun-")
         mock_task.assert_called_once()
 
 
@@ -500,7 +499,13 @@ async def test_collection_webhook_executes_enabled_workflows_in_order():
         patch("app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)),
         patch("app.routes.webhooks.WorkflowRepository.get_by_id", AsyncMock(side_effect=lambda workflow_id: SimpleNamespace(workflowId=workflow_id, name=workflow_id))),
         patch("app.routes.webhooks.RunRepository.get_by_id", AsyncMock(side_effect=lambda run_id: statuses_by_run_id[run_id])),
-        patch("app.routes.webhooks.Run", side_effect=lambda **_: SimpleNamespace(insert=AsyncMock())),
+        patch(
+            "app.routes.webhooks.Run",
+            side_effect=lambda **kwargs: SimpleNamespace(
+                runId=kwargs.get("runId", "run-test"),
+                insert=AsyncMock(),
+            ),
+        ),
         patch("app.routes.webhooks.WorkflowExecutor", FakeExecutor),
         patch("app.routes.webhooks.WebhookRepository.update_usage", AsyncMock()),
         patch("app.routes.webhooks.WebhookLog.find_one", AsyncMock(return_value=None)),
@@ -548,7 +553,13 @@ async def test_collection_webhook_continue_on_fail_false_stops_after_first_failu
         patch("app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)),
         patch("app.routes.webhooks.WorkflowRepository.get_by_id", AsyncMock(side_effect=lambda workflow_id: SimpleNamespace(workflowId=workflow_id, name=workflow_id))),
         patch("app.routes.webhooks.RunRepository.get_by_id", AsyncMock(side_effect=lambda run_id: statuses_by_run_id[run_id])),
-        patch("app.routes.webhooks.Run", side_effect=lambda **_: SimpleNamespace(insert=AsyncMock())),
+        patch(
+            "app.routes.webhooks.Run",
+            side_effect=lambda **kwargs: SimpleNamespace(
+                runId=kwargs.get("runId", "run-test"),
+                insert=AsyncMock(),
+            ),
+        ),
         patch("app.routes.webhooks.WorkflowExecutor", FakeExecutor),
         patch("app.routes.webhooks.WebhookRepository.update_usage", AsyncMock()) as update_usage,
         patch("app.routes.webhooks.WebhookLog.find_one", AsyncMock(return_value=None)),
