@@ -399,6 +399,7 @@ class WebhookLog(Document):
     duration: int  # milliseconds
     
     # Request information
+    httpMethod: Optional[str] = None
     requestHeaders: Dict[str, str] = Field(default_factory=dict)
     requestBody: Optional[str] = None
     ipAddress: Optional[str] = None

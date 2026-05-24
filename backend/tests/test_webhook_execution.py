@@ -592,3 +592,91 @@ async def test_collection_webhook_empty_collection_completes_immediately():
     executor.assert_not_called()
     assert complete.call_args.args[1] == "completed"
     update_usage.assert_awaited_once_with("wh-123", "success")
+
+
+@pytest.mark.asyncio
+async def test_run_workflow_wrapper_success():
+    from app.routes.webhooks import _run_workflow_and_update_webhook
+
+    mock_executor = MagicMock()
+    mock_executor.run_id = "run-abc"
+    mock_executor.has_failures = False
+    mock_executor.first_error_message = None
+    mock_executor.execute = AsyncMock()
+
+    class FakeLog:
+        status = "success"
+        duration = 0
+        runId = None
+        errorMessage = None
+        save = AsyncMock()
+
+    fake_log = FakeLog()
+
+    with patch("app.routes.webhooks.WebhookRepository.update_usage", new_callable=AsyncMock) as mock_update:
+        await _run_workflow_and_update_webhook(
+            mock_executor, "wh-test", fake_log, datetime.now(UTC)
+        )
+
+        mock_update.assert_awaited_once_with("wh-test", "success")
+        assert fake_log.status == "success"
+        assert fake_log.runId == "run-abc"
+        fake_log.save.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_workflow_wrapper_failure():
+    from app.routes.webhooks import _run_workflow_and_update_webhook
+
+    mock_executor = MagicMock()
+    mock_executor.run_id = "run-fail"
+    mock_executor.has_failures = True
+    mock_executor.first_error_message = "node-1 failed"
+    mock_executor.execute = AsyncMock()
+
+    class FakeLog:
+        status = "success"
+        duration = 0
+        runId = None
+        errorMessage = None
+        save = AsyncMock()
+
+    fake_log = FakeLog()
+
+    with patch("app.routes.webhooks.WebhookRepository.update_usage", new_callable=AsyncMock) as mock_update:
+        await _run_workflow_and_update_webhook(
+            mock_executor, "wh-test", fake_log, datetime.now(UTC)
+        )
+
+        mock_update.assert_awaited_once_with("wh-test", "failure")
+        assert fake_log.status == "failure"
+        assert fake_log.errorMessage == "node-1 failed"
+
+
+@pytest.mark.asyncio
+async def test_run_workflow_wrapper_executor_crash():
+    from app.routes.webhooks import _run_workflow_and_update_webhook
+
+    mock_executor = MagicMock()
+    mock_executor.run_id = "run-crash"
+    mock_executor.has_failures = False
+    mock_executor.first_error_message = None
+    mock_executor.execute = AsyncMock(side_effect=RuntimeError("unexpected crash"))
+
+    class FakeLog:
+        status = "success"
+        duration = 0
+        runId = None
+        errorMessage = None
+        save = AsyncMock()
+
+    fake_log = FakeLog()
+
+    with patch("app.routes.webhooks.WebhookRepository.update_usage", new_callable=AsyncMock) as mock_update:
+        await _run_workflow_and_update_webhook(
+            mock_executor, "wh-test", fake_log, datetime.now(UTC)
+        )
+
+        mock_update.assert_awaited_once_with("wh-test", "failure")
+        assert fake_log.status == "failure"
+        assert "unexpected crash" in (fake_log.errorMessage or "")
