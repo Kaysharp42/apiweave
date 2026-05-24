@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     
     # API Keys
     API_KEY_HEADER: str = "Authorization"
+    APIWEAVE_ADMIN_KEY: str | None = None
     
     # Worker
     WORKER_POLL_INTERVAL: int = 5  # seconds

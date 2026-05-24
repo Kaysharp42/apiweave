@@ -10,21 +10,23 @@ import secrets
 import uuid
 import asyncio
 import json
-import hashlib
-import hmac as hmac_lib
 
 from app.models import (
     Webhook,
     WebhookCreate,
     WebhookUpdate,
     WebhookLog,
-    RunCreate,
     Run
 )
-from app.repositories import WebhookRepository, WorkflowRepository, CollectionRepository, RunRepository
+from app.repositories import (
+    WebhookRepository,
+    WorkflowRepository,
+    CollectionRepository,
+    RunRepository,
+    CollectionRunRepository,
+)
 from app.config import settings
 from app.runner.executor import WorkflowExecutor
-from app.database import get_database
 from app.middleware.webhook_auth import (
     validate_hmac_signature,
     InvalidSignatureError,
@@ -71,11 +73,155 @@ async def _run_workflow_and_update_webhook(
             pass
 
         try:
+            log_doc.status = terminal_status  # type: ignore[assignment]
+            log_doc.duration = duration_ms
+            log_doc.runId = run_id
+            if error_message:
+                log_doc.errorMessage = error_message
+            await log_doc.save()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _run_collection_and_update_webhook(
+    collection_run_id: str,
+    webhook_id: str,
+    log_id: str,
+    payload: dict,
+    triggered_at: datetime,
+) -> None:
+    terminal_status = "failure"
+    collection_status = "failed"
+    error_message: Optional[str] = None
+
+    try:
+        collection_run = await CollectionRunRepository.get_by_id(collection_run_id)
+        if not collection_run:
+            raise RuntimeError(f"Collection run not found: {collection_run_id}")
+
+        collection = await CollectionRepository.get_by_id(collection_run.collectionId)
+        if not collection:
+            raise RuntimeError(f"Collection not found: {collection_run.collectionId}")
+
+        await CollectionRunRepository.update_fields(collection_run_id, status="running")
+
+        ordered_items = sorted(
+            (item for item in collection.workflowOrder if item.enabled),
+            key=lambda item: item.order,
+        )
+
+        if not ordered_items:
+            collection_status = "completed"
+            terminal_status = "success"
+            return
+
+        saw_failure = False
+        should_stop = False
+
+        for item in ordered_items:
+            workflow = await WorkflowRepository.get_by_id(item.workflowId)
+            run_id = f"run-{uuid.uuid4().hex[:12]}"
+            workflow_name = workflow.name if workflow else item.workflowId
+            workflow_start = datetime.now(UTC)
+            workflow_error: Optional[str] = None
+            passed = False
+            workflow_status = "failed"
+
+            if workflow:
+                run = Run(
+                    runId=run_id,
+                    workflowId=item.workflowId,
+                    environmentId=collection_run.environmentId,
+                    status="pending",
+                    trigger="webhook",
+                    variables=payload if isinstance(payload, dict) else {},
+                    results=[],
+                    createdAt=workflow_start,
+                )
+                await run.insert()
+
+                executor = WorkflowExecutor(run_id, item.workflowId)
+                try:
+                    await executor.execute()
+                except Exception as exc:  # noqa: BLE001
+                    workflow_error = str(exc)
+
+                run_doc = await RunRepository.get_by_id(run_id)
+                if run_doc:
+                    workflow_status = run_doc.status
+                    workflow_error = workflow_error or run_doc.error or run_doc.failureMessage
+
+                passed = workflow_status == "completed" and not workflow_error
+            else:
+                workflow_error = f"Workflow not found: {item.workflowId}"
+
+            if not passed:
+                saw_failure = True
+                if not error_message:
+                    error_message = workflow_error or f"Workflow failed: {item.workflowId}"
+                if not collection.continueOnFail and not item.continueOnFail:
+                    should_stop = True
+
+            workflow_duration = int((datetime.now(UTC) - workflow_start).total_seconds() * 1000)
+
+            await CollectionRunRepository.add_workflow_result(
+                collection_run_id,
+                {
+                    "order": item.order,
+                    "workflowId": item.workflowId,
+                    "workflowName": workflow_name,
+                    "runId": run_id if workflow else None,
+                    "status": workflow_status,
+                    "passed": passed,
+                    "duration": workflow_duration,
+                    "error": workflow_error,
+                },
+            )
+
+            if should_stop:
+                break
+
+        if should_stop:
+            collection_status = "failed"
+            terminal_status = "failure"
+        elif saw_failure:
+            collection_status = "completed_with_errors"
+            terminal_status = "success"
+        else:
+            collection_status = "completed"
+            terminal_status = "success"
+
+    except Exception as exc:  # noqa: BLE001
+        collection_status = "failed"
+        terminal_status = "failure"
+        error_message = str(exc)
+
+    finally:
+        end_time = datetime.now(UTC)
+        duration_ms = int((end_time - triggered_at).total_seconds() * 1000)
+
+        try:
+            await CollectionRunRepository.complete(
+                collection_run_id,
+                collection_status,
+                end_time,
+                duration_ms,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        try:
+            await WebhookRepository.update_usage(webhook_id, terminal_status)
+        except Exception:  # noqa: BLE001
+            pass
+
+        try:
             log_doc = await WebhookLog.find_one(WebhookLog.logId == log_id)
             if log_doc:
                 log_doc.status = terminal_status  # type: ignore[assignment]
                 log_doc.duration = duration_ms
-                log_doc.runId = run_id
+                log_doc.collectionRunId = collection_run_id
+                log_doc.responseBody = json.dumps({"collectionRunStatus": collection_status})
                 if error_message:
                     log_doc.errorMessage = error_message
                 await log_doc.save()
@@ -644,7 +790,6 @@ async def execute_workflow_webhook(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
 
     # ── 9. Create run ─────────────────────────────────────────────────────────
-    from app.models import Run
     run = Run(
         runId=f"run-{uuid.uuid4().hex[:12]}",
         workflowId=webhook.resourceId,
@@ -826,16 +971,33 @@ async def execute_collection_webhook(
         ).insert()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
 
-    # ── 9. Create placeholder collection run ──────────────────────────────────
-    # TODO: Implement full collection execution
-    collection_run_id = f"crun-{uuid.uuid4().hex[:12]}"
+    enabled_workflows = [item for item in collection.workflowOrder if item.enabled]
+    triggered_at = datetime.now(UTC)
+    collection_run = await CollectionRunRepository.create({
+        "collectionRunId": f"crun-{uuid.uuid4().hex[:12]}",
+        "collectionId": collection.collectionId,
+        "collectionName": collection.name,
+        "status": "pending",
+        "startTime": triggered_at,
+        "environmentId": webhook.environmentId,
+        "totalWorkflows": len(enabled_workflows),
+        "executedWorkflows": 0,
+        "passedWorkflows": 0,
+        "failedWorkflows": 0,
+        "workflowResults": [],
+        "webhookId": webhook_id,
+        "triggeredBy": "webhook",
+    })
 
     # ── 10. Build response body ───────────────────────────────────────────────
     response_body = {
         "status": "accepted",
-        "collectionRunId": collection_run_id,
+        "collectionRunId": collection_run.collectionRunId,
         "collectionId": webhook.resourceId,
-        "message": "Collection execution not yet implemented",
+        "pollUrl": (
+            f"{settings.BASE_URL}/api/collections/{webhook.resourceId}/runs/"
+            f"{collection_run.collectionRunId}"
+        ),
     }
 
     # ── 11. Store idempotency entry ───────────────────────────────────────────
@@ -843,32 +1005,34 @@ async def execute_collection_webhook(
         store_idempotency_entry(
             webhook_id=webhook_id,
             idempotency_key=idempotency_key,
-            run_id=collection_run_id,
-            collection_run_id=collection_run_id,
+            run_id=collection_run.collectionRunId,
+            collection_run_id=collection_run.collectionRunId,
             status_code=202,
             response_body=response_body,
         )
 
     # ── 12. Log success ───────────────────────────────────────────────────────
     payload_str = json.dumps(payload)
+    log_id = f"log-{uuid.uuid4().hex[:12]}"
     await WebhookLog(
-        logId=f"log-{uuid.uuid4().hex[:12]}",
+        logId=log_id,
         webhookId=webhook_id,
-        timestamp=datetime.now(UTC),
+        timestamp=triggered_at,
         status="success",
         duration=0,
         httpMethod="POST",
         responseStatus=202,
+        collectionRunId=collection_run.collectionRunId,
         requestBody=payload_str if len(payload_str) < 10000 else '{"_truncated": true}',
     ).insert()
 
-    # ── 13. Update usage stats ────────────────────────────────────────────────
-    webhook.usageCount = (webhook.usageCount or 0) + 1
-    webhook.lastUsed = datetime.now(UTC)
-    await WebhookRepository.update(webhook_id, {
-        "usageCount": webhook.usageCount,
-        "lastUsed": webhook.lastUsed,
-    })
+    asyncio.create_task(_run_collection_and_update_webhook(
+        collection_run.collectionRunId,
+        webhook_id,
+        log_id,
+        payload if isinstance(payload, dict) else {},
+        triggered_at,
+    ))
 
     # ── 14. Return 202 with rate-limit headers ────────────────────────────────
     rl_headers = get_rate_limit_headers(webhook_id)
