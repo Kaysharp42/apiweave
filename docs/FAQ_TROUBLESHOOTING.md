@@ -35,7 +35,7 @@ No. Refresh updates import templates and warning metadata. Existing node request
 
 ## Can I use collections for execution order?
 
-Yes, you can manage workflow order in collections. Collection webhook execution endpoint currently returns a placeholder response.
+Yes. Collection webhooks create a collection run and execute enabled workflows sequentially by collection order.
 
 ## Setup and Startup Issues
 

@@ -346,7 +346,7 @@ class CollectionRun(Document):
     collectionName: str
     
     # Execution status
-    status: Literal["pending", "running", "completed", "failed"]
+    status: Literal["pending", "running", "completed", "completed_with_errors", "failed"]
     startTime: datetime
     endTime: Optional[datetime] = None
     duration: Optional[int] = None  # milliseconds
