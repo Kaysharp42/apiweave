@@ -91,7 +91,8 @@ class RateLimiter:
         return allowed, remaining, reset_time
 
 
-# Global rate limiter instance
+# Global rate limiter instance.
+# This store is in-memory and process-local; a server restart clears all buckets.
 _rate_limiter = RateLimiter()
 
 
