@@ -32,6 +32,75 @@ def _make_hmac_signature(secret: str, timestamp: str, body: bytes) -> str:
     return hmac_lib.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
+def test_webhook_execute_invalid_token_returns_401():
+    """Wrong token on execute endpoint must return 401."""
+    with (
+        patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock,
+        patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
+    ):
+        mock_webhook = MagicMock()
+        mock_webhook.enabled = True
+        mock_webhook.token = "correct-token"
+        mock.return_value = mock_webhook
+
+        response = client.post(
+            "/api/webhooks/workflows/webhook-123/execute",
+            json={"test": "data"},
+            headers={"X-Webhook-Token": "wrong-token"},
+        )
+        assert response.status_code == 401
+        assert "token" in response.json()["detail"].lower()
+
+
+def test_webhook_execute_missing_token_returns_401():
+    """Missing X-Webhook-Token header must return 401."""
+    with (
+        patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock,
+        patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
+    ):
+        mock_webhook = MagicMock()
+        mock_webhook.enabled = True
+        mock_webhook.token = "correct-token"
+        mock.return_value = mock_webhook
+
+        response = client.post(
+            "/api/webhooks/workflows/webhook-123/execute",
+            json={"test": "data"},
+        )
+        assert response.status_code == 401
+
+
+def test_webhook_execute_rate_limit_returns_429():
+    """Exceeding the rate limit on execute endpoint must return 429."""
+    from app.middleware.rate_limiter import _rate_limiter
+
+    webhook_id = "wh-ratelimit-test"
+    max_req = 3
+    for _ in range(max_req):
+        _rate_limiter.check_rate_limit(webhook_id, max_requests=max_req, window_seconds=3600)
+
+    with (
+        patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock,
+        patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
+        patch(
+            "app.middleware.rate_limiter._rate_limiter.check_rate_limit",
+            return_value=(False, 0, int(time.time()) + 3600),
+        ),
+    ):
+        mock_webhook = MagicMock()
+        mock_webhook.enabled = True
+        mock_webhook.token = "rl-token"
+        mock.return_value = mock_webhook
+
+        response = client.post(
+            f"/api/webhooks/workflows/{webhook_id}/execute",
+            json={"event": "push"},
+            headers={"X-Webhook-Token": "rl-token"},
+        )
+        assert response.status_code == 429
+        assert "x-ratelimit-limit" in response.headers or "X-RateLimit-Limit" in response.headers
+
+
 def test_webhook_execute_missing_webhook():
     """Test webhook execution returns 404 for missing webhook"""
     with (
