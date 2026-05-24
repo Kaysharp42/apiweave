@@ -136,6 +136,35 @@ If an upstream value still cannot be resolved, run the full workflow once to ref
 - no execution has occurred yet
 - verify trigger call and status code
 
+## Webhook returns 429
+
+- rate limit exceeded (100 requests per hour per webhook)
+- check the `Retry-After` response header for seconds to wait
+- check `X-RateLimit-Reset` for the Unix timestamp when the window resets
+- reduce trigger frequency or spread calls across multiple webhooks
+
+## Webhook returns 401 — stale timestamp
+
+- `X-Webhook-Timestamp` is outside the ±300 second replay window
+- ensure the system clock on your CI/CD runner is accurate (use NTP)
+- generate the timestamp immediately before sending the request, not earlier in the pipeline
+
+## Webhook returns 401 — invalid signature
+
+- HMAC-SHA256 signature does not match
+- verify the signing scheme: `HMAC-SHA256(timestamp + raw_body_bytes)` using the HMAC secret
+- output must be a plain lowercase hex string (64 characters, no `sha256=` prefix in the hash value itself)
+- confirm you are using the current HMAC secret (regeneration invalidates the old one)
+- ensure the body used for signing matches the body sent exactly (no extra whitespace)
+
+## Idempotency-Key returns 200 instead of 202
+
+- this is expected behavior, not an error
+- a request with the same `Idempotency-Key` was already processed within the last 24 hours
+- the response includes `Idempotency-Replayed: true` header and the original response body
+- no new run was triggered; use the `runId` from the original response to check status
+- use a unique key per pipeline run (e.g., commit SHA + job ID) to avoid collisions
+
 ## If You Still Need Help
 
 1. Reproduce with a minimal workflow.
