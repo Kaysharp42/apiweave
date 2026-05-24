@@ -5,7 +5,8 @@ import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
 import { Button } from './atoms/Button';
 import { Input, TextArea } from './atoms';
-import { BeautifyButton, FormField, PanelTabs } from './molecules';
+import { BeautifyButton } from './molecules';
+import { FormField, PanelTabs } from './molecules';
 import { ResponseInspector } from './molecules/ResponseInspector';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { getNodeModalTypeName } from '../utils/nodeModalMeta';
@@ -173,6 +174,7 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
                           {getNodeIcon(node.type)}
                           <span>{nodeInfo.name}</span>
                         </div>
+                        <label className="text-xs font-medium text-text-muted dark:text-text-muted-dark">Node Name</label>
                         <Input
                           type="text"
                           defaultValue={node.data.label || ''}
@@ -259,6 +261,20 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
   );
 }
 
+const TabButton = ({ id, label, activeTab, onTabChange }: { id: string; label: string; activeTab: string; onTabChange: (id: string) => void }) => (
+  <button
+    type="button"
+    onClick={() => onTabChange(id)}
+    className={`px-4 py-2 text-sm font-medium transition-colors ${
+      activeTab === id
+        ? 'border-b-2 border-primary text-primary dark:text-primary-dark'
+        : 'text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
+    }`}
+  >
+    {label}
+  </button>
+);
+
 const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigProps) => {
   const [activeTab, setActiveTab] = useState('parameters');
   const { variables } = useWorkflow();
@@ -306,46 +322,31 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
 
   return (
     <div className="flex flex-col h-full">
-      <PanelTabs
-        tabs={[
-          { key: 'parameters', label: 'Parameters' },
-          { key: 'settings', label: 'Settings' }
-        ]}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-      />
+      <div className="flex border-b border-border/40 dark:border-border-dark/40">
+        <TabButton id="parameters" label="Parameters" activeTab={activeTab} onTabChange={setActiveTab} />
+        <TabButton id="settings" label="Settings" activeTab={activeTab} onTabChange={setActiveTab} />
+      </div>
 
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'parameters' && (
           <div className="space-y-4">
             <FormField label="HTTP Method">
               <div className="flex gap-2">
-                {HTTP_METHODS.map((method) => {
-                  const isActive = methodValue === method;
-                  return (
-                    <button
-                      key={method}
-                      type="button"
-                      onClick={() => {
-                        methodRef.current = method;
-                        setMethodValue(method);
-                        updateRef();
-                      }}
-                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all duration-150 active:scale-[0.98] ${
-                        isActive
-                          ? method === 'GET' ? 'bg-[#16a34a] text-white shadow-sm'
-                            : method === 'POST' ? 'bg-[#2563eb] text-white shadow-sm'
-                            : method === 'PUT' ? 'bg-[#ea580c] text-white shadow-sm'
-                            : method === 'PATCH' ? 'bg-[#7c3aed] text-white shadow-sm'
-                            : method === 'DELETE' ? 'bg-[#dc2626] text-white shadow-sm'
-                            : 'bg-primary text-white shadow-sm'
-                          : 'text-text-secondary hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
-                      }`}
-                    >
-                      {method}
-                    </button>
-                  );
-                })}
+                {HTTP_METHODS.map((method) => (
+                  <Button
+                    key={method}
+                    type="button"
+                    size="xs"
+                    variant={methodValue === method ? 'primary' : 'ghost'}
+                    onClick={() => {
+                      methodRef.current = method;
+                      setMethodValue(method);
+                      updateRef();
+                    }}
+                  >
+                    {method}
+                  </Button>
+                ))}
               </div>
             </FormField>
 
