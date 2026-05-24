@@ -4,10 +4,11 @@ Handles CRUD operations for CI/CD webhooks
 """
 from fastapi import APIRouter, HTTPException, status, Depends, Header, Request
 from fastapi.responses import JSONResponse
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import datetime, UTC
 import secrets
 import uuid
+import hmac
 import asyncio
 import json
 
@@ -45,7 +46,7 @@ async def _run_workflow_and_update_webhook(
     log_doc: "WebhookLog",
     triggered_at: datetime,
 ) -> None:
-    terminal_status = "failure"
+    terminal_status: Literal["success", "failure"] = "failure"
     run_id: Optional[str] = executor.run_id
     error_message: Optional[str] = None
 
@@ -73,7 +74,7 @@ async def _run_workflow_and_update_webhook(
             pass
 
         try:
-            log_doc.status = terminal_status  # type: ignore[assignment]
+            log_doc.status = terminal_status
             log_doc.duration = duration_ms
             log_doc.runId = run_id
             if error_message:
@@ -90,7 +91,7 @@ async def _run_collection_and_update_webhook(
     payload: dict,
     triggered_at: datetime,
 ) -> None:
-    terminal_status = "failure"
+    terminal_status: Literal["success", "failure"] = "failure"
     collection_status = "failed"
     error_message: Optional[str] = None
 
@@ -244,7 +245,7 @@ async def verify_admin_key(authorization: Optional[str] = Header(None)) -> None:
         )
 
     provided_key = authorization.removeprefix("Bearer ").strip()
-    if provided_key != admin_key:
+    if not hmac.compare_digest(provided_key, admin_key):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid admin key"
@@ -710,7 +711,7 @@ async def execute_workflow_webhook(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
 
     # ── 2. Token check (always required) ─────────────────────────────────────
-    if not x_webhook_token or x_webhook_token != webhook.token:
+    if not x_webhook_token or not hmac.compare_digest(x_webhook_token or '', webhook.token):
         await WebhookLog(
             logId=f"log-{uuid.uuid4().hex[:12]}",
             webhookId=webhook_id,
@@ -892,7 +893,7 @@ async def execute_collection_webhook(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
 
     # ── 2. Token check ────────────────────────────────────────────────────────
-    if not x_webhook_token or x_webhook_token != webhook.token:
+    if not x_webhook_token or not hmac.compare_digest(x_webhook_token or '', webhook.token):
         await WebhookLog(
             logId=f"log-{uuid.uuid4().hex[:12]}",
             webhookId=webhook_id,

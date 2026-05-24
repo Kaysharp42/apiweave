@@ -31,7 +31,7 @@ function buildGithubSnippet(mode: SnippetMode, auth: SnippetAuth): string {
 
   const hmacHeaders = `-H "X-Webhook-Token: \${{ secrets.APIWEAVE_WEBHOOK_TOKEN }}" \\
           -H "X-Webhook-Timestamp: \${{ steps.hmac.outputs.ts }}" \\
-          -H "X-Webhook-Signature: sha256=\${{ steps.hmac.outputs.sig }}"`;
+          -H "X-Webhook-Signature: \${{ steps.hmac.outputs.sig }}"`;
 
   if (mode === 'fire-and-forget') {
     if (auth === 'token-only') {
@@ -162,7 +162,7 @@ function buildGitlabSnippet(mode: SnippetMode, auth: SnippetAuth): string {
         "${url}" \\
         -H "X-Webhook-Token: $APIWEAVE_WEBHOOK_TOKEN" \\
         -H "X-Webhook-Timestamp: $TIMESTAMP" \\
-        -H "X-Webhook-Signature: sha256=$SIG" \\
+        -H "X-Webhook-Signature: $SIG" \\
         -H "Content-Type: application/json" \\
         -d '{}')
       [ "$STATUS" = "202" ] || (echo "Unexpected status $STATUS" && exit 1)
@@ -206,7 +206,7 @@ function buildGitlabSnippet(mode: SnippetMode, auth: SnippetAuth): string {
         "${url}" \\
         -H "X-Webhook-Token: $APIWEAVE_WEBHOOK_TOKEN" \\
         -H "X-Webhook-Timestamp: $TIMESTAMP" \\
-        -H "X-Webhook-Signature: sha256=$SIG" \\
+        -H "X-Webhook-Signature: $SIG" \\
         -H "Content-Type: application/json" \\
         -d '{}')
       RUN_ID=$(echo "$RESPONSE" | jq -r '.runId // empty')
@@ -270,7 +270,7 @@ function buildJenkinsSnippet(mode: SnippetMode, auth: SnippetAuth): string {
               "${url}" \\
               -H "X-Webhook-Token: \\$APIWEAVE_WEBHOOK_TOKEN" \\
               -H "X-Webhook-Timestamp: \\$TIMESTAMP" \\
-              -H "X-Webhook-Signature: sha256=\\$SIG" \\
+              -H "X-Webhook-Signature: \\$SIG" \\
               -H "Content-Type: application/json" \\
               -d '{}')
             [ "\\$STATUS" = "202" ] || (echo "Unexpected status \\$STATUS" && exit 1)
@@ -335,7 +335,7 @@ function buildJenkinsSnippet(mode: SnippetMode, auth: SnippetAuth): string {
               "${url}" \\
               -H "X-Webhook-Token: \\$APIWEAVE_WEBHOOK_TOKEN" \\
               -H "X-Webhook-Timestamp: \\$TIMESTAMP" \\
-              -H "X-Webhook-Signature: sha256=\\$SIG" \\
+              -H "X-Webhook-Signature: \\$SIG" \\
               -H "Content-Type: application/json" \\
               -d '{}')
             RUN_ID=\\$(echo "\\$RESPONSE" | jq -r '.runId // empty')
