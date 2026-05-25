@@ -5,7 +5,10 @@ import logging
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from beanie import init_beanie
 from app.config import settings
-from app.models import Workflow, Run, Environment, Collection, Webhook, CollectionRun, WebhookLog
+from app.models import (
+    Workflow, Run, Environment, Collection, Webhook, CollectionRun, WebhookLog,
+    User, ProviderIdentity, Session, Invite, ApprovedDomain, OAuthState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,13 @@ async def connect_db():
             Collection,
             Webhook,
             CollectionRun,
-            WebhookLog
+            WebhookLog,
+            User,
+            ProviderIdentity,
+            Session,
+            Invite,
+            ApprovedDomain,
+            OAuthState,
         ]
     )
 
