@@ -639,4 +639,5 @@ class InviteResponse(BaseModel):
     expires_at: datetime
     consumed: bool
     consumed_at: Optional[datetime] = None
+    invite_url: Optional[str] = None
 

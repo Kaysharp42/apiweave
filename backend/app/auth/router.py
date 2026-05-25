@@ -9,11 +9,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 
-from app.auth.dependencies import csrf_protect, get_current_session, get_current_user
-from app.auth.permissions import PRESET_ADMIN, PRESET_VIEWER
+from app.auth.dependencies import csrf_protect, get_current_session, get_current_user, require_permission
+from app.auth.permissions import PRESET_ADMIN, PRESET_VIEWER, SETTINGS_READ, SETTINGS_UPDATE, USERS_INVITE, USERS_READ
 from app.config import settings
-from app.models import Session, User, UserResponse
+from app.models import ApprovedDomain, Invite, InviteResponse, Session, User, UserResponse
 from app.repositories.auth_repositories import (
     ApprovedDomainRepository,
     InviteRepository,
@@ -308,3 +309,143 @@ async def csrf_token(response: Response) -> dict[str, str]:
         path="/",
     )
     return {"csrfToken": token}
+
+
+
+class CreateInviteRequest(BaseModel):
+    email: str
+    roles: list[str]
+
+
+class CreateInviteResponse(BaseModel):
+    invite_url: str
+    inviteId: str
+    email: str
+    role_preset: str
+
+
+@router.post(
+    "/invites",
+    response_model=CreateInviteResponse,
+    dependencies=[require_permission(USERS_INVITE)],
+)
+async def create_invite(
+    body: CreateInviteRequest,
+    current_user: User = Depends(get_current_user),
+) -> CreateInviteResponse:
+    role_preset = body.roles[0] if body.roles else PRESET_VIEWER
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = datetime.now(UTC)
+    invite = await InviteRepository.create(
+        invite_id=f"inv-{uuid.uuid4().hex[:12]}",
+        email=body.email,
+        token_hash=token_hash,
+        role_preset=role_preset,
+        created_by=current_user.userId,
+        created_at=now,
+        expires_at=now + timedelta(days=7),
+    )
+    return CreateInviteResponse(
+        invite_url=f"/invite?token={raw_token}",
+        inviteId=invite.inviteId,
+        email=invite.email,
+        role_preset=invite.role_preset,
+    )
+
+
+@router.get(
+    "/invites",
+    response_model=list[InviteResponse],
+    dependencies=[require_permission(USERS_READ)],
+)
+async def list_invites() -> list[InviteResponse]:
+    invites = await InviteRepository.get_all()
+    return [
+        InviteResponse(
+            inviteId=inv.inviteId,
+            email=inv.email,
+            role_preset=inv.role_preset,
+            created_by=inv.created_by,
+            created_at=inv.created_at,
+            expires_at=inv.expires_at,
+            consumed=inv.consumed,
+            consumed_at=inv.consumed_at,
+        )
+        for inv in invites
+    ]
+
+
+
+class ApprovedDomainResponse(BaseModel):
+    id: str
+    domain: str
+    created_by: str
+    created_at: datetime
+
+
+class AddDomainRequest(BaseModel):
+    domain: str
+
+
+@router.get(
+    "/domains",
+    response_model=list[ApprovedDomainResponse],
+    dependencies=[require_permission(SETTINGS_READ)],
+)
+async def list_approved_domains() -> list[ApprovedDomainResponse]:
+    domains = await ApprovedDomainRepository.list_all()
+    return [
+        ApprovedDomainResponse(
+            id=d.domainId,
+            domain=d.domain,
+            created_by=d.created_by,
+            created_at=d.created_at,
+        )
+        for d in domains
+    ]
+
+
+@router.post(
+    "/domains",
+    response_model=ApprovedDomainResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[require_permission(SETTINGS_UPDATE)],
+)
+async def add_approved_domain(
+    body: AddDomainRequest,
+    current_user: User = Depends(get_current_user),
+) -> ApprovedDomainResponse:
+    existing = await ApprovedDomainRepository.get_by_domain(body.domain.lower())
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Domain already approved",
+        )
+    now = datetime.now(UTC)
+    domain = await ApprovedDomainRepository.create(
+        domain_id=f"dom-{uuid.uuid4().hex[:12]}",
+        domain=body.domain.lower(),
+        created_by=current_user.userId,
+        created_at=now,
+    )
+    return ApprovedDomainResponse(
+        id=domain.domainId,
+        domain=domain.domain,
+        created_by=domain.created_by,
+        created_at=domain.created_at,
+    )
+
+
+@router.delete(
+    "/domains/{domain_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[require_permission(SETTINGS_UPDATE)],
+)
+async def remove_approved_domain(domain_id: str) -> None:
+    deleted = await ApprovedDomainRepository.delete(domain_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found",
+        )

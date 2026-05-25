@@ -3,15 +3,16 @@ APIWeave - Visual API Test Workflows Made Simple
 Main FastAPI application entry point
 """
 import logging
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import close_db, connect_db
-from app.routes import collections, environments, mcp_config, runs, webhooks, workflows
+from app.routes import auth_admin, collections, environments, mcp_config, runs, webhooks, workflows
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,44 @@ app.include_router(collections.router)
 app.include_router(webhooks.router)
 app.include_router(mcp_config.router)
 app.include_router(auth_router)
+app.include_router(auth_admin.router)
+
+_CSRF_EXEMPT_PREFIXES = (
+    "/api/auth/login",
+    "/api/auth/callback",
+)
+_CSRF_EXEMPT_EXACT = {
+    "/api/auth/csrf-token",
+    "/api/auth/logout",
+    "/api/auth/session/touch",
+}
+
+
+@app.middleware("http")
+async def csrf_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return await call_next(request)
+
+    path = request.url.path
+    if path in _CSRF_EXEMPT_EXACT or any(path.startswith(p) for p in _CSRF_EXEMPT_PREFIXES):
+        return await call_next(request)
+
+    if "session" in request.cookies and "csrftoken" in request.cookies:
+        from fastapi import HTTPException
+        from app.auth.dependencies import csrf_protect
+        try:
+            await csrf_protect(request)
+        except HTTPException:
+            return Response(
+                status_code=403,
+                content='{"detail":"CSRF token missing or invalid"}',
+                media_type="application/json",
+            )
+
+    return await call_next(request)
 
 # MCP Streamable HTTP mount
 if settings.MCP_ENABLED and settings.MCP_HTTP_ENABLED:
