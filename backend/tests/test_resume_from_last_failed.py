@@ -1,15 +1,60 @@
-from datetime import datetime, UTC
+import hashlib
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 import asyncio
 
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models import Node
+from app.models import Node, Session, User
+from app.repositories.auth_repositories import SessionRepository, UserRepository
+
+
+_SESSION_TOKEN = "test-resume-session-token"
+
+
+def _make_session() -> Session:
+    now = datetime.now(UTC)
+    return Session.model_construct(
+        sessionId="ses-resume-test",
+        userId="resume-test-user",
+        token_hash=hashlib.sha256(_SESSION_TOKEN.encode()).hexdigest(),
+        created_at=now,
+        last_seen_at=now,
+        expires_at=now + timedelta(days=7),
+        revoked=False,
+    )
+
+
+def _make_user() -> User:
+    now = datetime.now(UTC)
+    return User.model_construct(
+        userId="resume-test-user",
+        verified_email="resume@example.com",
+        display_name="Resume Test User",
+        avatar_url=None,
+        roles=["admin"],
+        permissions=[],
+        is_setup_complete=True,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _auth_patches():
+    """Return context managers that mock a valid authenticated session."""
+    session = _make_session()
+    user = _make_user()
+    return (
+        patch.object(SessionRepository, "get_by_token_hash", new=AsyncMock(return_value=session)),
+        patch.object(SessionRepository, "touch", new=AsyncMock(return_value=True)),
+        patch.object(UserRepository, "get_by_id", new=AsyncMock(return_value=user)),
+    )
 
 
 client = TestClient(app)
+client.cookies.set("session", _SESSION_TOKEN)
 
 
 WORKFLOW_ID = "fc87c260-e0b8-4b63-a762-47169f04f690"
@@ -57,7 +102,11 @@ def test_latest_failed_endpoint_returns_none_when_latest_run_is_success_even_if_
     workflow = _workflow_with_example_nodes()
     latest_success = _run("run-success", "completed")
 
+    session_patch, touch_patch, user_patch = _auth_patches()
     with (
+        session_patch,
+        touch_patch,
+        user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch("app.routes.workflows.RunRepository.get_latest_run", return_value=latest_success),
     ):
@@ -80,7 +129,11 @@ def test_latest_failed_endpoint_uses_latest_failed_when_latest_run_failed():
         },
     )
 
+    session_patch, touch_patch, user_patch = _auth_patches()
     with (
+        session_patch,
+        touch_patch,
+        user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch("app.routes.workflows.RunRepository.get_latest_run", return_value=latest_failed),
     ):
@@ -107,7 +160,11 @@ def test_latest_failed_endpoint_falls_back_to_node_statuses_when_failed_nodes_mi
         },
     )
 
+    session_patch, touch_patch, user_patch = _auth_patches()
     with (
+        session_patch,
+        touch_patch,
+        user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch("app.routes.workflows.RunRepository.get_latest_run", return_value=latest_failed),
     ):
@@ -130,7 +187,11 @@ def test_resume_run_accepts_workflow_nodes_as_pydantic_models_regression_for_nod
         failed_nodes=["http-request-1761432741713", "http-request-1761477525560"],
     )
 
+    session_patch, touch_patch, user_patch = _auth_patches()
     with (
+        session_patch,
+        touch_patch,
+        user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
         patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=latest_failed),
@@ -173,7 +234,11 @@ def test_resume_run_uses_node_status_fallback_when_source_failed_nodes_empty():
         },
     )
 
+    session_patch, touch_patch, user_patch = _auth_patches()
     with (
+        session_patch,
+        touch_patch,
+        user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
         patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=source_run),
@@ -202,7 +267,11 @@ def test_resume_run_uses_node_status_fallback_when_source_failed_nodes_empty():
 def test_resume_run_returns_409_when_no_failed_run_exists_for_auto_resume():
     workflow = _workflow_with_example_nodes()
 
+    session_patch, touch_patch, user_patch = _auth_patches()
     with (
+        session_patch,
+        touch_patch,
+        user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
         patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=None),
@@ -220,7 +289,11 @@ def test_resume_run_returns_400_for_invalid_resume_node_ids():
     workflow = _workflow_with_example_nodes()
     source_run = _run("run-source-3", "failed", failed_nodes=["http-request-1761432741713"])
 
+    session_patch, touch_patch, user_patch = _auth_patches()
     with (
+        session_patch,
+        touch_patch,
+        user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
         patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
@@ -248,7 +321,11 @@ def test_resume_single_mode_trims_multiple_failed_nodes_to_first():
         failed_nodes=["http-request-1761432741713", "http-request-1761477525560"],
     )
 
+    session_patch, touch_patch, user_patch = _auth_patches()
     with (
+        session_patch,
+        touch_patch,
+        user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
         patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
@@ -283,7 +360,11 @@ def test_latest_failed_endpoint_follows_latest_run_transitions_failed_then_succe
     )
     latest_success = _run("run-success-transition", "completed")
 
+    session_patch, touch_patch, user_patch = _auth_patches()
     with (
+        session_patch,
+        touch_patch,
+        user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch("app.routes.workflows.RunRepository.get_latest_run", side_effect=[latest_failed, latest_success]),
     ):
