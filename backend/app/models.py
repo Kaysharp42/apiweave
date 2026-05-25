@@ -501,6 +501,7 @@ class Session(Document):
     """
     sessionId: str
     userId: str                 # str reference to User.userId
+    token_hash: str             # SHA-256 hash of the opaque session token — raw token never stored
     created_at: datetime
     last_seen_at: datetime
     expires_at: datetime        # Absolute expiry (7d); TTL index on this field
@@ -510,6 +511,7 @@ class Session(Document):
         name = "sessions"
         indexes = [
             IndexModel([("sessionId", ASCENDING)], unique=True),
+            IndexModel([("token_hash", ASCENDING)], unique=True),
             IndexModel([("userId", ASCENDING)]),
             IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),  # TTL
         ]
