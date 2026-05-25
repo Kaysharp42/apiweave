@@ -14,6 +14,8 @@ Important: token and HMAC secret are shown once at creation/regeneration time. C
 
 Webhook management is a human UI/API action. You must be signed in to APIWeave with the appropriate `webhooks:*` permission (for example, `webhooks:create` to create, `webhooks:read` to list/read, and `webhooks:delete` to delete). Browser admin keys are not supported for webhook management.
 
+If your session expires, sign in again through SSO. Webhook management uses the same HttpOnly session and CSRF protection as the rest of the APIWeave UI; CI/CD systems should never receive or reuse human session cookies.
+
 1. Open APIWeave and go to `Webhooks` in the sidebar.
 2. Click `Create`.
 3. Choose resource type:
@@ -43,6 +45,8 @@ Expected behavior:
 ## Security
 
 Webhook execution is machine-to-machine authentication. Keep these execution credentials in your CI/CD secret manager; they are separate from human login sessions.
+
+For production hardening, see [Security](SECURITY.md). For SSO and user permission setup, see [Authentication Setup](AUTH_SETUP.md).
 
 ### Token-Only Development Compatibility
 

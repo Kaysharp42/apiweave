@@ -464,13 +464,15 @@ If your client does not support a `cwd` field, use an absolute path to `mcp_stdi
 
 ## Streamable HTTP Authentication
 
+MCP HTTP authentication is machine-to-machine key authentication. It is intentionally separate from APIWeave human SSO sessions, CSRF cookies, and browser permissions. Do not use MCP keys as user login credentials, and do not expose them to frontend code.
+
 When `MCP_HTTP_ENABLED=true` and `MCP_REQUIRE_API_KEY=true`:
 
 - All requests to `/mcp` must include an `Authorization: Bearer <MCP_API_KEY>` header
 - The `Origin` header is validated against `MCP_ALLOWED_ORIGINS`
 - Requests without valid auth receive a 401/403 response
 
-To disable auth (not recommended for production), set `MCP_REQUIRE_API_KEY=false`.
+Production deployments must keep `MCP_REQUIRE_API_KEY=true`, use a strong random `MCP_API_KEY`, and restrict `MCP_ALLOWED_ORIGINS` to trusted agent hosts only. Disabling API-key auth is only acceptable for isolated local development.
 
 ---
 

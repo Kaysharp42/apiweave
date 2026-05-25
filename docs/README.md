@@ -10,9 +10,12 @@ This is the main entry point for user documentation.
 
 ## Core Guides
 
+- [Authentication Setup](AUTH_SETUP.md)
+- [Security and Deployment Checklist](SECURITY.md)
 - [Workflows and Nodes Guide](WORKFLOWS_AND_NODES.md)
 - [Variables, Extractors, and JSON Editor](VARIABLES_EXTRACTORS_JSON_EDITOR.md)
 - [Environments, Secrets, and Collections](ENVIRONMENTS_COLLECTIONS.md)
+- [MCP Integration Guide](MCP.md)
 - [Swagger and OpenAPI Import Guide](SWAGGER_UI_BASE_URL_IMPORT.md)
 - [Webhook Quick Start](WEBHOOK_QUICKSTART.md)
 - [FAQ and Troubleshooting](FAQ_TROUBLESHOOTING.md)

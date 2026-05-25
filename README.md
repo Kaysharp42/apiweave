@@ -89,9 +89,12 @@ Start here:
 
 Current guides:
 
+- [Authentication Setup](docs/AUTH_SETUP.md)
+- [Security and Deployment Checklist](docs/SECURITY.md)
 - [Workflows and Nodes Guide](docs/WORKFLOWS_AND_NODES.md)
 - [Variables, Extractors, and JSON Editor](docs/VARIABLES_EXTRACTORS_JSON_EDITOR.md)
 - [Environments, Secrets, and Collections](docs/ENVIRONMENTS_COLLECTIONS.md)
+- [MCP Integration Guide](docs/MCP.md)
 - [Swagger and OpenAPI Import Guide](docs/SWAGGER_UI_BASE_URL_IMPORT.md)
 - [Webhook Quick Start](docs/WEBHOOK_QUICKSTART.md)
 - [FAQ and Troubleshooting](docs/FAQ_TROUBLESHOOTING.md)
