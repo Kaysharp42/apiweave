@@ -1,0 +1,310 @@
+from __future__ import annotations
+
+import hashlib
+import hmac
+import secrets
+import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
+
+from app.auth.dependencies import csrf_protect, get_current_session, get_current_user
+from app.auth.permissions import PRESET_ADMIN, PRESET_VIEWER
+from app.config import settings
+from app.models import Session, User, UserResponse
+from app.repositories.auth_repositories import (
+    ApprovedDomainRepository,
+    InviteRepository,
+    OAuthStateRepository,
+    ProviderIdentityRepository,
+    SessionRepository,
+    UserRepository,
+)
+
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+SESSION_COOKIE_NAME = "session"
+CSRF_COOKIE_NAME = "csrftoken"
+SESSION_MAX_AGE_SECONDS = 604800
+
+
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(
+        userId=user.userId,
+        verified_email=user.verified_email,
+        display_name=user.display_name,
+        avatar_url=user.avatar_url,
+        roles=user.roles,
+        permissions=user.permissions,
+        is_setup_complete=user.is_setup_complete,
+        created_at=user.created_at,
+    )
+
+
+def _redirect_uri(request: Request, provider: str) -> str:
+    return str(request.url_for("oauth_callback", provider=provider))
+
+
+def _session_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _email_domain(email: str) -> str:
+    return email.rsplit("@", maxsplit=1)[-1].lower()
+
+
+def _constant_time_match(left: str, right: str) -> bool:
+    return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
+
+
+def _validate_nonce(provider_config: Any, stored_nonce: str, userinfo: Any) -> None:
+    if not provider_config.oidc:
+        return
+    claims = userinfo.claims or {}
+    token_nonce = claims.get("nonce")
+    if token_nonce is not None and not _constant_time_match(str(token_nonce), stored_nonce):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth nonce")
+
+
+async def _is_domain_approved(email: str) -> bool:
+    domain = _email_domain(email)
+    configured_domains = {item.lower() for item in settings.get_approved_domains_list()}
+    if domain in configured_domains:
+        return True
+    return await ApprovedDomainRepository.is_domain_approved(domain)
+
+
+async def _create_or_link_user(userinfo: Any) -> User:
+    if not userinfo.email or not userinfo.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verified email required",
+        )
+
+    identity = await ProviderIdentityRepository.get_by_provider_subject(
+        userinfo.provider,
+        userinfo.subject,
+    )
+    if identity:
+        user = await UserRepository.get_by_id(identity.userId)
+        if user:
+            return user
+
+    user = await UserRepository.get_by_email(userinfo.email)
+    if user is None:
+        user_count = await UserRepository.count()
+        valid_invites = await InviteRepository.get_valid_by_email(userinfo.email)
+        if settings.SETUP_MODE_ENABLED and user_count == 0:
+            roles = [PRESET_ADMIN]
+            user = await UserRepository.create(
+                user_id=f"usr-{uuid.uuid4().hex[:12]}",
+                verified_email=userinfo.email,
+                display_name=userinfo.name,
+                avatar_url=userinfo.avatar_url,
+                roles=roles,
+                permissions=[],
+            )
+            updated = await UserRepository.update(user.userId, is_setup_complete=True)
+            user = updated or user
+        elif valid_invites:
+            invite = sorted(valid_invites, key=lambda item: item.expires_at)[0]
+            consumed = await InviteRepository.consume(invite.inviteId)
+            if not consumed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access requires an invitation",
+                )
+            user = await UserRepository.create(
+                user_id=f"usr-{uuid.uuid4().hex[:12]}",
+                verified_email=userinfo.email,
+                display_name=userinfo.name,
+                avatar_url=userinfo.avatar_url,
+                roles=[invite.role_preset],
+                permissions=[],
+            )
+        elif await _is_domain_approved(userinfo.email):
+            user = await UserRepository.create(
+                user_id=f"usr-{uuid.uuid4().hex[:12]}",
+                verified_email=userinfo.email,
+                display_name=userinfo.name,
+                avatar_url=userinfo.avatar_url,
+                roles=[PRESET_VIEWER],
+                permissions=[],
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access requires an invitation",
+            )
+
+    existing_identity = await ProviderIdentityRepository.get_by_provider_subject(
+        userinfo.provider,
+        userinfo.subject,
+    )
+    if not existing_identity:
+        await ProviderIdentityRepository.create(
+            identity_id=f"pid-{uuid.uuid4().hex[:12]}",
+            user_id=user.userId,
+            provider=userinfo.provider,
+            subject=userinfo.subject,
+            email=userinfo.email,
+            verified=True,
+        )
+    return user
+
+
+async def _create_session(response: Response, user: User) -> None:
+    now = datetime.now(UTC)
+    token = secrets.token_hex(32)
+    await SessionRepository.create(
+        session_id=f"ses-{uuid.uuid4().hex[:12]}",
+        user_id=user.userId,
+        token_hash=_session_hash(token),
+        created_at=now,
+        last_seen_at=now,
+        expires_at=now + timedelta(minutes=settings.SESSION_MAX_ABSOLUTE_MINUTES),
+    )
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=SESSION_MAX_AGE_SECONDS,
+        httponly=True,
+        secure=settings.get_session_cookie_secure(),
+        samesite=settings.get_session_cookie_samesite(),
+        path="/",
+    )
+
+
+@router.get("/login/{provider}")
+async def oauth_login(provider: str, request: Request) -> RedirectResponse:
+    from app.auth.provider_registry import (
+        create_login_url,
+        generate_nonce,
+        generate_pkce_pair,
+        get_provider_config,
+    )
+
+    try:
+        provider_config = get_provider_config(provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    state = secrets.token_urlsafe(32)
+    nonce = generate_nonce()
+    code_verifier, code_challenge = generate_pkce_pair()
+    redirect_uri = _redirect_uri(request, provider_config.name)
+    await OAuthStateRepository.create(
+        state_id=f"ost-{uuid.uuid4().hex[:12]}",
+        state=state,
+        code_verifier=code_verifier,
+        nonce=nonce,
+        provider=provider_config.name,
+        redirect_uri=redirect_uri,
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+    login_url = create_login_url(provider_config, state, nonce, code_challenge, redirect_uri)
+    return RedirectResponse(login_url, status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/callback/{provider}", response_model=UserResponse)
+async def oauth_callback(provider: str, request: Request, response: Response) -> UserResponse:
+    from app.auth.provider_registry import (
+        exchange_code_for_token,
+        fetch_userinfo,
+        get_provider_config,
+    )
+
+    code = request.query_params.get("code")
+    state_value = request.query_params.get("state")
+    if not code or not state_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing OAuth code or state",
+        )
+
+    stored_state = await OAuthStateRepository.consume(state_value)
+    if not stored_state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired OAuth state",
+        )
+    if stored_state.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired OAuth state",
+        )
+    if not _constant_time_match(stored_state.provider, provider.lower()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OAuth state provider mismatch",
+        )
+
+    try:
+        provider_config = get_provider_config(provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    redirect_uri = stored_state.redirect_uri or _redirect_uri(request, provider_config.name)
+    token_response = await exchange_code_for_token(
+        provider_config,
+        code,
+        redirect_uri,
+        stored_state.code_verifier,
+    )
+    userinfo = await fetch_userinfo(provider_config, token_response, stored_state.code_verifier)
+    _validate_nonce(provider_config, stored_state.nonce, userinfo)
+    user = await _create_or_link_user(userinfo)
+    await _create_session(response, user)
+    return _user_response(user)
+
+
+@router.post("/logout", dependencies=[Depends(csrf_protect)])
+async def logout(
+    response: Response,
+    session: Session = Depends(get_current_session),
+) -> dict[str, bool]:
+    revoked = await SessionRepository.revoke(session.sessionId)
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        httponly=True,
+        secure=settings.get_session_cookie_secure(),
+        samesite=settings.get_session_cookie_samesite().lower(),
+        path="/",
+    )
+    return {"revoked": revoked}
+
+
+@router.get("/me", response_model=UserResponse)
+async def me(
+    current_user: User = Depends(get_current_user),
+) -> UserResponse:
+    return _user_response(current_user)
+
+
+@router.post("/session/touch", dependencies=[Depends(csrf_protect)])
+async def touch_session(
+    session: Session = Depends(get_current_session),
+) -> dict[str, str]:
+    touched_at = datetime.now(UTC)
+    touched = await SessionRepository.touch(session.sessionId, touched_at)
+    if not touched:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session",
+        )
+    return {"status": "touched", "last_seen_at": touched_at.isoformat()}
+
+
+@router.get("/csrf-token")
+async def csrf_token(response: Response) -> dict[str, str]:
+    token = secrets.token_urlsafe(32)
+    response.set_cookie(
+        CSRF_COOKIE_NAME,
+        token,
+        httponly=False,
+        secure=settings.get_session_cookie_secure(),
+        samesite=settings.get_session_cookie_samesite().lower(),
+        path="/",
+    )
+    return {"csrfToken": token}

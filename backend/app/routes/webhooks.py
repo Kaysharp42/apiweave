@@ -13,12 +13,15 @@ import asyncio
 import json
 
 from app.models import (
+    User,
     Webhook,
     WebhookCreate,
     WebhookUpdate,
     WebhookLog,
     Run
 )
+from app.auth.dependencies import require_permission
+from app.auth.permissions import PRESET_ADMIN, WEBHOOKS_CREATE, WEBHOOKS_DELETE, WEBHOOKS_READ, WEBHOOKS_ROTATE, WEBHOOKS_UPDATE
 from app.repositories import (
     WebhookRepository,
     WorkflowRepository,
@@ -252,8 +255,34 @@ async def verify_admin_key(authorization: Optional[str] = Header(None)) -> None:
         )
 
 
-@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_admin_key)])
-async def create_webhook(webhook_data: WebhookCreate):
+def require_webhook_owner_or_admin(permission: str):
+    async def _check_webhook_owner_or_admin(
+        webhook_id: str,
+        current_user: User = require_permission(permission),
+    ) -> Webhook:
+        webhook = await WebhookRepository.get_by_id(webhook_id)
+        if not webhook:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Webhook not found: {webhook_id}",
+            )
+
+        if PRESET_ADMIN in current_user.roles:
+            return webhook
+
+        if webhook.createdBy and webhook.createdBy == current_user.userId:
+            return webhook
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Webhook owner or admin role is required",
+        )
+
+    return Depends(_check_webhook_owner_or_admin)
+
+
+@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def create_webhook(webhook_data: WebhookCreate, current_user: User = require_permission(WEBHOOKS_CREATE)):
     """
     Create a new webhook for CI/CD integration
     
@@ -298,6 +327,7 @@ async def create_webhook(webhook_data: WebhookCreate):
         "enabled": True,
         "description": webhook_data.description,
         "createdAt": datetime.now(UTC),
+        "createdBy": current_user.userId,
         "updatedAt": datetime.now(UTC),
         "usageCount": 0
     })
@@ -321,7 +351,7 @@ async def create_webhook(webhook_data: WebhookCreate):
     }
 
 
-@router.get("/workflows/{workflow_id}", response_model=List[dict], dependencies=[Depends(verify_admin_key)])
+@router.get("/workflows/{workflow_id}", response_model=List[dict], dependencies=[require_permission(WEBHOOKS_READ)])
 async def list_workflow_webhooks(workflow_id: str):
     """
     List all webhooks for a specific workflow
@@ -354,7 +384,7 @@ async def list_workflow_webhooks(workflow_id: str):
     ]
 
 
-@router.get("/collections/{collection_id}", response_model=List[dict], dependencies=[Depends(verify_admin_key)])
+@router.get("/collections/{collection_id}", response_model=List[dict], dependencies=[require_permission(WEBHOOKS_READ)])
 async def list_collection_webhooks(collection_id: str):
     """
     List all webhooks for a specific collection
@@ -387,7 +417,7 @@ async def list_collection_webhooks(collection_id: str):
     ]
 
 
-@router.get("/{webhook_id}", response_model=dict, dependencies=[Depends(verify_admin_key)])
+@router.get("/{webhook_id}", response_model=dict, dependencies=[require_permission(WEBHOOKS_READ)])
 async def get_webhook(webhook_id: str):
     """
     Get webhook details by ID
@@ -425,8 +455,12 @@ async def get_webhook(webhook_id: str):
     }
 
 
-@router.patch("/{webhook_id}", response_model=dict, dependencies=[Depends(verify_admin_key)])
-async def update_webhook(webhook_id: str, webhook_data: WebhookUpdate):
+@router.patch("/{webhook_id}", response_model=dict)
+async def update_webhook(
+    webhook_id: str,
+    webhook_data: WebhookUpdate,
+    _authorized_webhook: Webhook = require_webhook_owner_or_admin(WEBHOOKS_UPDATE),
+):
     """
     Update webhook configuration
     
@@ -478,8 +512,11 @@ async def update_webhook(webhook_id: str, webhook_data: WebhookUpdate):
     }
 
 
-@router.post("/{webhook_id}/regenerate-token", response_model=dict, dependencies=[Depends(verify_admin_key)])
-async def regenerate_webhook_token(webhook_id: str):
+@router.post("/{webhook_id}/regenerate-token", response_model=dict)
+async def regenerate_webhook_token(
+    webhook_id: str,
+    _authorized_webhook: Webhook = require_webhook_owner_or_admin(WEBHOOKS_ROTATE),
+):
     """
     Regenerate webhook token and HMAC secret
     
@@ -528,8 +565,11 @@ async def regenerate_webhook_token(webhook_id: str):
     }
 
 
-@router.delete("/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_admin_key)])
-async def delete_webhook(webhook_id: str):
+@router.delete("/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_webhook(
+    webhook_id: str,
+    _authorized_webhook: Webhook = require_webhook_owner_or_admin(WEBHOOKS_DELETE),
+):
     """
     Delete a webhook
     
@@ -552,7 +592,7 @@ async def delete_webhook(webhook_id: str):
     return None
 
 
-@router.get("/{webhook_id}/logs", response_model=dict, dependencies=[Depends(verify_admin_key)])
+@router.get("/{webhook_id}/logs", response_model=dict, dependencies=[require_permission(WEBHOOKS_READ)])
 async def get_webhook_logs(
     webhook_id: str,
     limit: int = 50,

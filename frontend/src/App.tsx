@@ -1,8 +1,11 @@
-import { useState, useEffect, createContext } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { useState, useEffect, createContext, type ReactNode } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home';
+import LoginPage from './pages/LoginPage';
 import { PaletteProvider } from './contexts/PaletteContext';
 import { Toast } from './components/atoms/Toast';
+import { AuthProvider } from './auth/AuthProvider';
+import { useAuth } from './auth/useAuth';
 
 interface AppContextValue {
   darkMode: boolean;
@@ -17,6 +20,32 @@ export const AppContext = createContext<AppContextValue>({
   autoSaveEnabled: true,
   setAutoSaveEnabled: () => {},
 });
+
+// ---------------------------------------------------------------------------
+// ProtectedRoute — shows spinner while loading, redirects when unauthenticated
+// ---------------------------------------------------------------------------
+
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { status } = useAuth();
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface dark:bg-surface-dark">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
 
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -65,11 +94,21 @@ function App() {
   return (
     <AppContext.Provider value={{ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }}>
       <PaletteProvider>
-        <Router>
-          <Routes>
-            <Route path="/*" element={<Home />} />
-          </Routes>
-        </Router>
+        <AuthProvider>
+          <Router>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route
+                path="/*"
+                element={
+                  <ProtectedRoute>
+                    <Home />
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </Router>
+        </AuthProvider>
         <Toast />
       </PaletteProvider>
     </AppContext.Provider>

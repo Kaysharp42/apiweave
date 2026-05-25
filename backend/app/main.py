@@ -4,12 +4,14 @@ Main FastAPI application entry point
 """
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import connect_db, close_db
+from app.auth.router import router as auth_router
 from app.config import settings
-from app.routes import workflows, runs, environments, collections, webhooks, mcp_config
+from app.database import close_db, connect_db
+from app.routes import collections, environments, mcp_config, runs, webhooks, workflows
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,7 @@ app.include_router(environments.router)
 app.include_router(collections.router)
 app.include_router(webhooks.router)
 app.include_router(mcp_config.router)
+app.include_router(auth_router)
 
 # MCP Streamable HTTP mount
 if settings.MCP_ENABLED and settings.MCP_HTTP_ENABLED:

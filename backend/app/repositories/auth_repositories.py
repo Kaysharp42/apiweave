@@ -1,13 +1,7 @@
-"""
-Auth Repositories
-Handles all database operations for auth-related documents:
-User, ProviderIdentity, Session, Invite, ApprovedDomain
-"""
-from typing import List, Optional
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 
-from app.models import User, ProviderIdentity, Session, Invite, ApprovedDomain
 from app.config import settings
+from app.models import ApprovedDomain, Invite, OAuthState, ProviderIdentity, Session, User
 
 
 class UserRepository:
@@ -17,10 +11,10 @@ class UserRepository:
     async def create(
         user_id: str,
         verified_email: str,
-        display_name: Optional[str],
-        avatar_url: Optional[str],
-        roles: List[str],
-        permissions: List[str],
+        display_name: str | None,
+        avatar_url: str | None,
+        roles: list[str],
+        permissions: list[str],
     ) -> User:
         """Create and persist a new user"""
         now = datetime.now(UTC)
@@ -39,22 +33,22 @@ class UserRepository:
         return user
 
     @staticmethod
-    async def get_by_id(user_id: str) -> Optional[User]:
+    async def get_by_id(user_id: str) -> User | None:
         """Find user by userId"""
         return await User.find_one(User.userId == user_id)
 
     @staticmethod
-    async def get_by_email(verified_email: str) -> Optional[User]:
+    async def get_by_email(verified_email: str) -> User | None:
         """Find user by verified_email (canonical linking key)"""
         return await User.find_one(User.verified_email == verified_email)
 
     @staticmethod
-    async def get_all() -> List[User]:
+    async def get_all() -> list[User]:
         """Return all users"""
         return await User.find_all().to_list()
 
     @staticmethod
-    async def update(user_id: str, **kwargs: object) -> Optional[User]:
+    async def update(user_id: str, **kwargs: object) -> User | None:
         """Update arbitrary user fields; always bumps updated_at"""
         user = await UserRepository.get_by_id(user_id)
         if not user:
@@ -80,7 +74,7 @@ class UserRepository:
         return True
 
     @staticmethod
-    async def find_by_role(role: str) -> List[User]:
+    async def find_by_role(role: str) -> list[User]:
         """Find all users that have the given role"""
         return await User.find({"roles": role}).to_list()
 
@@ -112,7 +106,7 @@ class ProviderIdentityRepository:
     @staticmethod
     async def get_by_provider_subject(
         provider: str, subject: str
-    ) -> Optional[ProviderIdentity]:
+    ) -> ProviderIdentity | None:
         """Find identity by (provider, subject) compound key"""
         return await ProviderIdentity.find_one(
             ProviderIdentity.provider == provider,
@@ -120,14 +114,14 @@ class ProviderIdentityRepository:
         )
 
     @staticmethod
-    async def get_by_user_id(user_id: str) -> List[ProviderIdentity]:
+    async def get_by_user_id(user_id: str) -> list[ProviderIdentity]:
         """Return all identities linked to a user"""
         return await ProviderIdentity.find(
             ProviderIdentity.userId == user_id
         ).to_list()
 
     @staticmethod
-    async def get_by_email(email: str) -> List[ProviderIdentity]:
+    async def get_by_email(email: str) -> list[ProviderIdentity]:
         """Return all identities with the given verified email (account linking)"""
         return await ProviderIdentity.find(
             ProviderIdentity.email == email
@@ -203,17 +197,17 @@ class SessionRepository:
         return session
 
     @staticmethod
-    async def get_by_token_hash(token_hash: str) -> Optional[Session]:
+    async def get_by_token_hash(token_hash: str) -> Session | None:
         """Find session by hashed token"""
         return await Session.find_one(Session.token_hash == token_hash)
 
     @staticmethod
-    async def get_by_id(session_id: str) -> Optional[Session]:
+    async def get_by_id(session_id: str) -> Session | None:
         """Find session by sessionId"""
         return await Session.find_one(Session.sessionId == session_id)
 
     @staticmethod
-    async def get_active_sessions_for_user(user_id: str) -> List[Session]:
+    async def get_active_sessions_for_user(user_id: str) -> list[Session]:
         """
         Return sessions for user that are not revoked and not absolutely expired.
         Idle expiry is checked in Python via is_active() — callers should filter
@@ -295,17 +289,17 @@ class InviteRepository:
         return invite
 
     @staticmethod
-    async def get_by_token_hash(token_hash: str) -> Optional[Invite]:
+    async def get_by_token_hash(token_hash: str) -> Invite | None:
         """Find invite by hashed token"""
         return await Invite.find_one(Invite.token_hash == token_hash)
 
     @staticmethod
-    async def get_by_id(invite_id: str) -> Optional[Invite]:
+    async def get_by_id(invite_id: str) -> Invite | None:
         """Find invite by inviteId"""
         return await Invite.find_one(Invite.inviteId == invite_id)
 
     @staticmethod
-    async def get_valid_by_email(email: str) -> List[Invite]:
+    async def get_valid_by_email(email: str) -> list[Invite]:
         """Return invites for email that are not consumed and not expired"""
         now = datetime.now(UTC)
         return await Invite.find(
@@ -331,7 +325,7 @@ class InviteRepository:
         return True
 
     @staticmethod
-    async def get_all() -> List[Invite]:
+    async def get_all() -> list[Invite]:
         """Return all invites"""
         return await Invite.find_all().to_list()
 
@@ -357,7 +351,7 @@ class ApprovedDomainRepository:
         return approved
 
     @staticmethod
-    async def get_by_domain(domain: str) -> Optional[ApprovedDomain]:
+    async def get_by_domain(domain: str) -> ApprovedDomain | None:
         """Find approved domain by domain string"""
         return await ApprovedDomain.find_one(ApprovedDomain.domain == domain)
 
@@ -368,7 +362,7 @@ class ApprovedDomainRepository:
         return result is not None
 
     @staticmethod
-    async def list_all() -> List[ApprovedDomain]:
+    async def list_all() -> list[ApprovedDomain]:
         """Return all approved domains"""
         return await ApprovedDomain.find_all().to_list()
 
@@ -382,3 +376,39 @@ class ApprovedDomainRepository:
             return False
         await approved.delete()
         return True
+
+
+class OAuthStateRepository:
+    @staticmethod
+    async def create(
+        state_id: str,
+        state: str,
+        code_verifier: str,
+        nonce: str,
+        provider: str,
+        redirect_uri: str,
+        expires_at: datetime,
+    ) -> OAuthState:
+        oauth_state = OAuthState(
+            stateId=state_id,
+            state=state,
+            code_verifier=code_verifier,
+            nonce=nonce,
+            provider=provider,
+            redirect_uri=redirect_uri,
+            expires_at=expires_at,
+        )
+        await oauth_state.insert()
+        return oauth_state
+
+    @staticmethod
+    async def get_by_state(state: str) -> OAuthState | None:
+        return await OAuthState.find_one(OAuthState.state == state)
+
+    @staticmethod
+    async def consume(state: str) -> OAuthState | None:
+        oauth_state = await OAuthStateRepository.get_by_state(state)
+        if not oauth_state:
+            return None
+        await oauth_state.delete()
+        return oauth_state

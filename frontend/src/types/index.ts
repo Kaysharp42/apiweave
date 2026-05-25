@@ -51,6 +51,8 @@ export type { KeyboardShortcut } from './KeyboardShortcut';
 export type { AppNavBarItemConfig } from './AppNavBarItemConfig';
 export type { AppNavBarWidthConfig } from './AppNavBarWidthConfig';
 export type { AppNavBarProps } from './AppNavBarProps';
+export type { User } from './User';
+export type { AuthStatus, AuthState } from './AuthState';
 export type { SidebarProps } from './SidebarProps';
 export type { SidebarHeaderProps } from './SidebarHeaderProps';
 export type { MainLayoutProps } from './MainLayoutProps';

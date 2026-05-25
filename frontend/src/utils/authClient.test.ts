@@ -57,6 +57,7 @@ function mockFetch(
 }
 
 /** Temporarily set document.cookie to a given value. */
+// @ts-ignore — kept for reference, not called in current tests
 function withCookie(cookieString: string, fn: () => void): void {
   const originalDescriptor = Object.getOwnPropertyDescriptor(
     Document.prototype,

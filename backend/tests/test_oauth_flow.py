@@ -1,63 +1,151 @@
-"""
-OAuth flow tests — Task 4 TDD scaffolding.
-
-Tests 1-6 are marked skip(reason="Requires Task 6 OAuth implementation") because
-the actual OAuth callback routes do not exist yet.  They will be un-skipped in
-Task 6 once the routes are wired up.
-
-Tests 7-8 verify the fixture shapes immediately (no skip) so CI can confirm the
-mock data is well-formed before Task 6 lands.
-"""
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
+import app.auth.provider_registry as provider_registry
+import app.auth.router as auth_router
+from app.auth.provider_registry import ProviderConfig, ProviderUserInfo
 from app.main import app
+from app.models import OAuthState, User
 
-# Import fixtures so pytest can discover them
-from tests.fixtures.oauth_mocks import (  # noqa: F401
-    mock_github_emails_unverified,
-    mock_github_emails_verified,
-    mock_github_user,
-    mock_github_userinfo,
-    mock_github_userinfo_unverified,
-    mock_gitlab_user_unverified,
-    mock_gitlab_user_verified,
-    mock_gitlab_userinfo,
-    mock_gitlab_userinfo_unverified,
-    mock_google_id_token_claims_unverified,
-    mock_google_id_token_claims_verified,
-    mock_google_userinfo,
-    mock_google_userinfo_unverified,
-    mock_microsoft_id_token_claims_verified,
-    mock_microsoft_me_response,
-    mock_microsoft_userinfo,
-    mock_microsoft_userinfo_unverified,
-)
+pytest_plugins = ("tests.fixtures.oauth_mocks",)
 
 client = TestClient(app)
 
 PROVIDERS = ["github", "gitlab", "google", "microsoft"]
 
-# ---------------------------------------------------------------------------
-# Tests 1-6: Implementation-dependent — skipped until Task 6
-# ---------------------------------------------------------------------------
+
+def _provider_config(provider: str) -> ProviderConfig:
+    return ProviderConfig(
+        name=provider,
+        client_id=f"{provider}-client-id",
+        client_secret=f"{provider}-client-secret",
+        authorize_url=f"https://{provider}.example.test/oauth/authorize",
+        token_url=f"https://{provider}.example.test/oauth/token",
+        userinfo_url=f"https://{provider}.example.test/userinfo",
+        oidc=provider in {"google", "microsoft"},
+        scopes=(
+            ("openid", "profile", "email")
+            if provider in {"google", "microsoft"}
+            else ("read_user",)
+        ),
+    )
 
 
-@pytest.mark.skip(reason="Requires Task 6 OAuth implementation")
+def _oauth_state(provider: str, *, expired: bool = False) -> OAuthState:
+    now = datetime.now(UTC)
+    return OAuthState.model_construct(
+        stateId=f"ost-{provider}",
+        state="valid-state",
+        code_verifier="verifier",
+        nonce="nonce",
+        provider=provider,
+        redirect_uri=f"http://testserver/api/auth/callback/{provider}",
+        expires_at=now - timedelta(minutes=1) if expired else now + timedelta(minutes=10),
+    )
+
+
+def _user(email: str) -> User:
+    now = datetime.now(UTC)
+    return User.model_construct(
+        userId="usr-test",
+        verified_email=email,
+        display_name="Test User",
+        avatar_url=None,
+        roles=["admin"],
+        permissions=[],
+        is_setup_complete=True,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _userinfo(provider: str, *, verified: bool = True) -> ProviderUserInfo:
+    email = f"testuser@{provider}.example.com" if verified else None
+    return ProviderUserInfo(
+        provider=provider,
+        subject=f"{provider}-subject",
+        email=email,
+        email_verified=verified,
+        name="Test User",
+        avatar_url=None,
+        claims={"nonce": "nonce"} if provider in {"google", "microsoft"} else None,
+    )
+
+
+def _patch_provider(monkeypatch: pytest.MonkeyPatch, provider: str) -> None:
+    monkeypatch.setattr(
+        provider_registry,
+        "get_provider_config",
+        lambda name: _provider_config(name),
+    )
+    monkeypatch.setattr(auth_router.OAuthStateRepository, "create", AsyncMock())
+
+
+def _patch_callback(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    *,
+    state: OAuthState | None,
+    verified: bool = True,
+) -> User:
+    user = _user(f"testuser@{provider}.example.com")
+    monkeypatch.setattr(
+        provider_registry,
+        "get_provider_config",
+        lambda name: _provider_config(name),
+    )
+    monkeypatch.setattr(auth_router.OAuthStateRepository, "consume", AsyncMock(return_value=state))
+    monkeypatch.setattr(
+        provider_registry,
+        "exchange_code_for_token",
+        AsyncMock(return_value={"access_token": "token", "id_token": "header.payload.sig"}),
+    )
+    monkeypatch.setattr(
+        provider_registry,
+        "fetch_userinfo",
+        AsyncMock(return_value=_userinfo(provider, verified=verified)),
+    )
+    monkeypatch.setattr(
+        auth_router.ProviderIdentityRepository,
+        "get_by_provider_subject",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(auth_router.ProviderIdentityRepository, "create", AsyncMock())
+    monkeypatch.setattr(auth_router.UserRepository, "get_by_email", AsyncMock(return_value=None))
+    monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=0))
+    monkeypatch.setattr(auth_router.UserRepository, "create", AsyncMock(return_value=user))
+    monkeypatch.setattr(auth_router.UserRepository, "update", AsyncMock(return_value=user))
+    monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "get_valid_by_email",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        auth_router.ApprovedDomainRepository,
+        "is_domain_approved",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(auth_router.SessionRepository, "create", AsyncMock())
+    return user
+
+
 @pytest.mark.parametrize("provider", PROVIDERS)
-def test_oauth_login_initiates_redirect(provider: str) -> None:
+def test_oauth_login_initiates_redirect(monkeypatch: pytest.MonkeyPatch, provider: str) -> None:
     """GET /api/auth/login/{provider} must return 302 with state in redirect URL."""
+    _patch_provider(monkeypatch, provider)
     response = client.get(f"/api/auth/login/{provider}", follow_redirects=False)
     assert response.status_code == 302
     location = response.headers.get("location", "")
     assert "state=" in location, f"Redirect URL missing state param: {location}"
 
 
-@pytest.mark.skip(reason="Requires Task 6 OAuth implementation")
 @pytest.mark.parametrize("provider", PROVIDERS)
-def test_callback_rejects_tampered_state(provider: str) -> None:
+def test_callback_rejects_tampered_state(monkeypatch: pytest.MonkeyPatch, provider: str) -> None:
     """Callback with a state value not matching server-side store must return 400."""
+    _patch_callback(monkeypatch, provider, state=None)
     response = client.get(
         f"/api/auth/callback/{provider}",
         params={"code": "legit-code", "state": "tampered-state-value"},
@@ -67,10 +155,10 @@ def test_callback_rejects_tampered_state(provider: str) -> None:
     assert "state" in detail or "invalid" in detail
 
 
-@pytest.mark.skip(reason="Requires Task 6 OAuth implementation")
 @pytest.mark.parametrize("provider", PROVIDERS)
-def test_callback_rejects_expired_state(provider: str) -> None:
+def test_callback_rejects_expired_state(monkeypatch: pytest.MonkeyPatch, provider: str) -> None:
     """Callback with an expired state token must return 400."""
+    _patch_callback(monkeypatch, provider, state=_oauth_state(provider, expired=True))
     response = client.get(
         f"/api/auth/callback/{provider}",
         params={"code": "legit-code", "state": "expired-state-value"},
@@ -80,26 +168,27 @@ def test_callback_rejects_expired_state(provider: str) -> None:
     assert "expir" in detail or "state" in detail or "invalid" in detail
 
 
-@pytest.mark.skip(reason="Requires Task 6 OAuth implementation")
 @pytest.mark.parametrize("provider", PROVIDERS)
-def test_callback_succeeds_with_verified_email(provider: str) -> None:
+def test_callback_succeeds_with_verified_email(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
     """Happy-path callback with verified email must return 200 and set session cookie."""
-    # Actual implementation will mock the provider token exchange and userinfo fetch.
+    _patch_callback(monkeypatch, provider, state=_oauth_state(provider), verified=True)
     response = client.get(
         f"/api/auth/callback/{provider}",
         params={"code": "valid-code", "state": "valid-state"},
     )
     assert response.status_code == 200
-    # Session cookie must be set
     assert "session" in response.cookies or any(
         "session" in k.lower() for k in response.cookies
     )
 
 
-@pytest.mark.skip(reason="Requires Task 6 OAuth implementation")
 @pytest.mark.parametrize("provider", PROVIDERS)
-def test_callback_rejects_unverified_email(provider: str) -> None:
+def test_callback_rejects_unverified_email(monkeypatch: pytest.MonkeyPatch, provider: str) -> None:
     """Callback where provider reports unverified email must return 403."""
+    _patch_callback(monkeypatch, provider, state=_oauth_state(provider), verified=False)
     response = client.get(
         f"/api/auth/callback/{provider}",
         params={"code": "unverified-code", "state": "valid-state"},
@@ -109,7 +198,6 @@ def test_callback_rejects_unverified_email(provider: str) -> None:
     assert "verif" in detail or "email" in detail
 
 
-@pytest.mark.skip(reason="Requires Task 6 OAuth implementation")
 @pytest.mark.parametrize("provider", PROVIDERS)
 def test_callback_rejects_missing_state_parameter(provider: str) -> None:
     """Callback with no state query parameter must return 400."""

@@ -35,6 +35,8 @@ WORKFLOWS_READ: Final = permission(RESOURCE_WORKFLOWS, ACTION_READ)
 WORKFLOWS_UPDATE: Final = permission(RESOURCE_WORKFLOWS, ACTION_UPDATE)
 WORKFLOWS_DELETE: Final = permission(RESOURCE_WORKFLOWS, ACTION_DELETE)
 WORKFLOWS_RUN: Final = permission(RESOURCE_WORKFLOWS, ACTION_RUN)
+WORKFLOWS_EXPORT: Final = permission(RESOURCE_WORKFLOWS, ACTION_EXPORT)
+WORKFLOWS_IMPORT: Final = permission(RESOURCE_WORKFLOWS, ACTION_IMPORT)
 
 COLLECTIONS_CREATE: Final = permission(RESOURCE_COLLECTIONS, ACTION_CREATE)
 COLLECTIONS_READ: Final = permission(RESOURCE_COLLECTIONS, ACTION_READ)
@@ -75,6 +77,8 @@ PERMISSIONS_BY_RESOURCE: Final[dict[str, list[str]]] = {
         WORKFLOWS_UPDATE,
         WORKFLOWS_DELETE,
         WORKFLOWS_RUN,
+        WORKFLOWS_EXPORT,
+        WORKFLOWS_IMPORT,
     ],
     RESOURCE_COLLECTIONS: [
         COLLECTIONS_CREATE,
@@ -122,6 +126,8 @@ ROLE_PRESETS: Final[dict[str, list[str]]] = {
         WORKFLOWS_UPDATE,
         WORKFLOWS_DELETE,
         WORKFLOWS_RUN,
+        WORKFLOWS_EXPORT,
+        WORKFLOWS_IMPORT,
         COLLECTIONS_CREATE,
         COLLECTIONS_READ,
         COLLECTIONS_UPDATE,
@@ -155,6 +161,8 @@ ROLE_PRESETS: Final[dict[str, list[str]]] = {
         WORKFLOWS_UPDATE,
         WORKFLOWS_DELETE,
         WORKFLOWS_RUN,
+        WORKFLOWS_EXPORT,
+        WORKFLOWS_IMPORT,
         COLLECTIONS_CREATE,
         COLLECTIONS_READ,
         COLLECTIONS_UPDATE,
@@ -217,7 +225,12 @@ def require_permission(
     permission: str,
     get_user: UserDependency | None = None,
 ) -> Callable[..., Awaitable[Any]]:
-    user_dependency = get_user or get_current_user
+    if get_user is None:
+        from app.auth.dependencies import get_current_active_user
+
+        user_dependency = get_current_active_user
+    else:
+        user_dependency = get_user
 
     async def _check_permission(
         current_user: Any = Depends(user_dependency),

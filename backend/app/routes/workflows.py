@@ -15,6 +15,8 @@ import httpx
 from bson import ObjectId
 
 from app.models import Workflow, WorkflowCreate, WorkflowUpdate, PaginatedWorkflows
+from app.auth.dependencies import require_permission
+from app.auth.permissions import WORKFLOWS_CREATE, WORKFLOWS_DELETE, WORKFLOWS_EXPORT, WORKFLOWS_IMPORT, WORKFLOWS_READ, WORKFLOWS_RUN, WORKFLOWS_UPDATE
 from app.database import get_database
 from app.config import settings
 from app.repositories import WorkflowRepository, CollectionRepository, RunRepository, EnvironmentRepository
@@ -112,25 +114,25 @@ def _derive_failed_node_ids(run: Any) -> List[str]:
 # with endpoints that still use local parse_* calls.
 
 
-@router.post("", response_model=Workflow, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=Workflow, status_code=status.HTTP_201_CREATED, dependencies=[require_permission(WORKFLOWS_CREATE)])
 async def create_workflow(workflow: WorkflowCreate):
     """Create a new workflow using shared service layer"""
     return await svc_create_workflow(workflow)
 
 
-@router.get("", response_model=PaginatedWorkflows)
+@router.get("", response_model=PaginatedWorkflows, dependencies=[require_permission(WORKFLOWS_READ)])
 async def list_workflows(skip: int = 0, limit: int = 20, tag: Optional[str] = None):
     """List workflows with pagination using shared service layer"""
     return await svc_list_workflows(skip, limit, tag)
 
 
-@router.get("/unattached", response_model=PaginatedWorkflows)
+@router.get("/unattached", response_model=PaginatedWorkflows, dependencies=[require_permission(WORKFLOWS_READ)])
 async def list_unattached_workflows(skip: int = 0, limit: int = 20):
     """Get all workflows not attached to any collection"""
     return await svc_list_unattached(skip, limit)
 
 
-@router.get("/{workflow_id}", response_model=Workflow)
+@router.get("/{workflow_id}", response_model=Workflow, dependencies=[require_permission(WORKFLOWS_READ)])
 async def get_workflow(workflow_id: str):
     """Get a workflow by ID"""
     try:
@@ -139,7 +141,7 @@ async def get_workflow(workflow_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.put("/{workflow_id}", response_model=Workflow)
+@router.put("/{workflow_id}", response_model=Workflow, dependencies=[require_permission(WORKFLOWS_UPDATE)])
 async def update_workflow(workflow_id: str, update: WorkflowUpdate):
     """Update a workflow"""
     try:
@@ -148,7 +150,7 @@ async def update_workflow(workflow_id: str, update: WorkflowUpdate):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require_permission(WORKFLOWS_DELETE)])
 async def delete_workflow(workflow_id: str):
     """Delete a workflow"""
     try:
@@ -158,7 +160,7 @@ async def delete_workflow(workflow_id: str):
     return None
 
 
-@router.post("/{workflow_id}/run", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/{workflow_id}/run", status_code=status.HTTP_202_ACCEPTED, dependencies=[require_permission(WORKFLOWS_RUN)])
 async def run_workflow(
     workflow_id: str,
     environmentId: Optional[str] = Query(None),
@@ -191,7 +193,7 @@ async def run_workflow(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
 
-@router.get("/{workflow_id}/runs")
+@router.get("/{workflow_id}/runs", dependencies=[require_permission(WORKFLOWS_READ)])
 async def get_workflow_runs(workflow_id: str, page: int = 1, limit: int = 10):
     """Get runs for a workflow with pagination (SQL injection safe)"""
     # Verify workflow exists using repository
@@ -240,7 +242,7 @@ async def get_workflow_runs(workflow_id: str, page: int = 1, limit: int = 10):
     }
 
 
-@router.get("/{workflow_id}/runs/latest-failed")
+@router.get("/{workflow_id}/runs/latest-failed", dependencies=[require_permission(WORKFLOWS_READ)])
 async def get_latest_failed_run_metadata(workflow_id: str):
     """Get latest failed run and failed node metadata for resume actions."""
     workflow = await WorkflowRepository.get_by_id(workflow_id)
@@ -288,7 +290,7 @@ async def get_latest_failed_run_metadata(workflow_id: str):
     }
 
 
-@router.get("/{workflow_id}/runs/{run_id}")
+@router.get("/{workflow_id}/runs/{run_id}", dependencies=[require_permission(WORKFLOWS_READ)])
 async def get_run_status(workflow_id: str, run_id: str):
     """Get the status of a workflow run with full node results (SQL injection safe)"""
     # Get run using repository
@@ -363,7 +365,7 @@ async def get_run_status(workflow_id: str, run_id: str):
     return run
 
 
-@router.get("/{workflow_id}/runs/{run_id}/nodes/{node_id}/result")
+@router.get("/{workflow_id}/runs/{run_id}/nodes/{node_id}/result", dependencies=[require_permission(WORKFLOWS_READ)])
 async def get_node_result(workflow_id: str, run_id: str, node_id: str):
     """
     Get the full result for a specific node in a run (SQL injection safe).
@@ -443,7 +445,7 @@ async def get_node_result(workflow_id: str, run_id: str, node_id: str):
     }
 
 
-@router.get("/{workflow_id}/export")
+@router.get("/{workflow_id}/export", dependencies=[require_permission(WORKFLOWS_EXPORT)])
 async def export_workflow(workflow_id: str, include_environment: bool = Query(True)):
     """Export a complete workflow bundle as JSON"""
     try:
@@ -463,7 +465,7 @@ async def export_workflow(workflow_id: str, include_environment: bool = Query(Tr
         )
 
 
-@router.post("/import")
+@router.post("/import", dependencies=[require_permission(WORKFLOWS_IMPORT)])
 async def import_workflow(
     bundle: Dict[str, Any],
     environment_mapping: Optional[Dict[str, str]] = None,
@@ -482,13 +484,13 @@ async def import_workflow(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/import/dry-run")
+@router.post("/import/dry-run", dependencies=[require_permission(WORKFLOWS_IMPORT)])
 async def import_workflow_dry_run(bundle: Dict[str, Any]):
     """Validate a workflow bundle without persisting"""
     return await svc_import_dry_run(bundle)
 
 
-@router.post("/import/har")
+@router.post("/import/har", dependencies=[require_permission(WORKFLOWS_IMPORT)])
 async def import_har_file(
     file: Optional[UploadFile] = File(None),
     import_mode: str = Query("linear"),
@@ -585,7 +587,7 @@ async def import_har_file(
         )
 
 
-@router.post("/import/har/dry-run")
+@router.post("/import/har/dry-run", dependencies=[require_permission(WORKFLOWS_IMPORT)])
 async def import_har_dry_run(
     file: Optional[UploadFile] = File(None),
     import_mode: str = Query("linear"),
@@ -682,7 +684,7 @@ async def import_har_dry_run(
     }
 
 
-@router.post("/import/openapi")
+@router.post("/import/openapi", dependencies=[require_permission(WORKFLOWS_IMPORT)])
 async def import_openapi_file(
     file: Optional[UploadFile] = File(None),
     base_url: str = Query(""),
@@ -904,7 +906,7 @@ async def _discover_definitions_from_swagger_ui(
     }
 
 
-@router.get("/import/openapi/url")
+@router.get("/import/openapi/url", dependencies=[require_permission(WORKFLOWS_IMPORT)])
 async def import_openapi_from_url(
     swagger_url: str = Query(...),
     base_url: str = Query(""),
@@ -1165,7 +1167,7 @@ async def import_openapi_from_url(
         )
 
 
-@router.post("/import/openapi/dry-run")
+@router.post("/import/openapi/dry-run", dependencies=[require_permission(WORKFLOWS_IMPORT)])
 async def import_openapi_dry_run(
     file: Optional[UploadFile] = File(None),
     base_url: str = Query(""),
@@ -1261,7 +1263,7 @@ async def import_openapi_dry_run(
         )
 
 
-@router.post("/import/curl/dry-run")
+@router.post("/import/curl/dry-run", dependencies=[require_permission(WORKFLOWS_IMPORT)])
 async def import_curl_dry_run(
     sanitize: bool = Query(True),
     curl_command: Optional[str] = Query(None)
@@ -1317,7 +1319,7 @@ async def import_curl_dry_run(
 
 
 
-@router.put("/{workflow_id}/collection")
+@router.put("/{workflow_id}/collection", dependencies=[require_permission(WORKFLOWS_UPDATE)])
 async def attach_workflow_to_collection(workflow_id: str, collection_id: Optional[str] = Query(None)):
     """Attach or detach a workflow to/from a collection"""
     try:
@@ -1326,7 +1328,7 @@ async def attach_workflow_to_collection(workflow_id: str, collection_id: Optiona
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/by-collection/{collection_id}")
+@router.get("/by-collection/{collection_id}", dependencies=[require_permission(WORKFLOWS_READ)])
 async def list_workflows_by_collection(collection_id: str):
     """Get all workflows attached to a collection"""
     try:
@@ -1336,7 +1338,7 @@ async def list_workflows_by_collection(collection_id: str):
 
 
 
-@router.post("/bulk-attach-collection")
+@router.post("/bulk-attach-collection", dependencies=[require_permission(WORKFLOWS_UPDATE)])
 async def bulk_attach_workflows(
     workflow_ids: List[str] = Query(...),
     collection_id: Optional[str] = Query(None)
@@ -1373,7 +1375,7 @@ async def bulk_attach_workflows(
 
 # Node Templates Management Endpoints
 
-@router.get("/{workflow_id}/templates")
+@router.get("/{workflow_id}/templates", dependencies=[require_permission(WORKFLOWS_READ)])
 async def get_workflow_templates(workflow_id: str):
     """Get all node templates for a workflow (SQL injection safe)"""
     # Use repository for type-safe query
@@ -1390,7 +1392,7 @@ async def get_workflow_templates(workflow_id: str):
     }
 
 
-@router.post("/{workflow_id}/templates")
+@router.post("/{workflow_id}/templates", dependencies=[require_permission(WORKFLOWS_UPDATE)])
 async def add_workflow_templates(
     workflow_id: str,
     templates: List[Dict[str, Any]]
@@ -1422,7 +1424,7 @@ async def add_workflow_templates(
     }
 
 
-@router.put("/{workflow_id}/templates")
+@router.put("/{workflow_id}/templates", dependencies=[require_permission(WORKFLOWS_UPDATE)])
 async def replace_workflow_templates(
     workflow_id: str,
     templates: List[Dict[str, Any]]
@@ -1448,7 +1450,7 @@ async def replace_workflow_templates(
     }
 
 
-@router.delete("/{workflow_id}/templates")
+@router.delete("/{workflow_id}/templates", dependencies=[require_permission(WORKFLOWS_UPDATE)])
 async def clear_workflow_templates(workflow_id: str):
     """Clear all node templates for a workflow (SQL injection safe)"""
     # Get workflow using repository
@@ -1470,7 +1472,7 @@ async def clear_workflow_templates(workflow_id: str):
     }
 
 
-@router.post("/import/curl")
+@router.post("/import/curl", dependencies=[require_permission(WORKFLOWS_IMPORT)])
 async def import_curl_file(
     sanitize: bool = Query(True),
     curl_command: Optional[str] = Query(None),
