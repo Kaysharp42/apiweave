@@ -1,4 +1,4 @@
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { Button } from '../components/atoms/Button';
 import { Card } from '../components/molecules/Card';
@@ -12,8 +12,9 @@ const SSO_PROVIDERS = [
   { id: 'google', label: 'Continue with Google' },
 ];
 
-export default function LoginPage() {
+export default function InvitePage() {
   const { login, status } = useAuth();
+  const { token } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
   const error = searchParams.get('error');
 
@@ -34,10 +35,10 @@ export default function LoginPage() {
       <Card className="w-full shadow-lg">
         <div className="p-8 text-center border-b border-border dark:border-border-dark">
           <h1 className="text-2xl font-display font-bold text-text-primary dark:text-white mb-2">
-            Welcome Back
+            Accept Invitation
           </h1>
           <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-            Sign in to APIWeave to continue
+            Sign in to join the APIWeave workspace
           </p>
         </div>
 
@@ -54,7 +55,7 @@ export default function LoginPage() {
               variant="secondary"
               fullWidth
               data-provider={provider.id}
-              onClick={() => login(provider.id)}
+              onClick={() => login(provider.id, token)}
             >
               {provider.label}
             </Button>

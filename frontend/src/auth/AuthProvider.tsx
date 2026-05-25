@@ -20,7 +20,7 @@ export interface AuthContextValue {
   status: AuthStatus;
   error: string | null;
   isSetupComplete: boolean;
-  login: (provider: string) => void;
+  login: (provider: string, inviteToken?: string) => void;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -60,8 +60,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     void fetchMe();
   }, [fetchMe]);
 
-  const login = useCallback((provider: string) => {
-    window.location.href = `${API_BASE_URL}/api/auth/login/${provider}`;
+  const login = useCallback((provider: string, inviteToken?: string) => {
+    const url = new URL(`${API_BASE_URL}/api/auth/login/${provider}`);
+    if (inviteToken) {
+      url.searchParams.set('invite_token', inviteToken);
+    }
+    window.location.href = url.toString();
   }, []);
 
   const logout = useCallback(async () => {

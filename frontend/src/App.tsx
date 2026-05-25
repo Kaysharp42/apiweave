@@ -2,10 +2,15 @@ import { useState, useEffect, createContext, type ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home';
 import LoginPage from './pages/LoginPage';
+import SetupPage from './pages/SetupPage';
+import InvitePage from './pages/InvitePage';
+import AdminUsersPage from './pages/AdminUsersPage';
+import AdminDomainsPage from './pages/AdminDomainsPage';
 import { PaletteProvider } from './contexts/PaletteContext';
 import { Toast } from './components/atoms/Toast';
 import { AuthProvider } from './auth/AuthProvider';
 import { useAuth } from './auth/useAuth';
+import { AdminRoute } from './auth/AdminRoute';
 
 interface AppContextValue {
   darkMode: boolean;
@@ -98,6 +103,24 @@ function App() {
           <Router>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/setup" element={<SetupPage />} />
+              <Route path="/invite/:token" element={<InvitePage />} />
+              <Route
+                path="/settings/users"
+                element={
+                  <AdminRoute>
+                    <AdminUsersPage />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/settings/domains"
+                element={
+                  <AdminRoute>
+                    <AdminDomainsPage />
+                  </AdminRoute>
+                }
+              />
               <Route
                 path="/*"
                 element={

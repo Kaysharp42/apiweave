@@ -233,28 +233,6 @@ async def _run_collection_and_update_webhook(
             pass
 
 
-async def verify_admin_key(authorization: Optional[str] = Header(None)) -> None:
-    admin_key = settings.APIWEAVE_ADMIN_KEY
-    if not admin_key or not admin_key.strip():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access is not configured"
-        )
-
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid admin key"
-        )
-
-    provided_key = authorization.removeprefix("Bearer ").strip()
-    if not hmac.compare_digest(provided_key, admin_key):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid admin key"
-        )
-
-
 def require_webhook_owner_or_admin(permission: str):
     async def _check_webhook_owner_or_admin(
         webhook_id: str,
@@ -716,6 +694,35 @@ async def _validate_hmac_or_raise(
         )
 
 
+async def _require_hmac_when_configured(
+    webhook_id: str,
+    signature: Optional[str],
+    timestamp: Optional[str],
+    body: bytes,
+) -> None:
+    if signature:
+        await _validate_hmac_or_raise(webhook_id, signature, timestamp, body)
+        return
+
+    if not settings.WEBHOOK_REQUIRE_HMAC:
+        return
+
+    await WebhookLog(
+        logId=f"log-{uuid.uuid4().hex[:12]}",
+        webhookId=webhook_id,
+        timestamp=datetime.now(UTC),
+        status="validation_error",
+        duration=0,
+        httpMethod="POST",
+        responseStatus=401,
+        errorMessage="Missing X-Webhook-Signature header",
+    ).insert()
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing X-Webhook-Signature header",
+    )
+
+
 @router.post("/workflows/{webhook_id}/execute", status_code=202)
 async def execute_workflow_webhook(
     webhook_id: str,
@@ -730,7 +737,7 @@ async def execute_workflow_webhook(
     Execute a workflow triggered by webhook.
 
     - `X-Webhook-Token` is always required.
-    - `X-Webhook-Signature` + `X-Webhook-Timestamp` are optional (HMAC replay protection).
+    - `X-Webhook-Signature` + `X-Webhook-Timestamp` are required when WEBHOOK_REQUIRE_HMAC=true.
     - `Idempotency-Key` is optional; duplicate keys return the original run without re-executing.
 
     Returns 202 Accepted with run ID and poll URL.
@@ -784,9 +791,8 @@ async def execute_workflow_webhook(
     # ── 4. Read body ──────────────────────────────────────────────────────────
     body = await request.body()
 
-    # ── 5. HMAC / replay protection (only when signature header is present) ───
-    if x_webhook_signature:
-        await _validate_hmac_or_raise(webhook_id, x_webhook_signature, x_webhook_timestamp, body)
+    # ── 5. HMAC / replay protection ───────────────────────────────────────────
+    await _require_hmac_when_configured(webhook_id, x_webhook_signature, x_webhook_timestamp, body)
 
     # ── 6. Idempotency check ──────────────────────────────────────────────────
     if idempotency_key:
@@ -912,7 +918,7 @@ async def execute_collection_webhook(
     Execute a collection (test suite) triggered by webhook.
 
     - `X-Webhook-Token` is always required.
-    - `X-Webhook-Signature` + `X-Webhook-Timestamp` are optional (HMAC replay protection).
+    - `X-Webhook-Signature` + `X-Webhook-Timestamp` are required when WEBHOOK_REQUIRE_HMAC=true.
     - `Idempotency-Key` is optional; duplicate keys return the original run without re-executing.
 
     Returns 202 Accepted with collection run ID and poll URL.
@@ -967,8 +973,7 @@ async def execute_collection_webhook(
     body = await request.body()
 
     # ── 5. HMAC / replay protection ───────────────────────────────────────────
-    if x_webhook_signature:
-        await _validate_hmac_or_raise(webhook_id, x_webhook_signature, x_webhook_timestamp, body)
+    await _require_hmac_when_configured(webhook_id, x_webhook_signature, x_webhook_timestamp, body)
 
     # ── 6. Idempotency check ──────────────────────────────────────────────────
     if idempotency_key:

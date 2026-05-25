@@ -12,7 +12,7 @@ const SSO_PROVIDERS = [
   { id: 'google', label: 'Continue with Google' },
 ];
 
-export default function LoginPage() {
+export default function SetupPage() {
   const { login, status } = useAuth();
   const [searchParams] = useSearchParams();
   const error = searchParams.get('error');
@@ -34,10 +34,10 @@ export default function LoginPage() {
       <Card className="w-full shadow-lg">
         <div className="p-8 text-center border-b border-border dark:border-border-dark">
           <h1 className="text-2xl font-display font-bold text-text-primary dark:text-white mb-2">
-            Welcome Back
+            Setup APIWeave
           </h1>
           <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-            Sign in to APIWeave to continue
+            Create the first admin account
           </p>
         </div>
 

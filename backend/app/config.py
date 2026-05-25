@@ -15,7 +15,6 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str
 
     API_KEY_HEADER: str = "Authorization"
-    APIWEAVE_ADMIN_KEY: str | None = None
 
     WORKER_POLL_INTERVAL: int = 5
     WORKER_MAX_RETRIES: int = 3

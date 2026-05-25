@@ -9,7 +9,7 @@ export interface UseAuthReturn {
   isLoading: boolean;
   isAuthenticated: boolean;
   isSetupComplete: boolean;
-  login: (provider: string) => void;
+  login: (provider: string, inviteToken?: string) => void;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   hasPermission: (permission: string) => boolean;

@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Modal, ConfirmDialog, FormField } from './molecules';
 import { Button, Input, IconButton } from './atoms';
 import { Badge } from './atoms/Badge';
-import API_BASE_URL, { APIWEAVE_ADMIN_KEY } from '../utils/api';
+import API_BASE_URL from '../utils/api';
 import type { Workflow } from '../types/Workflow';
 import type { Collection } from '../types/Collection';
 import type { Environment } from '../types/Environment';
@@ -394,8 +394,8 @@ function CiCdExamples() {
   ];
 
   const auths: { id: SnippetAuth; label: string; desc: string }[] = [
-    { id: 'token-only', label: 'Token Only', desc: 'Minimal — bearer token header' },
-    { id: 'hmac', label: 'HMAC (Recommended)', desc: 'Signed request with timestamp' },
+    { id: 'token-only', label: 'Token Only', desc: 'Development only when HMAC is not required' },
+    { id: 'hmac', label: 'HMAC', desc: 'Required in production with timestamp signing' },
   ];
 
   return (
@@ -503,9 +503,6 @@ const buildManagementHeaders = (contentType?: boolean): HeadersInit => {
   const headers: Record<string, string> = {};
   if (contentType) {
     headers['Content-Type'] = 'application/json';
-  }
-  if (APIWEAVE_ADMIN_KEY) {
-    headers.Authorization = `Bearer ${APIWEAVE_ADMIN_KEY}`;
   }
   return headers;
 };

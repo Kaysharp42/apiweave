@@ -12,6 +12,8 @@ Important: token and HMAC secret are shown once at creation/regeneration time. C
 
 ## Create a Webhook
 
+Webhook management is a human UI/API action. You must be signed in to APIWeave with the appropriate `webhooks:*` permission (for example, `webhooks:create` to create, `webhooks:read` to list/read, and `webhooks:delete` to delete). Browser admin keys are not supported for webhook management.
+
 1. Open APIWeave and go to `Webhooks` in the sidebar.
 2. Click `Create`.
 3. Choose resource type:
@@ -40,15 +42,15 @@ Expected behavior:
 
 ## Security
 
-APIWeave supports two authentication modes for webhooks.
+Webhook execution is machine-to-machine authentication. Keep these execution credentials in your CI/CD secret manager; they are separate from human login sessions.
 
-### Token-Only Compatibility
+### Token-Only Development Compatibility
 
-By default, you can authenticate by sending the `X-Webhook-Token` header. This is fully compatible with existing callers. If you don't need signature verification, you can omit the signature headers.
+When `WEBHOOK_REQUIRE_HMAC=false`, you can authenticate by sending only the `X-Webhook-Token` header. This is intended for local development and compatibility testing only.
 
 ### HMAC Signature Verification
 
-For production environments, you can enable HMAC signature verification. This prevents replay attacks and ensures payload integrity.
+Production deployments should set `WEBHOOK_REQUIRE_HMAC=true`. When enabled, APIWeave rejects token-only execution requests with `401 Unauthorized`; callers must send both signature headers. HMAC prevents replay attacks and ensures payload integrity.
 
 To use HMAC, send these headers:
 - `X-Webhook-Token`: Your webhook token.
@@ -104,7 +106,7 @@ Store your credentials in your GitHub repository secrets:
 
 #### Fire-and-Forget Snippet
 
-##### Token-Only Minimal
+##### Token-Only Minimal (development only)
 ```yaml
 name: Trigger APIWeave Tests
 on: [push]
@@ -120,7 +122,7 @@ jobs:
             -d '{"commit": "${{ github.sha }}"}'
 ```
 
-##### HMAC-Recommended
+##### HMAC-Required in Production
 ```yaml
 name: Trigger APIWeave Tests (HMAC)
 on: [push]
@@ -149,7 +151,7 @@ jobs:
 
 #### Blocking Poll-and-Fail Snippet
 
-##### Token-Only Minimal
+##### Token-Only Minimal (development only)
 ```yaml
 name: Run APIWeave Tests and Wait
 on: [push]
@@ -192,7 +194,7 @@ jobs:
           exit 1
 ```
 
-##### HMAC-Recommended
+##### HMAC-Required in Production
 ```yaml
 name: Run APIWeave Tests and Wait (HMAC)
 on: [push]
@@ -252,7 +254,7 @@ Define these variables in your GitLab project under **Settings > CI/CD > Variabl
 
 #### Fire-and-Forget Snippet
 
-##### Token-Only Minimal
+##### Token-Only Minimal (development only)
 ```yaml
 trigger_tests:
   stage: test
@@ -264,7 +266,7 @@ trigger_tests:
         -d "{\"commit\": \"${CI_COMMIT_SHA}\"}"
 ```
 
-##### HMAC-Recommended
+##### HMAC-Required in Production
 ```yaml
 trigger_tests_hmac:
   stage: test
@@ -286,7 +288,7 @@ trigger_tests_hmac:
 
 #### Blocking Poll-and-Fail Snippet
 
-##### Token-Only Minimal
+##### Token-Only Minimal (development only)
 ```yaml
 run_tests_blocking:
   stage: test
@@ -324,7 +326,7 @@ run_tests_blocking:
       exit 1
 ```
 
-##### HMAC-Recommended
+##### HMAC-Required in Production
 ```yaml
 run_tests_blocking_hmac:
   stage: test
@@ -381,7 +383,7 @@ Jenkins automatically masks these variables in the console output when bound usi
 
 #### Fire-and-Forget Snippet
 
-##### Token-Only Minimal
+##### Token-Only Minimal (development only)
 ```groovy
 pipeline {
     agent any
@@ -405,7 +407,7 @@ pipeline {
 }
 ```
 
-##### HMAC-Recommended
+##### HMAC-Required in Production
 ```groovy
 pipeline {
     agent any
@@ -440,7 +442,7 @@ pipeline {
 
 #### Blocking Poll-and-Fail Snippet
 
-##### Token-Only Minimal
+##### Token-Only Minimal (development only)
 ```groovy
 pipeline {
     agent any
@@ -490,7 +492,7 @@ pipeline {
 }
 ```
 
-##### HMAC-Recommended
+##### HMAC-Required in Production
 ```groovy
 pipeline {
     agent any
@@ -559,6 +561,8 @@ From the Webhooks list you can:
 
 Regeneration invalidates old credentials immediately.
 
+Management actions require an authenticated APIWeave user session with the matching `webhooks:*` permission. External webhook execution still uses `X-Webhook-Token` plus HMAC headers; CI/CD systems do not use browser sessions.
+
 ## Common Setup Pattern
 
 1. Create environment for your target stage.
@@ -572,6 +576,11 @@ Regeneration invalidates old credentials immediately.
 
 - Ensure `X-Webhook-Token` is present.
 - Confirm token is current (old tokens fail after regeneration).
+
+## 401 Missing X-Webhook-Signature header
+
+- Production instances require HMAC when `WEBHOOK_REQUIRE_HMAC=true`.
+- Send both `X-Webhook-Signature` and `X-Webhook-Timestamp` with the webhook token.
 
 ## 403 Webhook disabled
 
