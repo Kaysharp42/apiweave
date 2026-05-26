@@ -28,7 +28,7 @@ export function MainHeader() {
 
       <div className="navbar-center min-w-0 flex-1" />
 
-      <div className="navbar-end min-w-0 flex-shrink gap-2 overflow-hidden">
+      <div className="navbar-end min-w-0 flex-shrink gap-2">
         <Button
           variant="ghost"
           size="sm"

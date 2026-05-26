@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../auth/useAuth';
 import { toast } from 'sonner';
 import CollectionManager from '../CollectionManager';
 import WebhookManager from '../WebhookManager';
@@ -12,8 +14,9 @@ import {
   FolderOpen,
   Globe,
   Layers,
-  Cog,
   Trash2,
+  Shield,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import API_BASE_URL from '../../utils/api';
 import WorkflowExportImport from '../WorkflowExportImport';
@@ -177,6 +180,8 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
   const workflowVersion = useSidebarStore((s) => s.workflowVersion);
   const collectionVersion = useSidebarStore((s) => s.collectionVersion);
   const closeTab = useTabStore((s) => s.closeTab);
+  const { hasPermission } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (selectedNav === 'workflows') {
@@ -641,24 +646,38 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
 
   const renderSettingsContent = () => (
     <div className="h-full overflow-auto">
-      <ul className="menu menu-sm w-full p-2 gap-1">
-        {[
-          { icon: Cog, label: 'General', desc: 'App behavior & defaults' },
-          { icon: Globe, label: 'Editor', desc: 'Canvas & node defaults' },
-          { icon: Layers, label: 'Theme', desc: 'Colors & appearance' },
-        ].map(({ icon: Icon, label, desc }) => (
-          <li key={label}>
-            <button className="flex items-center gap-3 w-full rounded-lg opacity-60 cursor-not-allowed" disabled>
-              <Icon className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
+      {hasPermission('users:invite') ? (
+        <ul className="menu menu-sm w-full p-2 gap-1">
+          <li>
+            <button
+              className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus:outline-none focus:ring-2 focus:ring-primary"
+              onClick={() => navigate('/settings/users')}
+            >
+              <Shield className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
               <div className="text-left">
-                <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">{label}</div>
-                <div className="text-xs text-text-secondary dark:text-text-secondary-dark">{desc}</div>
+                <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">User Management</div>
+                <div className="text-xs text-text-secondary dark:text-text-secondary-dark">Manage users and invitations</div>
               </div>
-              <Badge variant="warning" size="xs" className="ml-auto">Soon</Badge>
             </button>
           </li>
-        ))}
-      </ul>
+          <li>
+            <button
+              className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus:outline-none focus:ring-2 focus:ring-primary"
+              onClick={() => navigate('/settings/domains')}
+            >
+              <SettingsIcon className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
+              <div className="text-left">
+                <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">Domain &amp; SSO Settings</div>
+                <div className="text-xs text-text-secondary dark:text-text-secondary-dark">Configure domain and SSO</div>
+              </div>
+            </button>
+          </li>
+        </ul>
+      ) : (
+        <div className="p-4 text-sm text-text-secondary dark:text-text-secondary-dark">
+          Settings are available for administrators only.
+        </div>
+      )}
     </div>
   );
 

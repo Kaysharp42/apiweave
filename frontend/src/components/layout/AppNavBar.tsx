@@ -43,7 +43,7 @@ const navItems: NavItemConfig[] = [
     id: AppNavBarItems.settings!.value,
     label: AppNavBarItems.settings!.displayValue,
     icon: Settings,
-    disabled: true,
+    disabled: false,
   },
 ];
 
