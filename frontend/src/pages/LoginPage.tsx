@@ -1,21 +1,40 @@
+import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { Button } from '../components/atoms/Button';
 import { Card } from '../components/molecules/Card';
 import { SplitAuthLayout } from '../components/auth/SplitAuthLayout';
 import { AuthInteractiveHero } from '../components/auth/AuthInteractiveHero';
-
-const SSO_PROVIDERS = [
-  { id: 'github', label: 'Continue with GitHub' },
-  { id: 'gitlab', label: 'Continue with GitLab' },
-  { id: 'microsoft', label: 'Continue with Microsoft' },
-  { id: 'google', label: 'Continue with Google' },
-];
+import type { ProviderInfo } from '../types/ProviderInfo';
+import { PROVIDER_DISPLAY_MAP, getEnabledProviders, type ProviderDisplay } from '../auth/providerConfig';
+import API_BASE_URL from '../utils/api';
 
 export default function LoginPage() {
   const { login, status } = useAuth();
   const [searchParams] = useSearchParams();
   const error = searchParams.get('error');
+
+  const [providers, setProviders] = useState<ProviderDisplay[]>([]);
+  const [providerError, setProviderError] = useState<string | null>(null);
+  const [providersLoading, setProvidersLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProviders() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/auth/providers`);
+        if (!res.ok) throw new Error('Failed to load providers');
+        const data: ProviderInfo[] = await res.json();
+        if (!cancelled) setProviders(getEnabledProviders(data));
+      } catch {
+        if (!cancelled) setProviderError('Unable to load sign-in options');
+      } finally {
+        if (!cancelled) setProvidersLoading(false);
+      }
+    }
+    loadProviders();
+    return () => { cancelled = true; };
+  }, []);
 
   if (status === 'loading') {
     return (
@@ -48,17 +67,39 @@ export default function LoginPage() {
             </div>
           )}
 
-          {SSO_PROVIDERS.map((provider) => (
-            <Button
-              key={provider.id}
-              variant="secondary"
-              fullWidth
-              data-provider={provider.id}
-              onClick={() => login(provider.id)}
-            >
-              {provider.label}
-            </Button>
-          ))}
+          {providersLoading && (
+            <div className="flex justify-center py-4">
+              <div className="w-6 h-6 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+
+          {!providersLoading && providerError && (
+            <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm border border-red-200 dark:border-red-800/30">
+              {providerError}
+            </div>
+          )}
+
+          {!providersLoading && !providerError && providers.length === 0 && (
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark text-center py-4">
+              No sign-in providers are configured.
+            </p>
+          )}
+
+          {!providersLoading && !providerError && providers.map((provider) => {
+            const { IconComponent, label } = PROVIDER_DISPLAY_MAP[provider.id];
+            return (
+              <Button
+                key={provider.id}
+                variant="secondary"
+                fullWidth
+                data-provider={provider.id}
+                onClick={() => login(provider.id)}
+              >
+                <IconComponent className="w-5 h-5 mr-2" />
+                {label}
+              </Button>
+            );
+          })}
         </div>
       </Card>
     </SplitAuthLayout>

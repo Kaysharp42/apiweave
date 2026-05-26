@@ -73,3 +73,4 @@ export type { AppContextType } from './AppContextType';
 export type { IconSwitchProps } from './IconSwitchProps';
 export type { ApprovedDomain } from './ApprovedDomain';
 export type { InviteResponse } from './InviteResponse';
+export type { ProviderInfo } from './ProviderInfo';
