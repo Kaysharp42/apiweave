@@ -56,28 +56,6 @@ function mockFetch(
   };
 }
 
-/** Temporarily set document.cookie to a given value. */
-// @ts-ignore — kept for reference, not called in current tests
-function withCookie(cookieString: string, fn: () => void): void {
-  const originalDescriptor = Object.getOwnPropertyDescriptor(
-    Document.prototype,
-    "cookie",
-  );
-
-  Object.defineProperty(document, "cookie", {
-    get: () => cookieString,
-    configurable: true,
-  });
-
-  try {
-    fn();
-  } finally {
-    if (originalDescriptor) {
-      Object.defineProperty(document, "cookie", originalDescriptor);
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Import the module under test AFTER the mock infrastructure is defined
 // ---------------------------------------------------------------------------

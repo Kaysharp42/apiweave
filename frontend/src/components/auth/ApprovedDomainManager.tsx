@@ -20,7 +20,7 @@ export function ApprovedDomainManager() {
       setLoading(true);
       const data = await authenticatedJson<ApprovedDomain[]>(`${API_BASE_URL}/api/auth/domains`);
       setDomains(data);
-    } catch (err) {
+    } catch {
       toast.error('Failed to load approved domains');
     } finally {
       setLoading(false);
@@ -72,7 +72,7 @@ export function ApprovedDomainManager() {
       }
       setDomains((prev) => prev.filter((d) => d.id !== domainId));
       toast.success('Domain removed');
-    } catch (err) {
+    } catch {
       toast.error('Failed to remove domain');
     }
   };

@@ -21,7 +21,7 @@ export default function AdminUsersPage() {
       setLoading(true);
       const data = await authenticatedJson<User[]>(`${API_BASE_URL}/api/users`);
       setUsers(data);
-    } catch (err) {
+    } catch {
       toast.error('Failed to load users');
     } finally {
       setLoading(false);
