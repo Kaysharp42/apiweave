@@ -6,7 +6,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -73,6 +73,11 @@ def _frontend_url(path: str = "/") -> str:
         allowed_origins = settings.get_allowed_origins_list()
         base_url = allowed_origins[0] if allowed_origins else "http://localhost:3000"
     return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+
+
+def _frontend_login_error(detail: str) -> str:
+    query = urlencode({"error": detail})
+    return _frontend_url(f"/login?{query}")
 
 
 def _session_hash(token: str) -> str:
@@ -292,7 +297,12 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
     )
     userinfo = await fetch_userinfo(provider_config, token_response, stored_state.code_verifier)
     _validate_nonce(provider_config, stored_state.nonce, userinfo)
-    user = await _create_or_link_user(userinfo)
+    try:
+        user = await _create_or_link_user(userinfo)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN and str(exc.detail) == "Access requires an invitation":
+            return RedirectResponse(_frontend_login_error(str(exc.detail)), status_code=status.HTTP_302_FOUND)
+        raise
     response = RedirectResponse(_frontend_url("/"), status_code=status.HTTP_302_FOUND)
     await _create_session(response, user)
     return response

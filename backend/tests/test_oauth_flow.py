@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
 import app.auth.provider_registry as provider_registry
@@ -92,6 +93,7 @@ def _patch_callback(
     verified: bool = True,
 ) -> User:
     user = _user(f"testuser@{provider}.example.com")
+    monkeypatch.setattr(auth_router.settings, "SETUP_MODE_ENABLED", True)
     monkeypatch.setattr(
         provider_registry,
         "get_provider_config",
@@ -211,6 +213,31 @@ def test_callback_rejects_missing_state_parameter(provider: str) -> None:
         # No 'state' param
     )
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+def test_callback_redirects_uninvited_users_to_frontend_login(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    _patch_callback(monkeypatch, provider, state=_oauth_state(provider), verified=True)
+
+    async def _raise_invite_required(*_args: object, **_kwargs: object) -> User:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access requires an invitation",
+        )
+
+    monkeypatch.setattr(auth_router, "_create_or_link_user", _raise_invite_required)
+
+    response = client.get(
+        f"/api/auth/callback/{provider}",
+        params={"code": "valid-code", "state": "valid-state"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://localhost:3000/login?error=Access+requires+an+invitation"
 
 
 # ---------------------------------------------------------------------------

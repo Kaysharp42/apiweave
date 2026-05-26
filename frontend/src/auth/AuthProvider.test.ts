@@ -146,3 +146,13 @@ test('hasPermission: returns false for empty permissions list', () => {
 
   assert.equal(hasPermission('workflows:read'), false);
 });
+
+test('hasPermission: admin role grants admin-only permissions', () => {
+  const roles = ['admin'];
+  const permissions: string[] = [];
+  const hasPermission = (permission: string): boolean => (
+    roles.includes('admin') || permissions.includes(permission) || roles.includes(permission)
+  );
+
+  assert.equal(hasPermission('users:invite'), true);
+});

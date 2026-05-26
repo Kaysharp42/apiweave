@@ -23,7 +23,7 @@ export function useAuth(): UseAuthReturn {
 
   const hasPermission = (permission: string): boolean => {
     if (!user) return false;
-    return user.permissions.includes(permission) || user.roles.includes(permission);
+    return user.roles.includes('admin') || user.permissions.includes(permission) || user.roles.includes(permission);
   };
 
   return {
