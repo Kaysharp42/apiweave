@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, type ReactNode } from 'react';
+import { useState, useEffect, createContext, type ReactNode, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home';
 import LoginPage from './pages/LoginPage';
@@ -11,6 +11,8 @@ import { Toast } from './components/atoms/Toast';
 import { AuthProvider } from './auth/AuthProvider';
 import { useAuth } from './auth/useAuth';
 import { AdminRoute } from './auth/AdminRoute';
+import MainLayout from './components/layout/MainLayout';
+import useNavigationStore from './stores/NavigationStore';
 
 interface AppContextValue {
   darkMode: boolean;
@@ -46,6 +48,30 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+// ---------------------------------------------------------------------------
+// AdminPageShell — wraps admin pages in the full app layout
+// ---------------------------------------------------------------------------
+
+function AdminPageShell({ children }: { children: ReactNode }) {
+  const setNavState = useNavigationStore((state) => state.setNavState);
+  const hasSet = useRef(false);
+
+  useEffect(() => {
+    if (!hasSet.current) {
+      setNavState('settings');
+      hasSet.current = true;
+    }
+  }, [setNavState]);
+
+  return (
+    <AdminRoute>
+      <div className="relative flex flex-col h-screen font-sans text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised">
+        <MainLayout>{children}</MainLayout>
+      </div>
+    </AdminRoute>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -108,17 +134,17 @@ function App() {
               <Route
                 path="/settings/users"
                 element={
-                  <AdminRoute>
+                  <AdminPageShell>
                     <AdminUsersPage />
-                  </AdminRoute>
+                  </AdminPageShell>
                 }
               />
               <Route
                 path="/settings/domains"
                 element={
-                  <AdminRoute>
+                  <AdminPageShell>
                     <AdminDomainsPage />
-                  </AdminRoute>
+                  </AdminPageShell>
                 }
               />
               <Route

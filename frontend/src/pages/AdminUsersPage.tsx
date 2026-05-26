@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MainHeader } from '../components/layout/MainHeader';
 import { Button } from '../components/atoms/Button';
 import { StatusBadge } from '../components/molecules/StatusBadge';
 import { InviteUserModal } from '../components/auth/InviteUserModal';
@@ -60,9 +59,8 @@ export default function AdminUsersPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-surface dark:bg-surface-dark font-sans text-text-primary dark:text-text-primary-dark">
-      <MainHeader />
-      <main className="flex-1 overflow-y-auto p-8">
+    <>
+    <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -159,6 +157,6 @@ export default function AdminUsersPage() {
           void fetchUsers();
         }}
       />
-    </div>
+    </>
   );
 }

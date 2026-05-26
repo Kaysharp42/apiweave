@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { MainHeader } from '../components/layout/MainHeader';
 import { ApprovedDomainManager } from '../components/auth/ApprovedDomainManager';
 import { Globe, Loader2, ShieldCheck } from 'lucide-react';
 import { authenticatedJson } from '../utils/authenticatedApi';
@@ -103,10 +102,8 @@ function SsoProviderSection() {
 
 export default function AdminDomainsPage() {
   return (
-    <div className="flex flex-col min-h-screen bg-surface dark:bg-surface-dark font-sans text-text-primary dark:text-text-primary-dark">
-      <MainHeader />
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-3xl mx-auto flex flex-col gap-12">
+    <main className="flex-1 overflow-y-auto p-8">
+      <div className="max-w-3xl mx-auto flex flex-col gap-12">
           {/* Approved Domains */}
           <section>
             <div className="flex items-center gap-2 mb-2">
@@ -134,7 +131,6 @@ export default function AdminDomainsPage() {
             <SsoProviderSection />
           </section>
         </div>
-      </main>
-    </div>
+    </main>
   );
 }

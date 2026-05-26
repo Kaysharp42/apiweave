@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { Allotment } from 'allotment';
 // @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
@@ -16,7 +16,7 @@ import API_BASE_URL from '../../utils/api';
 import type { Environment } from '../../types/Environment';
 import { authenticatedFetch } from '../../utils/authenticatedApi';
 
-export function MainLayout() {
+export function MainLayout({ children }: { children?: ReactNode }) {
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
   const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function MainLayout() {
           </Allotment.Pane>
 
           <Allotment.Pane>
-            <Workspace onActiveTabChange={setCurrentWorkflowId} />
+            {children !== undefined ? children : <Workspace onActiveTabChange={setCurrentWorkflowId} />}
           </Allotment.Pane>
         </Allotment>
       </main>
