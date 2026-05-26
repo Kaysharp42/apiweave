@@ -1,12 +1,13 @@
 import { useContext, useState } from 'react';
 import { AppContext } from '../../App';
 import EnvironmentManager from '../EnvironmentManager';
-import { Moon, Sun, Folder, Save, User } from 'lucide-react';
+import { Moon, Sun, Folder, Save } from 'lucide-react';
 import Tippy from '@tippyjs/react';
 // @ts-expect-error CSS import without types
 import 'tippy.js/dist/tippy.css';
-import { Button, IconButton, IconSwitch } from '../atoms';
+import { Button, IconSwitch } from '../atoms';
 import type { AppContextType } from '../../types/AppContextType';
+import { AccountMenu } from './AccountMenu';
 
 export function MainHeader() {
   const { darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled } = useContext(AppContext) as AppContextType;
@@ -66,13 +67,7 @@ export function MainHeader() {
           </div>
         </Tippy>
 
-        <Tippy content="Account (coming soon)" placement="bottom">
-          <span>
-            <IconButton disabled tooltip="Account (coming soon)">
-              <User className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
-            </IconButton>
-          </span>
-        </Tippy>
+        <AccountMenu />
       </div>
 
       <EnvironmentManager open={showEnvManager} onClose={() => setShowEnvManager(false)} />
