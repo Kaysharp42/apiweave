@@ -7,7 +7,6 @@ import {
   type ProviderDisplay,
 } from '../auth/providerConfig';
 import { Button } from '../components/atoms/Button';
-import { Card } from '../components/molecules/Card';
 import { SplitAuthLayout } from '../components/auth/SplitAuthLayout';
 import { AuthInteractiveHero } from '../components/auth/AuthInteractiveHero';
 import type { ProviderInfo } from '../types/ProviderInfo';
@@ -58,8 +57,8 @@ export default function InvitePage() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface dark:bg-surface-dark">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -70,57 +69,76 @@ export default function InvitePage() {
 
   return (
     <SplitAuthLayout hero={<AuthInteractiveHero />}>
-      <Card className="w-full shadow-lg">
-        <div className="p-8 text-center border-b border-border dark:border-border-dark">
-          <h1 className="text-2xl font-display font-bold text-text-primary dark:text-white mb-2">
+      <div className="w-full backdrop-blur-3xl bg-white/5 border border-white/10 shadow-2xl rounded-3xl overflow-hidden relative">
+        {/* Inner subtle glow */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-1 bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent blur-sm" />
+
+        <div className="p-10 text-center relative z-10">
+          <h1 className="text-3xl font-display font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-300 mb-3 drop-shadow-sm">
             Accept Invitation
           </h1>
-          <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+          <p className="text-sm text-cyan-100/70 font-medium">
             Sign in to join the APIWeave workspace
           </p>
         </div>
 
-        <div className="p-8 flex flex-col gap-3">
+        <div className="px-10 pb-10 flex flex-col gap-4 relative z-10">
           {error && (
-            <div className="p-3 mb-2 rounded bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm border border-red-200 dark:border-red-800/30">
+            <div className="p-4 mb-2 rounded-xl bg-red-500/10 text-red-200 text-sm border border-red-500/20 backdrop-blur-sm shadow-inner">
               {error}
             </div>
           )}
 
-          {providersLoading ? (
-            <div className="flex justify-center py-4">
-              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : providerError ? (
-            <div className="p-3 mb-2 rounded bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm border border-red-200 dark:border-red-800/30 text-center">
+          {providersLoading && (
+            <>
+              <div className="h-[52px] bg-white/5 rounded-xl animate-pulse" />
+              <div className="h-[52px] bg-white/5 rounded-xl animate-pulse" />
+              <div className="h-[52px] bg-white/5 rounded-xl animate-pulse" />
+            </>
+          )}
+
+          {!providersLoading && providerError && (
+            <div className="p-4 rounded-xl bg-red-500/10 text-red-200 text-sm border border-red-500/20 backdrop-blur-sm shadow-inner">
               {providerError}
             </div>
-          ) : providers.length === 0 ? (
-            <div className="p-3 mb-2 rounded bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 text-sm border border-yellow-200 dark:border-yellow-800/30 text-center">
+          )}
+
+          {!providersLoading && !providerError && providers.length === 0 && (
+            <div className="p-4 rounded-xl bg-amber-500/10 text-amber-200 text-sm border border-amber-500/20 backdrop-blur-sm shadow-inner">
               No sign-in providers are configured. Contact your administrator.
             </div>
-          ) : (
-            providers.map((provider) => {
-              const Icon = PROVIDER_DISPLAY_MAP[provider.id].IconComponent;
-
-              return (
-                <Button
-                  key={provider.id}
-                  variant="secondary"
-                  fullWidth
-                  data-provider={provider.id}
-                  onClick={() => login(provider.id, token)}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon className="w-5 h-5" />
-                    <span>{provider.label}</span>
-                  </div>
-                </Button>
-              );
-            })
           )}
+
+          {!providersLoading && providers.map((provider) => {
+            const display = PROVIDER_DISPLAY_MAP[provider.id];
+            if (!display) return null;
+            const { IconComponent, label } = display;
+            const isGoogle = provider.id === 'google';
+            const iconClass = isGoogle
+              ? 'w-5 h-5 opacity-80 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0'
+              : 'w-5 h-5 text-white/80 group-hover:text-white transition-colors';
+
+            return (
+              <Button
+                key={provider.id}
+                variant="ghost"
+                fullWidth
+                size="lg"
+                data-provider={provider.id}
+                onClick={() => login(provider.id, token)}
+                className="group relative !bg-white/5 hover:!bg-white/10 !border !border-white/5 hover:!border-white/20 !text-white/90 hover:!text-white shadow-sm hover:shadow-[0_0_20px_rgba(34,211,238,0.15)] overflow-hidden transition-all duration-300 rounded-xl font-medium !justify-start pl-6"
+              >
+                {/* Button hover glow sweep */}
+                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full ease-out" style={{ transitionDuration: '1000ms' }} />
+                <div className="flex items-center gap-4 relative z-10 w-full">
+                  <IconComponent className={iconClass} />
+                  <span>{label}</span>
+                </div>
+              </Button>
+            );
+          })}
         </div>
-      </Card>
+      </div>
     </SplitAuthLayout>
   );
 }

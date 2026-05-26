@@ -21,7 +21,7 @@ export function SplitAuthLayout({ hero, children }: SplitAuthLayoutProps) {
       </div>
 
       {/* Left side: Hero (Hidden on mobile) */}
-      <div className="hidden lg:block flex-1 relative z-10 lg:max-w-[60%] xl:max-w-[65%] border-r border-white/5">
+      <div className="hidden md:flex flex-1 relative z-10 lg:max-w-[60%] xl:max-w-[65%] border-r border-white/5">
         <div className="w-full h-full absolute inset-0">
           {hero}
         </div>

@@ -11,7 +11,28 @@ export function AuthInteractiveHero() {
       {/* Deep Space Background within Hero */}
       <div className="absolute inset-0 bg-black/20" />
       <div className="absolute inset-0 opacity-20 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:30px_30px]" />
-      
+
+      {/* Static fallback for reduced-motion users */}
+      <div
+        data-testid="auth-hero-static"
+        className="absolute inset-0 hidden motion-reduce:flex flex-col items-center justify-center p-8 text-white z-20"
+      >
+        <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-500 p-[1px] shadow-lg mb-4">
+          <div className="w-full h-full bg-slate-950 rounded-2xl flex items-center justify-center">
+            <Workflow className="w-10 h-10 text-cyan-400" />
+          </div>
+        </div>
+        <h2 className="text-5xl font-display font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-cyan-200 tracking-tight drop-shadow-md mt-4">
+          APIWeave
+        </h2>
+        <p className="text-cyan-100/70 text-base font-medium mt-2">Visual API Testing &amp; Orchestration</p>
+      </div>
+
+      {/* Animated content — hidden for reduced-motion users */}
+      <div
+        data-testid="auth-hero-animated"
+        className="absolute inset-0 flex motion-reduce:hidden flex-col items-center justify-center"
+      >
       {/* Animated Glowing Orbs */}
       <motion.div 
         animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3], x: [0, 50, 0], y: [0, -50, 0] }}
@@ -79,27 +100,33 @@ export function AuthInteractiveHero() {
             />
             <defs>
               <linearGradient id="gradient1" x1="220" y1="50" x2="220" y2="160" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#22d3ee" stopOpacity="0.8" />
+                <stop offset="0%" stopColor="rgb(59 130 246)" stopOpacity="0.8" />
+                <stop offset="100%" stopColor="rgb(34 211 238)" stopOpacity="0.8" />
               </linearGradient>
               <linearGradient id="gradient2" x1="220" y1="160" x2="110" y2="280" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#4ade80" stopOpacity="0.8" />
+                <stop offset="0%" stopColor="rgb(34 211 238)" stopOpacity="0.8" />
+                <stop offset="100%" stopColor="rgb(74 222 128)" stopOpacity="0.8" />
               </linearGradient>
               <linearGradient id="gradient3" x1="220" y1="160" x2="330" y2="280" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#c084fc" stopOpacity="0.8" />
+                <stop offset="0%" stopColor="rgb(34 211 238)" stopOpacity="0.8" />
+                <stop offset="100%" stopColor="rgb(192 132 252)" stopOpacity="0.8" />
               </linearGradient>
             </defs>
 
             {/* Data Packets flowing */}
-            <motion.circle r="4" fill="#67e8f9" filter="drop-shadow(0 0 6px #67e8f9)">
+            <motion.circle r="4" className="fill-cyan-300" filter="drop-shadow(0 0 6px rgb(103 232 249))">
               <animateMotion dur="2s" repeatCount="indefinite" path="M 220 50 L 220 160" />
             </motion.circle>
-            <motion.circle r="4" fill="#86efac" filter="drop-shadow(0 0 6px #86efac)">
+            <motion.circle r="4" className="fill-green-300" filter="drop-shadow(0 0 6px rgb(134 239 172))">
               <animateMotion dur="2.5s" repeatCount="indefinite" path="M 220 160 L 110 280" begin="0.5s" />
             </motion.circle>
-             <motion.circle r="4" fill="#d8b4fe" filter="drop-shadow(0 0 6px #d8b4fe)">
+            <motion.circle r="4" className="fill-purple-300" filter="drop-shadow(0 0 6px rgb(216 180 254))">
+              <animateMotion dur="2.5s" repeatCount="indefinite" path="M 220 160 L 330 280" begin="0.8s" />
+            </motion.circle>
+            <motion.circle r="4" className="fill-green-300" filter="drop-shadow(0 0 6px rgb(134 239 172))">
+              <animateMotion dur="2.5s" repeatCount="indefinite" path="M 220 160 L 110 280" begin="0.5s" />
+            </motion.circle>
+             <motion.circle r="4" className="fill-purple-300" filter="drop-shadow(0 0 6px rgb(216 180 254))">
               <animateMotion dur="2.5s" repeatCount="indefinite" path="M 220 160 L 330 280" begin="0.8s" />
             </motion.circle>
           </svg>
@@ -202,6 +229,7 @@ export function AuthInteractiveHero() {
             </div>
           </motion.div>
         </div>
+      </div>
       </div>
     </div>
   );
