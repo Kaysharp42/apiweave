@@ -44,53 +44,46 @@ def _required(value: str | None, provider: str, setting_name: str) -> str:
     return value
 
 
-def get_provider_config(name: str) -> ProviderConfig:
-    provider = name.lower()
+_KNOWN_PROVIDERS = ("github", "gitlab", "google", "microsoft")
+
+
+def _build_provider_config(name: str) -> ProviderConfig:
+    """Build and validate the config for a single provider."""
     microsoft_tenant = settings.MICROSOFT_TENANT or "common"
-    providers = {
-        "github": ProviderConfig(
+    if name == "github":
+        return ProviderConfig(
             name="github",
-            client_id=_required(
-                settings.GITHUB_CLIENT_ID,
-                "github",
-                "GITHUB_CLIENT_ID",
-            ),
+            client_id=_required(settings.GITHUB_CLIENT_ID, "github", "GITHUB_CLIENT_ID"),
             client_secret=_required(
-                settings.GITHUB_CLIENT_SECRET,
-                "github",
-                "GITHUB_CLIENT_SECRET",
+                settings.GITHUB_CLIENT_SECRET, "github", "GITHUB_CLIENT_SECRET"
             ),
             authorize_url="https://github.com/login/oauth/authorize",
             token_url="https://github.com/login/oauth/access_token",
             userinfo_url="https://api.github.com/user",
             oidc=False,
             scopes=("read:user", "user:email"),
-        ),
-        "gitlab": ProviderConfig(
+        )
+    if name == "gitlab":
+        return ProviderConfig(
             name="gitlab",
             client_id=_required(settings.GITLAB_CLIENT_ID, "gitlab", "GITLAB_CLIENT_ID"),
             client_secret=_required(
-                settings.GITLAB_CLIENT_SECRET,
-                "gitlab",
-                "GITLAB_CLIENT_SECRET",
+                settings.GITLAB_CLIENT_SECRET, "gitlab", "GITLAB_CLIENT_SECRET"
             ),
             authorize_url="https://gitlab.com/oauth/authorize",
             token_url="https://gitlab.com/oauth/token",
             userinfo_url="https://gitlab.com/api/v4/user",
             oidc=False,
             scopes=("read_user",),
-        ),
-        "microsoft": ProviderConfig(
+        )
+    if name == "microsoft":
+        return ProviderConfig(
             name="microsoft",
             client_id=_required(
-                settings.MICROSOFT_CLIENT_ID,
-                "microsoft",
-                "MICROSOFT_CLIENT_ID",
+                settings.MICROSOFT_CLIENT_ID, "microsoft", "MICROSOFT_CLIENT_ID"
             ),
             client_secret=_required(
-                settings.MICROSOFT_CLIENT_SECRET,
-                "microsoft",
-                "MICROSOFT_CLIENT_SECRET",
+                settings.MICROSOFT_CLIENT_SECRET, "microsoft", "MICROSOFT_CLIENT_SECRET"
             ),
             authorize_url=(
                 f"https://login.microsoftonline.com/{microsoft_tenant}/oauth2/v2.0/authorize"
@@ -101,26 +94,51 @@ def get_provider_config(name: str) -> ProviderConfig:
             userinfo_url="https://graph.microsoft.com/v1.0/me",
             oidc=True,
             scopes=("openid", "profile", "email", "User.Read"),
-        ),
-        "google": ProviderConfig(
+        )
+    if name == "google":
+        return ProviderConfig(
             name="google",
             client_id=_required(settings.GOOGLE_CLIENT_ID, "google", "GOOGLE_CLIENT_ID"),
             client_secret=_required(
-                settings.GOOGLE_CLIENT_SECRET,
-                "google",
-                "GOOGLE_CLIENT_SECRET",
+                settings.GOOGLE_CLIENT_SECRET, "google", "GOOGLE_CLIENT_SECRET"
             ),
             authorize_url="https://accounts.google.com/o/oauth2/auth",
             token_url="https://accounts.google.com/o/oauth2/token",
             userinfo_url="https://openidconnect.googleapis.com/v1/userinfo",
             oidc=True,
             scopes=("openid", "profile", "email"),
-        ),
-    }
+        )
+    raise ValueError(f"Unsupported OAuth provider: {name}")
+
+
+def _check_provider_enabled(name: str) -> bool:
+    """Return True only if BOTH client_id and client_secret are set and non-empty."""
+    if name == "github":
+        return bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET)
+    if name == "gitlab":
+        return bool(settings.GITLAB_CLIENT_ID and settings.GITLAB_CLIENT_SECRET)
+    if name == "microsoft":
+        return bool(settings.MICROSOFT_CLIENT_ID and settings.MICROSOFT_CLIENT_SECRET)
+    if name == "google":
+        return bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
+    return False
+
+
+def get_configured_providers() -> list[dict[str, Any]]:
+    """Return enabled status for all known providers. Safe — no secrets exposed."""
+    return [{"id": name, "enabled": _check_provider_enabled(name)} for name in _KNOWN_PROVIDERS]
+
+
+def get_provider_config(name: str) -> ProviderConfig:
+    provider = name.lower()
+    if provider not in _KNOWN_PROVIDERS:
+        raise ValueError(f"Unsupported OAuth provider: {name}")
     try:
-        return providers[provider]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported OAuth provider: {name}") from exc
+        return _build_provider_config(provider)
+    except ValueError as exc:
+        raise ValueError(
+            f"OAuth provider {provider!r} is not available or not configured"
+        ) from exc
 
 
 def generate_pkce_pair() -> tuple[str, str]:

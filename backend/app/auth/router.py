@@ -12,6 +12,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from app.auth.dependencies import csrf_protect, get_current_session, get_current_user, require_permission
+from app.auth.provider_registry import get_configured_providers
 from app.auth.permissions import PRESET_ADMIN, PRESET_VIEWER, SETTINGS_READ, SETTINGS_UPDATE, USERS_INVITE, USERS_READ
 from app.config import settings
 from app.models import ApprovedDomain, Invite, InviteResponse, Session, User, UserResponse
@@ -28,6 +29,12 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 SESSION_COOKIE_NAME = "session"
 CSRF_COOKIE_NAME = "csrftoken"
 SESSION_MAX_AGE_SECONDS = 604800
+
+
+@router.get("/providers")
+def list_providers() -> list[dict]:
+    """Return enabled status for all known OAuth providers. Public — no auth required."""
+    return get_configured_providers()
 
 
 def _user_response(user: User) -> UserResponse:
