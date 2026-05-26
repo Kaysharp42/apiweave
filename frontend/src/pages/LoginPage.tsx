@@ -7,6 +7,7 @@ import { AuthInteractiveHero } from '../components/auth/AuthInteractiveHero';
 import type { ProviderInfo } from '../types/ProviderInfo';
 import { PROVIDER_DISPLAY_MAP, getEnabledProviders, type ProviderDisplay } from '../auth/providerConfig';
 import API_BASE_URL from '../utils/api';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 export default function LoginPage() {
   const { login, status } = useAuth();
@@ -22,7 +23,7 @@ export default function LoginPage() {
 
     async function fetchProviders() {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/auth/providers`);
+        const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
         if (!res.ok) throw new Error(`Failed to load providers (${res.status})`);
         const data: ProviderInfo[] = await res.json() as ProviderInfo[];
         if (!cancelled) {

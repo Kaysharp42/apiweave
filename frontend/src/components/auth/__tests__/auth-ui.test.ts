@@ -36,7 +36,7 @@ test('SplitAuthLayout handles mobile layout', () => {
 
 test('LoginPage fetches configured-only providers and preserves inline states', () => {
   const content = readFileSync(join(PAGES_DIR, 'LoginPage.tsx'), 'utf-8');
-  assert.ok(content.includes('fetch(`${API_BASE_URL}/api/auth/providers`)'), 'Should fetch provider availability');
+  assert.ok(content.includes('authenticatedFetch(`${API_BASE_URL}/api/auth/providers`)'), 'Should fetch provider availability');
   assert.ok(content.includes('getEnabledProviders(data)'), 'Should filter enabled providers only');
   assert.ok(content.includes('Unable to load sign-in options'), 'Should show provider load error state');
   assert.ok(content.includes('No sign-in providers are configured.'), 'Should show empty provider state');

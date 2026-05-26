@@ -14,6 +14,7 @@ import { AppNavBarStyles } from '../../constants/AppNavBar';
 import { HorizontalDivider } from '../atoms';
 import API_BASE_URL from '../../utils/api';
 import type { Environment } from '../../types/Environment';
+import { authenticatedFetch } from '../../utils/authenticatedApi';
 
 export function MainLayout() {
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
@@ -25,7 +26,7 @@ export function MainLayout() {
   useEffect(() => {
     const checkEnvironmentSecrets = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/environments`);
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
         if (response.ok) {
           const environments: Environment[] = await response.json();
 
@@ -56,7 +57,7 @@ export function MainLayout() {
     if (environmentVersion > 0) {
       const checkSecrets = async () => {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/environments`);
+          const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
           if (response.ok) {
             const envs: Environment[] = await response.json();
             for (const env of envs) {

@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, ty
 import API_BASE_URL from '../utils/api';
 import { usePalette } from './PaletteContext';
 import useSidebarStore from '../stores/SidebarStore';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface WorkflowVariables {
   [key: string]: unknown;
@@ -82,7 +83,7 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }: Work
   const fetchCollections = useCallback(async () => {
     setIsLoadingCollections(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
         const data = await response.json() as Collection[];
         setCollections(data);

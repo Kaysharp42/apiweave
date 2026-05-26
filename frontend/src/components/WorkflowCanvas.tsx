@@ -47,6 +47,7 @@ import { shouldBlockDestructiveAutosave } from '../utils/workflowSaveSafety';
 import { buildSwaggerRefreshSummary } from '../utils/swaggerRefreshSummary';
 import { getCanvasClipboardShortcutAction } from '../utils/shortcutGuards';
 import type { Environment } from '../types';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface NodeData {
   label?: string;
@@ -351,7 +352,7 @@ export function WorkflowCanvas({
 
   const fetchEnvironments = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/environments`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
         const data = await response.json() as Environment[];
         setEnvironments(data);
@@ -425,7 +426,7 @@ export function WorkflowCanvas({
     setIsSwaggerRefreshing(true);
 
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/workflows/import/openapi/url?swagger_url=${encodeURIComponent(swaggerDocUrl)}&sanitize=true`
       );
 
@@ -643,7 +644,7 @@ export function WorkflowCanvas({
     if (reloadVersion > 0 && reloadWorkflowId === workflowId) {
       (async () => {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
+          const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
           if (response.ok) {
             const data = await response.json() as {
               nodes?: Array<{ nodeId: string; type: string; position: { x: number; y: number }; config?: Record<string, unknown>; label?: string }>;
@@ -1098,7 +1099,7 @@ export function WorkflowCanvas({
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(workflowPayload),
@@ -1181,7 +1182,7 @@ export function WorkflowCanvas({
     })) as Edge<EdgeData>[];
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

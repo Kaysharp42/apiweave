@@ -7,6 +7,7 @@ import { Button, IconButton, Input, TextArea } from './atoms';
 import SecretsPanel from './SecretsPanel';
 import useSidebarStore from '../stores/SidebarStore';
 import type { Environment } from '../types';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 export interface EnvironmentManagerProps {
   open: boolean;
@@ -55,7 +56,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
 
   const fetchEnvironments = async (): Promise<void> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/environments`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
         const data = await response.json() as EnvironmentListItem[];
         setEnvironments(data);
@@ -89,7 +90,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
         : `${API_BASE_URL}/api/environments`;
       const method = selectedEnv ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      const response = await authenticatedFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -111,7 +112,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
   const handleDeleteConfirm = async (): Promise<void> => {
     if (!deleteTarget) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/api/environments/${deleteTarget}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments/${deleteTarget}`, {
         method: 'DELETE'
       });
 
@@ -137,7 +138,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
 
   const handleDuplicate = async (envId: string): Promise<void> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/environments/${envId}/duplicate`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments/${envId}/duplicate`, {
         method: 'POST'
       });
 
@@ -173,7 +174,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
     if (!selectedEnv) return;
     try {
       const url = `${API_BASE_URL}/api/environments/${selectedEnv.environmentId}`;
-      const response = await fetch(url, {
+      const response = await authenticatedFetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...formData, secrets })

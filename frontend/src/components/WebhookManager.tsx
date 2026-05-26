@@ -8,6 +8,7 @@ import API_BASE_URL from '../utils/api';
 import type { Workflow } from '../types/Workflow';
 import type { Collection } from '../types/Collection';
 import type { Environment } from '../types/Environment';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 type CiProvider = 'github' | 'gitlab' | 'jenkins';
 type SnippetMode = 'fire-and-forget' | 'blocking';
@@ -546,7 +547,7 @@ export function WebhookManager() {
 
   const fetchWorkflows = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/workflows`);
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/workflows`);
       if (res.ok) { const d = await res.json(); const list: Workflow[] = Array.isArray(d) ? d : d.workflows || []; setWorkflows(list); return list; }
     } catch (e) { console.error('Error fetching workflows:', e); }
     return [];
@@ -554,7 +555,7 @@ export function WebhookManager() {
 
   const fetchCollections = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/collections`);
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (res.ok) { const d = await res.json(); const list: Collection[] = Array.isArray(d) ? d : []; setCollections(list); return list; }
     } catch (e) { console.error('Error fetching collections:', e); }
     return [];
@@ -562,7 +563,7 @@ export function WebhookManager() {
 
   const fetchEnvironments = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/environments`);
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
       if (res.ok) { const d = await res.json(); const list: Environment[] = Array.isArray(d) ? d : []; setEnvironments(list); return list; }
     } catch (e) { console.error('Error fetching environments:', e); }
     return [];
@@ -572,11 +573,11 @@ export function WebhookManager() {
     try {
       const all: Webhook[] = [];
       for (const w of wfList) {
-        const res = await fetch(`${API_BASE_URL}/api/webhooks/workflows/${w.workflowId}`);
+        const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/workflows/${w.workflowId}`);
         if (res.ok) { const d = await res.json(); all.push(...(Array.isArray(d) ? d : [])); }
       }
       for (const c of colList) {
-        const res = await fetch(`${API_BASE_URL}/api/webhooks/collections/${c.collectionId}`);
+        const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/collections/${c.collectionId}`);
         if (res.ok) { const d = await res.json(); all.push(...(Array.isArray(d) ? d : [])); }
       }
       setWebhooks(all);
@@ -590,7 +591,7 @@ export function WebhookManager() {
   const createWebhook = async () => {
     if (!newWebhookData.resourceId) { toast.error('Please select a workflow or collection'); return; }
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks`, {
         method: 'POST', headers: buildManagementHeaders(true), body: JSON.stringify(newWebhookData),
       });
       if (res.ok) {
@@ -611,7 +612,7 @@ export function WebhookManager() {
   const confirmDeleteWebhook = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks/${deleteTarget}`, { method: 'DELETE', headers: buildManagementHeaders() });
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${deleteTarget}`, { method: 'DELETE', headers: buildManagementHeaders() });
       if (res.ok) { await fetchAllWebhooks(); toast.success('Webhook deleted'); }
       else toast.error('Failed to delete webhook');
     } catch (e) { console.error('Error deleting webhook:', e); toast.error('Error deleting webhook'); }
@@ -620,7 +621,7 @@ export function WebhookManager() {
 
   const toggleWebhook = async (webhook: Webhook) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}`, {
         method: 'PATCH', headers: buildManagementHeaders(true), body: JSON.stringify({ enabled: !webhook.enabled }),
       });
       if (res.ok) await fetchAllWebhooks();
@@ -631,7 +632,7 @@ export function WebhookManager() {
   const confirmRegenerate = async () => {
     if (!webhookToRegenerate) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks/${webhookToRegenerate.webhookId}/regenerate-token`, { method: 'POST', headers: buildManagementHeaders() });
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhookToRegenerate.webhookId}/regenerate-token`, { method: 'POST', headers: buildManagementHeaders() });
       if (res.ok) {
         const data = await res.json();
         setWebhookCredentials(data);
@@ -657,7 +658,7 @@ export function WebhookManager() {
     setSelectedWebhook(webhook);
     setShowLogsModal(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}/logs?limit=50`, { headers: buildManagementHeaders() });
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}/logs?limit=50`, { headers: buildManagementHeaders() });
       if (res.ok) { const d = await res.json(); setWebhookLogs(d.logs || []); }
     } catch (e) { console.error('Error fetching webhook logs:', e); }
   };

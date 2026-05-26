@@ -5,6 +5,7 @@ import WorkflowCanvas from '../components/WorkflowCanvas';
 import { Spinner } from '../components/atoms';
 import API_BASE_URL from '../utils/api';
 import type { WorkflowCanvasWorkflow } from '../components/WorkflowCanvas';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface Workflow extends WorkflowCanvasWorkflow {
   id: string;
@@ -20,7 +21,7 @@ const WorkflowEditor = () => {
   useEffect(() => {
     const fetchWorkflow = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
         if (response.ok) {
           const data = await response.json() as Workflow;
           setWorkflow(data);

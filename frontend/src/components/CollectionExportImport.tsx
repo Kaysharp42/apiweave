@@ -20,6 +20,7 @@ import { IconButton } from './atoms/IconButton';
 import { Input } from './atoms/Input';
 import { TextArea } from './atoms/TextArea';
 import type { Collection } from '../types/Collection';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface CollectionWithWorkflowCount extends Collection {
   workflowCount?: number;
@@ -154,7 +155,7 @@ export function CollectionExportImport({
 
   const fetchCollections = async (): Promise<void> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
         const data: CollectionWithWorkflowCount[] = await response.json();
         const filtered = data.filter((c: CollectionWithWorkflowCount) => c.collectionId !== collectionId);
@@ -170,7 +171,7 @@ export function CollectionExportImport({
     setMessage(null);
 
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/${collectionId}/export?include_environment=${includeEnvironments}`
       );
 
@@ -233,7 +234,7 @@ export function CollectionExportImport({
         return;
       }
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/import/dry-run`,
         {
           method: 'POST',
@@ -296,7 +297,7 @@ export function CollectionExportImport({
         return;
       }
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/import`,
         {
           method: 'POST',
@@ -397,7 +398,7 @@ export function CollectionExportImport({
       if (detectedType === 'workflow') {
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'workflow.json');
-        parseResponse = await fetch(
+        parseResponse = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows/import`,
           {
             method: 'POST',
@@ -409,7 +410,7 @@ export function CollectionExportImport({
           const importResult: { workflowId: string } = await parseResponse.json();
           const workflowId = importResult.workflowId;
 
-          const assignResponse = await fetch(
+          const assignResponse = await authenticatedFetch(
             `${API_BASE_URL}/api/collections/${selectedTargetCollection}/workflows/${workflowId}/assign`,
             {
               method: 'POST',
@@ -454,7 +455,7 @@ export function CollectionExportImport({
       } else if (detectedType === 'openapi') {
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'openapi.json');
-        parseResponse = await fetch(
+        parseResponse = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows/import/openapi?sanitize=${sanitize}&parse_only=true`,
           {
             method: 'POST',
@@ -464,7 +465,7 @@ export function CollectionExportImport({
       } else {
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'har.json');
-        parseResponse = await fetch(
+        parseResponse = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows/import/har?import_mode=${importMode}&sanitize=${sanitize}&parse_only=true`,
           {
             method: 'POST',
@@ -514,7 +515,7 @@ export function CollectionExportImport({
           tags: ['imported']
         };
 
-        const createResponse = await fetch(
+        const createResponse = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows`,
           {
             method: 'POST',
@@ -598,7 +599,7 @@ export function CollectionExportImport({
       params.append('sanitize', String(sanitize));
       params.append('workflowId', selectedTargetCollection);
 
-      const response = await fetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
         method: 'POST',
       });
 

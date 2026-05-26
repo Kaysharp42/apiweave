@@ -11,6 +11,7 @@ import { SplitAuthLayout } from '../components/auth/SplitAuthLayout';
 import { AuthInteractiveHero } from '../components/auth/AuthInteractiveHero';
 import type { ProviderInfo } from '../types/ProviderInfo';
 import API_BASE_URL from '../utils/api';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 export default function InvitePage() {
   const { login, status } = useAuth();
@@ -26,7 +27,7 @@ export default function InvitePage() {
 
     async function loadProviders() {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/auth/providers`);
+        const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
 
         if (!res.ok) {
           throw new Error('Failed to load providers');

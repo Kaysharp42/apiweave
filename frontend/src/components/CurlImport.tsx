@@ -5,6 +5,7 @@ import useCanvasStore from '../stores/CanvasStore';
 import { Button } from './atoms/Button';
 import { TextArea } from './atoms/TextArea';
 import { IconButton } from './atoms/IconButton';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface Workflow {
   workflowId: string;
@@ -44,7 +45,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
   useEffect(() => {
     const fetchWorkflows = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/workflows?limit=100`);
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows?limit=100`);
         if (response.ok) {
           const data = await response.json();
           setWorkflows(data.workflows || []);
@@ -131,7 +132,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
       params.append('curl_command', curlInput);
       params.append('sanitize', String(sanitize));
 
-      const response = await fetch(`${API_BASE_URL}/api/workflows/import/curl/dry-run?${params}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/import/curl/dry-run?${params}`, {
         method: 'POST',
       });
 
@@ -169,7 +170,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
         params.append('workflowId', selectedWorkflowId);
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
         method: 'POST',
       });
 

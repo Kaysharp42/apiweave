@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import API_BASE_URL from '../utils/api';
 import { CheckCircle, XCircle, RefreshCw, Clock, Circle, History, X, ClipboardList, ChevronRight, Timer, Zap } from 'lucide-react';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface RunRecord {
   runId: string;
@@ -67,7 +68,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
   const fetchRunHistory = async (page = 1) => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs?page=${page}&limit=10`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs?page=${page}&limit=10`);
       if (response.ok) {
         const data: RunHistoryResponse = await response.json();
         setRuns(data.runs);

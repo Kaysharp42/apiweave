@@ -4,6 +4,7 @@ import { Button, Badge, Spinner } from './atoms';
 import { Panel, PanelTabs, EmptyState } from './molecules';
 import type { MCPConfig } from '../types/MCPConfig';
 import type { MCPTool } from '../types/MCPTool';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -25,7 +26,7 @@ export default function MCPManager({ className = '' }: MCPManagerProps) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/mcp/config`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/mcp/config`);
       if (response.ok) {
         const data = await response.json();
         setConfig(data);
@@ -49,7 +50,7 @@ export default function MCPManager({ className = '' }: MCPManagerProps) {
     setTesting(true);
     setTestResult(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/mcp`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/mcp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

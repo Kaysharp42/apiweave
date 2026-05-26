@@ -94,7 +94,7 @@ function startProviderVisibilityFlow(): { state: ProviderVisibilityState; run: P
 function assertProviderPageSource(fileName: string, emptyMessage: string): void {
   const content = readPage(fileName);
 
-  assertIncludes(content, "fetch(`${API_BASE_URL}/api/auth/providers`)");
+  assertIncludes(content, "authenticatedFetch(`${API_BASE_URL}/api/auth/providers`)");
   assertIncludes(content, 'getEnabledProviders');
   assertIncludes(content, 'Unable to load sign-in options');
   assertIncludes(content, emptyMessage);

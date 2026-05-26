@@ -29,6 +29,7 @@ import type { Workflow } from '../../types/Workflow';
 import type { Collection } from '../../types/Collection';
 import type { Environment } from '../../types/Environment';
 import type { PaginationState } from '../../types/PaginationState';
+import { authenticatedFetch } from '../../utils/authenticatedApi';
 
 interface WorkflowItemProps {
   workflow: Workflow;
@@ -215,7 +216,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
   useEffect(() => {
     const loadEnvs = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/environments`);
+        const res = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
         if (res.ok) {
           const data: Environment[] = await res.json();
           setEnvironments(data);
@@ -231,7 +232,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
         ? `${API_BASE_URL}/api/workflows/unattached?skip=${skip}&limit=${limit}`
         : `${API_BASE_URL}/api/workflows?skip=${skip}&limit=${limit}`;
 
-      const response = await fetch(endpoint);
+      const response = await authenticatedFetch(endpoint);
       if (response.ok) {
         const data: { workflows: Workflow[]; total: number } = await response.json();
 
@@ -254,7 +255,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
 
   const fetchCollections = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
         const data: Collection[] = await response.json();
         setCollections(data);
@@ -296,7 +297,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
 
   const handleCreateWorkflow = async (name: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -328,7 +329,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
     setSelectedWorkflowId(workflow.workflowId);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflow.workflowId}`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflow.workflowId}`);
       if (response.ok) {
         const fullWorkflow: Workflow = await response.json();
         useTabStore.getState().openTab(fullWorkflow);

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import API_BASE_URL from '../utils/api';
 import useSidebarStore from '../stores/SidebarStore';
 import type { Environment } from '../types';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 export interface EnvironmentSelectorProps {
   onManageClick: () => void;
@@ -34,7 +35,7 @@ export default function EnvironmentSelector({ onManageClick }: EnvironmentSelect
 
   const fetchEnvironments = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/environments`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
         const data: Environment[] = await response.json();
         setEnvironments(data);

@@ -6,16 +6,29 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urljoin
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from app.auth.dependencies import csrf_protect, get_current_session, get_current_user, require_permission
+from app.auth.dependencies import (
+    csrf_protect,
+    get_current_session,
+    get_current_user,
+    require_permission,
+)
+from app.auth.permissions import (
+    PRESET_ADMIN,
+    PRESET_VIEWER,
+    SETTINGS_READ,
+    SETTINGS_UPDATE,
+    USERS_INVITE,
+    USERS_READ,
+)
 from app.auth.provider_registry import get_configured_providers
-from app.auth.permissions import PRESET_ADMIN, PRESET_VIEWER, SETTINGS_READ, SETTINGS_UPDATE, USERS_INVITE, USERS_READ
 from app.config import settings
-from app.models import ApprovedDomain, Invite, InviteResponse, Session, User, UserResponse
+from app.models import InviteResponse, Session, User, UserResponse
 from app.repositories.auth_repositories import (
     ApprovedDomainRepository,
     InviteRepository,
@@ -52,6 +65,14 @@ def _user_response(user: User) -> UserResponse:
 
 def _redirect_uri(request: Request, provider: str) -> str:
     return str(request.url_for("oauth_callback", provider=provider))
+
+
+def _frontend_url(path: str = "/") -> str:
+    base_url = settings.FRONTEND_URL
+    if not base_url:
+        allowed_origins = settings.get_allowed_origins_list()
+        base_url = allowed_origins[0] if allowed_origins else "http://localhost:3000"
+    return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
 
 
 def _session_hash(token: str) -> str:
@@ -182,6 +203,15 @@ async def _create_session(response: Response, user: User) -> None:
         samesite=settings.get_session_cookie_samesite(),
         path="/",
     )
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=secrets.token_urlsafe(32),
+        max_age=SESSION_MAX_AGE_SECONDS,
+        httponly=False,
+        secure=settings.get_session_cookie_secure(),
+        samesite=settings.get_session_cookie_samesite(),
+        path="/",
+    )
 
 
 @router.get("/login/{provider}")
@@ -215,8 +245,8 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
     return RedirectResponse(login_url, status_code=status.HTTP_302_FOUND)
 
 
-@router.get("/callback/{provider}", response_model=UserResponse)
-async def oauth_callback(provider: str, request: Request, response: Response) -> UserResponse:
+@router.get("/callback/{provider}")
+async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
     from app.auth.provider_registry import (
         exchange_code_for_token,
         fetch_userinfo,
@@ -263,8 +293,9 @@ async def oauth_callback(provider: str, request: Request, response: Response) ->
     userinfo = await fetch_userinfo(provider_config, token_response, stored_state.code_verifier)
     _validate_nonce(provider_config, stored_state.nonce, userinfo)
     user = await _create_or_link_user(userinfo)
+    response = RedirectResponse(_frontend_url("/"), status_code=status.HTTP_302_FOUND)
     await _create_session(response, user)
-    return _user_response(user)
+    return response
 
 
 @router.post("/logout", dependencies=[Depends(csrf_protect)])

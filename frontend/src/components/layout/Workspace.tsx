@@ -19,6 +19,7 @@ import API_BASE_URL from '../../utils/api';
 import type { WorkspaceProps } from '../../types/WorkspaceProps';
 import type { WorkspaceTab } from '../../types/WorkspaceTab';
 import type { TabItem } from '../../types/TabItem';
+import { authenticatedFetch } from '../../utils/authenticatedApi';
 
 const panelTabs: TabItem[] = [
   { key: 'variables', icon: Package, label: 'Variables' },
@@ -45,7 +46,7 @@ export function Workspace({ onActiveTabChange }: WorkspaceProps) {
   useEffect(() => {
     const fetchEnvironments = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/environments`);
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
         if (response.ok) {
           const envs: Array<{ environmentId: string; name: string }> = await response.json();
           const namesMap: Record<string, string> = {};
@@ -66,7 +67,7 @@ export function Workspace({ onActiveTabChange }: WorkspaceProps) {
     if (environmentVersion > 0) {
       const fetchEnvNames = async () => {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/environments`);
+          const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
           if (response.ok) {
             const envs: Array<{ environmentId: string; name: string }> = await response.json();
             const namesMap: Record<string, string> = {};
@@ -89,7 +90,7 @@ export function Workspace({ onActiveTabChange }: WorkspaceProps) {
 
   const handleCreateWorkflow = useCallback(async (name: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

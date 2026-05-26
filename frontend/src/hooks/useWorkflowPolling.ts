@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, type MutableRefObject } from 
 import { toast } from 'sonner';
 import type { Node } from 'reactflow';
 import API_BASE_URL from '../utils/api';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface NodeStatusUpdate {
   status: string;
@@ -111,7 +112,7 @@ export default function useWorkflowPolling({
 
     setIsResumeLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs/latest-failed`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs/latest-failed`);
       if (!response.ok) {
         setResumeOptions([]);
         setResumeSourceRunId(null);
@@ -265,7 +266,7 @@ export default function useWorkflowPolling({
         payload.resume = runOptions.resume;
       }
 
-      const response = await fetch(url, {
+      const response = await authenticatedFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: Object.keys(payload).length > 0 ? JSON.stringify(payload) : null,
@@ -281,7 +282,7 @@ export default function useWorkflowPolling({
 
         const pollForStatus = async () => {
           try {
-            const statusResponse = await fetch(
+            const statusResponse = await authenticatedFetch(
               `${API_BASE_URL}/api/workflows/${workflowId}/runs/${result.runId}`,
             );
             if (statusResponse.ok) {
@@ -454,7 +455,7 @@ export default function useWorkflowPolling({
   const loadHistoricalRun = useCallback(
     async (run: { runId: string }) => {
       try {
-        const response = await fetch(
+        const response = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows/${workflowId}/runs/${run.runId}`,
         );
         if (response.ok) {

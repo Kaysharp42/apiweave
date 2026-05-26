@@ -12,6 +12,7 @@ import { usePalette } from '../contexts/PaletteContext';
 import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { TextArea } from './atoms/TextArea';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface MessageState {
   type: 'success' | 'error';
@@ -138,7 +139,7 @@ export function ImportToNodesPanel({
     _sourceType: string
   ): Promise<void> => {
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/workflows/${workflowId}/templates`,
         {
           method: 'POST',
@@ -198,7 +199,7 @@ export function ImportToNodesPanel({
       const blob = new Blob([fileContent], { type: 'application/json' });
       formData.append('file', blob, 'openapi.json');
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/workflows/import/openapi?sanitize=${sanitize}&parse_only=true`,
         {
           method: 'POST',
@@ -281,7 +282,7 @@ export function ImportToNodesPanel({
       const blob = new Blob([fileContent], { type: 'application/json' });
       formData.append('file', blob, 'har.json');
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/workflows/import/har?import_mode=${importMode}&sanitize=${sanitize}&parse_only=true`,
         {
           method: 'POST',
@@ -355,7 +356,7 @@ export function ImportToNodesPanel({
         return;
       }
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/workflows/import/curl?sanitize=${sanitize}&parse_only=true&curl_command=${encodeURIComponent(pastedText)}`,
         {
           method: 'POST',

@@ -173,15 +173,19 @@ def test_callback_succeeds_with_verified_email(
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
 ) -> None:
-    """Happy-path callback with verified email must return 200 and set session cookie."""
     _patch_callback(monkeypatch, provider, state=_oauth_state(provider), verified=True)
     response = client.get(
         f"/api/auth/callback/{provider}",
         params={"code": "valid-code", "state": "valid-state"},
+        follow_redirects=False,
     )
-    assert response.status_code == 200
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://localhost:3000/"
     assert "session" in response.cookies or any(
         "session" in k.lower() for k in response.cookies
+    )
+    assert "csrftoken" in response.cookies or any(
+        "csrftoken" in k.lower() for k in response.cookies
     )
 
 

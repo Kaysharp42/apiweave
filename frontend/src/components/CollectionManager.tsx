@@ -12,6 +12,7 @@ import useSidebarStore from '../stores/SidebarStore';
 import { DefaultCollectionColor, PresetCollectionColors } from '../constants/CollectionColors';
 import type { Collection } from '../types/Collection';
 import type { Workflow } from '../types/Workflow';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface ExtendedCollection extends Collection {
   color?: string;
@@ -61,7 +62,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
 
   const fetchWorkflows = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows`);
       if (response.ok) {
         const data: unknown = await response.json();
         const workflowArray: Workflow[] = Array.isArray(data) ? data : (data as { workflows: Workflow[] }).workflows || [];
@@ -74,7 +75,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
 
   const fetchCollections = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
         const data: ExtendedCollection[] = await response.json();
         setCollections(data);
@@ -109,7 +110,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
         : `${API_BASE_URL}/api/collections`;
       const method = selectedCol ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      const response = await authenticatedFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -135,7 +136,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/api/collections/${deleteTarget}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections/${deleteTarget}`, {
         method: 'DELETE'
       });
       if (response.ok) {
@@ -194,7 +195,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
       const orderData = workflowOrder.map((wo, index) => ({
         workflowId: wo.workflowId, order: index, enabled: wo.enabled, continueOnFail: wo.continueOnFail
       }));
-      const response = await fetch(`${API_BASE_URL}/api/collections/${selectedCol.collectionId}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections/${selectedCol.collectionId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workflowOrder: orderData, continueOnFail })

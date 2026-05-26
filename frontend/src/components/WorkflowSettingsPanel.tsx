@@ -7,6 +7,7 @@ import { Button } from './atoms/Button';
 import { Toggle } from './atoms/Toggle';
 import { Spinner } from './atoms/Spinner';
 import { Input } from './atoms/Input';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 type BackgroundColor = string;
 
@@ -69,7 +70,7 @@ export function WorkflowSettingsPanel() {
 
     setAssignmentLoading(true);
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/${collectionId}/workflows/${workflowId}`,
         { method: 'POST' }
       );
@@ -101,7 +102,7 @@ export function WorkflowSettingsPanel() {
 
     setAssignmentLoading(true);
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/${currentCollection.collectionId}/workflows/${workflowId}`,
         { method: 'DELETE' }
       );

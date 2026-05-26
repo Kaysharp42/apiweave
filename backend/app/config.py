@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     APP_ENV: str = "development"
     BASE_URL: str
+    FRONTEND_URL: str | None = None
 
     MONGODB_URL: str
     MONGODB_DB_NAME: str
