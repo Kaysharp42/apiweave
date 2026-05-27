@@ -2,13 +2,15 @@
 APIWeave - Visual API Test Workflows Made Simple
 Main FastAPI application entry point
 """
+
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth.dependencies import STATE_CHANGING_METHODS, csrf_protect
 from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import close_db, connect_db
@@ -87,9 +89,18 @@ async def csrf_middleware(
     if path in _CSRF_EXEMPT_EXACT or any(path.startswith(p) for p in _CSRF_EXEMPT_PREFIXES):
         return await call_next(request)
 
+    if (
+        request.method in STATE_CHANGING_METHODS
+        and "session" in request.cookies
+        and "csrftoken" not in request.cookies
+    ):
+        return Response(
+            status_code=403,
+            content='{"detail":"CSRF token missing or invalid"}',
+            media_type="application/json",
+        )
+
     if "session" in request.cookies and "csrftoken" in request.cookies:
-        from fastapi import HTTPException
-        from app.auth.dependencies import csrf_protect
         try:
             await csrf_protect(request)
         except HTTPException:
@@ -100,6 +111,7 @@ async def csrf_middleware(
             )
 
     return await call_next(request)
+
 
 # MCP Streamable HTTP mount
 if settings.MCP_ENABLED and settings.MCP_HTTP_ENABLED:

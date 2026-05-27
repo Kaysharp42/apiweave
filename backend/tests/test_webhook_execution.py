@@ -19,6 +19,11 @@ from app.routes.webhooks import _run_collection_and_update_webhook
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _allow_token_only_webhooks(monkeypatch):
+    monkeypatch.setattr("app.routes.webhooks.settings.WEBHOOK_REQUIRE_HMAC", False)
+
+
 def _mock_webhook_log(*args, **kwargs):
     """Create a mock WebhookLog that supports async .insert()"""
     mock_log = MagicMock()
@@ -372,14 +377,10 @@ def test_webhook_execute_valid_signature():
 
 def test_webhook_execute_idempotency_same_run_id():
     """Two identical requests with same Idempotency-Key return same runId."""
-    import app.idempotency as idempotency_module
-
-    # Clear cache before test
-    idempotency_module._idempotency_cache.clear()
-
     mock_run_doc = MagicMock()
     mock_run_doc.runId = "run-idem-001"
     mock_run_doc.insert = AsyncMock()
+    cached_entry = SimpleNamespace(response_body={"status": "accepted", "runId": "run-idem-001"})
 
     with (
         patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock_webhook,
@@ -390,6 +391,11 @@ def test_webhook_execute_idempotency_same_run_id():
         patch("app.routes.webhooks.WorkflowExecutor"),
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
         patch("app.routes.webhooks.Run", return_value=mock_run_doc),
+        patch(
+            "app.routes.webhooks.get_idempotency_entry",
+            new=AsyncMock(side_effect=[None, cached_entry]),
+        ),
+        patch("app.routes.webhooks.store_idempotency_entry", new=AsyncMock()),
     ):
         mock_webhook_obj = MagicMock()
         mock_webhook_obj.enabled = True
@@ -427,10 +433,6 @@ def test_webhook_execute_idempotency_same_run_id():
 
 def test_webhook_execute_idempotency_different_webhook_creates_new_run():
     """Same Idempotency-Key on a different webhookId must create a new run."""
-    import app.idempotency as idempotency_module
-
-    idempotency_module._idempotency_cache.clear()
-
     run_a = MagicMock()
     run_a.runId = "run-wh-A"
     run_a.insert = AsyncMock()
@@ -447,12 +449,14 @@ def test_webhook_execute_idempotency_different_webhook_creates_new_run():
     with (
         patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock_webhook,
         patch("app.routes.webhooks.WorkflowRepository.get_by_id") as mock_wf,
-        patch("app.routes.webhooks.RunRepository.create") as mock_run,
+        patch("app.routes.webhooks.RunRepository.create"),
         patch("app.routes.webhooks.asyncio.create_task"),
         patch("app.routes.webhooks.WebhookRepository.update"),
         patch("app.routes.webhooks.WorkflowExecutor"),
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
         patch("app.routes.webhooks.Run", side_effect=_next_run),
+        patch("app.routes.webhooks.get_idempotency_entry", new=AsyncMock(return_value=None)),
+        patch("app.routes.webhooks.store_idempotency_entry", new=AsyncMock()),
     ):
         def _webhook_for_id(wh_id: str):
             obj = MagicMock()

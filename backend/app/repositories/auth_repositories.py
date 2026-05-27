@@ -388,6 +388,7 @@ class OAuthStateRepository:
         provider: str,
         redirect_uri: str,
         expires_at: datetime,
+        invite_token: str | None = None,
     ) -> OAuthState:
         oauth_state = OAuthState(
             stateId=state_id,
@@ -396,6 +397,7 @@ class OAuthStateRepository:
             nonce=nonce,
             provider=provider,
             redirect_uri=redirect_uri,
+            invite_token=invite_token,
             expires_at=expires_at,
         )
         await oauth_state.insert()

@@ -1,15 +1,17 @@
+import hashlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
+from pymongo.errors import DuplicateKeyError
 
 import app.auth.provider_registry as provider_registry
 import app.auth.router as auth_router
 from app.auth.provider_registry import ProviderConfig, ProviderUserInfo
 from app.main import app
-from app.models import OAuthState, User
+from app.models import Invite, OAuthState, ProviderIdentity, User
 
 pytest_plugins = ("tests.fixtures.oauth_mocks",)
 
@@ -35,7 +37,12 @@ def _provider_config(provider: str) -> ProviderConfig:
     )
 
 
-def _oauth_state(provider: str, *, expired: bool = False) -> OAuthState:
+def _oauth_state(
+    provider: str,
+    *,
+    expired: bool = False,
+    invite_token: str | None = None,
+) -> OAuthState:
     now = datetime.now(UTC)
     return OAuthState.model_construct(
         stateId=f"ost-{provider}",
@@ -44,6 +51,7 @@ def _oauth_state(provider: str, *, expired: bool = False) -> OAuthState:
         nonce="nonce",
         provider=provider,
         redirect_uri=f"http://testserver/api/auth/callback/{provider}",
+        invite_token=invite_token,
         expires_at=now - timedelta(minutes=1) if expired else now + timedelta(minutes=10),
     )
 
@@ -60,6 +68,32 @@ def _user(email: str) -> User:
         is_setup_complete=True,
         created_at=now,
         updated_at=now,
+    )
+
+
+def _provider_identity(provider: str, user_id: str = "usr-test") -> ProviderIdentity:
+    return ProviderIdentity.model_construct(
+        identityId="pid-test",
+        userId=user_id,
+        provider=provider,
+        subject=f"{provider}-subject",
+        email=f"testuser@{provider}.example.com",
+        verified=True,
+    )
+
+
+def _invite(email: str, token: str) -> Invite:
+    now = datetime.now(UTC)
+    return Invite.model_construct(
+        inviteId="inv-test",
+        email=email,
+        token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        role_preset="viewer",
+        created_by="usr-admin",
+        created_at=now,
+        expires_at=now + timedelta(days=1),
+        consumed_at=None,
+        consumed=False,
     )
 
 
@@ -240,6 +274,141 @@ def test_callback_redirects_uninvited_users_to_frontend_login(
     assert response.headers["location"] == "http://localhost:3000/login?error=Access+requires+an+invitation"
 
 
+@pytest.mark.parametrize("provider", PROVIDERS)
+def test_callback_rejects_invalid_invite_token(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    _patch_callback(
+        monkeypatch,
+        provider,
+        state=_oauth_state(provider, invite_token="wrong-token"),
+        verified=True,
+    )
+    email = f"testuser@{provider}.example.com"
+    monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
+    monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "get_valid_by_email",
+        AsyncMock(return_value=[_invite(email, "correct-token")]),
+    )
+    consume = AsyncMock(return_value=True)
+    monkeypatch.setattr(auth_router.InviteRepository, "consume", consume)
+
+    response = client.get(
+        f"/api/auth/callback/{provider}",
+        params={"code": "valid-code", "state": "valid-state"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Invalid invite token"
+    consume.assert_not_awaited()
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+def test_callback_consumes_valid_invite_token(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    invite_token = "correct-token"
+    _patch_callback(
+        monkeypatch,
+        provider,
+        state=_oauth_state(provider, invite_token=invite_token),
+        verified=True,
+    )
+    email = f"testuser@{provider}.example.com"
+    monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
+    monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "get_valid_by_email",
+        AsyncMock(return_value=[_invite(email, invite_token)]),
+    )
+    consume = AsyncMock(return_value=True)
+    monkeypatch.setattr(auth_router.InviteRepository, "consume", consume)
+
+    response = client.get(
+        f"/api/auth/callback/{provider}",
+        params={"code": "valid-code", "state": "valid-state"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    consume.assert_awaited_once_with("inv-test")
+
+
+@pytest.mark.asyncio
+async def test_create_or_link_user_refetches_user_after_duplicate_key_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = "github"
+    email = f"testuser@{provider}.example.com"
+    existing_user = _user(email)
+    get_by_email = AsyncMock(side_effect=[None, existing_user])
+    create = AsyncMock(side_effect=DuplicateKeyError("duplicate verified_email"))
+
+    monkeypatch.setattr(auth_router.settings, "SETUP_MODE_ENABLED", False)
+    monkeypatch.setattr(
+        auth_router.ProviderIdentityRepository,
+        "get_by_provider_subject",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(auth_router.ProviderIdentityRepository, "create", AsyncMock())
+    monkeypatch.setattr(auth_router.UserRepository, "get_by_email", get_by_email)
+    monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
+    monkeypatch.setattr(auth_router.UserRepository, "create", create)
+    monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "get_valid_by_email",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(auth_router, "_is_domain_approved", AsyncMock(return_value=True))
+
+    user = await auth_router._create_or_link_user(_userinfo(provider))
+
+    assert user == existing_user
+    assert get_by_email.await_count == 2
+    create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_or_link_user_refetches_identity_after_duplicate_key_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = "github"
+    email = f"testuser@{provider}.example.com"
+    existing_user = _user(email)
+    existing_identity = _provider_identity(provider, user_id=existing_user.userId)
+    get_by_provider_subject = AsyncMock(side_effect=[None, existing_identity])
+
+    monkeypatch.setattr(
+        auth_router.ProviderIdentityRepository,
+        "get_by_provider_subject",
+        get_by_provider_subject,
+    )
+    monkeypatch.setattr(
+        auth_router.ProviderIdentityRepository,
+        "create",
+        AsyncMock(side_effect=DuplicateKeyError("duplicate provider subject")),
+    )
+    monkeypatch.setattr(
+        auth_router.UserRepository,
+        "get_by_email",
+        AsyncMock(return_value=existing_user),
+    )
+    monkeypatch.setattr(
+        auth_router.UserRepository,
+        "get_by_id",
+        AsyncMock(return_value=existing_user),
+    )
+
+    user = await auth_router._create_or_link_user(_userinfo(provider))
+
+    assert user == existing_user
+    assert get_by_provider_subject.await_count == 2
+
+
 # ---------------------------------------------------------------------------
 # Tests 7-8: Fixture shape validation — run immediately (no skip)
 # ---------------------------------------------------------------------------
@@ -398,3 +567,19 @@ class TestMockMicrosoftShape:
         info = mock_microsoft_userinfo_unverified
         assert info["email_verified"] is False
         assert info["email"] is None
+
+
+def test_setup_mode_auto_disabled_after_first_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """After the first admin user is created in setup mode, SETUP_MODE_ENABLED must be False."""
+    provider = "github"
+    _patch_callback(monkeypatch, provider, state=_oauth_state(provider), verified=True)
+
+    assert auth_router.settings.SETUP_MODE_ENABLED is True
+
+    client.get(
+        f"/api/auth/callback/{provider}",
+        params={"code": "legit-code", "state": "valid-state"},
+        follow_redirects=False,
+    )
+
+    assert auth_router.settings.SETUP_MODE_ENABLED is False

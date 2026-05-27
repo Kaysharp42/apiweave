@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Header, Request
 from fastapi.responses import JSONResponse
 from typing import List, Optional, Literal
 from datetime import datetime, UTC
+import logging
 import secrets
 import uuid
 import hmac
@@ -41,6 +42,7 @@ from app.idempotency import get_idempotency_entry, store_idempotency_entry
 
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+logger = logging.getLogger(__name__)
 
 
 async def _run_workflow_and_update_webhook(
@@ -663,6 +665,7 @@ async def _validate_hmac_or_raise(
     try:
         await validate_hmac_signature(webhook_id, signature, timestamp, body)
     except ReplayAttackError as exc:
+        logger.warning(f"Replay attack details: {exc}")
         await WebhookLog(
             logId=f"log-{uuid.uuid4().hex[:12]}",
             webhookId=webhook_id,
@@ -675,7 +678,7 @@ async def _validate_hmac_or_raise(
         ).insert()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Replay attack detected: {exc}",
+            detail="Replay attack detected",
         )
     except InvalidSignatureError as exc:
         await WebhookLog(
@@ -796,7 +799,7 @@ async def execute_workflow_webhook(
 
     # ── 6. Idempotency check ──────────────────────────────────────────────────
     if idempotency_key:
-        cached = get_idempotency_entry(webhook_id, idempotency_key)
+        cached = await get_idempotency_entry(webhook_id, idempotency_key)
         if cached is not None:
             rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
             return JSONResponse(
@@ -860,7 +863,7 @@ async def execute_workflow_webhook(
 
     # ── 11. Store idempotency entry ───────────────────────────────────────────
     if idempotency_key:
-        store_idempotency_entry(
+        await store_idempotency_entry(
             webhook_id=webhook_id,
             idempotency_key=idempotency_key,
             run_id=run.runId,
@@ -969,7 +972,7 @@ async def execute_collection_webhook(
 
     # ── 6. Idempotency check ──────────────────────────────────────────────────
     if idempotency_key:
-        cached = get_idempotency_entry(webhook_id, idempotency_key)
+        cached = await get_idempotency_entry(webhook_id, idempotency_key)
         if cached is not None:
             rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
             return JSONResponse(
@@ -1040,7 +1043,7 @@ async def execute_collection_webhook(
 
     # ── 11. Store idempotency entry ───────────────────────────────────────────
     if idempotency_key:
-        store_idempotency_entry(
+        await store_idempotency_entry(
             webhook_id=webhook_id,
             idempotency_key=idempotency_key,
             run_id=collection_run.collectionRunId,

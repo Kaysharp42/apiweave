@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_auth_configuration(self) -> "Settings":
         if self.APP_ENV.lower() in {"production", "prod"}:
+            if self.SETUP_MODE_ENABLED:
+                raise ValueError(
+                    "SETUP_MODE_ENABLED must be False in production after initial admin is created"
+                )
+
             if not self.SESSION_SECRET_KEY:
                 raise ValueError("SESSION_SECRET_KEY is required in production")
 

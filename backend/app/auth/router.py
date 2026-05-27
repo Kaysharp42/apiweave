@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -11,6 +12,7 @@ from urllib.parse import urlencode, urljoin
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+from pymongo.errors import DuplicateKeyError
 
 from app.auth.dependencies import (
     csrf_protect,
@@ -37,6 +39,8 @@ from app.repositories.auth_repositories import (
     SessionRepository,
     UserRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 SESSION_COOKIE_NAME = "session"
@@ -85,6 +89,8 @@ def _session_hash(token: str) -> str:
 
 
 def _email_domain(email: str) -> str:
+    if "@" not in email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email format")
     return email.rsplit("@", maxsplit=1)[-1].lower()
 
 
@@ -109,12 +115,14 @@ async def _is_domain_approved(email: str) -> bool:
     return await ApprovedDomainRepository.is_domain_approved(domain)
 
 
-async def _create_or_link_user(userinfo: Any) -> User:
+async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -> User:
     if not userinfo.email or not userinfo.email_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Verified email required",
         )
+    if "@" not in userinfo.email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email format")
 
     identity = await ProviderIdentityRepository.get_by_provider_subject(
         userinfo.provider,
@@ -131,41 +139,89 @@ async def _create_or_link_user(userinfo: Any) -> User:
         valid_invites = await InviteRepository.get_valid_by_email(userinfo.email)
         if settings.SETUP_MODE_ENABLED and user_count == 0:
             roles = [PRESET_ADMIN]
-            user = await UserRepository.create(
-                user_id=f"usr-{uuid.uuid4().hex[:12]}",
-                verified_email=userinfo.email,
-                display_name=userinfo.name,
-                avatar_url=userinfo.avatar_url,
-                roles=roles,
-                permissions=[],
-            )
+            try:
+                user = await UserRepository.create(
+                    user_id=f"usr-{uuid.uuid4().hex[:12]}",
+                    verified_email=userinfo.email,
+                    display_name=userinfo.name,
+                    avatar_url=userinfo.avatar_url,
+                    roles=roles,
+                    permissions=[],
+                )
+            except DuplicateKeyError:
+                logger.warning(
+                    "OAuth user creation raced for verified email %s; re-fetching existing user",
+                    userinfo.email,
+                )
+                user = await UserRepository.get_by_email(userinfo.email)
+                if user is None:
+                    raise
             updated = await UserRepository.update(user.userId, is_setup_complete=True)
             user = updated or user
+            settings.SETUP_MODE_ENABLED = False
+            logger.warning(
+                "Setup mode auto-disabled after first admin user was created (%s). "
+                "Set SETUP_MODE_ENABLED=False in your environment configuration.",
+                userinfo.email,
+            )
         elif valid_invites:
-            invite = sorted(valid_invites, key=lambda item: item.expires_at)[0]
+            invite_token_hash = hashlib.sha256((invite_token or "").encode("utf-8")).hexdigest()
+            invite = next(
+                (
+                    item
+                    for item in sorted(valid_invites, key=lambda invite: invite.expires_at)
+                    if _constant_time_match(invite_token_hash, item.token_hash)
+                ),
+                None,
+            )
+            if invite is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Invalid invite token",
+                )
             consumed = await InviteRepository.consume(invite.inviteId)
             if not consumed:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access requires an invitation",
                 )
-            user = await UserRepository.create(
-                user_id=f"usr-{uuid.uuid4().hex[:12]}",
-                verified_email=userinfo.email,
-                display_name=userinfo.name,
-                avatar_url=userinfo.avatar_url,
-                roles=[invite.role_preset],
-                permissions=[],
-            )
+            try:
+                user = await UserRepository.create(
+                    user_id=f"usr-{uuid.uuid4().hex[:12]}",
+                    verified_email=userinfo.email,
+                    display_name=userinfo.name,
+                    avatar_url=userinfo.avatar_url,
+                    roles=[invite.role_preset],
+                    permissions=[],
+                )
+            except DuplicateKeyError:
+                logger.warning(
+                    "OAuth invited user creation raced for verified email %s; "
+                    "re-fetching existing user",
+                    userinfo.email,
+                )
+                user = await UserRepository.get_by_email(userinfo.email)
+                if user is None:
+                    raise
         elif await _is_domain_approved(userinfo.email):
-            user = await UserRepository.create(
-                user_id=f"usr-{uuid.uuid4().hex[:12]}",
-                verified_email=userinfo.email,
-                display_name=userinfo.name,
-                avatar_url=userinfo.avatar_url,
-                roles=[PRESET_VIEWER],
-                permissions=[],
-            )
+            try:
+                user = await UserRepository.create(
+                    user_id=f"usr-{uuid.uuid4().hex[:12]}",
+                    verified_email=userinfo.email,
+                    display_name=userinfo.name,
+                    avatar_url=userinfo.avatar_url,
+                    roles=[PRESET_VIEWER],
+                    permissions=[],
+                )
+            except DuplicateKeyError:
+                logger.warning(
+                    "OAuth domain-approved user creation raced for verified email %s; "
+                    "re-fetching existing user",
+                    userinfo.email,
+                )
+                user = await UserRepository.get_by_email(userinfo.email)
+                if user is None:
+                    raise
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -177,14 +233,31 @@ async def _create_or_link_user(userinfo: Any) -> User:
         userinfo.subject,
     )
     if not existing_identity:
-        await ProviderIdentityRepository.create(
-            identity_id=f"pid-{uuid.uuid4().hex[:12]}",
-            user_id=user.userId,
-            provider=userinfo.provider,
-            subject=userinfo.subject,
-            email=userinfo.email,
-            verified=True,
-        )
+        try:
+            await ProviderIdentityRepository.create(
+                identity_id=f"pid-{uuid.uuid4().hex[:12]}",
+                user_id=user.userId,
+                provider=userinfo.provider,
+                subject=userinfo.subject,
+                email=userinfo.email,
+                verified=True,
+            )
+        except DuplicateKeyError:
+            logger.warning(
+                "OAuth provider identity creation raced for provider=%s subject=%s; "
+                "re-fetching existing identity",
+                userinfo.provider,
+                userinfo.subject,
+            )
+            existing_identity = await ProviderIdentityRepository.get_by_provider_subject(
+                userinfo.provider,
+                userinfo.subject,
+            )
+            if existing_identity is None:
+                raise
+            linked_user = await UserRepository.get_by_id(existing_identity.userId)
+            if linked_user:
+                return linked_user
     return user
 
 
@@ -234,6 +307,7 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     state = secrets.token_urlsafe(32)
+    invite_token = request.query_params.get("invite_token")
     nonce = generate_nonce()
     code_verifier, code_challenge = generate_pkce_pair()
     redirect_uri = _redirect_uri(request, provider_config.name)
@@ -245,6 +319,7 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
         provider=provider_config.name,
         redirect_uri=redirect_uri,
         expires_at=datetime.now(UTC) + timedelta(minutes=10),
+        invite_token=invite_token,
     )
     login_url = create_login_url(provider_config, state, nonce, code_challenge, redirect_uri)
     return RedirectResponse(login_url, status_code=status.HTTP_302_FOUND)
@@ -298,10 +373,14 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
     userinfo = await fetch_userinfo(provider_config, token_response, stored_state.code_verifier)
     _validate_nonce(provider_config, stored_state.nonce, userinfo)
     try:
-        user = await _create_or_link_user(userinfo)
+        user = await _create_or_link_user(userinfo, stored_state.invite_token)
     except HTTPException as exc:
-        if exc.status_code == status.HTTP_403_FORBIDDEN and str(exc.detail) == "Access requires an invitation":
-            return RedirectResponse(_frontend_login_error(str(exc.detail)), status_code=status.HTTP_302_FOUND)
+        invite_required = str(exc.detail) == "Access requires an invitation"
+        if exc.status_code == status.HTTP_403_FORBIDDEN and invite_required:
+            return RedirectResponse(
+                _frontend_login_error(str(exc.detail)),
+                status_code=status.HTTP_302_FOUND,
+            )
         raise
     response = RedirectResponse(_frontend_url("/"), status_code=status.HTTP_302_FOUND)
     await _create_session(response, user)

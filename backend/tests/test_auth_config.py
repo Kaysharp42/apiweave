@@ -15,6 +15,28 @@ def _base_settings_kwargs() -> dict[str, str]:
     }
 
 
+def test_setup_mode_enabled_in_production_is_invalid() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            **_base_settings_kwargs(),
+            APP_ENV="production",
+            SETUP_MODE_ENABLED=True,
+        )
+
+    assert "SETUP_MODE_ENABLED must be False in production" in str(exc_info.value)
+
+
+def test_setup_mode_enabled_in_prod_alias_is_invalid() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            **_base_settings_kwargs(),
+            APP_ENV="prod",
+            SETUP_MODE_ENABLED=True,
+        )
+
+    assert "SETUP_MODE_ENABLED must be False in production" in str(exc_info.value)
+
+
 def test_provider_missing_secret_is_invalid_in_prod() -> None:
     with pytest.raises(ValidationError) as exc_info:
         Settings(
@@ -42,7 +64,7 @@ def test_session_timeout_defaults_are_balanced() -> None:
 
 
 def test_setup_mode_enabled_by_default() -> None:
-    settings = Settings(**_base_settings_kwargs())
+    settings = Settings(**_base_settings_kwargs(), SETUP_MODE_ENABLED=True)
 
     assert settings.SETUP_MODE_ENABLED is True
 

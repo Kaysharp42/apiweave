@@ -421,6 +421,23 @@ class WebhookLog(Document):
         ]
 
 
+class IdempotencyKey(Document):
+    webhookId: str
+    idempotencyKey: str
+    runId: str
+    collectionRunId: Optional[str] = None
+    statusCode: int
+    responseBody: Dict[str, Any]
+    expires_at: datetime
+
+    class Settings:
+        name = "idempotency_keys"
+        indexes = [
+            IndexModel([("webhookId", ASCENDING), ("idempotencyKey", ASCENDING)], unique=True),
+            IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=86400),
+        ]
+
+
 # Request/Response models for Webhooks
 
 class WebhookCreate(BaseModel):
@@ -578,6 +595,7 @@ class OAuthState(Document):
     nonce: str                  # OIDC nonce for ID token validation
     provider: str               # "github" | "gitlab" | "microsoft" | "google"
     redirect_uri: Optional[str] = None
+    invite_token: Optional[str] = None
     expires_at: datetime        # TTL index — typically now + 10 minutes
 
     class Settings:

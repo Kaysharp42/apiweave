@@ -1,15 +1,14 @@
+import asyncio
 import hashlib
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-import asyncio
 
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models import Node, Session, User
 from app.repositories.auth_repositories import SessionRepository, UserRepository
-
 
 _SESSION_TOKEN = "test-resume-session-token"
 
@@ -55,6 +54,8 @@ def _auth_patches():
 
 client = TestClient(app)
 client.cookies.set("session", _SESSION_TOKEN)
+client.cookies.set("csrftoken", "resume-csrf-token")
+client.headers.update({"X-CSRF-Token": "resume-csrf-token"})
 
 
 WORKFLOW_ID = "fc87c260-e0b8-4b63-a762-47169f04f690"
@@ -79,10 +80,30 @@ def _workflow_with_example_nodes():
         workflowId=WORKFLOW_ID,
         variables={"catID": "response.body.id"},
         nodes=[
-            Node(nodeId="start-1", type="start", label="Start", position={"x": 0, "y": 0}, config={}),
-            Node(nodeId="http-request-1761432741713", type="http-request", label="Http Request  NB3", position={"x": 1, "y": 1}, config={}),
-            Node(nodeId="http-request-1761477525560", type="http-request", label="Http Request NB4", position={"x": 2, "y": 2}, config={}),
-            Node(nodeId="delay-1770749505484", type="delay", label="Delay", position={"x": 3, "y": 3}, config={}),
+            Node(
+                nodeId="start-1", type="start", label="Start", position={"x": 0, "y": 0}, config={}
+            ),
+            Node(
+                nodeId="http-request-1761432741713",
+                type="http-request",
+                label="Http Request  NB3",
+                position={"x": 1, "y": 1},
+                config={},
+            ),
+            Node(
+                nodeId="http-request-1761477525560",
+                type="http-request",
+                label="Http Request NB4",
+                position={"x": 2, "y": 2},
+                config={},
+            ),
+            Node(
+                nodeId="delay-1770749505484",
+                type="delay",
+                label="Delay",
+                position={"x": 3, "y": 3},
+                config={},
+            ),
         ],
     )
 
@@ -98,7 +119,8 @@ def _run(run_id: str, status: str, failed_nodes=None, node_statuses=None):
     )
 
 
-def test_latest_failed_endpoint_returns_none_when_latest_run_is_success_even_if_older_failed_exists():
+def test_latest_failed_endpoint_returns_none_when_latest_run_is_success_even_if_older_failed_exists(
+) -> None:
     workflow = _workflow_with_example_nodes()
     latest_success = _run("run-success", "completed")
 
@@ -193,8 +215,13 @@ def test_resume_run_accepts_workflow_nodes_as_pydantic_models_regression_for_nod
         touch_patch,
         user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
-        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
-        patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=latest_failed),
+        patch(
+            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            return_value=SimpleNamespace(environmentId=ENV_ID),
+        ),
+        patch(
+            "app.routes.workflows.RunRepository.get_latest_failed_run", return_value=latest_failed
+        ),
         patch("app.routes.workflows.RunRepository.get_by_id", return_value=latest_failed),
         patch("app.models.Run", _DummyRunInsert),
         patch("app.routes.workflows.asyncio.create_task", side_effect=_close_scheduled_coroutine),
@@ -240,7 +267,10 @@ def test_resume_run_uses_node_status_fallback_when_source_failed_nodes_empty():
         touch_patch,
         user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
-        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
+        patch(
+            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            return_value=SimpleNamespace(environmentId=ENV_ID),
+        ),
         patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=source_run),
         patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
         patch("app.models.Run", _DummyRunInsert),
@@ -273,7 +303,10 @@ def test_resume_run_returns_409_when_no_failed_run_exists_for_auto_resume():
         touch_patch,
         user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
-        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
+        patch(
+            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            return_value=SimpleNamespace(environmentId=ENV_ID),
+        ),
         patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=None),
     ):
         response = client.post(
@@ -295,7 +328,10 @@ def test_resume_run_returns_400_for_invalid_resume_node_ids():
         touch_patch,
         user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
-        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
+        patch(
+            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            return_value=SimpleNamespace(environmentId=ENV_ID),
+        ),
         patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
     ):
         response = client.post(
@@ -327,7 +363,10 @@ def test_resume_single_mode_trims_multiple_failed_nodes_to_first():
         touch_patch,
         user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
-        patch("app.routes.workflows.EnvironmentRepository.get_by_id", return_value=SimpleNamespace(environmentId=ENV_ID)),
+        patch(
+            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            return_value=SimpleNamespace(environmentId=ENV_ID),
+        ),
         patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
         patch("app.models.Run", _DummyRunInsert),
         patch("app.routes.workflows.asyncio.create_task", side_effect=_close_scheduled_coroutine),
@@ -356,7 +395,9 @@ def test_latest_failed_endpoint_follows_latest_run_transitions_failed_then_succe
         "run-failed-transition",
         "failed",
         failed_nodes=["http-request-1761432741713"],
-        node_statuses={"http-request-1761432741713": {"status": "error", "timestamp": "2026-02-22T10:00:00Z"}},
+        node_statuses={
+            "http-request-1761432741713": {"status": "error", "timestamp": "2026-02-22T10:00:00Z"}
+        },
     )
     latest_success = _run("run-success-transition", "completed")
 
@@ -366,7 +407,10 @@ def test_latest_failed_endpoint_follows_latest_run_transitions_failed_then_succe
         touch_patch,
         user_patch,
         patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
-        patch("app.routes.workflows.RunRepository.get_latest_run", side_effect=[latest_failed, latest_success]),
+        patch(
+            "app.routes.workflows.RunRepository.get_latest_run",
+            side_effect=[latest_failed, latest_success],
+        ),
     ):
         first = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
         second = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")

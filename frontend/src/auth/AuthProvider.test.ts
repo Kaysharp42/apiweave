@@ -130,29 +130,43 @@ test('logout: POST /api/auth/logout uses credentials: include', async () => {
 // hasPermission logic
 // ---------------------------------------------------------------------------
 
-test('hasPermission: returns true when permission is in user.permissions', () => {
-  const permissions = ['workflows:read', 'workflows:write', 'admin'];
-  const hasPermission = (permission: string): boolean => permissions.includes(permission);
+interface PermissionUser {
+  roles: string[];
+  permissions?: string[] | null | undefined;
+}
 
-  assert.equal(hasPermission('workflows:read'), true);
-  assert.equal(hasPermission('workflows:write'), true);
-  assert.equal(hasPermission('admin'), true);
-  assert.equal(hasPermission('superuser'), false);
+function hasPermission(user: PermissionUser, permission: string): boolean {
+  if (user.roles.includes('admin')) {
+    return true;
+  }
+
+  return Array.isArray(user.permissions) && user.permissions.includes(permission);
+}
+
+test('hasPermission: returns true when permission is in user.permissions', () => {
+  const user: PermissionUser = { roles: ['user'], permissions: ['workflows:read', 'workflows:write'] };
+
+  assert.equal(hasPermission(user, 'workflows:read'), true);
+  assert.equal(hasPermission(user, 'workflows:write'), true);
+  assert.equal(hasPermission(user, 'superuser'), false);
 });
 
-test('hasPermission: returns false for empty permissions list', () => {
-  const permissions: string[] = [];
-  const hasPermission = (permission: string): boolean => permissions.includes(permission);
+test('hasPermission: returns false when permissions are missing', () => {
+  const user: PermissionUser = { roles: ['user'], permissions: undefined };
 
-  assert.equal(hasPermission('workflows:read'), false);
+  assert.equal(hasPermission(user, 'workflows:read'), false);
 });
 
 test('hasPermission: admin role grants admin-only permissions', () => {
-  const roles = ['admin'];
-  const permissions: string[] = [];
-  const hasPermission = (permission: string): boolean => (
-    roles.includes('admin') || permissions.includes(permission) || roles.includes(permission)
-  );
+  const user: PermissionUser = { roles: ['admin'], permissions: undefined };
 
-  assert.equal(hasPermission('users:invite'), true);
+  assert.equal(hasPermission(user, 'users:invite'), true);
+  assert.equal(hasPermission(user, 'admin'), true);
+});
+
+test('hasPermission: explicit permission grants access without admin role', () => {
+  const user: PermissionUser = { roles: ['user'], permissions: ['users:invite'] };
+
+  assert.equal(hasPermission(user, 'users:invite'), true);
+  assert.equal(hasPermission(user, 'admin'), false);
 });
