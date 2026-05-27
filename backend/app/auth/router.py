@@ -395,7 +395,7 @@ async def create_invite(
         expires_at=now + timedelta(days=7),
     )
     return CreateInviteResponse(
-        invite_url=f"/invite?token={raw_token}",
+        invite_url=f"/invite/{raw_token}",
         inviteId=invite.inviteId,
         email=invite.email,
         role_preset=invite.role_preset,

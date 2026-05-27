@@ -727,7 +727,7 @@ async def _require_hmac_when_configured(
 async def execute_workflow_webhook(
     webhook_id: str,
     request: Request,
-    _rate_limit: None = Depends(check_webhook_rate_limit),
+    _rate_limit: int = Depends(check_webhook_rate_limit),
     x_webhook_token: Optional[str] = Header(None),
     x_webhook_signature: Optional[str] = Header(None),
     x_webhook_timestamp: Optional[str] = Header(None),
@@ -798,7 +798,7 @@ async def execute_workflow_webhook(
     if idempotency_key:
         cached = get_idempotency_entry(webhook_id, idempotency_key)
         if cached is not None:
-            rl_headers = get_rate_limit_headers(webhook_id)
+            rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
             return JSONResponse(
                 status_code=200,
                 content=cached.response_body,
@@ -891,16 +891,8 @@ async def execute_workflow_webhook(
         _run_workflow_and_update_webhook(executor, webhook_id, webhook_log, triggered_at)
     )
 
-    # ── 14. Update usage stats ────────────────────────────────────────────────
-    webhook.usageCount = (webhook.usageCount or 0) + 1
-    webhook.lastUsed = datetime.now(UTC)
-    await WebhookRepository.update(webhook_id, {
-        "usageCount": webhook.usageCount,
-        "lastUsed": webhook.lastUsed,
-    })
-
-    # ── 15. Return 202 with rate-limit headers ────────────────────────────────
-    rl_headers = get_rate_limit_headers(webhook_id)
+    # ── 14. Return 202 with rate-limit headers ────────────────────────────────
+    rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
     return JSONResponse(status_code=202, content=response_body, headers=rl_headers)
 
 
@@ -908,7 +900,7 @@ async def execute_workflow_webhook(
 async def execute_collection_webhook(
     webhook_id: str,
     request: Request,
-    _rate_limit: None = Depends(check_webhook_rate_limit),
+    _rate_limit: int = Depends(check_webhook_rate_limit),
     x_webhook_token: Optional[str] = Header(None),
     x_webhook_signature: Optional[str] = Header(None),
     x_webhook_timestamp: Optional[str] = Header(None),
@@ -979,7 +971,7 @@ async def execute_collection_webhook(
     if idempotency_key:
         cached = get_idempotency_entry(webhook_id, idempotency_key)
         if cached is not None:
-            rl_headers = get_rate_limit_headers(webhook_id)
+            rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
             return JSONResponse(
                 status_code=200,
                 content=cached.response_body,
@@ -1081,5 +1073,5 @@ async def execute_collection_webhook(
     ))
 
     # ── 14. Return 202 with rate-limit headers ────────────────────────────────
-    rl_headers = get_rate_limit_headers(webhook_id)
+    rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
     return JSONResponse(status_code=202, content=response_body, headers=rl_headers)

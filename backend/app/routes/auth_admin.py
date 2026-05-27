@@ -55,6 +55,29 @@ async def list_users() -> list[UserResponse]:
     return [_user_response(u) for u in users]
 
 
+async def _ensure_not_removing_last_admin(user_id: str, new_roles: list[str] | None = None) -> None:
+    """Prevent demoting or deleting the last admin user."""
+    users = await UserRepository.get_all()
+    target_user = next((u for u in users if u.userId == user_id), None)
+    if not target_user:
+        return
+
+    if new_roles is not None:
+        is_demoting = "admin" in target_user.roles and "admin" not in new_roles
+    else:
+        is_demoting = False
+
+    is_deleting = new_roles is None
+
+    if is_demoting or is_deleting:
+        admin_count = sum(1 for u in users if "admin" in u.roles)
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot remove the last admin user",
+            )
+
+
 @router.patch(
     "/users/{user_id}/roles",
     response_model=UserResponse,
@@ -64,6 +87,7 @@ async def update_user_roles(
     user_id: str,
     body: UpdateRolesRequest,
 ) -> UserResponse:
+    await _ensure_not_removing_last_admin(user_id, body.roles)
     updated = await UserRepository.update(user_id, roles=body.roles)
     if not updated:
         raise HTTPException(
@@ -79,6 +103,7 @@ async def update_user_roles(
     dependencies=[require_permission(USERS_DELETE)],
 )
 async def delete_user(user_id: str) -> None:
+    await _ensure_not_removing_last_admin(user_id)
     deleted = await UserRepository.delete(user_id)
     if not deleted:
         raise HTTPException(
@@ -171,7 +196,7 @@ async def settings_create_invite(
         expires_at=now + timedelta(days=7),
     )
     return SettingsCreateInviteResponse(
-        invite_url=f"/invite?token={raw_token}",
+        invite_url=f"/invite/{raw_token}",
         inviteId=invite.inviteId,
         email=invite.email,
         role_preset=invite.role_preset,

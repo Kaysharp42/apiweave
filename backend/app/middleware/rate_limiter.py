@@ -99,27 +99,12 @@ _rate_limiter = RateLimiter()
 async def check_webhook_rate_limit(
     webhook_id: str,
     max_requests_per_hour: int = 100
-) -> None:
+) -> int:
     """
-    FastAPI dependency for webhook rate limiting
+    FastAPI dependency for webhook rate limiting.
     
+    Returns remaining request count for downstream header generation.
     Raises HTTPException if rate limit exceeded.
-    
-    Usage:
-        @router.post("/api/webhooks/workflows/{webhook_id}/execute")
-        async def execute_workflow_webhook(
-            webhook_id: str,
-            _: None = Depends(check_webhook_rate_limit)
-        ):
-            # Rate-limited request
-            pass
-    
-    Args:
-        webhook_id: Webhook ID from URL path
-        max_requests_per_hour: Maximum requests allowed per hour (default 100)
-        
-    Raises:
-        HTTPException: 429 if rate limit exceeded
     """
     allowed, remaining, reset_time = _rate_limiter.check_rate_limit(
         webhook_id=webhook_id,
@@ -138,30 +123,36 @@ async def check_webhook_rate_limit(
                 "Retry-After": str(reset_time - int(time.time()))
             }
         )
+    
+    return remaining
 
 
 def get_rate_limit_headers(
     webhook_id: str,
-    max_requests_per_hour: int = 100
+    max_requests_per_hour: int = 100,
+    remaining: int | None = None,
 ) -> dict:
     """
-    Get current rate limit headers for response
+    Read-only rate limit headers for the response.
     
-    Args:
-        webhook_id: Webhook ID
-        max_requests_per_hour: Maximum requests allowed per hour
-        
-    Returns:
-        Dictionary of rate limit headers
+    Must NOT call check_rate_limit — that would consume an extra slot.
+    When `remaining` is provided from the dependency, use it directly.
     """
-    _, remaining, reset_time = _rate_limiter.check_rate_limit(
-        webhook_id=webhook_id,
-        max_requests=max_requests_per_hour,
-        window_seconds=3600
-    )
-    
+    current_time = time.time()
+    window_seconds = 3600
+    cutoff_time = current_time - window_seconds
+    request_times, _ = _rate_limiter._buckets.get(webhook_id, ([], current_time))
+    active_times = [t for t in request_times if t > cutoff_time]
+
+    if remaining is not None:
+        remaining = max(0, remaining)
+    else:
+        remaining = max(0, max_requests_per_hour - len(active_times))
+
+    reset_time = int(min(active_times) + window_seconds) if active_times else int(current_time + window_seconds)
+
     return {
         "X-RateLimit-Limit": str(max_requests_per_hour),
         "X-RateLimit-Remaining": str(remaining),
-        "X-RateLimit-Reset": str(reset_time)
+        "X-RateLimit-Reset": str(reset_time),
     }
