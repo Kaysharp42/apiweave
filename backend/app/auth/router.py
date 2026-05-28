@@ -33,6 +33,7 @@ from app.config import settings
 from app.models import InviteResponse, Session, User, UserResponse
 from app.repositories.auth_repositories import (
     ApprovedDomainRepository,
+    DeletedUserRepository,
     InviteRepository,
     OAuthStateRepository,
     ProviderIdentityRepository,
@@ -140,6 +141,17 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
     if "@" not in userinfo.email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email format")
 
+    if await DeletedUserRepository.is_deleted(userinfo.subject):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account has been deleted",
+        )
+    if await DeletedUserRepository.is_email_deleted(userinfo.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account has been deleted",
+        )
+
     identity = await ProviderIdentityRepository.get_by_provider_subject(
         userinfo.provider,
         userinfo.subject,
@@ -148,6 +160,11 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
         user = await UserRepository.get_by_id(identity.userId)
         if user:
             return await _reconcile_orphan_invite(user, invite_token)
+        await ProviderIdentityRepository.delete(identity.identityId)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account has been deleted",
+        )
 
     user = await UserRepository.get_by_email(userinfo.email)
     if user is None:

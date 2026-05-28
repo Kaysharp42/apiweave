@@ -485,6 +485,20 @@ class User(Document):
         ]
 
 
+class DeletedUser(Document):
+    """Blocklist for deleted users to prevent re-creation via OAuth."""
+    userId: str
+    verified_email: str
+    deleted_at: datetime
+
+    class Settings:
+        name = "deleted_users"
+        indexes = [
+            IndexModel([("userId", ASCENDING)], unique=True),
+            IndexModel([("verified_email", ASCENDING)], unique=True),
+        ]
+
+
 class ProviderIdentity(Document):
     """
     OAuth provider identity linked to a User.

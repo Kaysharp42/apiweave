@@ -1,7 +1,17 @@
 from datetime import UTC, datetime, timedelta
 
+from beanie.exceptions import CollectionWasNotInitialized
+
 from app.config import settings
-from app.models import ApprovedDomain, Invite, OAuthState, ProviderIdentity, Session, User
+from app.models import (
+    ApprovedDomain,
+    DeletedUser,
+    Invite,
+    OAuthState,
+    ProviderIdentity,
+    Session,
+    User,
+)
 
 
 class UserRepository:
@@ -66,10 +76,13 @@ class UserRepository:
 
     @staticmethod
     async def delete(user_id: str) -> bool:
-        """Delete user; returns True if deleted, False if not found"""
+        """Delete user and all related data; returns True if deleted, False if not found"""
         user = await UserRepository.get_by_id(user_id)
         if not user:
             return False
+        await DeletedUserRepository.create(user.userId, user.verified_email)
+        await ProviderIdentityRepository.delete_by_user_id(user_id)
+        await SessionRepository.delete_all_for_user(user_id)
         await user.delete()
         return True
 
@@ -137,6 +150,16 @@ class ProviderIdentityRepository:
             return False
         await identity.delete()
         return True
+
+    @staticmethod
+    async def delete_by_user_id(user_id: str) -> int:
+        """Delete all identities for a user. Returns count deleted."""
+        identities = await ProviderIdentity.find({"userId": user_id}).to_list()
+        count = 0
+        for identity in identities:
+            await identity.delete()
+            count += 1
+        return count
 
 
 class SessionRepository:
@@ -258,6 +281,47 @@ class SessionRepository:
             await session.save()
             count += 1
         return count
+
+    @staticmethod
+    async def delete_all_for_user(user_id: str) -> int:
+        """Delete all sessions for a user. Returns count deleted."""
+        sessions = await Session.find({"userId": user_id}).to_list()
+        count = 0
+        for session in sessions:
+            await session.delete()
+            count += 1
+        return count
+
+
+class DeletedUserRepository:
+    """Repository for tracking deleted users to prevent re-creation."""
+
+    @staticmethod
+    async def create(user_id: str, verified_email: str) -> DeletedUser:
+        """Record a deleted user."""
+        deleted = DeletedUser(
+            userId=user_id,
+            verified_email=verified_email,
+            deleted_at=datetime.now(UTC),
+        )
+        await deleted.insert()
+        return deleted
+
+    @staticmethod
+    async def is_deleted(user_id: str) -> bool:
+        """Check if a user has been deleted."""
+        try:
+            return await DeletedUser.find_one({"userId": user_id}) is not None
+        except CollectionWasNotInitialized:
+            return False
+
+    @staticmethod
+    async def is_email_deleted(email: str) -> bool:
+        """Check if an email belongs to a deleted user."""
+        try:
+            return await DeletedUser.find_one({"verified_email": email}) is not None
+        except CollectionWasNotInitialized:
+            return False
 
 
 class InviteRepository:
