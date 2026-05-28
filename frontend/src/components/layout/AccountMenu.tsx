@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent }
 import { Link, useNavigate } from 'react-router-dom';
 import { BadgeCheck, LogOut, Settings, Shield } from 'lucide-react';
 import { useAuth } from '../../auth/useAuth';
-import { Button } from '../atoms';
+import { Button } from '../atoms/Button';
 import { getAccountDisplayName, getAccountInitials, getRoleSummary } from './accountMenuUtils';
 
 export function AccountMenu() {
@@ -37,7 +37,7 @@ export function AccountMenu() {
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick as EventListener);
+    document.addEventListener('touchstart', handleOutsideClick as EventListener, { passive: true });
     document.addEventListener('keydown', handleEscape);
 
     return () => {

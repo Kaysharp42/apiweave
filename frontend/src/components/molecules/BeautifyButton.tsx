@@ -1,6 +1,6 @@
 import { Braces } from 'lucide-react';
 import { toast } from 'sonner';
-import { IconButton } from '../atoms';
+import { IconButton } from '../atoms/IconButton';
 import { formatOrMinifyJson } from '../../utils/jsonFormat';
 
 export interface BeautifyButtonProps {
@@ -15,7 +15,7 @@ export function BeautifyButton({ value, onChange, className = '' }: BeautifyButt
     if (success) {
       onChange(result);
     } else {
-      toast.error('Invalid JSON — cannot format');
+      toast.error('Invalid JSON -- cannot format');
     }
   };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/useAuth';
 import { toast } from 'sonner';
@@ -21,8 +21,13 @@ import {
 import API_BASE_URL from '../../utils/api';
 import WorkflowExportImport from '../WorkflowExportImport';
 import CollectionExportImport from '../CollectionExportImport';
-import { Badge, Spinner, Skeleton, Button } from '../atoms';
-import { ConfirmDialog, EmptyState, PromptDialog } from '../molecules';
+import { Badge } from '../atoms/Badge';
+import { Button } from '../atoms/Button';
+import { Spinner } from '../atoms/Spinner';
+import { Skeleton } from '../atoms/Skeleton';
+import { ConfirmDialog } from '../molecules/ConfirmDialog';
+import { EmptyState } from '../molecules/EmptyState';
+import { PromptDialog } from '../molecules/PromptDialog';
 import useSidebarStore from '../../stores/SidebarStore';
 import useTabStore from '../../stores/TabStore';
 import { getSidebarItemLabel } from '../../utils/sidebarItemLabel';
@@ -123,6 +128,7 @@ function WorkflowItem({ workflow, isActive, collections, environments, onWorkflo
 
         <div className="ml-1 flex w-[64px] shrink-0 items-center justify-end gap-1">
           <button
+            type="button"
             onClick={(event) => {
               event.stopPropagation();
               onExportWorkflow(workflow);
@@ -135,6 +141,7 @@ function WorkflowItem({ workflow, isActive, collections, environments, onWorkflo
           </button>
 
           <button
+            type="button"
             onClick={(event) => {
               event.stopPropagation();
               onDeleteWorkflow(workflow.workflowId, workflow.name);
@@ -175,6 +182,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
   const [deleteWorkflowTarget, setDeleteWorkflowTarget] = useState<{ workflowId: string; name: string } | null>(null);
   const [deleteCollectionTarget, setDeleteCollectionTarget] = useState<{ collectionId: string; name: string } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const handleScrollRef = useRef<() => void>(() => {});
 
   const searchQuery = useSidebarStore((s) => s.searchQuery);
   const workflowVersion = useSidebarStore((s) => s.workflowVersion);
@@ -182,41 +190,6 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
   const closeTab = useTabStore((s) => s.closeTab);
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (selectedNav === 'workflows') {
-      setWorkflows([]);
-      setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
-      fetchWorkflows(0);
-    } else if (selectedNav === 'collections') {
-      fetchCollections();
-      fetchWorkflows(0, false, 1000);
-    }
-  }, [selectedNav]);
-
-  useEffect(() => {
-    if (workflowVersion > 0) {
-      setIsRefreshing(true);
-      setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
-      if (selectedNav === 'workflows') {
-        fetchWorkflows(0);
-      } else if (selectedNav === 'collections') {
-        fetchWorkflows(0, false, 1000);
-      }
-    }
-  }, [workflowVersion]);
-
-  useEffect(() => {
-    if (collectionVersion > 0) {
-      setIsRefreshing(true);
-      if (selectedNav === 'collections') {
-        fetchCollections();
-        fetchWorkflows(0, false, 1000);
-      } else if (selectedNav === 'workflows') {
-        fetchWorkflows(0);
-      }
-    }
-  }, [collectionVersion]);
 
   useEffect(() => {
     const loadEnvs = async () => {
@@ -231,7 +204,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
     loadEnvs();
   }, []);
 
-  const fetchWorkflows = async (skip = 0, append = false, limit = 20) => {
+  const fetchWorkflows = useCallback(async (skip = 0, append = false, limit = 20) => {
     try {
       const endpoint = selectedNav === 'workflows'
         ? `${API_BASE_URL}/api/workflows/unattached?skip=${skip}&limit=${limit}`
@@ -241,8 +214,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
       if (response.ok) {
         const data: { workflows: Workflow[]; total: number } = await response.json();
 
-        const newWorkflows = append ? [...workflows, ...data.workflows] : data.workflows;
-        setWorkflows(newWorkflows);
+        setWorkflows((previousWorkflows) => (append ? [...previousWorkflows, ...data.workflows] : data.workflows));
         setPagination({
           skip,
           limit,
@@ -256,9 +228,9 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
       setIsLoadingMore(false);
       setIsRefreshing(false);
     }
-  };
+  }, [selectedNav]);
 
-  const fetchCollections = async () => {
+  const fetchCollections = useCallback(async () => {
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
@@ -270,31 +242,67 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
     } finally {
       setIsRefreshing(false);
     }
-  };
+  }, []);
 
-  const handleScroll = useCallback(() => {
+  useEffect(() => {
+    if (selectedNav === 'workflows') {
+      setWorkflows([]);
+      setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
+      fetchWorkflows(0);
+    } else if (selectedNav === 'collections') {
+      fetchCollections();
+      fetchWorkflows(0, false, 1000);
+    }
+  }, [selectedNav, fetchWorkflows, fetchCollections]);
+
+  useEffect(() => {
+    if (workflowVersion > 0) {
+      setIsRefreshing(true);
+      setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
+      if (selectedNav === 'workflows') {
+        fetchWorkflows(0);
+      } else if (selectedNav === 'collections') {
+        fetchWorkflows(0, false, 1000);
+      }
+    }
+  }, [workflowVersion, selectedNav, fetchWorkflows]);
+
+  useEffect(() => {
+    if (collectionVersion > 0) {
+      setIsRefreshing(true);
+      if (selectedNav === 'collections') {
+        fetchCollections();
+        fetchWorkflows(0, false, 1000);
+      } else if (selectedNav === 'workflows') {
+        fetchWorkflows(0);
+      }
+    }
+  }, [collectionVersion, selectedNav, fetchWorkflows, fetchCollections]);
+
+  handleScrollRef.current = () => {
     if (scrollContainerRef.current && selectedNav === 'workflows') {
       const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
       if (scrollHeight - scrollTop <= clientHeight + 100 && !isLoadingMore && pagination.hasMore) {
         setIsLoadingMore(true);
       }
     }
-  }, [isLoadingMore, pagination, selectedNav]);
+  };
 
   useEffect(() => {
     if (isLoadingMore && pagination.hasMore) {
       const nextSkip = pagination.skip + pagination.limit;
       fetchWorkflows(nextSkip, true);
     }
-  }, [isLoadingMore, pagination]);
+  }, [isLoadingMore, pagination, fetchWorkflows]);
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     if (scrollContainer && selectedNav === 'workflows') {
-      scrollContainer.addEventListener('scroll', handleScroll);
-      return () => scrollContainer.removeEventListener('scroll', handleScroll);
+      const onScroll = () => handleScrollRef.current();
+      scrollContainer.addEventListener('scroll', onScroll, { passive: true });
+      return () => scrollContainer.removeEventListener('scroll', onScroll);
     }
-  }, [handleScroll, selectedNav]);
+  }, [selectedNav]);
 
   const createNewWorkflow = () => {
     setShowNewWorkflowPrompt(true);
@@ -565,8 +573,16 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
             return (
               <li key={collection.collectionId}>
                 <div
+                  role="button"
+                  tabIndex={0}
                   className="group flex items-center gap-2 rounded-xl border border-transparent px-2.5 py-2 cursor-pointer transition-all hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:border-border/70 dark:hover:border-border-dark/70"
                   onClick={() => toggleCollection(collection.collectionId)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      toggleCollection(collection.collectionId);
+                    }
+                  }}
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
                     {isExpanded
@@ -584,6 +600,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
 
                   <div className="ml-1 flex w-[64px] shrink-0 items-center justify-end gap-1">
                     <button
+                      type="button"
                       onClick={(event) => {
                         event.stopPropagation();
                         handleExportCollection(collection);
@@ -596,6 +613,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
                     </button>
 
                     <button
+                      type="button"
                       onClick={(event) => {
                         event.stopPropagation();
                         setDeleteCollectionTarget({
@@ -650,6 +668,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
         <ul className="menu menu-sm w-full p-2 gap-1">
           <li>
             <button
+              type="button"
               className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus:outline-none focus:ring-2 focus:ring-primary"
               onClick={() => navigate('/settings/users')}
             >
@@ -662,6 +681,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
           </li>
           <li>
             <button
+              type="button"
               className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus:outline-none focus:ring-2 focus:ring-primary"
               onClick={() => navigate('/settings/domains')}
             >
@@ -684,22 +704,26 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
   const renderWebhooksContent = () => <WebhookManager />;
 
   return (
-    <div className="flex flex-col h-full w-full bg-surface-raised dark:bg-surface-dark-raised" role="complementary" aria-label="Sidebar">
-      <SidebarHeader
-        selectedNav={selectedNav}
-        onCreateNew={handleCreateNew}
-        isRefreshing={isRefreshing}
-      />
+    <>
+      <aside className="flex flex-col h-full w-full bg-surface-raised dark:bg-surface-dark-raised" aria-label="Sidebar">
+        <SidebarHeader
+          selectedNav={selectedNav}
+          onCreateNew={handleCreateNew}
+          isRefreshing={isRefreshing}
+        />
 
-      <div className="flex-1 overflow-hidden">
-        {selectedNav === 'workflows' && renderWorkflowsContent()}
-        {selectedNav === 'collections' && renderCollectionsContent()}
-        {selectedNav === 'webhooks' && renderWebhooksContent()}
-        {selectedNav === 'mcp' && <MCPManager className="h-full" />}
-        {selectedNav === 'settings' && renderSettingsContent()}
-      </div>
+        <div className="flex-1 overflow-hidden">
+          {selectedNav === 'workflows' && renderWorkflowsContent()}
+          {selectedNav === 'collections' && renderCollectionsContent()}
+          {selectedNav === 'webhooks' && renderWebhooksContent()}
+          {selectedNav === 'mcp' && <MCPManager className="h-full" />}
+          {selectedNav === 'settings' && renderSettingsContent()}
+        </div>
+      </aside>
 
-      <CollectionManager open={showCollectionManager} onClose={() => setShowCollectionManager(false)} />
+      {showCollectionManager && (
+        <CollectionManager open={true} onClose={() => setShowCollectionManager(false)} />
+      )}
 
       {exportingWorkflowId && (
         <WorkflowExportImport
@@ -767,6 +791,6 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
         placeholder="My Workflow"
         submitLabel="Create"
       />
-    </div>
+    </>
   );
 }

@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { Modal } from '../molecules';
+import { Modal } from '../molecules/Modal';
 import type { ShortcutGroup } from '../../types/ShortcutGroup';
 import type { KeyboardShortcutsHelpProps } from '../../types/KeyboardShortcutsHelpProps';
 
@@ -55,18 +55,18 @@ export function KeyboardShortcutsHelp({ open, onClose }: KeyboardShortcutsHelpPr
               {group.title}
             </h3>
             <div className="space-y-1">
-              {group.shortcuts.map((shortcut, idx) => (
+              {group.shortcuts.map((shortcut) => (
                 <div
-                  key={idx}
+                  key={`${group.title}-${shortcut.description}`}
                   className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
                 >
                   <span className="text-sm text-text-primary dark:text-text-primary-dark">
                     {shortcut.description}
                   </span>
                   <div className="flex items-center gap-1">
-                    {shortcut.keys.map((key, kIdx) => (
-                      <Fragment key={kIdx}>
-                        {kIdx > 0 && (
+                    {shortcut.keys.map((key, keyIndex) => (
+                      <Fragment key={key}>
+                        {keyIndex > 0 && (
                           <span className="text-xs text-text-muted dark:text-text-muted-dark">+</span>
                         )}
                         <kbd className="kbd kbd-sm text-xs min-w-[24px] text-center">

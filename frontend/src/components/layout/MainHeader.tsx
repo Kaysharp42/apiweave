@@ -5,7 +5,8 @@ import { Moon, Sun, Folder, Save } from 'lucide-react';
 import Tippy from '@tippyjs/react';
 // @ts-expect-error CSS import without types
 import 'tippy.js/dist/tippy.css';
-import { Button, IconSwitch } from '../atoms';
+import { Button } from '../atoms/Button';
+import { IconSwitch } from '../atoms/IconSwitch';
 import type { AppContextType } from '../../types/AppContextType';
 import { AccountMenu } from './AccountMenu';
 
@@ -70,7 +71,9 @@ export function MainHeader() {
         <AccountMenu />
       </div>
 
-      <EnvironmentManager open={showEnvManager} onClose={() => setShowEnvManager(false)} />
+      {showEnvManager && (
+        <EnvironmentManager open={true} onClose={() => setShowEnvManager(false)} />
+      )}
     </header>
   );
 }

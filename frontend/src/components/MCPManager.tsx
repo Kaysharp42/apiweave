@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Server, Plug, BookOpen, MessageSquare, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
 import { Button } from './atoms/Button';
 import { Badge } from './atoms/Badge';
@@ -263,34 +263,32 @@ interface MCPManagerProps {
 
 export default function MCPManager({ className = '' }: MCPManagerProps) {
   const [config, setConfig] = useState<MCPConfig | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('status');
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
   const [testing, setTesting] = useState(false);
 
-  const fetchConfig = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/mcp/config`);
-      if (response.ok) {
-        const data = await response.json();
-        setConfig(data);
-      } else if (response.status === 404) {
-        setError('MCP endpoint not found. Ensure MCP_ENABLED=true in backend .env');
-      } else {
-        setError('Failed to fetch MCP configuration');
-      }
-    } catch {
-      setError('Cannot connect to backend. Is the server running?');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    fetchConfig();
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/mcp/config`);
+        if (response.ok) {
+          const data = await response.json();
+          setConfig(data);
+        } else if (response.status === 404) {
+          setError('MCP endpoint not found. Ensure MCP_ENABLED=true in backend .env');
+        } else {
+          setError('Failed to fetch MCP configuration');
+        }
+      } catch {
+        setError('Cannot connect to backend. Is the server running?');
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   const testConnection = async () => {

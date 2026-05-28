@@ -419,10 +419,15 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
     try:
         user = await _create_or_link_user(userinfo, stored_state.invite_token)
     except HTTPException as exc:
-        invite_required = str(exc.detail) == "Access requires an invitation"
-        if exc.status_code == status.HTTP_403_FORBIDDEN and invite_required:
+        detail = str(exc.detail)
+        login_error = "Access requires an invitation"
+        should_redirect_to_login = detail in {
+            login_error,
+            "Account has been deleted",
+        }
+        if exc.status_code == status.HTTP_403_FORBIDDEN and should_redirect_to_login:
             return RedirectResponse(
-                _frontend_login_error(str(exc.detail)),
+                _frontend_login_error(detail),
                 status_code=status.HTTP_302_FOUND,
             )
         raise
@@ -531,6 +536,10 @@ async def create_invite(
         expires_at=now + timedelta(days=7),
         invite_url=_frontend_url(f"/invite/{raw_token}"),
     )
+    # Clear any deleted-user block: re-inviting a previously deleted user is
+    # an explicit admin signal that they should be allowed back.
+    await DeletedUserRepository.delete_by_email(email)
+
     return CreateInviteResponse(
         invite_url=invite.invite_url or _frontend_url(f"/invite/{raw_token}"),
         inviteId=invite.inviteId,

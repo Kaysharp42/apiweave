@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useReactFlow } from 'reactflow';
 import { Clock } from 'lucide-react';
 import { BaseNode } from '../atoms/flow/BaseNode';
@@ -18,7 +18,7 @@ interface DelayNodeProps {
   selected?: boolean;
 }
 
-const DelayNode = ({ id, data, selected = false }: DelayNodeProps) => {
+const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
   const { setNodes } = useReactFlow();
 
   const updateNodeData = useCallback((value: number) => {
@@ -33,13 +33,19 @@ const DelayNode = ({ id, data, selected = false }: DelayNodeProps) => {
 
   const duration = data.config?.duration ?? 1000;
   const humanLabel = duration >= 1000 ? `${(duration / 1000).toFixed(1)}s` : `${duration}ms`;
+  const icon = useMemo(() => <Clock className="w-4 h-4 text-yellow-700 dark:text-yellow-300" />, []);
+  const titleExtra = useMemo(() => (
+    <span className="text-[10px] font-mono text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-800/40 px-1.5 py-0.5 rounded">
+      {humanLabel}
+    </span>
+  ), [humanLabel]);
 
   return (
     <BaseNode
       title={data.label ?? 'Delay'}
-      icon={<Clock className="w-4 h-4 text-yellow-700 dark:text-yellow-300" />}
+      icon={icon}
       status={data.executionStatus ?? 'idle'}
-      selected={selected}
+      selected={selected ?? false}
       nodeId={id}
       handleLeft={{ type: 'target' }}
       handleRight={{ type: 'source' }}
@@ -47,11 +53,7 @@ const DelayNode = ({ id, data, selected = false }: DelayNodeProps) => {
       defaultExpanded={false}
       headerBg="bg-yellow-50 dark:bg-yellow-900/60"
       headerTextClass="text-yellow-800 dark:text-yellow-200"
-      titleExtra={
-        <span className="text-[10px] font-mono text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-800/40 px-1.5 py-0.5 rounded">
-          {humanLabel}
-        </span>
-      }
+      titleExtra={titleExtra}
       className="min-w-[180px]"
     >
       {() => (
@@ -62,6 +64,7 @@ const DelayNode = ({ id, data, selected = false }: DelayNodeProps) => {
           <div className="flex items-center gap-1.5">
             <input
               type="number"
+              aria-label="Delay duration in milliseconds"
               className="nodrag flex-1 px-1.5 py-0.5 border border-border dark:border-border-dark
                 bg-surface dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark
                 rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"

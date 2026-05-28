@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import WorkflowCanvas from '../components/WorkflowCanvas';
-import { Spinner } from '../components/atoms';
+import { Spinner } from '../components/atoms/Spinner';
 import API_BASE_URL from '../utils/api';
 import type { WorkflowCanvasWorkflow } from '../components/WorkflowCanvas';
 import { authenticatedFetch } from '../utils/authenticatedApi';

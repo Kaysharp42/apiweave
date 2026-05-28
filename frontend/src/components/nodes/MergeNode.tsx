@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { GitMerge, CheckCircle, SquareCheckBig, Filter, AlertTriangle, Clock, ArrowRight, Sparkles } from 'lucide-react';
 import { BaseNode } from '../atoms/flow/BaseNode';
 import type { NodeStatus } from '../../types/NodeStatus';
@@ -79,6 +80,16 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
   const mergeStrategy = config.mergeStrategy ?? 'all';
   const status = executionStatus ?? data.status ?? 'idle';
   const result = executionResult ?? data.result;
+  const icon = useMemo(() => <GitMerge className="w-4 h-4 text-purple-600 dark:text-purple-400" />, []);
+  const titleExtra = useMemo(() => {
+    if (!(data.incomingBranchCount && data.incomingBranchCount > 1)) return null;
+
+    return (
+      <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-200 dark:bg-purple-800 text-purple-700 dark:text-purple-200 font-semibold" title={`Merging ${data.incomingBranchCount} branches`}>
+        &larr; {data.incomingBranchCount}x
+      </span>
+    );
+  }, [data.incomingBranchCount]);
 
   const strategyMeta: Record<MergeStrategy, StrategyMeta> = {
     all:         { icon: <Clock className="w-3.5 h-3.5 flex-shrink-0" />, desc: 'Waits for all branches' },
@@ -92,7 +103,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
   return (
     <BaseNode
       title={label ?? 'Merge'}
-      icon={<GitMerge className="w-4 h-4 text-purple-600 dark:text-purple-400" />}
+      icon={icon}
       status={status}
       selected={selected}
       nodeId={id}
@@ -103,13 +114,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
       headerBg="bg-purple-50 dark:bg-purple-900/60"
       headerTextClass="text-purple-800 dark:text-purple-200"
       statusBadgeText={status !== 'idle' ? status.charAt(0).toUpperCase() + status.slice(1) : ''}
-      titleExtra={
-        data.incomingBranchCount && data.incomingBranchCount > 1 && (
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-200 dark:bg-purple-800 text-purple-700 dark:text-purple-200 font-semibold" title={`Merging ${data.incomingBranchCount} branches`}>
-            &larr; {data.incomingBranchCount}x
-          </span>
-        )
-      }
+      titleExtra={titleExtra}
       className={`min-w-[200px] ${status === 'running' ? 'animate-pulse' : ''}`}
     >
       {({ isExpanded }) => (
@@ -122,11 +127,13 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
           {isExpanded && (
             <div className="space-y-2">
               <div className="text-xs">
-                <label className="block mb-0.5 font-medium text-text-secondary dark:text-text-secondary-dark text-[10px]">
+                <label htmlFor="merge-strategy" className="block mb-0.5 font-medium text-text-secondary dark:text-text-secondary-dark text-[10px]">
                   Merge Strategy:
                 </label>
                 <select
+                  id="merge-strategy"
                   value={mergeStrategy}
+                  onChange={() => {}}
                   disabled
                   title="Double-click node to change strategy"
                   className="w-full px-1.5 py-0.5 text-xs border border-border dark:border-border-dark rounded

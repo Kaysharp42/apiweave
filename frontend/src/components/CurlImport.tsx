@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type ChangeEvent, type DragEvent } from 'react';
+import { useState, useEffect, type ChangeEvent, type DragEvent } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, X, Copy, Trash2 } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 import useCanvasStore from '../stores/CanvasStore';
@@ -40,24 +40,22 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(currentWorkflowId || '');
-  const [loadingWorkflows, setLoadingWorkflows] = useState<boolean>(true);
-
-  const fetchWorkflows = useCallback(async () => {
-    try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows?limit=100`);
-      if (response.ok) {
-        const data = await response.json();
-        setWorkflows(data.workflows || []);
-      }
-    } catch (err) {
-      console.error('Error fetching workflows:', err);
-    } finally {
-      setLoadingWorkflows(false);
-    }
-  }, []);
+  const [loadingWorkflows, setLoadingWorkflows] = useState<boolean>(false);
 
   useEffect(() => {
-    fetchWorkflows();
+    (async () => {
+      try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows?limit=100`);
+        if (response.ok) {
+          const data = await response.json();
+          setWorkflows(data.workflows || []);
+        }
+      } catch (err) {
+        console.error('Error fetching workflows:', err);
+      } finally {
+        setLoadingWorkflows(false);
+      }
+    })();
   }, []);
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {

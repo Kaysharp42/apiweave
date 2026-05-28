@@ -154,18 +154,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
       }`}
       style={{ backgroundColor: 'rgba(15, 23, 42, 0.3)' }}
     >
-      <div
-        role="button"
-        tabIndex={0}
-        className="absolute inset-0 cursor-pointer"
-        onClick={handleClose}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            handleClose();
-          }
-        }}
-      />
+      <button type="button" aria-label="Close run history" className="absolute inset-0 cursor-pointer" onClick={handleClose} />
 
       <div
         ref={modalRef}
@@ -213,7 +202,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
               <div className="flex flex-col items-center gap-3">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
                 <p className="text-sm text-text-muted dark:text-text-muted-dark">
-                  {pagination.page > 1 ? 'Loading page...' : 'Loading history...'}
+                   {pagination.page > 1 ? 'Loading page…' : 'Loading history…'}
                 </p>
               </div>
             </div>

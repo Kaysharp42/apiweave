@@ -143,10 +143,13 @@ def test_deleted_user_cannot_login_via_oauth(monkeypatch: pytest.MonkeyPatch) ->
     response = client.get(
         "/api/auth/callback/github",
         params={"code": "valid-code", "state": "valid-state"},
+        follow_redirects=False,
     )
 
-    assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json()["detail"] == "Account has been deleted"
+    assert response.status_code == status.HTTP_302_FOUND
+    assert response.headers["location"] == (
+        "http://localhost:3000/login?error=Account+has+been+deleted"
+    )
 
 
 @pytest.mark.asyncio

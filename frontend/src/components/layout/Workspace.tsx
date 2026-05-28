@@ -31,7 +31,7 @@ const panelTabs: TabItem[] = [
   { key: 'settings', icon: Settings, label: 'Settings' },
 ];
 
-export function Workspace({ onActiveTabChange }: WorkspaceProps) {
+export function Workspace(_props: WorkspaceProps) {
   const { tabs, activeTabId, openTab, closeTab, activateNextTab, activatePrevTab } = useTabStore();
 
   type WorkspaceState = {
@@ -73,12 +73,6 @@ export function Workspace({ onActiveTabChange }: WorkspaceProps) {
   });
 
   const activeTab: WorkspaceTab | undefined = tabs.find((t) => t.id === activeTabId);
-
-  useEffect(() => {
-    if (onActiveTabChange) {
-      onActiveTabChange(activeTabId);
-    }
-  }, [activeTabId, onActiveTabChange]);
 
   useEffect(() => {
     const fetchEnvironments = async () => {

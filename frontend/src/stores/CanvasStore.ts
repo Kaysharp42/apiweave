@@ -35,14 +35,14 @@ const useCanvasStore = create<CanvasState>()((set) => ({
 
   setClipboardNode: (nodeData: ClipboardNodeData | null) => {
     if (nodeData) {
-      sessionStorage.setItem('copiedNode', JSON.stringify(nodeData));
+      sessionStorage.setItem('copiedNode:v1', JSON.stringify(nodeData));
     }
     set({ clipboardNode: nodeData });
   },
 
   hydrateClipboard: () => {
     try {
-      const raw = sessionStorage.getItem('copiedNode');
+      const raw = sessionStorage.getItem('copiedNode:v1');
       if (raw) set({ clipboardNode: JSON.parse(raw) as ClipboardNodeData });
     } catch { /* ignore */ }
   },

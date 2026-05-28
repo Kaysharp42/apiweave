@@ -1,25 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Save, History, Play, Code, Upload, Loader2, RefreshCw, ChevronDown } from 'lucide-react';
-import { Button, IconButton } from '../atoms';
+import { Button } from '../atoms/Button';
+import { IconButton } from '../atoms/IconButton';
 import ButtonSelect from '../ButtonSelect';
 import type { CanvasToolbarProps } from '../../types/CanvasToolbarProps';
+import { buildEnvironmentOptions } from './canvasToolbarUtils';
 
-export interface EnvironmentOption {
-  value: string;
-  label: string;
-}
-
-export function buildEnvironmentOptions(
-  environments: Array<{ environmentId: string; name: string }>,
-): EnvironmentOption[] {
-  return [
-    { value: '', label: 'No Environment' },
-    ...environments.map((environment) => ({
-      value: environment.environmentId,
-      label: environment.name,
-    })),
-  ];
-}
+const EMPTY_ENVIRONMENTS: Array<{ environmentId: string; name: string }> = [];
+const EMPTY_RESUME_OPTIONS: NonNullable<CanvasToolbarProps['resumeOptions']> = [];
 
 export function CanvasToolbar({
   onSave,
@@ -31,19 +19,20 @@ export function CanvasToolbar({
   onRunAllFailed,
   onRunFromFailedNode,
   isRunning = false,
-  environments = [],
+  environments = EMPTY_ENVIRONMENTS,
   selectedEnvironment,
   onEnvironmentChange,
   onRefreshSwagger,
   isSwaggerRefreshing = false,
   workflowId,
-  resumeOptions = [],
+  resumeOptions = EMPTY_RESUME_OPTIONS,
   isResumeLoading = false,
 }: CanvasToolbarProps) {
   const [isRunMenuOpen, setIsRunMenuOpen] = useState(false);
   const runMenuRef = useRef<HTMLDivElement>(null);
+  const safeResumeOptions = resumeOptions ?? EMPTY_RESUME_OPTIONS;
 
-  const hasResumeOptions = resumeOptions.length > 0;
+  const hasResumeOptions = safeResumeOptions.length > 0;
 
   useEffect(() => {
     if (!isRunMenuOpen) return undefined;
@@ -173,7 +162,7 @@ export function CanvasToolbar({
               </div>
             )}
 
-            {!isResumeLoading && hasResumeOptions && resumeOptions.map((opt) => (
+            {!isResumeLoading && hasResumeOptions && safeResumeOptions.map((opt) => (
               <Button
                 key={opt.nodeId}
                 onClick={() => {

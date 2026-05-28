@@ -1,6 +1,6 @@
 import React from 'react';
 
-export interface SpinnerProps extends React.HTMLAttributes<HTMLSpanElement> {
+export interface SpinnerProps extends React.HTMLAttributes<HTMLOutputElement> {
   type?: 'spinner' | 'dots' | 'ring' | 'ball' | 'bars' | 'infinity';
   size?: 'xs' | 'sm' | 'md' | 'lg';
   color?: string;
@@ -30,9 +30,8 @@ export function Spinner({
   };
 
   return (
-    <span
+    <output
       className={['loading', typeClass[type] ?? 'loading-spinner', sizeClass[size] ?? 'loading-md', color, className].filter(Boolean).join(' ')}
-      role="status"
       aria-label="Loading"
       {...rest}
     />

@@ -136,6 +136,8 @@ def test_settings_update_permissions_admin_ok() -> None:
     client.cookies.set("session", "tok")
     s, t, u = _auth_patches(admin)
     with s, t, u, patch.object(
+        UserRepository, "get_all", new=AsyncMock(return_value=[admin, target])
+    ), patch.object(
         UserRepository, "update", new=AsyncMock(return_value=updated)
     ):
         response = client.patch(
@@ -165,6 +167,8 @@ def test_settings_update_permissions_user_not_found() -> None:
     client.cookies.set("session", "tok")
     s, t, u = _auth_patches(admin)
     with s, t, u, patch.object(
+        UserRepository, "get_all", new=AsyncMock(return_value=[admin])
+    ), patch.object(
         UserRepository, "update", new=AsyncMock(return_value=None)
     ):
         response = client.patch(

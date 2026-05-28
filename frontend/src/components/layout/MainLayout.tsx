@@ -19,37 +19,34 @@ import { authenticatedFetch } from '../../utils/authenticatedApi';
 export function MainLayout({ children }: { children?: ReactNode }) {
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
-  const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
   const [environmentWithSecrets, setEnvironmentWithSecrets] = useState<Environment | null>(null);
   const [showSecretsPrompt, setShowSecretsPrompt] = useState(false);
 
-  const checkEnvironmentSecrets = useCallback(async () => {
-    try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
-      if (response.ok) {
-        const environments: Environment[] = await response.json();
+  useEffect(() => {
+    (async () => {
+      try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
+        if (response.ok) {
+          const environments: Environment[] = await response.json();
 
-        for (const env of environments) {
-          if (env.secrets && Object.keys(env.secrets).length > 0) {
-            const secretsEntered = Object.keys(env.secrets).every((key) =>
-              sessionStorage.getItem(`secret_${key}`)
-            );
+          for (const env of environments) {
+            if (env.secrets && Object.keys(env.secrets).length > 0) {
+              const secretsEntered = Object.keys(env.secrets).every((key) =>
+                sessionStorage.getItem(`secret_${key}`)
+              );
 
-            if (!secretsEntered) {
-              setEnvironmentWithSecrets(env);
-              setShowSecretsPrompt(true);
-              break;
+              if (!secretsEntered) {
+                setEnvironmentWithSecrets(env);
+                setShowSecretsPrompt(true);
+                break;
+              }
             }
           }
         }
+      } catch (error) {
+        console.error('Error checking environment secrets:', error);
       }
-    } catch (error) {
-      console.error('Error checking environment secrets:', error);
-    }
-  }, []);
-
-  useEffect(() => {
-    checkEnvironmentSecrets();
+    })();
   }, []);
 
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);
@@ -112,7 +109,7 @@ export function MainLayout({ children }: { children?: ReactNode }) {
           </Allotment.Pane>
 
           <Allotment.Pane>
-            {children !== undefined ? children : <Workspace onActiveTabChange={setCurrentWorkflowId} />}
+            {children !== undefined ? children : <Workspace />}
           </Allotment.Pane>
         </Allotment>
       </main>

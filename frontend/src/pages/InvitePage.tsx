@@ -20,12 +20,12 @@ export default function InvitePage() {
   const error = searchParams.get('error');
   const [providers, setProviders] = useState<ProviderDisplay[]>([]);
   const [providerError, setProviderError] = useState<string | null>(null);
-  const [providersLoading, setProvidersLoading] = useState(true);
+  const [providersLoading, setProvidersLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadProviders() {
+    (async () => {
       try {
         const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
 
@@ -47,9 +47,7 @@ export default function InvitePage() {
           setProvidersLoading(false);
         }
       }
-    }
-
-    loadProviders();
+    })();
 
     return () => {
       cancelled = true;

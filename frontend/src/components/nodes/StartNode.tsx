@@ -9,7 +9,7 @@ interface StartNodeProps {
   selected?: boolean;
 }
 
-const StartNode = ({ id, selected = false }: StartNodeProps) => {
+const StartNode = ({ id, selected }: StartNodeProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -18,7 +18,7 @@ const StartNode = ({ id, selected = false }: StartNodeProps) => {
         'relative border-2 shadow-node transition-all cursor-pointer text-white',
         isExpanded ? 'rounded-2xl px-4 py-3 min-w-[220px]' : 'rounded-full px-5 py-2.5',
         'bg-gradient-to-r from-emerald-600 to-green-500 dark:from-emerald-700 dark:to-green-600',
-        selected
+        (selected ?? false)
           ? 'border-emerald-300 ring-2 ring-emerald-400/50 shadow-node-selected'
           : 'border-emerald-700 dark:border-emerald-800',
       ].filter(Boolean).join(' ')}

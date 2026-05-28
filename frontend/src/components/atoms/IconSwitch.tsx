@@ -5,8 +5,6 @@ const intentClassName: Record<NonNullable<IconSwitchProps['intent']>, string> = 
   success: 'bg-status-success/20 border-status-success/40',
 };
 
-const thumbIconClassName = 'h-3.5 w-3.5';
-
 export function IconSwitch({
   checked,
   onCheckedChange,
@@ -58,5 +56,3 @@ export function IconSwitch({
     </button>
   );
 }
-
-export { thumbIconClassName };

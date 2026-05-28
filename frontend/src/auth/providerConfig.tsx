@@ -53,8 +53,10 @@ export function getProviderDisplay(id: string): ProviderDisplay | undefined {
 }
 
 export function getEnabledProviders(availability: ProviderInfo[]): ProviderDisplay[] {
-  return availability
-    .filter((provider) => provider.enabled)
-    .map((provider) => getProviderDisplay(provider.id))
-    .filter((provider): provider is ProviderDisplay => provider !== undefined);
+  return availability.reduce<ProviderDisplay[]>((providers, provider) => {
+    if (!provider.enabled) return providers;
+    const display = getProviderDisplay(provider.id);
+    if (display) providers.push(display);
+    return providers;
+  }, []);
 }

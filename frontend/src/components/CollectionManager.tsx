@@ -169,7 +169,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
     setContinueOnFail(col.continueOnFail !== undefined ? col.continueOnFail : true);
     const collectionWorkflows = workflows.filter(w => w.collectionId === col.collectionId);
     if (col.workflowOrder && col.workflowOrder.length > 0) {
-      const sorted = [...col.workflowOrder].sort((a: { order: number }, b: { order: number }) => a.order - b.order);
+      const sorted = col.workflowOrder.toSorted((a: { order: number }, b: { order: number }) => a.order - b.order);
       const orderedWorkflows: WorkflowOrderItem[] = sorted
         .map((wo: { workflowId: string; order: number; enabled: boolean; continueOnFail: boolean }) => ({ ...wo, workflow: collectionWorkflows.find(w => w.workflowId === wo.workflowId) }))
         .filter((wo: WorkflowOrderItem) => wo.workflow !== undefined);

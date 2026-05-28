@@ -15,7 +15,10 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ApiResponse, NodeResultMetadata, TabItem } from '../../types';
-import { Badge, Button, IconButton, Input } from '../atoms';
+import { Badge } from '../atoms/Badge';
+import { Button } from '../atoms/Button';
+import { IconButton } from '../atoms/IconButton';
+import { Input } from '../atoms/Input';
 import { Card } from './Card';
 import { EmptyState } from './EmptyState';
 import { PanelTabs } from './PanelTabs';
@@ -209,9 +212,11 @@ function getStructuredCookieRows(response: ApiResponse | null): CookieRow[] {
 function splitSetCookieHeader(value: string): string[] {
   return value
     .split(/,(?=\s*[^;,=]+=[^;,]+)/)
-    .flatMap((candidate) => candidate.split(/\r?\n/))
-    .map((candidate) => candidate.trim())
-    .filter(Boolean);
+    .flatMap((candidate) => candidate.split(/\r?\n/).reduce<string[]>((entries, entry) => {
+      const trimmed = entry.trim();
+      if (trimmed) entries.push(trimmed);
+      return entries;
+    }, []));
 }
 
 function parseCookie(value: string): CookieRow | null {
@@ -308,10 +313,6 @@ export function ResponseInspector({
       return key.toLowerCase().includes(normalizedFilter) || value.toLowerCase().includes(normalizedFilter);
     });
   }, [headerFilter, response]);
-
-  useEffect(() => {
-    setActiveTab(getDefaultTab(response, metadata));
-  }, [metadata, response]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -456,9 +457,9 @@ export function ResponseInspector({
                     )}
                   </div>
                 </td>
-                <td className="px-3 py-2 align-top font-mono text-xs">{cookieRow.path ?? '—'}</td>
-                <td className="px-3 py-2 align-top font-mono text-xs">{cookieRow.domain ?? '—'}</td>
-                <td className="px-3 py-2 align-top font-mono text-xs">{cookieRow.expires ?? '—'}</td>
+                <td className="px-3 py-2 align-top font-mono text-xs">{cookieRow.path ?? '--'}</td>
+                <td className="px-3 py-2 align-top font-mono text-xs">{cookieRow.domain ?? '--'}</td>
+                <td className="px-3 py-2 align-top font-mono text-xs">{cookieRow.expires ?? '--'}</td>
               </tr>
             ))}
                 {cookieRows.length === 0 && (
@@ -529,7 +530,7 @@ export function ResponseInspector({
       <Card title="Binary preview" icon={HardDriveDownloadCardIcon}>
         <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-6 text-center">
           <HardDriveDownload className="h-8 w-8 text-text-secondary dark:text-text-secondary-dark" />
-          <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">Binary content — download to view</p>
+            <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">Binary content -- download to view</p>
           <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Preview is disabled for non-text response bodies.</p>
         </div>
       </Card>

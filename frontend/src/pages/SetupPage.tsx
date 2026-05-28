@@ -15,12 +15,12 @@ export default function SetupPage() {
   const error = searchParams.get('error');
   const [providers, setProviders] = useState<ProviderDisplay[]>([]);
   const [providerError, setProviderError] = useState<string | null>(null);
-  const [providersLoading, setProvidersLoading] = useState(true);
+  const [providersLoading, setProvidersLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadProviders() {
+    (async () => {
       try {
         const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
         if (!res.ok) throw new Error('Failed to load providers');
@@ -35,9 +35,7 @@ export default function SetupPage() {
       } finally {
         if (!cancelled) setProvidersLoading(false);
       }
-    }
-
-    loadProviders();
+    })();
 
     return () => {
       cancelled = true;

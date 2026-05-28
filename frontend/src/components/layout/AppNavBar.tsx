@@ -4,7 +4,7 @@ import { Transition } from '@headlessui/react';
 import Tippy from '@tippyjs/react';
 // @ts-expect-error CSS import without types
 import 'tippy.js/dist/tippy.css';
-import { IconButton } from '../atoms';
+import { IconButton } from '../atoms/IconButton';
 import useNavigationStore from '../../stores/NavigationStore';
 import { AppNavBarItems, AppNavBarStyles } from '../../constants/AppNavBar';
 import type { NavSection } from '../../types/NavSection';
@@ -74,6 +74,7 @@ export function AppNavBar() {
 
           const content = (
             <button
+              type="button"
               key={id}
               className="relative w-full"
               onClick={() => !disabled && updateNavigationSelectedValue(id as NavSection)}

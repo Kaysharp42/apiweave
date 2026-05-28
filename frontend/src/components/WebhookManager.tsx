@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Trash2, RefreshCw, Plus, Check, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from './molecules/Modal';
@@ -65,7 +65,7 @@ export function WebhookManager() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [newWebhookData, setNewWebhookData] = useState<NewWebhookFormData>({
@@ -80,20 +80,20 @@ export function WebhookManager() {
   const [copySuccess, setCopySuccess] = useState<CopySuccessState>({});
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
-  const loadAllData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [wf, col] = await Promise.all([fetchWorkflows(), fetchCollections()]);
-      fetchEnvironments().catch(() => undefined);
-      await fetchAllWebhooksWithData(wf || [], col || []);
-    } catch (error) {
-      console.error('Error loading webhook data:', error);
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [wf, col] = await Promise.all([fetchWorkflows(), fetchCollections()]);
+        fetchEnvironments().catch(() => undefined);
+        await fetchAllWebhooksWithData(wf || [], col || []);
+      } catch (error) {
+        console.error('Error loading webhook data:', error);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
-
-  useEffect(() => { loadAllData(); }, []);
 
   /* ---------- Data fetching ---------- */
 

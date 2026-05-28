@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type DragEvent, type ChangeEvent } from 'react';
+import { useState, useRef, type DragEvent, type ChangeEvent } from 'react';
 import useSidebarStore from '../stores/SidebarStore';
 import {
   X,
@@ -120,16 +120,6 @@ export function CollectionExportImport({
   const [collections, setCollections] = useState<CollectionWithWorkflowCount[]>([]);
   const [selectedTargetCollection, setSelectedTargetCollection] = useState<string | null>(null);
   const [sanitize, setSanitize] = useState<boolean>(true);
-
-  useEffect(() => {
-    setActiveTab(mode);
-  }, [mode]);
-
-  useEffect(() => {
-    if (activeTab === 'import-workflows' || activeTab === 'import-har' || activeTab === 'import-openapi' || activeTab === 'import-curl') {
-      fetchCollections();
-    }
-  }, [activeTab]);
 
   const formatErrorMessage = (error: unknown): string => {
     if (typeof error === 'string') {
@@ -688,7 +678,17 @@ export function CollectionExportImport({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div
+      role="button"
+      tabIndex={0}
+      className="fixed inset-0 bg-slate-950/50 flex items-center justify-center z-50"
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClose();
+        }
+      }}
+    >
       <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-border dark:border-border-dark">
@@ -712,6 +712,7 @@ export function CollectionExportImport({
         {/* Tabs */}
         <div className="flex border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
           <button
+            type="button"
             onClick={() => {
               setActiveTab('export');
               setMessage(null);
@@ -723,6 +724,7 @@ export function CollectionExportImport({
             Export Collection
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-collection');
               setMessage(null);
@@ -735,6 +737,7 @@ export function CollectionExportImport({
             Import Collection
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-workflows');
               setMessage(null);
@@ -746,6 +749,7 @@ export function CollectionExportImport({
             Import Workflows
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-har');
               setMessage(null);
@@ -757,6 +761,7 @@ export function CollectionExportImport({
             HAR File
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-openapi');
               setMessage(null);
@@ -768,6 +773,7 @@ export function CollectionExportImport({
             OpenAPI
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-curl');
               setMessage(null);
@@ -840,11 +846,19 @@ export function CollectionExportImport({
             <div className="space-y-4">
               {/* Upload */}
               <div
+                role="button"
+                tabIndex={0}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
               >
                 <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
                 <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop collection bundle</p>
@@ -854,6 +868,7 @@ export function CollectionExportImport({
                   type="file"
                   accept=".awecollection,.json"
                   onChange={handleFileInputChange}
+                  aria-label="Collection bundle file upload"
                   className="hidden"
                 />
               </div>
@@ -867,10 +882,11 @@ export function CollectionExportImport({
 
               {/* Paste JSON */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-export-paste-json" className="block text-sm font-medium mb-2 text-text-primary dark:text-text-primary-dark">
                   Or paste JSON:
                 </label>
                 <TextArea
+                  id="collection-export-paste-json"
                   value={pastedJson}
                   onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                     setPastedJson(e.target.value);
@@ -892,8 +908,8 @@ export function CollectionExportImport({
                     </p>
                   ) : (
                     <div className="space-y-1">
-                      {validation.errors.map((err: string, i: number) => (
-                        <p key={i} className="text-status-error dark:text-status-error-dark text-sm flex items-center gap-2">
+                      {validation.errors.map((err: string) => (
+                        <p key={err} className="text-status-error dark:text-status-error-dark text-sm flex items-center gap-2">
                           <AlertCircle size={14} /> {err}
                         </p>
                       ))}
@@ -902,8 +918,8 @@ export function CollectionExportImport({
 
                   {validation.warnings && validation.warnings.length > 0 && (
                     <div className="space-y-1">
-                      {validation.warnings.map((warn: string, i: number) => (
-                        <p key={i} className="text-yellow-600 dark:text-yellow-400 text-sm flex items-center gap-2">
+                      {validation.warnings.map((warn: string) => (
+                        <p key={warn} className="text-yellow-600 dark:text-yellow-400 text-sm flex items-center gap-2">
                           <Info size={14} /> {warn}
                         </p>
                       ))}
@@ -965,7 +981,7 @@ export function CollectionExportImport({
                     onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value)}
                     className="ml-7 w-full px-3 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                   >
-                    <option value="">Select collection...</option>
+                    <option value="">Select collection…</option>
                     {collections.map((c: CollectionWithWorkflowCount) => (
                       <option key={c.collectionId} value={c.collectionId}>
                         {c.name}
@@ -1011,10 +1027,11 @@ export function CollectionExportImport({
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-import-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
+                  id="collection-import-select"
                   value={selectedTargetCollection || ''}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1035,11 +1052,19 @@ export function CollectionExportImport({
 
               {/* Upload */}
               <div
+                role="button"
+                tabIndex={0}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
               >
                 <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
                 <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop file or click to browse</p>
@@ -1051,6 +1076,7 @@ export function CollectionExportImport({
                   type="file"
                   accept=".json,.har"
                   onChange={handleFileInputChange}
+                  aria-label="Collection workflow or HAR file upload"
                   className="hidden"
                 />
               </div>
@@ -1100,10 +1126,11 @@ export function CollectionExportImport({
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-har-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
+                  id="collection-har-select"
                   value={selectedTargetCollection || ''}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1124,11 +1151,19 @@ export function CollectionExportImport({
 
               {/* Upload */}
               <div
+                role="button"
+                tabIndex={0}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
               >
                 <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
                 <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop file or click to browse</p>
@@ -1140,6 +1175,7 @@ export function CollectionExportImport({
                   type="file"
                   accept=".json,.har"
                   onChange={handleFileInputChange}
+                  aria-label="Collection workflow or HAR file upload"
                   className="hidden"
                 />
               </div>
@@ -1189,10 +1225,11 @@ export function CollectionExportImport({
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-openapi-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
+                  id="collection-openapi-select"
                   value={selectedTargetCollection || ''}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1213,11 +1250,19 @@ export function CollectionExportImport({
 
               {/* Upload */}
               <div
+                role="button"
+                tabIndex={0}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
               >
                 <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
                 <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop file or click to browse</p>
@@ -1229,6 +1274,7 @@ export function CollectionExportImport({
                   type="file"
                   accept=".json,.har"
                   onChange={handleFileInputChange}
+                  aria-label="Collection OpenAPI file upload"
                   className="hidden"
                 />
               </div>
@@ -1278,10 +1324,11 @@ export function CollectionExportImport({
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-curl-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
+                  id="collection-curl-select"
                   value={selectedTargetCollection || ''}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1302,10 +1349,11 @@ export function CollectionExportImport({
 
               {/* cURL Input */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-curl-commands" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   cURL Command(s)
                 </label>
                 <TextArea
+                  id="collection-curl-commands"
                   value={pastedJson}
                   onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setPastedJson(e.target.value)}
                   placeholder="Paste your cURL command here (single or multiple commands separated by &&)"

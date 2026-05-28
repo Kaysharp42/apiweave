@@ -1,4 +1,4 @@
-import { useState, useRef, type ChangeEvent, type DragEvent } from 'react';
+import { useState, useRef, type ChangeEvent, type DragEvent, type RefObject } from 'react';
 import {
   X,
   Upload,
@@ -64,6 +64,129 @@ interface ImportToNodesPanelProps {
 
 type ActiveTab = 'openapi' | 'har' | 'curl';
 type ImportMode = 'linear' | 'parallel';
+
+interface FileUploadDropzoneProps {
+  accept: string;
+  description: string;
+  fileInputRef: RefObject<HTMLInputElement>;
+  onDragOver: (e: DragEvent<HTMLDivElement>) => void;
+  onDragLeave: (e: DragEvent<HTMLDivElement>) => void;
+  onDrop: (e: DragEvent<HTMLDivElement>) => void;
+  onFileInputChange: (e: ChangeEvent<HTMLInputElement>) => void;
+}
+
+export function FileUploadDropzone({
+  accept,
+  description,
+  fileInputRef,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onFileInputChange,
+}: FileUploadDropzoneProps) {
+  const openFilePicker = (): void => {
+    fileInputRef.current?.click();
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition-colors"
+      onClick={openFilePicker}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openFilePicker();
+        }
+      }}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={accept}
+        onChange={onFileInputChange}
+        aria-label={description}
+        className="hidden"
+      />
+      <div>
+        <Upload className="w-12 h-12 mx-auto text-text-muted dark:text-text-muted-dark mb-2" />
+        <div className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
+          Click to upload or drag and drop
+        </div>
+        <div className="text-xs text-text-muted dark:text-text-muted-dark">
+          {description}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface PasteAreaFieldProps {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+export function PasteAreaField({ label, placeholder, value, onChange }: PasteAreaFieldProps) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+        {label}
+      </label>
+      <TextArea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full h-40 px-4 py-3 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised"
+      />
+    </div>
+  );
+}
+
+interface SanitizeCheckboxProps {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}
+
+export function SanitizeCheckbox({ checked, onChange }: SanitizeCheckboxProps) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-text-primary dark:text-text-primary-dark">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="w-4 h-4"
+      />
+      Sanitize secrets
+    </label>
+  );
+}
+
+interface ImportActionButtonProps {
+  disabled: boolean;
+  loading: boolean;
+  onClick: () => void;
+}
+
+export function ImportActionButton({ disabled, loading, onClick }: ImportActionButtonProps) {
+  return (
+    <Button
+      onClick={onClick}
+      disabled={disabled}
+      variant="primary"
+      intent="info"
+      fullWidth
+      loading={loading}
+    >
+      {loading ? 'Processing...' : 'Add to Nodes'}
+    </Button>
+  );
+}
 
 export function ImportToNodesPanel({
   isOpen,
@@ -430,93 +553,8 @@ export function ImportToNodesPanel({
     setPastedText('');
   };
 
-  const renderFileUpload = (accept: string, description: string): React.ReactNode => (
-    <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition-colors"
-    >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept={accept}
-        onChange={handleFileInputChange}
-        className="hidden"
-      />
-      <div onClick={() => fileInputRef.current?.click()}>
-        <Upload className="w-12 h-12 mx-auto text-text-muted dark:text-text-muted-dark mb-2" />
-        <div className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
-          Click to upload or drag and drop
-        </div>
-        <div className="text-xs text-text-muted dark:text-text-muted-dark">
-          {description}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderPasteArea = (
-    label: string,
-    placeholder: string,
-    value: string,
-    onChange: (val: string) => void
-  ): React.ReactNode => (
-    <div>
-      <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-        {label}
-      </label>
-      <TextArea
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-        }}
-        placeholder={placeholder}
-        className="w-full h-40 px-4 py-3 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised"
-      />
-    </div>
-  );
-
-  const renderSanitizeCheckbox = (): React.ReactNode => (
-    <label className="flex items-center gap-2 text-sm text-text-primary dark:text-text-primary-dark">
-      <input
-        type="checkbox"
-        checked={sanitize}
-        onChange={(e) => setSanitize(e.target.checked)}
-        className="w-4 h-4"
-      />
-      Sanitize secrets
-    </label>
-  );
-
-  const renderImportButton = (): React.ReactNode => (
-    <Button
-      onClick={handleImport}
-      disabled={isLoading || (!uploadedFile && !pastedText)}
-      variant="primary"
-      intent="info"
-      fullWidth
-      loading={isLoading}
-    >
-      {isLoading ? 'Processing...' : 'Add to Nodes'}
-    </Button>
-  );
-
-  const renderImportButtonCurl = (): React.ReactNode => (
-    <Button
-      onClick={handleImport}
-      disabled={isLoading || !pastedText.trim()}
-      variant="primary"
-      intent="info"
-      fullWidth
-      loading={isLoading}
-    >
-      {isLoading ? 'Processing...' : 'Add to Nodes'}
-    </Button>
-  );
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-slate-950/50 flex items-center justify-center z-50">
       <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-border dark:border-border-dark">
@@ -607,23 +645,35 @@ export function ImportToNodesPanel({
                 <span>Upload or paste an OpenAPI specification. Requests will be added to your Add Nodes panel.</span>
               </div>
 
-              {renderFileUpload('.json,.yaml,.yml', 'JSON or YAML OpenAPI files')}
+              <FileUploadDropzone
+                accept=".json,.yaml,.yml"
+                description="JSON or YAML OpenAPI files"
+                fileInputRef={fileInputRef}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onFileInputChange={handleFileInputChange}
+              />
 
-              {renderPasteArea(
-                'Or paste OpenAPI spec',
-                'Paste OpenAPI JSON/YAML here...',
-                pastedText,
-                (val) => {
+              <PasteAreaField
+                label="Or paste OpenAPI spec"
+                placeholder="Paste OpenAPI JSON/YAML here..."
+                value={pastedText}
+                onChange={(val) => {
                   setPastedText(val);
                   setUploadedFile(null);
-                }
-              )}
+                }}
+              />
 
               <div className="flex items-center gap-4">
-                {renderSanitizeCheckbox()}
+                <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
               </div>
 
-              {renderImportButton()}
+              <ImportActionButton
+                disabled={isLoading || (!uploadedFile && !pastedText)}
+                loading={isLoading}
+                onClick={handleImport}
+              />
             </div>
           )}
 
@@ -635,24 +685,33 @@ export function ImportToNodesPanel({
                 <span>Upload or paste a HAR (HTTP Archive) file. Requests will be added to your Add Nodes panel.</span>
               </div>
 
-              {renderFileUpload('.json,.har', 'JSON or HAR files')}
+              <FileUploadDropzone
+                accept=".json,.har"
+                description="JSON or HAR files"
+                fileInputRef={fileInputRef}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onFileInputChange={handleFileInputChange}
+              />
 
-              {renderPasteArea(
-                'Or paste HAR content',
-                'Paste HAR JSON here...',
-                pastedText,
-                (val) => {
+              <PasteAreaField
+                label="Or paste HAR content"
+                placeholder="Paste HAR JSON here..."
+                value={pastedText}
+                onChange={(val) => {
                   setPastedText(val);
                   setUploadedFile(null);
-                }
-              )}
+                }}
+              />
 
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                  <label htmlFor="import-to-nodes-import-mode" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                     Import mode
                   </label>
                   <select
+                    id="import-to-nodes-import-mode"
                     value={importMode}
                     onChange={(e) => setImportMode(e.target.value as ImportMode)}
                     className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark text-text-primary dark:text-text-primary-dark"
@@ -661,10 +720,14 @@ export function ImportToNodesPanel({
                     <option value="parallel">Parallel</option>
                   </select>
                 </div>
-                {renderSanitizeCheckbox()}
+                <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
               </div>
 
-              {renderImportButton()}
+              <ImportActionButton
+                disabled={isLoading || (!uploadedFile && !pastedText)}
+                loading={isLoading}
+                onClick={handleImport}
+              />
             </div>
           )}
 
@@ -677,10 +740,11 @@ export function ImportToNodesPanel({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                <label htmlFor="import-to-nodes-curl-commands" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Curl Commands
                 </label>
                 <TextArea
+                  id="import-to-nodes-curl-commands"
                   value={pastedText}
                   onChange={(e) => setPastedText(e.target.value)}
                   placeholder={'Paste curl command(s) here. Example:\ncurl -X GET "https://api.example.com/users"\ncurl -X POST "https://api.example.com/users" -H "Content-Type: application/json" -d \'{"name": "John"}\'\n\nOr multiple commands separated by && or on separate lines'}
@@ -689,10 +753,14 @@ export function ImportToNodesPanel({
               </div>
 
               <div>
-                {renderSanitizeCheckbox()}
+                <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
               </div>
 
-              {renderImportButtonCurl()}
+              <ImportActionButton
+                disabled={isLoading || !pastedText.trim()}
+                loading={isLoading}
+                onClick={handleImport}
+              />
             </div>
           )}
         </div>

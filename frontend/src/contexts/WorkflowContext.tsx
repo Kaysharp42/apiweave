@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useReducer, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import API_BASE_URL from '../utils/api';
 import { usePalette } from './PaletteContext';
 import useSidebarStore from '../stores/SidebarStore';
@@ -68,11 +68,91 @@ const shallowEqual = (left: Record<string, unknown>, right: Record<string, unkno
 
 export const WorkflowProvider = ({ children, workflowId, initialWorkflow }: WorkflowProviderProps) => {
   const wf = initialWorkflow as { variables?: WorkflowVariables; settings?: WorkflowSettings; collectionId?: string | null; nodeTemplates?: { label?: string; config?: { url?: string; method?: string; headers?: string; body?: string; queryParams?: string; pathVariables?: string; cookies?: string; timeout?: number; openapiMeta?: unknown } }[] } | undefined;
-  const [variables, setVariables] = useState<WorkflowVariables>(wf?.variables ?? {});
-  const [settings, setSettings] = useState<WorkflowSettings>(wf?.settings ?? {});
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [isLoadingCollections, setIsLoadingCollections] = useState(false);
-  const [currentCollectionId, setCurrentCollectionId] = useState<string | null>(wf?.collectionId ?? null);
+  type WorkflowState = {
+    variables: WorkflowVariables;
+    settings: WorkflowSettings;
+    collections: Collection[];
+    isLoadingCollections: boolean;
+    currentCollectionId: string | null;
+  };
+
+  type WorkflowAction =
+    | { type: 'set-variables'; value: WorkflowVariables }
+    | { type: 'set-settings'; value: WorkflowSettings }
+    | { type: 'set-collections'; value: Collection[] }
+    | { type: 'set-loading-collections'; value: boolean }
+    | { type: 'set-current-collection-id'; value: string | null }
+    | { type: 'update-variable'; varName: string; varValue: unknown }
+    | { type: 'delete-variable'; varName: string }
+    | { type: 'delete-variables'; varNames: string[] }
+    | { type: 'update-variables'; value: WorkflowVariables }
+    | { type: 'update-settings'; value: WorkflowSettings }
+    | { type: 'register-extractors'; value: WorkflowVariables };
+
+  const [state, dispatch] = useReducer((current: WorkflowState, action: WorkflowAction): WorkflowState => {
+    switch (action.type) {
+      case 'set-variables':
+        return { ...current, variables: action.value };
+      case 'set-settings':
+        return { ...current, settings: action.value };
+      case 'set-collections':
+        return { ...current, collections: action.value };
+      case 'set-loading-collections':
+        return { ...current, isLoadingCollections: action.value };
+      case 'set-current-collection-id':
+        return { ...current, currentCollectionId: action.value };
+      case 'update-variable':
+        return { ...current, variables: { ...current.variables, [action.varName]: action.varValue } };
+      case 'delete-variable': {
+        const updated = { ...current.variables };
+        delete updated[action.varName];
+        return { ...current, variables: updated };
+      }
+      case 'delete-variables': {
+        const updated = { ...current.variables };
+        action.varNames.forEach((name) => delete updated[name]);
+        return { ...current, variables: updated };
+      }
+      case 'update-variables':
+        return { ...current, variables: action.value };
+      case 'update-settings':
+        return { ...current, settings: { ...current.settings, ...action.value } };
+      case 'register-extractors': {
+        const prevExtractorVarNames = Object.keys(extractorVariablesRef.current);
+        if (shallowEqual(extractorVariablesRef.current, action.value)) {
+          return current;
+        }
+
+        extractorVariablesRef.current = action.value;
+
+        const manualVariables: WorkflowVariables = {};
+        Object.entries(current.variables).forEach(([key, value]) => {
+          if (!prevExtractorVarNames.includes(key)) {
+            manualVariables[key] = value;
+          }
+        });
+
+        const merged = {
+          ...manualVariables,
+          ...action.value,
+        };
+
+        if (shallowEqual(current.variables, merged)) {
+          return current;
+        }
+
+        return { ...current, variables: merged };
+      }
+      default:
+        return current;
+    }
+  }, {
+    variables: wf?.variables ?? {},
+    settings: wf?.settings ?? {},
+    collections: [],
+    isLoadingCollections: false,
+    currentCollectionId: wf?.collectionId ?? null,
+  });
 
   const { addImportedGroup, removeImportedGroup } = usePalette();
 
@@ -81,26 +161,19 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }: Work
   const onVariablesDeletedRef = useRef<((varNames: string[]) => void) | null>(null);
 
   const fetchCollections = useCallback(async () => {
-    setIsLoadingCollections(true);
+    dispatch({ type: 'set-loading-collections', value: true });
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
         const data = await response.json() as Collection[];
-        setCollections(data);
+        dispatch({ type: 'set-collections', value: data });
       }
     } catch {
       // ignore
     } finally {
-      setIsLoadingCollections(false);
+      dispatch({ type: 'set-loading-collections', value: false });
     }
   }, []);
-
-  useEffect(() => {
-    setVariables(wf?.variables ?? {});
-    setSettings(wf?.settings ?? {});
-    setCurrentCollectionId(wf?.collectionId ?? null);
-    extractorVariablesRef.current = {};
-  }, [workflowId, initialWorkflow]);
 
   useEffect(() => {
     const templateGroupId = `workflow-templates-${workflowId}`;
@@ -153,73 +226,34 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }: Work
   }, [collectionVersion, fetchCollections]);
 
   const updateVariable = useCallback((varName: string, varValue: unknown) => {
-    setVariables((prev) => ({
-      ...prev,
-      [varName]: varValue,
-    }));
+    dispatch({ type: 'update-variable', varName, varValue });
   }, []);
 
   const deleteVariable = useCallback((varName: string) => {
-    setVariables((prev) => {
-      const updated = { ...prev };
-      delete updated[varName];
-      return updated;
-    });
+    dispatch({ type: 'delete-variable', varName });
   }, []);
 
   const deleteVariablesWithCleanup = useCallback((varNames: string[]) => {
-    setVariables((prev) => {
-      const updated = { ...prev };
-      varNames.forEach((name) => delete updated[name]);
-      return updated;
-    });
+    dispatch({ type: 'delete-variables', varNames });
     if (onVariablesDeletedRef.current) {
       onVariablesDeletedRef.current(varNames);
     }
   }, []);
 
   const updateVariables = useCallback((newVariables: WorkflowVariables) => {
-    setVariables(newVariables);
+    dispatch({ type: 'update-variables', value: newVariables });
   }, []);
 
   const updateSettings = useCallback((newSettings: WorkflowSettings) => {
-    setSettings((prev) => ({
-      ...prev,
-      ...newSettings,
-    }));
+    dispatch({ type: 'update-settings', value: newSettings });
   }, []);
 
   const registerExtractors = useCallback((extractors: WorkflowVariables) => {
-    const prevExtractorVarNames = Object.keys(extractorVariablesRef.current);
-
-    if (shallowEqual(extractorVariablesRef.current, extractors)) {
-      return;
-    }
-
-    extractorVariablesRef.current = extractors;
-
-    setVariables((prev) => {
-      const manualVariables: WorkflowVariables = {};
-      Object.entries(prev).forEach(([key, value]) => {
-        if (!prevExtractorVarNames.includes(key)) {
-          manualVariables[key] = value;
-        }
-      });
-
-      const merged = {
-        ...manualVariables,
-        ...extractors,
-      };
-
-      if (shallowEqual(prev, merged)) {
-        return prev;
-      }
-      return merged;
-    });
+    dispatch({ type: 'register-extractors', value: extractors });
   }, []);
 
-  const currentCollection = currentCollectionId
-    ? collections.find((c) => c.collectionId === currentCollectionId) ?? null
+  const currentCollection = state.currentCollectionId
+    ? state.collections.find((c) => c.collectionId === state.currentCollectionId) ?? null
     : null;
 
   const refreshCollectionsAndWorkflows = useCallback(() => {
@@ -227,17 +261,23 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }: Work
     useSidebarStore.getState().signalWorkflowsRefresh();
   }, [fetchCollections]);
 
+  const resolveSetStateAction = <T,>(currentValue: T, nextValue: React.SetStateAction<T>): T => (
+    typeof nextValue === 'function'
+      ? (nextValue as (previousValue: T) => T)(currentValue)
+      : nextValue
+  );
+
   const contextValue: WorkflowContextValue = {
     workflowId,
-    variables,
-    settings,
-    collections,
-    isLoadingCollections,
-    currentCollectionId,
+    variables: state.variables,
+    settings: state.settings,
+    collections: state.collections,
+    isLoadingCollections: state.isLoadingCollections,
+    currentCollectionId: state.currentCollectionId,
     currentCollection,
-    setVariables,
-    setSettings,
-    setCurrentCollectionId,
+    setVariables: (value) => dispatch({ type: 'set-variables', value: resolveSetStateAction(state.variables, value) }),
+    setSettings: (value) => dispatch({ type: 'set-settings', value: resolveSetStateAction(state.settings, value) }),
+    setCurrentCollectionId: (value) => dispatch({ type: 'set-current-collection-id', value: resolveSetStateAction(state.currentCollectionId, value) }),
     updateVariable,
     deleteVariable,
     deleteVariablesWithCleanup,

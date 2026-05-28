@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useReducer, useEffect, useCallback } from 'react';
 import { Button } from '../atoms/Button';
 import { Input } from '../atoms/Input';
 import { FormField } from '../molecules/FormField';
@@ -9,21 +9,50 @@ import { toast } from 'sonner';
 import { Loader2, Trash2 } from 'lucide-react';
 
 export function ApprovedDomainManager() {
-  const [domains, setDomains] = useState<ApprovedDomain[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [newDomain, setNewDomain] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  type ApprovedDomainState = {
+    domains: ApprovedDomain[];
+    loading: boolean;
+    newDomain: string;
+    adding: boolean;
+    error: string | null;
+  };
+
+  type ApprovedDomainAction =
+    | { type: 'set-domains'; value: ApprovedDomain[] }
+    | { type: 'set-loading'; value: boolean }
+    | { type: 'set-new-domain'; value: string }
+    | { type: 'set-adding'; value: boolean }
+    | { type: 'set-error'; value: string | null }
+    | { type: 'reset-form' };
+
+  const [state, dispatch] = useReducer((current: ApprovedDomainState, action: ApprovedDomainAction): ApprovedDomainState => {
+    switch (action.type) {
+      case 'set-domains':
+        return { ...current, domains: action.value };
+      case 'set-loading':
+        return { ...current, loading: action.value };
+      case 'set-new-domain':
+        return { ...current, newDomain: action.value };
+      case 'set-adding':
+        return { ...current, adding: action.value };
+      case 'set-error':
+        return { ...current, error: action.value };
+      case 'reset-form':
+        return { ...current, newDomain: '', error: null, adding: false };
+      default:
+        return current;
+    }
+  }, { domains: [], loading: true, newDomain: '', adding: false, error: null });
 
   const fetchDomains = useCallback(async () => {
     try {
-      setLoading(true);
+      dispatch({ type: 'set-loading', value: true });
       const data = await authenticatedJson<ApprovedDomain[]>(`${API_BASE_URL}/api/auth/domains`);
-      setDomains(data);
+      dispatch({ type: 'set-domains', value: data });
     } catch {
       toast.error('Failed to load approved domains');
     } finally {
-      setLoading(false);
+      dispatch({ type: 'set-loading', value: false });
     }
   }, []);
 
@@ -33,14 +62,14 @@ export function ApprovedDomainManager() {
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault();
-    const domainStr = newDomain.trim();
+    const domainStr = state.newDomain.trim();
     if (!domainStr) {
-      setError('Domain is required');
+      dispatch({ type: 'set-error', value: 'Domain is required' });
       return;
     }
 
-    setAdding(true);
-    setError(null);
+    dispatch({ type: 'set-adding', value: true });
+    dispatch({ type: 'set-error', value: null });
 
     try {
       const added = await authenticatedJson<ApprovedDomain>(
@@ -51,14 +80,14 @@ export function ApprovedDomainManager() {
           body: JSON.stringify({ domain: domainStr }),
         }
       );
-      setDomains((prev) => [...prev, added]);
-      setNewDomain('');
+      dispatch({ type: 'set-domains', value: [...state.domains, added] });
+      dispatch({ type: 'reset-form' });
       toast.success('Domain added successfully');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to add domain';
-      setError(msg);
+      dispatch({ type: 'set-error', value: msg });
     } finally {
-      setAdding(false);
+      dispatch({ type: 'set-adding', value: false });
     }
   };
 
@@ -70,14 +99,14 @@ export function ApprovedDomainManager() {
       if (!res.ok) {
         throw new Error('Failed to delete domain');
       }
-      setDomains((prev) => prev.filter((d) => d.id !== domainId));
+      dispatch({ type: 'set-domains', value: state.domains.filter((d) => d.id !== domainId) });
       toast.success('Domain removed');
     } catch {
       toast.error('Failed to remove domain');
     }
   };
 
-  if (loading) {
+  if (state.loading) {
     return (
       <div className="flex items-center justify-center p-8 text-text-muted">
         <Loader2 className="w-6 h-6 animate-spin" />
@@ -93,16 +122,16 @@ export function ApprovedDomainManager() {
         </h3>
           <form onSubmit={handleAddDomain} className="flex items-end gap-3">
             <div className="flex-1">
-              <FormField label="Domain Name" {...(error ? { error } : {})}>
+              <FormField label="Domain Name" {...(state.error ? { error: state.error } : {})}>
                 <Input
                   placeholder="example.com"
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
-                  disabled={adding}
+                  value={state.newDomain}
+                  onChange={(e) => dispatch({ type: 'set-new-domain', value: e.target.value })}
+                  disabled={state.adding}
                 />
             </FormField>
           </div>
-          <Button type="submit" loading={adding} disabled={!newDomain.trim()}>
+          <Button type="submit" loading={state.adding} disabled={!state.newDomain.trim()}>
             Add
           </Button>
         </form>
@@ -117,14 +146,14 @@ export function ApprovedDomainManager() {
             </tr>
           </thead>
           <tbody>
-            {domains.length === 0 ? (
+            {state.domains.length === 0 ? (
               <tr>
                 <td colSpan={2} className="px-6 py-8 text-center text-text-muted">
                   No approved domains configured
                 </td>
               </tr>
             ) : (
-              domains.map((domain) => (
+              state.domains.map((domain) => (
                 <tr
                   key={domain.id}
                   className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-raised dark:hover:bg-surface-dark-raised transition-colors"

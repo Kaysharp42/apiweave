@@ -18,17 +18,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import app.auth.router as auth_router
 from app.auth.permissions import PRESET_ADMIN, PRESET_EDITOR, PRESET_VIEWER
 from app.models import Invite, Session, User
 from app.repositories.auth_repositories import (
+    DeletedUserRepository,
     InviteRepository,
     SessionRepository,
     UserRepository,
 )
 from app.routes import auth_admin
-import app.auth.router as auth_router
-from app.auth.provider_registry import ProviderUserInfo
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -174,9 +173,8 @@ def test_settings_create_invite_case_insensitive_email() -> None:
 def test_auth_create_invite_duplicate_email_returns_409(monkeypatch: pytest.MonkeyPatch) -> None:
     """POST /api/auth/invites: duplicate active invite → 409."""
     from app.main import app as main_app
-    from fastapi.testclient import TestClient as TC
 
-    client = TC(main_app)
+    client = TestClient(main_app)
     admin = _make_user(roles=[PRESET_ADMIN])
     existing_invite = _make_invite()
     session = _make_session(user_id=admin.userId)
@@ -201,9 +199,8 @@ def test_auth_create_invite_duplicate_email_returns_409(monkeypatch: pytest.Monk
 def test_auth_create_invite_existing_user_returns_409(monkeypatch: pytest.MonkeyPatch) -> None:
     """POST /api/auth/invites: existing user with same email → 409."""
     from app.main import app as main_app
-    from fastapi.testclient import TestClient as TC
 
-    client = TC(main_app)
+    client = TestClient(main_app)
     admin = _make_user(roles=[PRESET_ADMIN])
     existing_user = _make_user(user_id="u2", email="taken@example.com")
     session = _make_session(user_id=admin.userId)
@@ -296,7 +293,7 @@ async def test_reconcile_orphan_invite_skips_when_no_active_invite(
 async def test_reconcile_orphan_invite_skips_role_update_when_user_already_has_roles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_reconcile_orphan_invite: if user already has roles, consume invite but don't update roles."""
+    """Consume the orphan invite without replacing existing roles."""
     email = "orphan@example.com"
     user = _make_user(user_id="usr-orphan", roles=[PRESET_ADMIN], email=email)
     invite = _make_invite(invite_id="inv-orphan", email=email, role_preset=PRESET_VIEWER)
@@ -503,6 +500,23 @@ def test_delete_user_other_admin_ok() -> None:
     assert response.status_code == 204
 
 
+def test_delete_non_admin_user_with_single_admin_ok() -> None:
+    admin = _make_user(user_id="admin-1", roles=[PRESET_ADMIN])
+    viewer = _make_user(user_id="viewer-1", roles=[PRESET_VIEWER])
+    client = _client()
+    client.cookies.set("session", "tok")
+    client.headers.update({"X-CSRF-Token": "x"})
+    client.cookies.set("csrftoken", "x")
+    s, t, u = _auth_patches(admin)
+    with s, t, u, patch.object(
+        UserRepository, "get_all", new=AsyncMock(return_value=[admin, viewer])
+    ), patch.object(
+        UserRepository, "delete", new=AsyncMock(return_value=True)
+    ):
+        response = client.delete("/api/users/viewer-1")
+    assert response.status_code == 204
+
+
 def test_delete_user_not_found_returns_404() -> None:
     """DELETE /api/users/{id}: user not found → 404."""
     admin = _make_user(user_id="admin-1", roles=[PRESET_ADMIN])
@@ -567,6 +581,24 @@ def test_delete_last_admin_guard_with_single_admin_in_system() -> None:
     assert "admin" in detail
 
 
+def test_settings_update_permissions_blocks_last_admin_demotion() -> None:
+    admin = _make_user(user_id="admin-1", roles=[PRESET_ADMIN])
+    client = _client()
+    client.cookies.set("session", "tok")
+    client.headers.update({"X-CSRF-Token": "x"})
+    client.cookies.set("csrftoken", "x")
+    s, t, u = _auth_patches(admin)
+    with s, t, u, patch.object(
+        UserRepository, "get_all", new=AsyncMock(return_value=[admin])
+    ):
+        response = client.patch(
+            "/api/settings/users/admin-1/permissions",
+            json={"roles": [PRESET_VIEWER], "permissions": []},
+        )
+    assert response.status_code == 400
+    assert "admin" in response.json()["detail"].lower()
+
+
 def test_delete_user_viewer_forbidden() -> None:
     """DELETE /api/users/{id}: viewer cannot delete users → 403."""
     user = _make_user(roles=[PRESET_VIEWER])
@@ -578,3 +610,99 @@ def test_delete_user_viewer_forbidden() -> None:
     with s, t, u:
         response = client.delete("/api/users/some-user")
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 7. Re-inviting a deleted user clears the DeletedUser block
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_by_email_removes_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DeletedUserRepository.delete_by_email: existing record → removed, returns True."""
+    doc = AsyncMock()
+    doc.delete = AsyncMock()
+    monkeypatch.setattr(
+        "app.repositories.auth_repositories.DeletedUser.find_one",
+        AsyncMock(return_value=doc),
+    )
+
+    result = await DeletedUserRepository.delete_by_email("removed@example.com")
+    assert result is True
+    doc.delete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_by_email_no_record_returns_false() -> None:
+    """DeletedUserRepository.delete_by_email: no matching record → returns False."""
+    result = await DeletedUserRepository.delete_by_email("never-deleted@example.com")
+    assert result is False
+
+
+def test_settings_create_invite_clears_deleted_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /api/settings/invites: re-inviting a deleted user clears the DeletedUser record."""
+    admin = _make_user(user_id="admin-1", roles=[PRESET_ADMIN])
+    client = _client()
+    client.cookies.set("session", "tok")
+    client.headers.update({"X-CSRF-Token": "x"})
+    client.cookies.set("csrftoken", "x")
+    s, t, u = _auth_patches(admin)
+
+    clear_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(DeletedUserRepository, "delete_by_email", clear_mock)
+
+    with s, t, u, patch.object(
+        InviteRepository, "find_active_by_email", new=AsyncMock(return_value=None)
+    ), patch.object(
+        UserRepository, "get_by_email", new=AsyncMock(return_value=None)
+    ), patch.object(
+        InviteRepository, "create", new=AsyncMock(return_value=_make_invite(
+            invite_id="inv-reinvite", email="reinvite@example.com"
+        ))
+    ):
+        response = client.post(
+            "/api/settings/invites",
+            json={"email": "reinvite@example.com", "role_preset": "viewer"},
+        )
+
+    assert response.status_code == 201
+    clear_mock.assert_awaited_once_with("reinvite@example.com")
+
+
+def test_auth_create_invite_clears_deleted_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /api/auth/invites: re-inviting a deleted user clears the DeletedUser record."""
+    from app.main import app as main_app
+
+    admin = _make_user(user_id="admin-1", roles=[PRESET_ADMIN])
+    client = TestClient(main_app)
+    session = _make_session(user_id=admin.userId)
+
+    monkeypatch.setattr(SessionRepository, "get_by_token_hash", AsyncMock(return_value=session))
+    monkeypatch.setattr(SessionRepository, "touch", AsyncMock(return_value=True))
+    monkeypatch.setattr(UserRepository, "get_by_id", AsyncMock(return_value=admin))
+    monkeypatch.setattr(InviteRepository, "find_active_by_email", AsyncMock(return_value=None))
+    monkeypatch.setattr(UserRepository, "get_by_email", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        InviteRepository,
+        "create",
+        AsyncMock(
+            return_value=_make_invite(
+                invite_id="inv-reinvite2", email="reinvite2@example.com"
+            )
+        ),
+    )
+    clear_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(DeletedUserRepository, "delete_by_email", clear_mock)
+
+    client.cookies.set("session", "tok")
+    client.headers.update({"X-CSRF-Token": "x"})
+    client.cookies.set("csrftoken", "x")
+    response = client.post(
+        "/api/auth/invites",
+        json={"email": "reinvite2@example.com", "roles": ["viewer"]},
+    )
+
+    assert response.status_code == 200
+    clear_mock.assert_awaited_once_with("reinvite2@example.com")

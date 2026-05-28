@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { IconButton } from '../atoms';
+import { IconButton } from '../atoms/IconButton';
 import useTabStore from '../../stores/TabStore';
 import type { WorkspaceTab } from '../../types/WorkspaceTab';
 
@@ -13,30 +13,32 @@ interface ContextMenuState {
 export function TabBar() {
   const { tabs, activeTabId, setActive, closeTab, closeOthers, closeAll } = useTabStore();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const checkOverflowRef = useRef<() => void>(() => {});
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
-  const checkOverflow = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 0);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-  }, []);
-
   useEffect(() => {
-    checkOverflow();
+    checkOverflowRef.current = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      setCanScrollLeft(el.scrollLeft > 0);
+      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    };
+
+    checkOverflowRef.current();
     const el = scrollRef.current;
     if (el) {
-      el.addEventListener('scroll', checkOverflow, { passive: true });
-      const ro = new ResizeObserver(checkOverflow);
+      const onScroll = () => checkOverflowRef.current();
+      el.addEventListener('scroll', onScroll, { passive: true });
+      const ro = new ResizeObserver(onScroll);
       ro.observe(el);
       return () => {
-        el.removeEventListener('scroll', checkOverflow);
+        el.removeEventListener('scroll', onScroll);
         ro.disconnect();
       };
     }
-  }, [checkOverflow, tabs.length]);
+  }, [tabs.length]);
 
   const scroll = (dir: number) => {
     scrollRef.current?.scrollBy({ left: dir * 160, behavior: 'smooth' });
@@ -84,6 +86,7 @@ export function TabBar() {
           const isActive = tab.id === activeTabId;
           return (
             <button
+              type="button"
               key={tab.id}
               onClick={() => setActive(tab.id)}
               onMouseDown={(e) => handleMouseDown(e, tab.id)}
@@ -112,10 +115,17 @@ export function TabBar() {
 
               <span
                 role="button"
-                tabIndex={-1}
+                tabIndex={0}
                 onClick={(e) => {
                   e.stopPropagation();
                   closeTab(tab.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeTab(tab.id);
+                  }
                 }}
                 className={[
                   'ml-1 p-0.5 rounded transition-colors',
@@ -148,12 +158,14 @@ export function TabBar() {
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
           <button
+            type="button"
             className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
             onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}
           >
             Close
           </button>
           <button
+            type="button"
             className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
             onClick={() => { closeOthers(contextMenu.tabId); setContextMenu(null); }}
           >
@@ -161,6 +173,7 @@ export function TabBar() {
           </button>
           <div className="my-1 border-t border-border dark:border-border-dark" />
           <button
+            type="button"
             className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors text-status-error"
             onClick={() => { closeAll(); setContextMenu(null); }}
           >

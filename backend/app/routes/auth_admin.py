@@ -23,6 +23,7 @@ from app.config import settings
 from app.models import Invite, InviteResponse, User, UserResponse
 from app.repositories.auth_repositories import (
     ApprovedDomainRepository,
+    DeletedUserRepository,
     InviteRepository,
     UserRepository,
 )
@@ -72,19 +73,22 @@ async def _ensure_not_removing_last_admin(user_id: str, new_roles: list[str] | N
     if not target_user:
         return
 
-    if new_roles is not None:
-        is_demoting = "admin" in target_user.roles and "admin" not in new_roles
-    else:
-        is_demoting = False
+    if "admin" not in target_user.roles:
+        return
 
-    is_deleting = new_roles is None
+    is_demoting = new_roles is not None and "admin" not in new_roles
+    is_deleting_admin = new_roles is None
 
-    if is_demoting or is_deleting:
+    if is_demoting or is_deleting_admin:
         admin_count = sum(1 for u in users if "admin" in u.roles)
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete the last admin",
+                detail=(
+                    "Cannot delete the last admin"
+                    if is_deleting_admin
+                    else "Cannot demote the last admin"
+                ),
             )
 
 
@@ -171,6 +175,7 @@ async def settings_update_user_permissions(
     user_id: str,
     body: UpdatePermissionsRequest,
 ) -> UserResponse:
+    await _ensure_not_removing_last_admin(user_id, body.roles)
     updated = await UserRepository.update(user_id, roles=body.roles, permissions=body.permissions)
     if not updated:
         raise HTTPException(
@@ -228,6 +233,10 @@ async def settings_create_invite(
         expires_at=now + timedelta(days=7),
         invite_url=_frontend_url(f"/invite/{raw_token}"),
     )
+    # Clear any deleted-user block: re-inviting a previously deleted user is
+    # an explicit admin signal that they should be allowed back.
+    await DeletedUserRepository.delete_by_email(email)
+
     return SettingsCreateInviteResponse(
         invite_url=invite.invite_url or _frontend_url(f"/invite/{raw_token}"),
         inviteId=invite.inviteId,

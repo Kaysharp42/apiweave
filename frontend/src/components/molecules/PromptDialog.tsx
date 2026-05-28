@@ -1,4 +1,4 @@
-import React, { Fragment, useRef, useState, useEffect } from 'react';
+import React, { Fragment, useRef, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { FileText } from 'lucide-react';
 import { Button } from '../atoms/Button';
@@ -29,13 +29,6 @@ export function PromptDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(defaultValue);
 
-  useEffect(() => {
-    if (open) {
-      setValue(defaultValue);
-      setTimeout(() => inputRef.current?.select(), 100);
-    }
-  }, [open, defaultValue]);
-
   const handleSubmit = (e: React.FormEvent) => {
     e?.preventDefault();
     const trimmed = value.trim();
@@ -62,7 +55,7 @@ export function PromptDialog({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+          <div className="fixed inset-0 bg-slate-950/30" aria-hidden="true" />
         </Transition.Child>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -99,6 +92,7 @@ export function PromptDialog({
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   placeholder={placeholder}
+                  aria-label={title}
                   className="input input-bordered input-sm w-full bg-surface dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus:border-primary dark:focus:border-primary"
                 />
 

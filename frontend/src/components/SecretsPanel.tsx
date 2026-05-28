@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Modal } from './molecules';
+import { Modal } from './molecules/Modal';
 import { Button } from './atoms/Button';
 import type { Environment } from '../types';
 
@@ -18,16 +18,20 @@ export default function SecretsPanel({
   onSecretsChange,
   onClose,
 }: SecretsPanelProps) {
-  const [secrets, setSecrets] = useState<Record<string, string>>(environment?.secrets ?? {});
+  const initialSecrets = useMemo<Record<string, string>>(
+    () => environment?.secrets ?? {},
+    [environment?.secrets],
+  );
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [newSecretKey, setNewSecretKey] = useState('');
   const [newSecretPlaceholder, setNewSecretPlaceholder] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setSecrets(environment?.secrets ?? {});
-    setNewSecretKey('');
-    setNewSecretPlaceholder('');
-  }, [environment?.environmentId]);
+    if (isOpen) {
+      setSecrets(initialSecrets);
+    }
+  }, [initialSecrets, isOpen]);
 
   const handleAddSecret = () => {
     if (!newSecretKey.trim()) return;
@@ -56,7 +60,7 @@ export default function SecretsPanel({
     }
   };
 
-  const footer = (
+  const footer = () => (
     <div className="flex gap-3 w-full">
       <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
       <Button onClick={handleSave} disabled={saving} variant="primary" fullWidth>
@@ -85,7 +89,9 @@ export default function SecretsPanel({
                     <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">Placeholder: {placeholder ?? '(none)'}</p>
                   </div>
                   <button
+                    type="button"
                     onClick={() => handleRemoveSecret(key)}
+                    aria-label={`Remove secret ${key}`}
                     className="p-2 text-status-error hover:bg-status-error/10 rounded-lg transition-colors flex-shrink-0"
                     title="Remove secret"
                   >
@@ -101,8 +107,9 @@ export default function SecretsPanel({
           <h3 className="font-semibold text-text-primary dark:text-text-primary-dark">Add New Secret</h3>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Secret Name</label>
+              <label htmlFor="secret-name" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Secret Name</label>
               <input
+                id="secret-name"
                 type="text"
                 value={newSecretKey}
                 onChange={(e) => setNewSecretKey(e.target.value)}
@@ -111,8 +118,9 @@ export default function SecretsPanel({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Placeholder Text (optional)</label>
+              <label htmlFor="secret-placeholder" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Placeholder Text (optional)</label>
               <input
+                id="secret-placeholder"
                 type="text"
                 value={newSecretPlaceholder}
                 onChange={(e) => setNewSecretPlaceholder(e.target.value)}

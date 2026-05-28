@@ -114,6 +114,7 @@ export default function DynamicFunctionsHelper() {
                 name="func-category"
                 checked={isOpen}
                 onChange={() => setExpandedCategory(isOpen ? null : category)}
+                aria-label={`Toggle ${categoryTitles[category]}`}
               />
               <div className="collapse-title flex items-center gap-2 p-2 min-h-0">
                 <Icon className="w-4 h-4 text-text-secondary" />
@@ -125,13 +126,14 @@ export default function DynamicFunctionsHelper() {
 
               <div className="collapse-content px-0 pb-0">
                 <div className="divide-y divide-border dark:divide-border-dark">
-                  {funcs.map((func, idx) => (
-                    <div key={idx} className="p-2 hover:bg-surface-raised/50 dark:hover:bg-surface-dark-raised/50">
+                  {funcs.map((func) => (
+                    <div key={func.syntax} className="p-2 hover:bg-surface-raised/50 dark:hover:bg-surface-dark-raised/50">
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <code className="text-xs font-mono font-bold text-primary break-all">
                           {func.syntax}
                         </code>
                         <button
+                          type="button"
                           onClick={() => copyToClipboard(func.example)}
                           className={`inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold rounded border transition-colors flex-shrink-0 ${
                             copiedFunc === func.example

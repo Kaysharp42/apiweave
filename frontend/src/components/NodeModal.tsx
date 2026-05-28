@@ -6,7 +6,7 @@ import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerg
 import { Button } from './atoms/Button';
 import { Input } from './atoms/Input';
 import { TextArea } from './atoms/TextArea';
-import { BeautifyButton } from './molecules';
+import { BeautifyButton } from './molecules/BeautifyButton';
 import { FormField } from './molecules/FormField';
 import { PanelTabs } from './molecules/PanelTabs';
 import { ResponseInspector } from './molecules/ResponseInspector';

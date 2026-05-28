@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 export interface SplitAuthLayoutProps {
-  hero: ReactNode;
+  hero: () => ReactNode;
   children: ReactNode;
 }
 
@@ -23,12 +23,12 @@ export function SplitAuthLayout({ hero, children }: SplitAuthLayoutProps) {
       {/* Left side: Hero (Hidden on mobile) */}
       <div className="hidden md:flex flex-1 relative z-10 lg:max-w-[60%] xl:max-w-[65%] border-r border-white/5">
         <div className="w-full h-full absolute inset-0">
-          {hero}
+          {hero()}
         </div>
       </div>
 
       {/* Right side: Auth Controls */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 relative z-10 backdrop-blur-xl bg-black/20 shadow-[0_0_100px_rgba(0,0,0,0.5)]">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 relative z-10 backdrop-blur-xl bg-slate-950/20 shadow-[0_0_100px_rgba(15,23,42,0.5)]">
         <div className="w-full max-w-sm relative">
           {/* Subtle glow behind the login box */}
           <div className="absolute -inset-4 bg-gradient-to-tr from-cyan-500/10 via-blue-500/10 to-purple-500/10 rounded-3xl blur-xl z-0" />

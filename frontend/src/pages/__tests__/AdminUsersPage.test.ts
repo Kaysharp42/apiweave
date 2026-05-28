@@ -189,11 +189,11 @@ test('InviteUserModal resets state on close', () => {
     'Must define resetAndClose to clear state on close'
   );
   assert.ok(
-    content.includes("setEmail('')"),
-    'Must reset email on close'
+    content.includes("type: 'reset'") || content.includes('dispatch({ type: \'reset\' })'),
+    'Must reset invite form state on close'
   );
   assert.ok(
-    content.includes("setRole("),
+    content.includes("role: 'viewer'") || content.includes("type: 'reset'"),
     'Must reset role on close'
   );
 });

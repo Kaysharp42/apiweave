@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, type ReactNode, useRef } from 'react';
+import { useState, useEffect, createContext, type ReactNode, useRef, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home';
 import LoginPage from './pages/LoginPage';
@@ -13,6 +13,18 @@ import { useAuth } from './auth/useAuth';
 import { AdminRoute } from './auth/AdminRoute';
 import MainLayout from './components/layout/MainLayout';
 import useNavigationStore from './stores/NavigationStore';
+
+const STORAGE_PREFIX = 'apiweave:v1:';
+
+const getStoredValue = (key: string): string | null => {
+  const versionedKey = `${STORAGE_PREFIX}${key}`;
+  return localStorage.getItem(versionedKey) ?? localStorage.getItem(key);
+};
+
+const setStoredValue = (key: string, value: string): void => {
+  localStorage.setItem(`${STORAGE_PREFIX}${key}`, value);
+  localStorage.setItem(key, value);
+};
 
 interface AppContextValue {
   darkMode: boolean;
@@ -81,7 +93,7 @@ function AdminPageShell({ children }: { children: ReactNode }) {
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     try {
-      const stored = localStorage.getItem('darkMode');
+      const stored = getStoredValue('darkMode');
       if (stored !== null) return stored === 'true';
       return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     } catch {
@@ -91,7 +103,7 @@ function App() {
 
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
     try {
-      const stored = localStorage.getItem('autoSaveEnabled');
+      const stored = getStoredValue('autoSaveEnabled');
       if (stored !== null) return stored === 'true';
       return true;
     } catch {
@@ -108,7 +120,7 @@ function App() {
         document.documentElement.classList.remove('dark');
         document.documentElement.setAttribute('data-theme', 'apiweave');
       }
-      localStorage.setItem('darkMode', darkMode ? 'true' : 'false');
+      setStoredValue('darkMode', darkMode ? 'true' : 'false');
     } catch {
       // ignore
     }
@@ -116,14 +128,19 @@ function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('autoSaveEnabled', autoSaveEnabled ? 'true' : 'false');
+      setStoredValue('autoSaveEnabled', autoSaveEnabled ? 'true' : 'false');
     } catch {
       // ignore
     }
   }, [autoSaveEnabled]);
 
+  const appContextValue = useMemo(
+    () => ({ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }),
+    [darkMode, autoSaveEnabled],
+  );
+
   return (
-    <AppContext.Provider value={{ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }}>
+    <AppContext.Provider value={appContextValue}>
       <PaletteProvider>
         <AuthProvider>
           <Router>

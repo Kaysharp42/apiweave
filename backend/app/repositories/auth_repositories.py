@@ -323,6 +323,21 @@ class DeletedUserRepository:
         except CollectionWasNotInitialized:
             return False
 
+    @staticmethod
+    async def delete_by_email(email: str) -> bool:
+        """Remove a DeletedUser record by email (e.g. when re-inviting a previously deleted user).
+
+        Returns True if a record was found and removed, False otherwise.
+        """
+        try:
+            deleted_user = await DeletedUser.find_one({"verified_email": email})
+            if not deleted_user:
+                return False
+            await deleted_user.delete()
+            return True
+        except CollectionWasNotInitialized:
+            return False
+
 
 class InviteRepository:
     """Repository for Invite operations with one-time consumption enforcement"""

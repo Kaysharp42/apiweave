@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useReducer, useEffect, useCallback } from 'react';
 import { Button } from '../components/atoms/Button';
 import { StatusBadge } from '../components/molecules/StatusBadge';
 import { InviteUserModal } from '../components/auth/InviteUserModal';
@@ -17,28 +17,68 @@ interface DeleteConfirmState {
 
 export default function AdminUsersPage() {
   const { user: currentUser } = useAuth();
-  const [users, setUsers] = useState<User[]>([]);
-  const [invites, setInvites] = useState<InviteResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [inviteModalOpen, setInviteModalOpen] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [copyingInviteId, setCopyingInviteId] = useState<string | null>(null);
+  type AdminUsersState = {
+    users: User[];
+    invites: InviteResponse[];
+    loading: boolean;
+    inviteModalOpen: boolean;
+    deleteConfirm: DeleteConfirmState | null;
+    deleting: boolean;
+    copyingInviteId: string | null;
+  };
+
+  type AdminUsersAction =
+    | { type: 'set-users'; value: User[] }
+    | { type: 'set-invites'; value: InviteResponse[] }
+    | { type: 'set-loading'; value: boolean }
+    | { type: 'set-invite-modal-open'; value: boolean }
+    | { type: 'set-delete-confirm'; value: DeleteConfirmState | null }
+    | { type: 'set-deleting'; value: boolean }
+    | { type: 'set-copying-invite-id'; value: string | null };
+
+  const [state, dispatch] = useReducer((current: AdminUsersState, action: AdminUsersAction): AdminUsersState => {
+    switch (action.type) {
+      case 'set-users':
+        return { ...current, users: action.value };
+      case 'set-invites':
+        return { ...current, invites: action.value };
+      case 'set-loading':
+        return { ...current, loading: action.value };
+      case 'set-invite-modal-open':
+        return { ...current, inviteModalOpen: action.value };
+      case 'set-delete-confirm':
+        return { ...current, deleteConfirm: action.value };
+      case 'set-deleting':
+        return { ...current, deleting: action.value };
+      case 'set-copying-invite-id':
+        return { ...current, copyingInviteId: action.value };
+      default:
+        return current;
+    }
+  }, {
+    users: [],
+    invites: [],
+    loading: true,
+    inviteModalOpen: false,
+    deleteConfirm: null,
+    deleting: false,
+    copyingInviteId: null,
+  });
 
   const fetchUsers = useCallback(async () => {
     try {
-      setLoading(true);
+      dispatch({ type: 'set-loading', value: true });
       const [userData, inviteData] = await Promise.all([
         authenticatedJson<User[]>(`${API_BASE_URL}/api/users`),
         authenticatedJson<InviteResponse[]>(`${API_BASE_URL}/api/auth/invites`),
       ]);
-      setUsers(userData);
+      dispatch({ type: 'set-users', value: userData });
       const now = new Date();
-      setInvites(inviteData.filter(inv => !inv.consumed && new Date(inv.expires_at) > now));
+      dispatch({ type: 'set-invites', value: inviteData.filter(inv => !inv.consumed && new Date(inv.expires_at) > now) });
     } catch {
       toast.error('Failed to load users');
     } finally {
-      setLoading(false);
+      dispatch({ type: 'set-loading', value: false });
     }
   }, []);
 
@@ -48,7 +88,7 @@ export default function AdminUsersPage() {
 
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (userId === currentUser?.userId && newRole !== 'admin') {
-      const adminCount = users.filter((u) => u.roles.includes('admin')).length;
+      const adminCount = state.users.filter((u) => u.roles.includes('admin')).length;
       if (adminCount <= 1) {
         toast.error('Cannot demote the last admin user');
         return;
@@ -64,7 +104,7 @@ export default function AdminUsersPage() {
           body: JSON.stringify({ roles: [newRole] }),
         }
       );
-      setUsers((prev) => prev.map((u) => (u.userId === userId ? updatedUser : u)));
+      dispatch({ type: 'set-users', value: state.users.map((u) => (u.userId === userId ? updatedUser : u)) });
       toast.success('User role updated');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to update role';
@@ -82,9 +122,7 @@ export default function AdminUsersPage() {
           body: JSON.stringify({ role_preset: newRole }),
         }
       );
-      setInvites((prev) =>
-        prev.map((inv) => (inv.inviteId === inviteId ? { ...inv, role_preset: newRole } : inv))
-      );
+      dispatch({ type: 'set-invites', value: state.invites.map((inv) => (inv.inviteId === inviteId ? { ...inv, role_preset: newRole } : inv)) });
       toast.success('Invite role updated');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to update invite role';
@@ -93,48 +131,48 @@ export default function AdminUsersPage() {
   };
 
   const handleCopyInviteLink = async (inviteId: string, inviteUrl: string) => {
-    setCopyingInviteId(inviteId);
+    dispatch({ type: 'set-copying-invite-id', value: inviteId });
     const success = await copyInviteLink(inviteUrl);
     if (success) {
       toast.success('Invite link copied');
     } else {
       toast.error('Failed to copy invite link');
     }
-    setTimeout(() => setCopyingInviteId(null), 1500);
+    setTimeout(() => dispatch({ type: 'set-copying-invite-id', value: null }), 1500);
   };
 
   const handleDeleteConfirmed = async () => {
-    if (!deleteConfirm) return;
-    setDeleting(true);
+    if (!state.deleteConfirm) return;
+    dispatch({ type: 'set-deleting', value: true });
     try {
-      if (deleteConfirm.type === 'user') {
-        await authenticatedFetch(`${API_BASE_URL}/api/users/${deleteConfirm.id}`, {
+      if (state.deleteConfirm.type === 'user') {
+        await authenticatedFetch(`${API_BASE_URL}/api/users/${state.deleteConfirm.id}`, {
           method: 'DELETE',
         });
-        setUsers((prev) => prev.filter((u) => u.userId !== deleteConfirm.id));
+        dispatch({ type: 'set-users', value: state.users.filter((u) => u.userId !== state.deleteConfirm?.id) });
         toast.success('User deleted');
       } else {
-        await authenticatedFetch(`${API_BASE_URL}/api/invites/${deleteConfirm.id}`, {
+        await authenticatedFetch(`${API_BASE_URL}/api/invites/${state.deleteConfirm.id}`, {
           method: 'DELETE',
         });
-        setInvites((prev) => prev.filter((inv) => inv.inviteId !== deleteConfirm.id));
+        dispatch({ type: 'set-invites', value: state.invites.filter((inv) => inv.inviteId !== state.deleteConfirm?.id) });
         toast.success('Invite deleted');
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to delete';
       toast.error(msg);
     } finally {
-      setDeleting(false);
-      setDeleteConfirm(null);
+      dispatch({ type: 'set-deleting', value: false });
+      dispatch({ type: 'set-delete-confirm', value: null });
     }
   };
 
   // Map email (lowercase) → invite for quick lookup on pending user rows
-  const inviteByEmail = new Map(invites.map((inv) => [inv.email.toLowerCase(), inv]));
+  const inviteByEmail = new Map(state.invites.map((inv) => [inv.email.toLowerCase(), inv]));
 
   // Invite-only rows: invites whose email has no matching user yet (case-insensitive)
-  const orphanInvites = invites.filter(
-    (inv) => !users.some((u) => u.verified_email.toLowerCase() === inv.email.toLowerCase())
+  const orphanInvites = state.invites.filter(
+    (inv) => !state.users.some((u) => u.verified_email.toLowerCase() === inv.email.toLowerCase())
   );
 
   return (
@@ -146,11 +184,11 @@ export default function AdminUsersPage() {
               <Shield className="w-6 h-6 text-primary" />
               User Management
             </h1>
-            <Button onClick={() => setInviteModalOpen(true)}>Invite User</Button>
+            <Button onClick={() => dispatch({ type: 'set-invite-modal-open', value: true })}>Invite User</Button>
           </div>
 
           <div className="bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg overflow-hidden">
-            {loading ? (
+            {state.loading ? (
               <div className="flex justify-center p-12 text-text-muted">
                 <Loader2 className="w-8 h-8 animate-spin" />
               </div>
@@ -165,7 +203,7 @@ export default function AdminUsersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.length === 0 && orphanInvites.length === 0 ? (
+                  {state.users.length === 0 && orphanInvites.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-6 py-8 text-center text-text-muted">
                         No users found
@@ -173,7 +211,7 @@ export default function AdminUsersPage() {
                     </tr>
                   ) : (
                     <>
-                      {users.map((user) => {
+                      {state.users.map((user) => {
                         const primaryRole = user.roles.includes('admin')
                           ? 'admin'
                           : user.roles.includes('editor')
@@ -237,18 +275,22 @@ export default function AdminUsersPage() {
                                       )
                                     }
                                   >
-                                    {copyingInviteId === pendingInvite.inviteId ? 'Copied!' : 'Copy Link'}
+                                      {state.copyingInviteId === pendingInvite.inviteId ? 'Copied!' : 'Copy Link'}
                                   </Button>
                                 )}
                                 {!isSelf && (
                                   <button
+                                    type="button"
                                     className="p-1 text-text-muted hover:text-error transition-colors rounded"
                                     title="Delete user"
                                     onClick={() =>
-                                      setDeleteConfirm({
+                                      dispatch({
+                                        type: 'set-delete-confirm',
+                                        value: {
                                         type: 'user',
                                         id: user.userId,
                                         label: user.display_name || user.verified_email,
+                                        },
                                       })
                                     }
                                   >
@@ -297,17 +339,21 @@ export default function AdminUsersPage() {
                                   variant="secondary"
                                   onClick={() => handleCopyInviteLink(inv.inviteId, inv.invite_url!)}
                                 >
-                                  {copyingInviteId === inv.inviteId ? 'Copied!' : 'Copy Link'}
+                                {state.copyingInviteId === inv.inviteId ? 'Copied!' : 'Copy Link'}
                                 </Button>
                               )}
                               <button
+                                type="button"
                                 className="p-1 text-text-muted hover:text-error transition-colors rounded"
                                 title="Delete invite"
                                 onClick={() =>
-                                  setDeleteConfirm({
+                                  dispatch({
+                                    type: 'set-delete-confirm',
+                                    value: {
                                     type: 'invite',
                                     id: inv.inviteId,
                                     label: inv.email,
+                                    },
                                   })
                                 }
                               >
@@ -327,21 +373,21 @@ export default function AdminUsersPage() {
       </main>
 
       <InviteUserModal
-        isOpen={inviteModalOpen}
+        isOpen={state.inviteModalOpen}
         onClose={() => {
-          setInviteModalOpen(false);
+          dispatch({ type: 'set-invite-modal-open', value: false });
           void fetchUsers();
         }}
       />
 
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      {state.deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50">
           <div className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
             <h2 className="text-lg font-semibold mb-2">Confirm Delete</h2>
             <p className="text-text-secondary dark:text-text-secondary-dark text-sm mb-6">
               Are you sure you want to delete{' '}
               <span className="font-medium text-text dark:text-text-dark">
-                {deleteConfirm.label}
+                {state.deleteConfirm.label}
               </span>
               ? This action cannot be undone.
             </p>
@@ -349,8 +395,8 @@ export default function AdminUsersPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setDeleteConfirm(null)}
-                disabled={deleting}
+                onClick={() => dispatch({ type: 'set-delete-confirm', value: null })}
+                disabled={state.deleting}
               >
                 Cancel
               </Button>
@@ -358,7 +404,7 @@ export default function AdminUsersPage() {
                 variant="primary"
                 size="sm"
                 intent="error"
-                loading={deleting}
+                loading={state.deleting}
                 onClick={() => void handleDeleteConfirmed()}
               >
                 Delete

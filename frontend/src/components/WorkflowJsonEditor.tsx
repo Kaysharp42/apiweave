@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
 import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { Button } from './atoms/Button';
-import { BeautifyButton } from './molecules';
+import { BeautifyButton } from './molecules/BeautifyButton';
 
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows
@@ -471,37 +471,23 @@ export function WorkflowJsonEditor({
   onApply,
   onClose,
 }: WorkflowJsonEditorProps) {
-  const [value, setValue] = useState<string>('');
+  const initialValue = useMemo(() => {
+    if (!workflowJson) return '';
+    try {
+      return JSON.stringify(workflowJson, null, 2);
+    } catch {
+      return '{}';
+    }
+  }, [workflowJson]);
+
+  const [value, setValue] = useState<string>(initialValue);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<ViewMode>('json');
-  const [includeWorkflow, setIncludeWorkflow] = useState<boolean>(
-    Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length)
-  );
+  const [includeWorkflow, setIncludeWorkflow] = useState<boolean>(Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const promptRef = useRef<HTMLDivElement>(null);
-  const seededForOpenRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    if (!open) {
-      seededForOpenRef.current = false;
-      return;
-    }
-    if (!workflowJson || seededForOpenRef.current) return;
-
-    try {
-      const pretty = JSON.stringify(workflowJson, null, 2);
-      setValue(pretty);
-      setError(null);
-      setIsDirty(false);
-      setIncludeWorkflow(Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length));
-    } catch {
-      setValue('{}');
-      setIncludeWorkflow(false);
-    }
-    seededForOpenRef.current = true;
-  }, [open, workflowJson]);
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -575,13 +561,13 @@ export function WorkflowJsonEditor({
   const lineCount = value.split('\n').length;
 
   return (
-    <Transition show={open} as={Fragment}>
+    <Transition key={initialValue} show={open} as={Fragment}>
       <Dialog onClose={onClose} className="relative z-50">
         <TransitionChild
           enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
           leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm" />
         </TransitionChild>
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <TransitionChild
@@ -711,6 +697,7 @@ export function WorkflowJsonEditor({
                 value={value}
                 onChange={handleChange}
                 spellCheck={false}
+                aria-label="Workflow JSON editor"
                 className="flex-1 p-3 bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark font-mono text-[12px] leading-[1.6] resize-none outline-none border-none"
                 style={{ tabSize: 2 }}
               />
