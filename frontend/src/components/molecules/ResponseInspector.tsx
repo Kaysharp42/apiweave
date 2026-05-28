@@ -320,7 +320,6 @@ export function ResponseInspector({
       setIsDarkMode(root.classList.contains('dark'));
     };
 
-    syncDarkMode();
     const observer = new MutationObserver(syncDarkMode);
     observer.observe(root, { attributes: true, attributeFilter: ['class'] });
 

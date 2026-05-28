@@ -4,6 +4,6 @@ export interface CardProps {
   headerActions?: React.ReactNode;
   collapsible?: boolean;
   defaultExpanded?: boolean;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 }

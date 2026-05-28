@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
+import { useEffect, useReducer, useCallback, useRef, useMemo, Fragment } from 'react';
 import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { Button } from './atoms/Button';
@@ -460,6 +460,54 @@ export interface WorkflowJsonEditorProps {
 
 type ViewMode = 'json' | 'ai-prompt';
 
+interface WorkflowJsonEditorState {
+  value: string;
+  error: string | null;
+  copied: boolean;
+  isDirty: boolean;
+  viewMode: ViewMode;
+  includeWorkflow: boolean;
+}
+
+type WorkflowJsonEditorAction =
+  | { type: 'set-value'; value: string }
+  | { type: 'set-error'; value: string | null }
+  | { type: 'set-copied'; value: boolean }
+  | { type: 'set-dirty'; value: boolean }
+  | { type: 'set-view-mode'; value: ViewMode }
+  | { type: 'set-include-workflow'; value: boolean };
+
+function createWorkflowJsonEditorState(initialValue: string, workflowJson: Record<string, unknown> | null): WorkflowJsonEditorState {
+  return {
+    value: initialValue,
+    error: null,
+    copied: false,
+    isDirty: false,
+    viewMode: 'json',
+    includeWorkflow: Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length),
+  };
+}
+
+function workflowJsonEditorReducer(
+  state: WorkflowJsonEditorState,
+  action: WorkflowJsonEditorAction,
+): WorkflowJsonEditorState {
+  switch (action.type) {
+    case 'set-value':
+      return { ...state, value: action.value, isDirty: true, error: null };
+    case 'set-error':
+      return { ...state, error: action.value };
+    case 'set-copied':
+      return { ...state, copied: action.value };
+    case 'set-dirty':
+      return { ...state, isDirty: action.value };
+    case 'set-view-mode':
+      return { ...state, viewMode: action.value };
+    case 'set-include-workflow':
+      return { ...state, includeWorkflow: action.value };
+  }
+}
+
 /**
  * WorkflowJsonEditor — Full-screen modal that shows the raw JSON of the
  * current workflow (nodes, edges, variables, settings).  Users can read,
@@ -480,23 +528,27 @@ export function WorkflowJsonEditor({
     }
   }, [workflowJson]);
 
-  const [value, setValue] = useState<string>(initialValue);
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<boolean>(false);
-  const [isDirty, setIsDirty] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('json');
-  const [includeWorkflow, setIncludeWorkflow] = useState<boolean>(Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length));
+  const [state, dispatch] = useReducer(
+    workflowJsonEditorReducer,
+    createWorkflowJsonEditorState(initialValue, workflowJson),
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const promptRef = useRef<HTMLDivElement>(null);
+  const {
+    value,
+    error,
+    copied,
+    isDirty,
+    viewMode,
+    includeWorkflow,
+  } = state;
 
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
 
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setValue(e.target.value);
-    setIsDirty(true);
-    setError(null);
+  const handleWorkflowJsonChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    dispatch({ type: 'set-value', value: e.target.value });
   }, []);
 
   const handleCopy = useCallback(async () => {
@@ -506,8 +558,8 @@ export function WorkflowJsonEditor({
 
     try {
       await navigator.clipboard.writeText(textToCopy);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      dispatch({ type: 'set-copied', value: true });
+      setTimeout(() => dispatch({ type: 'set-copied', value: false }), 1500);
     } catch {
       if (viewMode === 'json') {
         textareaRef.current?.select();
@@ -520,8 +572,8 @@ export function WorkflowJsonEditor({
         document.execCommand('copy');
         document.body.removeChild(textarea);
       }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      dispatch({ type: 'set-copied', value: true });
+      setTimeout(() => dispatch({ type: 'set-copied', value: false }), 1500);
     }
   }, [value, viewMode, workflowJson, includeWorkflow]);
 
@@ -530,17 +582,17 @@ export function WorkflowJsonEditor({
       const parsed = JSON.parse(value) as Record<string, unknown>;
 
       if (!parsed.nodes || !Array.isArray(parsed.nodes)) {
-        setError('"nodes" must be an array.');
+        dispatch({ type: 'set-error', value: '"nodes" must be an array.' });
         return;
       }
       if (!parsed.edges || !Array.isArray(parsed.edges)) {
-        setError('"edges" must be an array.');
+        dispatch({ type: 'set-error', value: '"edges" must be an array.' });
         return;
       }
 
       onApply(parsed);
     } catch (e) {
-      setError(`Invalid JSON: ${(e as Error).message}`);
+      dispatch({ type: 'set-error', value: `Invalid JSON: ${(e as Error).message}` });
     }
   }, [value, onApply]);
 
@@ -591,7 +643,7 @@ export function WorkflowJsonEditor({
             {/* View mode tabs */}
             <div className="flex items-center gap-1 mr-2 bg-surface-raised dark:bg-surface-dark-raised rounded-md p-0.5">
               <Button
-                onClick={() => setViewMode('json')}
+                onClick={() => dispatch({ type: 'set-view-mode', value: 'json' })}
                 variant="ghost"
                 size="xs"
                 className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
@@ -604,7 +656,7 @@ export function WorkflowJsonEditor({
                 Edit JSON
               </Button>
               <Button
-                onClick={() => setViewMode('ai-prompt')}
+                onClick={() => dispatch({ type: 'set-view-mode', value: 'ai-prompt' })}
                 variant="ghost"
                 size="xs"
                 className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
@@ -665,7 +717,7 @@ export function WorkflowJsonEditor({
               <input
                 type="checkbox"
                 checked={includeWorkflow}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIncludeWorkflow(e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'set-include-workflow', value: e.target.checked })}
                 className="checkbox checkbox-sm checkbox-primary"
               />
               <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">
@@ -695,7 +747,7 @@ export function WorkflowJsonEditor({
               <textarea
                 ref={textareaRef}
                 value={value}
-                onChange={handleChange}
+                onChange={handleWorkflowJsonChange}
                 spellCheck={false}
                 aria-label="Workflow JSON editor"
                 className="flex-1 p-3 bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark font-mono text-[12px] leading-[1.6] resize-none outline-none border-none"
@@ -719,7 +771,7 @@ export function WorkflowJsonEditor({
               <div className="flex-1" />
               <BeautifyButton
                 value={value}
-                onChange={setValue}
+                onChange={(v: string) => dispatch({ type: 'set-value', value: v })}
               />
               <span>Ctrl+S to apply &middot; Esc to close</span>
             </div>

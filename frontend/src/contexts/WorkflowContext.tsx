@@ -68,6 +68,10 @@ const shallowEqual = (left: Record<string, unknown>, right: Record<string, unkno
 
 export const WorkflowProvider = ({ children, workflowId, initialWorkflow }: WorkflowProviderProps) => {
   const wf = initialWorkflow as { variables?: WorkflowVariables; settings?: WorkflowSettings; collectionId?: string | null; nodeTemplates?: { label?: string; config?: { url?: string; method?: string; headers?: string; body?: string; queryParams?: string; pathVariables?: string; cookies?: string; timeout?: number; openapiMeta?: unknown } }[] } | undefined;
+  const extractorVariablesRef = useRef<WorkflowVariables>({});
+
+  const onVariablesDeletedRef = useRef<((varNames: string[]) => void) | null>(null);
+
   type WorkflowState = {
     variables: WorkflowVariables;
     settings: WorkflowSettings;
@@ -155,10 +159,6 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }: Work
   });
 
   const { addImportedGroup, removeImportedGroup } = usePalette();
-
-  const extractorVariablesRef = useRef<WorkflowVariables>({});
-
-  const onVariablesDeletedRef = useRef<((varNames: string[]) => void) | null>(null);
 
   const fetchCollections = useCallback(async () => {
     dispatch({ type: 'set-loading-collections', value: true });

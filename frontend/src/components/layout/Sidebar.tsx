@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/useAuth';
 import { toast } from 'sonner';
@@ -32,12 +32,11 @@ import useSidebarStore from '../../stores/SidebarStore';
 import useTabStore from '../../stores/TabStore';
 import { getSidebarItemLabel } from '../../utils/sidebarItemLabel';
 import { requestCollectionDeletion, requestWorkflowDeletion } from '../../utils/sidebarDeletion';
-import type { SidebarProps } from '../../types/SidebarProps';
 import type { Workflow } from '../../types/Workflow';
 import type { Collection } from '../../types/Collection';
 import type { Environment } from '../../types/Environment';
-import type { PaginationState } from '../../types/PaginationState';
 import { authenticatedFetch } from '../../utils/authenticatedApi';
+import useNavigationStore from '../../stores/NavigationStore';
 
 interface WorkflowItemProps {
   workflow: Workflow;
@@ -76,55 +75,58 @@ function WorkflowItem({ workflow, isActive, collections, environments, onWorkflo
   return (
     <li>
       <div
-        role="button"
-        tabIndex={0}
-        aria-current={isActive ? 'page' : undefined}
-        onClick={handleActivate}
-        onKeyDown={handleKeyDown}
         className={[
-          'group flex w-full items-start gap-2 rounded-xl px-2.5 py-2 text-sm transition-all duration-150 cursor-pointer border',
+          'group flex w-full items-start gap-2 rounded-xl px-2.5 py-2 text-sm transition-all duration-150 border',
           isActive
             ? 'bg-primary/10 dark:bg-cyan-400/10 border-primary/30 dark:border-cyan-400/30 shadow-sm'
             : 'border-transparent hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:border-border/70 dark:hover:border-border-dark/70',
         ].join(' ')}
       >
-        <FileText className="mt-0.5 h-4 w-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+        <button
+          type="button"
+          aria-current={isActive ? 'page' : undefined}
+          onClick={handleActivate}
+          onKeyDown={handleKeyDown}
+          className="flex min-w-0 flex-1 items-start gap-2 text-left"
+        >
+          <FileText className="mt-0.5 h-4 w-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
 
-        <div className="min-w-0 flex-1 text-left overflow-hidden">
-          <div
-            className="font-medium text-text-primary dark:text-text-primary-dark truncate"
-            title={workflowLabel.fullLabel}
-          >
-            {workflowLabel.label}
+          <div className="min-w-0 flex-1 text-left overflow-hidden">
+            <div
+              className="font-medium text-text-primary dark:text-text-primary-dark truncate"
+              title={workflowLabel.fullLabel}
+            >
+              {workflowLabel.label}
+            </div>
+
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-text-secondary dark:text-text-secondary-dark overflow-hidden">
+              <Badge variant="ghost" size="xs">{workflow.nodes?.length ?? 0} nodes</Badge>
+
+              {collectionLabel && (
+                <Badge
+                  variant="info"
+                  size="xs"
+                  className="max-w-[9.5rem] truncate"
+                  title={collectionLabel.fullLabel}
+                >
+                  {collectionLabel.label}
+                </Badge>
+              )}
+
+              {environmentLabel && (
+                <Badge
+                  variant="secondary"
+                  size="xs"
+                  className="max-w-[9rem] truncate"
+                  title={environmentLabel.fullLabel}
+                >
+                  <Globe className="w-2.5 h-2.5 mr-0.5" />
+                  {environmentLabel.label}
+                </Badge>
+              )}
+            </div>
           </div>
-
-          <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-text-secondary dark:text-text-secondary-dark overflow-hidden">
-            <Badge variant="ghost" size="xs">{workflow.nodes?.length ?? 0} nodes</Badge>
-
-            {collectionLabel && (
-              <Badge
-                variant="info"
-                size="xs"
-                className="max-w-[9.5rem] truncate"
-                title={collectionLabel.fullLabel}
-              >
-                {collectionLabel.label}
-              </Badge>
-            )}
-
-            {environmentLabel && (
-              <Badge
-                variant="secondary"
-                size="xs"
-                className="max-w-[9rem] truncate"
-                title={environmentLabel.fullLabel}
-              >
-                <Globe className="w-2.5 h-2.5 mr-0.5" />
-                {environmentLabel.label}
-              </Badge>
-            )}
-          </div>
-        </div>
+        </button>
 
         <div className="ml-1 flex w-[64px] shrink-0 items-center justify-end gap-1">
           <button
@@ -158,18 +160,8 @@ function WorkflowItem({ workflow, isActive, collections, environments, onWorkflo
   );
 }
 
-export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _currentWorkflowId }: SidebarProps) {
-  const selectedNav = _selectedNav;
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [pagination, setPagination] = useState<PaginationState>({
-    skip: 0,
-    limit: 20,
-    total: 0,
-    hasMore: false,
-  });
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [collections, setCollections] = useState<Collection[]>([]);
+export function Sidebar() {
+  const selectedNav = useNavigationStore((s) => s.selectedNavVal);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [showCollectionManager, setShowCollectionManager] = useState(false);
   const [exportingWorkflowId, setExportingWorkflowId] = useState<string | null>(null);
@@ -177,123 +169,40 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
   const [expandedCollections, setExpandedCollections] = useState<Set<string>>(new Set());
   const [exportingCollectionId, setExportingCollectionId] = useState<string | null>(null);
   const [exportingCollectionName, setExportingCollectionName] = useState<string | null>(null);
-  const [environments, setEnvironments] = useState<Environment[]>([]);
   const [showNewWorkflowPrompt, setShowNewWorkflowPrompt] = useState(false);
   const [deleteWorkflowTarget, setDeleteWorkflowTarget] = useState<{ workflowId: string; name: string } | null>(null);
   const [deleteCollectionTarget, setDeleteCollectionTarget] = useState<{ collectionId: string; name: string } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleScrollRef = useRef<() => void>(() => {});
 
+  const workflows = useSidebarStore((s) => s.workflows);
+  const collections = useSidebarStore((s) => s.collections);
+  const environments = useSidebarStore((s) => s.environments);
+  const pagination = useSidebarStore((s) => s.pagination);
+  const isLoadingMore = useSidebarStore((s) => s.isLoadingMore);
+  const isRefreshing = useSidebarStore((s) => s.isRefreshing);
   const searchQuery = useSidebarStore((s) => s.searchQuery);
-  const workflowVersion = useSidebarStore((s) => s.workflowVersion);
-  const collectionVersion = useSidebarStore((s) => s.collectionVersion);
   const closeTab = useTabStore((s) => s.closeTab);
+  const fetchWorkflows = useSidebarStore((s) => s.fetchWorkflows);
+  const fetchEnvironments = useSidebarStore((s) => s.fetchEnvironments);
+  const refreshAll = useSidebarStore((s) => s.refreshAll);
+  const setIsLoadingMore = useSidebarStore((s) => s.setIsLoadingMore);
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    const loadEnvs = async () => {
-      try {
-        const res = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
-        if (res.ok) {
-          const data: Environment[] = await res.json();
-          setEnvironments(data);
-        }
-      } catch { /* silent */ }
-    };
-    loadEnvs();
-  }, []);
-
-  const fetchWorkflows = useCallback(async (skip = 0, append = false, limit = 20) => {
-    try {
-      const endpoint = selectedNav === 'workflows'
-        ? `${API_BASE_URL}/api/workflows/unattached?skip=${skip}&limit=${limit}`
-        : `${API_BASE_URL}/api/workflows?skip=${skip}&limit=${limit}`;
-
-      const response = await authenticatedFetch(endpoint);
-      if (response.ok) {
-        const data: { workflows: Workflow[]; total: number } = await response.json();
-
-        setWorkflows((previousWorkflows) => (append ? [...previousWorkflows, ...data.workflows] : data.workflows));
-        setPagination({
-          skip,
-          limit,
-          total: data.total,
-          hasMore: data.workflows.length === limit && (skip + limit) < data.total,
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching workflows:', error);
-    } finally {
-      setIsLoadingMore(false);
-      setIsRefreshing(false);
-    }
-  }, [selectedNav]);
-
-  const fetchCollections = useCallback(async () => {
-    try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
-      if (response.ok) {
-        const data: Collection[] = await response.json();
-        setCollections(data);
-      }
-    } catch (error) {
-      console.error('Error fetching collections:', error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (selectedNav === 'workflows') {
-      setWorkflows([]);
-      setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
-      fetchWorkflows(0);
-    } else if (selectedNav === 'collections') {
-      fetchCollections();
-      fetchWorkflows(0, false, 1000);
-    }
-  }, [selectedNav, fetchWorkflows, fetchCollections]);
-
-  useEffect(() => {
-    if (workflowVersion > 0) {
-      setIsRefreshing(true);
-      setPagination({ skip: 0, limit: 20, total: 0, hasMore: false });
-      if (selectedNav === 'workflows') {
-        fetchWorkflows(0);
-      } else if (selectedNav === 'collections') {
-        fetchWorkflows(0, false, 1000);
-      }
-    }
-  }, [workflowVersion, selectedNav, fetchWorkflows]);
-
-  useEffect(() => {
-    if (collectionVersion > 0) {
-      setIsRefreshing(true);
-      if (selectedNav === 'collections') {
-        fetchCollections();
-        fetchWorkflows(0, false, 1000);
-      } else if (selectedNav === 'workflows') {
-        fetchWorkflows(0);
-      }
-    }
-  }, [collectionVersion, selectedNav, fetchWorkflows, fetchCollections]);
+    void fetchEnvironments();
+  }, [fetchEnvironments]);
 
   handleScrollRef.current = () => {
     if (scrollContainerRef.current && selectedNav === 'workflows') {
       const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
       if (scrollHeight - scrollTop <= clientHeight + 100 && !isLoadingMore && pagination.hasMore) {
         setIsLoadingMore(true);
+        void fetchWorkflows(pagination.skip + pagination.limit, true);
       }
     }
   };
-
-  useEffect(() => {
-    if (isLoadingMore && pagination.hasMore) {
-      const nextSkip = pagination.skip + pagination.limit;
-      fetchWorkflows(nextSkip, true);
-    }
-  }, [isLoadingMore, pagination, fetchWorkflows]);
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -330,7 +239,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
 
       if (response.ok) {
         const workflow = await response.json() as Workflow;
-        fetchWorkflows(0);
+        void refreshAll(selectedNav);
         useTabStore.getState().openTab(workflow);
       }
     } catch (error) {
@@ -388,16 +297,8 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
 
       toast.success('Workflow deleted permanently');
       setSelectedWorkflowId((prev) => (prev === workflowId ? null : prev));
-      setWorkflows((prev) => prev.filter((wf) => wf.workflowId !== workflowId));
       closeTab(workflowId);
-
-      if (selectedNav === 'collections') {
-        await Promise.all([fetchCollections(), fetchWorkflows(0, false, 1000)]);
-      } else {
-        await fetchWorkflows(0);
-      }
-
-      useSidebarStore.getState().signalWorkflowsRefresh();
+      await refreshAll(selectedNav);
     } catch (error) {
       console.error('Error deleting workflow:', error);
       toast.error((error as Error).message || 'Error deleting workflow');
@@ -419,22 +320,12 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
       if (!collectionId) return;
 
       toast.success('Collection deleted permanently');
-      setCollections((prev) => prev.filter((c) => c.collectionId !== collectionId));
       setExpandedCollections((prev) => {
         const next = new Set(prev);
         next.delete(collectionId);
         return next;
       });
-
-      if (selectedNav === 'collections') {
-        await Promise.all([fetchCollections(), fetchWorkflows(0, false, 1000)]);
-      } else {
-        await fetchWorkflows(0);
-      }
-
-      const sidebarStore = useSidebarStore.getState();
-      sidebarStore.signalCollectionsRefresh();
-      sidebarStore.signalWorkflowsRefresh();
+      await refreshAll(selectedNav);
     } catch (error) {
       console.error('Error deleting collection:', error);
       toast.error((error as Error).message || 'Error deleting collection');
@@ -572,19 +463,12 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
 
             return (
               <li key={collection.collectionId}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  className="group flex items-center gap-2 rounded-xl border border-transparent px-2.5 py-2 cursor-pointer transition-all hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:border-border/70 dark:hover:border-border-dark/70"
-                  onClick={() => toggleCollection(collection.collectionId)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      toggleCollection(collection.collectionId);
-                    }
-                  }}
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+                <div className="group flex items-center gap-2 rounded-xl border border-transparent px-2.5 py-2 transition-all hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:border-border/70 dark:hover:border-border-dark/70">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    onClick={() => toggleCollection(collection.collectionId)}
+                  >
                     {isExpanded
                       ? <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
                       : <ChevronRight className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />}
@@ -596,7 +480,7 @@ export function Sidebar({ selectedNav: _selectedNav, currentWorkflowId: _current
                       {collectionLabel.label}
                     </span>
                     <Badge variant="ghost" size="xs">{collectionWorkflows.length}</Badge>
-                  </div>
+                  </button>
 
                   <div className="ml-1 flex w-[64px] shrink-0 items-center justify-end gap-1">
                     <button

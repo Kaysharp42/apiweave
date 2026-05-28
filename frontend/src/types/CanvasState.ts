@@ -13,4 +13,6 @@ export interface CanvasState {
   setClipboardNode: (nodeData: ClipboardNodeData | null) => void;
   hydrateClipboard: () => void;
   signalWorkflowReload: (workflowId: string) => void;
+  registerWorkflowReloadHandler: (workflowId: string, handler: () => void) => () => void;
+  registerPendingActionHandler: (handler: (action: { type: CanvasActionType; nodeId?: string; timestamp: number }) => void) => () => void;
 }

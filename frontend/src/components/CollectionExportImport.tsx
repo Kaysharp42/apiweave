@@ -106,7 +106,7 @@ export function CollectionExportImport({
   mode = 'export',
   onImportSuccess = () => {},
 }: CollectionExportImportProps) {
-  const [activeTab, setActiveTab] = useState<TabId>(mode);
+  const [selectedTab, setActiveTab] = useState<TabId | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<MessageState | null>(null);
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
@@ -120,6 +120,8 @@ export function CollectionExportImport({
   const [collections, setCollections] = useState<CollectionWithWorkflowCount[]>([]);
   const [selectedTargetCollection, setSelectedTargetCollection] = useState<string | null>(null);
   const [sanitize, setSanitize] = useState<boolean>(true);
+
+  const activeTab = selectedTab ?? mode;
 
   const formatErrorMessage = (error: unknown): string => {
     if (typeof error === 'string') {
@@ -627,16 +629,16 @@ export function CollectionExportImport({
     }
   };
 
-  const handleDragOver = (e: DragEvent<HTMLDivElement>): void => {
+  const handleDragOver = (e: DragEvent<HTMLButtonElement>): void => {
     e.preventDefault();
     e.currentTarget.classList.add('border-blue-500', 'bg-blue-50');
   };
 
-  const handleDragLeave = (e: DragEvent<HTMLDivElement>): void => {
+  const handleDragLeave = (e: DragEvent<HTMLButtonElement>): void => {
     e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
   };
 
-  const handleDrop = (e: DragEvent<HTMLDivElement>): void => {
+  const handleDrop = (e: DragEvent<HTMLButtonElement>): void => {
     e.preventDefault();
     e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
 
@@ -678,18 +680,9 @@ export function CollectionExportImport({
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className="fixed inset-0 bg-slate-950/50 flex items-center justify-center z-50"
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onClose();
-        }
-      }}
-    >
-      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
+    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="Collection export import">
+      <button type="button" aria-label="Close collection export import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
+      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-border dark:border-border-dark">
           <h2 className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
@@ -845,20 +838,13 @@ export function CollectionExportImport({
           {activeTab === 'import-collection' && (
             <div className="space-y-4">
               {/* Upload */}
-              <div
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    fileInputRef.current?.click();
-                  }
-                }}
               >
                 <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
                 <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop collection bundle</p>
@@ -871,7 +857,7 @@ export function CollectionExportImport({
                   aria-label="Collection bundle file upload"
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {uploadedFile && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
@@ -1051,20 +1037,13 @@ export function CollectionExportImport({
               </div>
 
               {/* Upload */}
-              <div
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    fileInputRef.current?.click();
-                  }
-                }}
               >
                 <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
                 <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop file or click to browse</p>
@@ -1079,7 +1058,7 @@ export function CollectionExportImport({
                   aria-label="Collection workflow or HAR file upload"
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {uploadedFile && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
@@ -1150,20 +1129,13 @@ export function CollectionExportImport({
               </div>
 
               {/* Upload */}
-              <div
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    fileInputRef.current?.click();
-                  }
-                }}
               >
                 <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
                 <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop file or click to browse</p>
@@ -1178,7 +1150,7 @@ export function CollectionExportImport({
                   aria-label="Collection workflow or HAR file upload"
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {uploadedFile && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
@@ -1249,20 +1221,13 @@ export function CollectionExportImport({
               </div>
 
               {/* Upload */}
-              <div
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    fileInputRef.current?.click();
-                  }
-                }}
               >
                 <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
                 <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop file or click to browse</p>
@@ -1277,7 +1242,7 @@ export function CollectionExportImport({
                   aria-label="Collection OpenAPI file upload"
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {uploadedFile && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
@@ -1390,7 +1355,7 @@ export function CollectionExportImport({
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

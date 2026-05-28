@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from './molecules/Modal';
@@ -18,20 +18,10 @@ export default function SecretsPanel({
   onSecretsChange,
   onClose,
 }: SecretsPanelProps) {
-  const initialSecrets = useMemo<Record<string, string>>(
-    () => environment?.secrets ?? {},
-    [environment?.secrets],
-  );
-  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [secrets, setSecrets] = useState<Record<string, string>>(environment?.secrets ?? {});
   const [newSecretKey, setNewSecretKey] = useState('');
   const [newSecretPlaceholder, setNewSecretPlaceholder] = useState('');
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setSecrets(initialSecrets);
-    }
-  }, [initialSecrets, isOpen]);
 
   const handleAddSecret = () => {
     if (!newSecretKey.trim()) return;

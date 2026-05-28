@@ -85,60 +85,52 @@ export function TabBar() {
         {tabs.map((tab: WorkspaceTab) => {
           const isActive = tab.id === activeTabId;
           return (
-            <button
-              type="button"
-              key={tab.id}
-              onClick={() => setActive(tab.id)}
-              onMouseDown={(e) => handleMouseDown(e, tab.id)}
-              onContextMenu={(e) => handleContextMenu(e, tab.id)}
-              className={[
-                'group relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors',
-                'border-r border-border dark:border-border-dark',
-                isActive
-                  ? 'bg-surface dark:bg-surface-dark text-primary dark:text-cyan-400 font-medium'
-                  : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              title={tab.name}
-            >
-              {isActive && (
-                <span className="absolute bottom-0 inset-x-0 h-0.5 bg-primary dark:bg-cyan-400" />
-              )}
+              <div key={tab.id} className="group relative flex items-stretch border-r border-border dark:border-border-dark">
+                <button
+                  type="button"
+                  onClick={() => setActive(tab.id)}
+                  onMouseDown={(e) => handleMouseDown(e, tab.id)}
+                  onContextMenu={(e) => handleContextMenu(e, tab.id)}
+                  className={[
+                    'relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors',
+                    isActive
+                      ? 'bg-surface dark:bg-surface-dark text-primary dark:text-cyan-400 font-medium'
+                      : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  title={tab.name}
+                >
+                  {isActive && (
+                    <span className="absolute bottom-0 inset-x-0 h-0.5 bg-primary dark:bg-cyan-400" />
+                  )}
 
-              <span className="max-w-[160px] truncate">
-                {tab.isDirty && (
-                  <span className="text-status-warning mr-0.5" aria-label="Unsaved changes">•</span>
-                )}
-                {tab.name}
-              </span>
+                  <span className="max-w-[160px] truncate">
+                    {tab.isDirty && (
+                      <span className="text-status-warning mr-0.5" aria-label="Unsaved changes">•</span>
+                    )}
+                    {tab.name}
+                  </span>
+                </button>
 
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(tab.id);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+                <button
+                  type="button"
+                  onClick={(e) => {
                     e.stopPropagation();
                     closeTab(tab.id);
-                  }
-                }}
-                className={[
-                  'ml-1 p-0.5 rounded transition-colors',
-                  isActive ? '' : 'opacity-0 group-hover:opacity-100',
-                  'hover:bg-status-error/20 hover:text-status-error',
-                ].join(' ')}
-                aria-label={`Close ${tab.name}`}
-              >
-                <X className="w-3 h-3" />
-              </span>
-            </button>
-          );
-        })}
+                  }}
+                  className={[
+                    'px-1.5 rounded transition-colors self-center',
+                    isActive ? '' : 'opacity-0 group-hover:opacity-100',
+                    'hover:bg-status-error/20 hover:text-status-error',
+                  ].join(' ')}
+                  aria-label={`Close ${tab.name}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          })}
       </div>
 
       {canScrollRight && (

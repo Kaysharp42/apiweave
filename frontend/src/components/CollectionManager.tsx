@@ -36,70 +36,138 @@ interface CollectionFormData {
   color: string;
 }
 
+interface CollectionManagerState {
+  collections: ExtendedCollection[];
+  workflows: Workflow[];
+  selectedCol: ExtendedCollection | null;
+  isEditing: boolean;
+  isManagingWorkflows: boolean;
+  workflowOrder: WorkflowOrderItem[];
+  draggedIndex: number | null;
+  continueOnFail: boolean;
+  formData: CollectionFormData;
+  error: string;
+  deleteTarget: string | null;
+}
+
+const createInitialState = (): CollectionManagerState => ({
+  collections: [],
+  workflows: [],
+  selectedCol: null,
+  isEditing: false,
+  isManagingWorkflows: false,
+  workflowOrder: [],
+  draggedIndex: null,
+  continueOnFail: true,
+  formData: { name: '', description: '', color: DefaultCollectionColor },
+  error: '',
+  deleteTarget: null,
+});
+
 interface CollectionManagerProps {
   open: boolean;
   onClose: () => void;
 }
 
 export function CollectionManager({ open, onClose }: CollectionManagerProps) {
-  const [collections, setCollections] = useState<ExtendedCollection[]>([]);
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [selectedCol, setSelectedCol] = useState<ExtendedCollection | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [isManagingWorkflows, setIsManagingWorkflows] = useState(false);
-  const [workflowOrder, setWorkflowOrder] = useState<WorkflowOrderItem[]>([]);
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [continueOnFail, setContinueOnFail] = useState(true);
-  const [formData, setFormData] = useState<CollectionFormData>({ name: '', description: '', color: DefaultCollectionColor });
-  const [error, setError] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [state, setState] = useState<CollectionManagerState>(() => createInitialState());
 
-  const fetchWorkflows = useCallback(async () => {
+  const {
+    collections,
+    workflows,
+    selectedCol,
+    isEditing,
+    isManagingWorkflows,
+    workflowOrder,
+    draggedIndex,
+    continueOnFail,
+    formData,
+    error,
+    deleteTarget,
+  } = state;
+
+  const fetchWorkflows = useCallback(async (): Promise<Workflow[]> => {
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows`);
       if (response.ok) {
         const data: unknown = await response.json();
         const workflowArray: Workflow[] = Array.isArray(data) ? data : (data as { workflows: Workflow[] }).workflows || [];
-        setWorkflows(workflowArray);
+        return workflowArray;
       }
     } catch (err: unknown) {
       console.error('Error fetching workflows:', err);
     }
+    return [];
   }, []);
 
-  const fetchCollections = useCallback(async () => {
+  const fetchCollections = useCallback(async (): Promise<ExtendedCollection[]> => {
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
         const data: ExtendedCollection[] = await response.json();
-        setCollections(data);
+        return data;
       }
     } catch (err: unknown) {
       console.error('Error fetching collections:', err);
     }
+    return [];
   }, []);
 
   useEffect(() => {
-    Promise.all([fetchCollections(), fetchWorkflows()]);
+    (async () => {
+      const [nextCollections, nextWorkflows] = await Promise.all([fetchCollections(), fetchWorkflows()]);
+      setState((prev) => ({ ...prev, collections: nextCollections, workflows: nextWorkflows }));
+    })();
   }, [fetchCollections, fetchWorkflows]);
 
+  const resetEditingState = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      isEditing: false,
+      selectedCol: null,
+      error: '',
+    }));
+  }, []);
+
+  const resetManageState = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      isManagingWorkflows: false,
+      selectedCol: null,
+      workflowOrder: [],
+    }));
+  }, []);
+
+  const updateFormData = useCallback((patch: Partial<CollectionFormData>) => {
+    setState((prev) => ({
+      ...prev,
+      formData: { ...prev.formData, ...patch },
+    }));
+  }, []);
+
   const handleCreate = () => {
-    setIsEditing(true);
-    setSelectedCol(null);
-    setFormData({ name: '', description: '', color: DefaultCollectionColor });
-    setError('');
+    setState((prev) => ({
+      ...prev,
+      isEditing: true,
+      selectedCol: null,
+      formData: { name: '', description: '', color: DefaultCollectionColor },
+      error: '',
+    }));
   };
 
   const handleEdit = (col: ExtendedCollection) => {
-    setIsEditing(true);
-    setSelectedCol(col);
-    setFormData({ name: col.name, description: col.description || '', color: col.color || DefaultCollectionColor });
-    setError('');
+    setState((prev) => ({
+      ...prev,
+      isEditing: true,
+      selectedCol: col,
+      formData: { name: col.name, description: col.description || '', color: col.color || DefaultCollectionColor },
+      error: '',
+    }));
   };
 
   const handleSave = async () => {
     if (!formData.name.trim()) {
-      setError('Collection name is required');
+      setState((prev) => ({ ...prev, error: 'Collection name is required' }));
       return;
     }
     try {
@@ -116,18 +184,22 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
 
       if (response.ok) {
         toast.success(selectedCol ? 'Collection updated' : 'Collection created');
-        await fetchCollections();
-        setIsEditing(false);
-        setSelectedCol(null);
-        setError('');
+        const nextCollections = await fetchCollections();
+        setState((prev) => ({
+          ...prev,
+          collections: nextCollections,
+          isEditing: false,
+          selectedCol: null,
+          error: '',
+        }));
         useSidebarStore.getState().signalCollectionsRefresh();
       } else {
         const errorData: { detail?: string } = await response.json();
-        setError(errorData.detail || 'Failed to save collection');
+        setState((prev) => ({ ...prev, error: errorData.detail || 'Failed to save collection' }));
       }
     } catch (err: unknown) {
       console.error('Error saving collection:', err);
-      setError('Error saving collection');
+      setState((prev) => ({ ...prev, error: 'Error saving collection' }));
     }
   };
 
@@ -139,11 +211,11 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
       });
       if (response.ok) {
         toast.success('Collection deleted');
-        await fetchCollections();
+        const nextCollections = await fetchCollections();
         if (selectedCol?.collectionId === deleteTarget) {
-          setSelectedCol(null);
-          setIsEditing(false);
+          setState((prev) => ({ ...prev, selectedCol: null, isEditing: false }));
         }
+        setState((prev) => ({ ...prev, collections: nextCollections }));
         useSidebarStore.getState().signalCollectionsRefresh();
       } else {
         const errorData: { detail?: string } = await response.json();
@@ -153,38 +225,37 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
       console.error('Error deleting collection:', err);
       toast.error('Error deleting collection');
     } finally {
-      setDeleteTarget(null);
+      setState((prev) => ({ ...prev, deleteTarget: null }));
     }
   };
 
   const handleCancel = () => {
-    setIsEditing(false);
-    setSelectedCol(null);
-    setError('');
+    resetEditingState();
   };
 
   const handleManageWorkflows = (col: ExtendedCollection) => {
-    setSelectedCol(col);
-    setIsManagingWorkflows(true);
-    setContinueOnFail(col.continueOnFail !== undefined ? col.continueOnFail : true);
+    setState((prev) => ({
+      ...prev,
+      selectedCol: col,
+      isManagingWorkflows: true,
+      continueOnFail: col.continueOnFail !== undefined ? col.continueOnFail : true,
+    }));
     const collectionWorkflows = workflows.filter(w => w.collectionId === col.collectionId);
     if (col.workflowOrder && col.workflowOrder.length > 0) {
       const sorted = col.workflowOrder.toSorted((a: { order: number }, b: { order: number }) => a.order - b.order);
       const orderedWorkflows: WorkflowOrderItem[] = sorted
         .map((wo: { workflowId: string; order: number; enabled: boolean; continueOnFail: boolean }) => ({ ...wo, workflow: collectionWorkflows.find(w => w.workflowId === wo.workflowId) }))
         .filter((wo: WorkflowOrderItem) => wo.workflow !== undefined);
-      setWorkflowOrder(orderedWorkflows);
+      setState((prev) => ({ ...prev, workflowOrder: orderedWorkflows }));
     } else {
-      setWorkflowOrder(collectionWorkflows.map((workflow, index) => ({
+      setState((prev) => ({ ...prev, workflowOrder: collectionWorkflows.map((workflow, index) => ({
         workflowId: workflow.workflowId, order: index, enabled: true, continueOnFail: true, workflow
-      })));
+      })) }));
     }
   };
 
   const handleBackFromWorkflows = () => {
-    setIsManagingWorkflows(false);
-    setSelectedCol(null);
-    setWorkflowOrder([]);
+    resetManageState();
   };
 
   const handleSaveWorkflowOrder = async () => {
@@ -200,10 +271,14 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
       });
       if (response.ok) {
         toast.success('Workflow order saved');
-        await fetchCollections();
-        setIsManagingWorkflows(false);
-        setSelectedCol(null);
-        setWorkflowOrder([]);
+        const nextCollections = await fetchCollections();
+        setState((prev) => ({
+          ...prev,
+          collections: nextCollections,
+          isManagingWorkflows: false,
+          selectedCol: null,
+          workflowOrder: [],
+        }));
         useSidebarStore.getState().signalCollectionsRefresh();
       } else {
         const errorData: { detail?: string } = await response.json();
@@ -215,7 +290,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
     }
   };
 
-  const handleDragStart = (index: number) => setDraggedIndex(index);
+  const handleDragStart = (index: number) => setState((prev) => ({ ...prev, draggedIndex: index }));
   const handleDragOver = (e: DragEvent<HTMLDivElement>, index: number) => {
     e.preventDefault();
     if (draggedIndex === null || draggedIndex === index) return;
@@ -223,35 +298,34 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
     const draggedItem = newOrder[draggedIndex]!;
     newOrder.splice(draggedIndex, 1);
     newOrder.splice(index, 0, draggedItem);
-    setWorkflowOrder(newOrder);
-    setDraggedIndex(index);
+    setState((prev) => ({ ...prev, workflowOrder: newOrder, draggedIndex: index }));
   };
-  const handleDragEnd = () => setDraggedIndex(null);
+  const handleDragEnd = () => setState((prev) => ({ ...prev, draggedIndex: null }));
 
   const toggleWorkflowEnabled = (i: number) => {
     const n = [...workflowOrder];
     const item = n[i]!;
     n[i] = { workflowId: item.workflowId, order: item.order, enabled: !item.enabled, continueOnFail: item.continueOnFail, workflow: item.workflow };
-    setWorkflowOrder(n);
+    setState((prev) => ({ ...prev, workflowOrder: n }));
   };
 
   const toggleWorkflowContinueOnFail = (i: number) => {
     const n = [...workflowOrder];
     const item = n[i]!;
     n[i] = { workflowId: item.workflowId, order: item.order, enabled: item.enabled, continueOnFail: !item.continueOnFail, workflow: item.workflow };
-    setWorkflowOrder(n);
+    setState((prev) => ({ ...prev, workflowOrder: n }));
   };
 
   const removeWorkflowFromOrder = (i: number) => {
     const n = [...workflowOrder];
     n.splice(i, 1);
-    setWorkflowOrder(n);
+    setState((prev) => ({ ...prev, workflowOrder: n }));
   };
 
   const addWorkflowToOrder = (workflowId: string) => {
     const workflow = workflows.find(w => w.workflowId === workflowId);
     if (!workflow) return;
-    setWorkflowOrder([...workflowOrder, { workflowId: workflow.workflowId, order: workflowOrder.length, enabled: true, continueOnFail: true, workflow }]);
+    setState((prev) => ({ ...prev, workflowOrder: [...workflowOrder, { workflowId: workflow.workflowId, order: workflowOrder.length, enabled: true, continueOnFail: true, workflow }] }));
   };
 
   const handleSelectChange = (e: ChangeEvent<HTMLSelectElement>) => {
@@ -283,7 +357,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
 
               <div className="p-3 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded">
                 <div className="flex items-center gap-2 cursor-pointer">
-                  <Toggle checked={continueOnFail} onChange={(e) => setContinueOnFail(e.target.checked)} variant="primary" size="sm" />
+          <Toggle checked={continueOnFail} onChange={(e) => setState((prev) => ({ ...prev, continueOnFail: e.target.checked }))} variant="primary" size="sm" />
                   <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">Continue on Failure (Collection-wide)</span>
                 </div>
                 <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">When enabled, execution continues even if a workflow fails</p>
@@ -372,11 +446,11 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
               )}
               <div>
                 <label htmlFor="collection-name" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Collection Name *</label>
-                <Input
-                  id="collection-name"
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  <Input
+                    id="collection-name"
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => updateFormData({ name: e.target.value })}
                   size="sm"
                   className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                   placeholder="e.g., Staging Tests"
@@ -384,10 +458,10 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
               </div>
               <div>
                 <label htmlFor="collection-description" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Description</label>
-                <TextArea
-                  id="collection-description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  <TextArea
+                    id="collection-description"
+                    value={formData.description}
+                    onChange={(e) => updateFormData({ description: e.target.value })}
                   size="sm"
                   className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark resize-none"
                   placeholder="Optional description..."
@@ -401,7 +475,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                     <button
                       type="button"
                       key={color}
-                      onClick={() => setFormData({ ...formData, color })}
+                      onClick={() => updateFormData({ color })}
                       className={`w-8 h-8 rounded-full border-2 transition-all p-0 ${formData.color === color ? 'border-text-primary dark:border-text-primary-dark scale-110' : 'border-border dark:border-border-dark'}`}
                       style={{ backgroundColor: color }}
                       title={color}
@@ -440,7 +514,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                         <IconButton
                           variant="ghost"
                           size="xs"
-                          onClick={() => setDeleteTarget(col.collectionId)}
+                          onClick={() => setState((prev) => ({ ...prev, deleteTarget: col.collectionId }))}
                           className="text-status-error hover:bg-status-error/10"
                           tooltip="Delete"
                         >
@@ -462,7 +536,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
 
       <ConfirmDialog
         open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
+        onClose={() => setState((prev) => ({ ...prev, deleteTarget: null }))}
         onConfirm={handleDeleteConfirm}
         title="Delete Collection"
         message="Are you sure you want to delete this collection? All workflows will be unassigned. This action cannot be undone."

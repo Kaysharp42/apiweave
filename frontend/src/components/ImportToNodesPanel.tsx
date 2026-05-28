@@ -69,9 +69,9 @@ interface FileUploadDropzoneProps {
   accept: string;
   description: string;
   fileInputRef: RefObject<HTMLInputElement>;
-  onDragOver: (e: DragEvent<HTMLDivElement>) => void;
-  onDragLeave: (e: DragEvent<HTMLDivElement>) => void;
-  onDrop: (e: DragEvent<HTMLDivElement>) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent) => void;
   onFileInputChange: (e: ChangeEvent<HTMLInputElement>) => void;
 }
 
@@ -89,20 +89,13 @@ export function FileUploadDropzone({
   };
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       className="border-2 border-dashed border-border dark:border-border-dark rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition-colors"
       onClick={openFilePicker}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          openFilePicker();
-        }
-      }}
     >
       <input
         ref={fileInputRef}
@@ -121,7 +114,7 @@ export function FileUploadDropzone({
           {description}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -236,16 +229,16 @@ export function ImportToNodesPanel({
     }
   };
 
-  const handleDragOver = (e: DragEvent<HTMLDivElement>): void => {
+  const handleDragOver = (e: DragEvent): void => {
     e.preventDefault();
     e.currentTarget.classList.add('border-blue-500', 'bg-blue-50');
   };
 
-  const handleDragLeave = (e: DragEvent<HTMLDivElement>): void => {
+  const handleDragLeave = (e: DragEvent): void => {
     e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
   };
 
-  const handleDrop = (e: DragEvent<HTMLDivElement>): void => {
+  const handleDrop = (e: DragEvent): void => {
     e.preventDefault();
     e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
     const files = e.dataTransfer.files;

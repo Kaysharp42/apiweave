@@ -36,8 +36,7 @@ test('Button renders typed variants, loading state, icon state, and dark mode cl
       intent: 'default',
       size: 'lg',
       fullWidth: true,
-      children: 'Save',
-    }),
+    }, 'Save'),
   );
 
   assertIncludes(primaryMarkup, 'type="button"');
@@ -50,8 +49,7 @@ test('Button renders typed variants, loading state, icon state, and dark mode cl
     React.createElement(Button, {
       loading: true,
       icon: React.createElement(Save, { className: 'save-icon' }),
-      children: 'Saving',
-    }),
+    }, 'Saving'),
   );
 
   assertIncludes(loadingMarkup, 'disabled=""');
@@ -66,8 +64,7 @@ test('IconButton renders accessible icon-only controls without duplicating butto
       variant: 'success',
       disabled: true,
       className: 'custom-icon-button',
-      children: React.createElement(Save, { 'aria-hidden': true }),
-    }),
+    }, React.createElement(Save, { 'aria-hidden': true })),
   );
 
   assertIncludes(markup, 'type="button"');
@@ -113,9 +110,7 @@ test('Input and TextArea render labels, help/error states, and dark mode classes
 });
 
 test('Badge, Toggle, Spinner, Skeleton, and dividers render expected primitive classes', () => {
-  const badgeMarkup = renderMarkup(
-    React.createElement(Badge, { variant: 'warning', size: 'xs', children: 'Draft' }),
-  );
+  const badgeMarkup = renderMarkup(React.createElement(Badge, { variant: 'warning', size: 'xs' }, 'Draft'));
   assertIncludes(badgeMarkup, 'badge-warning');
   assertIncludes(badgeMarkup, 'badge-xs');
 
@@ -135,7 +130,8 @@ test('Badge, Toggle, Spinner, Skeleton, and dividers render expected primitive c
   assertIncludes(toggleMarkup, 'checked=""');
 
   const spinnerMarkup = renderMarkup(React.createElement(Spinner, { type: 'bars', size: 'sm', color: 'text-primary' }));
-  assertIncludes(spinnerMarkup, 'role="status"');
+  assertIncludes(spinnerMarkup, '<output');
+  assertIncludes(spinnerMarkup, 'aria-label="Loading"');
   assertIncludes(spinnerMarkup, 'loading-bars');
   assertIncludes(spinnerMarkup, 'loading-sm');
 
@@ -147,7 +143,7 @@ test('Badge, Toggle, Spinner, Skeleton, and dividers render expected primitive c
   assertIncludes(dividerMarkup, 'divider-horizontal');
 
   const horizontalDividerMarkup = renderMarkup(React.createElement(HorizontalDivider, { className: 'my-2' }));
-  assertIncludes(horizontalDividerMarkup, 'role="separator"');
+  assertIncludes(horizontalDividerMarkup, '<hr');
   assertIncludes(horizontalDividerMarkup, 'dark:bg-border-dark');
 });
 

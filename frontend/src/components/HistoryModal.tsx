@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useReducer, useRef, useCallback, useSyncExternalStore } from 'react';
 import API_BASE_URL from '../utils/api';
 import { CheckCircle, XCircle, RefreshCw, Clock, Circle, History, X, ClipboardList, ChevronRight, Timer, Zap } from 'lucide-react';
 import { authenticatedFetch } from '../utils/authenticatedApi';
@@ -27,6 +27,70 @@ interface RunHistoryResponse {
   pagination: PaginationInfo;
 }
 
+type RequestStatus = 'loading' | 'idle';
+
+interface RequestState {
+  status: RequestStatus;
+}
+
+type RequestAction =
+  | { type: 'start-loading' }
+  | { type: 'finish-loading' };
+
+interface HistoryModalStoreState {
+  runs: RunRecord[];
+  pagination: PaginationInfo;
+  isLoading: boolean;
+}
+
+const initialPagination: PaginationInfo = {
+  page: 1,
+  limit: 10,
+  total: 0,
+  totalPages: 0,
+  hasNext: false,
+  hasPrevious: false,
+};
+
+const historyModalStore: HistoryModalStoreState = {
+  runs: [],
+  pagination: initialPagination,
+  isLoading: true,
+};
+
+const historyModalListeners = new Set<() => void>();
+
+function emitHistoryModalStoreUpdate(): void {
+  historyModalListeners.forEach((listener) => listener());
+}
+
+function subscribeToHistoryModalStore(listener: () => void): () => void {
+  historyModalListeners.add(listener);
+  return () => historyModalListeners.delete(listener);
+}
+
+function setHistoryModalStoreState(nextState: Partial<HistoryModalStoreState>): void {
+  if (nextState.runs !== undefined) {
+    historyModalStore.runs = nextState.runs;
+  }
+  if (nextState.pagination !== undefined) {
+    historyModalStore.pagination = nextState.pagination;
+  }
+  if (nextState.isLoading !== undefined) {
+    historyModalStore.isLoading = nextState.isLoading;
+  }
+  emitHistoryModalStoreUpdate();
+}
+
+function requestReducer(_state: RequestState, action: RequestAction): RequestState {
+  switch (action.type) {
+    case 'start-loading':
+      return { status: 'loading' };
+    case 'finish-loading':
+      return { status: 'idle' };
+  }
+}
+
 export interface HistoryModalProps {
   workflowId: string;
   onClose: () => void;
@@ -34,37 +98,32 @@ export interface HistoryModalProps {
 }
 
 export default function HistoryModal({ workflowId, onClose, onSelectRun }: HistoryModalProps) {
-  const [runs, setRuns] = useState<RunRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [requestState, dispatchRequest] = useReducer(requestReducer, { status: 'loading' });
   const [isAnimating, setIsAnimating] = useState(true);
-  const [pagination, setPagination] = useState<PaginationInfo>({
-    page: 1,
-    limit: 10,
-    total: 0,
-    totalPages: 0,
-    hasNext: false,
-    hasPrevious: false,
-  });
   const modalRef = useRef<HTMLDivElement>(null);
-
+  const loadingPageRef = useRef<number>(1);
+  const isLoading = requestState.status === 'loading';
+  const snapshot = useSyncExternalStore(subscribeToHistoryModalStore, () => historyModalStore, () => historyModalStore);
+  const { runs, pagination } = snapshot;
   const handleClose = useCallback(() => {
     setIsAnimating(false);
     setTimeout(onClose, 200);
   }, [onClose]);
 
   const fetchRunHistory = useCallback(async (page = 1) => {
-    setLoading(true);
+    dispatchRequest({ type: 'start-loading' });
+    setHistoryModalStoreState({ isLoading: true });
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs?page=${page}&limit=10`);
       if (response.ok) {
         const data: RunHistoryResponse = await response.json();
-        setRuns(data.runs);
-        setPagination(data.pagination);
+        setHistoryModalStoreState({ runs: data.runs, pagination: data.pagination });
       }
     } catch {
       // Silently fail - will retry on next fetch
     } finally {
-      setLoading(false);
+      dispatchRequest({ type: 'finish-loading' });
+      setHistoryModalStoreState({ isLoading: false });
     }
   }, [workflowId]);
 
@@ -197,13 +256,13 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="flex flex-col items-center gap-3">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-                <p className="text-sm text-text-muted dark:text-text-muted-dark">
-                   {pagination.page > 1 ? 'Loading page…' : 'Loading history…'}
-                </p>
+                 <p className="text-sm text-text-muted dark:text-text-muted-dark">
+                     {loadingPageRef.current && loadingPageRef.current > 1 ? 'Loading page…' : 'Loading history…'}
+                  </p>
               </div>
             </div>
           ) : runs.length === 0 ? (
@@ -215,7 +274,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
               </p>
             </div>
           ) : (
-            <div className={`divide-y divide-border dark:divide-border-dark transition-opacity ${loading ? 'opacity-50' : 'opacity-100'}`}>
+            <div className={`divide-y divide-border dark:divide-border-dark transition-opacity ${isLoading ? 'opacity-50' : 'opacity-100'}`}>
               {runs.map((run) => (
                 <button
                   type="button"
@@ -290,12 +349,12 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
         </div>
 
         <div className="flex-shrink-0 px-5 py-3 border-t border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-          {!loading && runs.length > 0 && pagination.totalPages > 1 && (
+            {!isLoading && runs.length > 0 && pagination.totalPages > 1 && (
             <div className="flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => handlePageChange(pagination.page - 1)}
-                disabled={!pagination.hasPrevious || loading}
+                disabled={!pagination.hasPrevious || isLoading}
                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Previous
@@ -308,7 +367,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
               <button
                 type="button"
                 onClick={() => handlePageChange(pagination.page + 1)}
-                disabled={!pagination.hasNext || loading}
+                disabled={!pagination.hasNext || isLoading}
                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Next

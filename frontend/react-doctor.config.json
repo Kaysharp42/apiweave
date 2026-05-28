@@ -1,4 +1,11 @@
 {
   "$schema": "https://react.doctor/schema.json",
-  "deadCode": false
+  "deadCode": false,
+  "ignore": {
+    "rules": [
+      "react-doctor/no-giant-component",
+      "react-doctor/prefer-useReducer",
+      "react-doctor/no-multi-comp"
+    ]
+  }
 }

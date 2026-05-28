@@ -287,22 +287,15 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
 
               <div className="space-y-2">
                 {environments.map((env) => (
-                  <div
+                  <button
+                    type="button"
                     key={env.environmentId}
-                    role="button"
-                    tabIndex={0}
-                    className={`p-3 rounded border cursor-pointer transition-colors ${
+                    className={`w-full text-left p-3 rounded border cursor-pointer transition-colors ${
                       state.selectedEnv?.environmentId === env.environmentId
                         ? 'border-primary bg-primary/5 dark:border-primary dark:bg-primary/10'
                         : 'border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
                     }`}
                     onClick={() => handleEdit(env)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        handleEdit(env);
-                      }
-                    }}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
@@ -324,7 +317,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -382,10 +375,10 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
                   </p>
                 </div>
 
-                <div>
-                  <div className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">
-                    Variables
-                  </div>
+                  <div>
+                    <div className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">
+                      Variables
+                    </div>
 
                   {/* Variable List */}
                   <div className="space-y-2 mb-3">
@@ -526,10 +519,10 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
                   <Button variant="secondary" size="sm" onClick={() => dispatch({ type: 'open-secrets' })}>
                     <Lock className="w-3.5 h-3.5 mr-1" /> Manage Secrets
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDuplicate(state.selectedEnv.environmentId)}>
+                  <Button variant="ghost" size="sm" onClick={() => handleDuplicate(state.selectedEnv!.environmentId)}>
                     <Copy className="w-3.5 h-3.5 mr-1" /> Duplicate
                   </Button>
-                  <Button variant="primary" size="sm" intent="error" onClick={() => dispatch({ type: 'set-delete-target', value: state.selectedEnv.environmentId })}>
+                  <Button variant="primary" size="sm" intent="error" onClick={() => dispatch({ type: 'set-delete-target', value: state.selectedEnv!.environmentId })}>
                     <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
                   </Button>
                 </div>
@@ -556,6 +549,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
 
       {/* Secrets Panel Modal */}
       <SecretsPanel
+        key={state.selectedEnv?.environmentId ?? 'no-environment'}
         isOpen={state.showSecretsPanel && !!state.selectedEnv}
         environment={state.selectedEnv as Environment | null}
         onSecretsChange={handleSecretsChange}

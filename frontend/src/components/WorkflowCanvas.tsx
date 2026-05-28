@@ -48,6 +48,7 @@ import { buildSwaggerRefreshSummary } from '../utils/swaggerRefreshSummary';
 import { getCanvasClipboardShortcutAction } from '../utils/shortcutGuards';
 import type { Environment } from '../types';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import type { CanvasActionType } from '../types/CanvasActionType';
 
 interface NodeData {
   label?: string;
@@ -259,9 +260,11 @@ export function WorkflowCanvas({
   const hydratedBaselineRef = useRef<HydratedBaseline | null>(null);
   const envSwaggerGroupId = `env-openapi-${workflowId}`;
 
-  const [selectedEnvironment, setSelectedEnvironment] = useState<string | null>(() => {
-    const workflowSpecific = localStorage.getItem(`selectedEnvironment_${workflowId}`);
-    if (workflowSpecific) {
+  const selectedEnvironmentByWorkflow = useRef<Record<string, string | null>>({});
+  const selectedEnvironment = useMemo<string | null>(() => {
+    const workflowKey = workflowId ?? '';
+    const workflowSpecific = selectedEnvironmentByWorkflow.current[workflowKey];
+    if (workflowSpecific !== undefined) {
       return workflowSpecific;
     }
 
@@ -275,16 +278,7 @@ export function WorkflowCanvas({
     }
 
     return null;
-  });
-
-  useEffect(() => {
-    if (selectedEnvironment) {
-      localStorage.setItem(`selectedEnvironment_${workflowId}`, selectedEnvironment);
-      localStorage.setItem('defaultEnvironment', selectedEnvironment);
-    } else {
-      localStorage.removeItem(`selectedEnvironment_${workflowId}`);
-    }
-  }, [selectedEnvironment, workflowId]);
+  }, [workflowId, workflow?.environmentId]);
 
   const {
     isRunning,
@@ -362,11 +356,15 @@ export function WorkflowCanvas({
     }
   }, []);
 
-  useEffect(() => { fetchEnvironments(); }, [fetchEnvironments]);
+  useEffect(() => {
+    void fetchEnvironments();
+  }, [fetchEnvironments]);
 
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);
   useEffect(() => {
-    if (environmentVersion > 0) fetchEnvironments();
+    if (environmentVersion > 0) {
+      void fetchEnvironments();
+    }
   }, [environmentVersion, fetchEnvironments]);
 
   const clearSwaggerWarningOnCanvas = useCallback(() => {
@@ -624,95 +622,100 @@ export function WorkflowCanvas({
     clearSwaggerWarningOnCanvas,
   ]);
 
-  useEffect(() => {
-    const requestId = swaggerRefreshRequestIdRef.current;
-    return () => {
-      swaggerRefreshRequestIdRef.current = requestId + 1;
-      removeImportedGroup(envSwaggerGroupId);
-    };
+  const cancelSwaggerRefresh = useCallback((requestId: number) => {
+    if (swaggerRefreshRequestIdRef.current !== requestId) return;
+    removeImportedGroup(envSwaggerGroupId);
   }, [envSwaggerGroupId, removeImportedGroup]);
 
   useEffect(() => {
-    refreshSwaggerTemplates();
-  }, []);
+    const requestId = swaggerRefreshRequestIdRef.current + 1;
+    swaggerRefreshRequestIdRef.current = requestId;
+    return () => cancelSwaggerRefresh(requestId);
+  }, [cancelSwaggerRefresh]);
+
+  useEffect(() => {
+    void refreshSwaggerTemplates();
+  }, [refreshSwaggerTemplates]);
 
   const handleManualSwaggerRefresh = useCallback(() => {
     refreshSwaggerTemplates({ force: true, showSuccessToast: true });
   }, [refreshSwaggerTemplates]);
 
-  const reloadVersion = useCanvasStore((s) => s.reloadVersion);
-  const reloadWorkflowId = useCanvasStore((s) => s.reloadWorkflowId);
-  useEffect(() => {
-    if (reloadVersion > 0 && reloadWorkflowId === workflowId) {
-      (async () => {
-        try {
-          const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
-          if (response.ok) {
-            const data = await response.json() as {
-              nodes?: Array<{ nodeId: string; type: string; position: { x: number; y: number }; config?: Record<string, unknown>; label?: string }>;
-              edges?: Array<{ edgeId: string; source: string; target: string; sourceHandle?: string; targetHandle?: string; label?: string }>;
-            };
-            const newNodes = (data.nodes || []).map(node => ({
-              id: node.nodeId,
-              type: node.type,
-              position: node.position,
-              data: {
-                config: node.config || {},
-                label: node.label,
-              },
-            })) as Node<NodeData>[];
-            const newEdges: Edge<EdgeData>[] = (data.edges || []).map(edge => ({
-              id: edge.edgeId,
-              source: edge.source,
-              target: edge.target,
-              sourceHandle: edge.sourceHandle || null,
-              targetHandle: edge.targetHandle || null,
-              label: edge.label,
-              type: 'custom',
-              ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
-                animated: true,
-                style: {
-                  stroke: edge.sourceHandle === 'pass'
-                    ? assertionEdgeColor('pass')
-                    : assertionEdgeColor('fail'),
-                  strokeWidth: 2,
-                },
-                labelStyle: {
-                  fill: edge.sourceHandle === 'pass'
-                    ? assertionEdgeColor('pass')
-                    : assertionEdgeColor('fail'),
-                  fontWeight: 700,
-                  fontSize: 11,
-                },
-                labelBgStyle: {
-                  fill: edgeLabelBackground,
-                  fillOpacity: 0.95,
-                },
-                labelBgPadding: [6, 4],
-                labelBgBorderRadius: 4,
-              } : {}),
-            }));
-            setNodes(newNodes);
-            setEdges(newEdges);
-          }
-        } catch (err) {
-          console.error('Error reloading workflow:', err);
-        }
-      })();
+  const reloadWorkflowFromServer = useCallback(async () => {
+    if (!workflowId) return;
+
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
+      if (response.ok) {
+        const data = await response.json() as {
+          nodes?: Array<{ nodeId: string; type: string; position: { x: number; y: number }; config?: Record<string, unknown>; label?: string }>;
+          edges?: Array<{ edgeId: string; source: string; target: string; sourceHandle?: string; targetHandle?: string; label?: string }>;
+        };
+        const newNodes = (data.nodes || []).map(node => ({
+          id: node.nodeId,
+          type: node.type,
+          position: node.position,
+          data: {
+            config: node.config || {},
+            label: node.label,
+          },
+        })) as Node<NodeData>[];
+        const newEdges: Edge<EdgeData>[] = (data.edges || []).map(edge => ({
+          id: edge.edgeId,
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle || null,
+          targetHandle: edge.targetHandle || null,
+          label: edge.label,
+          type: 'custom',
+          ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
+            animated: true,
+            style: {
+              stroke: edge.sourceHandle === 'pass'
+                ? assertionEdgeColor('pass')
+                : assertionEdgeColor('fail'),
+              strokeWidth: 2,
+            },
+            labelStyle: {
+              fill: edge.sourceHandle === 'pass'
+                ? assertionEdgeColor('pass')
+                : assertionEdgeColor('fail'),
+              fontWeight: 700,
+              fontSize: 11,
+            },
+            labelBgStyle: {
+              fill: edgeLabelBackground,
+              fillOpacity: 0.95,
+            },
+            labelBgPadding: [6, 4],
+            labelBgBorderRadius: 4,
+          } : {}),
+        }));
+        setNodes(newNodes);
+        setEdges(newEdges);
+      }
+    } catch (err) {
+      console.error('Error reloading workflow:', err);
     }
-  }, [reloadVersion, reloadWorkflowId, workflowId, setNodes, setEdges]);
+  }, [workflowId, setNodes, setEdges]);
 
-  const pendingAction = useCanvasStore((s) => s.pendingAction);
   useEffect(() => {
-    if (!pendingAction) return;
-    const { type, nodeId } = pendingAction;
+    if (!workflowId) return;
 
-      if (type === 'duplicate' && nodeId) {
+    return useCanvasStore.getState().registerWorkflowReloadHandler(workflowId, () => {
+      void reloadWorkflowFromServer();
+    });
+  }, [reloadWorkflowFromServer, workflowId]);
+
+  const handlePendingAction = useCallback((action: { type: CanvasActionType; nodeId?: string; timestamp: number }) => {
+    const { type, nodeId } = action;
+
+    if (type === 'duplicate' && nodeId) {
       const nodeToClone = nodes.find((n) => n.id === nodeId);
       if (nodeToClone) {
         const newNode: Node<NodeData> = {
           ...nodeToClone,
-          id: `${nodeToClone.id}-${Date.now()}`,
+          id: `${nodeToClone.id}-${action.timestamp}`,
           position: {
             x: nodeToClone.position.x + 150,
             y: nodeToClone.position.y + 150,
@@ -749,7 +752,7 @@ export function WorkflowCanvas({
             const lastNode = nodes[nodes.length - 1]!;
             newPosition = { x: lastNode.position.x + 150, y: lastNode.position.y + 150 };
           }
-          setNodes((nds) => [...nds, { id: `node-${Date.now()}`, type: nodeType, position: newPosition, data }]);
+          setNodes((nds) => [...nds, { id: `node-${action.timestamp}`, type: nodeType, position: newPosition, data }]);
           toast.success('Node pasted successfully');
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Unknown error';
@@ -758,7 +761,11 @@ export function WorkflowCanvas({
       }
     }
     useCanvasStore.getState().clearPendingAction();
-  }, [pendingAction, nodes, setNodes]);
+  }, [nodes, setNodes]);
+
+  useEffect(() => {
+    return useCanvasStore.getState().registerPendingActionHandler(handlePendingAction);
+  }, [handlePendingAction]);
 
   useEffect(() => {
     const isEditorOverlayOpen = !!modalNode || showJsonEditor || showImportToNodes || showHistory || showSecretsPrompt;
@@ -1368,7 +1375,13 @@ export function WorkflowCanvas({
           const processed = (val && val.trim()) ? val.trim() : null;
           const selectedEnv = processed ? environments.find(e => e.environmentId === processed) : undefined;
           const envName = selectedEnv ? selectedEnv.name : 'No Environment';
-          setSelectedEnvironment(processed);
+          selectedEnvironmentByWorkflow.current[workflowId ?? ''] = processed;
+          if (processed) {
+            localStorage.setItem(`selectedEnvironment_${workflowId}`, processed);
+            localStorage.setItem('defaultEnvironment', processed);
+          } else {
+            localStorage.removeItem(`selectedEnvironment_${workflowId}`);
+          }
           toast.success(`Environment: ${envName}`);
         }}
         workflowId={workflowId ?? ''}

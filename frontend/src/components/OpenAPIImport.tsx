@@ -226,23 +226,9 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
   };
 
   return (
-    <div 
-      role="button"
-      tabIndex={0}
-      className="fixed inset-0 bg-slate-950/50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onClose();
-        }
-      }}
-    >
-      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="OpenAPI import">
+      <button type="button" aria-label="Close OpenAPI import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
+      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
           <div className="flex items-center gap-2">
@@ -495,7 +481,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

@@ -295,21 +295,14 @@ export function WorkflowSettingsPanel() {
               </div>
             )}
 
-            {showCollectionDropdown && (
-              <div
-                role="button"
-                tabIndex={0}
-                aria-label="Close collection dropdown"
-                className="fixed inset-0 z-40"
-                onClick={() => setShowCollectionDropdown(false)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    setShowCollectionDropdown(false);
-                  }
-                }}
-              />
-            )}
+              {showCollectionDropdown && (
+                <button
+                  type="button"
+                  aria-label="Close collection dropdown"
+                  className="fixed inset-0 z-40 cursor-default"
+                  onClick={() => setShowCollectionDropdown(false)}
+                />
+              )}
           </div>
           )}
         </div>

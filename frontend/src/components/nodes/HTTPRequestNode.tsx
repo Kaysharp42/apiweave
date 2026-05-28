@@ -136,7 +136,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
     };
   }, [isOpen]);
 
-  const handleBlur = useCallback((event: React.FocusEvent) => {
+  const handleWarningPopoverBlur = useCallback((event: React.FocusEvent) => {
     const nextFocusedElement = event.relatedTarget;
     if (!nextFocusedElement) return;
     if (wrapperRef.current && !wrapperRef.current.contains(nextFocusedElement as Node)) {
@@ -155,7 +155,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
       onMouseEnter={() => setIsOpen(true)}
       onMouseLeave={() => setIsOpen(false)}
       onFocus={() => setIsOpen(true)}
-      onBlur={handleBlur}
+      onBlur={handleWarningPopoverBlur}
     >
       <button
         ref={triggerRef}
@@ -179,7 +179,6 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
           open
           aria-label="Swagger warning details"
           className="nodrag absolute top-full right-0 mt-1 z-[120] w-[260px] max-w-[calc(100vw-2rem)] rounded-md border border-amber-300/70 dark:border-amber-700/70 bg-surface-raised dark:bg-surface-dark-raised p-2 shadow-2xl"
-          onClick={(event) => event.stopPropagation()}
         >
           <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 mb-1">Swagger Warning</div>
           <p className="text-[10px] text-text-primary dark:text-text-primary-dark leading-snug break-words">{warning.text}</p>

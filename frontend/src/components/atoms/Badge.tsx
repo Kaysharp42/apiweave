@@ -3,7 +3,7 @@ import React from 'react';
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: 'default' | 'primary' | 'secondary' | 'success' | 'error' | 'warning' | 'info' | 'ghost' | 'outline';
   size?: 'xs' | 'sm' | 'md' | 'lg';
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 export function Badge({

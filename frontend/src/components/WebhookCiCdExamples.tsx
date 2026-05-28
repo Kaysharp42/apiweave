@@ -284,7 +284,7 @@ function buildJenkinsSnippet(mode: SnippetMode, auth: SnippetAuth): string {
             [ -n "\\$RUN_ID" ] || (echo "No runId in response" && exit 1)
             for i in \\$(seq 1 60); do
               RESULT=\\$(curl -s \\
-                "\\${env.APIWEAVE_BASE_URL}/api/runs/\\$RUN_ID" \\
+                "\${env.APIWEAVE_BASE_URL}/api/runs/\\$RUN_ID" \\
                 -H "X-Webhook-Token: \\$APIWEAVE_WEBHOOK_TOKEN")
               STATUS=\\$(echo "\\$RESULT" | jq -r '.status // empty')
               case "\\$STATUS" in
@@ -326,7 +326,7 @@ function buildJenkinsSnippet(mode: SnippetMode, auth: SnippetAuth): string {
             [ -n "\\$RUN_ID" ] || (echo "No runId in response" && exit 1)
             for i in \\$(seq 1 60); do
               RESULT=\\$(curl -s \\
-                "\\${env.APIWEAVE_BASE_URL}/api/runs/\\$RUN_ID" \\
+                "\${env.APIWEAVE_BASE_URL}/api/runs/\\$RUN_ID" \\
                 -H "X-Webhook-Token: \\$APIWEAVE_WEBHOOK_TOKEN")
               STATUS=\\$(echo "\\$RESULT" | jq -r '.status // empty')
               case "\\$STATUS" in

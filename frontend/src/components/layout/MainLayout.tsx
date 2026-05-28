@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Allotment } from 'allotment';
 // @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
@@ -12,70 +12,36 @@ import useNavigationStore from '../../stores/NavigationStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
 import { HorizontalDivider } from '../atoms/HorizontalDivider';
-import API_BASE_URL from '../../utils/api';
 import type { Environment } from '../../types/Environment';
-import { authenticatedFetch } from '../../utils/authenticatedApi';
 
 export function MainLayout({ children }: { children?: ReactNode }) {
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
-  const [environmentWithSecrets, setEnvironmentWithSecrets] = useState<Environment | null>(null);
-  const [showSecretsPrompt, setShowSecretsPrompt] = useState(false);
+  const environments = useSidebarStore((state) => state.environments);
+  const fetchEnvironments = useSidebarStore((state) => state.fetchEnvironments);
+  const refreshAll = useSidebarStore((state) => state.refreshAll);
+  const resetPagination = useSidebarStore((state) => state.resetPagination);
+  const [dismissedEnvironmentId, setDismissedEnvironmentId] = useState<string | null>(null);
+  const environmentWithSecrets = useMemo<Environment | null>(() => (
+    environments.find((env) => {
+      if (!env.secrets || Object.keys(env.secrets).length === 0) return false;
+      return !Object.keys(env.secrets).every((key) => sessionStorage.getItem(`secret_${key}`));
+    }) ?? null
+  ), [environments]);
+  const isSecretsPromptOpen = environmentWithSecrets !== null && environmentWithSecrets.environmentId !== dismissedEnvironmentId;
 
   useEffect(() => {
-    (async () => {
-      try {
-        const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
-        if (response.ok) {
-          const environments: Environment[] = await response.json();
-
-          for (const env of environments) {
-            if (env.secrets && Object.keys(env.secrets).length > 0) {
-              const secretsEntered = Object.keys(env.secrets).every((key) =>
-                sessionStorage.getItem(`secret_${key}`)
-              );
-
-              if (!secretsEntered) {
-                setEnvironmentWithSecrets(env);
-                setShowSecretsPrompt(true);
-                break;
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error checking environment secrets:', error);
-      }
-    })();
-  }, []);
-
-  const environmentVersion = useSidebarStore((s) => s.environmentVersion);
-  const checkActiveEnvironmentSecrets = useCallback(async () => {
-    try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
-      if (response.ok) {
-        const envs: Environment[] = await response.json();
-        for (const env of envs) {
-          if (env.isActive && env.secrets) {
-            for (const [, val] of Object.entries(env.secrets)) {
-              if (!val || val === '***') {
-                setShowSecretsPrompt(true);
-                return;
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error checking environment secrets:', error);
-    }
-  }, []);
+    void fetchEnvironments();
+  }, [fetchEnvironments]);
 
   useEffect(() => {
-    if (environmentVersion > 0) {
-      checkActiveEnvironmentSecrets();
+    if (navigationSelectedValue === 'workflows') {
+      resetPagination();
+      void refreshAll(navigationSelectedValue);
+    } else if (navigationSelectedValue === 'collections') {
+      void refreshAll(navigationSelectedValue);
     }
-  }, [environmentVersion, checkActiveEnvironmentSecrets]);
+  }, [navigationSelectedValue, refreshAll, resetPagination]);
 
   const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth!.absolute;
   const expandedPreferred = 450;
@@ -100,8 +66,6 @@ export function MainLayout({ children }: { children?: ReactNode }) {
               {!isNavBarCollapsed && (
                 <div className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
                   <Sidebar
-                    selectedNav={navigationSelectedValue}
-                    currentWorkflowId={currentWorkflowId}
                   />
                 </div>
               )}
@@ -119,10 +83,10 @@ export function MainLayout({ children }: { children?: ReactNode }) {
 
       {environmentWithSecrets && (
         <SecretsPrompt
-          isOpen={showSecretsPrompt}
+          isOpen={isSecretsPromptOpen}
           environment={environmentWithSecrets}
-          onClose={() => setShowSecretsPrompt(false)}
-          onSecretsProvided={() => setShowSecretsPrompt(false)}
+          onClose={() => setDismissedEnvironmentId(environmentWithSecrets.environmentId)}
+          onSecretsProvided={() => setDismissedEnvironmentId(environmentWithSecrets.environmentId)}
         />
       )}
     </>

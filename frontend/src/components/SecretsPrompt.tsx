@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { Modal } from './molecules/Modal';
@@ -28,14 +28,9 @@ export default function SecretsPrompt({
     return secretsObj;
   }, [environment?.secrets]);
 
-  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [secrets, setSecrets] = useState<Record<string, string>>(initialSecrets);
   const [visibleSecrets, setVisibleSecrets] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setSecrets(initialSecrets);
-    setVisibleSecrets(new Set());
-  }, [initialSecrets]);
   const allFilled = useMemo(() => {
     if (!environment?.secrets) return false;
     const secretKeys = Object.keys(environment.secrets);

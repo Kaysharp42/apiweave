@@ -3,6 +3,6 @@ export interface FormFieldProps {
   hint?: string;
   error?: string;
   required?: boolean;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 }

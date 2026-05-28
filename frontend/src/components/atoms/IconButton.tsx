@@ -7,7 +7,7 @@ export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonEl
   size?: 'xs' | 'sm' | 'md' | 'lg';
   variant?: 'ghost' | 'primary' | 'error' | 'warning' | 'success';
   disabled?: boolean;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 export function IconButton({
