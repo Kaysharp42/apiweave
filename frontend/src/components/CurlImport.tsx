@@ -1,4 +1,4 @@
-import { useState, useEffect, type ChangeEvent, type DragEvent } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent, type DragEvent } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, X, Copy, Trash2 } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 import useCanvasStore from '../stores/CanvasStore';
@@ -42,20 +42,21 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(currentWorkflowId || '');
   const [loadingWorkflows, setLoadingWorkflows] = useState<boolean>(true);
 
-  useEffect(() => {
-    const fetchWorkflows = async () => {
-      try {
-        const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows?limit=100`);
-        if (response.ok) {
-          const data = await response.json();
-          setWorkflows(data.workflows || []);
-        }
-      } catch (err) {
-        console.error('Error fetching workflows:', err);
-      } finally {
-        setLoadingWorkflows(false);
+  const fetchWorkflows = useCallback(async () => {
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows?limit=100`);
+      if (response.ok) {
+        const data = await response.json();
+        setWorkflows(data.workflows || []);
       }
-    };
+    } catch (err) {
+      console.error('Error fetching workflows:', err);
+    } finally {
+      setLoadingWorkflows(false);
+    }
+  }, []);
+
+  useEffect(() => {
     fetchWorkflows();
   }, []);
 
@@ -216,9 +217,17 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      role="button"
+      tabIndex={0}
+      className="fixed inset-0 bg-slate-950/50 flex items-center justify-center z-50"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
           onClose();
         }
       }}
@@ -282,11 +291,12 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
           {/* Text Input Area */}
           <div>
-            <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-              Or paste curl commands here:
-            </label>
-            <TextArea
-              value={curlInput}
+                <label htmlFor="curl-paste-area" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                  Or paste curl commands here:
+                </label>
+                <TextArea
+                  id="curl-paste-area"
+                  value={curlInput}
               onChange={(e) => setCurlInput(e.target.value)}
               placeholder={`curl -X GET "https://api.example.com/users" \\
   -H "Authorization: Bearer token123" \\
@@ -324,10 +334,11 @@ curl -X POST "https://api.example.com/users" \\
             <div className="space-y-3 p-3 bg-surface dark:bg-surface-dark rounded-lg">
               {/* Workflow Selection */}
               <div>
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                <label htmlFor="curl-destination-workflow" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Destination Workflow
                 </label>
                 <select
+                  id="curl-destination-workflow"
                   value={selectedWorkflowId}
                   onChange={(e) => setSelectedWorkflowId(e.target.value)}
                   disabled={loadingWorkflows}
@@ -357,7 +368,7 @@ curl -X POST "https://api.example.com/users" \\
               </div>
 
               {/* Sanitize Option */}
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={sanitize}
@@ -402,7 +413,7 @@ curl -X POST "https://api.example.com/users" \\
         </div>
 
         {/* Footer */}
-        <div className="flex space-x-3 p-4 border-t border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <div className="flex gap-3 p-4 border-t border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
           <Button
             onClick={handlePreview}
             disabled={!curlInput || isLoading}

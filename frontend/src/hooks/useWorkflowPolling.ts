@@ -479,7 +479,7 @@ export default function useWorkflowPolling({
 
   useEffect(() => {
     refreshLatestFailedRun();
-  }, [refreshLatestFailedRun]);
+  }, []);
 
   useEffect(
     () => () => {

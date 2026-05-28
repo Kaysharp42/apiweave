@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Allotment } from 'allotment';
 // @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
@@ -11,7 +11,7 @@ import SecretsPrompt from '../SecretsPrompt';
 import useNavigationStore from '../../stores/NavigationStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
-import { HorizontalDivider } from '../atoms';
+import { HorizontalDivider } from '../atoms/HorizontalDivider';
 import API_BASE_URL from '../../utils/api';
 import type { Environment } from '../../types/Environment';
 import { authenticatedFetch } from '../../utils/authenticatedApi';
@@ -23,61 +23,62 @@ export function MainLayout({ children }: { children?: ReactNode }) {
   const [environmentWithSecrets, setEnvironmentWithSecrets] = useState<Environment | null>(null);
   const [showSecretsPrompt, setShowSecretsPrompt] = useState(false);
 
-  useEffect(() => {
-    const checkEnvironmentSecrets = async () => {
-      try {
-        const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
-        if (response.ok) {
-          const environments: Environment[] = await response.json();
+  const checkEnvironmentSecrets = useCallback(async () => {
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
+      if (response.ok) {
+        const environments: Environment[] = await response.json();
 
-          for (const env of environments) {
-            if (env.secrets && Object.keys(env.secrets).length > 0) {
-              const secretsEntered = Object.keys(env.secrets).every((key) =>
-                sessionStorage.getItem(`secret_${key}`)
-              );
+        for (const env of environments) {
+          if (env.secrets && Object.keys(env.secrets).length > 0) {
+            const secretsEntered = Object.keys(env.secrets).every((key) =>
+              sessionStorage.getItem(`secret_${key}`)
+            );
 
-              if (!secretsEntered) {
-                setEnvironmentWithSecrets(env);
-                setShowSecretsPrompt(true);
-                break;
-              }
+            if (!secretsEntered) {
+              setEnvironmentWithSecrets(env);
+              setShowSecretsPrompt(true);
+              break;
             }
           }
         }
-      } catch (error) {
-        console.error('Error checking environment secrets:', error);
       }
-    };
+    } catch (error) {
+      console.error('Error checking environment secrets:', error);
+    }
+  }, []);
 
+  useEffect(() => {
     checkEnvironmentSecrets();
   }, []);
 
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);
-  useEffect(() => {
-    if (environmentVersion > 0) {
-      const checkSecrets = async () => {
-        try {
-          const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
-          if (response.ok) {
-            const envs: Environment[] = await response.json();
-            for (const env of envs) {
-              if (env.isActive && env.secrets) {
-                for (const [, val] of Object.entries(env.secrets)) {
-                  if (!val || val === '***') {
-                    setShowSecretsPrompt(true);
-                    return;
-                  }
-                }
+  const checkActiveEnvironmentSecrets = useCallback(async () => {
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
+      if (response.ok) {
+        const envs: Environment[] = await response.json();
+        for (const env of envs) {
+          if (env.isActive && env.secrets) {
+            for (const [, val] of Object.entries(env.secrets)) {
+              if (!val || val === '***') {
+                setShowSecretsPrompt(true);
+                return;
               }
             }
           }
-        } catch (error) {
-          console.error('Error checking environment secrets:', error);
         }
-      };
-      checkSecrets();
+      }
+    } catch (error) {
+      console.error('Error checking environment secrets:', error);
     }
-  }, [environmentVersion]);
+  }, []);
+
+  useEffect(() => {
+    if (environmentVersion > 0) {
+      checkActiveEnvironmentSecrets();
+    }
+  }, [environmentVersion, checkActiveEnvironmentSecrets]);
 
   const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth!.absolute;
   const expandedPreferred = 450;

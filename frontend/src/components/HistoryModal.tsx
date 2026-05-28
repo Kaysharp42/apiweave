@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import API_BASE_URL from '../utils/api';
 import { CheckCircle, XCircle, RefreshCw, Clock, Circle, History, X, ClipboardList, ChevronRight, Timer, Zap } from 'lucide-react';
 import { authenticatedFetch } from '../utils/authenticatedApi';
@@ -36,7 +36,7 @@ export interface HistoryModalProps {
 export default function HistoryModal({ workflowId, onClose, onSelectRun }: HistoryModalProps) {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAnimating, setIsAnimating] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(true);
   const [pagination, setPagination] = useState<PaginationInfo>({
     page: 1,
     limit: 10,
@@ -47,25 +47,12 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
   });
   const modalRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setIsAnimating(true);
-    fetchRunHistory(1);
-  }, []);
+  const handleClose = useCallback(() => {
+    setIsAnimating(false);
+    setTimeout(onClose, 200);
+  }, [onClose]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
-        handleClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  const fetchRunHistory = async (page = 1) => {
+  const fetchRunHistory = useCallback(async (page = 1) => {
     setLoading(true);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs?page=${page}&limit=10`);
@@ -79,15 +66,27 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
     } finally {
       setLoading(false);
     }
-  };
+  }, [workflowId]);
+
+  useEffect(() => {
+    fetchRunHistory(1);
+  }, [fetchRunHistory]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        handleClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [handleClose]);
 
   const handlePageChange = (newPage: number) => {
     fetchRunHistory(newPage);
-  };
-
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
   };
 
   const handleRunClick = (run: RunRecord) => {
@@ -143,7 +142,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
   };
 
   const formatDuration = (duration?: number): string => {
-    if (!duration) return '—';
+    if (!duration) return '--';
     if (duration < 1000) return `${duration}ms`;
     return `${(duration / 1000).toFixed(2)}s`;
   };
@@ -153,11 +152,19 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
       className={`fixed inset-0 z-50 flex items-start justify-end pt-40 pr-4 transition-opacity duration-300 ${
         isAnimating ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
+      style={{ backgroundColor: 'rgba(15, 23, 42, 0.3)' }}
     >
       <div
+        role="button"
+        tabIndex={0}
         className="absolute inset-0 cursor-pointer"
         onClick={handleClose}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            handleClose();
+          }
+        }}
       />
 
       <div
@@ -190,6 +197,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
               </div>
             </div>
             <button
+              type="button"
               onClick={handleClose}
               className="p-2 text-text-muted hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors rounded-lg"
               title="Close"
@@ -221,6 +229,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
             <div className={`divide-y divide-border dark:divide-border-dark transition-opacity ${loading ? 'opacity-50' : 'opacity-100'}`}>
               {runs.map((run) => (
                 <button
+                  type="button"
                   key={run.runId}
                   onClick={() => handleRunClick(run)}
                   className="w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left"
@@ -295,6 +304,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
           {!loading && runs.length > 0 && pagination.totalPages > 1 && (
             <div className="flex items-center justify-between">
               <button
+                type="button"
                 onClick={() => handlePageChange(pagination.page - 1)}
                 disabled={!pagination.hasPrevious || loading}
                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -307,6 +317,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
               </span>
 
               <button
+                type="button"
                 onClick={() => handlePageChange(pagination.page + 1)}
                 disabled={!pagination.hasNext || loading}
                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
