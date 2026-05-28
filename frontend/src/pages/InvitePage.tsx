@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import {
@@ -22,39 +22,40 @@ export default function InvitePage() {
   const [providerError, setProviderError] = useState<string | null>(null);
   const [providersLoading, setProvidersLoading] = useState(true);
 
-  useEffect(() => {
+  const loadProviders = useCallback(async () => {
     let cancelled = false;
 
-    async function loadProviders() {
-      try {
-        const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
 
-        if (!res.ok) {
-          throw new Error('Failed to load providers');
-        }
+      if (!res.ok) {
+        throw new Error('Failed to load providers');
+      }
 
-        const data: ProviderInfo[] = await res.json();
+      const data: ProviderInfo[] = await res.json();
 
-        if (!cancelled) {
-          setProviders(getEnabledProviders(data));
-        }
-      } catch {
-        if (!cancelled) {
-          setProviderError('Unable to load sign-in options');
-        }
-      } finally {
-        if (!cancelled) {
-          setProvidersLoading(false);
-        }
+      if (!cancelled) {
+        setProviders(getEnabledProviders(data));
+      }
+    } catch {
+      if (!cancelled) {
+        setProviderError('Unable to load sign-in options');
+      }
+    } finally {
+      if (!cancelled) {
+        setProvidersLoading(false);
       }
     }
-
-    loadProviders();
 
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const cleanup = loadProviders();
+    return cleanup;
+  }, [loadProviders]);
 
   if (status === 'loading') {
     return (
@@ -69,13 +70,13 @@ export default function InvitePage() {
   }
 
   return (
-    <SplitAuthLayout hero={<AuthInteractiveHero />}>
+      <SplitAuthLayout hero={() => <AuthInteractiveHero />}>
       <div className="w-full backdrop-blur-3xl bg-white/5 border border-white/10 shadow-2xl rounded-3xl overflow-hidden relative">
         {/* Inner subtle glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-1 bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent blur-sm" />
 
         <div className="p-10 text-center relative z-10">
-          <h1 className="text-3xl font-display font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-300 mb-3 drop-shadow-sm">
+          <h1 className="text-3xl font-display font-extrabold text-cyan-50 mb-3 drop-shadow-sm">
             Accept Invitation
           </h1>
           <p className="text-sm text-cyan-100/70 font-medium">

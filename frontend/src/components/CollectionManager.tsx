@@ -80,8 +80,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
   }, []);
 
   useEffect(() => {
-    fetchCollections();
-    fetchWorkflows();
+    Promise.all([fetchCollections(), fetchWorkflows()]);
   }, [fetchCollections, fetchWorkflows]);
 
   const handleCreate = () => {
@@ -355,7 +354,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                     onChange={handleSelectChange}
                     className="w-full rounded border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   >
-                    <option value="">Select a workflow to add...</option>
+                    <option value="">Select a workflow to add…</option>
                     {availableWorkflows.map((w) => <option key={w.workflowId} value={w.workflowId}>{w.name}</option>)}
                   </select>
                 </div>

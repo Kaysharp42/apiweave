@@ -642,65 +642,68 @@ export function WorkflowCanvas({
 
   const reloadVersion = useCanvasStore((s) => s.reloadVersion);
   const reloadWorkflowId = useCanvasStore((s) => s.reloadWorkflowId);
-  useEffect(() => {
+  
+  const handleReloadWorkflow = useCallback(async () => {
     if (reloadVersion > 0 && reloadWorkflowId === workflowId) {
-      (async () => {
-        try {
-          const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
-          if (response.ok) {
-            const data = await response.json() as {
-              nodes?: Array<{ nodeId: string; type: string; position: { x: number; y: number }; config?: Record<string, unknown>; label?: string }>;
-              edges?: Array<{ edgeId: string; source: string; target: string; sourceHandle?: string; targetHandle?: string; label?: string }>;
-            };
-            const newNodes = (data.nodes || []).map(node => ({
-              id: node.nodeId,
-              type: node.type,
-              position: node.position,
-              data: {
-                config: node.config || {},
-                label: node.label,
+      try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
+        if (response.ok) {
+          const data = await response.json() as {
+            nodes?: Array<{ nodeId: string; type: string; position: { x: number; y: number }; config?: Record<string, unknown>; label?: string }>;
+            edges?: Array<{ edgeId: string; source: string; target: string; sourceHandle?: string; targetHandle?: string; label?: string }>;
+          };
+          const newNodes = (data.nodes || []).map(node => ({
+            id: node.nodeId,
+            type: node.type,
+            position: node.position,
+            data: {
+              config: node.config || {},
+              label: node.label,
+            },
+          })) as Node<NodeData>[];
+          const newEdges: Edge<EdgeData>[] = (data.edges || []).map(edge => ({
+            id: edge.edgeId,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle || null,
+            targetHandle: edge.targetHandle || null,
+            label: edge.label,
+            type: 'custom',
+            ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
+              animated: true,
+              style: {
+                stroke: edge.sourceHandle === 'pass'
+                  ? assertionEdgeColor('pass')
+                  : assertionEdgeColor('fail'),
+                strokeWidth: 2,
               },
-            })) as Node<NodeData>[];
-            const newEdges: Edge<EdgeData>[] = (data.edges || []).map(edge => ({
-              id: edge.edgeId,
-              source: edge.source,
-              target: edge.target,
-              sourceHandle: edge.sourceHandle || null,
-              targetHandle: edge.targetHandle || null,
-              label: edge.label,
-              type: 'custom',
-              ...(edge.sourceHandle === 'pass' || edge.sourceHandle === 'fail' ? {
-                animated: true,
-                style: {
-                  stroke: edge.sourceHandle === 'pass'
-                    ? assertionEdgeColor('pass')
-                    : assertionEdgeColor('fail'),
-                  strokeWidth: 2,
-                },
-                labelStyle: {
-                  fill: edge.sourceHandle === 'pass'
-                    ? assertionEdgeColor('pass')
-                    : assertionEdgeColor('fail'),
-                  fontWeight: 700,
-                  fontSize: 11,
-                },
-                labelBgStyle: {
-                  fill: edgeLabelBackground,
-                  fillOpacity: 0.95,
-                },
-                labelBgPadding: [6, 4],
-                labelBgBorderRadius: 4,
-              } : {}),
-            }));
-            setNodes(newNodes);
-            setEdges(newEdges);
-          }
-        } catch (err) {
-          console.error('Error reloading workflow:', err);
+              labelStyle: {
+                fill: edge.sourceHandle === 'pass'
+                  ? assertionEdgeColor('pass')
+                  : assertionEdgeColor('fail'),
+                fontWeight: 700,
+                fontSize: 11,
+              },
+              labelBgStyle: {
+                fill: edgeLabelBackground,
+                fillOpacity: 0.95,
+              },
+              labelBgPadding: [6, 4],
+              labelBgBorderRadius: 4,
+            } : {}),
+          }));
+          setNodes(newNodes);
+          setEdges(newEdges);
         }
-      })();
+      } catch (err) {
+        console.error('Error reloading workflow:', err);
+      }
     }
   }, [reloadVersion, reloadWorkflowId, workflowId, setNodes, setEdges]);
+
+  useEffect(() => {
+    handleReloadWorkflow();
+  }, [handleReloadWorkflow]);
 
   const pendingAction = useCanvasStore((s) => s.pendingAction);
   useEffect(() => {

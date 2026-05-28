@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Trash2, RefreshCw, Plus } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Trash2, RefreshCw, Plus, Check, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from './molecules/Modal';
 import { ConfirmDialog } from './molecules/ConfirmDialog';
@@ -80,11 +80,7 @@ export function WebhookManager() {
   const [copySuccess, setCopySuccess] = useState<CopySuccessState>({});
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
-  useEffect(() => { loadAllData(); }, []);
-
-  /* ---------- Data fetching ---------- */
-
-  const loadAllData = async () => {
+  const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
       const [wf, col] = await Promise.all([fetchWorkflows(), fetchCollections()]);
@@ -95,7 +91,11 @@ export function WebhookManager() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => { loadAllData(); }, [loadAllData]);
+
+  /* ---------- Data fetching ---------- */
 
   const fetchWorkflows = async () => {
     try {
