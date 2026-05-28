@@ -93,7 +93,7 @@ export function WebhookManager() {
     }
   }, []);
 
-  useEffect(() => { loadAllData(); }, [loadAllData]);
+  useEffect(() => { loadAllData(); }, []);
 
   /* ---------- Data fetching ---------- */
 

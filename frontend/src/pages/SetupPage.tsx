@@ -17,33 +17,32 @@ export default function SetupPage() {
   const [providerError, setProviderError] = useState<string | null>(null);
   const [providersLoading, setProvidersLoading] = useState(true);
 
-  const loadProviders = useCallback(async () => {
+  useEffect(() => {
     let cancelled = false;
 
-    try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
-      if (!res.ok) throw new Error('Failed to load providers');
-      const data: ProviderInfo[] = await res.json();
-      if (!cancelled) {
-        setProviders(getEnabledProviders(data));
+    async function loadProviders() {
+      try {
+        const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
+        if (!res.ok) throw new Error('Failed to load providers');
+        const data: ProviderInfo[] = await res.json();
+        if (!cancelled) {
+          setProviders(getEnabledProviders(data));
+        }
+      } catch {
+        if (!cancelled) {
+          setProviderError('Unable to load sign-in options');
+        }
+      } finally {
+        if (!cancelled) setProvidersLoading(false);
       }
-    } catch {
-      if (!cancelled) {
-        setProviderError('Unable to load sign-in options');
-      }
-    } finally {
-      if (!cancelled) setProvidersLoading(false);
     }
+
+    loadProviders();
 
     return () => {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    const cleanup = loadProviders();
-    return cleanup;
-  }, [loadProviders]);
 
   if (status === 'loading') {
     return (

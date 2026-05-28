@@ -291,7 +291,7 @@ export default function MCPManager({ className = '' }: MCPManagerProps) {
 
   useEffect(() => {
     fetchConfig();
-  }, [fetchConfig]);
+  }, []);
 
   const testConnection = async () => {
     setTesting(true);

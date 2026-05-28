@@ -74,15 +74,11 @@ export function Workspace({ onActiveTabChange }: WorkspaceProps) {
 
   const activeTab: WorkspaceTab | undefined = tabs.find((t) => t.id === activeTabId);
 
-  const handleTabChange = useCallback(() => {
+  useEffect(() => {
     if (onActiveTabChange) {
       onActiveTabChange(activeTabId);
     }
   }, [activeTabId, onActiveTabChange]);
-
-  useEffect(() => {
-    handleTabChange();
-  }, [handleTabChange]);
 
   useEffect(() => {
     const fetchEnvironments = async () => {
