@@ -1,9 +1,10 @@
-import { useState, useEffect, type ChangeEvent, type DragEvent } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent, type DragEvent } from 'react';
 import { toast } from 'sonner';
 import { Trash2, Plus, X, GripVertical, Eye, EyeOff, ArrowLeft, Pencil, ListOrdered } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
-import { Modal, ConfirmDialog } from './molecules';
-import { Button } from './atoms';
+import { Modal } from './molecules/Modal';
+import { ConfirmDialog } from './molecules/ConfirmDialog';
+import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { Input } from './atoms/Input';
 import { TextArea } from './atoms/TextArea';
@@ -53,14 +54,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      fetchCollections();
-      fetchWorkflows();
-    }
-  }, [open]);
-
-  const fetchWorkflows = async () => {
+  const fetchWorkflows = useCallback(async () => {
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows`);
       if (response.ok) {
@@ -71,9 +65,9 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
     } catch (err: unknown) {
       console.error('Error fetching workflows:', err);
     }
-  };
+  }, []);
 
-  const fetchCollections = async () => {
+  const fetchCollections = useCallback(async () => {
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
@@ -83,7 +77,12 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
     } catch (err: unknown) {
       console.error('Error fetching collections:', err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchCollections();
+    fetchWorkflows();
+  }, [fetchCollections, fetchWorkflows]);
 
   const handleCreate = () => {
     setIsEditing(true);
@@ -284,10 +283,10 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
               </Button>
 
               <div className="p-3 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <div className="flex items-center gap-2 cursor-pointer">
                   <Toggle checked={continueOnFail} onChange={(e) => setContinueOnFail(e.target.checked)} variant="primary" size="sm" />
                   <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">Continue on Failure (Collection-wide)</span>
-                </label>
+                </div>
                 <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">When enabled, execution continues even if a workflow fails</p>
               </div>
 
@@ -373,8 +372,9 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                 <div className="p-3 bg-status-error/5 border border-status-error/20 rounded text-sm text-status-error">{error}</div>
               )}
               <div>
-                <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Collection Name *</label>
+                <label htmlFor="collection-name" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Collection Name *</label>
                 <Input
+                  id="collection-name"
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -384,8 +384,9 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Description</label>
+                <label htmlFor="collection-description" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Description</label>
                 <TextArea
+                  id="collection-description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   size="sm"
@@ -395,10 +396,11 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">Collection Color</label>
+                <div className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">Collection Color</div>
                 <div className="flex gap-2 flex-wrap">
                   {PresetCollectionColors.map((color) => (
                     <button
+                      type="button"
                       key={color}
                       onClick={() => setFormData({ ...formData, color })}
                       className={`w-8 h-8 rounded-full border-2 transition-all p-0 ${formData.color === color ? 'border-text-primary dark:border-text-primary-dark scale-110' : 'border-border dark:border-border-dark'}`}

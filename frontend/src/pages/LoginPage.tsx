@@ -30,7 +30,7 @@ export default function LoginPage() {
           setProviders(getEnabledProviders(data));
           setFetchError(null);
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setFetchError('Unable to load sign-in options');
         }
@@ -56,13 +56,13 @@ export default function LoginPage() {
   }
 
   return (
-    <SplitAuthLayout hero={<AuthInteractiveHero />}>
+      <SplitAuthLayout hero={() => <AuthInteractiveHero />}>
       <div className="w-full backdrop-blur-3xl bg-white/5 border border-white/10 shadow-2xl rounded-3xl overflow-hidden relative">
         {/* Inner subtle glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-1 bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent blur-sm" />
 
         <div className="p-10 text-center relative z-10">
-          <h1 className="text-3xl font-display font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-300 mb-3 drop-shadow-sm">
+          <h1 className="text-3xl font-display font-extrabold text-cyan-50 mb-3 drop-shadow-sm">
             Welcome Back
           </h1>
           <p className="text-sm text-cyan-100/70 font-medium">

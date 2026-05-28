@@ -35,7 +35,7 @@ import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { usePalette } from '../contexts/PaletteContext';
 import { toast } from 'sonner';
-import { CanvasToolbar } from './organisms';
+import { CanvasToolbar } from './organisms/CanvasToolbar';
 import useTabStore from '../stores/TabStore';
 import useCanvasStore from '../stores/CanvasStore';
 import useSidebarStore from '../stores/SidebarStore';
@@ -244,9 +244,9 @@ export function WorkflowCanvas({
     workflowVariablesRef.current = workflowVariables;
   }, [workflowVariables]);
 
-  const [selectedNode, setSelectedNode] = useState<Node<NodeData> | null>(null);
-  const [isDraggingNode, setIsDraggingNode] = useState(false);
-  const [isWorkflowHydrated, setIsWorkflowHydrated] = useState(false);
+  const selectedNodeRef = useRef<Node<NodeData> | null>(null);
+  const isDraggingNodeRef = useRef(false);
+  const isWorkflowHydratedRef = useRef(false);
   const reactFlowInstanceRef = useRef<ReactFlowInstance<NodeData, EdgeData> | null>(null) as MutableRefObject<ReactFlowInstance<NodeData, EdgeData> | null>;
   const [modalNode, setModalNode] = useState<Node<NodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -441,10 +441,11 @@ export function WorkflowCanvas({
         throw new Error(detail);
       }
 
-      const result = await response.json() as { nodes?: Array<{ label?: string; config?: Record<string, unknown> }>; stats?: Record<string, unknown> };
       if (requestId !== swaggerRefreshRequestIdRef.current) {
         return { skipped: true, reason: 'superseded' };
       }
+
+      const result = await response.json() as { nodes?: Array<{ label?: string; config?: Record<string, unknown> }>; stats?: Record<string, unknown> };
 
       const apiNodes = result.nodes || [];
       const items: ImportedItem[] = apiNodes.map((node) => {
@@ -624,15 +625,16 @@ export function WorkflowCanvas({
   ]);
 
   useEffect(() => {
+    const requestId = swaggerRefreshRequestIdRef.current;
     return () => {
-      swaggerRefreshRequestIdRef.current += 1;
+      swaggerRefreshRequestIdRef.current = requestId + 1;
       removeImportedGroup(envSwaggerGroupId);
     };
   }, [envSwaggerGroupId, removeImportedGroup]);
 
   useEffect(() => {
     refreshSwaggerTemplates();
-  }, [refreshSwaggerTemplates]);
+  }, []);
 
   const handleManualSwaggerRefresh = useCallback(() => {
     refreshSwaggerTemplates({ force: true, showSuccessToast: true });
@@ -705,7 +707,7 @@ export function WorkflowCanvas({
     if (!pendingAction) return;
     const { type, nodeId } = pendingAction;
 
-    if (type === 'duplicate' && nodeId) {
+      if (type === 'duplicate' && nodeId) {
       const nodeToClone = nodes.find((n) => n.id === nodeId);
       if (nodeToClone) {
         const newNode: Node<NodeData> = {
@@ -741,8 +743,8 @@ export function WorkflowCanvas({
         try {
           const { type: nodeType, data } = JSON.parse(cloneData) as { type: string; data: Record<string, unknown> };
           let newPosition = { x: 400, y: 300 };
-          if (selectedNode) {
-            newPosition = { x: selectedNode.position.x + 200, y: selectedNode.position.y + 150 };
+          if (selectedNodeRef.current) {
+            newPosition = { x: selectedNodeRef.current.position.x + 200, y: selectedNodeRef.current.position.y + 150 };
           } else if (nodes.length > 0) {
             const lastNode = nodes[nodes.length - 1]!;
             newPosition = { x: lastNode.position.x + 150, y: lastNode.position.y + 150 };
@@ -756,7 +758,7 @@ export function WorkflowCanvas({
       }
     }
     useCanvasStore.getState().clearPendingAction();
-  }, [pendingAction, nodes, setNodes, selectedNode]);
+  }, [pendingAction, nodes, setNodes]);
 
   useEffect(() => {
     const isEditorOverlayOpen = !!modalNode || showJsonEditor || showImportToNodes || showHistory || showSecretsPrompt;
@@ -764,14 +766,14 @@ export function WorkflowCanvas({
     const handleKeyDown = (e: KeyboardEvent) => {
       const action = getCanvasClipboardShortcutAction({
         event: e,
-        hasSelectedNode: !!selectedNode,
+        hasSelectedNode: !!selectedNodeRef.current,
         isEditorOverlayOpen,
       });
       if (!action) return;
 
-      if (action === 'copy' && selectedNode) {
+      if (action === 'copy' && selectedNodeRef.current) {
         e.preventDefault();
-        useCanvasStore.getState().copyNode(selectedNode.id);
+        useCanvasStore.getState().copyNode(selectedNodeRef.current.id);
         toast.success('Node copied to clipboard');
       }
 
@@ -783,7 +785,7 @@ export function WorkflowCanvas({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, modalNode, showJsonEditor, showImportToNodes, showHistory, showSecretsPrompt]);
+  }, [modalNode, showJsonEditor, showImportToNodes, showHistory, showSecretsPrompt]);
 
   useEffect(() => {
     const branchCounts: Record<string, number> = {};
@@ -872,7 +874,7 @@ export function WorkflowCanvas({
 
   useEffect(() => {
     if (!workflow || !Array.isArray(workflow.nodes) || !Array.isArray(workflow.edges)) {
-      setIsWorkflowHydrated(false);
+      isWorkflowHydratedRef.current = false;
       return;
     }
 
@@ -920,7 +922,7 @@ export function WorkflowCanvas({
 
     setNodes(loadedNodes);
     setEdges(loadedEdges);
-    setIsWorkflowHydrated(true);
+    isWorkflowHydratedRef.current = true;
     hydratedBaselineRef.current = {
       nodeCount: loadedNodes.length,
       edgeCount: loadedEdges.length,
@@ -1036,19 +1038,19 @@ export function WorkflowCanvas({
   }, []);
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node<NodeData>) => {
-    setSelectedNode(node);
+    selectedNodeRef.current = node;
   }, []);
 
   const onPaneClick = useCallback(() => {
-    setSelectedNode(null);
+    selectedNodeRef.current = null;
   }, []);
 
   const onNodeDragStart = useCallback(() => {
-    setIsDraggingNode(true);
+    isDraggingNodeRef.current = true;
   }, []);
 
   const onNodeDragStop = useCallback(() => {
-    setIsDraggingNode(false);
+    isDraggingNodeRef.current = false;
   }, []);
 
   const onNodeDoubleClick = useCallback((_event: React.MouseEvent, node: Node<NodeData>) => {
@@ -1114,7 +1116,7 @@ export function WorkflowCanvas({
     } catch (error) {
       console.error('Save error:', error);
     }
-  }, [workflowId, workflow]);
+  }, [workflowId]);
 
   const workflowJsonMemo = useMemo((): WorkflowJsonData => ({
     nodes: nodes.map(node => ({
@@ -1224,14 +1226,14 @@ export function WorkflowCanvas({
       }
     } catch (err) {
       console.error('JSON editor save error:', err);
-      toast.error('Network error — see console');
+      toast.error('Network error -- see console');
     }
-  }, [setNodes, setEdges, workflowId, workflowVariables, updateVariable, workflow]);
+  }, [setNodes, setEdges, workflowId, workflowVariables, updateVariable]);
 
   useAutoSave({
     workflowId,
-    autoSaveEnabled: autoSaveEnabled && !isDraggingNode && !isRunning && !isSwaggerRefreshing,
-    isHydrated: isWorkflowHydrated,
+    autoSaveEnabled: autoSaveEnabled && !isDraggingNodeRef.current && !isRunning && !isSwaggerRefreshing,
+    isHydrated: isWorkflowHydratedRef.current,
     nodes,
     edges,
     workflowVariables,
@@ -1258,42 +1260,30 @@ export function WorkflowCanvas({
     return 'var(--aw-border)';
   }, []);
 
-  const miniMapStyle = useMemo(() => ({
+  const miniMapStyle = {
     backgroundColor: 'var(--aw-surface-raised)',
     border: '2px solid var(--aw-border-focus)',
     borderRadius: '8px',
     width: 220,
     height: 150,
-  }), []);
+  };
 
-  const miniMapMaskColor = useMemo(
-    () => (darkMode ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.05)'),
-    [darkMode],
-  );
+  const miniMapMaskColor = darkMode ? 'rgba(15, 23, 42, 0.6)' : 'rgba(15, 23, 42, 0.05)';
 
-  const defaultEdgeOptions = useMemo(
-    () => ({ type: 'custom' as const, animated: true }),
-    [],
-  );
+  const defaultEdgeOptions = { type: 'custom' as const, animated: true };
 
-  const reactFlowStyle = useMemo(
-    () => ({ width: '100%', height: '100%' }),
-    [],
-  );
+  const reactFlowStyle = { width: '100%', height: '100%' };
 
-  const fitViewOptions = useMemo(
-    () => ({
-      padding: 0.25,
-      minZoom: 0.02,
-      includeHiddenNodes: true,
-    }),
-    [],
-  );
+  const fitViewOptions = {
+    padding: 0.25,
+    minZoom: 0.02,
+    includeHiddenNodes: true,
+  };
 
   const rfInstanceRef = useRef<Parameters<NonNullable<Parameters<typeof ReactFlow>[0]['onInit']>>[0] | null>(null);
 
   return (
-    <div className="w-full h-full min-h-0 relative bg-surface dark:bg-surface-dark transition-colors" role="main" aria-label="Workflow canvas">
+    <main className="w-full h-full min-h-0 relative bg-surface dark:bg-surface-dark transition-colors" aria-label="Workflow canvas">
       <ReactFlow
         style={reactFlowStyle}
         nodes={nodes}
@@ -1352,7 +1342,7 @@ export function WorkflowCanvas({
         onSave={() => saveWorkflow(false)}
         onHistory={() => setShowHistory(true)}
         onJsonEditor={() => {
-          if (!isWorkflowHydrated) {
+          if (!isWorkflowHydratedRef.current) {
             toast.info('Workflow is still loading. Try JSON again in a moment.');
             return;
           }
@@ -1386,20 +1376,23 @@ export function WorkflowCanvas({
 
       <AddNodesPanel isModalOpen={!!modalNode} showVariablesPanel={showVariablesPanel} onShowVariablesPanel={onShowVariablesPanel} />
 
-      <NodeModal
-        open={!!modalNode}
-        node={modalNode ? {
-          ...modalNode,
-          type: modalNode.type as 'http-request' | 'assertion' | 'delay' | 'merge' | 'start' | 'end',
-          data: {
-            ...modalNode.data,
-            label: String(modalNode.data.label || ''),
-            config: (modalNode.data.config as Record<string, unknown>) || {},
-          },
-        } : { id: 'start-1', type: 'start' as const, position: { x: 0, y: 0 }, data: { label: 'Start', config: {} } }}
-        onClose={() => setModalNode(null)}
-        onSave={(node) => handleModalSave(node as Node<NodeData>)}
-      />
+      {modalNode && (
+        <NodeModal
+          key={modalNode.id}
+          open={true}
+          node={{
+            ...modalNode,
+            type: modalNode.type as 'http-request' | 'assertion' | 'delay' | 'merge' | 'start' | 'end',
+            data: {
+              ...modalNode.data,
+              label: String(modalNode.data.label || ''),
+              config: (modalNode.data.config as Record<string, unknown>) || {},
+            },
+          }}
+          onClose={() => setModalNode(null)}
+          onSave={(node) => handleModalSave(node as Node<NodeData>)}
+        />
+      )}
 
       {showHistory && (
         <HistoryModal
@@ -1417,23 +1410,27 @@ export function WorkflowCanvas({
         />
       )}
 
-      <WorkflowJsonEditor
-        open={showJsonEditor}
-        workflowJson={showJsonEditor ? (workflowJsonMemo as unknown as Record<string, unknown>) : null}
-        onApply={handleJsonApply}
-        onClose={() => {
-          setShowJsonEditor(false);
-        }}
-      />
+      {showJsonEditor && (
+        <WorkflowJsonEditor
+          open={true}
+          workflowJson={workflowJsonMemo as unknown as Record<string, unknown>}
+          onApply={handleJsonApply}
+          onClose={() => {
+            setShowJsonEditor(false);
+          }}
+        />
+      )}
 
-      <SecretsPrompt
-        isOpen={showSecretsPrompt && !!selectedEnvironment?.trim() && !!environments.find(e => e.environmentId === selectedEnvironment.trim())}
-        environment={selectedEnvironment?.trim() ? (environments.find(e => e.environmentId === selectedEnvironment.trim()) ?? null) : null}
-        onClose={() => { setShowSecretsPrompt(false); pendingRunRef.current = null; }}
-        onSecretsProvided={handleSecretsProvided}
-      />
+      {showSecretsPrompt && !!selectedEnvironment?.trim() && !!environments.find(e => e.environmentId === selectedEnvironment.trim()) && (
+        <SecretsPrompt
+          isOpen={true}
+          environment={selectedEnvironment?.trim() ? (environments.find(e => e.environmentId === selectedEnvironment.trim()) ?? null) : null}
+          onClose={() => { setShowSecretsPrompt(false); pendingRunRef.current = null; }}
+          onSecretsProvided={handleSecretsProvided}
+        />
+      )}
 
-    </div>
+    </main>
   );
 }
 

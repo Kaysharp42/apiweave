@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef, Fragment, type ChangeEvent } from 'react';
+import { useState, useRef, Fragment, type ChangeEvent } from 'react';
 import AssertionEditor from './AssertionEditor';
 import FileUploadSection from './FileUploadSection';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { CheckCircle, Info, AlertTriangle, Pencil, Trash2, Globe, Timer, GitMerge, Circle, X, FileText, BadgeCheck, Square } from 'lucide-react';
 import { Button } from './atoms/Button';
-import { Input, TextArea } from './atoms';
+import { Input } from './atoms/Input';
+import { TextArea } from './atoms/TextArea';
 import { BeautifyButton } from './molecules';
-import { FormField, PanelTabs } from './molecules';
+import { FormField } from './molecules/FormField';
+import { PanelTabs } from './molecules/PanelTabs';
 import { ResponseInspector } from './molecules/ResponseInspector';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { getNodeModalTypeName } from '../utils/nodeModalMeta';
@@ -131,10 +133,6 @@ const getNodeIcon = (type: ModalNodeType): React.ReactNode => {
 export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
   const workingDataRef = useRef<Record<string, unknown>>({ ...node.data });
 
-  useEffect(() => {
-    if (node) workingDataRef.current = { ...node.data };
-  }, [node?.id]);
-
   const handleClose = () => {
     onClose();
   };
@@ -151,20 +149,20 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
   const nodeInfo = { name: getNodeModalTypeName(node.type) };
 
   return (
-    <Transition show={open} as={Fragment}>
+    <Transition key={node.id} show={open} as={Fragment}>
       <Dialog onClose={handleClose} className="relative z-50">
         <TransitionChild
           enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
           leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/60 dark:bg-black/70 backdrop-blur-sm" />
+          <div className="fixed inset-0 bg-slate-950/60 dark:bg-slate-950/70 backdrop-blur-sm" />
         </TransitionChild>
         <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-5">
           <TransitionChild
             enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
             leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="h-[90vh] w-[96vw] max-w-[1800px] shadow-[0_24px_50px_-12px_rgba(0,0,0,0.25)] rounded-2xl overflow-hidden border border-border/40 dark:border-border-dark/40 bg-surface dark:bg-surface-dark flex flex-col">
+                <Dialog.Panel className="h-[90vh] w-[96vw] max-w-[1800px] shadow-[0_24px_50px_-12px_rgba(15,23,42,0.25)] rounded-2xl overflow-hidden border border-border/40 dark:border-border-dark/40 bg-surface dark:bg-surface-dark flex flex-col">
               <div className="flex h-full w-full flex-col xl:flex-row backdrop-blur-md">
                 <div className="flex h-full min-h-0 flex-col xl:basis-[56%] xl:min-w-0 border-r border-border/40 dark:border-border-dark/40 bg-surface-raised/60 dark:bg-surface-dark-raised/60">
                   <div className="flex h-full min-h-0 flex-col p-4 sm:p-5">
@@ -174,8 +172,9 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
                           {getNodeIcon(node.type)}
                           <span>{nodeInfo.name}</span>
                         </div>
-                        <label className="text-xs font-medium text-text-muted dark:text-text-muted-dark">Node Name</label>
+                        <label htmlFor="node-modal-name" className="text-xs font-medium text-text-muted dark:text-text-muted-dark">Node Name</label>
                         <Input
+                          id="node-modal-name"
                           type="text"
                           defaultValue={node.data.label || ''}
                           onChange={(e: ChangeEvent<HTMLInputElement>) => handleLabelChange(e.target.value)}
@@ -290,12 +289,6 @@ const HTTPRequestConfig = ({ initialConfig, workingDataRef }: HTTPRequestConfigP
   const timeoutRef = useRef(initialConfig.timeout || 30);
   const fileUploadsRef = useRef(initialConfig.fileUploads || []);
   const [fileUploads, setFileUploads] = useState<FileUpload[]>(initialConfig.fileUploads || []);
-
-  useEffect(() => {
-    const nextMethod = initialConfig.method || 'GET';
-    methodRef.current = nextMethod;
-    setMethodValue(nextMethod);
-  }, [initialConfig.method]);
 
   const updateRef = () => {
     const newConfig: HTTPRequestConfigType = {
@@ -556,13 +549,15 @@ const HttpRequestOutputPanel = ({ node, initialConfig, output }: HttpRequestOutp
 };
 HttpRequestOutputPanel.displayName = 'HttpRequestOutputPanel';
 
-const NodeOutputPanel = ({ output }: NodeOutputPanelProps) => {
-  const CodeBlock = ({ value }: { value: unknown }) => (
+function CodeBlock({ value }: { value: unknown }) {
+  return (
     <pre className="h-full w-full overflow-auto rounded-lg border border-border/70 bg-surface p-4 font-mono text-xs leading-relaxed text-text-secondary dark:border-border-dark/70 dark:bg-surface-dark dark:text-text-secondary-dark">
       {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
     </pre>
   );
+}
 
+const NodeOutputPanel = ({ output }: NodeOutputPanelProps) => {
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
       <div className="flex flex-shrink-0 items-center justify-between border-b border-border/30 dark:border-border-dark/30 bg-surface/50 dark:bg-surface-dark/50 px-5 py-4 backdrop-blur-sm">
@@ -801,10 +796,11 @@ const AssertionFormModal = ({ onAdd }: AssertionFormModalProps) => {
   return (
     <div className="space-y-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
       <div>
-        <label className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
+        <label htmlFor="assertion-source" className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
           Assert On
         </label>
         <select
+          id="assertion-source"
           value={source}
           onChange={(e) => setSource(e.target.value)}
           className="w-full px-3 py-2 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary"
@@ -819,13 +815,14 @@ const AssertionFormModal = ({ onAdd }: AssertionFormModalProps) => {
 
       {source !== 'status' && (
         <div>
-          <label className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
+          <label htmlFor="assertion-path" className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
             {source === 'prev' ? 'JSONPath (e.g., body.status)' :
              source === 'variables' ? 'Variable name' :
              source === 'cookies' ? 'Cookie name' : 'Header name'}
           </label>
           <div>
             <Input
+              id="assertion-path"
               type="text"
               placeholder={source === 'prev' ? 'body.status' : source === 'variables' ? 'tokenId' : 'Set-Cookie'}
               value={path}
@@ -837,10 +834,11 @@ const AssertionFormModal = ({ onAdd }: AssertionFormModalProps) => {
       )}
 
       <div>
-        <label className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
+        <label htmlFor="assertion-operator" className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
           Operator
         </label>
         <select
+          id="assertion-operator"
           value={operator}
           onChange={(e) => setOperator(e.target.value)}
           className="w-full px-3 py-2 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary"
@@ -861,11 +859,12 @@ const AssertionFormModal = ({ onAdd }: AssertionFormModalProps) => {
 
       {!['exists', 'notExists'].includes(operator) && (
         <div>
-          <label className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
+          <label htmlFor="assertion-expected-value" className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
             {operator === 'count' ? 'Expected Count' : 'Expected Value'}
           </label>
           <div>
             <Input
+              id="assertion-expected-value"
               type="text"
               placeholder={operator === 'count' ? '5' : '200'}
               value={expectedValue}
@@ -956,7 +955,7 @@ const AssertionConfig = ({ initialConfig, workingDataRef }: AssertionConfigProps
                 </h4>
                 {assertions.map((assertion, index) => (
                   <div
-                    key={index}
+                    key={`${assertion.source}-${assertion.path}-${assertion.operator}-${assertion.expectedValue}`}
                     className="p-3 bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded-lg space-y-2"
                   >
                     {editingIndex === index ? (
@@ -1242,12 +1241,13 @@ const MergeConfig = ({ initialConfig, workingDataRef }: MergeConfigProps) => {
 
             {conditions.length > 1 && (
               <div className="mb-4 p-3 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-lg">
-                <label className="block text-xs font-medium text-text-secondary dark:text-text-secondary-dark mb-2">
+                <div className="block text-xs font-medium text-text-secondary dark:text-text-secondary-dark mb-2">
                   Evaluation Logic:
-                </label>
+                </div>
                 <div className="flex gap-3">
                   <label className="flex items-center cursor-pointer">
                     <input
+                      id="condition-logic-or"
                       type="radio"
                       name="conditionLogic"
                       value="OR"
@@ -1266,6 +1266,7 @@ const MergeConfig = ({ initialConfig, workingDataRef }: MergeConfigProps) => {
                   </label>
                   <label className="flex items-center cursor-pointer">
                     <input
+                      id="condition-logic-and"
                       type="radio"
                       name="conditionLogic"
                       value="AND"
@@ -1302,7 +1303,7 @@ const MergeConfig = ({ initialConfig, workingDataRef }: MergeConfigProps) => {
               <div className="space-y-3">
                 {conditions.map((condition, index) => (
                   <div
-                    key={index}
+                    key={`${condition.branchIndex}-${condition.field}-${condition.operator}-${condition.value}`}
                     className="p-3 border border-border dark:border-border-dark rounded-lg bg-surface dark:bg-surface-dark"
                   >
                     <div className="flex items-center justify-between mb-2">
@@ -1325,8 +1326,9 @@ const MergeConfig = ({ initialConfig, workingDataRef }: MergeConfigProps) => {
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">Branch</label>
+                        <label htmlFor={`merge-condition-branch-${index}`} className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">Branch</label>
                         <Input
+                          id={`merge-condition-branch-${index}`}
                           type="number"
                           value={condition.branchIndex}
                           onChange={(e: ChangeEvent<HTMLInputElement>) => updateCondition(index, { branchIndex: parseInt(e.target.value) || 0 })}
@@ -1336,13 +1338,14 @@ const MergeConfig = ({ initialConfig, workingDataRef }: MergeConfigProps) => {
                       </div>
 
                       <div>
-                        <label className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">
+                        <label htmlFor={`merge-condition-field-${index}`} className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">
                           Field
                           <span className="ml-1 text-[10px] text-purple-600 dark:text-purple-400">
                             (supports variables)
                           </span>
                         </label>
                         <Input
+                          id={`merge-condition-field-${index}`}
                           type="text"
                           value={condition.field}
                           onChange={(e: ChangeEvent<HTMLInputElement>) => updateCondition(index, { field: e.target.value })}
@@ -1355,8 +1358,9 @@ const MergeConfig = ({ initialConfig, workingDataRef }: MergeConfigProps) => {
                       </div>
 
                       <div>
-                        <label className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">Operator</label>
+                        <label htmlFor={`merge-condition-operator-${index}`} className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">Operator</label>
                         <select
+                          id={`merge-condition-operator-${index}`}
                           value={condition.operator}
                           onChange={(e) => updateCondition(index, { operator: e.target.value })}
                           className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
@@ -1371,13 +1375,14 @@ const MergeConfig = ({ initialConfig, workingDataRef }: MergeConfigProps) => {
                       </div>
 
                       <div>
-                        <label className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">
+                        <label htmlFor={`merge-condition-value-${index}`} className="block text-xs text-text-secondary dark:text-text-secondary-dark mb-1">
                           Value
                           <span className="ml-1 text-[10px] text-purple-600 dark:text-purple-400">
                             (supports variables)
                           </span>
                         </label>
                         <Input
+                          id={`merge-condition-value-${index}`}
                           type="text"
                           value={condition.value}
                           onChange={(e: ChangeEvent<HTMLInputElement>) => updateCondition(index, { value: e.target.value })}
