@@ -1,3 +1,11 @@
 export interface InviteResponse {
-  invite_url: string;
+  inviteId: string;
+  email: string;
+  role_preset: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  consumed: boolean;
+  consumed_at: string | null;
+  invite_url: string | null;
 }

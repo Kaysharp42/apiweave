@@ -80,3 +80,16 @@ export async function authenticatedJson<T = unknown>(
   }
   return response.json() as Promise<T>;
 }
+
+export async function copyInviteLink(inviteUrl: string): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.writeText(inviteUrl);
+    return true;
+  } catch {
+    return false;
+  }
+}

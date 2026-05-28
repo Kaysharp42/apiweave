@@ -4,6 +4,7 @@ import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urljoin
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -18,6 +19,7 @@ from app.auth.permissions import (
     USERS_UPDATE_ROLE,
 )
 from app.auth.provider_registry import get_configured_providers
+from app.config import settings
 from app.models import Invite, InviteResponse, User, UserResponse
 from app.repositories.auth_repositories import (
     ApprovedDomainRepository,
@@ -26,6 +28,14 @@ from app.repositories.auth_repositories import (
 )
 
 router = APIRouter(prefix="/api", tags=["admin-users"])
+
+
+def _frontend_url(path: str = "/") -> str:
+    base_url = settings.FRONTEND_URL
+    if not base_url:
+        allowed_origins = settings.get_allowed_origins_list()
+        base_url = allowed_origins[0] if allowed_origins else "http://localhost:3000"
+    return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
 
 
 class UpdateRolesRequest(BaseModel):
@@ -74,7 +84,7 @@ async def _ensure_not_removing_last_admin(user_id: str, new_roles: list[str] | N
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot remove the last admin user",
+                detail="Cannot delete the last admin",
             )
 
 
@@ -102,7 +112,16 @@ async def update_user_roles(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[require_permission(USERS_DELETE)],
 )
-async def delete_user(user_id: str) -> None:
+async def delete_user(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+) -> None:
+    if current_user.userId == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete your own account",
+        )
+
     await _ensure_not_removing_last_admin(user_id)
     deleted = await UserRepository.delete(user_id)
     if not deleted:
@@ -168,7 +187,7 @@ class SettingsCreateInviteRequest(BaseModel):
 
 class SettingsCreateInviteResponse(BaseModel):
     invite_url: str
-    inviteId: str
+    inviteId: str  # noqa: N815
     email: str
     role_preset: str
 
@@ -183,20 +202,34 @@ async def settings_create_invite(
     body: SettingsCreateInviteRequest,
     current_user: User = Depends(get_current_user),
 ) -> SettingsCreateInviteResponse:
+    email = body.email.lower()
+    existing_invite = await InviteRepository.find_active_by_email(email)
+    if existing_invite:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An active invite already exists for this email",
+        )
+    existing_user = await UserRepository.get_by_email(email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this email already exists",
+        )
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     now = datetime.now(UTC)
     invite: Invite = await InviteRepository.create(
         invite_id=f"inv-{uuid.uuid4().hex[:12]}",
-        email=body.email,
+        email=email,
         token_hash=token_hash,
         role_preset=body.role_preset,
         created_by=current_user.userId,
         created_at=now,
         expires_at=now + timedelta(days=7),
+        invite_url=_frontend_url(f"/invite/{raw_token}"),
     )
     return SettingsCreateInviteResponse(
-        invite_url=f"/invite/{raw_token}",
+        invite_url=invite.invite_url or _frontend_url(f"/invite/{raw_token}"),
         inviteId=invite.inviteId,
         email=invite.email,
         role_preset=invite.role_preset,
@@ -220,9 +253,59 @@ async def settings_list_invites() -> list[InviteResponse]:
             expires_at=inv.expires_at,
             consumed=inv.consumed,
             consumed_at=inv.consumed_at,
+            invite_url=inv.invite_url,
         )
         for inv in invites
     ]
+
+
+class SettingsDeleteInviteResponse(BaseModel):
+    message: str
+
+
+@router.delete(
+    "/settings/invites/{invite_id}",
+    response_model=SettingsDeleteInviteResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[require_permission(USERS_INVITE)],
+)
+async def settings_delete_invite(invite_id: str) -> SettingsDeleteInviteResponse:
+    invite = await InviteRepository.get_by_id(invite_id)
+    if not invite:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invite not found",
+        )
+    if invite.consumed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invite not found",
+        )
+    await InviteRepository.delete_invite(invite_id)
+    return SettingsDeleteInviteResponse(message="Invite deleted")
+
+
+@router.delete(
+    "/invites/{invite_id}",
+    response_model=SettingsDeleteInviteResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[require_permission(USERS_INVITE)],
+)
+async def delete_invite(invite_id: str) -> SettingsDeleteInviteResponse:
+    """Delete an unconsumed invite (alias for settings route)."""
+    invite = await InviteRepository.get_by_id(invite_id)
+    if not invite:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invite not found",
+        )
+    if invite.consumed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invite not found",
+        )
+    await InviteRepository.delete_invite(invite_id)
+    return SettingsDeleteInviteResponse(message="Invite deleted")
 
 
 class SettingsDomainResponse(BaseModel):
@@ -285,6 +368,49 @@ async def settings_add_domain(
     )
 
 
+class UpdateInviteRoleRequest(BaseModel):
+    role_preset: str
+
+
+@router.patch(
+    "/invites/{invite_id}/role",
+    response_model=InviteResponse,
+    dependencies=[require_permission(USERS_INVITE)],
+)
+async def update_invite_role(
+    invite_id: str,
+    body: UpdateInviteRoleRequest,
+) -> InviteResponse:
+    invite = await InviteRepository.get_by_id(invite_id)
+    if not invite:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invite not found",
+        )
+    if invite.consumed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change role on a consumed invite",
+        )
+    updated = await InviteRepository.update_role(invite_id, body.role_preset)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invite not found",
+        )
+    return InviteResponse(
+        inviteId=updated.inviteId,
+        email=updated.email,
+        role_preset=updated.role_preset,
+        created_by=updated.created_by,
+        created_at=updated.created_at,
+        expires_at=updated.expires_at,
+        consumed=updated.consumed,
+        consumed_at=updated.consumed_at,
+        invite_url=updated.invite_url,
+    )
+
+
 @router.delete(
     "/settings/domains/{domain_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -297,4 +423,3 @@ async def settings_remove_domain(domain_id: str) -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Domain not found",
         )
-

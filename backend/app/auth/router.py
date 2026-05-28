@@ -115,6 +115,22 @@ async def _is_domain_approved(email: str) -> bool:
     return await ApprovedDomainRepository.is_domain_approved(domain)
 
 
+async def _reconcile_orphan_invite(user: User, invite_token: str | None) -> User:
+    if invite_token is not None:
+        return user
+
+    invite = await InviteRepository.find_active_by_email(user.verified_email)
+    if invite is None:
+        return user
+
+    consumed = await InviteRepository.consume(invite.inviteId)
+    if not consumed or user.roles:
+        return user
+
+    updated = await UserRepository.update(user.userId, roles=[invite.role_preset])
+    return updated or user
+
+
 async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -> User:
     if not userinfo.email or not userinfo.email_verified:
         raise HTTPException(
@@ -131,7 +147,7 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
     if identity:
         user = await UserRepository.get_by_id(identity.userId)
         if user:
-            return user
+            return await _reconcile_orphan_invite(user, invite_token)
 
     user = await UserRepository.get_by_email(userinfo.email)
     if user is None:
@@ -175,16 +191,25 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
                 None,
             )
             if invite is None:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Invalid invite token",
-                )
-            consumed = await InviteRepository.consume(invite.inviteId)
-            if not consumed:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access requires an invitation",
-                )
+                if invite_token is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Invalid invite token",
+                    )
+                invite = valid_invites[0]
+                consumed = await InviteRepository.consume(invite.inviteId)
+                if not consumed:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access requires an invitation",
+                    )
+            else:
+                consumed = await InviteRepository.consume(invite.inviteId)
+                if not consumed:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access requires an invitation",
+                    )
             try:
                 user = await UserRepository.create(
                     user_id=f"usr-{uuid.uuid4().hex[:12]}",
@@ -203,6 +228,8 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
                 user = await UserRepository.get_by_email(userinfo.email)
                 if user is None:
                     raise
+            updated = await UserRepository.update(user.userId, is_setup_complete=True)
+            user = updated or user
         elif await _is_domain_approved(userinfo.email):
             try:
                 user = await UserRepository.create(
@@ -257,8 +284,8 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
                 raise
             linked_user = await UserRepository.get_by_id(existing_identity.userId)
             if linked_user:
-                return linked_user
-    return user
+                return await _reconcile_orphan_invite(linked_user, invite_token)
+    return await _reconcile_orphan_invite(user, invite_token)
 
 
 async def _create_session(response: Response, user: User) -> None:
@@ -446,7 +473,7 @@ class CreateInviteRequest(BaseModel):
 
 class CreateInviteResponse(BaseModel):
     invite_url: str
-    inviteId: str
+    inviteId: str  # noqa: N815
     email: str
     role_preset: str
 
@@ -460,21 +487,35 @@ async def create_invite(
     body: CreateInviteRequest,
     current_user: User = Depends(get_current_user),
 ) -> CreateInviteResponse:
+    email = body.email.lower()
+    existing_invite = await InviteRepository.find_active_by_email(email)
+    if existing_invite:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An active invite already exists for this email",
+        )
+    existing_user = await UserRepository.get_by_email(email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this email already exists",
+        )
     role_preset = body.roles[0] if body.roles else PRESET_VIEWER
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     now = datetime.now(UTC)
     invite = await InviteRepository.create(
         invite_id=f"inv-{uuid.uuid4().hex[:12]}",
-        email=body.email,
+        email=email,
         token_hash=token_hash,
         role_preset=role_preset,
         created_by=current_user.userId,
         created_at=now,
         expires_at=now + timedelta(days=7),
+        invite_url=_frontend_url(f"/invite/{raw_token}"),
     )
     return CreateInviteResponse(
-        invite_url=f"/invite/{raw_token}",
+        invite_url=invite.invite_url or _frontend_url(f"/invite/{raw_token}"),
         inviteId=invite.inviteId,
         email=invite.email,
         role_preset=invite.role_preset,
@@ -498,6 +539,7 @@ async def list_invites() -> list[InviteResponse]:
             expires_at=inv.expires_at,
             consumed=inv.consumed,
             consumed_at=inv.consumed_at,
+            invite_url=inv.invite_url,
         )
         for inv in invites
     ]

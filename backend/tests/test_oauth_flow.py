@@ -160,6 +160,11 @@ def _patch_callback(
         AsyncMock(return_value=[]),
     )
     monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "find_active_by_email",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
         auth_router.ApprovedDomainRepository,
         "is_domain_approved",
         AsyncMock(return_value=False),
@@ -338,6 +343,38 @@ def test_callback_consumes_valid_invite_token(
     consume.assert_awaited_once_with("inv-test")
 
 
+@pytest.mark.parametrize("provider", PROVIDERS)
+def test_callback_auto_consumes_invite_when_no_token(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    _patch_callback(
+        monkeypatch,
+        provider,
+        state=_oauth_state(provider, invite_token=None),
+        verified=True,
+    )
+    email = f"testuser@{provider}.example.com"
+    monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
+    monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "get_valid_by_email",
+        AsyncMock(return_value=[_invite(email, "some-other-token")]),
+    )
+    consume = AsyncMock(return_value=True)
+    monkeypatch.setattr(auth_router.InviteRepository, "consume", consume)
+    monkeypatch.setattr(auth_router.UserRepository, "update", AsyncMock(return_value=_user(email)))
+
+    response = client.get(
+        f"/api/auth/callback/{provider}",
+        params={"code": "valid-code", "state": "valid-state"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    consume.assert_awaited_once_with("inv-test")
+
+
 @pytest.mark.asyncio
 async def test_create_or_link_user_refetches_user_after_duplicate_key_race(
     monkeypatch: pytest.MonkeyPatch,
@@ -358,6 +395,11 @@ async def test_create_or_link_user_refetches_user_after_duplicate_key_race(
     monkeypatch.setattr(auth_router.UserRepository, "get_by_email", get_by_email)
     monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
     monkeypatch.setattr(auth_router.UserRepository, "create", create)
+    monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "find_active_by_email",
+        AsyncMock(return_value=None),
+    )
     monkeypatch.setattr(
         auth_router.InviteRepository,
         "get_valid_by_email",
@@ -401,6 +443,11 @@ async def test_create_or_link_user_refetches_identity_after_duplicate_key_race(
         auth_router.UserRepository,
         "get_by_id",
         AsyncMock(return_value=existing_user),
+    )
+    monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "find_active_by_email",
+        AsyncMock(return_value=None),
     )
 
     user = await auth_router._create_or_link_user(_userinfo(provider))

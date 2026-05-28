@@ -48,7 +48,7 @@ function mockFetch(
 // Import module under test
 // ---------------------------------------------------------------------------
 
-const { authenticatedFetch, authenticatedJson, readCookie } = await import('./authenticatedApi.ts');
+const { authenticatedFetch, authenticatedJson, copyInviteLink, readCookie } = await import('./authenticatedApi.ts');
 
 // ---------------------------------------------------------------------------
 // readCookie
@@ -179,6 +179,21 @@ test('non-2xx response throws error', async () => {
   }
 });
 
+test('409 response is still caught by authenticatedJson error handling', async () => {
+  const { restore } = mockFetch(409, { detail: 'Invite already exists' });
+  try {
+    await assert.rejects(
+      () => authenticatedJson('/api/auth/invites'),
+      (err: Error) => {
+        assert.ok(err.message.includes('409'), `Expected 409 in: ${err.message}`);
+        return true;
+      },
+    );
+  } finally {
+    restore();
+  }
+});
+
 test('authenticatedJson returns parsed JSON on 200', async () => {
   const { restore } = mockFetch(200, { id: 'wf-1', name: 'My Workflow' });
   try {
@@ -187,5 +202,61 @@ test('authenticatedJson returns parsed JSON on 200', async () => {
     assert.equal(data.name, 'My Workflow');
   } finally {
     restore();
+  }
+});
+
+test('copyInviteLink returns true when clipboard write succeeds', async () => {
+  const originalNavigator = globalThis.navigator;
+  const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const clipboardMock = {
+    writeText: async (text: string) => {
+      assert.equal(text, 'https://example.com/invite/token');
+    },
+  } as unknown as Clipboard;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { clipboard: clipboardMock } as Navigator,
+  });
+
+  try {
+    const result = await copyInviteLink('https://example.com/invite/token');
+    assert.equal(result, true);
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, 'navigator', originalDescriptor);
+    } else {
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: originalNavigator,
+      });
+    }
+  }
+});
+
+test('copyInviteLink returns false when clipboard write fails', async () => {
+  const originalNavigator = globalThis.navigator;
+  const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const clipboardMock = {
+    writeText: async () => {
+      throw new Error('clipboard unavailable');
+    },
+  } as unknown as Clipboard;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { clipboard: clipboardMock } as Navigator,
+  });
+
+  try {
+    const result = await copyInviteLink('https://example.com/invite/token');
+    assert.equal(result, false);
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, 'navigator', originalDescriptor);
+    } else {
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: originalNavigator,
+      });
+    }
   }
 });

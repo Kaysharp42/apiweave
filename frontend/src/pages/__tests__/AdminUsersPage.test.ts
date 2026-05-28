@@ -197,3 +197,126 @@ test('InviteUserModal resets state on close', () => {
     'Must reset role on close'
   );
 });
+
+// ── Behavioral source tests ───────────────────────────────────────────────────
+
+test('AdminUsersPage derives Active status from is_setup_complete=true', () => {
+  const content = readPage('AdminUsersPage.tsx');
+  assert.ok(
+    content.includes('is_setup_complete') && content.includes('"Active"') || content.includes("'Active'") || content.includes('label="Active"'),
+    'Must show Active label when is_setup_complete is true'
+  );
+  assert.ok(
+    content.includes('"Pending"') || content.includes("'Pending'") || content.includes('label="Pending"'),
+    'Must show Pending label when is_setup_complete is false'
+  );
+  assert.ok(
+    content.includes('"Invited"') || content.includes("'Invited'") || content.includes('label="Invited"'),
+    'Must show Invited label for orphan invite rows'
+  );
+});
+
+test('AdminUsersPage has copyInviteLink wired to handleCopyInviteLink', () => {
+  const content = readPage('AdminUsersPage.tsx');
+  assert.ok(
+    content.includes('copyInviteLink'),
+    'Must import and call copyInviteLink utility'
+  );
+  assert.ok(
+    content.includes('handleCopyInviteLink'),
+    'Must define handleCopyInviteLink handler'
+  );
+  assert.ok(
+    content.includes('copyingInviteId'),
+    'Must track copyingInviteId state for feedback'
+  );
+  assert.ok(
+    content.includes("'Copied!'") || content.includes('"Copied!"'),
+    'Must show Copied! feedback after copy'
+  );
+  assert.ok(
+    content.includes('Copy Link') || content.includes('Copy link'),
+    'Must show Copy Link label before copy'
+  );
+});
+
+test('AdminUsersPage has handleInviteRoleChange for invited rows', () => {
+  const content = readPage('AdminUsersPage.tsx');
+  assert.ok(
+    content.includes('handleInviteRoleChange'),
+    'Must define handleInviteRoleChange for orphan invite rows'
+  );
+  assert.ok(
+    content.includes('/api/invites/') && content.includes('/role'),
+    'Must PATCH /api/invites/{id}/role endpoint'
+  );
+  assert.ok(
+    content.includes('role_preset'),
+    'Must send role_preset in invite role update body'
+  );
+  assert.ok(
+    content.includes('Invite role updated'),
+    'Must show success toast after invite role update'
+  );
+});
+
+test('AdminUsersPage shows delete confirmation dialog before deleting user or invite', () => {
+  const content = readPage('AdminUsersPage.tsx');
+  assert.ok(
+    content.includes('deleteConfirm'),
+    'Must track deleteConfirm state for confirmation dialog'
+  );
+  assert.ok(
+    content.includes('Confirm Delete'),
+    'Must show Confirm Delete heading in dialog'
+  );
+  assert.ok(
+    content.includes('cannot be undone'),
+    'Must warn that delete action cannot be undone'
+  );
+  assert.ok(
+    content.includes('handleDeleteConfirmed'),
+    'Must define handleDeleteConfirmed to execute deletion'
+  );
+  assert.ok(
+    content.includes(`/api/users/`) && content.includes("method: 'DELETE'"),
+    'Must call DELETE /api/users/{id} for user deletion'
+  );
+  assert.ok(
+    content.includes('/api/invites/'),
+    'Must call DELETE /api/invites/{id} for invite deletion'
+  );
+  assert.ok(
+    content.includes("type: 'user'") && content.includes("type: 'invite'"),
+    'Must distinguish between user and invite delete types'
+  );
+});
+
+test('AdminUsersPage prevents self-delete by hiding delete button for current user', () => {
+  const content = readPage('AdminUsersPage.tsx');
+  assert.ok(
+    content.includes('isSelf'),
+    'Must compute isSelf flag for current user row'
+  );
+  assert.ok(
+    content.includes('currentUser?.userId') || content.includes('currentUser?.userId'),
+    'Must compare user.userId with currentUser.userId'
+  );
+  assert.ok(
+    content.includes('!isSelf'),
+    'Must conditionally render delete button only when !isSelf'
+  );
+});
+
+test('AdminUsersPage uses authenticatedFetch for delete operations', () => {
+  const content = readPage('AdminUsersPage.tsx');
+  assert.ok(
+    content.includes('authenticatedFetch'),
+    'Must import and use authenticatedFetch for delete calls'
+  );
+  const deleteFetchCount = (content.match(/authenticatedFetch/g) ?? []).length;
+  assert.ok(
+    deleteFetchCount >= 2,
+    'Must call authenticatedFetch at least twice (user delete + invite delete)'
+  );
+});

@@ -551,6 +551,7 @@ class Invite(Document):
     expires_at: datetime        # TTL index on this field
     consumed_at: Optional[datetime] = None
     consumed: bool = False
+    invite_url: Optional[str] = None
 
     class Settings:
         name = "invites"

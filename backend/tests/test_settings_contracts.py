@@ -208,6 +208,14 @@ def test_settings_create_invite_admin_ok() -> None:
     s, t, u = _auth_patches(admin)
     with s, t, u, patch.object(
         InviteRepository, "create", new=AsyncMock(return_value=invite)
+    ), patch.object(
+        InviteRepository,
+        "find_active_by_email",
+        new=AsyncMock(return_value=None),
+    ), patch.object(
+        UserRepository,
+        "get_by_email",
+        new=AsyncMock(return_value=None),
     ):
         response = client.post(
             "/api/settings/invites",
@@ -216,6 +224,36 @@ def test_settings_create_invite_admin_ok() -> None:
     assert response.status_code == 201
     assert response.json()["email"] == "new@example.com"
     assert "invite_url" in response.json()
+
+
+def test_settings_create_invite_returns_absolute_url() -> None:
+    """Settings invite endpoint should return absolute URL, not relative path."""
+    admin = _make_user(roles=[PRESET_ADMIN])
+    invite = _make_invite()
+    client = _client()
+    client.cookies.set("session", "tok")
+    client.headers.update({"X-CSRF-Token": "x"})
+    client.cookies.set("csrftoken", "x")
+    s, t, u = _auth_patches(admin)
+    with s, t, u, patch.object(
+        InviteRepository, "create", new=AsyncMock(return_value=invite)
+    ), patch.object(
+        InviteRepository,
+        "find_active_by_email",
+        new=AsyncMock(return_value=None),
+    ), patch.object(
+        UserRepository,
+        "get_by_email",
+        new=AsyncMock(return_value=None),
+    ):
+        response = client.post(
+            "/api/settings/invites",
+            json={"email": "new@example.com", "role_preset": "viewer"},
+        )
+    assert response.status_code == 201
+    invite_url = response.json()["invite_url"]
+    assert invite_url.startswith("http"), f"Expected absolute URL, got: {invite_url}"
+    assert "/invite/" in invite_url
 
 
 def test_settings_create_invite_editor_forbidden() -> None:
