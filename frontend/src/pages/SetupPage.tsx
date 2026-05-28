@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { Button } from '../components/atoms/Button';
