@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
+
+const EMPTY_OPTIONS: SelectOption[] = [];
 
 export interface SelectOption {
   value: string;
@@ -15,7 +17,7 @@ export interface ButtonSelectProps {
 }
 
 export default function ButtonSelect({
-  options = [],
+  options = EMPTY_OPTIONS,
   value = '',
   onChange = () => {},
   placeholder = 'Select',
@@ -34,10 +36,7 @@ export default function ButtonSelect({
     return () => document.removeEventListener('click', onDocClick);
   }, []);
 
-  const selected = useMemo(
-    () => options.find((o) => o.value === value),
-    [options, value],
-  );
+  const selected = options.find((o) => o.value === value);
 
   return (
     <div ref={ref} className="relative">

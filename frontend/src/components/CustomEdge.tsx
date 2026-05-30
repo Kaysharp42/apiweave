@@ -1,3 +1,4 @@
+import { type CSSProperties } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useReactFlow, type EdgeProps } from 'reactflow';
 import { X } from 'lucide-react';
 
@@ -7,6 +8,8 @@ interface CustomEdgeData {
 
 type CustomEdgeProps = EdgeProps<CustomEdgeData>;
 
+const EMPTY_EDGE_STYLE: CSSProperties = {};
+
 export default function CustomEdge({
   id,
   sourceX,
@@ -15,7 +18,7 @@ export default function CustomEdge({
   targetY,
   sourcePosition,
   targetPosition,
-  style = {},
+  style = EMPTY_EDGE_STYLE,
   markerEnd,
   data,
 }: CustomEdgeProps) {
@@ -60,6 +63,7 @@ export default function CustomEdge({
           className="nodrag nopan"
         >
           <button
+            type="button"
             className="w-5 h-5 bg-surface dark:bg-surface-dark-raised border border-border dark:border-border-dark
               text-text-muted dark:text-text-muted-dark hover:text-red-500 dark:hover:text-red-400
               hover:border-red-300 dark:hover:border-red-600 rounded-full flex items-center justify-center

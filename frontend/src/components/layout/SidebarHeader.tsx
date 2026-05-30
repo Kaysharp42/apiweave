@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 import {
   Upload,
   Plus,
@@ -13,8 +13,9 @@ import HARImport from '../HARImport';
 import OpenAPIImport from '../OpenAPIImport';
 import CurlImport from '../CurlImport';
 import CollectionExportImport from '../CollectionExportImport';
-import { Spinner, Button } from '../atoms';
-import { SearchInput } from '../molecules';
+import { Button } from '../atoms/Button';
+import { Spinner } from '../atoms/Spinner';
+import { SearchInput } from '../molecules/SearchInput';
 import useSidebarStore from '../../stores/SidebarStore';
 import type { SidebarHeaderProps } from '../../types/SidebarHeaderProps';
 
@@ -26,14 +27,78 @@ interface ImportMenuItem {
   action: () => void;
 }
 
+interface SidebarHeaderState {
+  showWorkflowImportExport: boolean;
+  showHARImport: boolean;
+  showOpenAPIImport: boolean;
+  showCurlImport: boolean;
+  showImportMenu: boolean;
+  showCollectionImportExport: boolean;
+  collectionImportMode: 'export' | 'import-collection' | 'import-workflows' | 'import-har' | 'import-openapi' | 'import-curl' | null;
+}
+
+type SidebarHeaderAction =
+  | { type: 'toggle-import-menu' }
+  | { type: 'close-import-menu' }
+  | { type: 'open-workflow-import-export' }
+  | { type: 'open-har-import' }
+  | { type: 'open-openapi-import' }
+  | { type: 'open-curl-import' }
+  | { type: 'open-collection-import'; mode: SidebarHeaderState['collectionImportMode'] }
+  | { type: 'close-workflow-import-export' }
+  | { type: 'close-har-import' }
+  | { type: 'close-openapi-import' }
+  | { type: 'close-curl-import' }
+  | { type: 'close-collection-import' };
+
+const initialState: SidebarHeaderState = {
+  showWorkflowImportExport: false,
+  showHARImport: false,
+  showOpenAPIImport: false,
+  showCurlImport: false,
+  showImportMenu: false,
+  showCollectionImportExport: false,
+  collectionImportMode: null,
+};
+
+function sidebarHeaderReducer(state: SidebarHeaderState, action: SidebarHeaderAction): SidebarHeaderState {
+  switch (action.type) {
+    case 'toggle-import-menu':
+      return { ...state, showImportMenu: !state.showImportMenu };
+    case 'close-import-menu':
+      return { ...state, showImportMenu: false };
+    case 'open-workflow-import-export':
+      return { ...state, showWorkflowImportExport: true, showImportMenu: false };
+    case 'open-har-import':
+      return { ...state, showHARImport: true, showImportMenu: false };
+    case 'open-openapi-import':
+      return { ...state, showOpenAPIImport: true, showImportMenu: false };
+    case 'open-curl-import':
+      return { ...state, showCurlImport: true, showImportMenu: false };
+    case 'open-collection-import':
+      return {
+        ...state,
+        collectionImportMode: action.mode,
+        showCollectionImportExport: true,
+        showImportMenu: false,
+      };
+    case 'close-workflow-import-export':
+      return { ...state, showWorkflowImportExport: false };
+    case 'close-har-import':
+      return { ...state, showHARImport: false };
+    case 'close-openapi-import':
+      return { ...state, showOpenAPIImport: false };
+    case 'close-curl-import':
+      return { ...state, showCurlImport: false };
+    case 'close-collection-import':
+      return { ...state, showCollectionImportExport: false, collectionImportMode: null };
+    default:
+      return state;
+  }
+}
+
 export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: SidebarHeaderProps) {
-  const [showWorkflowImportExport, setShowWorkflowImportExport] = useState(false);
-  const [showHARImport, setShowHARImport] = useState(false);
-  const [showOpenAPIImport, setShowOpenAPIImport] = useState(false);
-  const [showCurlImport, setShowCurlImport] = useState(false);
-  const [showImportMenu, setShowImportMenu] = useState(false);
-  const [showCollectionImportExport, setShowCollectionImportExport] = useState(false);
-  const [collectionImportMode, setCollectionImportMode] = useState<'export' | 'import-collection' | 'import-workflows' | 'import-har' | 'import-openapi' | 'import-curl' | null>(null);
+  const [state, dispatch] = useReducer(sidebarHeaderReducer, initialState);
   const importMenuRef = useRef<HTMLDivElement>(null);
 
   const searchQuery = useSidebarStore((s) => s.searchQuery);
@@ -42,15 +107,15 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (importMenuRef.current && !importMenuRef.current.contains(event.target as Node)) {
-        setShowImportMenu(false);
+        dispatch({ type: 'close-import-menu' });
       }
     };
 
-    if (showImportMenu) {
+    if (state.showImportMenu) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showImportMenu]);
+  }, [state.showImportMenu]);
 
   const getNavLabel = (): string => {
     switch (selectedNav) {
@@ -64,17 +129,17 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
   };
 
   const workflowImportItems: ImportMenuItem[] = [
-    { label: 'Workflow', icon: Download, action: () => { setShowWorkflowImportExport(true); setShowImportMenu(false); } },
-    { label: 'HAR File', icon: Upload, action: () => { setShowHARImport(true); setShowImportMenu(false); } },
-    { label: 'OpenAPI', icon: Upload, action: () => { setShowOpenAPIImport(true); setShowImportMenu(false); } },
-    { label: 'cURL', icon: Terminal, action: () => { setShowCurlImport(true); setShowImportMenu(false); } },
+    { label: 'Workflow', icon: Download, action: () => dispatch({ type: 'open-workflow-import-export' }) },
+    { label: 'HAR File', icon: Upload, action: () => dispatch({ type: 'open-har-import' }) },
+    { label: 'OpenAPI', icon: Upload, action: () => dispatch({ type: 'open-openapi-import' }) },
+    { label: 'cURL', icon: Terminal, action: () => dispatch({ type: 'open-curl-import' }) },
   ];
 
   const collectionImportItems: ImportMenuItem[] = [
-    { label: 'Collection', icon: FolderOpen, action: () => { setCollectionImportMode('import-collection'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
-    { label: 'HAR File', icon: Upload, action: () => { setCollectionImportMode('import-har'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
-    { label: 'OpenAPI', icon: Upload, action: () => { setCollectionImportMode('import-openapi'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
-    { label: 'cURL', icon: Terminal, action: () => { setCollectionImportMode('import-curl'); setShowCollectionImportExport(true); setShowImportMenu(false); } },
+    { label: 'Collection', icon: FolderOpen, action: () => dispatch({ type: 'open-collection-import', mode: 'import-collection' }) },
+    { label: 'HAR File', icon: Upload, action: () => dispatch({ type: 'open-collection-import', mode: 'import-har' }) },
+    { label: 'OpenAPI', icon: Upload, action: () => dispatch({ type: 'open-collection-import', mode: 'import-openapi' }) },
+    { label: 'cURL', icon: Terminal, action: () => dispatch({ type: 'open-collection-import', mode: 'import-curl' }) },
   ];
 
   const importItems = selectedNav === 'collections' ? collectionImportItems : workflowImportItems;
@@ -113,18 +178,18 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowImportMenu(!showImportMenu)}
+                onClick={() => dispatch({ type: 'toggle-import-menu' })}
                 icon={<Upload className="w-4 h-4" />}
                 className="w-full"
               >
                 <span>Import</span>
               </Button>
 
-              {showImportMenu && (
+              {state.showImportMenu && (
                 <ul className="menu menu-sm bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg shadow-lg absolute top-full left-0 mt-1 z-20 min-w-[140px] p-1">
                   {importItems.map(({ label, icon: Icon, action }) => (
                     <li key={label}>
-                      <button onClick={action} className="flex items-center gap-2 text-sm">
+                      <button type="button" onClick={action} className="flex items-center gap-2 text-sm">
                         <Icon className="w-4 h-4" />
                         {label}
                       </button>
@@ -148,30 +213,28 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
         )}
       </div>
 
-      {showWorkflowImportExport && (
+      {state.showWorkflowImportExport && (
         <WorkflowExportImport
-          onClose={() => setShowWorkflowImportExport(false)}
+          onClose={() => dispatch({ type: 'close-workflow-import-export' })}
           initialTab="import"
           onImportSuccess={() => {
-            setShowWorkflowImportExport(false);
+            dispatch({ type: 'close-workflow-import-export' });
             useSidebarStore.getState().signalWorkflowsRefresh();
           }}
         />
       )}
-      {showHARImport && <HARImport onClose={() => setShowHARImport(false)} />}
-      {showOpenAPIImport && <OpenAPIImport onClose={() => setShowOpenAPIImport(false)} />}
-      {showCurlImport && <CurlImport onClose={() => setShowCurlImport(false)} />}
-      {showCollectionImportExport && (
+      {state.showHARImport && <HARImport onClose={() => dispatch({ type: 'close-har-import' })} />}
+      {state.showOpenAPIImport && <OpenAPIImport onClose={() => dispatch({ type: 'close-openapi-import' })} />}
+      {state.showCurlImport && <CurlImport onClose={() => dispatch({ type: 'close-curl-import' })} />}
+      {state.showCollectionImportExport && (
         <CollectionExportImport
-          {...(collectionImportMode && { mode: collectionImportMode })}
+          {...(state.collectionImportMode && { mode: state.collectionImportMode })}
           isOpen={true}
           onClose={() => {
-            setShowCollectionImportExport(false);
-            setCollectionImportMode(null);
+            dispatch({ type: 'close-collection-import' });
           }}
           onImportSuccess={() => {
-            setShowCollectionImportExport(false);
-            setCollectionImportMode(null);
+            dispatch({ type: 'close-collection-import' });
             useSidebarStore.getState().signalCollectionsRefresh();
           }}
         />

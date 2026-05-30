@@ -51,7 +51,7 @@ export function Modal({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 bg-slate-950/40" aria-hidden="true" />
         </Transition.Child>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -110,7 +110,7 @@ export function Modal({
 
               {footer && (
                 <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border dark:border-border-dark flex-shrink-0">
-                  {footer}
+                  {typeof footer === 'function' ? footer() : footer}
                 </div>
               )}
             </Dialog.Panel>

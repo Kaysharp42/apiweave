@@ -226,15 +226,9 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
   };
 
   return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="OpenAPI import">
+      <button type="button" aria-label="Close OpenAPI import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
+      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
           <div className="flex items-center gap-2">
@@ -297,17 +291,18 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
               {/* Server Selection */}
               {preview?.availableServers && preview.availableServers.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                  <label htmlFor="openapi-base-url" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                     Base URL (Server)
                   </label>
                   <select
+                    id="openapi-base-url"
                     value={baseUrl}
                     onChange={(e) => handleServerSelect(e.target.value)}
                     className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                   >
                     <option value="">-- Select Server --</option>
-                    {preview.availableServers.map((server, idx) => (
-                      <option key={idx} value={server.url}>
+                    {preview.availableServers.map((server) => (
+                      <option key={server.url} value={server.url}>
                         {server.url} {server.description && `(${server.description})`}
                       </option>
                     ))}
@@ -317,10 +312,11 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
 
               {/* Custom Base URL */}
               <div>
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                <label htmlFor="openapi-custom-base-url" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Custom Base URL (optional)
                 </label>
                 <Input
+                  id="openapi-custom-base-url"
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
@@ -331,13 +327,13 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
               {/* Tag Filter */}
               {preview?.availableTags && preview.availableTags.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                  <div className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                     Filter by Tags (select to import only specific tags)
-                  </label>
+                  </div>
                   <div className="flex flex-wrap gap-2">
-                    {preview.availableTags.map((tag, idx) => (
+                    {preview.availableTags.map((tag) => (
                       <Button
-                        key={idx}
+                        key={tag.name}
                         onClick={() => handleTagToggle(tag.name)}
                         variant={selectedTags.includes(tag.name) ? 'primary' : 'secondary'}
                         size="xs"
@@ -372,10 +368,11 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
 
               {/* Group Title */}
               <div>
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                <label htmlFor="openapi-palette-group-title" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Palette Group Title (optional)
                 </label>
                 <Input
+                  id="openapi-palette-group-title"
                   type="text"
                   value={groupTitle}
                   onChange={(e) => setGroupTitle(e.target.value)}
@@ -437,9 +434,9 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
                     Sample Endpoints (first 5):
                   </h4>
                   <div className="space-y-1">
-                    {preview.nodes.slice(1, 6).map((node, idx) => (
+                    {preview.nodes.slice(1, 6).map((node) => (
                       <div
-                        key={idx}
+                        key={node.label ?? node.config?.method ?? node.type ?? 'endpoint'}
                         className="text-xs px-2 py-1 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark"
                       >
                         <span className="font-mono text-primary dark:text-primary-dark">
@@ -484,7 +481,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

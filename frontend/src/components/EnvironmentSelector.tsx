@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import API_BASE_URL from '../utils/api';
 import useSidebarStore from '../stores/SidebarStore';
 import type { Environment } from '../types';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 export interface EnvironmentSelectorProps {
   onManageClick: () => void;
@@ -11,6 +12,18 @@ export default function EnvironmentSelector({ onManageClick }: EnvironmentSelect
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const fetchEnvironments = useCallback(async () => {
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
+      if (response.ok) {
+        const data: Environment[] = await response.json();
+        setEnvironments(data);
+      }
+    } catch {
+      // Silently fail - environments will be fetched on next attempt
+    }
+  }, []);
 
   useEffect(() => {
     fetchEnvironments();
@@ -25,24 +38,12 @@ export default function EnvironmentSelector({ onManageClick }: EnvironmentSelect
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [fetchEnvironments]);
 
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);
   useEffect(() => {
     if (environmentVersion > 0) fetchEnvironments();
-  }, [environmentVersion]);
-
-  const fetchEnvironments = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/environments`);
-      if (response.ok) {
-        const data: Environment[] = await response.json();
-        setEnvironments(data);
-      }
-    } catch {
-      // Silently fail - environments will be fetched on next attempt
-    }
-  };
+  }, [environmentVersion, fetchEnvironments]);
 
   const handleManage = () => {
     setIsOpen(false);
@@ -52,6 +53,7 @@ export default function EnvironmentSelector({ onManageClick }: EnvironmentSelect
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
         title="Manage environments"
@@ -103,6 +105,7 @@ export default function EnvironmentSelector({ onManageClick }: EnvironmentSelect
 
           <div className="border-t border-gray-200 dark:border-gray-700 py-1">
             <button
+              type="button"
               onClick={handleManage}
               className="w-full text-left px-3 py-2 text-sm text-cyan-900 dark:text-cyan-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors font-medium"
             >

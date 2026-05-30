@@ -11,6 +11,8 @@ import json
 import re
 
 from app.models import Collection, CollectionCreate, CollectionUpdate, CollectionImportRequest, CollectionImportDryRunRequest
+from app.auth.dependencies import require_permission
+from app.auth.permissions import COLLECTIONS_CREATE, COLLECTIONS_DELETE, COLLECTIONS_EXPORT, COLLECTIONS_IMPORT, COLLECTIONS_READ, COLLECTIONS_UPDATE
 from app.repositories import CollectionRepository, WorkflowRepository, EnvironmentRepository
 from app.services import (
     list_collections as svc_list_collections,
@@ -32,19 +34,19 @@ from app.services.exceptions import ConflictError
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
 
-@router.post("", response_model=Collection, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=Collection, status_code=status.HTTP_201_CREATED, dependencies=[require_permission(COLLECTIONS_CREATE)])
 async def create_collection(collection: CollectionCreate):
     """Create a new collection"""
     return await svc_create_collection(collection)
 
 
-@router.get("", response_model=List[Collection])
+@router.get("", response_model=List[Collection], dependencies=[require_permission(COLLECTIONS_READ)])
 async def list_collections():
     """List all collections"""
     return await svc_list_collections()
 
 
-@router.get("/{collection_id}", response_model=Collection)
+@router.get("/{collection_id}", response_model=Collection, dependencies=[require_permission(COLLECTIONS_READ)])
 async def get_collection(collection_id: str):
     """Get a collection by ID"""
     try:
@@ -53,7 +55,7 @@ async def get_collection(collection_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.put("/{collection_id}", response_model=Collection)
+@router.put("/{collection_id}", response_model=Collection, dependencies=[require_permission(COLLECTIONS_UPDATE)])
 async def update_collection(collection_id: str, update: CollectionUpdate):
     """Update a collection"""
     try:
@@ -62,7 +64,7 @@ async def update_collection(collection_id: str, update: CollectionUpdate):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.delete("/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{collection_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require_permission(COLLECTIONS_DELETE)])
 async def delete_collection(collection_id: str):
     """Delete a collection"""
     try:
@@ -74,7 +76,7 @@ async def delete_collection(collection_id: str):
     return None
 
 
-@router.post("/{collection_id}/workflows/{workflow_id}", status_code=status.HTTP_200_OK)
+@router.post("/{collection_id}/workflows/{workflow_id}", status_code=status.HTTP_200_OK, dependencies=[require_permission(COLLECTIONS_UPDATE)])
 async def add_workflow_to_collection(collection_id: str, workflow_id: str):
     """Add a workflow to a collection"""
     try:
@@ -83,7 +85,7 @@ async def add_workflow_to_collection(collection_id: str, workflow_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.delete("/{collection_id}/workflows/{workflow_id}", status_code=status.HTTP_200_OK)
+@router.delete("/{collection_id}/workflows/{workflow_id}", status_code=status.HTTP_200_OK, dependencies=[require_permission(COLLECTIONS_UPDATE)])
 async def remove_workflow_from_collection(collection_id: str, workflow_id: str):
     """Remove a workflow from a collection"""
     try:
@@ -92,7 +94,7 @@ async def remove_workflow_from_collection(collection_id: str, workflow_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/{collection_id}/workflows", response_model=List)
+@router.get("/{collection_id}/workflows", response_model=List, dependencies=[require_permission(COLLECTIONS_READ)])
 async def get_collection_workflows(collection_id: str):
     """Get all workflows in a collection"""
     try:
@@ -106,7 +108,7 @@ async def get_collection_workflows(collection_id: str):
 
 # Export/Import Endpoints
 
-@router.get("/{collection_id}/export")
+@router.get("/{collection_id}/export", dependencies=[require_permission(COLLECTIONS_EXPORT)])
 async def export_collection(collection_id: str, include_environment: bool = Query(True)):
     """Export a collection with all workflows and environments"""
     try:
@@ -115,7 +117,7 @@ async def export_collection(collection_id: str, include_environment: bool = Quer
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.post("/import/dry-run")
+@router.post("/import/dry-run", dependencies=[require_permission(COLLECTIONS_IMPORT)])
 async def import_collection_dry_run(
     request: CollectionImportDryRunRequest
 ):
@@ -187,7 +189,7 @@ async def import_collection_dry_run(
     }
 
 
-@router.post("/import")
+@router.post("/import", dependencies=[require_permission(COLLECTIONS_IMPORT)])
 async def import_collection(
     request: CollectionImportRequest
 ):
@@ -331,7 +333,7 @@ async def import_collection(
     }
 
 
-@router.post("/{collection_id}/workflows/{workflow_id}/assign")
+@router.post("/{collection_id}/workflows/{workflow_id}/assign", dependencies=[require_permission(COLLECTIONS_UPDATE)])
 async def assign_workflow_to_collection(
     collection_id: str,
     workflow_id: str

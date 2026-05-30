@@ -39,17 +39,13 @@ const assertNotIncludes = (markup: string, expected: string): void => {
 
 test('Panel and Card render reusable shells with collapse affordances', () => {
   const panelMarkup = renderMarkup(
-    React.createElement(
-      Panel,
-      {
-        title: 'Variables',
-        icon: SettingsIcon,
-        collapsible: true,
-        footer: React.createElement('span', null, 'Panel footer'),
-        headerActions: React.createElement('span', { className: 'panel-action' }, 'Action'),
-        children: React.createElement('div', null, 'Panel body'),
-      },
-    ),
+    React.createElement(Panel, {
+      title: 'Variables',
+      icon: SettingsIcon,
+      collapsible: true,
+      footer: React.createElement('span', null, 'Panel footer'),
+      headerActions: React.createElement('span', { className: 'panel-action' }, 'Action'),
+    }, React.createElement('div', null, 'Panel body')),
   );
 
   assertIncludes(panelMarkup, 'Variables');
@@ -60,16 +56,12 @@ test('Panel and Card render reusable shells with collapse affordances', () => {
   assertIncludes(panelMarkup, 'border-border dark:border-border-dark');
 
   const collapsedCardMarkup = renderMarkup(
-    React.createElement(
-      Card,
-      {
-        title: 'Request settings',
-        icon: ActivityIcon,
-        collapsible: true,
-        defaultExpanded: false,
-        children: React.createElement('div', null, 'Hidden body'),
-      },
-    ),
+    React.createElement(Card, {
+      title: 'Request settings',
+      icon: ActivityIcon,
+      collapsible: true,
+      defaultExpanded: false,
+    }, React.createElement('div', null, 'Hidden body')),
   );
 
   assertIncludes(collapsedCardMarkup, 'Request settings');
@@ -96,16 +88,12 @@ test('PanelTabs and FormField render accessible panel form abstractions', () => 
   assertIncludes(tabsMarkup, 'Output');
 
   const fieldMarkup = renderMarkup(
-    React.createElement(
-      FormField,
-      {
-        label: 'URL',
-        hint: 'Supports variables',
-        required: true,
-        className: 'field-wrapper',
-        children: React.createElement('input', { type: 'text', defaultValue: 'https://api.example.com' }),
-      },
-    ),
+    React.createElement(FormField, {
+      label: 'URL',
+      hint: 'Supports variables',
+      required: true,
+      className: 'field-wrapper',
+    }, React.createElement('input', { type: 'text', defaultValue: 'https://api.example.com' })),
   );
 
   assertIncludes(fieldMarkup, 'field-wrapper');
@@ -115,15 +103,11 @@ test('PanelTabs and FormField render accessible panel form abstractions', () => 
   assertIncludes(fieldMarkup, 'https://api.example.com');
 
   const errorMarkup = renderMarkup(
-    React.createElement(
-      FormField,
-      {
-        label: 'Body',
-        hint: 'JSON request body',
-        error: 'Invalid JSON',
-        children: React.createElement('textarea', { defaultValue: '{' }),
-      },
-    ),
+    React.createElement(FormField, {
+      label: 'Body',
+      hint: 'JSON request body',
+      error: 'Invalid JSON',
+    }, React.createElement('textarea', { defaultValue: '{' })),
   );
 
   assertIncludes(errorMarkup, 'Invalid JSON');
@@ -132,31 +116,23 @@ test('PanelTabs and FormField render accessible panel form abstractions', () => 
 
 test('Modal, ConfirmDialog, PromptDialog, and SlidePanel render SSR-safe transition states', () => {
   const hiddenModalMarkup = renderMarkup(
-    React.createElement(
-      Modal,
-      {
-        isOpen: false,
-        onClose: noop,
-        title: 'Hidden modal',
-        children: React.createElement('div', null, 'Hidden content'),
-      },
-    ),
+    React.createElement(Modal, {
+      isOpen: false,
+      onClose: noop,
+      title: 'Hidden modal',
+    }, React.createElement('div', null, 'Hidden content')),
   );
 
   assert.equal(hiddenModalMarkup, '');
 
   const modalMarkup = renderMarkup(
-    React.createElement(
-      Modal,
-      {
-        isOpen: true,
-        onClose: noop,
-        title: 'Edit workflow',
-        size: 'lg',
-        footer: React.createElement('button', { type: 'button' }, 'Save'),
-        children: React.createElement('div', null, 'Modal body'),
-      },
-    ),
+    React.createElement(Modal, {
+      isOpen: true,
+      onClose: noop,
+      title: 'Edit workflow',
+      size: 'lg',
+      footer: React.createElement('button', { type: 'button' }, 'Save'),
+    }, React.createElement('div', null, 'Modal body')),
   );
 
   assertIncludes(modalMarkup, 'hidden=""');
@@ -195,19 +171,15 @@ test('Modal, ConfirmDialog, PromptDialog, and SlidePanel render SSR-safe transit
   assertIncludes(promptMarkup, 'position:fixed');
 
   const slidePanelMarkup = renderMarkup(
-    React.createElement(
-      SlidePanel,
-      {
-        open: true,
-        onClose: noop,
-        title: 'Helpers',
-        side: 'left',
-        size: 'lg',
-        showClose: false,
-        footer: React.createElement('span', null, 'Panel footer'),
-        children: React.createElement('div', null, 'Panel content'),
-      },
-    ),
+    React.createElement(SlidePanel, {
+      open: true,
+      onClose: noop,
+      title: 'Helpers',
+      side: 'left',
+      size: 'lg',
+      showClose: false,
+      footer: React.createElement('span', null, 'Panel footer'),
+    }, React.createElement('div', null, 'Panel content')),
   );
 
   assertIncludes(slidePanelMarkup, 'hidden=""');

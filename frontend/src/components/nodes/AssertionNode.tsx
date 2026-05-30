@@ -1,4 +1,4 @@
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useMemo } from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { BaseNode } from '../atoms/flow/BaseNode';
 import AssertionEditor from '../AssertionEditor';
@@ -116,10 +116,11 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
   return (
     <div className="space-y-1.5 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
       <div>
-        <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
+        <label htmlFor="assertion-source" className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
           Assert On
         </label>
         <select
+          id="assertion-source"
           value={source}
           onChange={(e) => setSource(e.target.value as AssertionSource)}
           className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
@@ -134,12 +135,13 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
 
       {source !== 'status' && (
         <div>
-          <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
+          <label htmlFor="assertion-path" className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
             {source === 'prev' ? 'JSONPath (e.g., body.status)' :
              source === 'variables' ? 'Variable name' :
              source === 'cookies' ? 'Cookie name' : 'Header name'}
           </label>
           <input
+            id="assertion-path"
             type="text"
             placeholder={source === 'prev' ? 'body.status' : source === 'variables' ? 'tokenId' : 'Set-Cookie'}
             value={path}
@@ -154,10 +156,11 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
       )}
 
       <div>
-        <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
+        <label htmlFor="assertion-operator" className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
           Operator
         </label>
         <select
+          id="assertion-operator"
           value={operator}
           onChange={(e) => setOperator(e.target.value as AssertionOperator)}
           className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
@@ -178,10 +181,11 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
 
       {!['exists', 'notExists'].includes(operator) && (
         <div>
-          <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
+          <label htmlFor="assertion-expected-value" className="block text-[9px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
             {operator === 'count' ? 'Expected Count' : 'Expected Value'}
           </label>
           <input
+            id="assertion-expected-value"
             type="text"
             placeholder={operator === 'count' ? '5' : '200'}
             value={expectedValue}
@@ -196,7 +200,9 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
       )}
 
       <button
+        type="button"
         onClick={handleAdd}
+        aria-label="Add assertion"
         className="w-full px-2 py-1 bg-status-success hover:bg-green-700 text-white text-[9px] font-semibold rounded nodrag transition-colors"
       >
         Add Assertion
@@ -206,10 +212,67 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
 };
 
 
-const AssertionNode = ({ id, data, selected = false }: AssertionNodeProps) => {
+const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
   const { setNodes } = useReactFlow();
   const [editingIndex, setEditingIndex] = useState(-1);
   const [editDraft, setEditDraft] = useState<AssertionItem | null>(null);
+  const icon = useMemo(() => (
+    data.executionStatus === 'error'
+      ? <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+      : <BadgeCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
+  ), [data.executionStatus]);
+  const titleExtra = useMemo(() => {
+    if (!data.assertionStats) return null;
+
+    return (
+      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+        data.assertionStats.failedCount > 0
+          ? 'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200'
+          : 'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200'
+      }`}>
+        {data.assertionStats.failedCount > 0
+          ? `${data.assertionStats.failedCount}/${data.assertionStats.totalCount} failed`
+          : `${data.assertionStats.passedCount}/${data.assertionStats.totalCount} passed`}
+      </span>
+    );
+  }, [data.assertionStats]);
+  const extraHandles = useMemo(() => (
+    <>
+      <div className="group absolute" style={{ top: '50%', right: 0, transform: 'translateY(-20px)' }}>
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="pass"
+          className="!bg-green-500 dark:!bg-green-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
+          style={{ position: 'relative' }}
+          title="Pass &mdash; all assertions passed"
+        />
+        <div
+          className="absolute text-[9px] font-semibold text-green-600 dark:text-green-400 pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ right: 14, top: -4, lineHeight: '1', whiteSpace: 'nowrap' }}
+        >
+          Pass
+        </div>
+      </div>
+
+      <div className="group absolute" style={{ top: '50%', right: 0, transform: 'translateY(20px)' }}>
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="fail"
+          className="!bg-red-500 dark:!bg-red-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
+          style={{ position: 'relative' }}
+          title="Fail &mdash; one or more assertions failed"
+        />
+        <div
+          className="absolute text-[9px] font-semibold text-red-600 dark:text-red-400 pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ right: 14, top: -4, lineHeight: '1', whiteSpace: 'nowrap' }}
+        >
+          Fail
+        </div>
+      </div>
+    </>
+  ), []);
 
   const updateNodeData = useCallback(
     (key: string, value: unknown) => {
@@ -237,13 +300,9 @@ const AssertionNode = ({ id, data, selected = false }: AssertionNodeProps) => {
   return (
     <BaseNode
       title={data.label ?? 'Assertions'}
-      icon={
-        data.executionStatus === 'error'
-          ? <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-          : <BadgeCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
-      }
+      icon={icon}
       status={data.executionStatus ?? 'idle'}
-      selected={selected}
+      selected={selected ?? false}
       nodeId={id}
       handleLeft={{ type: 'target' }}
       collapsible={true}
@@ -258,56 +317,8 @@ const AssertionNode = ({ id, data, selected = false }: AssertionNodeProps) => {
           ? 'text-red-800 dark:text-red-200'
           : 'text-green-800 dark:text-green-200'
       }
-      titleExtra={
-        data.assertionStats && (
-          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-            data.assertionStats.failedCount > 0
-              ? 'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200'
-              : 'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200'
-          }`}>
-            {data.assertionStats.failedCount > 0
-              ? `${data.assertionStats.failedCount}/${data.assertionStats.totalCount} failed`
-              : `${data.assertionStats.passedCount}/${data.assertionStats.totalCount} passed`}
-          </span>
-        )
-      }
-      extraHandles={
-        <>
-          <div className="group absolute" style={{ top: '50%', right: 0, transform: 'translateY(-20px)' }}>
-            <Handle
-              type="source"
-              position={Position.Right}
-              id="pass"
-              className="!bg-green-500 dark:!bg-green-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
-              style={{ position: 'relative' }}
-              title="Pass &mdash; all assertions passed"
-            />
-            <div
-              className="absolute text-[9px] font-semibold text-green-600 dark:text-green-400 pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ right: 14, top: -4, lineHeight: '1', whiteSpace: 'nowrap' }}
-            >
-              Pass
-            </div>
-          </div>
-
-          <div className="group absolute" style={{ top: '50%', right: 0, transform: 'translateY(20px)' }}>
-            <Handle
-              type="source"
-              position={Position.Right}
-              id="fail"
-              className="!bg-red-500 dark:!bg-red-400 !w-2.5 !h-2.5 !border-2 !border-white dark:!border-gray-800"
-              style={{ position: 'relative' }}
-              title="Fail &mdash; one or more assertions failed"
-            />
-            <div
-              className="absolute text-[9px] font-semibold text-red-600 dark:text-red-400 pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ right: 14, top: -4, lineHeight: '1', whiteSpace: 'nowrap' }}
-            >
-              Fail
-            </div>
-          </div>
-        </>
-      }
+      titleExtra={titleExtra}
+      extraHandles={extraHandles}
       className={`min-w-[250px] ${data?.invalid ? 'ring-2 ring-red-500 animate-pulse' : ''}`}
     >
       {({ isExpanded }) => (
@@ -350,7 +361,7 @@ const AssertionNode = ({ id, data, selected = false }: AssertionNodeProps) => {
                 <div className="space-y-1.5">
                   {data.config.assertions.map((assertion, index) => (
                     <div
-                      key={index}
+                      key={`${assertion.source}-${assertion.path}-${assertion.operator}-${assertion.expectedValue}`}
                       className="p-1.5 bg-surface dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded space-y-0.5"
                     >
                       {editingIndex === index ? (
@@ -405,6 +416,7 @@ const AssertionNode = ({ id, data, selected = false }: AssertionNodeProps) => {
                           </div>
                           <div className="flex gap-1">
                             <button
+                              type="button"
                               onClick={() => {
                                 setEditingIndex(index);
                                 setEditDraft({ ...assertion });
@@ -415,6 +427,7 @@ const AssertionNode = ({ id, data, selected = false }: AssertionNodeProps) => {
                               <Pencil className="w-3 h-3" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteAssertion(index)}
                               className="px-1.5 py-0.5 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 text-white text-[8px] rounded nodrag transition-colors"
                               title="Delete assertion"

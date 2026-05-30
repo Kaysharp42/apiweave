@@ -58,7 +58,7 @@ export function NodeActionMenu({
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick as EventListener);
+      document.addEventListener('touchstart', handleOutsideClick as EventListener, { passive: true });
     document.addEventListener('keydown', handleEscape);
 
     return () => {

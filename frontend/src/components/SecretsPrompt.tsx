@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import { Modal } from './molecules';
-import { Button } from './atoms';
+import { Modal } from './molecules/Modal';
+import { Button } from './atoms/Button';
 import type { Environment } from '../types';
 
 export interface SecretsPromptProps {
@@ -18,25 +18,24 @@ export default function SecretsPrompt({
   onClose,
   onSecretsProvided,
 }: SecretsPromptProps) {
-  const [secrets, setSecrets] = useState<Record<string, string>>({});
-  const [visibleSecrets, setVisibleSecrets] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
-  const [allFilled, setAllFilled] = useState(false);
+  const initialSecrets = useMemo<Record<string, string>>(() => {
+    if (!environment?.secrets) return {};
 
-  useEffect(() => {
-    if (!environment?.secrets) return;
     const secretsObj: Record<string, string> = {};
     Object.keys(environment.secrets).forEach((key) => {
       secretsObj[key] = sessionStorage.getItem(`secret_${key}`) ?? '';
     });
-    setSecrets(secretsObj);
-  }, [environment]);
+    return secretsObj;
+  }, [environment?.secrets]);
 
-  useEffect(() => {
-    if (!environment?.secrets) return;
+  const [secrets, setSecrets] = useState<Record<string, string>>(initialSecrets);
+  const [visibleSecrets, setVisibleSecrets] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const allFilled = useMemo(() => {
+    if (!environment?.secrets) return false;
     const secretKeys = Object.keys(environment.secrets);
-    setAllFilled(secretKeys.length > 0 && secretKeys.every((key) => secrets[key]?.trim()));
-  }, [secrets, environment?.secrets]);
+    return secretKeys.length > 0 && secretKeys.every((key) => secrets[key]?.trim());
+  }, [environment?.secrets, secrets]);
 
   const handleSecretChange = (key: string, value: string) => {
     setSecrets((prev) => ({ ...prev, [key]: value }));
@@ -71,11 +70,12 @@ export default function SecretsPrompt({
 
   return (
     <Modal
+      key={environment?.environmentId ?? 'no-environment'}
       isOpen={isOpen}
       onClose={onClose}
       title="Environment Secrets Required"
       size="sm"
-      footer={
+      footer={() => (
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
           <Button variant="primary" size="sm" onClick={handleSave} disabled={!allFilled || saving}>
@@ -83,7 +83,7 @@ export default function SecretsPrompt({
             {saving ? 'Saving...' : 'Save Secrets'}
           </Button>
         </>
-      }
+      )}
     >
       <div className="p-5 space-y-4">
         <div className="flex gap-3 p-3 bg-primary/5 dark:bg-primary/10 rounded border border-primary/20">
@@ -96,15 +96,17 @@ export default function SecretsPrompt({
         <div className="space-y-3">
           {Object.entries(environment.secrets).map(([key, placeholder]) => (
             <div key={key} className="space-y-1">
-              <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
+              <label htmlFor={`secret-${key}`} className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
                 {key}
               </label>
               <div className="flex gap-2">
                 <input
+                  id={`secret-${key}`}
                   type={visibleSecrets.has(key) ? 'text' : 'password'}
                   value={secrets[key] ?? ''}
                   onChange={(e) => handleSecretChange(key, e.target.value)}
                   placeholder={placeholder ?? `Enter ${key}`}
+                  aria-label={key}
                   className="input input-bordered input-sm flex-1 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                 />
                 <Button
@@ -112,6 +114,7 @@ export default function SecretsPrompt({
                   variant="ghost"
                   size="sm"
                   className="!p-2 !min-w-0"
+                  aria-label={visibleSecrets.has(key) ? `Hide secret ${key}` : `Show secret ${key}`}
                   title={visibleSecrets.has(key) ? 'Hide' : 'Show'}
                 >
                   {visibleSecrets.has(key) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

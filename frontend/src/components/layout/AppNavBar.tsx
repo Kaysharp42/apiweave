@@ -1,10 +1,11 @@
 import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Home, Settings, Webhook, LayoutGrid, ChevronLeft, ChevronRight, Server } from 'lucide-react';
 import { Transition } from '@headlessui/react';
 import Tippy from '@tippyjs/react';
 // @ts-expect-error CSS import without types
 import 'tippy.js/dist/tippy.css';
-import { IconButton } from '../atoms';
+import { IconButton } from '../atoms/IconButton';
 import useNavigationStore from '../../stores/NavigationStore';
 import { AppNavBarItems, AppNavBarStyles } from '../../constants/AppNavBar';
 import type { NavSection } from '../../types/NavSection';
@@ -43,15 +44,19 @@ const navItems: NavItemConfig[] = [
     id: AppNavBarItems.settings!.value,
     label: AppNavBarItems.settings!.displayValue,
     icon: Settings,
-    disabled: true,
+    disabled: false,
   },
 ];
 
 export function AppNavBar() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
   const updateNavigationSelectedValue = useNavigationStore((state) => state.setNavState);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
   const toggleNavBarCollapse = useNavigationStore((state) => state.toggleNavBarCollapse);
+
+  const isOnSettingsRoute = location.pathname.startsWith('/settings/');
 
   return (
     <nav
@@ -74,9 +79,18 @@ export function AppNavBar() {
 
           const content = (
             <button
+              type="button"
               key={id}
               className="relative w-full"
-              onClick={() => !disabled && updateNavigationSelectedValue(id as NavSection)}
+              onClick={() => {
+                if (disabled) return;
+                updateNavigationSelectedValue(id as NavSection);
+                if (id === 'settings') {
+                  if (!isOnSettingsRoute) navigate('/settings/users');
+                } else if (isOnSettingsRoute) {
+                  navigate('/');
+                }
+              }}
               disabled={disabled}
             >
               {isSelected && (

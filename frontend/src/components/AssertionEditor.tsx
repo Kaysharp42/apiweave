@@ -55,11 +55,13 @@ export default function AssertionEditor({
   };
 
   return (
-    <div className="space-y-2" onKeyDown={handleKey}>
+    <form className="space-y-2" onSubmit={(e) => e.preventDefault()}>
       <div className="grid grid-cols-2 gap-2">
         <select
           value={source}
           onChange={(e) => onChange({ ...local, source: e.target.value })}
+          onKeyDown={handleKey}
+          aria-label="Assertion source"
           className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded"
         >
           <option value="prev">prev</option>
@@ -74,7 +76,9 @@ export default function AssertionEditor({
             type="text"
             value={path}
             onChange={(e) => onChange({ ...local, path: e.target.value })}
+            onKeyDown={handleKey}
             placeholder="path or name"
+            aria-label="Assertion path or name"
             className={`w-full px-2 py-1 text-sm border rounded font-mono ${errors.path ? 'border-red-500 dark:border-red-400' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
           />
           {errors.path && <div className="text-[11px] text-red-600 dark:text-red-400 mt-1">{errors.path}</div>}
@@ -85,6 +89,8 @@ export default function AssertionEditor({
         <select
           value={operator}
           onChange={(e) => onChange({ ...local, operator: e.target.value })}
+          onKeyDown={handleKey}
+          aria-label="Assertion operator"
           className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded"
         >
           <option value="equals">Equals (==)</option>
@@ -106,7 +112,9 @@ export default function AssertionEditor({
               type="text"
               value={expectedValue}
               onChange={(e) => onChange({ ...local, expectedValue: e.target.value })}
+              onKeyDown={handleKey}
               placeholder="expected value"
+              aria-label="Assertion expected value"
               className={`w-full px-2 py-1 text-sm border rounded font-mono ${errors.expectedValue ? 'border-red-500 dark:border-red-400' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
             />
             {errors.expectedValue && <div className="text-[11px] text-red-600 dark:text-red-400 mt-1">{errors.expectedValue}</div>}
@@ -118,18 +126,20 @@ export default function AssertionEditor({
 
       <div className="flex gap-2 justify-end">
         <button
+          type="button"
           onClick={onCancel}
           className="px-3 py-1 bg-surface dark:bg-surface-dark-raised text-text-secondary dark:text-text-primary-dark rounded text-sm"
         >
           Cancel
         </button>
         <button
+          type="button"
           onClick={handleSave}
           className="px-3 py-1 bg-primary text-white rounded text-sm"
         >
           Save
         </button>
       </div>
-    </div>
+    </form>
   );
 }

@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Copy, Trash2, RefreshCw, Plus, Check } from 'lucide-react';
+import { Trash2, RefreshCw, Plus, Check, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { Modal, ConfirmDialog, FormField } from './molecules';
-import { Button, Input, IconButton } from './atoms';
+import { Modal } from './molecules/Modal';
+import { ConfirmDialog } from './molecules/ConfirmDialog';
+import { FormField } from './molecules/FormField';
+import { Button } from './atoms/Button';
+import { Input } from './atoms/Input';
+import { IconButton } from './atoms/IconButton';
 import { Badge } from './atoms/Badge';
 import API_BASE_URL from '../utils/api';
 import type { Workflow } from '../types/Workflow';
 import type { Collection } from '../types/Collection';
 import type { Environment } from '../types/Environment';
+import { authenticatedFetch } from '../utils/authenticatedApi';
+import { WebhookCiCdExamples } from './WebhookCiCdExamples';
 
 interface Webhook {
   webhookId: string;
@@ -46,12 +52,20 @@ interface NewWebhookFormData {
 
 type CopySuccessState = Record<string, boolean>;
 
+const buildManagementHeaders = (contentType?: boolean): HeadersInit => {
+  const headers: Record<string, string> = {};
+  if (contentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return headers;
+};
+
 export function WebhookManager() {
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [newWebhookData, setNewWebhookData] = useState<NewWebhookFormData>({
@@ -66,26 +80,26 @@ export function WebhookManager() {
   const [copySuccess, setCopySuccess] = useState<CopySuccessState>({});
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
-  useEffect(() => { loadAllData(); }, []);
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [wf, col] = await Promise.all([fetchWorkflows(), fetchCollections()]);
+        fetchEnvironments().catch(() => undefined);
+        await fetchAllWebhooksWithData(wf || [], col || []);
+      } catch (error) {
+        console.error('Error loading webhook data:', error);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   /* ---------- Data fetching ---------- */
 
-  const loadAllData = async () => {
-    setLoading(true);
-    try {
-      const [wf, col] = await Promise.all([fetchWorkflows(), fetchCollections()]);
-      fetchEnvironments().catch(() => undefined);
-      await fetchAllWebhooksWithData(wf || [], col || []);
-    } catch (error) {
-      console.error('Error loading webhook data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const fetchWorkflows = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/workflows`);
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/workflows`);
       if (res.ok) { const d = await res.json(); const list: Workflow[] = Array.isArray(d) ? d : d.workflows || []; setWorkflows(list); return list; }
     } catch (e) { console.error('Error fetching workflows:', e); }
     return [];
@@ -93,7 +107,7 @@ export function WebhookManager() {
 
   const fetchCollections = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/collections`);
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (res.ok) { const d = await res.json(); const list: Collection[] = Array.isArray(d) ? d : []; setCollections(list); return list; }
     } catch (e) { console.error('Error fetching collections:', e); }
     return [];
@@ -101,7 +115,7 @@ export function WebhookManager() {
 
   const fetchEnvironments = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/environments`);
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
       if (res.ok) { const d = await res.json(); const list: Environment[] = Array.isArray(d) ? d : []; setEnvironments(list); return list; }
     } catch (e) { console.error('Error fetching environments:', e); }
     return [];
@@ -109,16 +123,21 @@ export function WebhookManager() {
 
   const fetchAllWebhooksWithData = async (wfList: Workflow[], colList: Collection[]) => {
     try {
-      const all: Webhook[] = [];
-      for (const w of wfList) {
-        const res = await fetch(`${API_BASE_URL}/api/webhooks/workflows/${w.workflowId}`);
-        if (res.ok) { const d = await res.json(); all.push(...(Array.isArray(d) ? d : [])); }
-      }
-      for (const c of colList) {
-        const res = await fetch(`${API_BASE_URL}/api/webhooks/collections/${c.collectionId}`);
-        if (res.ok) { const d = await res.json(); all.push(...(Array.isArray(d) ? d : [])); }
-      }
-      setWebhooks(all);
+      const [workflowWebhookGroups, collectionWebhookGroups] = await Promise.all([
+        Promise.all(wfList.map(async (w) => {
+          const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/workflows/${w.workflowId}`);
+          if (!res.ok) return [] as Webhook[];
+          const d = await res.json();
+          return Array.isArray(d) ? d as Webhook[] : [];
+        })),
+        Promise.all(colList.map(async (c) => {
+          const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/collections/${c.collectionId}`);
+          if (!res.ok) return [] as Webhook[];
+          const d = await res.json();
+          return Array.isArray(d) ? d as Webhook[] : [];
+        })),
+      ]);
+      setWebhooks([...workflowWebhookGroups.flat(), ...collectionWebhookGroups.flat()]);
     } catch (e) { console.error('Error fetching webhooks:', e); }
   };
 
@@ -129,8 +148,8 @@ export function WebhookManager() {
   const createWebhook = async () => {
     if (!newWebhookData.resourceId) { toast.error('Please select a workflow or collection'); return; }
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newWebhookData),
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks`, {
+        method: 'POST', headers: buildManagementHeaders(true), body: JSON.stringify(newWebhookData),
       });
       if (res.ok) {
         const data = await res.json();
@@ -150,7 +169,7 @@ export function WebhookManager() {
   const confirmDeleteWebhook = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks/${deleteTarget}`, { method: 'DELETE' });
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${deleteTarget}`, { method: 'DELETE', headers: buildManagementHeaders() });
       if (res.ok) { await fetchAllWebhooks(); toast.success('Webhook deleted'); }
       else toast.error('Failed to delete webhook');
     } catch (e) { console.error('Error deleting webhook:', e); toast.error('Error deleting webhook'); }
@@ -159,8 +178,8 @@ export function WebhookManager() {
 
   const toggleWebhook = async (webhook: Webhook) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !webhook.enabled }),
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}`, {
+        method: 'PATCH', headers: buildManagementHeaders(true), body: JSON.stringify({ enabled: !webhook.enabled }),
       });
       if (res.ok) await fetchAllWebhooks();
       else toast.error('Failed to update webhook');
@@ -170,7 +189,7 @@ export function WebhookManager() {
   const confirmRegenerate = async () => {
     if (!webhookToRegenerate) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks/${webhookToRegenerate.webhookId}/regenerate-token`, { method: 'POST' });
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhookToRegenerate.webhookId}/regenerate-token`, { method: 'POST', headers: buildManagementHeaders() });
       if (res.ok) {
         const data = await res.json();
         setWebhookCredentials(data);
@@ -196,7 +215,7 @@ export function WebhookManager() {
     setSelectedWebhook(webhook);
     setShowLogsModal(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}/logs?limit=50`);
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}/logs?limit=50`, { headers: buildManagementHeaders() });
       if (res.ok) { const d = await res.json(); setWebhookLogs(d.logs || []); }
     } catch (e) { console.error('Error fetching webhook logs:', e); }
   };
@@ -290,7 +309,7 @@ export function WebhookManager() {
             <div className="mb-2">
               <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">Webhook URL:</span>
               <div className="flex items-center gap-2 mt-1">
-                <input type="text" readOnly value={wh.url} className="input input-bordered input-sm flex-1 font-mono text-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
+                <input type="text" readOnly value={wh.url} aria-label="Webhook URL" className="input input-bordered input-sm flex-1 font-mono text-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
                 <IconButton onClick={() => copyToClipboard(wh.url, `url-${wh.webhookId}`)} variant="ghost" size="sm" title="Copy URL">
                   {copySuccess[`url-${wh.webhookId}`] ? <Check className="w-4 h-4 text-status-success" /> : <Copy className="w-4 h-4" />}
                 </IconButton>
@@ -315,7 +334,7 @@ export function WebhookManager() {
 
       {/* Create Webhook */}
       <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Webhook" size="sm"
-        footer={<div className="flex gap-3 w-full"><Button onClick={() => setShowCreateModal(false)} variant="ghost" fullWidth>Cancel</Button><Button onClick={createWebhook} variant="primary" fullWidth>Create</Button></div>}>
+        footer={() => <div className="flex gap-3 w-full"><Button onClick={() => setShowCreateModal(false)} variant="ghost" fullWidth>Cancel</Button><Button onClick={createWebhook} variant="primary" fullWidth>Create</Button></div>}>
         <div className="space-y-4 p-5">
           <FormField label="Resource Type">
             <select value={newWebhookData.resourceType} onChange={(e) => setNewWebhookData({ ...newWebhookData, resourceType: e.target.value as 'workflow' | 'collection', resourceId: '' })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
@@ -345,7 +364,7 @@ export function WebhookManager() {
 
       {/* Credentials Modal */}
       <Modal isOpen={showCredentialsModal && !!webhookCredentials} onClose={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} title="Webhook Credentials" size="md"
-        footer={<Button onClick={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} variant="primary" fullWidth>I've Saved the Credentials</Button>}>
+        footer={() => <Button onClick={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} variant="primary" fullWidth>I've Saved the Credentials</Button>}>
         <div className="space-y-4 p-5">
           <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
             <p className="text-sm text-text-primary dark:text-text-primary-dark">⚠️ <strong>Important:</strong> Copy these credentials now. They will not be shown again!</p>
@@ -356,7 +375,7 @@ export function WebhookManager() {
             return (
               <FormField key={field} label={labels[field] ?? ''}>
                 <div className="flex items-center gap-2">
-                  <input type="text" readOnly value={webhookCredentials[field]} className="input input-bordered flex-1 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
+                    <input type="text" readOnly value={webhookCredentials[field]} aria-label={labels[field] ?? 'Webhook credential'} className="input input-bordered flex-1 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
                   <IconButton onClick={() => copyToClipboard(webhookCredentials[field], key)} variant="primary" size="sm">
                     {copySuccess[key] ? <Check className="w-4 h-4" /> : 'Copy'}
                   </IconButton>
@@ -374,6 +393,9 @@ export function WebhookManager() {
               </pre>
             </FormField>
           )}
+          <FormField label="CI/CD Examples">
+<WebhookCiCdExamples />
+          </FormField>
         </div>
       </Modal>
 

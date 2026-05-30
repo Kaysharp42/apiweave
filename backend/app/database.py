@@ -2,10 +2,28 @@
 MongoDB database connection and utilities with Beanie ODM
 """
 import logging
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+
 from beanie import init_beanie
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+
 from app.config import settings
-from app.models import Workflow, Run, Environment, Collection, Webhook, CollectionRun, WebhookLog
+from app.models import (
+    ApprovedDomain,
+    Collection,
+    CollectionRun,
+    DeletedUser,
+    Environment,
+    IdempotencyKey,
+    Invite,
+    OAuthState,
+    ProviderIdentity,
+    Run,
+    Session,
+    User,
+    Webhook,
+    WebhookLog,
+    Workflow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +49,15 @@ async def connect_db():
             Collection,
             Webhook,
             CollectionRun,
-            WebhookLog
+            WebhookLog,
+            IdempotencyKey,
+            User,
+            DeletedUser,
+            ProviderIdentity,
+            Session,
+            Invite,
+            ApprovedDomain,
+            OAuthState,
         ]
     )
 

@@ -3,6 +3,8 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '../atoms/Button';
 import { IconButton } from '../atoms/IconButton';
 
+const EMPTY_PAIRS: KeyValuePair[] = [];
+
 export interface KeyValuePair {
   key: string;
   value: string;
@@ -18,7 +20,7 @@ export interface KeyValueEditorProps {
 }
 
 export function KeyValueEditor({
-  pairs = [],
+  pairs = EMPTY_PAIRS,
   onChange,
   keyPlaceholder = 'Key',
   valuePlaceholder = 'Value',
@@ -59,13 +61,14 @@ export function KeyValueEditor({
       </div>
 
       {pairs.map((pair, index) => (
-        <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
+        <div key={pair.key} className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
           <input
             type="text"
             value={pair.key}
             onChange={(e) => updatePair(index, 'key', e.target.value)}
             placeholder={keyPlaceholder}
             readOnly={readOnly}
+            aria-label={`${keyPlaceholder} ${index + 1}`}
             className="input input-bordered input-sm w-full"
           />
           <input
@@ -74,6 +77,7 @@ export function KeyValueEditor({
             onChange={(e) => updatePair(index, 'value', e.target.value)}
             placeholder={valuePlaceholder}
             readOnly={readOnly}
+            aria-label={`${valuePlaceholder} ${index + 1}`}
             className="input input-bordered input-sm w-full"
           />
           {!readOnly && (
@@ -83,6 +87,7 @@ export function KeyValueEditor({
               variant="ghost"
               onClick={() => removePair(index)}
               className="text-text-muted hover:text-status-error"
+              aria-label={`Remove row ${index + 1}`}
             >
               <Trash2 className="w-4 h-4" />
             </IconButton>

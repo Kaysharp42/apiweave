@@ -1,8 +1,30 @@
-import { useState, useEffect, createContext } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { useState, useEffect, createContext, type ReactNode, useRef, useMemo } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home';
+import LoginPage from './pages/LoginPage';
+import SetupPage from './pages/SetupPage';
+import InvitePage from './pages/InvitePage';
+import AdminUsersPage from './pages/AdminUsersPage';
+import AdminDomainsPage from './pages/AdminDomainsPage';
 import { PaletteProvider } from './contexts/PaletteContext';
 import { Toast } from './components/atoms/Toast';
+import { AuthProvider } from './auth/AuthProvider';
+import { useAuth } from './auth/useAuth';
+import { AdminRoute } from './auth/AdminRoute';
+import MainLayout from './components/layout/MainLayout';
+import useNavigationStore from './stores/NavigationStore';
+
+const STORAGE_PREFIX = 'apiweave:v1:';
+
+const getStoredValue = (key: string): string | null => {
+  const versionedKey = `${STORAGE_PREFIX}${key}`;
+  return localStorage.getItem(versionedKey) ?? localStorage.getItem(key);
+};
+
+const setStoredValue = (key: string, value: string): void => {
+  localStorage.setItem(`${STORAGE_PREFIX}${key}`, value);
+  localStorage.setItem(key, value);
+};
 
 interface AppContextValue {
   darkMode: boolean;
@@ -18,10 +40,60 @@ export const AppContext = createContext<AppContextValue>({
   setAutoSaveEnabled: () => {},
 });
 
+// ---------------------------------------------------------------------------
+// ProtectedRoute — shows spinner while loading, redirects when unauthenticated
+// ---------------------------------------------------------------------------
+
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { status } = useAuth();
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface dark:bg-surface-dark">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+// ---------------------------------------------------------------------------
+// AdminPageShell — wraps admin pages in the full app layout
+// ---------------------------------------------------------------------------
+
+function AdminPageShell({ children }: { children: ReactNode }) {
+  const setNavState = useNavigationStore((state) => state.setNavState);
+  const hasSet = useRef(false);
+
+  useEffect(() => {
+    if (!hasSet.current) {
+      setNavState('settings');
+      hasSet.current = true;
+    }
+  }, [setNavState]);
+
+  return (
+    <AdminRoute>
+      <div className="relative flex flex-col h-screen font-sans text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised">
+        <MainLayout>{children}</MainLayout>
+      </div>
+    </AdminRoute>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     try {
-      const stored = localStorage.getItem('darkMode');
+      const stored = getStoredValue('darkMode');
       if (stored !== null) return stored === 'true';
       return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     } catch {
@@ -31,7 +103,7 @@ function App() {
 
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
     try {
-      const stored = localStorage.getItem('autoSaveEnabled');
+      const stored = getStoredValue('autoSaveEnabled');
       if (stored !== null) return stored === 'true';
       return true;
     } catch {
@@ -48,7 +120,7 @@ function App() {
         document.documentElement.classList.remove('dark');
         document.documentElement.setAttribute('data-theme', 'apiweave');
       }
-      localStorage.setItem('darkMode', darkMode ? 'true' : 'false');
+      setStoredValue('darkMode', darkMode ? 'true' : 'false');
     } catch {
       // ignore
     }
@@ -56,20 +128,53 @@ function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('autoSaveEnabled', autoSaveEnabled ? 'true' : 'false');
+      setStoredValue('autoSaveEnabled', autoSaveEnabled ? 'true' : 'false');
     } catch {
       // ignore
     }
   }, [autoSaveEnabled]);
 
+  const appContextValue = useMemo(
+    () => ({ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }),
+    [darkMode, autoSaveEnabled],
+  );
+
   return (
-    <AppContext.Provider value={{ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }}>
+    <AppContext.Provider value={appContextValue}>
       <PaletteProvider>
-        <Router>
-          <Routes>
-            <Route path="/*" element={<Home />} />
-          </Routes>
-        </Router>
+        <AuthProvider>
+          <Router>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/setup" element={<SetupPage />} />
+              <Route path="/invite/:token" element={<InvitePage />} />
+              <Route
+                path="/settings/users"
+                element={
+                  <AdminPageShell>
+                    <AdminUsersPage />
+                  </AdminPageShell>
+                }
+              />
+              <Route
+                path="/settings/domains"
+                element={
+                  <AdminPageShell>
+                    <AdminDomainsPage />
+                  </AdminPageShell>
+                }
+              />
+              <Route
+                path="/*"
+                element={
+                  <ProtectedRoute>
+                    <Home />
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </Router>
+        </AuthProvider>
         <Toast />
       </PaletteProvider>
     </AppContext.Provider>

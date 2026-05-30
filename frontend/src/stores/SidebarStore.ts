@@ -4,6 +4,7 @@ import type { Workflow } from '../types/Workflow';
 import type { Collection } from '../types/Collection';
 import type { Environment } from '../types/Environment';
 import type { PaginationState } from '../types/PaginationState';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface PaginatedWorkflowResponse {
   workflows: Workflow[];
@@ -67,7 +68,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
           ? `${API_BASE_URL}/api/workflows/unattached?skip=${skip}&limit=${limit}`
           : `${API_BASE_URL}/api/workflows?skip=${skip}&limit=${limit}`;
 
-      const response = await fetch(url);
+      const response = await authenticatedFetch(url);
       if (response.ok) {
         const data: PaginatedWorkflowResponse = await response.json();
         const prev = get().workflows;
@@ -92,7 +93,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
   fetchCollections: async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
         const data: Collection[] = await response.json();
         set({ collections: data, isRefreshing: false });
@@ -105,7 +106,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
   fetchEnvironments: async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/environments`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
       if (response.ok) {
         const data: Environment[] = await response.json();
         set({ environments: data });

@@ -9,6 +9,8 @@ from datetime import datetime, UTC
 import uuid
 
 from app.models import Environment, EnvironmentCreate, EnvironmentUpdate
+from app.auth.dependencies import require_permission
+from app.auth.permissions import ENVIRONMENTS_CREATE, ENVIRONMENTS_DELETE, ENVIRONMENTS_READ, ENVIRONMENTS_UPDATE
 from app.repositories import EnvironmentRepository
 from app.services import (
     list_environments as svc_list_environments,
@@ -25,19 +27,19 @@ from app.services.exceptions import ConflictError
 router = APIRouter(prefix="/api/environments", tags=["environments"])
 
 
-@router.post("", response_model=Environment, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=Environment, status_code=status.HTTP_201_CREATED, dependencies=[require_permission(ENVIRONMENTS_CREATE)])
 async def create_environment(environment: EnvironmentCreate):
     """Create a new environment"""
     return await svc_create_environment(environment)
 
 
-@router.get("", response_model=List[Environment])
+@router.get("", response_model=List[Environment], dependencies=[require_permission(ENVIRONMENTS_READ)])
 async def list_environments():
     """List all environments"""
     return await svc_list_environments()
 
 
-@router.get("/{environment_id}", response_model=Environment)
+@router.get("/{environment_id}", response_model=Environment, dependencies=[require_permission(ENVIRONMENTS_READ)])
 async def get_environment(environment_id: str):
     """Get an environment by ID"""
     try:
@@ -46,7 +48,7 @@ async def get_environment(environment_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/active/current", response_model=Environment)
+@router.get("/active/current", response_model=Environment, dependencies=[require_permission(ENVIRONMENTS_READ)])
 async def get_active_environment():
     """Get the currently active environment"""
     try:
@@ -55,7 +57,7 @@ async def get_active_environment():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.put("/{environment_id}", response_model=Environment)
+@router.put("/{environment_id}", response_model=Environment, dependencies=[require_permission(ENVIRONMENTS_UPDATE)])
 async def update_environment(environment_id: str, update: EnvironmentUpdate):
     """Update an environment"""
     try:
@@ -64,7 +66,7 @@ async def update_environment(environment_id: str, update: EnvironmentUpdate):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.delete("/{environment_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{environment_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require_permission(ENVIRONMENTS_DELETE)])
 async def delete_environment(environment_id: str):
     """Delete an environment"""
     try:
@@ -75,7 +77,7 @@ async def delete_environment(environment_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.post("/{environment_id}/activate", response_model=Environment)
+@router.post("/{environment_id}/activate", response_model=Environment, dependencies=[require_permission(ENVIRONMENTS_UPDATE)])
 async def activate_environment(environment_id: str):
     """Set an environment as active - deactivates all others"""
     try:
@@ -84,7 +86,7 @@ async def activate_environment(environment_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.post("/{environment_id}/duplicate", response_model=Environment, status_code=status.HTTP_201_CREATED)
+@router.post("/{environment_id}/duplicate", response_model=Environment, status_code=status.HTTP_201_CREATED, dependencies=[require_permission(ENVIRONMENTS_CREATE)])
 async def duplicate_environment(environment_id: str):
     """Duplicate an existing environment"""
     try:

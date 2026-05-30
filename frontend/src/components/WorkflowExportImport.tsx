@@ -1,4 +1,4 @@
-import { useState, useEffect, type ChangeEvent } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import { Download, Upload, FileText, AlertCircle, CheckCircle, X, AlertTriangle } from 'lucide-react';
 import { resolveWorkflowExportImportInitialTab } from '../utils/workflowExportImportTabs';
 import { Button } from './atoms/Button';
@@ -55,10 +55,6 @@ export function WorkflowExportImport({
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createMissingEnvs, setCreateMissingEnvs] = useState<boolean>(true);
-
-  useEffect(() => {
-    setActiveTab(resolveWorkflowExportImportInitialTab({ initialTab, mode }));
-  }, [initialTab, mode, workflowId]);
 
   const handleExport = async (): Promise<void> => {
     if (!workflowId) {
@@ -209,15 +205,9 @@ export function WorkflowExportImport({
   };
 
   return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      onClick={(e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="Workflow export import">
+      <button type="button" aria-label="Close workflow export import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
+      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
           <h2 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
@@ -236,6 +226,7 @@ export function WorkflowExportImport({
         {/* Tabs */}
         <div className="flex border-b border-border dark:border-border-dark">
           <button
+            type="button"
             onClick={() => workflowId && setActiveTab('export')}
             disabled={!workflowId}
             title={!workflowId ? 'Select a workflow from the list to export' : undefined}
@@ -249,6 +240,7 @@ export function WorkflowExportImport({
             Export
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('import')}
             className={`px-6 py-3 font-medium ${
               activeTab === 'import'
@@ -290,7 +282,7 @@ export function WorkflowExportImport({
               </div>
 
               <div className="space-y-3">
-                <label className="flex items-center space-x-3">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={includeEnvironment}
@@ -332,11 +324,12 @@ export function WorkflowExportImport({
 
               {/* File upload */}
               <div>
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                <label htmlFor="workflow-bundle-file" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Upload File
                 </label>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <Input
+                    id="workflow-bundle-file"
                     type="file"
                     accept=".json"
                     onChange={handleFileSelect}
@@ -354,10 +347,11 @@ export function WorkflowExportImport({
 
               {/* Or paste JSON */}
               <div>
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                <label htmlFor="workflow-bundle-json" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Or Paste JSON
                 </label>
                 <TextArea
+                  id="workflow-bundle-json"
                   value={importJson}
                   onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                     setImportJson(e.target.value);
@@ -373,7 +367,7 @@ export function WorkflowExportImport({
 
               {/* Options */}
               <div className="space-y-3">
-                <label className="flex items-center space-x-3">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={createMissingEnvs}
@@ -424,16 +418,16 @@ export function WorkflowExportImport({
 
                       {dryRunResult.errors && dryRunResult.errors.length > 0 && (
                         <ul className="mt-2 text-sm text-status-error dark:text-status-error-dark list-disc list-inside">
-                          {dryRunResult.errors.map((err: string, idx: number) => (
-                            <li key={idx}>{err}</li>
+                          {dryRunResult.errors.map((err: string) => (
+                            <li key={err}>{err}</li>
                           ))}
                         </ul>
                       )}
 
                       {dryRunResult.warnings && dryRunResult.warnings.length > 0 && (
                         <ul className="mt-2 text-sm text-yellow-700 dark:text-yellow-400 list-disc list-inside">
-                          {dryRunResult.warnings.map((warn: string, idx: number) => (
-                            <li key={idx}>{warn}</li>
+                          {dryRunResult.warnings.map((warn: string) => (
+                            <li key={warn}>{warn}</li>
                           ))}
                         </ul>
                       )}
@@ -472,7 +466,7 @@ export function WorkflowExportImport({
               )}
 
               {/* Action buttons */}
-              <div className="flex space-x-3">
+              <div className="flex gap-3">
                 <Button
                   onClick={handleDryRun}
                   disabled={!importJson}
@@ -497,7 +491,7 @@ export function WorkflowExportImport({
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

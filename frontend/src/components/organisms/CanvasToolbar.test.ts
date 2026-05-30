@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildEnvironmentOptions } from './CanvasToolbar';
+import { buildEnvironmentOptions } from './canvasToolbarUtils';
 
 test('buildEnvironmentOptions includes fallback environment first', () => {
   const options = buildEnvironmentOptions([

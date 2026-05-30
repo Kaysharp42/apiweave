@@ -152,6 +152,7 @@ export function BaseNode({
 
             {collapsible && (
               <button
+                type="button"
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="p-1 rounded-md text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus:outline-none"
                 style={{ background: 'transparent', border: 'none', WebkitTapHighlightColor: 'transparent' }}

@@ -4,7 +4,7 @@ export interface PanelProps {
   collapsible?: boolean;
   defaultExpanded?: boolean;
   headerActions?: React.ReactNode;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
 }

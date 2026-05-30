@@ -5,6 +5,7 @@ import useCanvasStore from '../stores/CanvasStore';
 import { Button } from './atoms/Button';
 import { TextArea } from './atoms/TextArea';
 import { IconButton } from './atoms/IconButton';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface Workflow {
   workflowId: string;
@@ -39,12 +40,12 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(currentWorkflowId || '');
-  const [loadingWorkflows, setLoadingWorkflows] = useState<boolean>(true);
+  const [loadingWorkflows, setLoadingWorkflows] = useState<boolean>(false);
 
   useEffect(() => {
-    const fetchWorkflows = async () => {
+    (async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/workflows?limit=100`);
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows?limit=100`);
         if (response.ok) {
           const data = await response.json();
           setWorkflows(data.workflows || []);
@@ -54,8 +55,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
       } finally {
         setLoadingWorkflows(false);
       }
-    };
-    fetchWorkflows();
+    })();
   }, []);
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -131,7 +131,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
       params.append('curl_command', curlInput);
       params.append('sanitize', String(sanitize));
 
-      const response = await fetch(`${API_BASE_URL}/api/workflows/import/curl/dry-run?${params}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/import/curl/dry-run?${params}`, {
         method: 'POST',
       });
 
@@ -169,7 +169,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
         params.append('workflowId', selectedWorkflowId);
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
         method: 'POST',
       });
 
@@ -214,15 +214,9 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <>
+      <button type="button" aria-label="Close curl import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
+      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
           <div className="flex items-center gap-2">
@@ -281,11 +275,12 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
           {/* Text Input Area */}
           <div>
-            <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-              Or paste curl commands here:
-            </label>
-            <TextArea
-              value={curlInput}
+                <label htmlFor="curl-paste-area" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                  Or paste curl commands here:
+                </label>
+                <TextArea
+                  id="curl-paste-area"
+                  value={curlInput}
               onChange={(e) => setCurlInput(e.target.value)}
               placeholder={`curl -X GET "https://api.example.com/users" \\
   -H "Authorization: Bearer token123" \\
@@ -323,10 +318,11 @@ curl -X POST "https://api.example.com/users" \\
             <div className="space-y-3 p-3 bg-surface dark:bg-surface-dark rounded-lg">
               {/* Workflow Selection */}
               <div>
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                <label htmlFor="curl-destination-workflow" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Destination Workflow
                 </label>
                 <select
+                  id="curl-destination-workflow"
                   value={selectedWorkflowId}
                   onChange={(e) => setSelectedWorkflowId(e.target.value)}
                   disabled={loadingWorkflows}
@@ -356,7 +352,7 @@ curl -X POST "https://api.example.com/users" \\
               </div>
 
               {/* Sanitize Option */}
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={sanitize}
@@ -401,7 +397,7 @@ curl -X POST "https://api.example.com/users" \\
         </div>
 
         {/* Footer */}
-        <div className="flex space-x-3 p-4 border-t border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <div className="flex gap-3 p-4 border-t border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
           <Button
             onClick={handlePreview}
             disabled={!curlInput || isLoading}
@@ -431,7 +427,7 @@ curl -X POST "https://api.example.com/users" \\
           </Button>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

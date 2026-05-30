@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type DragEvent, type ChangeEvent } from 'react';
+import { useState, useRef, type DragEvent, type ChangeEvent } from 'react';
 import useSidebarStore from '../stores/SidebarStore';
 import {
   X,
@@ -20,6 +20,7 @@ import { IconButton } from './atoms/IconButton';
 import { Input } from './atoms/Input';
 import { TextArea } from './atoms/TextArea';
 import type { Collection } from '../types/Collection';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface CollectionWithWorkflowCount extends Collection {
   workflowCount?: number;
@@ -105,7 +106,7 @@ export function CollectionExportImport({
   mode = 'export',
   onImportSuccess = () => {},
 }: CollectionExportImportProps) {
-  const [activeTab, setActiveTab] = useState<TabId>(mode);
+  const [selectedTab, setActiveTab] = useState<TabId | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<MessageState | null>(null);
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
@@ -120,15 +121,7 @@ export function CollectionExportImport({
   const [selectedTargetCollection, setSelectedTargetCollection] = useState<string | null>(null);
   const [sanitize, setSanitize] = useState<boolean>(true);
 
-  useEffect(() => {
-    setActiveTab(mode);
-  }, [mode]);
-
-  useEffect(() => {
-    if (activeTab === 'import-workflows' || activeTab === 'import-har' || activeTab === 'import-openapi' || activeTab === 'import-curl') {
-      fetchCollections();
-    }
-  }, [activeTab]);
+  const activeTab = selectedTab ?? mode;
 
   const formatErrorMessage = (error: unknown): string => {
     if (typeof error === 'string') {
@@ -154,7 +147,7 @@ export function CollectionExportImport({
 
   const fetchCollections = async (): Promise<void> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
       if (response.ok) {
         const data: CollectionWithWorkflowCount[] = await response.json();
         const filtered = data.filter((c: CollectionWithWorkflowCount) => c.collectionId !== collectionId);
@@ -170,7 +163,7 @@ export function CollectionExportImport({
     setMessage(null);
 
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/${collectionId}/export?include_environment=${includeEnvironments}`
       );
 
@@ -233,7 +226,7 @@ export function CollectionExportImport({
         return;
       }
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/import/dry-run`,
         {
           method: 'POST',
@@ -296,7 +289,7 @@ export function CollectionExportImport({
         return;
       }
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/import`,
         {
           method: 'POST',
@@ -397,7 +390,7 @@ export function CollectionExportImport({
       if (detectedType === 'workflow') {
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'workflow.json');
-        parseResponse = await fetch(
+        parseResponse = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows/import`,
           {
             method: 'POST',
@@ -409,7 +402,7 @@ export function CollectionExportImport({
           const importResult: { workflowId: string } = await parseResponse.json();
           const workflowId = importResult.workflowId;
 
-          const assignResponse = await fetch(
+          const assignResponse = await authenticatedFetch(
             `${API_BASE_URL}/api/collections/${selectedTargetCollection}/workflows/${workflowId}/assign`,
             {
               method: 'POST',
@@ -454,7 +447,7 @@ export function CollectionExportImport({
       } else if (detectedType === 'openapi') {
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'openapi.json');
-        parseResponse = await fetch(
+        parseResponse = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows/import/openapi?sanitize=${sanitize}&parse_only=true`,
           {
             method: 'POST',
@@ -464,7 +457,7 @@ export function CollectionExportImport({
       } else {
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'har.json');
-        parseResponse = await fetch(
+        parseResponse = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows/import/har?import_mode=${importMode}&sanitize=${sanitize}&parse_only=true`,
           {
             method: 'POST',
@@ -514,7 +507,7 @@ export function CollectionExportImport({
           tags: ['imported']
         };
 
-        const createResponse = await fetch(
+        const createResponse = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows`,
           {
             method: 'POST',
@@ -598,7 +591,7 @@ export function CollectionExportImport({
       params.append('sanitize', String(sanitize));
       params.append('workflowId', selectedTargetCollection);
 
-      const response = await fetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
         method: 'POST',
       });
 
@@ -636,16 +629,16 @@ export function CollectionExportImport({
     }
   };
 
-  const handleDragOver = (e: DragEvent<HTMLDivElement>): void => {
+  const handleDragOver = (e: DragEvent<HTMLButtonElement>): void => {
     e.preventDefault();
     e.currentTarget.classList.add('border-blue-500', 'bg-blue-50');
   };
 
-  const handleDragLeave = (e: DragEvent<HTMLDivElement>): void => {
+  const handleDragLeave = (e: DragEvent<HTMLButtonElement>): void => {
     e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
   };
 
-  const handleDrop = (e: DragEvent<HTMLDivElement>): void => {
+  const handleDrop = (e: DragEvent<HTMLButtonElement>): void => {
     e.preventDefault();
     e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
 
@@ -687,8 +680,9 @@ export function CollectionExportImport({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
+    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="Collection export import">
+      <button type="button" aria-label="Close collection export import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
+      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-border dark:border-border-dark">
           <h2 className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
@@ -711,6 +705,7 @@ export function CollectionExportImport({
         {/* Tabs */}
         <div className="flex border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
           <button
+            type="button"
             onClick={() => {
               setActiveTab('export');
               setMessage(null);
@@ -722,6 +717,7 @@ export function CollectionExportImport({
             Export Collection
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-collection');
               setMessage(null);
@@ -734,6 +730,7 @@ export function CollectionExportImport({
             Import Collection
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-workflows');
               setMessage(null);
@@ -745,6 +742,7 @@ export function CollectionExportImport({
             Import Workflows
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-har');
               setMessage(null);
@@ -756,6 +754,7 @@ export function CollectionExportImport({
             HAR File
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-openapi');
               setMessage(null);
@@ -767,6 +766,7 @@ export function CollectionExportImport({
             OpenAPI
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('import-curl');
               setMessage(null);
@@ -838,7 +838,8 @@ export function CollectionExportImport({
           {activeTab === 'import-collection' && (
             <div className="space-y-4">
               {/* Upload */}
-              <div
+              <button
+                type="button"
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -853,9 +854,10 @@ export function CollectionExportImport({
                   type="file"
                   accept=".awecollection,.json"
                   onChange={handleFileInputChange}
+                  aria-label="Collection bundle file upload"
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {uploadedFile && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
@@ -866,10 +868,11 @@ export function CollectionExportImport({
 
               {/* Paste JSON */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-export-paste-json" className="block text-sm font-medium mb-2 text-text-primary dark:text-text-primary-dark">
                   Or paste JSON:
                 </label>
                 <TextArea
+                  id="collection-export-paste-json"
                   value={pastedJson}
                   onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                     setPastedJson(e.target.value);
@@ -891,8 +894,8 @@ export function CollectionExportImport({
                     </p>
                   ) : (
                     <div className="space-y-1">
-                      {validation.errors.map((err: string, i: number) => (
-                        <p key={i} className="text-status-error dark:text-status-error-dark text-sm flex items-center gap-2">
+                      {validation.errors.map((err: string) => (
+                        <p key={err} className="text-status-error dark:text-status-error-dark text-sm flex items-center gap-2">
                           <AlertCircle size={14} /> {err}
                         </p>
                       ))}
@@ -901,8 +904,8 @@ export function CollectionExportImport({
 
                   {validation.warnings && validation.warnings.length > 0 && (
                     <div className="space-y-1">
-                      {validation.warnings.map((warn: string, i: number) => (
-                        <p key={i} className="text-yellow-600 dark:text-yellow-400 text-sm flex items-center gap-2">
+                      {validation.warnings.map((warn: string) => (
+                        <p key={warn} className="text-yellow-600 dark:text-yellow-400 text-sm flex items-center gap-2">
                           <Info size={14} /> {warn}
                         </p>
                       ))}
@@ -964,7 +967,7 @@ export function CollectionExportImport({
                     onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value)}
                     className="ml-7 w-full px-3 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                   >
-                    <option value="">Select collection...</option>
+                    <option value="">Select collection…</option>
                     {collections.map((c: CollectionWithWorkflowCount) => (
                       <option key={c.collectionId} value={c.collectionId}>
                         {c.name}
@@ -1010,10 +1013,11 @@ export function CollectionExportImport({
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-import-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
+                  id="collection-import-select"
                   value={selectedTargetCollection || ''}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1033,7 +1037,8 @@ export function CollectionExportImport({
               </div>
 
               {/* Upload */}
-              <div
+              <button
+                type="button"
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -1050,9 +1055,10 @@ export function CollectionExportImport({
                   type="file"
                   accept=".json,.har"
                   onChange={handleFileInputChange}
+                  aria-label="Collection workflow or HAR file upload"
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {uploadedFile && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
@@ -1099,10 +1105,11 @@ export function CollectionExportImport({
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-har-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
+                  id="collection-har-select"
                   value={selectedTargetCollection || ''}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1122,7 +1129,8 @@ export function CollectionExportImport({
               </div>
 
               {/* Upload */}
-              <div
+              <button
+                type="button"
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -1139,9 +1147,10 @@ export function CollectionExportImport({
                   type="file"
                   accept=".json,.har"
                   onChange={handleFileInputChange}
+                  aria-label="Collection workflow or HAR file upload"
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {uploadedFile && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
@@ -1188,10 +1197,11 @@ export function CollectionExportImport({
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-openapi-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
+                  id="collection-openapi-select"
                   value={selectedTargetCollection || ''}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1211,7 +1221,8 @@ export function CollectionExportImport({
               </div>
 
               {/* Upload */}
-              <div
+              <button
+                type="button"
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -1228,9 +1239,10 @@ export function CollectionExportImport({
                   type="file"
                   accept=".json,.har"
                   onChange={handleFileInputChange}
+                  aria-label="Collection OpenAPI file upload"
                   className="hidden"
                 />
-              </div>
+              </button>
 
               {uploadedFile && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg flex items-center gap-2 text-status-success dark:text-status-success-dark">
@@ -1277,10 +1289,11 @@ export function CollectionExportImport({
 
               {/* Collection Selector */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-curl-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Select Collection
                 </label>
                 <select
+                  id="collection-curl-select"
                   value={selectedTargetCollection || ''}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1301,10 +1314,11 @@ export function CollectionExportImport({
 
               {/* cURL Input */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                <label htmlFor="collection-curl-commands" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   cURL Command(s)
                 </label>
                 <TextArea
+                  id="collection-curl-commands"
                   value={pastedJson}
                   onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setPastedJson(e.target.value)}
                   placeholder="Paste your cURL command here (single or multiple commands separated by &&)"
@@ -1341,7 +1355,7 @@ export function CollectionExportImport({
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

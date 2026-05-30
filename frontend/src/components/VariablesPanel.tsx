@@ -1,19 +1,64 @@
-import { useState } from 'react';
+import { useReducer } from 'react';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { GitMerge, Pencil, Search, Trash2 } from 'lucide-react';
-import { Button, IconButton } from './atoms';
+import { Button } from './atoms/Button';
+import { IconButton } from './atoms/IconButton';
 
 export default function VariablesPanel() {
   const { variables, updateVariable, deleteVariablesWithCleanup } = useWorkflow();
 
-  const [showForm, setShowForm] = useState(false);
-  const [newVarName, setNewVarName] = useState('');
-  const [newVarValue, setNewVarValue] = useState('');
-  const [editingVar, setEditingVar] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  type VariablesPanelState = {
+    showForm: boolean;
+    newVarName: string;
+    newVarValue: string;
+    editingVar: string | null;
+    editValue: string;
+    searchTerm: string;
+  };
 
-  const normalizedQuery = searchTerm.trim().toLowerCase();
+  type VariablesPanelAction =
+    | { type: 'toggle-form' }
+    | { type: 'set-new-var-name'; value: string }
+    | { type: 'set-new-var-value'; value: string }
+    | { type: 'start-edit'; varName: string; value: string }
+    | { type: 'set-edit-value'; value: string }
+    | { type: 'clear-edit' }
+    | { type: 'set-search-term'; value: string }
+    | { type: 'reset-add-form' };
+
+  const initialState: VariablesPanelState = {
+    showForm: false,
+    newVarName: '',
+    newVarValue: '',
+    editingVar: null,
+    editValue: '',
+    searchTerm: '',
+  };
+
+  const [state, dispatch] = useReducer((current: VariablesPanelState, action: VariablesPanelAction): VariablesPanelState => {
+    switch (action.type) {
+      case 'toggle-form':
+        return { ...current, showForm: !current.showForm };
+      case 'set-new-var-name':
+        return { ...current, newVarName: action.value };
+      case 'set-new-var-value':
+        return { ...current, newVarValue: action.value };
+      case 'start-edit':
+        return { ...current, editingVar: action.varName, editValue: action.value };
+      case 'set-edit-value':
+        return { ...current, editValue: action.value };
+      case 'clear-edit':
+        return { ...current, editingVar: null, editValue: '' };
+      case 'set-search-term':
+        return { ...current, searchTerm: action.value };
+      case 'reset-add-form':
+        return { ...current, showForm: false, newVarName: '', newVarValue: '' };
+      default:
+        return current;
+    }
+  }, initialState);
+
+  const normalizedQuery = state.searchTerm.trim().toLowerCase();
   const filteredVariables = Object.entries(variables ?? {}).filter(([varName, varValue]) => {
     if (!normalizedQuery) return true;
 
@@ -28,11 +73,9 @@ export default function VariablesPanel() {
   });
 
   const handleAdd = () => {
-    if (newVarName.trim()) {
-      updateVariable(newVarName.trim(), newVarValue);
-      setNewVarName('');
-      setNewVarValue('');
-      setShowForm(false);
+    if (state.newVarName.trim()) {
+      updateVariable(state.newVarName.trim(), state.newVarValue);
+      dispatch({ type: 'reset-add-form' });
     }
   };
 
@@ -42,7 +85,7 @@ export default function VariablesPanel() {
 
   const handleEdit = (varName: string, value: string) => {
     updateVariable(varName, value);
-    setEditingVar(null);
+    dispatch({ type: 'clear-edit' });
   };
 
   return (
@@ -50,10 +93,10 @@ export default function VariablesPanel() {
       <div className="sticky top-0 bg-slate-50 dark:bg-gray-900 border-b dark:border-gray-700 p-3 z-10">
         <div className="relative mb-2">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
+            <input
+              type="text"
+              value={state.searchTerm}
+              onChange={(event) => dispatch({ type: 'set-search-term', value: event.target.value })}
             placeholder="Search variables"
             className="w-full pl-8 pr-2 py-1.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-gray-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
             aria-label="Search variables"
@@ -61,7 +104,7 @@ export default function VariablesPanel() {
         </div>
 
         <Button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => dispatch({ type: 'toggle-form' })}
           size="xs"
           fullWidth
         >
@@ -70,21 +113,23 @@ export default function VariablesPanel() {
       </div>
 
       <div className="p-3 space-y-2 flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
-        {showForm && (
+        {state.showForm && (
           <div className="p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded space-y-2">
             <input
               type="text"
               placeholder="Variable name"
+              aria-label="Variable name"
               className="w-full px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-gray-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-              value={newVarName}
-              onChange={(e) => setNewVarName(e.target.value)}
+              value={state.newVarName}
+              onChange={(e) => dispatch({ type: 'set-new-var-name', value: e.target.value })}
             />
             <textarea
               placeholder="Value (can be JSON, text, etc.)"
+              aria-label="Variable value"
               className="w-full px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-gray-400 rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary"
               rows={3}
-              value={newVarValue}
-              onChange={(e) => setNewVarValue(e.target.value)}
+              value={state.newVarValue}
+              onChange={(e) => dispatch({ type: 'set-new-var-value', value: e.target.value })}
             />
             <div className="flex gap-2">
               <Button
@@ -95,12 +140,10 @@ export default function VariablesPanel() {
               >
                 Save
               </Button>
-              <Button
-                onClick={() => {
-                  setShowForm(false);
-                  setNewVarName('');
-                  setNewVarValue('');
-                }}
+                <Button
+                  onClick={() => {
+                    dispatch({ type: 'reset-add-form' });
+                  }}
                 variant="ghost"
                 size="xs"
                 fullWidth
@@ -126,10 +169,7 @@ export default function VariablesPanel() {
                     {varName}
                   </code>
                   <IconButton
-                    onClick={() => {
-                      setEditingVar(varName);
-                      setEditValue(typeof varValue === 'string' ? varValue : JSON.stringify(varValue));
-                    }}
+                      onClick={() => dispatch({ type: 'start-edit', varName, value: typeof varValue === 'string' ? varValue : JSON.stringify(varValue) })}
                     variant="primary"
                     size="xs"
                     tooltip="Edit variable"
@@ -148,17 +188,18 @@ export default function VariablesPanel() {
                   </IconButton>
                 </div>
 
-                {editingVar === varName ? (
+                {state.editingVar === varName ? (
                   <div className="space-y-1">
                     <textarea
+                      aria-label={`Variable ${varName} value`}
                       className="w-full px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                       rows={3}
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
+                      value={state.editValue}
+                      onChange={(e) => dispatch({ type: 'set-edit-value', value: e.target.value })}
                     />
                     <div className="flex gap-1">
                       <Button
-                        onClick={() => handleEdit(varName, editValue)}
+                        onClick={() => handleEdit(varName, state.editValue)}
                         size="xs"
                         intent="success"
                         fullWidth
@@ -166,7 +207,7 @@ export default function VariablesPanel() {
                         Save
                       </Button>
                       <Button
-                        onClick={() => setEditingVar(null)}
+                        onClick={() => dispatch({ type: 'clear-edit' })}
                         variant="ghost"
                         size="xs"
                         fullWidth

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Allotment } from 'allotment';
 // @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
+import { useLocation } from 'react-router-dom';
 import { AppNavBar } from './AppNavBar';
 import { Sidebar } from './Sidebar';
 import { Workspace } from './Workspace';
@@ -11,72 +12,45 @@ import SecretsPrompt from '../SecretsPrompt';
 import useNavigationStore from '../../stores/NavigationStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
-import { HorizontalDivider } from '../atoms';
-import API_BASE_URL from '../../utils/api';
+import { HorizontalDivider } from '../atoms/HorizontalDivider';
 import type { Environment } from '../../types/Environment';
 
-export function MainLayout() {
+export function MainLayout({ children }: { children?: ReactNode }) {
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
+  const setNavState = useNavigationStore((state) => state.setNavState);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
-  const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
-  const [environmentWithSecrets, setEnvironmentWithSecrets] = useState<Environment | null>(null);
-  const [showSecretsPrompt, setShowSecretsPrompt] = useState(false);
+  const location = useLocation();
+  const environments = useSidebarStore((state) => state.environments);
+  const fetchEnvironments = useSidebarStore((state) => state.fetchEnvironments);
+  const refreshAll = useSidebarStore((state) => state.refreshAll);
+  const resetPagination = useSidebarStore((state) => state.resetPagination);
+  const [dismissedEnvironmentId, setDismissedEnvironmentId] = useState<string | null>(null);
+  const environmentWithSecrets = useMemo<Environment | null>(() => (
+    environments.find((env) => {
+      if (!env.secrets || Object.keys(env.secrets).length === 0) return false;
+      return !Object.keys(env.secrets).every((key) => sessionStorage.getItem(`secret_${key}`));
+    }) ?? null
+  ), [environments]);
+  const isSecretsPromptOpen = environmentWithSecrets !== null && environmentWithSecrets.environmentId !== dismissedEnvironmentId;
 
   useEffect(() => {
-    const checkEnvironmentSecrets = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/environments`);
-        if (response.ok) {
-          const environments: Environment[] = await response.json();
+    void fetchEnvironments();
+  }, [fetchEnvironments]);
 
-          for (const env of environments) {
-            if (env.secrets && Object.keys(env.secrets).length > 0) {
-              const secretsEntered = Object.keys(env.secrets).every((key) =>
-                sessionStorage.getItem(`secret_${key}`)
-              );
-
-              if (!secretsEntered) {
-                setEnvironmentWithSecrets(env);
-                setShowSecretsPrompt(true);
-                break;
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error checking environment secrets:', error);
-      }
-    };
-
-    checkEnvironmentSecrets();
-  }, []);
-
-  const environmentVersion = useSidebarStore((s) => s.environmentVersion);
   useEffect(() => {
-    if (environmentVersion > 0) {
-      const checkSecrets = async () => {
-        try {
-          const response = await fetch(`${API_BASE_URL}/api/environments`);
-          if (response.ok) {
-            const envs: Environment[] = await response.json();
-            for (const env of envs) {
-              if (env.isActive && env.secrets) {
-                for (const [, val] of Object.entries(env.secrets)) {
-                  if (!val || val === '***') {
-                    setShowSecretsPrompt(true);
-                    return;
-                  }
-                }
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error checking environment secrets:', error);
-        }
-      };
-      checkSecrets();
+    if (!location.pathname.startsWith('/settings/') && navigationSelectedValue === 'settings') {
+      setNavState('workflows');
     }
-  }, [environmentVersion]);
+  }, [location.pathname, navigationSelectedValue, setNavState]);
+
+  useEffect(() => {
+    if (navigationSelectedValue === 'workflows') {
+      resetPagination();
+      void refreshAll(navigationSelectedValue);
+    } else if (navigationSelectedValue === 'collections') {
+      void refreshAll(navigationSelectedValue);
+    }
+  }, [navigationSelectedValue, refreshAll, resetPagination]);
 
   const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth!.absolute;
   const expandedPreferred = 450;
@@ -101,8 +75,6 @@ export function MainLayout() {
               {!isNavBarCollapsed && (
                 <div className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
                   <Sidebar
-                    selectedNav={navigationSelectedValue}
-                    currentWorkflowId={currentWorkflowId}
                   />
                 </div>
               )}
@@ -110,7 +82,7 @@ export function MainLayout() {
           </Allotment.Pane>
 
           <Allotment.Pane>
-            <Workspace onActiveTabChange={setCurrentWorkflowId} />
+            {children !== undefined ? children : <Workspace />}
           </Allotment.Pane>
         </Allotment>
       </main>
@@ -120,10 +92,10 @@ export function MainLayout() {
 
       {environmentWithSecrets && (
         <SecretsPrompt
-          isOpen={showSecretsPrompt}
+          isOpen={isSecretsPromptOpen}
           environment={environmentWithSecrets}
-          onClose={() => setShowSecretsPrompt(false)}
-          onSecretsProvided={() => setShowSecretsPrompt(false)}
+          onClose={() => setDismissedEnvironmentId(environmentWithSecrets.environmentId)}
+          onSecretsProvided={() => setDismissedEnvironmentId(environmentWithSecrets.environmentId)}
         />
       )}
     </>

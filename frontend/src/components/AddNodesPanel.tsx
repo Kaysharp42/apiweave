@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type DragEvent } from 'react';
+import { useState, useMemo, type DragEvent } from 'react';
 import { Popover, Transition } from '@headlessui/react';
 import { X, Plus, PanelRightOpen, Search, Globe, GitBranch, CheckCircle, Package, type LucideIcon } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
@@ -95,10 +95,6 @@ export default function AddNodesPanel({
   const [searchQuery, setSearchQuery] = useState('');
   const { importedGroups } = usePalette();
 
-  useEffect(() => {
-    setSearchQuery((currentValue) => getNextNodeFilterValue({ currentValue, isModalOpen }));
-  }, [isModalOpen]);
-
   const allSections = useMemo<NodeSection[]>(() => {
     const sections: NodeSection[] = nodeTemplates.map((cat) => ({
       key: cat.category,
@@ -159,17 +155,16 @@ export default function AddNodesPanel({
   const filteredSections = useMemo(() => {
     if (!searchQuery.trim()) return allSections;
     const q = searchQuery.toLowerCase();
-    return allSections
-      .map((sec) => ({
-        ...sec,
-        nodes: sec.nodes.filter(
-          (n) =>
-            n.label.toLowerCase().includes(q) ||
-            (n.method && n.method.toLowerCase().includes(q)) ||
-            (n.description && n.description.toLowerCase().includes(q)),
-        ),
-      }))
-      .filter((sec) => sec.nodes.length > 0);
+    return allSections.reduce<NodeSection[]>((sections, sec) => {
+      const nodes = sec.nodes.filter(
+        (n) =>
+          n.label.toLowerCase().includes(q) ||
+          (n.method && n.method.toLowerCase().includes(q)) ||
+          (n.description && n.description.toLowerCase().includes(q)),
+      );
+      if (nodes.length > 0) sections.push({ ...sec, nodes });
+      return sections;
+    }, []);
   }, [allSections, searchQuery]);
 
   const onDragStart = (event: DragEvent, node: NodeTemplate) => {
@@ -195,6 +190,7 @@ export default function AddNodesPanel({
     >
       {!showVariablesPanel && (
         <button
+          type="button"
           onClick={() => onShowVariablesPanel(true)}
           className="flex items-center justify-center w-11 h-11 rounded-full bg-primary text-white shadow-lg ring-1 ring-primary/40 hover:brightness-110 transition-all"
           title="Show Side Panel (Variables, Functions, Settings)"
@@ -232,7 +228,7 @@ export default function AddNodesPanel({
                 <div className="p-3 border-b border-border-default dark:border-border-default-dark">
                   <h3 className="text-sm font-bold text-primary dark:text-primary-dark mb-2">
                     Add Nodes
-                    <span className="ml-1 text-text-muted dark:text-text-muted-dark font-normal text-xs">— drag to canvas</span>
+                    <span className="ml-1 text-text-muted dark:text-text-muted-dark font-normal text-xs"> -- drag to canvas</span>
                   </h3>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark" />
@@ -240,6 +236,7 @@ export default function AddNodesPanel({
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      aria-label="Filter nodes"
                       onKeyDown={(e) => {
                         if (shouldClearNodeFilter({ key: e.key })) {
                           setSearchQuery((currentValue) =>
@@ -249,7 +246,6 @@ export default function AddNodesPanel({
                       }}
                       placeholder="Filter nodes…"
                       className="w-full pl-8 pr-8 py-1.5 text-sm rounded-lg border border-border-default dark:border-border-default-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-primary-dark"
-                      autoFocus
                     />
 
                     {searchQuery && (
@@ -311,7 +307,7 @@ interface NodeSectionProps {
 function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }: NodeSectionProps) {
   return (
     <div className="collapse collapse-arrow rounded-none border-b border-border-default dark:border-border-default-dark last:border-b-0">
-      <input type="checkbox" defaultChecked={defaultOpen} />
+      <input type="checkbox" defaultChecked={defaultOpen} aria-label={`Toggle ${title}`} />
       <div className="collapse-title text-sm font-medium py-2 min-h-0 flex items-center gap-2 text-text-primary dark:text-text-primary-dark">
         <Icon className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />
         <span>{title}</span>
@@ -319,9 +315,9 @@ function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }: Nod
       </div>
       <div className="collapse-content px-2 pb-1">
         <div className="space-y-0.5">
-          {nodes.map((node, idx) => (
+          {nodes.map((node) => (
             <div
-              key={idx}
+              key={`${node.type}-${node.label}`}
               draggable
               onDragStart={(e) => onDragStart(e, node)}
               className="group flex flex-col gap-0.5 px-2.5 py-1.5 rounded-md cursor-grab hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay active:cursor-grabbing transition-colors"

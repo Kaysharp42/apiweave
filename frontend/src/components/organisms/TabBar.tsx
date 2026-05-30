@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { IconButton } from '../atoms';
+import { IconButton } from '../atoms/IconButton';
 import useTabStore from '../../stores/TabStore';
 import type { WorkspaceTab } from '../../types/WorkspaceTab';
 
@@ -13,30 +13,32 @@ interface ContextMenuState {
 export function TabBar() {
   const { tabs, activeTabId, setActive, closeTab, closeOthers, closeAll } = useTabStore();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const checkOverflowRef = useRef<() => void>(() => {});
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
-  const checkOverflow = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 0);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-  }, []);
-
   useEffect(() => {
-    checkOverflow();
+    checkOverflowRef.current = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      setCanScrollLeft(el.scrollLeft > 0);
+      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    };
+
+    checkOverflowRef.current();
     const el = scrollRef.current;
     if (el) {
-      el.addEventListener('scroll', checkOverflow, { passive: true });
-      const ro = new ResizeObserver(checkOverflow);
+      const onScroll = () => checkOverflowRef.current();
+      el.addEventListener('scroll', onScroll, { passive: true });
+      const ro = new ResizeObserver(onScroll);
       ro.observe(el);
       return () => {
-        el.removeEventListener('scroll', checkOverflow);
+        el.removeEventListener('scroll', onScroll);
         ro.disconnect();
       };
     }
-  }, [checkOverflow, tabs.length]);
+  }, [tabs.length]);
 
   const scroll = (dir: number) => {
     scrollRef.current?.scrollBy({ left: dir * 160, behavior: 'smooth' });
@@ -83,52 +85,52 @@ export function TabBar() {
         {tabs.map((tab: WorkspaceTab) => {
           const isActive = tab.id === activeTabId;
           return (
-            <button
-              key={tab.id}
-              onClick={() => setActive(tab.id)}
-              onMouseDown={(e) => handleMouseDown(e, tab.id)}
-              onContextMenu={(e) => handleContextMenu(e, tab.id)}
-              className={[
-                'group relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors',
-                'border-r border-border dark:border-border-dark',
-                isActive
-                  ? 'bg-surface dark:bg-surface-dark text-primary dark:text-cyan-400 font-medium'
-                  : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              title={tab.name}
-            >
-              {isActive && (
-                <span className="absolute bottom-0 inset-x-0 h-0.5 bg-primary dark:bg-cyan-400" />
-              )}
+              <div key={tab.id} className="group relative flex items-stretch border-r border-border dark:border-border-dark">
+                <button
+                  type="button"
+                  onClick={() => setActive(tab.id)}
+                  onMouseDown={(e) => handleMouseDown(e, tab.id)}
+                  onContextMenu={(e) => handleContextMenu(e, tab.id)}
+                  className={[
+                    'relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors',
+                    isActive
+                      ? 'bg-surface dark:bg-surface-dark text-primary dark:text-cyan-400 font-medium'
+                      : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  title={tab.name}
+                >
+                  {isActive && (
+                    <span className="absolute bottom-0 inset-x-0 h-0.5 bg-primary dark:bg-cyan-400" />
+                  )}
 
-              <span className="max-w-[160px] truncate">
-                {tab.isDirty && (
-                  <span className="text-status-warning mr-0.5" aria-label="Unsaved changes">•</span>
-                )}
-                {tab.name}
-              </span>
+                  <span className="max-w-[160px] truncate">
+                    {tab.isDirty && (
+                      <span className="text-status-warning mr-0.5" aria-label="Unsaved changes">•</span>
+                    )}
+                    {tab.name}
+                  </span>
+                </button>
 
-              <span
-                role="button"
-                tabIndex={-1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(tab.id);
-                }}
-                className={[
-                  'ml-1 p-0.5 rounded transition-colors',
-                  isActive ? '' : 'opacity-0 group-hover:opacity-100',
-                  'hover:bg-status-error/20 hover:text-status-error',
-                ].join(' ')}
-                aria-label={`Close ${tab.name}`}
-              >
-                <X className="w-3 h-3" />
-              </span>
-            </button>
-          );
-        })}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                  className={[
+                    'px-1.5 rounded transition-colors self-center',
+                    isActive ? '' : 'opacity-0 group-hover:opacity-100',
+                    'hover:bg-status-error/20 hover:text-status-error',
+                  ].join(' ')}
+                  aria-label={`Close ${tab.name}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          })}
       </div>
 
       {canScrollRight && (
@@ -148,12 +150,14 @@ export function TabBar() {
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
           <button
+            type="button"
             className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
             onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}
           >
             Close
           </button>
           <button
+            type="button"
             className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
             onClick={() => { closeOthers(contextMenu.tabId); setContextMenu(null); }}
           >
@@ -161,6 +165,7 @@ export function TabBar() {
           </button>
           <div className="my-1 border-t border-border dark:border-border-dark" />
           <button
+            type="button"
             className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors text-status-error"
             onClick={() => { closeAll(); setContextMenu(null); }}
           >

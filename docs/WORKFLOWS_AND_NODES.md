@@ -36,6 +36,8 @@ Tip: Save often from the top toolbar (`Save`) or use `Ctrl+S`.
 
 Resume actions are available only when the latest run status is failed.
 
+Runs are started by signed-in users with the required workflow/run permission. External CI/CD execution uses [webhooks](WEBHOOK_QUICKSTART.md), which are authenticated separately with machine-to-machine token and HMAC credentials.
+
 Useful shortcuts:
 
 - `Ctrl+N`: new workflow

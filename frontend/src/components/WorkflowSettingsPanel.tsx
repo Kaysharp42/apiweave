@@ -7,6 +7,7 @@ import { Button } from './atoms/Button';
 import { Toggle } from './atoms/Toggle';
 import { Spinner } from './atoms/Spinner';
 import { Input } from './atoms/Input';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 type BackgroundColor = string;
 
@@ -69,7 +70,7 @@ export function WorkflowSettingsPanel() {
 
     setAssignmentLoading(true);
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/${collectionId}/workflows/${workflowId}`,
         { method: 'POST' }
       );
@@ -101,7 +102,7 @@ export function WorkflowSettingsPanel() {
 
     setAssignmentLoading(true);
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/api/collections/${currentCollection.collectionId}/workflows/${workflowId}`,
         { method: 'DELETE' }
       );
@@ -143,10 +144,10 @@ export function WorkflowSettingsPanel() {
         {/* Continue on Fail Option */}
         {showExecutionSection && (
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2">
+          <div className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2">
             <ToggleLeft className="w-4 h-4 flex-shrink-0" />
             <span>Execution Settings</span>
-          </label>
+          </div>
 
           {showExecutionItem && (
           <div className="p-3 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded space-y-3">
@@ -182,16 +183,16 @@ export function WorkflowSettingsPanel() {
         {/* Collection Assignment Section */}
         {showCollectionsSection && (
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2">
+          <div className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2">
             <LayoutGrid className="w-4 h-4 flex-shrink-0" />
             <span>Collections</span>
-          </label>
+          </div>
           {showCollectionsItem && (
           <div className="relative">
             {isLoadingCollections ? (
               <div className="flex items-center justify-center py-3 px-4 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded">
                 <Spinner size="sm" />
-                <span className="ml-2 text-sm text-text-secondary dark:text-text-secondary-dark">Loading collections...</span>
+                <span className="ml-2 text-sm text-text-secondary dark:text-text-secondary-dark">Loading collections…</span>
               </div>
             ) : currentCollection ? (
               <div className="flex items-center justify-between px-4 py-3 text-sm bg-primary/5 dark:bg-primary/10 border border-primary/20 dark:border-primary/30 rounded">
@@ -250,6 +251,7 @@ export function WorkflowSettingsPanel() {
                         const c = collection as unknown as LocalCollection;
                         return (
                         <button
+                          type="button"
                           key={c.collectionId}
                           onClick={() => {
                             handleAssignToCollection(c.collectionId);
@@ -293,12 +295,14 @@ export function WorkflowSettingsPanel() {
               </div>
             )}
 
-            {showCollectionDropdown && (
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setShowCollectionDropdown(false)}
-              />
-            )}
+              {showCollectionDropdown && (
+                <button
+                  type="button"
+                  aria-label="Close collection dropdown"
+                  className="fixed inset-0 z-40 cursor-default"
+                  onClick={() => setShowCollectionDropdown(false)}
+                />
+              )}
           </div>
           )}
         </div>

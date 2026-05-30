@@ -2,6 +2,9 @@ import { useState, useCallback, type ChangeEvent } from 'react';
 import { Plus, Trash2, Image } from 'lucide-react';
 import { toast } from 'sonner';
 
+const EMPTY_FILE_UPLOADS: FileUpload[] = [];
+const EMPTY_VARIABLES: Record<string, unknown> = {};
+
 export interface FileUpload {
   name: string;
   type: 'base64' | 'path' | 'variable';
@@ -36,9 +39,9 @@ const defaultFormData: FormData = {
 };
 
 export default function FileUploadSection({
-  fileUploads = [],
+  fileUploads = EMPTY_FILE_UPLOADS,
   onUpdate,
-  variables = {},
+  variables = EMPTY_VARIABLES,
 }: FileUploadSectionProps) {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<FormData>(defaultFormData);
@@ -103,7 +106,7 @@ export default function FileUploadSection({
       <div className="space-y-1 mb-2">
         {fileUploads.length > 0 ? (
           fileUploads.map((file, idx) => (
-            <div key={idx} className="flex gap-1 items-center text-[9px] p-1 bg-surface dark:bg-surface-dark/30 rounded">
+            <div key={`${file.fieldName}-${file.name}`} className="flex gap-1 items-center text-[9px] p-1 bg-surface dark:bg-surface-dark/30 rounded">
               <div className="flex-1">
                 <div className="font-semibold text-text-primary dark:text-text-primary-dark">{file.name}</div>
                 <div className="text-[8px] text-text-muted dark:text-text-muted-dark">
@@ -120,6 +123,7 @@ export default function FileUploadSection({
                 )}
               </div>
               <button
+                type="button"
                 className="text-status-error dark:text-status-error hover:text-status-error/80 dark:hover:text-status-error/80 nodrag flex-shrink-0"
                 onClick={() => handleRemoveFile(idx)}
                 title="Delete file"
@@ -135,6 +139,7 @@ export default function FileUploadSection({
 
       {!showForm ? (
         <button
+          type="button"
           className="w-full px-2 py-1 bg-primary dark:bg-primary/90 hover:bg-primary/90 dark:hover:bg-primary/80 text-white text-[9px] font-semibold rounded nodrag transition-colors flex items-center justify-center gap-1"
           onClick={() => setShowForm(true)}
         >
@@ -144,10 +149,11 @@ export default function FileUploadSection({
       ) : (
         <div className="space-y-1 p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded border border-dashed border-blue-300 dark:border-blue-600">
           <div>
-            <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label htmlFor="file-upload-name" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
               File Name (identifier)
             </label>
             <input
+              id="file-upload-name"
               type="text"
               placeholder="e.g., resume, invoice"
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
@@ -157,10 +163,11 @@ export default function FileUploadSection({
           </div>
 
           <div>
-            <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label htmlFor="file-upload-reference-type" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
               Reference Type
             </label>
             <select
+              id="file-upload-reference-type"
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
               value={formData.type}
               onChange={(e) => {
@@ -175,20 +182,22 @@ export default function FileUploadSection({
           </div>
 
           <div>
-            <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <div className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
               {formData.type === 'base64' && 'Upload File or Paste Base64'}
               {formData.type === 'path' && 'File Path'}
               {formData.type === 'variable' && 'Variable Reference'}
-            </label>
+            </div>
             {formData.type === 'base64' ? (
               <div className="space-y-1">
                 <input
                   type="file"
                   onChange={handleFileSelect}
+                  aria-label="Upload base64 file"
                   className="nodrag w-full text-[9px] border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary"
                   title="Select a file to upload"
                 />
                 <textarea
+                  aria-label="Paste base64 content"
                   placeholder="Or paste base64 content here..."
                   className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
@@ -198,6 +207,7 @@ export default function FileUploadSection({
               </div>
             ) : formData.type === 'path' ? (
               <textarea
+                aria-label="File path"
                 placeholder={`e.g., /uploads/document.pdf\nor {{env.UPLOAD_DIR}}/{{variables.filename}}`}
                 className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                 rows={2}
@@ -206,6 +216,7 @@ export default function FileUploadSection({
               />
             ) : (
               <textarea
+                aria-label="Variable reference"
                 placeholder={`e.g., {{variables.filePath}}\nor {{variables.fileContent}}`}
                 className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                 rows={2}
@@ -216,10 +227,11 @@ export default function FileUploadSection({
           </div>
 
           <div>
-            <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label htmlFor="file-upload-html-field-name" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
               HTML Field Name
             </label>
             <input
+              id="file-upload-html-field-name"
               type="text"
               placeholder="e.g., document, image, attachment"
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
@@ -229,10 +241,11 @@ export default function FileUploadSection({
           </div>
 
           <div>
-            <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label htmlFor="file-upload-mime-type" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
               MIME Type
             </label>
             <input
+              id="file-upload-mime-type"
               type="text"
               placeholder="e.g., application/pdf, image/png"
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
@@ -242,10 +255,11 @@ export default function FileUploadSection({
           </div>
 
           <div>
-            <label className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label htmlFor="file-upload-description" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
               Description (optional)
             </label>
             <input
+              id="file-upload-description"
               type="text"
               placeholder="e.g., User resume document"
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
@@ -266,12 +280,14 @@ export default function FileUploadSection({
 
           <div className="flex gap-1">
             <button
+              type="button"
               onClick={handleAddFile}
               className="flex-1 px-2 py-1 bg-status-success dark:bg-status-success/90 hover:bg-status-success/90 dark:hover:bg-status-success/80 text-white text-[9px] font-semibold rounded nodrag transition-colors"
             >
               Add File
             </button>
             <button
+              type="button"
               onClick={() => {
                 setShowForm(false);
                 setFormData(defaultFormData);
@@ -288,17 +304,27 @@ export default function FileUploadSection({
               <strong>Available variables:</strong>
               <div className="flex flex-wrap gap-1 mt-0.5">
                 {Object.keys(variables).map((varName) => (
-                  <code
+                  <button
                     key={varName}
+                    type="button"
                     className="bg-surface-raised dark:bg-surface-dark-raised px-1 py-0.5 rounded cursor-pointer hover:bg-primary/20 dark:hover:bg-primary/30"
                     onClick={() => setFormData((prev) => ({
                       ...prev,
                       value: `{{variables.${varName}}}`,
                     }))}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setFormData((prev) => ({
+                          ...prev,
+                          value: `{{variables.${varName}}}`,
+                        }));
+                      }
+                    }}
                     title="Click to insert"
                   >
                     {`{{variables.${varName}}}`}
-                  </code>
+                  </button>
                 ))}
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type DragEvent, type MouseEvent } from 'react';
+import { useState, type ChangeEvent, type DragEvent } from 'react';
 import { Upload, FileText, AlertCircle, X, List, GitBranch } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
 import { Button } from './atoms/Button';
@@ -167,18 +167,10 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
     }
   };
 
-  const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onClick={handleOverlayClick}
-    >
-      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="HAR import">
+      <button type="button" aria-label="Close HAR import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
+      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
           <h2 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
@@ -202,7 +194,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
 
             {/* File Upload */}
             <div>
-              <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+              <label htmlFor="har-file-input" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
                 HAR File
               </label>
               <div
@@ -239,16 +231,17 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
             {harJson && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                    Import Mode
-                  </label>
-                  <div className="flex space-x-4">
-                    <label className="flex items-center space-x-2 cursor-pointer">
+                <div className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                  Import Mode
+                </div>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="radio"
                         value="linear"
                         checked={importMode === 'linear'}
                         onChange={(e) => setImportMode(e.target.value as ImportMode)}
+                        aria-label="Linear import mode"
                         className="w-4 h-4 text-primary border-border focus:ring-primary"
                       />
                       <List className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
@@ -256,13 +249,14 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                         Linear (Sequential)
                       </span>
                     </label>
-                    <label className="flex items-center space-x-2 opacity-50 cursor-not-allowed">
+                    <label className="flex items-center gap-2 opacity-50 cursor-not-allowed">
                       <input
                         type="radio"
                         value="grouped"
                         checked={importMode === 'grouped'}
                         onChange={(e) => setImportMode(e.target.value as ImportMode)}
                         disabled
+                        aria-label="Grouped import mode"
                         className="w-4 h-4 text-primary border-border focus:ring-primary"
                       />
                       <GitBranch className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
@@ -273,7 +267,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                   </div>
                 </div>
 
-                <label className="flex items-center space-x-3">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={sanitize}
@@ -325,11 +319,11 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                         First {dryRunResult.preview.length} requests:
                       </p>
                       <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {dryRunResult.preview.map((entry, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center space-x-3 text-xs bg-surface dark:bg-surface-dark p-2 rounded"
-                          >
+                          {dryRunResult.preview.map((entry) => (
+                            <div
+                              key={`${entry.method}-${entry.url}-${entry.time ?? ''}`}
+                              className="flex items-center gap-3 text-xs bg-surface dark:bg-surface-dark p-2 rounded"
+                            >
                             <span className={`font-medium px-2 py-0.5 rounded ${getMethodBadgeClasses(entry.method)}`}>
                               {entry.method}
                             </span>
@@ -372,7 +366,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
             )}
 
             {/* Action Buttons */}
-            <div className="flex space-x-3 pt-4 border-t border-border dark:border-border-dark">
+            <div className="flex gap-3 pt-4 border-t border-border dark:border-border-dark">
               <Button
                 onClick={handlePreview}
                 disabled={!harJson}
@@ -396,7 +390,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

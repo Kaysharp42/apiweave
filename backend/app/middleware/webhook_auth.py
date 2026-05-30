@@ -6,8 +6,8 @@ import hmac
 import hashlib
 import time
 from typing import Optional, Tuple
+
 from fastapi import Request, HTTPException, status
-from datetime import datetime, UTC
 
 from app.repositories.webhook_repository import WebhookRepository
 
@@ -193,17 +193,17 @@ async def authenticate_webhook_request(request: Request, webhook_id: str) -> Tup
         
         return True, None
         
-    except InvalidTokenError as e:
-        return False, f"Token validation failed: {str(e)}"
+    except InvalidTokenError:
+        return False, "Token validation failed"
     
-    except InvalidSignatureError as e:
-        return False, f"Signature validation failed: {str(e)}"
+    except InvalidSignatureError:
+        return False, "Signature validation failed"
     
-    except ReplayAttackError as e:
-        return False, f"Replay attack detected: {str(e)}"
+    except ReplayAttackError:
+        return False, "Replay attack detected"
     
-    except Exception as e:
-        return False, f"Authentication error: {str(e)}"
+    except Exception:
+        return False, "Authentication error"
 
 
 async def require_webhook_auth(request: Request, webhook_id: str):

@@ -1,49 +1,51 @@
-"""
-Configuration settings for APIWeave backend
-Uses pydantic-settings for environment variable management
-"""
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
 
 
 class Settings(BaseSettings):
-    """Application settings"""
-    
-    # Application
     APP_NAME: str = "APIWeave"
     VERSION: str = "0.1.0"
     DEBUG: bool = False
-    BASE_URL: str  # Base URL for webhook URLs (loaded from .env)
-    
-    # MongoDB
+    APP_ENV: str = "development"
+    BASE_URL: str
+    FRONTEND_URL: str | None = None
+
     MONGODB_URL: str
     MONGODB_DB_NAME: str
-    
-    # CORS - comma-separated string that gets split into list
-    ALLOWED_ORIGINS: str
-    
-    def get_allowed_origins_list(self) -> List[str]:
-        """Parse ALLOWED_ORIGINS from comma-separated string"""
-        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
-    def get_mcp_allowed_origins_list(self) -> List[str]:
-        """Parse MCP_ALLOWED_ORIGINS from comma-separated string"""
-        return [origin.strip() for origin in self.MCP_ALLOWED_ORIGINS.split(",") if origin.strip()]
-    
-    # API Keys
+    ALLOWED_ORIGINS: str
+
     API_KEY_HEADER: str = "Authorization"
-    
-    # Worker
-    WORKER_POLL_INTERVAL: int = 5  # seconds
+
+    WORKER_POLL_INTERVAL: int = 5
     WORKER_MAX_RETRIES: int = 3
-    
-    # Artifacts
+
     ARTIFACTS_PATH: str = "./artifacts"
-    
-    # Secrets (for encryption)
+
     SECRET_KEY: str
 
-    # MCP (Model Context Protocol)
+    GITHUB_CLIENT_ID: str | None = None
+    GITHUB_CLIENT_SECRET: str | None = None
+    GITLAB_CLIENT_ID: str | None = None
+    GITLAB_CLIENT_SECRET: str | None = None
+    MICROSOFT_CLIENT_ID: str | None = None
+    MICROSOFT_CLIENT_SECRET: str | None = None
+    MICROSOFT_TENANT: str = "common"
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+
+    SESSION_SECRET_KEY: str | None = None
+    SESSION_MAX_IDLE_MINUTES: int = 720
+    SESSION_MAX_ABSOLUTE_MINUTES: int = 10080
+    SESSION_COOKIE_SECURE: bool = True
+    SESSION_COOKIE_SAMESITE: str = "lax"
+    CSRF_ENABLED: bool = True
+
+    WEBHOOK_REQUIRE_HMAC: bool = False
+    APPROVED_DOMAINS_ENABLED: bool = False
+    APPROVED_DOMAINS: str = ""
+    SETUP_MODE_ENABLED: bool = True
+
     MCP_ENABLED: bool = False
     MCP_HTTP_ENABLED: bool = False
     MCP_API_KEY: str | None = None
@@ -51,10 +53,83 @@ class Settings(BaseSettings):
     MCP_REQUIRE_API_KEY: bool = True
     MCP_ALLOW_SECRET_WRITES: bool = False
 
+    def get_allowed_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    def get_mcp_allowed_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.MCP_ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    def get_approved_domains_list(self) -> list[str]:
+        return [domain.strip() for domain in self.APPROVED_DOMAINS.split(",") if domain.strip()]
+
+    def get_session_cookie_secure(self) -> bool:
+        if self.APP_ENV.lower() == "development":
+            return False
+        return self.SESSION_COOKIE_SECURE
+
+    def get_session_cookie_samesite(self) -> str:
+        return self.SESSION_COOKIE_SAMESITE
+
+    @model_validator(mode="after")
+    def validate_auth_configuration(self) -> "Settings":
+        if self.APP_ENV.lower() in {"production", "prod"}:
+            if self.SETUP_MODE_ENABLED:
+                raise ValueError(
+                    "SETUP_MODE_ENABLED must be False in production after initial admin is created"
+                )
+
+            if not self.SESSION_SECRET_KEY:
+                raise ValueError("SESSION_SECRET_KEY is required in production")
+
+            if not self.get_session_cookie_secure():
+                raise ValueError("SESSION_COOKIE_SECURE must remain enabled in production")
+
+            if not self.SETUP_MODE_ENABLED:
+                missing_provider_secrets = []
+
+                provider_pairs = (
+                    (
+                        "GITHUB_CLIENT_ID",
+                        self.GITHUB_CLIENT_ID,
+                        "GITHUB_CLIENT_SECRET",
+                        self.GITHUB_CLIENT_SECRET,
+                    ),
+                    (
+                        "GITLAB_CLIENT_ID",
+                        self.GITLAB_CLIENT_ID,
+                        "GITLAB_CLIENT_SECRET",
+                        self.GITLAB_CLIENT_SECRET,
+                    ),
+                    (
+                        "MICROSOFT_CLIENT_ID",
+                        self.MICROSOFT_CLIENT_ID,
+                        "MICROSOFT_CLIENT_SECRET",
+                        self.MICROSOFT_CLIENT_SECRET,
+                    ),
+                    (
+                        "GOOGLE_CLIENT_ID",
+                        self.GOOGLE_CLIENT_ID,
+                        "GOOGLE_CLIENT_SECRET",
+                        self.GOOGLE_CLIENT_SECRET,
+                    ),
+                )
+
+                for client_name, client_id, secret_name, secret in provider_pairs:
+                    if client_id and not secret:
+                        missing_provider_secrets.append(secret_name)
+
+                if missing_provider_secrets:
+                    raise ValueError(
+                        "Missing OAuth provider secrets in production: "
+                        + ", ".join(missing_provider_secrets)
+                    )
+
+        return self
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True
+        case_sensitive=True,
     )
 
 

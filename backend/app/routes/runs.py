@@ -8,6 +8,8 @@ from typing import List, Optional
 from datetime import datetime, UTC
 import uuid
 
+from app.auth.dependencies import require_permission
+from app.auth.permissions import RUNS_CANCEL, RUNS_READ
 from app.models import Run, RunCreate
 from app.repositories import RunRepository, WorkflowRepository
 from app.services import (
@@ -25,7 +27,7 @@ from app.services.exceptions import ConflictError
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
 
-@router.post("", response_model=Run, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=Run, status_code=status.HTTP_201_CREATED, dependencies=[require_permission(RUNS_READ)])
 async def create_run(run_request: RunCreate):
     """Trigger a workflow run"""
     try:
@@ -34,7 +36,7 @@ async def create_run(run_request: RunCreate):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("", response_model=List[Run])
+@router.get("", response_model=List[Run], dependencies=[require_permission(RUNS_READ)])
 async def list_runs(
     workflow_id: Optional[str] = None,
     status_filter: Optional[str] = None,
@@ -45,7 +47,7 @@ async def list_runs(
     return await svc_list_runs(workflow_id, status_filter, skip, limit)
 
 
-@router.get("/{run_id}", response_model=Run)
+@router.get("/{run_id}", response_model=Run, dependencies=[require_permission(RUNS_READ)])
 async def get_run(run_id: str):
     """Get a run by ID"""
     try:
@@ -54,7 +56,7 @@ async def get_run(run_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require_permission(RUNS_CANCEL)])
 async def cancel_run(run_id: str):
     """Cancel a pending or running run"""
     try:
@@ -66,7 +68,7 @@ async def cancel_run(run_id: str):
     return None
 
 
-@router.get("/{run_id}/results")
+@router.get("/{run_id}/results", dependencies=[require_permission(RUNS_READ)])
 async def get_run_results(run_id: str):
     """Get human-readable test results for a workflow run"""
     try:

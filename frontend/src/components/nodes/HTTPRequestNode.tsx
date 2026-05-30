@@ -4,7 +4,8 @@ import { useWorkflow } from '../../contexts/WorkflowContext';
 import { BaseNode } from '../atoms/flow/BaseNode';
 import FileUploadSection, { type FileUpload } from '../FileUploadSection';
 import { Puzzle, Plus, Trash2, CheckCircle, ArrowRight, AlertTriangle, XCircle, ChevronDown, ChevronUp, Snowflake, ExternalLink, Clock3 } from 'lucide-react';
-import { BeautifyButton, StatusBadge } from '../molecules';
+import { BeautifyButton } from '../molecules/BeautifyButton';
+import { StatusBadge } from '../molecules/StatusBadge';
 import type { NodeStatus } from '../../types/NodeStatus';
 import type { HttpMethod } from '../../types/HttpMethod';
 import type { HttpRequestConfig } from '../../types/HttpRequestConfig';
@@ -125,7 +126,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('touchstart', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside, { passive: true });
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
@@ -135,7 +136,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
     };
   }, [isOpen]);
 
-  const handleBlur = useCallback((event: React.FocusEvent) => {
+  const handleWarningPopoverBlur = useCallback((event: React.FocusEvent) => {
     const nextFocusedElement = event.relatedTarget;
     if (!nextFocusedElement) return;
     if (wrapperRef.current && !wrapperRef.current.contains(nextFocusedElement as Node)) {
@@ -154,7 +155,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
       onMouseEnter={() => setIsOpen(true)}
       onMouseLeave={() => setIsOpen(false)}
       onFocus={() => setIsOpen(true)}
-      onBlur={handleBlur}
+      onBlur={handleWarningPopoverBlur}
     >
       <button
         ref={triggerRef}
@@ -174,11 +175,10 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
       </button>
 
       {isOpen && (
-        <div
-          role="dialog"
+        <dialog
+          open
           aria-label="Swagger warning details"
           className="nodrag absolute top-full right-0 mt-1 z-[120] w-[260px] max-w-[calc(100vw-2rem)] rounded-md border border-amber-300/70 dark:border-amber-700/70 bg-surface-raised dark:bg-surface-dark-raised p-2 shadow-2xl"
-          onClick={(event) => event.stopPropagation()}
         >
           <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 mb-1">Swagger Warning</div>
           <p className="text-[10px] text-text-primary dark:text-text-primary-dark leading-snug break-words">{warning.text}</p>
@@ -209,7 +209,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
               <div className="pl-4 text-text-muted dark:text-text-muted-dark">Unavailable</div>
             )}
           </div>
-        </div>
+        </dialog>
       )}
     </div>
   );
@@ -232,6 +232,7 @@ const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
       <input
         type="text"
         placeholder="Variable name (e.g., token)"
+        aria-label="Extractor variable name"
         className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
         value={varName}
         onChange={(e) => setVarName(e.target.value)}
@@ -239,12 +240,15 @@ const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
       <input
         type="text"
         placeholder="Path (e.g., response.body.token)"
+        aria-label="Extractor path"
         className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
         value={varPath}
         onChange={(e) => setVarPath(e.target.value)}
       />
       <button
+        type="button"
         onClick={handleAdd}
+        aria-label="Add extractor"
         className="w-full px-2 py-1 bg-status-success hover:bg-green-700 text-white text-[9px] font-semibold rounded nodrag transition-colors flex items-center justify-center gap-1"
       >
         <Plus className="w-3 h-3" />
@@ -349,14 +353,18 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
             <span>Body{status === 'error' ? ' (Error)' : ''}</span>
             <div className="flex items-center gap-0.5">
               <button
+                type="button"
                 onClick={handleToggleBodyFormat}
+                aria-label={isBodyBeautified ? 'Minify JSON' : 'Beautify JSON'}
                 className="p-0.5 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay rounded transition-colors nodrag"
                 title={isBodyBeautified ? 'Minify JSON' : 'Beautify JSON'}
               >
                 <Puzzle className="w-3 h-3" />
               </button>
               <button
+                type="button"
                 onClick={() => setIsBodyExpanded(!isBodyExpanded)}
+                aria-label={isBodyExpanded ? 'Collapse response body' : 'Expand response body'}
                 className="p-0.5 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay rounded transition-colors nodrag"
                 title={isBodyExpanded ? 'Collapse' : 'Expand'}
               >
@@ -367,6 +375,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
           <textarea
             className={`w-full px-1.5 py-1 border text-[10px] font-mono nodrag rounded overflow-y-auto ${status === 'error' ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
             style={{ height: isBodyExpanded ? '600px' : '150px', resize: 'vertical', minHeight: '100px' }}
+            aria-label="Response body"
             value={bodyStr}
             readOnly
             onFocus={(e) => e.target.select()}
@@ -383,7 +392,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
   );
 };
 
-const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) => {
+const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
   const { setNodes } = useReactFlow();
   const { variables } = useWorkflow();
 
@@ -405,50 +414,53 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
   const hasBody = data.config?.body && data.config?.method !== 'GET';
   const bodyFormat = data.config?.bodyType ?? 'raw';
   const bodyPreview = getBodyPreview(data.config?.body);
+  const icon = useMemo(() => (
+    <span className="mr-2 inline-flex items-center gap-1">
+      <span className={`inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-bold rounded ${methodBadge} leading-none`}>{method}</span>
+      {hasBody && (
+        <StatusBadge
+          status="info"
+          size="xs"
+          label={`body: ${bodyFormat}`}
+          className="nodrag whitespace-nowrap"
+        />
+      )}
+    </span>
+  ), [bodyFormat, hasBody, method, methodBadge]);
+  const titleExtra = useMemo(() => (
+    <>
+      {data.schemaRefreshWarning && (
+        <SchemaWarningBadge warning={data.schemaRefreshWarning} />
+      )}
+      {data.branchCount && data.branchCount > 1 && (
+        <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-200 font-semibold flex items-center gap-0.5" title={`${data.branchCount} parallel branches`}>
+          <Snowflake className="w-3 h-3" /> {data.branchCount}x
+        </span>
+      )}
+    </>
+  ), [data.branchCount, data.schemaRefreshWarning]);
 
   return (
     <BaseNode
       title={data.label ?? 'HTTP Request'}
-      icon={(
-        <span className="mr-2 inline-flex items-center gap-1">
-          <span className={`inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-bold rounded ${methodBadge} leading-none`}>{method}</span>
-          {hasBody && (
-            <StatusBadge
-              status="info"
-              size="xs"
-              label={`body: ${bodyFormat}`}
-              className="nodrag whitespace-nowrap"
-            />
-          )}
-        </span>
-      )}
+      icon={icon}
       status={data.executionStatus ?? 'idle'}
       statusBadgeText={data.executionStatus && data.executionStatus !== 'idle' ? data.executionStatus : ''}
-      selected={selected}
+      selected={selected ?? false}
       nodeId={id}
       handleLeft={{ type: 'target' }}
       handleRight={{ type: 'source' }}
       collapsible={true}
       defaultExpanded={false}
       headerBg="bg-surface-overlay dark:bg-surface-dark-overlay"
-      titleExtra={
-        <>
-          {data.schemaRefreshWarning && (
-            <SchemaWarningBadge warning={data.schemaRefreshWarning} />
-          )}
-          {data.branchCount && data.branchCount > 1 && (
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-200 font-semibold flex items-center gap-0.5" title={`${data.branchCount} parallel branches`}>
-              <Snowflake className="w-3 h-3" /> {data.branchCount}x
-            </span>
-          )}
-        </>
-      }
+      titleExtra={titleExtra}
       className="max-w-[320px]"
     >
       {({ isExpanded }) => (
         <div className="p-3 space-y-1.5">
           <div className={`flex gap-1 ${isExpanded ? 'items-start' : 'items-center'}`}>
             <select
+              aria-label="HTTP method"
               className="nodrag px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
               value={method}
               onChange={(e) => updateNodeData('method', e.target.value)}
@@ -460,6 +472,7 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
 
             {isExpanded ? (
               <textarea
+                aria-label="Request URL"
                 placeholder="Enter URL..."
                 rows={2}
                 className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-y min-h-[58px]"
@@ -469,6 +482,7 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
             ) : (
               <input
                 type="text"
+                aria-label="Request URL"
                 placeholder="Enter URL..."
                 className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                 value={data.config?.url ?? ''}
@@ -493,10 +507,12 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
           {isExpanded && (
             <div className="space-y-1.5 pt-1 border-t border-border dark:border-border-dark">
               <div>
-                <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
+                <label htmlFor="http-request-query-params" className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
                   Query Params <span className="font-normal text-text-muted dark:text-text-muted-dark">(key=value)</span>
                 </label>
                 <textarea
+                  id="http-request-query-params"
+                  aria-label="Query parameters"
                   className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
                   placeholder={'page=1\nlimit=10'}
@@ -506,10 +522,12 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
+                <label htmlFor="http-request-path-variables" className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
                   Path Variables <span className="font-normal text-text-muted dark:text-text-muted-dark">(Use :varName in URL)</span>
                 </label>
                 <textarea
+                  id="http-request-path-variables"
+                  aria-label="Path variables"
                   className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
                   placeholder={'userId={{prev.response.body.id}}'}
@@ -519,10 +537,12 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
+                <label htmlFor="http-request-headers" className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
                   Headers <span className="font-normal text-text-muted dark:text-text-muted-dark">(key=value)</span>
                 </label>
                 <textarea
+                  id="http-request-headers"
+                  aria-label="Headers"
                   className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
                   placeholder={'Content-Type=application/json\nAuthorization=Bearer {{variables.token}}'}
@@ -532,10 +552,12 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
+                <label htmlFor="http-request-cookies" className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">
                   Cookies <span className="font-normal text-text-muted dark:text-text-muted-dark">(key=value)</span>
                 </label>
                 <textarea
+                  id="http-request-cookies"
+                  aria-label="Cookies"
                   className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
                   placeholder={'session={{prev.response.cookies.session}}'}
@@ -546,9 +568,11 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
 
               {method !== 'GET' && (
                 <div>
-                  <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">Body</label>
+                  <label htmlFor="http-request-body" className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">Body</label>
                   <div className="relative">
                     <textarea
+                      id="http-request-body"
+                      aria-label="Request body"
                       className="nodrag w-full px-1.5 py-1 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                       rows={3}
                       placeholder={'{\n  "key": "value"\n}'}
@@ -566,9 +590,11 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
               )}
 
               <div>
-                <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">Timeout (seconds)</label>
+                <label htmlFor="http-request-timeout" className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-0.5">Timeout (seconds)</label>
                 <input
+                  id="http-request-timeout"
                   type="number"
+                  aria-label="Timeout in seconds"
                   className="nodrag w-16 px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                   value={data.config?.timeout ?? 30}
                   onChange={(e) => updateNodeData('timeout', parseInt(e.target.value))}
@@ -577,10 +603,10 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
               </div>
 
               <div className="border-t border-border dark:border-border-dark pt-2 mt-2">
-                <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-1 flex items-center gap-1">
+                <div className="block text-[10px] font-semibold text-text-secondary dark:text-text-secondary-dark mb-1 flex items-center gap-1">
                   <Puzzle className="w-3.5 h-3.5" />
                   <span>Store Response As Variables</span>
-                </label>
+                </div>
                 <div className="space-y-1 mb-2">
                   {data.config?.extractors && Object.entries(data.config.extractors).length > 0 ? (
                     Object.entries(data.config.extractors).map(([varName, varPath]) => (
@@ -589,6 +615,7 @@ const HTTPRequestNode = ({ id, data, selected = false }: HTTPRequestNodeProps) =
                         <span className="text-text-muted dark:text-text-muted-dark">&larr;</span>
                         <code className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded flex-1 truncate">{varPath}</code>
                         <button
+                          type="button"
                           className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 nodrag flex-shrink-0"
                           onClick={() => {
                             const newExtractors = { ...data.config?.extractors };

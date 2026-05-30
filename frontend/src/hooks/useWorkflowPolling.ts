@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback, useEffect, type MutableRefObject } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, type MutableRefObject } from 'react';
 import { toast } from 'sonner';
 import type { Node } from 'reactflow';
 import API_BASE_URL from '../utils/api';
+import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface NodeStatusUpdate {
   status: string;
@@ -97,24 +98,27 @@ export default function useWorkflowPolling({
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [showSecretsPrompt, setShowSecretsPrompt] = useState(false);
   const [isResumeLoading, setIsResumeLoading] = useState(false);
-  const [resumeOptions, setResumeOptions] = useState<FailedNodeOption[]>([]);
-  const [resumeSourceRunId, setResumeSourceRunId] = useState<string | null>(null);
+  const [latestFailedRun, setLatestFailedRun] = useState<{ runId: string | null; failedNodes: FailedNodeOption[] } | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingRunRef = useRef<RunOptions | null>(null);
+  const latestFailedRunRef = useRef<{ runId: string | null; failedNodes: FailedNodeOption[] } | null>(null);
+
+  const resumeOptions = useMemo(() => latestFailedRun?.failedNodes ?? [], [latestFailedRun]);
+  const resumeSourceRunId = useMemo(() => latestFailedRun?.runId ?? null, [latestFailedRun]);
 
   const refreshLatestFailedRun = useCallback(async () => {
     if (!workflowId) {
-      setResumeOptions([]);
-      setResumeSourceRunId(null);
+      latestFailedRunRef.current = null;
+      setLatestFailedRun(null);
       return { runId: null, failedNodes: [] };
     }
 
     setIsResumeLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs/latest-failed`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs/latest-failed`);
       if (!response.ok) {
-        setResumeOptions([]);
-        setResumeSourceRunId(null);
+        latestFailedRunRef.current = null;
+        setLatestFailedRun(null);
         return { runId: null, failedNodes: [] };
       }
 
@@ -124,8 +128,8 @@ export default function useWorkflowPolling({
         failedNodes?: { nodeId: string; label?: string; type: string }[];
       };
       if (!data?.hasFailedRun) {
-        setResumeOptions([]);
-        setResumeSourceRunId(null);
+        latestFailedRunRef.current = null;
+        setLatestFailedRun(null);
         return { runId: null, failedNodes: [] };
       }
 
@@ -135,12 +139,13 @@ export default function useWorkflowPolling({
         type: node.type,
       }));
 
-      setResumeSourceRunId(data.runId ?? null);
-      setResumeOptions(failedNodes);
+      const nextLatest = { runId: data.runId ?? null, failedNodes };
+      latestFailedRunRef.current = nextLatest;
+      setLatestFailedRun(nextLatest);
       return { runId: data.runId ?? null, failedNodes };
     } catch {
-      setResumeOptions([]);
-      setResumeSourceRunId(null);
+      latestFailedRunRef.current = null;
+      setLatestFailedRun(null);
       return { runId: null, failedNodes: [] };
     } finally {
       setIsResumeLoading(false);
@@ -265,7 +270,7 @@ export default function useWorkflowPolling({
         payload.resume = runOptions.resume;
       }
 
-      const response = await fetch(url, {
+      const response = await authenticatedFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: Object.keys(payload).length > 0 ? JSON.stringify(payload) : null,
@@ -281,7 +286,7 @@ export default function useWorkflowPolling({
 
         const pollForStatus = async () => {
           try {
-            const statusResponse = await fetch(
+            const statusResponse = await authenticatedFetch(
               `${API_BASE_URL}/api/workflows/${workflowId}/runs/${result.runId}`,
             );
             if (statusResponse.ok) {
@@ -401,8 +406,9 @@ export default function useWorkflowPolling({
   }, [ensureSecretsThenRun]);
 
   const runFromLastFailed = useCallback(async () => {
-    let options = resumeOptions;
-    let sourceRunId = resumeSourceRunId;
+    const latest = latestFailedRunRef.current;
+    let options = latest?.failedNodes ?? [];
+    let sourceRunId = latest?.runId ?? null;
 
     if (!sourceRunId || options.length === 0) {
       const latest = await refreshLatestFailedRun();
@@ -420,24 +426,26 @@ export default function useWorkflowPolling({
       runFromFailedNodes([firstNode.nodeId], sourceRunId, 'single');
     }
   }, [
-    resumeOptions,
-    resumeSourceRunId,
     refreshLatestFailedRun,
     runFromFailedNodes,
   ]);
 
   const runAllFailed = useCallback(() => {
-    if (!resumeSourceRunId || resumeOptions.length === 0) {
+    const latest = latestFailedRunRef.current;
+    const sourceRunId = latest?.runId ?? null;
+    const options = latest?.failedNodes ?? [];
+
+    if (!sourceRunId || options.length === 0) {
       toast.error('No failed run available to resume');
       return;
     }
 
     runFromFailedNodes(
-      resumeOptions.map((opt) => opt.nodeId),
-      resumeSourceRunId,
+      options.map((opt) => opt.nodeId),
+      sourceRunId,
       'all-failed',
     );
-  }, [resumeSourceRunId, resumeOptions, runFromFailedNodes]);
+  }, [runFromFailedNodes]);
 
   const handleSecretsProvided = useCallback(
     (_secrets: Record<string, string>) => {
@@ -454,7 +462,7 @@ export default function useWorkflowPolling({
   const loadHistoricalRun = useCallback(
     async (run: { runId: string }) => {
       try {
-        const response = await fetch(
+        const response = await authenticatedFetch(
           `${API_BASE_URL}/api/workflows/${workflowId}/runs/${run.runId}`,
         );
         if (response.ok) {
@@ -477,7 +485,7 @@ export default function useWorkflowPolling({
   );
 
   useEffect(() => {
-    refreshLatestFailedRun();
+    void refreshLatestFailedRun();
   }, [refreshLatestFailedRun]);
 
   useEffect(
