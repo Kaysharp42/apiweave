@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Allotment } from 'allotment';
 // @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
+import { useLocation } from 'react-router-dom';
 import { AppNavBar } from './AppNavBar';
 import { Sidebar } from './Sidebar';
 import { Workspace } from './Workspace';
@@ -16,7 +17,9 @@ import type { Environment } from '../../types/Environment';
 
 export function MainLayout({ children }: { children?: ReactNode }) {
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
+  const setNavState = useNavigationStore((state) => state.setNavState);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
+  const location = useLocation();
   const environments = useSidebarStore((state) => state.environments);
   const fetchEnvironments = useSidebarStore((state) => state.fetchEnvironments);
   const refreshAll = useSidebarStore((state) => state.refreshAll);
@@ -33,6 +36,12 @@ export function MainLayout({ children }: { children?: ReactNode }) {
   useEffect(() => {
     void fetchEnvironments();
   }, [fetchEnvironments]);
+
+  useEffect(() => {
+    if (!location.pathname.startsWith('/settings/') && navigationSelectedValue === 'settings') {
+      setNavState('workflows');
+    }
+  }, [location.pathname, navigationSelectedValue, setNavState]);
 
   useEffect(() => {
     if (navigationSelectedValue === 'workflows') {

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Home, Settings, Webhook, LayoutGrid, ChevronLeft, ChevronRight, Server } from 'lucide-react';
 import { Transition } from '@headlessui/react';
 import Tippy from '@tippyjs/react';
@@ -48,10 +49,14 @@ const navItems: NavItemConfig[] = [
 ];
 
 export function AppNavBar() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
   const updateNavigationSelectedValue = useNavigationStore((state) => state.setNavState);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
   const toggleNavBarCollapse = useNavigationStore((state) => state.toggleNavBarCollapse);
+
+  const isOnSettingsRoute = location.pathname.startsWith('/settings/');
 
   return (
     <nav
@@ -77,7 +82,15 @@ export function AppNavBar() {
               type="button"
               key={id}
               className="relative w-full"
-              onClick={() => !disabled && updateNavigationSelectedValue(id as NavSection)}
+              onClick={() => {
+                if (disabled) return;
+                updateNavigationSelectedValue(id as NavSection);
+                if (id === 'settings') {
+                  if (!isOnSettingsRoute) navigate('/settings/users');
+                } else if (isOnSettingsRoute) {
+                  navigate('/');
+                }
+              }}
               disabled={disabled}
             >
               {isSelected && (

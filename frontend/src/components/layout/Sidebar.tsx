@@ -162,6 +162,7 @@ function WorkflowItem({ workflow, isActive, collections, environments, onWorkflo
 
 export function Sidebar() {
   const selectedNav = useNavigationStore((s) => s.selectedNavVal);
+  const setNavState = useNavigationStore((s) => s.setNavState);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [showCollectionManager, setShowCollectionManager] = useState(false);
   const [exportingWorkflowId, setExportingWorkflowId] = useState<string | null>(null);
@@ -254,6 +255,10 @@ export function Sidebar() {
       const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflow.workflowId}`);
       if (response.ok) {
         const fullWorkflow: Workflow = await response.json();
+        if (selectedNav === 'settings') {
+          setNavState('workflows');
+          navigate('/');
+        }
         useTabStore.getState().openTab(fullWorkflow);
         return;
       }
