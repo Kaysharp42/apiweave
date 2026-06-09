@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Allotment } from 'allotment';
 // @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
@@ -14,11 +14,14 @@ import useSidebarStore from '../../stores/SidebarStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
 import { HorizontalDivider } from '../atoms/HorizontalDivider';
 import type { Environment } from '../../types/Environment';
+import type { MainLayoutProps } from '../../types/MainLayoutProps';
 
-export function MainLayout({ children }: { children?: ReactNode }) {
+export function MainLayout({ children }: MainLayoutProps) {
   const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
   const setNavState = useNavigationStore((state) => state.setNavState);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
+  const mobileSidebarOpen = useNavigationStore((state) => state.mobileSidebarOpen);
+  const setMobileSidebarOpen = useNavigationStore((state) => state.setMobileSidebarOpen);
   const location = useLocation();
   const environments = useSidebarStore((state) => state.environments);
   const fetchEnvironments = useSidebarStore((state) => state.fetchEnvironments);
@@ -52,6 +55,17 @@ export function MainLayout({ children }: { children?: ReactNode }) {
     }
   }, [navigationSelectedValue, refreshAll, resetPagination]);
 
+  // Close mobile sidebar on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mobileSidebarOpen) {
+        setMobileSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileSidebarOpen, setMobileSidebarOpen]);
+
   const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth!.absolute;
   const expandedPreferred = 450;
   const expandedMin = 450;
@@ -59,10 +73,22 @@ export function MainLayout({ children }: { children?: ReactNode }) {
 
   return (
     <>
-      <MainHeader />
+      {/* Skip to main content link */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-surface-raised focus:text-text-primary focus:shadow-modal focus:rounded-lg focus:outline-2 focus:outline-[var(--aw-primary)] focus:outline-offset-2"
+      >
+        Skip to main content
+      </a>
+
+      <header>
+        <MainHeader />
+      </header>
+
       <HorizontalDivider />
 
-      <main className="flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
+      {/* Desktop layout (lg+): Allotment split panes */}
+      <div className="hidden lg:flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
         <Allotment>
           <Allotment.Pane
             preferredSize={isNavBarCollapsed ? collapsedWidth : expandedPreferred}
@@ -71,24 +97,60 @@ export function MainLayout({ children }: { children?: ReactNode }) {
             snap={false}
           >
             <div className="flex h-full w-full text-xs">
-              <AppNavBar />
+              <nav aria-label="Main navigation">
+                <AppNavBar />
+              </nav>
               {!isNavBarCollapsed && (
-                <div className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
-                  <Sidebar
-                  />
-                </div>
+                <aside
+                  className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised"
+                  aria-label="Sidebar"
+                >
+                  <Sidebar />
+                </aside>
               )}
             </div>
           </Allotment.Pane>
 
           <Allotment.Pane>
-            {children !== undefined ? children : <Workspace />}
+            <main id="main-content" className="h-full">
+              {children !== undefined ? children : <Workspace />}
+            </main>
           </Allotment.Pane>
         </Allotment>
-      </main>
+      </div>
+
+      {/* Mobile layout (< lg): flex with collapsible sidebar overlay */}
+      <div className="flex lg:hidden flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
+        <nav aria-label="Main navigation">
+          <AppNavBar />
+        </nav>
+
+        {mobileSidebarOpen && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/30 z-40 motion-reduce:transition-none"
+              onClick={() => setMobileSidebarOpen(false)}
+              aria-hidden="true"
+            />
+            <aside
+              className="fixed left-14 top-12 bottom-8 w-80 z-50 bg-surface-raised dark:bg-surface-dark-raised border-r border-border dark:border-border-dark shadow-modal overflow-hidden flex flex-col"
+              aria-label="Sidebar"
+            >
+              <Sidebar />
+            </aside>
+          </>
+        )}
+
+        <main id="main-content" className="flex-1 min-w-0 overflow-hidden">
+          {children !== undefined ? children : <Workspace />}
+        </main>
+      </div>
 
       <HorizontalDivider />
-      <MainFooter />
+
+      <footer>
+        <MainFooter />
+      </footer>
 
       {environmentWithSecrets && (
         <SecretsPrompt

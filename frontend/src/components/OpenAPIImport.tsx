@@ -4,66 +4,10 @@ import { usePalette } from '../contexts/PaletteContext';
 import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { Input } from './atoms/Input';
-
-interface OpenAPIImportProps {
-  onClose: () => void;
-  onImportSuccess?: () => void;
-}
-
-interface PreviewNode {
-  type?: string;
-  label?: string;
-  config?: {
-    method?: string;
-    url?: string;
-    headers?: string;
-    cookies?: string;
-    queryParams?: string;
-    pathVariables?: string;
-    body?: string;
-    timeout?: number;
-  };
-}
-
-interface PreviewStats {
-  apiTitle?: string;
-  apiVersion?: string;
-  totalEndpoints?: number;
-}
-
-interface PreviewWorkflow {
-  nodeCount?: number;
-}
-
-interface PreviewServer {
-  url: string;
-  description?: string;
-}
-
-interface PreviewTag {
-  name: string;
-  description?: string;
-}
-
-interface PreviewData {
-  nodes?: PreviewNode[];
-  stats?: PreviewStats;
-  workflow?: PreviewWorkflow;
-  availableServers?: PreviewServer[];
-  availableTags?: PreviewTag[];
-}
-
-interface ImportedItem {
-  label: string | undefined;
-  method: string;
-  url: string;
-  headers: string;
-  cookies: string;
-  queryParams: string;
-  pathVariables: string;
-  body: string;
-  timeout: number;
-}
+import type { OpenAPIImportProps } from '../types/OpenAPIImportProps';
+import type { PreviewNode } from '../types/PreviewNode';
+import type { PreviewData } from '../types/PreviewData';
+import type { ImportedItem } from '../types/ImportedItem';
 
 export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) {
   const [openapiFile, setOpenapiFile] = useState<File | null>(null);
@@ -177,7 +121,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
       const items: ImportedItem[] = (preview.nodes || [])
         .filter((n): n is PreviewNode => n.type === 'http-request')
         .map(n => ({
-          label: n.label,
+          label: n.label || 'Untitled',
           method: n.config?.method || 'GET',
           url: n.config?.url || '',
           headers: n.config?.headers || '',
@@ -186,6 +130,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
           pathVariables: n.config?.pathVariables || '',
           body: n.config?.body || '',
           timeout: n.config?.timeout || 30,
+          openapiMeta: null,
         }));
 
       const itemCount = items.length;
@@ -227,8 +172,8 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
 
   return (
     <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="OpenAPI import">
-      <button type="button" aria-label="Close OpenAPI import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
-      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <button type="button" aria-label="Close OpenAPI import" className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80" onClick={onClose} />
+      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-modal w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
           <div className="flex items-center gap-2">
@@ -273,7 +218,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
             />
             <label
               htmlFor="openapi-file-input"
-              className="inline-block px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover cursor-pointer"
+              className="inline-block px-4 py-2 bg-[var(--aw-primary)] text-white rounded-lg hover:bg-[var(--aw-primary-hover)] cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
             >
               Choose File
             </label>
@@ -384,9 +329,9 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
 
           {/* Error Display */}
           {error && (
-            <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <div className="flex items-start gap-2 p-3 bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded-lg">
               <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+              <p className="text-sm text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]">{error}</p>
             </div>
           )}
 

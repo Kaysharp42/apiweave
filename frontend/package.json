@@ -10,7 +10,9 @@
     "test": "tsx --test src/**/*.test.ts src/**/*.test.js",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,json,css,md}\"",
-    "doctor": "npx react-doctor@latest"
+    "audit:types": "node scripts/audit-types.mjs",
+    "doctor": "npx react-doctor@latest",
+    "qa:ui": "playwright test"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",
@@ -31,6 +33,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/mousetrap": "^1.6.15",
     "@types/node": "^25.8.0",
     "@types/react": "^18.2.0",

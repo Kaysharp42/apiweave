@@ -58,7 +58,7 @@ export function KeyboardShortcutsHelp({ open, onClose }: KeyboardShortcutsHelpPr
               {group.shortcuts.map((shortcut) => (
                 <div
                   key={`${group.title}-${shortcut.description}`}
-                  className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                  className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
                 >
                   <span className="text-sm text-text-primary dark:text-text-primary-dark">
                     {shortcut.description}
@@ -69,7 +69,7 @@ export function KeyboardShortcutsHelp({ open, onClose }: KeyboardShortcutsHelpPr
                         {keyIndex > 0 && (
                           <span className="text-xs text-text-muted dark:text-text-muted-dark">+</span>
                         )}
-                        <kbd className="kbd kbd-sm text-xs min-w-[24px] text-center">
+                        <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark text-text-primary dark:text-text-primary-dark text-xs min-w-[24px] font-mono">
                           {key}
                         </kbd>
                       </Fragment>

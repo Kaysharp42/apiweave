@@ -1,6 +1,8 @@
 import { useState, type ElementType } from 'react';
-import { Copy, Info, Search, Sparkles, CheckCircle, Type, Hash, Calendar, Clock, Code } from 'lucide-react';
+import { Copy, Info, Search, Sparkles, CheckCircle, Type, Hash, Calendar, Clock, Code, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from './atoms/Button';
+import { EmptyState } from './molecules/EmptyState';
 
 interface DynamicFunction {
   name: string;
@@ -80,149 +82,164 @@ export default function DynamicFunctionsHelper() {
   const visibleCategories = Object.entries(filteredFunctions) as [FunctionCategory, DynamicFunction[]][];
 
   return (
-    <div className="w-full bg-surface dark:bg-surface-dark overflow-y-auto h-full flex flex-col">
-      <div className="sticky top-0 bg-gradient-to-r from-primary/5 to-primary/10 border-b border-border dark:border-border-dark p-3 z-10">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h2 className="font-bold text-sm text-text-primary dark:text-text-primary-dark">Dynamic Functions</h2>
+    <div className="w-full h-full flex flex-col bg-surface-raised dark:bg-surface-dark-raised overflow-hidden">
+      {/* Sticky header */}
+      <div className="sticky top-0 z-10 bg-gradient-to-r from-[var(--aw-primary)]/5 to-[var(--aw-primary)]/10 border-b border-border dark:border-border-dark p-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Sparkles className="w-5 h-5 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" />
+          <h2 className="font-bold text-sm text-text-primary dark:text-text-primary-dark min-w-0 truncate">Dynamic Functions</h2>
         </div>
-        <p className="text-[10px] text-text-muted mt-1">
+        <p className="text-[10px] text-text-muted dark:text-text-muted-dark mt-1">
           Generate random data, dates, IDs on every run
         </p>
         <div className="relative mt-2">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted dark:text-text-muted-dark" />
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted dark:text-text-muted-dark pointer-events-none" />
           <input
             type="text"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Search functions"
-            className="w-full pl-8 pr-2 py-1.5 border border-border dark:border-border-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full pl-8 pr-2 py-1.5 border border-border dark:border-border-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark rounded text-xs focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow] duration-[var(--aw-transition-fast)] ease-in-out"
             aria-label="Search functions"
           />
         </div>
       </div>
 
-      <div className="p-3 space-y-2 flex-1 overflow-y-auto">
+      {/* Scrollable content */}
+      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-2">
         {visibleCategories.map(([category, funcs]) => {
           const Icon = categoryIcons[category];
           const isOpen = expandedCategory === category;
 
           return (
-            <div key={category} className="collapse collapse-arrow border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised">
-              <input
-                type="radio"
-                name="func-category"
-                checked={isOpen}
-                onChange={() => setExpandedCategory(isOpen ? null : category)}
+            <div
+              key={category}
+              className="border border-border dark:border-border-dark rounded-lg bg-surface dark:bg-surface-dark overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => setExpandedCategory(isOpen ? null : category)}
+                className="w-full flex items-center gap-2 p-2 cursor-pointer hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                aria-expanded={isOpen}
                 aria-label={`Toggle ${categoryTitles[category]}`}
-              />
-              <div className="collapse-title flex items-center gap-2 p-2 min-h-0">
-                <Icon className="w-4 h-4 text-text-secondary" />
-                <span className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">
+              >
+                <Icon className="w-4 h-4 flex-shrink-0 text-text-secondary dark:text-text-secondary-dark" aria-hidden="true" />
+                <span className="text-xs font-semibold text-text-primary dark:text-text-primary-dark min-w-0 truncate flex-1 text-left">
                   {categoryTitles[category]}
                 </span>
-                <span className="badge badge-sm badge-ghost">{funcs.length}</span>
-              </div>
+                <span className="inline-flex items-center justify-center text-[10px] px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark border border-border dark:border-border-dark flex-shrink-0">
+                  {funcs.length}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 flex-shrink-0 text-text-muted dark:text-text-muted-dark transition-transform duration-200 motion-reduce:transition-none ${isOpen ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
+                />
+              </button>
 
-              <div className="collapse-content px-0 pb-0">
-                <div className="divide-y divide-border dark:divide-border-dark">
+              {isOpen && (
+                <div className="divide-y divide-border dark:divide-border-dark border-t border-border dark:border-border-dark">
                   {funcs.map((func) => (
-                    <div key={func.syntax} className="p-2 hover:bg-surface-raised/50 dark:hover:bg-surface-dark-raised/50">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <code className="text-xs font-mono font-bold text-primary break-all">
+                    <div key={func.syntax} className="p-2 hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50 transition-colors motion-reduce:transition-none">
+                      <div className="flex items-start justify-between gap-2 mb-1 min-w-0">
+                        <code className="text-xs font-mono font-bold text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)] break-all min-w-0">
                           {func.syntax}
                         </code>
-                        <button
+                        <Button
                           type="button"
                           onClick={() => copyToClipboard(func.example)}
-                          className={`inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold rounded border transition-colors flex-shrink-0 ${
-                            copiedFunc === func.example
-                              ? 'border-status-success bg-status-success text-white'
-                              : 'border-primary bg-primary text-white hover:bg-primary-hover'
-                          }`}
-                          title="Copy to clipboard"
+                          size="xs"
+                          variant={copiedFunc === func.example ? 'primary' : 'secondary'}
+                          intent={copiedFunc === func.example ? 'success' : 'default'}
+                          className="flex-shrink-0"
+                          icon={copiedFunc === func.example ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         >
-                          <Copy className="w-3 h-3" />
-                          {copiedFunc === func.example ? 'Copied!' : 'Copy'}
-                        </button>
+                          {copiedFunc === func.example ? 'Copied' : 'Copy'}
+                        </Button>
                       </div>
 
-                      <p className="text-[10px] text-text-muted mb-1.5">{func.description}</p>
+                      <p className="text-[10px] text-text-muted dark:text-text-muted-dark mb-1.5">{func.description}</p>
 
-                      <div className="bg-surface dark:bg-surface-dark p-1.5 rounded mb-1.5 text-[10px] space-y-0.5 border border-border/50 dark:border-border-dark/50">
-                        <div>
+                      <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-1.5 rounded mb-1.5 text-[10px] space-y-0.5 border border-border/50 dark:border-border-dark/50 min-w-0">
+                        <div className="min-w-0">
                           <span className="text-text-muted">Example: </span>
-                          <code className="text-text-primary dark:text-text-primary-dark font-mono">
+                          <code className="text-text-primary dark:text-text-primary-dark font-mono break-all">
                             {`{{${func.example}}}`}
                           </code>
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <span className="text-text-muted">Result: </span>
-                          <code className="text-status-success font-mono">{func.result}</code>
+                          <code className="text-status-success dark:text-[var(--aw-status-success)] font-mono break-all">{func.result}</code>
                         </div>
                       </div>
 
                       {func.default !== 'N/A' && (
-                        <div className="text-[9px] text-text-muted flex items-start gap-1">
-                          <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                          <span>Default: {func.default}</span>
+                        <div className="text-[9px] text-text-muted dark:text-text-muted-dark flex items-start gap-1 min-w-0">
+                          <Info className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                          <span className="break-all">Default: {func.default}</span>
                         </div>
                       )}
                     </div>
                   ))}
                 </div>
-              </div>
+              )}
             </div>
           );
         })}
 
         {visibleCategories.length === 0 && (
-          <div className="text-center py-6 text-xs text-text-muted dark:text-text-muted-dark border border-dashed border-border dark:border-border-dark rounded-lg">
-            No matching functions
-          </div>
+          <EmptyState
+            title="No matching functions"
+            description="Try a different search term"
+            className="py-6"
+          />
         )}
       </div>
 
-      <div className="border-t border-border dark:border-border-dark p-3 text-[10px] text-text-muted bg-surface-raised dark:bg-surface-dark-raised space-y-1.5 overflow-x-hidden">
-        <div className="font-semibold text-text-secondary dark:text-text-primary-dark flex items-center gap-1">
-          <Sparkles className="w-3 h-3" />
+      {/* Tips footer */}
+      <div className="border-t border-border dark:border-border-dark p-3 text-[10px] text-text-muted dark:text-text-muted-dark bg-surface-overlay dark:bg-surface-dark-overlay space-y-1.5 overflow-x-hidden flex-shrink-0">
+        <div className="font-semibold text-text-secondary dark:text-text-secondary-dark flex items-center gap-1">
+          <Sparkles className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
           Quick Tips
         </div>
 
-        <ul className="space-y-1 pl-4 break-words">
-          <li className="flex items-start gap-1 flex-wrap">
-            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-            Use in any field: URL, Headers, Body, Assertions
+        <ul className="space-y-1 pl-4">
+          <li className="flex items-start gap-1">
+            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <span className="break-words">Use in any field: URL, Headers, Body, Assertions</span>
           </li>
-          <li className="flex items-start gap-1 flex-wrap">
-            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-            Fresh value generated per workflow run
+          <li className="flex items-start gap-1">
+            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <span className="break-words">Fresh value generated per workflow run</span>
           </li>
-          <li className="flex items-start gap-1 flex-wrap">
-            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-            Combine: <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 rounded ml-1 break-all max-w-full">{`user_{{randomNumber(4)}}@test.com`}</code>
+          <li className="flex items-start gap-1">
+            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <span className="break-words">
+              Combine: <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 rounded break-all">{`user_{{randomNumber(4)}}@test.com`}</code>
+            </span>
           </li>
-          <li className="flex items-start gap-1 flex-wrap">
-            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-            Works in Workflow Variables too
+          <li className="flex items-start gap-1">
+            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <span className="break-words">Works in Workflow Variables too</span>
           </li>
         </ul>
 
         <div className="pt-1.5 border-t border-border dark:border-border-dark flex items-center gap-1">
-          <Calendar className="w-3 h-3" />
-          <span className="font-semibold text-text-secondary dark:text-text-primary-dark">Date Format Codes</span>
+          <Calendar className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+          <span className="font-semibold text-text-secondary dark:text-text-secondary-dark">Date Format Codes</span>
         </div>
-        <ul className="space-y-0.5 pl-4 text-[9px] break-words">
-          <li>%Y = Year (2025) | %m = Month (10) | %d = Day (30)</li>
-          <li>%H = Hour (14) | %M = Minute (30) | %S = Second (45)</li>
-          <li>Example: <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 break-all max-w-full">{`date("%d/%m/%Y")`}</code> → 30/10/2025</li>
+        <ul className="space-y-0.5 pl-4 text-[9px]">
+          <li className="break-words">%Y = Year (2025) | %m = Month (10) | %d = Day (30)</li>
+          <li className="break-words">%H = Hour (14) | %M = Minute (30) | %S = Second (45)</li>
+          <li className="break-words">
+            Example: <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 break-all">{`date("%d/%m/%Y")`}</code> → 30/10/2025
+          </li>
         </ul>
 
         <div className="pt-1.5 border-t border-border dark:border-border-dark flex items-center gap-1">
-          <span className="font-semibold text-text-secondary dark:text-text-primary-dark">In Assertions</span>
+          <span className="font-semibold text-text-secondary dark:text-text-secondary-dark">In Assertions</span>
         </div>
-        <p className="text-[9px] pl-4">
-          Compare with dynamic values: <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 break-all max-w-full">{`Expected: {{futureDate(1)}}`}</code>
+        <p className="text-[9px] pl-4 break-words">
+          Compare with dynamic values: <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 break-all">{`Expected: {{futureDate(1)}}`}</code>
         </p>
       </div>
     </div>

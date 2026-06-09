@@ -34,13 +34,13 @@ type ImportMode = 'linear' | 'grouped';
 function getMethodBadgeClasses(method: string): string {
   switch (method) {
     case 'GET':
-      return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300';
+      return 'bg-[var(--aw-status-info)]/10 dark:bg-[var(--aw-status-info)]/20 text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)]';
     case 'POST':
-      return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+      return 'bg-[var(--aw-status-success)]/10 dark:bg-[var(--aw-status-success)]/20 text-[var(--aw-status-success)] dark:text-[var(--aw-status-success)]';
     case 'PUT':
-      return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300';
+      return 'bg-[var(--aw-status-warning)]/10 dark:bg-[var(--aw-status-warning)]/20 text-[var(--aw-status-warning)] dark:text-[var(--aw-status-warning)]';
     case 'DELETE':
-      return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300';
+      return 'bg-[var(--aw-status-error)]/10 dark:bg-[var(--aw-status-error)]/20 text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]';
     default:
       return 'bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark';
   }
@@ -169,7 +169,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
 
   return (
     <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="HAR import">
-      <button type="button" aria-label="Close HAR import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
+      <button type="button" aria-label="Close HAR import" className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80" onClick={onClose} />
       <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
@@ -293,7 +293,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                   {/* Stats */}
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                      <p className="text-2xl font-bold text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)]">
                         {dryRunResult.stats?.totalEntries || 0}
                       </p>
                       <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Total Requests</p>
@@ -305,7 +305,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                       <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Nodes</p>
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                      <p className="text-2xl font-bold text-[var(--aw-branch-edge)] dark:text-[var(--aw-branch-edge)]">
                         {dryRunResult.stats?.edges || 0}
                       </p>
                       <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Edges</p>
@@ -357,10 +357,10 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
 
             {/* Error */}
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded-lg p-4">
                 <div className="flex items-start">
                   <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2" />
-                  <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+                  <p className="text-sm text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]">{error}</p>
                 </div>
               </div>
             )}

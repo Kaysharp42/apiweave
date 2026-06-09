@@ -2,16 +2,7 @@ import { useState, useEffect, useReducer, useRef, useCallback, useSyncExternalSt
 import API_BASE_URL from '../utils/api';
 import { CheckCircle, XCircle, RefreshCw, Clock, Circle, History, X, ClipboardList, ChevronRight, Timer, Zap } from 'lucide-react';
 import { authenticatedFetch } from '../utils/authenticatedApi';
-
-interface RunRecord {
-  runId: string;
-  status: string;
-  createdAt: string;
-  duration?: number;
-  trigger?: string;
-  error?: string;
-  failedNodes?: string[];
-}
+import type { RunRecord, HistoryModalProps } from '../types';
 
 interface PaginationInfo {
   page: number;
@@ -89,12 +80,6 @@ function requestReducer(_state: RequestState, action: RequestAction): RequestSta
     case 'finish-loading':
       return { status: 'idle' };
   }
-}
-
-export interface HistoryModalProps {
-  workflowId: string;
-  onClose: () => void;
-  onSelectRun: (run: RunRecord) => void;
 }
 
 export default function HistoryModal({ workflowId, onClose, onSelectRun }: HistoryModalProps) {
@@ -208,23 +193,22 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-start justify-end pt-40 pr-4 transition-opacity duration-300 ${
+      className={`fixed inset-0 z-50 flex items-start justify-end pt-40 pr-4 transition-opacity duration-300 bg-[var(--aw-surface)]/30 ${
         isAnimating ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
-      style={{ backgroundColor: 'rgba(15, 23, 42, 0.3)' }}
     >
       <button type="button" aria-label="Close run history" className="absolute inset-0 cursor-pointer" onClick={handleClose} />
 
       <div
         ref={modalRef}
-        className="relative z-10 bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-2xl transition-transform duration-300 flex flex-col"
+        className="relative z-10 bg-surface-raised dark:bg-surface-dark-raised rounded-3xl overflow-hidden shadow-2xl transition-transform duration-300 flex flex-col"
         style={{
           width: '500px',
           maxHeight: '600px',
           transform: isAnimating ? 'translateY(0)' : 'translateY(-20px)',
         }}
       >
-        <div className="flex-shrink-0 px-5 py-4 border-b border-border dark:border-border-dark bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
+        <div className="flex-shrink-0 px-5 py-4 border-b border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-cyan-600 dark:bg-cyan-700 rounded-lg">

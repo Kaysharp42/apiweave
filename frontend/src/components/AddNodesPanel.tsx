@@ -3,6 +3,7 @@ import { Popover, Transition } from '@headlessui/react';
 import { X, Plus, PanelRightOpen, Search, Globe, GitBranch, CheckCircle, Package, type LucideIcon } from 'lucide-react';
 import { usePalette } from '../contexts/PaletteContext';
 import { getNextNodeFilterValue, shouldClearNodeFilter } from '../utils/nodeFilterBehavior';
+import type { AddNodesPanelProps } from '../types';
 
 const methodBadge: Record<string, string> = {
   GET: 'bg-method-get',
@@ -80,12 +81,6 @@ const nodeTemplates: { category: string; nodes: NodeTemplate[] }[] = [
     ],
   },
 ];
-
-export interface AddNodesPanelProps {
-  isModalOpen?: boolean;
-  showVariablesPanel?: boolean;
-  onShowVariablesPanel?: (show: boolean) => void;
-}
 
 export default function AddNodesPanel({
   isModalOpen = false,

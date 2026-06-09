@@ -1,24 +1,14 @@
 import { useState, useCallback, type ChangeEvent } from 'react';
 import { Plus, Trash2, Image } from 'lucide-react';
 import { toast } from 'sonner';
+import type { FileUpload } from '../types/FileUpload';
+import type { FileUploadSectionProps } from '../types';
+
+// Re-export for backward compatibility
+export type { FileUpload } from '../types/FileUpload';
 
 const EMPTY_FILE_UPLOADS: FileUpload[] = [];
 const EMPTY_VARIABLES: Record<string, unknown> = {};
-
-export interface FileUpload {
-  name: string;
-  type: 'base64' | 'path' | 'variable';
-  value: string;
-  fieldName: string;
-  mimeType: string;
-  description: string;
-}
-
-export interface FileUploadSectionProps {
-  fileUploads?: FileUpload[];
-  onUpdate: (uploads: FileUpload[]) => void;
-  variables?: Record<string, unknown>;
-}
 
 interface FormData {
   name: string;

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useReducer } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2, Copy, Pencil, Lock, X, Link2 } from 'lucide-react';
+import { Plus, Trash2, Copy, Pencil, Lock, X, Link2, Globe } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 import { Modal } from './molecules/Modal';
 import { ConfirmDialog } from './molecules/ConfirmDialog';
+import { EmptyState } from './molecules/EmptyState';
 import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { Input } from './atoms/Input';
@@ -12,55 +13,11 @@ import SecretsPanel from './SecretsPanel';
 import useSidebarStore from '../stores/SidebarStore';
 import type { Environment } from '../types';
 import { authenticatedFetch } from '../utils/authenticatedApi';
-
-export interface EnvironmentManagerProps {
-  open: boolean;
-  onClose: () => void;
-}
-
-export interface EnvironmentFormData {
-  name: string;
-  description: string;
-  swaggerDocUrl: string;
-  variables: Record<string, string>;
-}
-
-export interface EnvironmentListItem {
-  id: string;
-  environmentId: string;
-  name: string;
-  description?: string;
-  swaggerDocUrl?: string;
-  variables: Record<string, string>;
-  createdAt: string;
-  updatedAt: string;
-  isDefault?: boolean;
-  isActive?: boolean;
-  secrets?: Record<string, string>;
-}
-
-interface EnvironmentManagerState {
-  selectedEnv: EnvironmentListItem | null;
-  isEditing: boolean;
-  showSecretsPanel: boolean;
-  deleteTarget: string | null;
-  formData: EnvironmentFormData;
-  newVarKey: string;
-  newVarValue: string;
-}
-
-type EnvironmentManagerAction =
-  | { type: 'select'; env: EnvironmentListItem | null }
-  | { type: 'start-create' }
-  | { type: 'start-edit'; env: EnvironmentListItem }
-  | { type: 'set-form'; formData: EnvironmentFormData }
-  | { type: 'patch-form'; patch: Partial<EnvironmentFormData> }
-  | { type: 'set-new-var-key'; value: string }
-  | { type: 'set-new-var-value'; value: string }
-  | { type: 'open-secrets' }
-  | { type: 'close-secrets' }
-  | { type: 'set-delete-target'; value: string | null }
-  | { type: 'reset-editor' };
+import type { EnvironmentManagerProps } from '../types/EnvironmentManagerProps';
+import type { EnvironmentFormData } from '../types/EnvironmentFormData';
+import type { EnvironmentListItem } from '../types/EnvironmentListItem';
+import type { EnvironmentManagerState } from '../types/EnvironmentManagerState';
+import type { EnvironmentManagerAction } from '../types/EnvironmentManagerAction';
 
 const initialEnvironmentFormData: EnvironmentFormData = {
   name: '',
@@ -286,39 +243,47 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
               </Button>
 
               <div className="space-y-2">
-                {environments.map((env) => (
-                  <button
-                    type="button"
-                    key={env.environmentId}
-                    className={`w-full text-left p-3 rounded border cursor-pointer transition-colors ${
-                      state.selectedEnv?.environmentId === env.environmentId
-                        ? 'border-primary bg-primary/5 dark:border-primary dark:bg-primary/10'
-                        : 'border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
-                    }`}
-                    onClick={() => handleEdit(env)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">
-                          {env.name}
-                        </div>
-                        <div className="text-xs text-text-muted dark:text-text-muted-dark mt-0.5">
-                          {Object.keys(env.variables).length} variables
-                          {env.swaggerDocUrl && (
-                            <span className="ml-2 inline-flex items-center gap-1">
-                              <Link2 className="w-3 h-3 inline" /> Swagger
-                            </span>
-                          )}
-                          {env.secrets && Object.keys(env.secrets).length > 0 && (
-                            <span className="ml-2">
-                              <Lock className="w-3 h-3 inline" /> {Object.keys(env.secrets).length} secrets
-                            </span>
-                          )}
+                {environments.length === 0 ? (
+                  <EmptyState
+                    icon={<Globe className="w-10 h-10 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+                    title="No environments"
+                    description="Create an environment to manage variables and secrets."
+                  />
+                ) : (
+                  environments.map((env) => (
+                    <button
+                      type="button"
+                      key={env.environmentId}
+                      className={`w-full text-left p-3 rounded border cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${
+                        state.selectedEnv?.environmentId === env.environmentId
+                          ? 'border-primary bg-primary/5 dark:border-primary dark:bg-primary/10'
+                          : 'border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
+                      }`}
+                      onClick={() => handleEdit(env)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">
+                            {env.name}
+                          </div>
+                          <div className="text-xs text-text-muted dark:text-text-muted-dark mt-0.5">
+                            {Object.keys(env.variables).length} variables
+                            {env.swaggerDocUrl && (
+                              <span className="ml-2 inline-flex items-center gap-1">
+                                <Link2 className="w-3 h-3 inline" /> Swagger
+                              </span>
+                            )}
+                            {env.secrets && Object.keys(env.secrets).length > 0 && (
+                              <span className="ml-2">
+                                <Lock className="w-3 h-3 inline" /> {Object.keys(env.secrets).length} secrets
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -502,9 +467,9 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
                     </h4>
                     <div className="space-y-1">
                       {Object.entries(state.selectedEnv.secrets).map(([key]) => (
-                        <div key={key} className="flex items-center gap-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
-                          <Lock className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 flex-shrink-0" />
-                          <span className="font-mono text-sm text-purple-700 dark:text-purple-300">{key}</span>
+                        <div key={key} className="flex items-center gap-2 p-2 bg-[var(--aw-status-info)]/5 dark:bg-[var(--aw-status-info)]/10 rounded border border-[var(--aw-status-info)]/20 dark:border-[var(--aw-status-info)]/30">
+                          <Lock className="w-3.5 h-3.5 text-[var(--aw-status-info)] flex-shrink-0" />
+                          <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark min-w-0 truncate">{key}</span>
                         </div>
                       ))}
                     </div>

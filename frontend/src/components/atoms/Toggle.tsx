@@ -1,14 +1,5 @@
-import React, { useId } from 'react';
-
-export interface ToggleProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
-  label?: string;
-  checked?: boolean;
-  onChange?: React.ChangeEventHandler<HTMLInputElement>;
-  variant?: 'primary' | 'secondary' | 'success' | 'error' | 'warning';
-  size?: 'xs' | 'sm' | 'md' | 'lg';
-  disabled?: boolean;
-  id?: string;
-}
+import { useId } from 'react';
+import type { ToggleProps } from '../../types';
 
 export function Toggle({
   label,
@@ -50,7 +41,15 @@ export function Toggle({
         <input
           id={id}
           type="checkbox"
-          className={['toggle', variantClass[variant] ?? 'toggle-primary', sizeClass[size] ?? 'toggle-sm', className].filter(Boolean).join(' ')}
+          className={[
+            'toggle',
+            variantClass[variant] ?? 'toggle-primary',
+            sizeClass[size] ?? 'toggle-sm',
+            'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+            'transition-[outline] duration-[var(--aw-transition-fast)] ease-in-out',
+            disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+            className,
+          ].filter(Boolean).join(' ')}
           checked={checked}
           onChange={onChange}
           disabled={disabled}

@@ -1,14 +1,6 @@
 import { useId } from 'react';
 import { Search, X } from 'lucide-react';
-
-export interface SearchInputProps {
-  value?: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  size?: 'xs' | 'sm' | 'md';
-  className?: string;
-  autoFocus?: boolean;
-}
+import type { SearchInputProps } from '../../types';
 
 export function SearchInput({
   value = '',
@@ -56,6 +48,7 @@ export function SearchInput({
           'text-text-primary dark:text-text-primary-dark',
           'placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
           'focus:outline-none focus:border-primary dark:focus:border-primary-light',
+          'focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light focus-visible:ring-offset-2',
         ].join(' ')}
         {...rest}
       />
@@ -64,7 +57,7 @@ export function SearchInput({
         <button
           type="button"
           onClick={() => onChange('')}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark transition-colors"
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:focus-visible:outline-primary-light focus-visible:outline-offset-2"
           aria-label="Clear search"
         >
           <X className={iconSize[size] ?? 'w-3.5 h-3.5'} />

@@ -1,14 +1,6 @@
-import React from 'react';
 import Tippy from '@tippyjs/react';
 import { buildIconButtonClassName } from '../../utils/iconButtonStyles';
-
-export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  tooltip?: string;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
-  variant?: 'ghost' | 'primary' | 'error' | 'warning' | 'success';
-  disabled?: boolean;
-  children?: React.ReactNode;
-}
+import type { IconButtonProps } from '../../types';
 
 export function IconButton({
   children,

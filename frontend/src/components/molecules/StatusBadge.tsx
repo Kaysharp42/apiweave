@@ -1,4 +1,4 @@
-import { Loader2, CheckCircle2, XCircle, Clock, type LucideIcon } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Clock, AlertTriangle, Info, type LucideIcon } from 'lucide-react';
 import type { StatusBadgeProps } from '../../types';
 
 export function StatusBadge({
@@ -33,13 +33,13 @@ export function StatusBadge({
       iconClass: 'text-error',
     },
     warning: {
-      icon: Clock,
+      icon: AlertTriangle,
       text: 'Warning',
       badgeClass: 'badge-warning',
       iconClass: 'text-warning',
     },
     info: {
-      icon: Clock,
+      icon: Info,
       text: 'Info',
       badgeClass: 'badge-info',
       iconClass: 'text-info',
@@ -54,13 +54,16 @@ export function StatusBadge({
 
   const sizeClass = size === 'sm' ? 'badge-sm' : size === 'xs' ? 'badge-xs' : '';
   const iconSize = size === 'xs' ? 'w-3 h-3' : size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
+  const displayText = label ?? text;
 
   return (
     <span
       className={['badge gap-1', badgeClass, sizeClass, className].filter(Boolean).join(' ')}
+      aria-label={displayText}
+      role="status"
     >
-      <Icon className={`${iconSize} ${iconClass}`} />
-      {label ?? text}
+      <Icon className={`${iconSize} ${iconClass}`} aria-hidden="true" />
+      <span className="truncate">{displayText}</span>
     </span>
   );
 }

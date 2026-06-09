@@ -1,6 +1,7 @@
+import type { AuthStatus } from './AuthStatus';
 import type { User } from './User';
 
-export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+export type { AuthStatus } from './AuthStatus';
 
 export interface AuthState {
   status: AuthStatus;

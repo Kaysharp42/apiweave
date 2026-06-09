@@ -231,16 +231,16 @@ export function ImportToNodesPanel({
 
   const handleDragOver = (e: DragEvent): void => {
     e.preventDefault();
-    e.currentTarget.classList.add('border-blue-500', 'bg-blue-50');
+    e.currentTarget.classList.add('border-[var(--aw-primary)]', 'bg-[var(--aw-primary)]/5');
   };
 
   const handleDragLeave = (e: DragEvent): void => {
-    e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
+    e.currentTarget.classList.remove('border-[var(--aw-primary)]', 'bg-[var(--aw-primary)]/5');
   };
 
   const handleDrop = (e: DragEvent): void => {
     e.preventDefault();
-    e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
+    e.currentTarget.classList.remove('border-[var(--aw-primary)]', 'bg-[var(--aw-primary)]/5');
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       const file = files[0];
@@ -547,7 +547,7 @@ export function ImportToNodesPanel({
   };
 
   return (
-          <div className="fixed inset-0 bg-slate-950/50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80 flex items-center justify-center z-50">
       <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-border dark:border-border-dark">
@@ -572,7 +572,7 @@ export function ImportToNodesPanel({
             intent="info"
             className={`flex-1 px-4 py-3 font-medium text-center rounded-none ${
               activeTab === 'openapi'
-                ? 'border-b-2 border-blue-500'
+                ? 'border-b-2 border-[var(--aw-primary)]'
                 : ''
             }`}
             icon={<Upload className="w-4 h-4" />}
@@ -585,7 +585,7 @@ export function ImportToNodesPanel({
             intent="info"
             className={`flex-1 px-4 py-3 font-medium text-center rounded-none ${
               activeTab === 'har'
-                ? 'border-b-2 border-blue-500'
+                ? 'border-b-2 border-[var(--aw-primary)]'
                 : ''
             }`}
             icon={<Upload className="w-4 h-4" />}
@@ -598,7 +598,7 @@ export function ImportToNodesPanel({
             intent="info"
             className={`flex-1 px-4 py-3 font-medium text-center rounded-none ${
               activeTab === 'curl'
-                ? 'border-b-2 border-blue-500'
+                ? 'border-b-2 border-[var(--aw-primary)]'
                 : ''
             }`}
             icon={<Terminal className="w-4 h-4" />}
@@ -614,8 +614,8 @@ export function ImportToNodesPanel({
             <div
               className={`mb-4 p-4 rounded-lg flex gap-3 ${
                 message.type === 'success'
-                  ? 'bg-green-50 dark:bg-green-900/20 text-status-success dark:text-status-success-dark'
-                  : 'bg-red-50 dark:bg-red-900/20 text-status-error dark:text-status-error-dark'
+                  ? 'bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 text-status-success dark:text-status-success-dark'
+                  : 'bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 text-status-error dark:text-status-error-dark'
               }`}
             >
               {message.type === 'success' ? (
@@ -633,7 +633,7 @@ export function ImportToNodesPanel({
           {/* OpenAPI Tab */}
           {activeTab === 'openapi' && (
             <div className="space-y-4">
-              <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-lg flex gap-2 text-sm text-blue-600 dark:text-blue-400 border border-primary/20 dark:border-primary/30">
+              <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-lg flex gap-2 text-sm text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)] border border-primary/20 dark:border-primary/30">
                 <Info size={18} className="flex-shrink-0 mt-0.5" />
                 <span>Upload or paste an OpenAPI specification. Requests will be added to your Add Nodes panel.</span>
               </div>
@@ -673,7 +673,7 @@ export function ImportToNodesPanel({
           {/* HAR Tab */}
           {activeTab === 'har' && (
             <div className="space-y-4">
-              <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-lg flex gap-2 text-sm text-blue-600 dark:text-blue-400 border border-primary/20 dark:border-primary/30">
+              <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-lg flex gap-2 text-sm text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)] border border-primary/20 dark:border-primary/30">
                 <Info size={18} className="flex-shrink-0 mt-0.5" />
                 <span>Upload or paste a HAR (HTTP Archive) file. Requests will be added to your Add Nodes panel.</span>
               </div>
@@ -727,7 +727,7 @@ export function ImportToNodesPanel({
           {/* Curl Tab */}
           {activeTab === 'curl' && (
             <div className="space-y-4">
-              <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-lg flex gap-2 text-sm text-blue-600 dark:text-blue-400 border border-primary/20 dark:border-primary/30">
+              <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-lg flex gap-2 text-sm text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)] border border-primary/20 dark:border-primary/30">
                 <Info size={18} className="flex-shrink-0 mt-0.5" />
                 <span>Paste one or more curl commands. They will be parsed and added to your Add Nodes panel.</span>
               </div>

@@ -1,22 +1,12 @@
-import React, { Fragment, useRef } from 'react';
+import { Fragment, useRef } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Info, XCircle } from 'lucide-react';
 import { Button } from '../atoms/Button';
 import {
   resolveConfirmDialogIntent,
   runConfirmDialogAction,
 } from '../../utils/confirmDialogActions';
-
-export interface ConfirmDialogProps {
-  open?: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title?: string;
-  message: string | React.ReactNode;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  intent?: 'error' | 'warning' | 'info';
-}
+import type { ConfirmDialogProps } from '../../types';
 
 export function ConfirmDialog({
   open = false,
@@ -30,6 +20,15 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmIntent = resolveConfirmDialogIntent(intent);
+
+  const intentConfig = {
+    error: { icon: XCircle, iconBg: 'bg-status-error/10', iconText: 'text-status-error' },
+    warning: { icon: AlertTriangle, iconBg: 'bg-status-warning/10', iconText: 'text-status-warning' },
+    info: { icon: Info, iconBg: 'bg-status-info/10', iconText: 'text-status-info' },
+  };
+
+  const config = intentConfig[intent];
+  const IntentIcon = config.icon;
 
   return (
     <Transition appear show={open} as={Fragment}>
@@ -61,13 +60,13 @@ export function ConfirmDialog({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-md rounded-lg bg-surface-raised dark:bg-surface-dark-raised p-6 shadow-xl border border-border dark:border-border-dark">
+            <Dialog.Panel className="w-full max-w-md rounded-lg bg-surface-raised dark:bg-surface-dark-raised p-6 shadow-modal border border-border dark:border-border-dark">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 p-1 rounded-full bg-status-error/10">
-                  <AlertTriangle className="w-5 h-5 text-status-error" />
+                <div className={`flex-shrink-0 p-1 rounded-full ${config.iconBg}`}>
+                  <IntentIcon className={`w-5 h-5 ${config.iconText}`} />
                 </div>
-                <div className="flex-1">
-                  <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark">
+                <div className="flex-1 min-w-0">
+                  <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark truncate">
                     {title}
                   </Dialog.Title>
                   {message && (

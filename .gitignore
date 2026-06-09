@@ -187,3 +187,4 @@ graphify-out/
 frontend/react-doctor.config.json
 frontend/react-doctor.json
 frontend/react-doctor.config.json
+frontend/package-lock.json

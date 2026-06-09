@@ -1,9 +1,4 @@
-import React from 'react';
-
-export interface DividerProps extends React.HTMLAttributes<HTMLDivElement> {
-  direction?: 'horizontal' | 'vertical';
-  text?: string;
-}
+import type { DividerProps } from '../../types';
 
 export function Divider({
   direction = 'horizontal',
@@ -14,7 +9,7 @@ export function Divider({
   if (direction === 'vertical') {
     return (
       <div
-        className={['divider divider-horizontal', className].filter(Boolean).join(' ')}
+        className={['divider divider-horizontal before:bg-border after:bg-border dark:before:bg-border-dark dark:after:bg-border-dark', className].filter(Boolean).join(' ')}
         {...rest}
       >
         {text}
@@ -23,7 +18,7 @@ export function Divider({
   }
 
   return (
-    <div className={['divider', className].filter(Boolean).join(' ')} {...rest}>
+    <div className={['divider before:bg-border after:bg-border dark:before:bg-border-dark dark:after:bg-border-dark', className].filter(Boolean).join(' ')} {...rest}>
       {text}
     </div>
   );

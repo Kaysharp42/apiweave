@@ -16,7 +16,7 @@ export function MainFooter() {
       </div>
 
       <div className="flex items-center gap-1.5 text-text-secondary dark:text-text-secondary-dark">
-        <span className="w-1.5 h-1.5 rounded-full bg-status-success" />
+        <span className="w-1.5 h-1.5 rounded-full bg-[var(--aw-status-success)]" />
         <span>Ready</span>
       </div>
 
@@ -25,6 +25,7 @@ export function MainFooter() {
           tooltip={isNavBarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           size="xs"
           onClick={toggleNavBarCollapse}
+          className="hidden lg:inline-flex focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
         >
           {isNavBarCollapsed ? (
             <PanelLeftOpen className="w-3.5 h-3.5" />
@@ -37,7 +38,8 @@ export function MainFooter() {
             href="https://github.com/Kaysharp42/apiweave"
             target="_blank"
             rel="noopener noreferrer"
-            className="btn btn-ghost btn-xs btn-square text-text-muted dark:text-text-muted-dark"
+            className="btn btn-ghost btn-xs btn-square text-text-muted dark:text-text-muted-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+            aria-label="View on GitHub"
           >
             <Github className="w-3.5 h-3.5" />
           </a>

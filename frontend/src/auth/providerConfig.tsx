@@ -1,9 +1,9 @@
-import type { ComponentType, SVGProps } from 'react';
+import type { SVGProps } from 'react';
 import { Fingerprint, Github, Gitlab } from 'lucide-react';
 import type { ProviderInfo } from '../types';
+import type { ProviderId, ProviderDisplay } from '../types';
 
-export type ProviderId = 'github' | 'gitlab' | 'google' | 'microsoft';
-
+export type { ProviderId, ProviderDisplay };
 export const PROVIDER_IDS = ['github', 'gitlab', 'google', 'microsoft'] as const;
 
 type ProviderIconProps = SVGProps<SVGSVGElement>;
@@ -17,12 +17,6 @@ function GoogleIcon(props: ProviderIconProps) {
       <path d="M12 5.75c1.5 0 2.84.52 3.9 1.54l2.92-2.92A9.8 9.8 0 0 0 12 2a10 10 0 0 0-9.18 5.65l3.43 2.65C7.07 7.56 9.33 5.75 12 5.75Z" />
     </svg>
   );
-}
-
-export interface ProviderDisplay {
-  id: ProviderId;
-  label: string;
-  IconComponent: ComponentType<ProviderIconProps>;
 }
 
 export const PROVIDER_DISPLAY_MAP: Record<ProviderId, ProviderDisplay> = {

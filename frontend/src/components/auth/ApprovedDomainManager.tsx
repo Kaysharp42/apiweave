@@ -1,12 +1,15 @@
 import React, { useReducer, useEffect, useCallback } from 'react';
 import { Button } from '../atoms/Button';
 import { Input } from '../atoms/Input';
+import { Spinner } from '../atoms/Spinner';
 import { FormField } from '../molecules/FormField';
+import { EmptyState } from '../molecules/EmptyState';
+import { Panel } from '../molecules/Panel';
 import { authenticatedJson, authenticatedFetch } from '../../utils/authenticatedApi';
 import API_BASE_URL from '../../utils/api';
 import type { ApprovedDomain } from '../../types';
 import { toast } from 'sonner';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Globe, Trash2 } from 'lucide-react';
 
 export function ApprovedDomainManager() {
   type ApprovedDomainState = {
@@ -109,17 +112,15 @@ export function ApprovedDomainManager() {
   if (state.loading) {
     return (
       <div className="flex items-center justify-center p-8 text-text-muted">
-        <Loader2 className="w-6 h-6 animate-spin" />
+        <Spinner size="lg" className="text-primary dark:text-primary-light" />
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-lg p-5">
-        <h3 className="text-sm font-semibold mb-4 text-text-primary dark:text-text-primary-dark">
-          Add Approved Domain
-        </h3>
+      <Panel title="Add Approved Domain" icon={Globe as React.ComponentType<{ className?: string }>}>
+        <div className="p-5">
           <form onSubmit={handleAddDomain} className="flex items-end gap-3">
             <div className="flex-1">
               <FormField label="Domain Name" {...(state.error ? { error: state.error } : {})}>
@@ -129,54 +130,61 @@ export function ApprovedDomainManager() {
                   onChange={(e) => dispatch({ type: 'set-new-domain', value: e.target.value })}
                   disabled={state.adding}
                 />
-            </FormField>
-          </div>
-          <Button type="submit" loading={state.adding} disabled={!state.newDomain.trim()}>
-            Add
-          </Button>
-        </form>
-      </div>
+              </FormField>
+            </div>
+            <Button type="submit" loading={state.adding} disabled={!state.newDomain.trim()}>
+              Add
+            </Button>
+          </form>
+        </div>
+      </Panel>
 
-      <div className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-lg overflow-hidden">
-        <table className="w-full text-sm text-left">
-          <thead className="text-xs text-text-secondary dark:text-text-secondary-dark uppercase bg-surface-raised dark:bg-surface-dark-raised border-b border-border dark:border-border-dark">
-            <tr>
-              <th className="px-6 py-3">Domain</th>
-              <th className="px-6 py-3 w-24">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.domains.length === 0 ? (
+      <Panel title="Approved Domains">
+        <div className="overflow-hidden">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-text-secondary dark:text-text-secondary-dark uppercase bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark">
               <tr>
-                <td colSpan={2} className="px-6 py-8 text-center text-text-muted">
-                  No approved domains configured
-                </td>
+                <th className="px-6 py-3">Domain</th>
+                <th className="px-6 py-3 w-24">Actions</th>
               </tr>
-            ) : (
-              state.domains.map((domain) => (
-                <tr
-                  key={domain.id}
-                  className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-raised dark:hover:bg-surface-dark-raised transition-colors"
-                >
-                  <td className="px-6 py-3 font-medium text-text-primary dark:text-text-primary-dark">
-                    {domain.domain}
-                  </td>
-                  <td className="px-6 py-3">
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      intent="error"
-                      onClick={() => handleRemoveDomain(domain.id)}
-                      icon={<Trash2 className="w-4 h-4" />}
-                      aria-label="Remove domain"
+            </thead>
+            <tbody>
+              {state.domains.length === 0 ? (
+                <tr>
+                  <td colSpan={2}>
+                    <EmptyState
+                      title="No approved domains"
+                      description="Add a domain above to automatically approve users from that organization."
                     />
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                state.domains.map((domain) => (
+                  <tr
+                    key={domain.id}
+                    className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px]"
+                    tabIndex={0}
+                  >
+                    <td className="px-6 py-3 font-medium text-text-primary dark:text-text-primary-dark">
+                      {domain.domain}
+                    </td>
+                    <td className="px-6 py-3">
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        intent="error"
+                        onClick={() => handleRemoveDomain(domain.id)}
+                        icon={<Trash2 className="w-4 h-4" />}
+                        aria-label="Remove domain"
+                      />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
     </div>
   );
 }

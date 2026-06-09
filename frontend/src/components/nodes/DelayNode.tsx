@@ -2,21 +2,7 @@ import { memo, useCallback, useMemo } from 'react';
 import { useReactFlow } from 'reactflow';
 import { Clock } from 'lucide-react';
 import { BaseNode } from '../atoms/flow/BaseNode';
-import type { NodeStatus } from '../../types/NodeStatus';
-
-interface DelayNodeData {
-  label?: string;
-  executionStatus?: NodeStatus;
-  config?: {
-    duration?: number;
-  };
-}
-
-interface DelayNodeProps {
-  id: string;
-  data: DelayNodeData;
-  selected?: boolean;
-}
+import type { DelayNodeProps } from '../../types/DelayNodeProps';
 
 const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
   const { setNodes } = useReactFlow();
@@ -33,9 +19,19 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
 
   const duration = data.config?.duration ?? 1000;
   const humanLabel = duration >= 1000 ? `${(duration / 1000).toFixed(1)}s` : `${duration}ms`;
-  const icon = useMemo(() => <Clock className="w-4 h-4 text-yellow-700 dark:text-yellow-300" />, []);
+
+  const icon = useMemo(() => (
+    <Clock className="w-4 h-4" style={{ color: 'var(--aw-status-warning)' }} />
+  ), []);
+
   const titleExtra = useMemo(() => (
-    <span className="text-[10px] font-mono text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-800/40 px-1.5 py-0.5 rounded">
+    <span
+      className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+      style={{
+        backgroundColor: 'var(--aw-status-warning)/15',
+        color: 'var(--aw-status-warning)',
+      }}
+    >
       {humanLabel}
     </span>
   ), [humanLabel]);
@@ -51,29 +47,38 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
       handleRight={{ type: 'source' }}
       collapsible={true}
       defaultExpanded={false}
-      headerBg="bg-yellow-50 dark:bg-yellow-900/60"
-      headerTextClass="text-yellow-800 dark:text-yellow-200"
       titleExtra={titleExtra}
       className="min-w-[180px]"
     >
-      {() => (
+      {({ isExpanded }) => (
         <div className="p-3 space-y-1.5">
-          <div className="text-[10px] text-text-muted dark:text-text-muted-dark">
+          <div className="text-[10px]" style={{ color: 'var(--aw-text-muted)' }}>
             Wait before next step
           </div>
-          <div className="flex items-center gap-1.5">
-            <input
-              type="number"
-              aria-label="Delay duration in milliseconds"
-              className="nodrag flex-1 px-1.5 py-0.5 border border-border dark:border-border-dark
-                bg-surface dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark
-                rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-              value={duration}
-              onChange={(e) => updateNodeData(parseInt(e.target.value) || 0)}
-              min="0"
-            />
-            <span className="text-[10px] font-medium text-text-secondary dark:text-text-secondary-dark">ms</span>
-          </div>
+
+          {!isExpanded && duration > 0 && (
+            <div
+              className="text-[9px] px-1.5 py-0.5 rounded inline-block"
+              style={{ backgroundColor: 'var(--aw-surface-overlay)', color: 'var(--aw-text-secondary)' }}
+            >
+              {humanLabel}
+            </div>
+          )}
+
+          {isExpanded && (
+            <div className="flex items-center gap-1.5 pt-1 border-t" style={{ borderColor: 'var(--aw-border)' }}>
+              <input
+                type="number"
+                aria-label="Delay duration in milliseconds"
+                className="nodrag flex-1 px-1.5 py-0.5 border rounded text-xs focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                style={{ borderColor: 'var(--aw-border)', backgroundColor: 'var(--aw-surface-raised)', color: 'var(--aw-text-primary)' }}
+                value={duration}
+                onChange={(e) => updateNodeData(parseInt(e.target.value) || 0)}
+                min="0"
+              />
+              <span className="text-[10px] font-medium" style={{ color: 'var(--aw-text-secondary)' }}>ms</span>
+            </div>
+          )}
         </div>
       )}
     </BaseNode>

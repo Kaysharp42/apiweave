@@ -1,5 +1,5 @@
 export interface ToolbarButtonProps {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ElementType;
   label: string;
   onClick: () => void;
   tooltip?: string;

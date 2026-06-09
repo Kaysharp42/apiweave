@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Trash2, RefreshCw, Plus, Check, Copy } from 'lucide-react';
+import { Trash2, RefreshCw, Plus, Check, Copy, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from './molecules/Modal';
 import { ConfirmDialog } from './molecules/ConfirmDialog';
 import { FormField } from './molecules/FormField';
+import { EmptyState } from './molecules/EmptyState';
+import { Spinner } from './atoms/Spinner';
 import { Button } from './atoms/Button';
 import { Input } from './atoms/Input';
 import { IconButton } from './atoms/IconButton';
@@ -14,43 +16,11 @@ import type { Collection } from '../types/Collection';
 import type { Environment } from '../types/Environment';
 import { authenticatedFetch } from '../utils/authenticatedApi';
 import { WebhookCiCdExamples } from './WebhookCiCdExamples';
-
-interface Webhook {
-  webhookId: string;
-  resourceType: 'workflow' | 'collection';
-  resourceId: string;
-  environmentId?: string;
-  description?: string;
-  enabled: boolean;
-  url: string;
-  usageCount: number;
-  lastUsed?: string;
-  lastStatus?: 'success' | 'failed' | 'pending';
-}
-
-interface WebhookCredentials {
-  url: string;
-  token: string;
-  hmacSecret: string;
-}
-
-interface WebhookLog {
-  logId: string;
-  status: 'success' | 'failed' | 'pending';
-  timestamp?: string;
-  duration?: number;
-  errorMessage?: string;
-  runId?: string;
-}
-
-interface NewWebhookFormData {
-  resourceType: 'workflow' | 'collection';
-  resourceId: string;
-  environmentId: string;
-  description: string;
-}
-
-type CopySuccessState = Record<string, boolean>;
+import type { Webhook } from '../types/Webhook';
+import type { WebhookCredentials } from '../types/WebhookCredentials';
+import type { WebhookLog } from '../types/WebhookLog';
+import type { NewWebhookFormData } from '../types/NewWebhookFormData';
+import type { CopySuccessState } from '../types/CopySuccessState';
 
 const buildManagementHeaders = (contentType?: boolean): HeadersInit => {
   const headers: Record<string, string> = {};
@@ -251,7 +221,11 @@ export function WebhookManager() {
   /* ---------- Render ---------- */
 
   if (loading) {
-    return <div className="flex items-center justify-center h-full"><span className="text-sm text-text-muted dark:text-text-muted-dark">Loading webhooks\u2026</span></div>;
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner size="md" className="motion-reduce:animate-none" />
+      </div>
+    );
   }
 
   return (
@@ -270,37 +244,43 @@ export function WebhookManager() {
       {/* Webhooks List */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {webhooks.length === 0 ? (
-          <div className="text-center py-8 text-text-muted dark:text-text-muted-dark">
-            <p className="text-sm">No webhooks created yet.</p>
-            <p className="text-xs mt-2">Create a webhook to integrate with CI/CD pipelines.</p>
-          </div>
+          <EmptyState
+            icon={<Plus className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+            title="No webhooks yet"
+            description="Create a webhook to integrate with CI/CD pipelines."
+            action={
+              <Button onClick={() => setShowCreateModal(true)} variant="primary" size="sm">
+                <Plus className="w-4 h-4" /> Create Webhook
+              </Button>
+            }
+          />
         ) : webhooks.map((wh) => (
           <div key={wh.webhookId} className="border border-border dark:border-border-dark rounded-lg p-3 bg-surface-raised dark:bg-surface-dark-raised">
             {/* Header row */}
             <div className="flex items-start justify-between mb-2">
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="font-medium text-sm text-text-primary dark:text-text-primary-dark">{getResourceName(wh)}</span>
+                  <span className="font-medium text-sm text-text-primary dark:text-text-primary-dark min-w-0 truncate">{getResourceName(wh)}</span>
                   <Badge variant={wh.resourceType === 'workflow' ? 'info' : 'secondary'} size="sm">{wh.resourceType}</Badge>
                   <Button
                     onClick={() => toggleWebhook(wh)}
                     variant="ghost"
                     size="xs"
-                    className={`cursor-pointer ${wh.enabled ? 'text-status-success' : 'text-text-muted'}`}
+                    className={wh.enabled ? 'text-status-success' : 'text-text-muted'}
                   >
                     {wh.enabled ? 'Enabled' : 'Disabled'}
                   </Button>
                 </div>
-                {wh.description && <p className="text-xs text-text-muted dark:text-text-muted-dark">{wh.description}</p>}
+                {wh.description && <p className="text-xs text-text-muted dark:text-text-muted-dark truncate">{wh.description}</p>}
               </div>
             </div>
 
             {/* Info */}
             <div className="space-y-1 text-xs text-text-secondary dark:text-text-secondary-dark mb-2">
-              <div className="flex items-center gap-2"><span className="font-medium">Environment:</span><span>{getEnvironmentName(wh.environmentId)}</span></div>
-              <div className="flex items-center gap-2"><span className="font-medium">Last Used:</span><span>{formatDate(wh.lastUsed)}</span></div>
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Usage:</span><span>{wh.usageCount}</span>
+              <div className="flex items-center gap-2 min-w-0"><span className="font-medium flex-shrink-0">Environment:</span><span className="truncate">{getEnvironmentName(wh.environmentId)}</span></div>
+              <div className="flex items-center gap-2 min-w-0"><span className="font-medium flex-shrink-0">Last Used:</span><span className="truncate">{formatDate(wh.lastUsed)}</span></div>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-medium flex-shrink-0">Usage:</span><span>{wh.usageCount}</span>
                 {wh.lastStatus && <Badge variant={statusBadgeVariant(wh.lastStatus)} size="xs">{wh.lastStatus}</Badge>}
               </div>
             </div>
@@ -309,15 +289,15 @@ export function WebhookManager() {
             <div className="mb-2">
               <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">Webhook URL:</span>
               <div className="flex items-center gap-2 mt-1">
-                <input type="text" readOnly value={wh.url} aria-label="Webhook URL" className="input input-bordered input-sm flex-1 font-mono text-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
-                <IconButton onClick={() => copyToClipboard(wh.url, `url-${wh.webhookId}`)} variant="ghost" size="sm" title="Copy URL">
+                <Input type="text" readOnly value={wh.url} aria-label="Webhook URL" className="flex-1 font-mono text-xs" />
+                <IconButton onClick={() => copyToClipboard(wh.url, `url-${wh.webhookId}`)} variant="ghost" size="sm" tooltip="Copy URL">
                   {copySuccess[`url-${wh.webhookId}`] ? <Check className="w-4 h-4 text-status-success" /> : <Copy className="w-4 h-4" />}
                 </IconButton>
               </div>
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-border-dark">
+            <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-border-dark flex-wrap">
               <Button onClick={() => viewLogs(wh)} variant="ghost" size="sm">View Logs</Button>
               <Button onClick={() => { setWebhookToRegenerate(wh); setShowRegenerateModal(true); }} variant="ghost" size="sm" intent="warning">
                 <RefreshCw className="w-3.5 h-3.5" /> Regenerate
@@ -366,8 +346,11 @@ export function WebhookManager() {
       <Modal isOpen={showCredentialsModal && !!webhookCredentials} onClose={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} title="Webhook Credentials" size="md"
         footer={() => <Button onClick={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} variant="primary" fullWidth>I've Saved the Credentials</Button>}>
         <div className="space-y-4 p-5">
-          <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
-            <p className="text-sm text-text-primary dark:text-text-primary-dark">⚠️ <strong>Important:</strong> Copy these credentials now. They will not be shown again!</p>
+          <div className="p-3 bg-[var(--aw-status-warning)]/10 border border-[var(--aw-status-warning)]/30 rounded-lg">
+            <p className="text-sm text-text-primary dark:text-text-primary-dark flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-[var(--aw-status-warning)] flex-shrink-0" />
+              <strong>Important:</strong> Copy these credentials now. They will not be shown again!
+            </p>
           </div>
           {webhookCredentials && (['url', 'token', 'hmacSecret'] as const).map((field) => {
             const labels: Record<string, string> = { url: 'Webhook URL', token: 'Webhook Token (X-Webhook-Token header)', hmacSecret: 'HMAC Secret (for signature validation)' };

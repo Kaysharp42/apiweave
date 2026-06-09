@@ -14,7 +14,7 @@ import {
   TableProperties,
   type LucideIcon,
 } from 'lucide-react';
-import type { ApiResponse, NodeResultMetadata, TabItem } from '../../types';
+import type { ApiResponse, NodeResultMetadata, TabItem, ResponseInspectorProps } from '../../types';
 import { Badge } from '../atoms/Badge';
 import { Button } from '../atoms/Button';
 import { IconButton } from '../atoms/IconButton';
@@ -22,12 +22,6 @@ import { Input } from '../atoms/Input';
 import { Card } from './Card';
 import { EmptyState } from './EmptyState';
 import { PanelTabs } from './PanelTabs';
-
-export interface ResponseInspectorProps {
-  response: ApiResponse | null;
-  metadata?: NodeResultMetadata;
-  rawBody?: string;
-}
 
 type ResponseInspectorTab = 'tree' | 'raw' | 'headers' | 'cookies' | 'preview' | 'timing';
 
@@ -408,7 +402,7 @@ export function ResponseInspector({
               <tbody className="divide-y divide-border dark:divide-border-dark text-text-primary dark:text-text-primary-dark">
                 {filteredHeaders.map(([key, value]) => (
                   <tr key={key}>
-                    <td className="px-3 py-2 align-top font-mono text-xs font-semibold text-primary dark:text-primary-light">{key}</td>
+                    <td className="px-3 py-2 align-top font-mono text-xs font-semibold text-primary dark:text-primary-light truncate max-w-[200px]">{key}</td>
                     <td className="px-3 py-2 align-top font-mono text-xs break-all">{value}</td>
                   </tr>
                 ))}
@@ -444,7 +438,7 @@ export function ResponseInspector({
           <tbody className="divide-y divide-border dark:divide-border-dark text-text-primary dark:text-text-primary-dark">
             {cookieRows.map((cookieRow) => (
               <tr key={`${cookieRow.name}-${cookieRow.domain ?? ''}-${cookieRow.path ?? ''}`}>
-                <td className="px-3 py-2 align-top font-mono text-xs font-semibold text-primary dark:text-primary-light">{cookieRow.name}</td>
+                <td className="px-3 py-2 align-top font-mono text-xs font-semibold text-primary dark:text-primary-light truncate max-w-[150px]">{cookieRow.name}</td>
                 <td className="px-3 py-2 align-top font-mono text-xs break-all">{cookieRow.value}</td>
                 <td className="px-3 py-2 align-top">
                   <div className="flex flex-wrap gap-1.5">
@@ -456,9 +450,9 @@ export function ResponseInspector({
                     )}
                   </div>
                 </td>
-                <td className="px-3 py-2 align-top font-mono text-xs">{cookieRow.path ?? '--'}</td>
-                <td className="px-3 py-2 align-top font-mono text-xs">{cookieRow.domain ?? '--'}</td>
-                <td className="px-3 py-2 align-top font-mono text-xs">{cookieRow.expires ?? '--'}</td>
+                <td className="px-3 py-2 align-top font-mono text-xs truncate max-w-[100px]">{cookieRow.path ?? '--'}</td>
+                <td className="px-3 py-2 align-top font-mono text-xs truncate max-w-[150px]">{cookieRow.domain ?? '--'}</td>
+                <td className="px-3 py-2 align-top font-mono text-xs truncate max-w-[150px]">{cookieRow.expires ?? '--'}</td>
               </tr>
             ))}
                 {cookieRows.length === 0 && (
@@ -538,7 +532,7 @@ export function ResponseInspector({
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised px-3.5 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised px-3.5 py-2.5 shadow-raised">
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant={response.status >= 200 && response.status < 400 ? 'success' : 'error'} size="sm">
             {response.status}
@@ -601,7 +595,7 @@ export function ResponseInspector({
               const Icon = metricRow.icon;
               return (
                 <Card key={metricRow.label} title={metricRow.label} icon={Icon}>
-                  <p className="font-mono text-lg font-semibold text-text-primary dark:text-text-primary-dark">{metricRow.value}</p>
+                  <p className="font-mono text-lg font-semibold text-text-primary dark:text-text-primary-dark truncate">{metricRow.value}</p>
                 </Card>
               );
             })}

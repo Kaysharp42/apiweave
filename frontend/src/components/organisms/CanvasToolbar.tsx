@@ -4,6 +4,7 @@ import { Button } from '../atoms/Button';
 import { IconButton } from '../atoms/IconButton';
 import ButtonSelect from '../ButtonSelect';
 import type { CanvasToolbarProps } from '../../types/CanvasToolbarProps';
+import type { ToolbarButtonProps } from '../../types/ToolbarButtonProps';
 import { buildEnvironmentOptions } from './canvasToolbarUtils';
 
 const EMPTY_ENVIRONMENTS: Array<{ environmentId: string; name: string }> = [];
@@ -88,6 +89,7 @@ export function CanvasToolbar({
         disabled={!onRefreshSwagger || isSwaggerRefreshing}
         className="h-8 whitespace-nowrap"
         icon={<RefreshCw className={`w-4 h-4 flex-shrink-0 ${isSwaggerRefreshing ? 'animate-spin' : ''}`} />}
+        title={isSwaggerRefreshing ? 'Refreshing Swagger' : 'Refresh Swagger'}
       >
         <span className="hidden lg:inline">{isSwaggerRefreshing ? 'Refreshing' : 'Refresh'}</span>
       </Button>
@@ -96,11 +98,11 @@ export function CanvasToolbar({
 
       <div className="relative flex" ref={runMenuRef}>
         <Button
-          intent={isRunning ? 'warning' : 'success'}
+          intent={isRunning ? 'warning' : 'default'}
           size="sm"
           onClick={onRun}
           disabled={isRunning}
-          className="rounded-r-none h-8 whitespace-nowrap border-r border-black/10"
+          className="rounded-r-none h-8 whitespace-nowrap font-semibold border-r border-surface-raised/30 dark:border-surface-dark-raised/30"
           icon={isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
         >
           {isRunning ? 'Running…' : 'Run'}
@@ -110,10 +112,10 @@ export function CanvasToolbar({
           onClick={() => setIsRunMenuOpen((prev) => !prev)}
           disabled={isRunning}
           tooltip="Run options"
-          variant="success"
+          variant={isRunning ? 'warning' : 'primary'}
           size="sm"
           className={[
-            'h-8 rounded-l-none rounded-r-lg transition-colors border-l border-black/10',
+            'h-8 rounded-l-none rounded-r-lg transition-colors border-l border-surface-raised/30 dark:border-surface-dark-raised/30',
             isRunning
               ? 'cursor-wait'
               : 'hover:brightness-110',
@@ -184,12 +186,7 @@ export function CanvasToolbar({
   );
 }
 
-function ToolbarButton({ icon: Icon, label, onClick, tooltip }: {
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  label: string;
-  onClick: () => void;
-  tooltip?: string;
-}) {
+function ToolbarButton({ icon: Icon, label, onClick, tooltip }: ToolbarButtonProps) {
   return (
     <Button
       variant="ghost"

@@ -1,15 +1,13 @@
+import type { Workflow } from './Workflow';
+import type { Collection } from './Collection';
+import type { Environment } from './Environment';
+
 export interface WorkflowItemProps {
-  workflow: {
-    workflowId: string;
-    name: string;
-    description?: string;
-    nodes?: Array<Record<string, unknown>>;
-    collectionId?: string;
-  };
+  workflow: Workflow;
   isActive: boolean;
-  collections: Array<{ collectionId: string; name: string }>;
-  environments: Array<{ environmentId: string; name: string }>;
-  onWorkflowClick: (workflow: WorkflowItemProps['workflow']) => void;
-  onExportWorkflow: (workflow: WorkflowItemProps['workflow']) => void;
+  collections: Collection[];
+  environments: Environment[];
+  onWorkflowClick: (workflow: Workflow) => void;
+  onExportWorkflow: (workflow: Workflow) => void;
   onDeleteWorkflow: (workflowId: string, name: string) => void;
 }

@@ -1,12 +1,17 @@
 import { useReducer, useEffect, useCallback } from 'react';
+import { Shield, Trash2 } from 'lucide-react';
 import { Button } from '../components/atoms/Button';
+import { IconButton } from '../components/atoms/IconButton';
+import { Spinner } from '../components/atoms/Spinner';
 import { StatusBadge } from '../components/molecules/StatusBadge';
+import { EmptyState } from '../components/molecules/EmptyState';
+import { Panel } from '../components/molecules/Panel';
+import { ConfirmDialog } from '../components/molecules/ConfirmDialog';
 import { InviteUserModal } from '../components/auth/InviteUserModal';
 import { authenticatedJson, authenticatedFetch, copyInviteLink } from '../utils/authenticatedApi';
 import API_BASE_URL from '../utils/api';
 import type { User, InviteResponse } from '../types';
 import { toast } from 'sonner';
-import { Loader2, Shield, Trash2 } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 
 interface DeleteConfirmState {
@@ -187,188 +192,197 @@ export default function AdminUsersPage() {
             <Button onClick={() => dispatch({ type: 'set-invite-modal-open', value: true })}>Invite User</Button>
           </div>
 
-          <div className="bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg overflow-hidden">
+          <Panel title="Users">
             {state.loading ? (
               <div className="flex justify-center p-12 text-text-muted">
-                <Loader2 className="w-8 h-8 animate-spin" />
+                <Spinner size="lg" className="text-primary dark:text-primary-light" />
               </div>
             ) : (
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs text-text-secondary dark:text-text-secondary-dark uppercase bg-surface dark:bg-surface-dark border-b border-border dark:border-border-dark">
-                  <tr>
-                    <th className="px-6 py-4">User</th>
-                    <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4">Roles</th>
-                    <th className="px-6 py-4">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.users.length === 0 && orphanInvites.length === 0 ? (
+              <div className="overflow-hidden">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-text-secondary dark:text-text-secondary-dark uppercase bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark">
                     <tr>
-                      <td colSpan={4} className="px-6 py-8 text-center text-text-muted">
-                        No users found
-                      </td>
+                      <th className="px-6 py-4">User</th>
+                      <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4">Roles</th>
+                      <th className="px-6 py-4">Actions</th>
                     </tr>
-                  ) : (
-                    <>
-                      {state.users.map((user) => {
-                        const primaryRole = user.roles.includes('admin')
-                          ? 'admin'
-                          : user.roles.includes('editor')
-                          ? 'editor'
-                          : 'viewer';
+                  </thead>
+                  <tbody>
+                    {state.users.length === 0 && orphanInvites.length === 0 ? (
+                      <tr>
+                        <td colSpan={4}>
+                          <EmptyState
+                            title="No users found"
+                            description="Invite users to get started with your workspace."
+                          />
+                        </td>
+                      </tr>
+                    ) : (
+                      <>
+                        {state.users.map((user) => {
+                          const primaryRole = user.roles.includes('admin')
+                            ? 'admin'
+                            : user.roles.includes('editor')
+                            ? 'editor'
+                            : 'viewer';
 
-                        // Case-insensitive email match; only show invite link if setup not complete
-                        const pendingInvite = !user.is_setup_complete
-                          ? inviteByEmail.get(user.verified_email.toLowerCase())
-                          : undefined;
+                          // Case-insensitive email match; only show invite link if setup not complete
+                          const pendingInvite = !user.is_setup_complete
+                            ? inviteByEmail.get(user.verified_email.toLowerCase())
+                            : undefined;
 
-                        const isSelf = user.userId === currentUser?.userId;
+                          const isSelf = user.userId === currentUser?.userId;
 
-                        return (
+                          return (
+                            <tr
+                              key={user.userId}
+                              className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px]"
+                              tabIndex={0}
+                            >
+                              <td className="px-6 py-4">
+                                <div className="font-medium">{user.display_name || 'No Name'}</div>
+                                <div className="text-text-secondary dark:text-text-secondary-dark text-xs mt-0.5">
+                                  {user.verified_email}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                {user.is_setup_complete ? (
+                                  <StatusBadge status="success" label="Active" />
+                                ) : (
+                                  <StatusBadge status="warning" label="Pending" />
+                                )}
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex gap-1 flex-wrap">
+                                  {user.roles.map((r) => (
+                                    <span
+                                      key={r}
+                                      className="px-2 py-0.5 bg-primary/10 text-primary dark:text-primary-light rounded-full text-xs font-medium"
+                                    >
+                                      {r}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    className="select select-sm select-bordered bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out cursor-pointer"
+                                    value={primaryRole}
+                                    onChange={(e) => handleRoleChange(user.userId, e.target.value)}
+                                  >
+                                    <option value="admin">Admin</option>
+                                    <option value="editor">Editor</option>
+                                    <option value="viewer">Viewer</option>
+                                  </select>
+                                  {pendingInvite?.invite_url && (
+                                    <Button
+                                      size="xs"
+                                      variant="secondary"
+                                      onClick={() =>
+                                        handleCopyInviteLink(
+                                          pendingInvite.inviteId,
+                                          pendingInvite.invite_url!
+                                        )
+                                      }
+                                    >
+                                      {state.copyingInviteId === pendingInvite.inviteId ? 'Copied!' : 'Copy Link'}
+                                    </Button>
+                                  )}
+                                  {!isSelf && (
+                                    <IconButton
+                                      tooltip="Delete user"
+                                      variant="error"
+                                      onClick={() =>
+                                        dispatch({
+                                          type: 'set-delete-confirm',
+                                          value: {
+                                            type: 'user',
+                                            id: user.userId,
+                                            label: user.display_name || user.verified_email,
+                                          },
+                                        })
+                                      }
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </IconButton>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                        {orphanInvites.map((inv) => (
                           <tr
-                            key={user.userId}
-                            className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface dark:hover:bg-surface-dark transition-colors"
+                            key={inv.inviteId}
+                            className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px]"
+                            tabIndex={0}
                           >
                             <td className="px-6 py-4">
-                              <div className="font-medium">{user.display_name || 'No Name'}</div>
+                              <div className="font-medium">{inv.email}</div>
                               <div className="text-text-secondary dark:text-text-secondary-dark text-xs mt-0.5">
-                                {user.verified_email}
+                                Invite pending
                               </div>
                             </td>
                             <td className="px-6 py-4">
-                              {user.is_setup_complete ? (
-                                <StatusBadge status="success" label="Active" />
-                              ) : (
-                                <StatusBadge status="warning" label="Pending" />
-                              )}
+                              <StatusBadge status="warning" label="Invited" />
                             </td>
-                            <td className="px-6 py-4 flex gap-1 flex-wrap">
-                              {user.roles.map((r) => (
-                                <span
-                                  key={r}
-                                  className="px-2 py-0.5 bg-primary/10 text-primary dark:text-primary-light rounded-full text-xs font-medium"
-                                >
-                                  {r}
+                            <td className="px-6 py-4">
+                              <div className="flex gap-1 flex-wrap">
+                                <span className="px-2 py-0.5 bg-primary/10 text-primary dark:text-primary-light rounded-full text-xs font-medium">
+                                  {inv.role_preset}
                                 </span>
-                              ))}
+                              </div>
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-2">
                                 <select
-                                  className="select select-sm select-bordered bg-surface dark:bg-surface-dark"
-                                  value={primaryRole}
-                                  onChange={(e) => handleRoleChange(user.userId, e.target.value)}
+                                  className="select select-sm select-bordered bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out cursor-pointer"
+                                  value={inv.role_preset}
+                                  onChange={(e) => handleInviteRoleChange(inv.inviteId, e.target.value)}
                                 >
                                   <option value="admin">Admin</option>
                                   <option value="editor">Editor</option>
                                   <option value="viewer">Viewer</option>
                                 </select>
-                                {pendingInvite?.invite_url && (
+                                {inv.invite_url && (
                                   <Button
                                     size="xs"
                                     variant="secondary"
-                                    onClick={() =>
-                                      handleCopyInviteLink(
-                                        pendingInvite.inviteId,
-                                        pendingInvite.invite_url!
-                                      )
-                                    }
+                                    onClick={() => handleCopyInviteLink(inv.inviteId, inv.invite_url!)}
                                   >
-                                      {state.copyingInviteId === pendingInvite.inviteId ? 'Copied!' : 'Copy Link'}
+                                    {state.copyingInviteId === inv.inviteId ? 'Copied!' : 'Copy Link'}
                                   </Button>
                                 )}
-                                {!isSelf && (
-                                  <button
-                                    type="button"
-                                    className="p-1 text-text-muted hover:text-error transition-colors rounded"
-                                    title="Delete user"
-                                    onClick={() =>
-                                      dispatch({
-                                        type: 'set-delete-confirm',
-                                        value: {
-                                        type: 'user',
-                                        id: user.userId,
-                                        label: user.display_name || user.verified_email,
-                                        },
-                                      })
-                                    }
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                )}
+                                <IconButton
+                                  tooltip="Delete invite"
+                                  variant="error"
+                                  onClick={() =>
+                                    dispatch({
+                                      type: 'set-delete-confirm',
+                                      value: {
+                                        type: 'invite',
+                                        id: inv.inviteId,
+                                        label: inv.email,
+                                      },
+                                    })
+                                  }
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </IconButton>
                               </div>
                             </td>
                           </tr>
-                        );
-                      })}
-
-                      {orphanInvites.map((inv) => (
-                        <tr
-                          key={inv.inviteId}
-                          className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface dark:hover:bg-surface-dark transition-colors"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="font-medium">{inv.email}</div>
-                            <div className="text-text-secondary dark:text-text-secondary-dark text-xs mt-0.5">
-                              Invite pending
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <StatusBadge status="warning" label="Invited" />
-                          </td>
-                          <td className="px-6 py-4 flex gap-1 flex-wrap">
-                            <span className="px-2 py-0.5 bg-primary/10 text-primary dark:text-primary-light rounded-full text-xs font-medium">
-                              {inv.role_preset}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <select
-                                className="select select-sm select-bordered bg-surface dark:bg-surface-dark"
-                                value={inv.role_preset}
-                                onChange={(e) => handleInviteRoleChange(inv.inviteId, e.target.value)}
-                              >
-                                <option value="admin">Admin</option>
-                                <option value="editor">Editor</option>
-                                <option value="viewer">Viewer</option>
-                              </select>
-                              {inv.invite_url && (
-                                <Button
-                                  size="xs"
-                                  variant="secondary"
-                                  onClick={() => handleCopyInviteLink(inv.inviteId, inv.invite_url!)}
-                                >
-                                {state.copyingInviteId === inv.inviteId ? 'Copied!' : 'Copy Link'}
-                                </Button>
-                              )}
-                              <button
-                                type="button"
-                                className="p-1 text-text-muted hover:text-error transition-colors rounded"
-                                title="Delete invite"
-                                onClick={() =>
-                                  dispatch({
-                                    type: 'set-delete-confirm',
-                                    value: {
-                                    type: 'invite',
-                                    id: inv.inviteId,
-                                    label: inv.email,
-                                    },
-                                  })
-                                }
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </>
-                  )}
-                </tbody>
-              </table>
+                        ))}
+                      </>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             )}
-          </div>
+          </Panel>
         </div>
       </main>
 
@@ -380,39 +394,24 @@ export default function AdminUsersPage() {
         }}
       />
 
-      {state.deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50">
-          <div className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-            <h2 className="text-lg font-semibold mb-2">Confirm Delete</h2>
-            <p className="text-text-secondary dark:text-text-secondary-dark text-sm mb-6">
-              Are you sure you want to delete{' '}
-              <span className="font-medium text-text dark:text-text-dark">
-                {state.deleteConfirm.label}
-              </span>
-              ? This action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => dispatch({ type: 'set-delete-confirm', value: null })}
-                disabled={state.deleting}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                intent="error"
-                loading={state.deleting}
-                onClick={() => void handleDeleteConfirmed()}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!state.deleteConfirm}
+        onClose={() => dispatch({ type: 'set-delete-confirm', value: null })}
+        onConfirm={handleDeleteConfirmed}
+        title="Confirm Delete"
+        message={
+          <>
+            Are you sure you want to delete{' '}
+            <span className="font-medium text-text-primary dark:text-text-primary-dark">
+              {state.deleteConfirm?.label}
+            </span>
+            ? This action cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        intent="error"
+      />
     </>
   );
 }

@@ -2,12 +2,7 @@ import { Braces } from 'lucide-react';
 import { toast } from 'sonner';
 import { IconButton } from '../atoms/IconButton';
 import { formatOrMinifyJson } from '../../utils/jsonFormat';
-
-export interface BeautifyButtonProps {
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-}
+import type { BeautifyButtonProps } from '../../types';
 
 export function BeautifyButton({ value, onChange, className = '' }: BeautifyButtonProps) {
   const handleBeautifyJson = () => {

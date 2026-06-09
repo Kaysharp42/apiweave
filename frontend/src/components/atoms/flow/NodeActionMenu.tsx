@@ -5,22 +5,13 @@ import {
   getNextNodeActionMenuFocusIndex,
   getNextNodeExpandedState,
 } from '../../../utils/nodeActionMenu';
+import type { NodeActionMenuProps } from '../../../types/NodeActionMenuProps';
 
 const ACTION_ICONS: Record<string, LucideIcon> = {
   duplicate: Files,
   copy: Copy,
   'toggle-expand': ChevronsDownUp,
 };
-
-export interface NodeActionMenuProps {
-  nodeId: string;
-  collapsible?: boolean;
-  isExpanded?: boolean;
-  onDuplicate?: (nodeId: string) => void;
-  onCopy?: (nodeId: string) => void;
-  onToggleExpand?: (nextExpanded: boolean) => void;
-  triggerClassName?: string;
-}
 
 export function NodeActionMenu({
   nodeId,
@@ -58,7 +49,7 @@ export function NodeActionMenu({
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
-      document.addEventListener('touchstart', handleOutsideClick as EventListener, { passive: true });
+    document.addEventListener('touchstart', handleOutsideClick as EventListener, { passive: true });
     document.addEventListener('keydown', handleEscape);
 
     return () => {
@@ -132,7 +123,7 @@ export function NodeActionMenu({
         }}
         onKeyDown={handleTriggerKeyDown}
         className={[
-          'p-1 rounded-md text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors',
+          'p-1 rounded-md text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
           triggerClassName,
         ]
           .filter(Boolean)
@@ -147,7 +138,7 @@ export function NodeActionMenu({
 
       {menuOpen && (
         <div
-          className="absolute right-0 mt-1 min-w-[144px] overflow-hidden rounded-xl border border-border dark:border-border-dark bg-surface-raised/95 dark:bg-surface-dark-raised/95 backdrop-blur-sm shadow-xl z-50 nodrag py-1"
+          className="absolute right-0 mt-1 min-w-[144px] overflow-hidden rounded-xl border border-[var(--aw-border)] dark:border-[var(--aw-border)] bg-surface-raised/95 dark:bg-surface-dark-raised/95 backdrop-blur-sm shadow-[var(--aw-shadow-popover)] dark:shadow-[var(--aw-shadow-popover)] z-50 nodrag py-1"
           role="menu"
         >
           {menuItems.map((item, index) => {
@@ -163,8 +154,8 @@ export function NodeActionMenu({
                 onClick={(event) => handleMenuAction(item.key, event)}
                 onKeyDown={(event) => handleMenuItemKeyDown(event, index)}
                 className={[
-                  'w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus:outline-none focus:bg-surface-overlay dark:focus:bg-surface-dark-overlay flex items-center gap-2',
-                  index > 0 ? 'border-t border-border dark:border-border-dark' : '',
+                  'w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] flex items-center gap-2 cursor-pointer',
+                  index > 0 ? 'border-t border-[var(--aw-border)] dark:border-[var(--aw-border)]' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}

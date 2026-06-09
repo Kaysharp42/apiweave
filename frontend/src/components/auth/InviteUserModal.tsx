@@ -5,13 +5,8 @@ import { Input } from '../atoms/Input';
 import { Button } from '../atoms/Button';
 import { authenticatedJson } from '../../utils/authenticatedApi';
 import API_BASE_URL from '../../utils/api';
-import type { InviteResponse } from '../../types';
+import type { InviteResponse, InviteUserModalProps } from '../../types';
 import { toast } from 'sonner';
-
-interface InviteUserModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
 
 export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
   type InviteState = {
@@ -155,7 +150,7 @@ export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
 
             <FormField label="Role Preset" required>
               <select
-                className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark"
+                className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out cursor-pointer"
                 value={state.role}
                 onChange={(e) => setRole(e.target.value)}
                 disabled={state.loading}

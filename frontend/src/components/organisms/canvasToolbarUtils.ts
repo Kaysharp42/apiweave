@@ -1,7 +1,4 @@
-export interface EnvironmentOption {
-  value: string;
-  label: string;
-}
+import type { EnvironmentOption } from '../../types';
 
 export function buildEnvironmentOptions(environments: Array<{ environmentId: string; name: string }>): EnvironmentOption[] {
   return [

@@ -1,6 +1,6 @@
 export interface PanelProps {
   title: string;
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: React.ElementType;
   collapsible?: boolean;
   defaultExpanded?: boolean;
   headerActions?: React.ReactNode;

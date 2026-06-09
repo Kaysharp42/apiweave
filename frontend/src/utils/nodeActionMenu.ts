@@ -1,7 +1,4 @@
-export interface NodeActionMenuItem {
-  key: string;
-  label: string;
-}
+import type { NodeActionMenuItem } from '../types';
 
 export const buildNodeActionMenuItems = ({ collapsible = false, isExpanded = false } = {}): NodeActionMenuItem[] => {
   const items: NodeActionMenuItem[] = [

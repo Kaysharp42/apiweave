@@ -98,7 +98,7 @@ function assertProviderPageSource(fileName: string, emptyMessage: string): void 
   assertIncludes(content, 'getEnabledProviders');
   assertIncludes(content, 'Unable to load sign-in options');
   assertIncludes(content, emptyMessage);
-  assertIncludes(content, 'animate-spin');
+  assertIncludes(content, 'Spinner');
 }
 
 test('LoginPage renders only enabled providers and hides disabled ones', async () => {
@@ -198,19 +198,19 @@ test('LoginPage shows loading state while provider request is pending', async ()
 });
 
 test('LoginPage source keeps provider visibility UI and loading/error states', () => {
-  assertProviderPageSource('LoginPage.tsx', 'No sign-in providers are configured.');
+  assertProviderPageSource('LoginPage.tsx', 'No sign-in providers configured');
 });
 
 test('SetupPage source keeps provider visibility UI and loading/error states', () => {
   assertProviderPageSource(
     'SetupPage.tsx',
-    'No sign-in providers are configured. Contact your administrator.',
+    'No sign-in providers configured',
   );
 });
 
 test('InvitePage source keeps provider visibility UI and loading/error states', () => {
   assertProviderPageSource(
     'InvitePage.tsx',
-    'No sign-in providers are configured. Contact your administrator.',
+    'No sign-in providers configured',
   );
 });

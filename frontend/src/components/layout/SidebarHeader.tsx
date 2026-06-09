@@ -17,7 +17,7 @@ import { Button } from '../atoms/Button';
 import { Spinner } from '../atoms/Spinner';
 import { SearchInput } from '../molecules/SearchInput';
 import useSidebarStore from '../../stores/SidebarStore';
-import type { SidebarHeaderProps } from '../../types/SidebarHeaderProps';
+import type { SidebarHeaderProps } from '../../types';
 
 type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
@@ -148,7 +148,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
 
   return (
     <>
-      <div className="flex flex-col border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
+      <div className="flex flex-col border-b border-[var(--aw-border)] bg-surface-raised dark:bg-surface-dark-raised">
         <div className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-1 text-sm min-w-0">
             <User className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
@@ -157,7 +157,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
             <span className="font-semibold text-text-primary dark:text-text-primary-dark truncate">
               {getNavLabel()}
             </span>
-            {isRefreshing && <Spinner size="xs" className="ml-1.5" />}
+            {isRefreshing && <Spinner size="xs" className="ml-1.5 motion-reduce:animate-none" />}
           </div>
         </div>
 
@@ -186,11 +186,21 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
               </Button>
 
               {state.showImportMenu && (
-                <ul className="menu menu-sm bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg shadow-lg absolute top-full left-0 mt-1 z-20 min-w-[140px] p-1">
+                <ul className="bg-surface-raised dark:bg-surface-dark-raised border border-[var(--aw-border)] rounded-lg shadow-[var(--aw-shadow-popover)] absolute top-full left-0 mt-1 z-20 min-w-[140px] p-1">
                   {importItems.map(({ label, icon: Icon, action }) => (
                     <li key={label}>
-                      <button type="button" onClick={action} className="flex items-center gap-2 text-sm">
-                        <Icon className="w-4 h-4" />
+                      <button
+                        type="button"
+                        onClick={action}
+                        className={[
+                          'flex items-center gap-2 text-sm w-full px-3 py-1.5 rounded-md text-left',
+                          'text-text-primary dark:text-text-primary-dark',
+                          'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
+                          'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+                          'cursor-pointer transition-colors',
+                        ].join(' ')}
+                      >
+                        <Icon className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
                         {label}
                       </button>
                     </li>

@@ -7,7 +7,7 @@ import VariablesPanel from '../VariablesPanel';
 import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
 import DynamicFunctionsHelper from '../DynamicFunctionsHelper';
 import { WorkflowProvider } from '../../contexts/WorkflowContext';
-import { Settings, Sparkles, Package, PanelRightClose } from 'lucide-react';
+import { Settings, Sparkles, Package, PanelRightClose, Globe } from 'lucide-react';
 import { TabBar } from '../organisms/TabBar';
 import { KeyboardShortcutsHelp } from '../organisms/KeyboardShortcutsHelp';
 import { WorkspaceEmptyState } from '../molecules/WorkspaceEmptyState';
@@ -15,6 +15,7 @@ import { PromptDialog } from '../molecules/PromptDialog';
 import { Panel } from '../molecules/Panel';
 import { PanelTabs } from '../molecules/PanelTabs';
 import { IconButton } from '../atoms/IconButton';
+import { Badge } from '../atoms/Badge';
 import useTabStore from '../../stores/TabStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import useNavigationStore from '../../stores/NavigationStore';
@@ -162,12 +163,16 @@ export function Workspace(_props: WorkspaceProps) {
             workflowId={activeTab.id}
             initialWorkflow={activeTab.workflow ?? undefined}
           >
-                {activeTab.workflow?.environmentId && (
-                  <div className="px-3 py-2 bg-primary/5 dark:bg-primary/10 border-b border-primary/20 dark:border-primary/20 flex items-center gap-2 text-sm">
-                <span className="text-primary dark:text-cyan-400">Running in environment:</span>
-                <span className="font-semibold text-text-primary dark:text-text-primary-dark">
-                  {state.environmentNames[activeTab.workflow.environmentId] ?? 'Loading...'}
-                </span>
+            {/* Environment banner — compact, only when active */}
+            {activeTab.workflow?.environmentId && (
+              <div className="px-3 py-1.5 bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 border-b border-[var(--aw-primary)]/20 dark:border-[var(--aw-primary)]/20 flex items-center gap-2 text-xs min-w-0">
+                <Globe className="w-3.5 h-3.5 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" aria-hidden="true" />
+                <span className="text-text-secondary dark:text-text-secondary-dark flex-shrink-0">Environment:</span>
+                <Badge variant="primary" size="sm" className="min-w-0 truncate">
+                  <span className="min-w-0 truncate">
+                    {state.environmentNames[activeTab.workflow.environmentId] ?? 'Loading…'}
+                  </span>
+                </Badge>
               </div>
             )}
 
@@ -195,7 +200,7 @@ export function Workspace(_props: WorkspaceProps) {
                         <IconButton
                           tooltip="Collapse panel"
                           size="xs"
-                            onClick={() => dispatch({ type: 'set-show-variables-panel', value: false })}
+                          onClick={() => dispatch({ type: 'set-show-variables-panel', value: false })}
                         >
                           <PanelRightClose className="w-4 h-4" />
                         </IconButton>
@@ -203,9 +208,9 @@ export function Workspace(_props: WorkspaceProps) {
                     >
                       <PanelTabs
                         tabs={panelTabs}
-                          activeTab={state.activePanelTab}
-                          onTabChange={(value) => dispatch({ type: 'set-active-panel-tab', value })}
-                        />
+                        activeTab={state.activePanelTab}
+                        onTabChange={(value) => dispatch({ type: 'set-active-panel-tab', value })}
+                      />
                       {state.activePanelTab === 'variables' && <VariablesPanel />}
                       {state.activePanelTab === 'dynamic' && <DynamicFunctionsHelper />}
                       {state.activePanelTab === 'settings' && <WorkflowSettingsPanel />}
@@ -219,7 +224,9 @@ export function Workspace(_props: WorkspaceProps) {
           <WorkspaceEmptyState onNewWorkflow={handleNewWorkflow} />
         )}
       </div>
-        <KeyboardShortcutsHelp open={state.showShortcutsHelp} onClose={() => dispatch({ type: 'set-show-shortcuts-help', value: false })} />
+
+      <KeyboardShortcutsHelp open={state.showShortcutsHelp} onClose={() => dispatch({ type: 'set-show-shortcuts-help', value: false })} />
+
       {state.showNewWorkflowPrompt && (
         <PromptDialog
           open={true}

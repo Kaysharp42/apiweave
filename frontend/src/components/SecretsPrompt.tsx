@@ -3,14 +3,9 @@ import { toast } from 'sonner';
 import { Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { Modal } from './molecules/Modal';
 import { Button } from './atoms/Button';
-import type { Environment } from '../types';
-
-export interface SecretsPromptProps {
-  isOpen: boolean;
-  environment: Environment | null;
-  onClose: () => void;
-  onSecretsProvided?: (secrets: Record<string, string>) => void;
-}
+import { Input } from './atoms/Input';
+import { IconButton } from './atoms/IconButton';
+import type { SecretsPromptProps } from '../types/SecretsPromptProps';
 
 export default function SecretsPrompt({
   isOpen,
@@ -100,25 +95,23 @@ export default function SecretsPrompt({
                 {key}
               </label>
               <div className="flex gap-2">
-                <input
+                <Input
                   id={`secret-${key}`}
                   type={visibleSecrets.has(key) ? 'text' : 'password'}
                   value={secrets[key] ?? ''}
                   onChange={(e) => handleSecretChange(key, e.target.value)}
                   placeholder={placeholder ?? `Enter ${key}`}
                   aria-label={key}
-                  className="input input-bordered input-sm flex-1 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                  className="flex-1"
                 />
-                <Button
+                <IconButton
                   onClick={() => toggleSecretVisibility(key)}
                   variant="ghost"
                   size="sm"
-                  className="!p-2 !min-w-0"
-                  aria-label={visibleSecrets.has(key) ? `Hide secret ${key}` : `Show secret ${key}`}
-                  title={visibleSecrets.has(key) ? 'Hide' : 'Show'}
+                  tooltip={visibleSecrets.has(key) ? `Hide secret ${key}` : `Show secret ${key}`}
                 >
                   {visibleSecrets.has(key) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </Button>
+                </IconButton>
               </div>
             </div>
           ))}

@@ -1,14 +1,5 @@
-import React from 'react';
 import Tippy from '@tippyjs/react';
-
-export interface TooltipProps {
-  children: React.ReactElement;
-  content?: string | React.ReactNode;
-  placement?: 'top' | 'bottom' | 'left' | 'right';
-  delay?: number;
-  disabled?: boolean;
-  className?: string;
-}
+import type { TooltipProps } from '../../types';
 
 export function Tooltip({
   children,

@@ -1,15 +1,7 @@
 import { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { X } from 'lucide-react';
-import type { ModalProps } from '../../types';
-
-export interface ModalInternalProps extends ModalProps {
-  headerExtra?: React.ReactNode;
-  showClose?: boolean;
-  scrollable?: boolean;
-  initialFocus?: React.MutableRefObject<HTMLElement | null>;
-  className?: string;
-}
+import type { ModalInternalProps } from '../../types';
 
 export function Modal({
   isOpen,
@@ -67,7 +59,7 @@ export function Modal({
             <Dialog.Panel
               className={[
                 'w-full rounded-lg bg-surface-raised dark:bg-surface-dark-raised',
-                'shadow-xl border border-border dark:border-border-dark',
+                'shadow-modal border border-border dark:border-border-dark',
                 'flex flex-col',
                 size === 'fullscreen' ? 'h-[90vh]' : 'max-h-[90vh]',
                 panelSize,
@@ -87,7 +79,7 @@ export function Modal({
                       <button
                         type="button"
                         onClick={onClose}
-                        className="p-1 rounded text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                        className="p-1 rounded text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:focus-visible:outline-primary-light focus-visible:outline-offset-2"
                         aria-label="Close"
                       >
                         <X className="w-5 h-5" />

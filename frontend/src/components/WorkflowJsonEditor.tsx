@@ -3,6 +3,7 @@ import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { Button } from './atoms/Button';
 import { BeautifyButton } from './molecules/BeautifyButton';
+import type { WorkflowJsonEditorProps } from '../types';
 
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows
@@ -449,13 +450,6 @@ Create multiple edges from one node to fan out. Use a Merge node to rejoin.
 11. Always include appropriate assertions after HTTP requests.
 12. Return **only** the JSON object — no markdown fences, no explanations.
 `;
-}
-
-export interface WorkflowJsonEditorProps {
-  open: boolean;
-  workflowJson: Record<string, unknown> | null;
-  onApply: (json: Record<string, unknown>) => void;
-  onClose: () => void;
 }
 
 type ViewMode = 'json' | 'ai-prompt';

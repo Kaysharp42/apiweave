@@ -1,40 +1,14 @@
 import { useState, type ChangeEvent } from 'react';
-import { Download, Upload, FileText, AlertCircle, CheckCircle, X, AlertTriangle } from 'lucide-react';
+import { Download, Upload, FileText, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import { resolveWorkflowExportImportInitialTab } from '../utils/workflowExportImportTabs';
 import { Button } from './atoms/Button';
 import { Input } from './atoms/Input';
 import { TextArea } from './atoms/TextArea';
-import { IconButton } from './atoms/IconButton';
-
-export interface DryRunStats {
-  nodes: number;
-  edges: number;
-  variables: number;
-  secretReferences: number;
-}
-
-export interface DryRunResult {
-  valid: boolean;
-  stats?: DryRunStats;
-  errors?: string[];
-  warnings?: string[];
-}
-
-export interface ImportResult {
-  workflowId: string;
-  secretReferences?: string[];
-}
-
-export type WorkflowExportImportTab = 'export' | 'import';
-
-export interface WorkflowExportImportProps {
-  workflowId?: string | null;
-  workflowName?: string | null;
-  onClose: () => void;
-  onImportSuccess?: (workflowId: string) => void;
-  initialTab?: WorkflowExportImportTab;
-  mode?: string;
-}
+import { Modal } from './molecules/Modal';
+import type { WorkflowExportImportTab } from '../types/WorkflowExportImportTab';
+import type { WorkflowExportImportProps } from '../types/WorkflowExportImportProps';
+import type { DryRunResult } from '../types/DryRunResult';
+import type { ImportResult } from '../types/ImportResult';
 
 export function WorkflowExportImport({
   workflowId,
@@ -205,293 +179,273 @@ export function WorkflowExportImport({
   };
 
   return (
-    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="Workflow export import">
-      <button type="button" aria-label="Close workflow export import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
-      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
-          <h2 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
-            Workflow Export / Import
-          </h2>
-          <IconButton
-            onClick={onClose}
-            variant="ghost"
-            size="sm"
-            tooltip="Close"
-          >
-            <X className="w-5 h-5" />
-          </IconButton>
-        </div>
+    <Modal isOpen onClose={onClose} title="Workflow Export / Import" size="xl" scrollable>
+      {/* Tabs */}
+      <div className="flex border-b border-border dark:border-border-dark">
+        <button
+          type="button"
+          onClick={() => workflowId && setActiveTab('export')}
+          disabled={!workflowId}
+          title={!workflowId ? 'Select a workflow from the list to export' : undefined}
+          className={`px-6 py-3 font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${
+            activeTab === 'export'
+              ? 'border-b-2 border-primary text-primary dark:text-primary-dark'
+              : 'text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark'
+          } ${!workflowId ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          <Download className="w-4 h-4 inline mr-2" />
+          Export
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('import')}
+          className={`px-6 py-3 font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${
+            activeTab === 'import'
+              ? 'border-b-2 border-primary text-primary dark:text-primary-dark'
+              : 'text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark'
+          }`}
+        >
+          <Upload className="w-4 h-4 inline mr-2" />
+          Import
+        </button>
+      </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-border dark:border-border-dark">
-          <button
-            type="button"
-            onClick={() => workflowId && setActiveTab('export')}
-            disabled={!workflowId}
-            title={!workflowId ? 'Select a workflow from the list to export' : undefined}
-            className={`px-6 py-3 font-medium ${
-              activeTab === 'export'
-                ? 'border-b-2 border-primary text-primary dark:text-primary-dark'
-                : 'text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark'
-            } ${!workflowId ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <Download className="w-4 h-4 inline mr-2" />
-            Export
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('import')}
-            className={`px-6 py-3 font-medium ${
-              activeTab === 'import'
-                ? 'border-b-2 border-primary text-primary dark:text-primary-dark'
-                : 'text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark'
-            }`}
-          >
-            <Upload className="w-4 h-4 inline mr-2" />
-            Import
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {activeTab === 'export' ? (
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-lg font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                  Export Workflow Bundle
-                </h3>
-                <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
-                  Download a complete workflow bundle including nodes, edges, variables, and
-                  optional environment configuration.
-                </p>
-              </div>
-
-              <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 dark:border-primary/30 rounded-lg p-4">
-                <div className="flex items-start">
-                  <AlertCircle className="w-5 h-5 text-primary dark:text-primary-dark mr-3 mt-0.5" />
-                  <div className="text-sm text-text-primary dark:text-text-primary-dark">
-                    <p className="font-medium mb-1">Secret values are never exported</p>
-                    <p>
-                      Any detected secrets (API keys, tokens, passwords) will be replaced with{' '}
-                      <code className="bg-primary/5 dark:bg-primary/10 px-1 rounded">&lt;SECRET&gt;</code>{' '}
-                      placeholders. You'll need to re-enter these values after importing.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <label className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={includeEnvironment}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setIncludeEnvironment(e.target.checked)}
-                    className="w-4 h-4 text-primary border-border dark:border-border-dark rounded focus:ring-primary"
-                  />
-                  <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                    Include referenced environment (if any)
-                  </span>
-                </label>
-              </div>
-
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-sm text-status-error dark:text-status-error-dark">
-                  {error}
-                </div>
-              )}
-
-              <Button
-                onClick={handleExport}
-                disabled={exporting}
-                loading={exporting}
-                fullWidth
-                icon={<Download className="w-4 h-4" />}
-              >
-                {exporting ? 'Exporting...' : 'Download Workflow Bundle'}
-              </Button>
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        {activeTab === 'export' ? (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                Export Workflow Bundle
+              </h3>
+              <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
+                Download a complete workflow bundle including nodes, edges, variables, and
+                optional environment configuration.
+              </p>
             </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-lg font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                  Import Workflow Bundle
-                </h3>
-                <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
-                  Upload a workflow bundle JSON file or paste the JSON content directly.
-                </p>
-              </div>
 
-              {/* File upload */}
-              <div>
-                <label htmlFor="workflow-bundle-file" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                  Upload File
-                </label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="workflow-bundle-file"
-                    type="file"
-                    accept=".json"
-                    onChange={handleFileSelect}
-                    className="block w-full text-sm text-text-muted dark:text-text-muted-dark
-                      file:mr-4 file:py-2 file:px-4
-                      file:rounded-lg file:border-0
-                      file:text-sm file:font-medium
-                      file:bg-primary/5 file:text-primary
-                      hover:file:bg-primary/10
-                      dark:file:bg-primary/10 dark:file:text-primary-dark
-                      dark:hover:file:bg-primary/20"
-                  />
+            <div className="bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 border border-[var(--aw-primary)]/20 dark:border-[var(--aw-primary)]/30 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-[var(--aw-primary)] flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-text-primary dark:text-text-primary-dark">
+                  <p className="font-medium mb-1">Secret values are never exported</p>
+                  <p>
+                    Any detected secrets (API keys, tokens, passwords) will be replaced with{' '}
+                    <code className="bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 px-1 rounded">&lt;SECRET&gt;</code>{' '}
+                    placeholders. You&apos;ll need to re-enter these values after importing.
+                  </p>
                 </div>
               </div>
+            </div>
 
-              {/* Or paste JSON */}
-              <div>
-                <label htmlFor="workflow-bundle-json" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                  Or Paste JSON
-                </label>
-                <TextArea
-                  id="workflow-bundle-json"
-                  value={importJson}
-                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
-                    setImportJson(e.target.value);
-                    setError(null);
-                    setDryRunResult(null);
-                  }}
-                  placeholder='{"workflow": {...}, "environments": [...], ...}'
-                  className="w-full h-32 px-3 py-2 border border-border dark:border-border-dark rounded-lg
-                    bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark text-sm font-mono
-                    focus:outline-none focus:ring-2 focus:ring-primary"
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeEnvironment}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setIncludeEnvironment(e.target.checked)}
+                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded focus:ring-primary cursor-pointer"
+                />
+                <span className="text-sm text-text-primary dark:text-text-primary-dark">
+                  Include referenced environment (if any)
+                </span>
+              </label>
+            </div>
+
+            {error && (
+              <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded-lg p-4 text-sm text-status-error dark:text-status-error-dark">
+                {error}
+              </div>
+            )}
+
+            <Button
+              onClick={handleExport}
+              disabled={exporting}
+              loading={exporting}
+              fullWidth
+              icon={<Download className="w-4 h-4" />}
+            >
+              {exporting ? 'Exporting...' : 'Download Workflow Bundle'}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                Import Workflow Bundle
+              </h3>
+              <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
+                Upload a workflow bundle JSON file or paste the JSON content directly.
+              </p>
+            </div>
+
+            {/* File upload */}
+            <div>
+              <label htmlFor="workflow-bundle-file" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                Upload File
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="workflow-bundle-file"
+                  type="file"
+                  accept=".json"
+                  onChange={handleFileSelect}
+                  className="block w-full text-sm text-text-muted dark:text-text-muted-dark
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-lg file:border-0
+                    file:text-sm file:font-medium
+                    file:bg-[var(--aw-primary)]/5 file:text-[var(--aw-primary)]
+                    hover:file:bg-[var(--aw-primary)]/10
+                    dark:file:bg-[var(--aw-primary)]/10 dark:file:text-[var(--aw-primary)]
+                    dark:hover:file:bg-[var(--aw-primary)]/20"
                 />
               </div>
-
-              {/* Options */}
-              <div className="space-y-3">
-                <label className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={createMissingEnvs}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setCreateMissingEnvs(e.target.checked)}
-                    className="w-4 h-4 text-primary border-border dark:border-border-dark rounded focus:ring-primary"
-                  />
-                  <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                    Create missing environments from bundle
-                  </span>
-                </label>
-              </div>
-
-              {/* Dry run result */}
-              {dryRunResult && (
-                <div className={`border rounded-lg p-4 ${
-                  dryRunResult.valid
-                    ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                    : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                }`}>
-                  <div className="flex items-start mb-2">
-                    {dryRunResult.valid ? (
-                      <CheckCircle className="w-5 h-5 text-status-success dark:text-status-success-dark mr-2" />
-                    ) : (
-                      <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2" />
-                    )}
-                    <div className="flex-1">
-                      <p className={`font-medium ${
-                        dryRunResult.valid
-                          ? 'text-status-success dark:text-status-success-dark'
-                          : 'text-status-error dark:text-status-error-dark'
-                      }`}>
-                        {dryRunResult.valid ? 'Bundle is valid!' : 'Validation failed'}
-                      </p>
-                      
-                      {dryRunResult.stats && (
-                        <div className="mt-2 text-sm text-text-primary dark:text-text-primary-dark">
-                          <p>Nodes: {dryRunResult.stats.nodes}</p>
-                          <p>Edges: {dryRunResult.stats.edges}</p>
-                          <p>Variables: {dryRunResult.stats.variables}</p>
-                          {dryRunResult.stats.secretReferences > 0 && (
-                            <p className="text-yellow-700 dark:text-yellow-400 flex items-center gap-2">
-                              <AlertTriangle className="w-4 h-4" />
-                              <span>{dryRunResult.stats.secretReferences} secret(s) need to be re-entered</span>
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {dryRunResult.errors && dryRunResult.errors.length > 0 && (
-                        <ul className="mt-2 text-sm text-status-error dark:text-status-error-dark list-disc list-inside">
-                          {dryRunResult.errors.map((err: string) => (
-                            <li key={err}>{err}</li>
-                          ))}
-                        </ul>
-                      )}
-
-                      {dryRunResult.warnings && dryRunResult.warnings.length > 0 && (
-                        <ul className="mt-2 text-sm text-yellow-700 dark:text-yellow-400 list-disc list-inside">
-                          {dryRunResult.warnings.map((warn: string) => (
-                            <li key={warn}>{warn}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Import result */}
-              {importResult && (
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                  <div className="flex items-start">
-                    <CheckCircle className="w-5 h-5 text-status-success dark:text-status-success-dark mr-2" />
-                    <div>
-                      <p className="font-medium text-status-success dark:text-status-success-dark">
-                        Import successful!
-                      </p>
-                      <p className="text-sm text-status-success dark:text-status-success-dark mt-1">
-                        Workflow ID: {importResult.workflowId}
-                      </p>
-                      {importResult.secretReferences && importResult.secretReferences.length > 0 && (
-                        <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-2 flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4" />
-                          <span>Remember to re-enter {importResult.secretReferences.length} secret value(s)</span>
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-sm text-status-error dark:text-status-error-dark">
-                  {error}
-                </div>
-              )}
-
-              {/* Action buttons */}
-              <div className="flex gap-3">
-                <Button
-                  onClick={handleDryRun}
-                  disabled={!importJson}
-                  variant="secondary"
-                  fullWidth
-                  icon={<FileText className="w-4 h-4" />}
-                >
-                  Validate
-                </Button>
-                <Button
-                  onClick={handleImport}
-                  disabled={importing || !importJson || (dryRunResult !== null && !dryRunResult.valid)}
-                  loading={importing}
-                  variant="primary"
-                  fullWidth
-                  icon={<Upload className="w-4 h-4" />}
-                >
-                  {importing ? 'Importing...' : 'Import Workflow'}
-                </Button>
-              </div>
             </div>
-          )}
-        </div>
+
+            {/* Or paste JSON */}
+            <div>
+              <label htmlFor="workflow-bundle-json" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                Or Paste JSON
+              </label>
+              <TextArea
+                id="workflow-bundle-json"
+                value={importJson}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
+                  setImportJson(e.target.value);
+                  setError(null);
+                  setDryRunResult(null);
+                }}
+                placeholder='{"workflow": {...}, "environments": [...], ...}'
+                className="w-full h-32"
+              />
+            </div>
+
+            {/* Options */}
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={createMissingEnvs}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setCreateMissingEnvs(e.target.checked)}
+                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded focus:ring-primary cursor-pointer"
+                />
+                <span className="text-sm text-text-primary dark:text-text-primary-dark">
+                  Create missing environments from bundle
+                </span>
+              </label>
+            </div>
+
+            {/* Dry run result */}
+            {dryRunResult && (
+              <div className={`border rounded-lg p-4 ${
+                dryRunResult.valid
+                  ? 'bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 border-[var(--aw-status-success)]/20 dark:border-[var(--aw-status-success)]/30'
+                  : 'bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30'
+              }`}>
+                <div className="flex items-start gap-2">
+                  {dryRunResult.valid ? (
+                    <CheckCircle className="w-5 h-5 text-[var(--aw-status-success)] flex-shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 text-[var(--aw-status-error)] flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-medium ${
+                      dryRunResult.valid
+                        ? 'text-status-success dark:text-status-success-dark'
+                        : 'text-status-error dark:text-status-error-dark'
+                    }`}>
+                      {dryRunResult.valid ? 'Bundle is valid!' : 'Validation failed'}
+                    </p>
+                    
+                    {dryRunResult.stats && (
+                      <div className="mt-2 text-sm text-text-primary dark:text-text-primary-dark">
+                        <p>Nodes: {dryRunResult.stats.nodes}</p>
+                        <p>Edges: {dryRunResult.stats.edges}</p>
+                        <p>Variables: {dryRunResult.stats.variables}</p>
+                        {dryRunResult.stats.secretReferences > 0 && (
+                          <p className="text-[var(--aw-status-warning)] flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                            <span>{dryRunResult.stats.secretReferences} secret(s) need to be re-entered</span>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {dryRunResult.errors && dryRunResult.errors.length > 0 && (
+                      <ul className="mt-2 text-sm text-status-error dark:text-status-error-dark list-disc list-inside">
+                        {dryRunResult.errors.map((err: string) => (
+                          <li key={err}>{err}</li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {dryRunResult.warnings && dryRunResult.warnings.length > 0 && (
+                      <ul className="mt-2 text-sm text-[var(--aw-status-warning)] list-disc list-inside">
+                        {dryRunResult.warnings.map((warn: string) => (
+                          <li key={warn}>{warn}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Import result */}
+            {importResult && (
+              <div className="bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 border border-[var(--aw-status-success)]/20 dark:border-[var(--aw-status-success)]/30 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-[var(--aw-status-success)] flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-status-success dark:text-status-success-dark">
+                      Import successful!
+                    </p>
+                    <p className="text-sm text-status-success dark:text-status-success-dark mt-1">
+                      Workflow ID: {importResult.workflowId}
+                    </p>
+                    {importResult.secretReferences && importResult.secretReferences.length > 0 && (
+                      <p className="text-sm text-[var(--aw-status-warning)] mt-2 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        <span>Remember to re-enter {importResult.secretReferences.length} secret value(s)</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded-lg p-4 text-sm text-status-error dark:text-status-error-dark">
+                {error}
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-3">
+              <Button
+                onClick={handleDryRun}
+                disabled={!importJson}
+                variant="secondary"
+                fullWidth
+                icon={<FileText className="w-4 h-4" />}
+              >
+                Validate
+              </Button>
+              <Button
+                onClick={handleImport}
+                disabled={importing || !importJson || (dryRunResult !== null && !dryRunResult.valid)}
+                loading={importing}
+                variant="primary"
+                fullWidth
+                icon={<Upload className="w-4 h-4" />}
+              >
+                {importing ? 'Importing...' : 'Import Workflow'}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
-    </dialog>
+    </Modal>
   );
 }
 

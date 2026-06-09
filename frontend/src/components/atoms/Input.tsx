@@ -1,12 +1,5 @@
-import React, { useId } from 'react';
-
-export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
-  label?: string;
-  error?: string;
-  helperText?: string;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
-  id?: string;
-}
+import { useId } from 'react';
+import type { InputProps } from '../../types';
 
 export function Input({
   label,
@@ -37,7 +30,13 @@ export function Input({
       <input
         id={id}
         className={[
-          'input input-bordered w-full px-3 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
+          'input input-bordered w-full px-3',
+          'bg-surface-raised dark:bg-surface-dark-raised',
+          'text-text-primary dark:text-text-primary-dark',
+          'border-border dark:border-border-dark',
+          'placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
+          'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+          'transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out',
           sizeClass[size] ?? '',
           error && 'input-error',
           className,

@@ -4,12 +4,20 @@ import { toast } from 'sonner';
 import WorkflowCanvas from '../components/WorkflowCanvas';
 import { Spinner } from '../components/atoms/Spinner';
 import API_BASE_URL from '../utils/api';
-import type { WorkflowCanvasWorkflow } from '../components/WorkflowCanvas';
+import type { WorkflowCanvasWorkflow } from '../types/WorkflowCanvasWorkflow';
 import { authenticatedFetch } from '../utils/authenticatedApi';
 
 interface Workflow extends WorkflowCanvasWorkflow {
   id: string;
-  [key: string]: unknown;
+  name?: string;
+  description?: string;
+  variables?: Record<string, unknown>[];
+  createdAt?: string;
+  updatedAt?: string;
+  collectionId?: string;
+  swaggerUrl?: string;
+  swaggerLastRefreshed?: string;
+  nodeTemplates?: unknown[];
 }
 
 const WorkflowEditor = () => {

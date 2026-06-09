@@ -100,7 +100,7 @@ test('AdminUsersPage shows role selector with admin/editor/viewer options', () =
 test('AdminUsersPage shows loading spinner while fetching users', () => {
   const content = readPage('AdminUsersPage.tsx');
   assert.ok(
-    content.includes('animate-spin') || content.includes('Loader2'),
+    content.includes('animate-spin') || content.includes('Loader2') || content.includes('Spinner'),
     'Must show loading indicator while fetching users'
   );
   assert.ok(content.includes('loading'), 'Must track loading state');

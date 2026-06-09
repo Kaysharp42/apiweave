@@ -264,7 +264,10 @@ test('AdminDomainsPage source: renders ApprovedDomainManager (approved-domain ma
 
 test('AdminDomainsPage source: shows loading spinner while fetching providers', () => {
   const content = readPage('AdminDomainsPage.tsx');
-  assert.ok(content.includes('animate-spin'), 'Must show a loading spinner (animate-spin)');
+  assert.ok(
+    content.includes('animate-spin') || content.includes('Spinner'),
+    'Must show a loading spinner (animate-spin or Spinner)',
+  );
 });
 
 test('AdminDomainsPage source: shows Configured / Not configured status labels', () => {

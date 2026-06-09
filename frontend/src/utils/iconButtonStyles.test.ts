@@ -12,7 +12,7 @@ test('resolveIconButtonSizeClass falls back to small size', () => {
 });
 
 test('resolveIconButtonVariantClass falls back to ghost variant', () => {
-  assert.match(resolveIconButtonVariantClass('primary'), /bg-primary/);
+  assert.match(resolveIconButtonVariantClass('primary'), /bg-\[var\(--aw-primary\)\]/);
   assert.match(resolveIconButtonVariantClass('unknown' as never), /border-transparent/);
 });
 
@@ -20,5 +20,7 @@ test('buildIconButtonClassName does not use removed DaisyUI semantic button clas
   const classes = buildIconButtonClassName({ variant: 'error' });
 
   assert.equal(/\bbtn-[a-z-]+\b/.test(classes), false);
-  assert.match(classes, /bg-red-600/);
+  assert.match(classes, /bg-status-error/);
+  assert.match(classes, /focus-visible:outline-2/);
+  assert.match(classes, /cursor-pointer/);
 });

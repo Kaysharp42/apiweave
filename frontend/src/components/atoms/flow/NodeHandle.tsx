@@ -1,14 +1,5 @@
-import React from 'react';
 import { Handle, Position } from 'reactflow';
-
-export interface NodeHandleProps {
-  type?: 'source' | 'target';
-  position?: 'top' | 'bottom' | 'left' | 'right';
-  id?: string;
-  color?: string;
-  className?: string;
-  style?: React.CSSProperties;
-}
+import type { NodeHandleProps } from '../../../types/NodeHandleProps';
 
 export function NodeHandle({
   type = 'source',
@@ -26,7 +17,7 @@ export function NodeHandle({
     right: Position.Right,
   };
 
-  const defaultColor = type === 'source' ? '!bg-primary' : '!bg-primary-light';
+  const defaultColor = type === 'source' ? '!bg-[var(--aw-primary)]' : '!bg-[var(--aw-primary-light)]';
 
   return (
     <Handle
@@ -35,12 +26,13 @@ export function NodeHandle({
       {...(id && { id })}
       {...(style && { style })}
       className={[
-        '!w-3 !h-3 !rounded-sm !border-2 !border-white dark:!border-gray-800',
+        '!w-3.5 !h-3.5 !rounded-sm !border-2 !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-dark)]',
         color ?? defaultColor,
         className,
       ]
         .filter(Boolean)
         .join(' ')}
+      aria-label={`${type} handle`}
       {...rest}
     />
   );

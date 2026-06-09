@@ -215,7 +215,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
   return (
     <>
-      <button type="button" aria-label="Close curl import" className="fixed inset-0 z-40 cursor-default bg-slate-950/50" onClick={onClose} />
+      <button type="button" aria-label="Close curl import" className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80" onClick={onClose} />
       <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
@@ -357,7 +357,7 @@ curl -X POST "https://api.example.com/users" \\
                   type="checkbox"
                   checked={sanitize}
                   onChange={(e) => setSanitize(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-border dark:border-border-dark rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-[var(--aw-primary)] border-border dark:border-border-dark rounded focus:ring-[var(--aw-primary)]"
                 />
                 <span className="text-sm text-text-primary dark:text-text-primary-dark">
                   Sanitize sensitive headers (API keys, tokens, etc.)
@@ -368,7 +368,7 @@ curl -X POST "https://api.example.com/users" \\
 
           {/* Error */}
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded-lg p-4">
               <div className="flex items-start">
                 <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-status-error dark:text-status-error-dark">{error}</p>
@@ -378,14 +378,14 @@ curl -X POST "https://api.example.com/users" \\
 
           {/* Dry Run Result */}
           {dryRunResult && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="bg-[var(--aw-status-info)]/5 dark:bg-[var(--aw-status-info)]/10 border border-[var(--aw-status-info)]/20 dark:border-[var(--aw-status-info)]/30 rounded-lg p-4">
               <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0 mt-0.5" />
+                <CheckCircle className="w-5 h-5 text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)] mr-2 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <h3 className="font-medium text-blue-900 dark:text-blue-100 mb-2">
+                  <h3 className="font-medium text-text-primary dark:text-text-primary-dark mb-2">
                     Preview: {dryRunResult.stats.totalRequests} request(s)
                   </h3>
-                  <div className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
+                  <div className="text-sm text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)] space-y-1">
                     <p><strong>Workflow:</strong> {dryRunResult.workflow.name}</p>
                     <p><strong>Nodes:</strong> {dryRunResult.workflow.nodeCount}</p>
                     <p><strong>Edges:</strong> {dryRunResult.workflow.edgeCount}</p>

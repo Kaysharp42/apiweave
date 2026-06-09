@@ -15,23 +15,23 @@
 :root,
 [data-theme="apiweave"] {
   /* Surface colors */
-  --aw-surface: #f8fafc;
+  --aw-surface: #f6f5f3;
   --aw-surface-raised: #ffffff;
-  --aw-surface-overlay: #f1f5f9;
+  --aw-surface-overlay: #eeede9;
 
   /* Text colors */
-  --aw-text-primary: #111827;
-  --aw-text-secondary: #4b5563;
-  --aw-text-muted: #9ca3af;
+  --aw-text-primary: #1c1917;
+  --aw-text-secondary: #5e5a55;
+  --aw-text-muted: #9e9a94;
 
   /* Border colors */
-  --aw-border: #cbd5e1;
-  --aw-border-focus: #164e63;
+  --aw-border: #d6d2cc;
+  --aw-border-focus: #0d5c6e;
 
   /* Brand / Primary */
-  --aw-primary: #164e63;
-  --aw-primary-light: #0e7490;
-  --aw-primary-hover: #155e75;
+  --aw-primary: #0d5c6e;
+  --aw-primary-light: #0e7a8a;
+  --aw-primary-hover: #0e6b7d;
 
   /* Status colors */
   --aw-status-success: #16a34a;
@@ -66,15 +66,24 @@
   --aw-transition-slow: 500ms ease-in-out;
 
   /* Shadows */
-  --aw-shadow-node: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
-  --aw-shadow-node-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-  --aw-shadow-node-selected: 0 0 0 2px rgba(22, 78, 99, 0.5);
+  --aw-shadow-node: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --aw-shadow-node-hover: 0 4px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --aw-shadow-node-selected: 0 0 0 2px rgba(13, 92, 110, 0.5);
+  --aw-shadow-raised: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --aw-shadow-overlay: 0 4px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --aw-shadow-modal: 0 10px 25px rgba(0, 0, 0, 0.1), 0 8px 10px rgba(0, 0, 0, 0.04);
+  --aw-shadow-popover: 0 20px 50px rgba(0, 0, 0, 0.12), 0 12px 24px rgba(0, 0, 0, 0.06);
 
   /* Border radius */
   --aw-radius-sm: 0.25rem;
   --aw-radius-md: 0.375rem;
   --aw-radius-lg: 0.5rem;
   --aw-radius-xl: 0.75rem;
+  --aw-radius-full: 9999px;
+
+  /* Focus ring */
+  --aw-focus-ring-width: 2px;
+  --aw-focus-ring-offset: 2px;
 }
 
 /* ──────────────────────────────────────────────
@@ -82,15 +91,15 @@
    ────────────────────────────────────────────── */
 .dark,
 [data-theme="apiweave-dark"] {
-  --aw-surface: #111827;
-  --aw-surface-raised: #1f2937;
-  --aw-surface-overlay: #1e293b;
+  --aw-surface: #1c1b19;
+  --aw-surface-raised: #2a2926;
+  --aw-surface-overlay: #363431;
 
-  --aw-text-primary: #f3f4f6;
-  --aw-text-secondary: #9ca3af;
-  --aw-text-muted: #4b5563;
+  --aw-text-primary: #f5f4f2;
+  --aw-text-secondary: #b8b4ae;
+  --aw-text-muted: #6b6863;
 
-  --aw-border: #374151;
+  --aw-border: #4a4743;
   --aw-border-focus: #22d3ee;
 
   --aw-primary: #22d3ee;
@@ -109,9 +118,13 @@
   --aw-branch-edge: #a78bfa;
   --aw-branch-label: #e9d5ff;
 
-  --aw-shadow-node: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
-  --aw-shadow-node-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --aw-shadow-node: 0 1px 3px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15);
+  --aw-shadow-node-hover: 0 4px 6px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
   --aw-shadow-node-selected: 0 0 0 2px rgba(34, 211, 238, 0.5);
+  --aw-shadow-raised: 0 1px 3px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15);
+  --aw-shadow-overlay: 0 4px 6px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
+  --aw-shadow-modal: 0 10px 25px rgba(0, 0, 0, 0.35), 0 8px 10px rgba(0, 0, 0, 0.2);
+  --aw-shadow-popover: 0 20px 50px rgba(0, 0, 0, 0.4), 0 12px 24px rgba(0, 0, 0, 0.25);
 }
 
 /* ──────────────────────────────────────────────
@@ -120,7 +133,7 @@
 
 /* Apply design system fonts */
 body {
-  font-family: 'Open Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--aw-surface);
@@ -131,7 +144,7 @@ body {
 /* Headings use display font */
 h1, h2, h3, h4, h5, h6,
 .font-display {
-  font-family: 'Montserrat', system-ui, sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
 }
 
 /* Code blocks use mono font */
@@ -167,8 +180,8 @@ code, pre, .font-mono,
 
 /* Focus ring utility — consistent focus styles */
 .aw-focus-ring:focus-visible {
-  outline: 2px solid var(--aw-primary);
-  outline-offset: 2px;
+  outline: var(--aw-focus-ring-width) solid var(--aw-primary);
+  outline-offset: var(--aw-focus-ring-offset);
   border-radius: var(--aw-radius-md);
 }
 

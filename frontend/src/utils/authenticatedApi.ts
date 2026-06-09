@@ -1,3 +1,4 @@
+import type { AuthenticatedRequestInit } from '../types';
 /**
  * authenticatedApi — thin fetch wrapper for APIWeave auth-aware API calls.
  *
@@ -25,11 +26,6 @@ export function readCookie(name: string): string | null {
     .split("; ")
     .find((row) => row.startsWith(`${name}=`));
   return match ? decodeURIComponent(match.split("=")[1] ?? "") : null;
-}
-
-export interface AuthenticatedRequestInit extends RequestInit {
-  /** Override the method explicitly (defaults to "GET"). */
-  method?: string;
 }
 
 /**

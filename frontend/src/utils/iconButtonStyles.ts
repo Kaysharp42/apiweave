@@ -10,15 +10,15 @@ const SIZE_CLASS_MAP: Record<ButtonSize, string> = {
 
 const VARIANT_CLASS_MAP: Record<IconButtonVariant, string> = {
   ghost:
-    'border border-transparent text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark focus:bg-surface-overlay dark:focus:bg-surface-dark-overlay focus:text-text-primary dark:focus:text-text-primary-dark active:bg-surface-overlay dark:active:bg-surface-dark-overlay active:text-text-primary dark:active:text-text-primary-dark',
+    'border border-transparent text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark active:bg-surface-overlay dark:active:bg-surface-dark-overlay active:text-text-primary dark:active:text-text-primary-dark',
   primary:
-    'bg-primary dark:bg-primary-light text-white border border-primary dark:border-primary-light hover:bg-primary-hover dark:hover:bg-primary-hover active:bg-primary/80 dark:active:bg-primary-hover/80 shadow-sm hover:shadow-md',
+    'bg-[var(--aw-primary)] dark:bg-[var(--aw-primary-light)] text-white dark:text-primary-dark border border-[var(--aw-primary)] dark:border-[var(--aw-primary-light)] hover:bg-[var(--aw-primary-hover)] dark:hover:bg-[var(--aw-primary-hover)] active:brightness-95 dark:active:brightness-105 shadow-raised hover:shadow-overlay',
   error:
-    'bg-red-600 border border-red-600 text-white hover:bg-red-700 active:bg-red-500 shadow-sm hover:shadow-md',
+    'bg-status-error dark:bg-[var(--aw-status-error)] text-white dark:text-red-950 border border-status-error dark:border-[var(--aw-status-error)] hover:brightness-95 dark:hover:brightness-105 active:brightness-90 dark:active:brightness-110 shadow-raised hover:shadow-overlay',
   warning:
-    'bg-yellow-600 border border-yellow-600 text-white hover:bg-yellow-700 active:bg-yellow-500 shadow-sm hover:shadow-md',
+    'bg-status-warning dark:bg-[var(--aw-status-warning)] text-white dark:text-amber-950 border border-status-warning dark:border-[var(--aw-status-warning)] hover:brightness-95 dark:hover:brightness-105 active:brightness-90 dark:active:brightness-110 shadow-raised hover:shadow-overlay',
   success:
-    'bg-green-600 border border-green-600 text-white hover:bg-green-700 active:bg-green-500 shadow-sm hover:shadow-md',
+    'bg-status-success dark:bg-[var(--aw-status-success)] text-white dark:text-green-950 border border-status-success dark:border-[var(--aw-status-success)] hover:brightness-95 dark:hover:brightness-105 active:brightness-90 dark:active:brightness-110 shadow-raised hover:shadow-overlay',
 };
 
 export const resolveIconButtonSizeClass = (size: ButtonSize): string => SIZE_CLASS_MAP[size] || SIZE_CLASS_MAP.sm;
@@ -38,10 +38,12 @@ export const buildIconButtonClassName = ({
   className?: string;
 } = {}): string =>
   [
-    'inline-flex items-center justify-center rounded transition',
+    'inline-flex items-center justify-center rounded',
+    'transition-[box-shadow,background-color,color,filter] duration-[var(--aw-transition-fast)] ease-in-out',
+    'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
     resolveIconButtonSizeClass(size),
     resolveIconButtonVariantClass(variant),
-    disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+    disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer',
     className,
   ]
     .filter(Boolean)

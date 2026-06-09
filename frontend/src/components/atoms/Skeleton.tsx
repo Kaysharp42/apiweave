@@ -1,14 +1,8 @@
 import React from 'react';
-
-export interface SkeletonProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: 'text' | 'circle' | 'rect';
-  width?: string | number;
-  height?: string | number;
-  count?: number;
-}
+import type { SkeletonProps } from '../../types';
 
 export function Skeleton({ variant = 'text', width, height, className = '', count = 1, ...rest }: SkeletonProps) {
-  const base = 'skeleton rounded';
+  const base = 'skeleton rounded motion-reduce:animate-none';
   const variantClass: Record<string, string> = {
     text: 'h-4 w-full',
     circle: 'h-10 w-10 rounded-full',

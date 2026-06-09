@@ -10,20 +10,11 @@ import type { User } from '../types/User';
 import type { AuthStatus } from '../types/AuthState';
 import { authenticatedFetch, authenticatedJson } from '../utils/authenticatedApi';
 import API_BASE_URL from '../utils/api';
+import type { AuthContextValue } from '../types';
 
 // ---------------------------------------------------------------------------
 // Context shape
 // ---------------------------------------------------------------------------
-
-export interface AuthContextValue {
-  user: User | null;
-  status: AuthStatus;
-  error: string | null;
-  isSetupComplete: boolean;
-  login: (provider: string, inviteToken?: string) => void;
-  logout: () => Promise<void>;
-  refresh: () => Promise<void>;
-}
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 

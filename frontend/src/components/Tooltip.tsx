@@ -1,12 +1,12 @@
 import { useState, useRef, type ReactNode } from 'react';
 
-export interface TooltipProps {
+interface TooltipComponentProps {
   children: ReactNode;
   text: string;
   placement?: 'top' | 'bottom' | 'left' | 'right';
 }
 
-export default function Tooltip({ children, text, placement = 'top' }: TooltipProps) {
+export default function Tooltip({ children, text, placement = 'top' }: TooltipComponentProps) {
   const [visible, setVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 

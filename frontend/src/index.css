@@ -22,11 +22,15 @@
 }
 
 /* Edge styling */
-.dark .react-flow__edge-path {
-  stroke: #6b7280;
+.react-flow__edge-path {
+  stroke: var(--aw-border);
 }
 
-.dark .react-flow__edge-text {
+.dark .react-flow__edge-path {
+  stroke: var(--aw-text-muted);
+}
+
+.react-flow__edge-text {
   fill: var(--aw-text-primary);
 }
 
@@ -47,30 +51,51 @@
   font-weight: 600;
 }
 
-/* Controls */
-.dark .react-flow__controls {
+/* Controls — token-based styling, both themes */
+.react-flow__controls {
   background-color: var(--aw-surface-raised);
-  border-color: var(--aw-border);
+  border: 1px solid var(--aw-border);
+  border-radius: var(--aw-radius-lg);
+  box-shadow: var(--aw-shadow-raised);
 }
 
-.dark .react-flow__controls button {
+.react-flow__controls button {
+  cursor: pointer;
   background-color: var(--aw-surface-raised);
-  border-color: var(--aw-border);
+  border-bottom: 1px solid var(--aw-border);
   color: var(--aw-text-primary);
+  transition: background-color var(--aw-transition-fast, 150ms);
 }
 
-.dark .react-flow__controls button:hover {
+.react-flow__controls button:hover {
   background-color: var(--aw-surface-overlay);
 }
 
-.dark .react-flow__controls button svg {
+.react-flow__controls button:focus-visible {
+  outline: var(--aw-focus-ring-width) solid var(--aw-primary);
+  outline-offset: var(--aw-focus-ring-offset);
+  border-radius: var(--aw-radius-sm);
+}
+
+.react-flow__controls button svg {
   fill: var(--aw-text-primary);
 }
 
-/* Minimap */
-.dark .react-flow__minimap {
+/* Minimap — token-based styling, both themes */
+.react-flow__minimap {
   background-color: var(--aw-surface-raised);
-  border-color: var(--aw-border);
+  border: 2px solid var(--aw-border);
+  border-radius: var(--aw-radius-lg);
+}
+
+.react-flow__minimap:focus-visible {
+  outline: var(--aw-focus-ring-width) solid var(--aw-primary);
+  outline-offset: var(--aw-focus-ring-offset);
+  border-radius: var(--aw-radius-lg);
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(15, 23, 42, 0.05);
 }
 
 .dark .react-flow__minimap-mask {
@@ -78,8 +103,9 @@
 }
 
 /* Background & attribution */
-.dark .react-flow__background {
-  background-color: var(--aw-surface);
+.react-flow__attribution {
+  background-color: rgba(255, 255, 255, 0.9);
+  color: var(--aw-text-muted);
 }
 
 .dark .react-flow__attribution {
@@ -88,19 +114,34 @@
 }
 
 /* Selection box */
-.dark .react-flow__selectionpane {
-  background: rgba(59, 130, 246, 0.2);
-  border: 1px solid #3b82f6;
+.react-flow__selectionpane {
+  background: rgba(13, 92, 110, 0.15);
+  border: 1px solid var(--aw-primary);
 }
 
-/* Node handles */
+.dark .react-flow__selectionpane {
+  background: rgba(34, 211, 238, 0.15);
+  border: 1px solid var(--aw-primary);
+}
+
+
+/* Node handles — token-based styling */
+.react-flow__handle {
+  background-color: var(--aw-primary-light);
+  border-color: var(--aw-surface-raised);
+}
+
+.react-flow__handle:hover {
+  background-color: var(--aw-primary);
+}
+
 .dark .react-flow__handle {
-  background-color: #6b7280;
-  border-color: #9ca3af;
+  background-color: var(--aw-primary);
+  border-color: var(--aw-surface-raised);
 }
 
 .dark .react-flow__handle:hover {
-  background-color: #9ca3af;
+  background-color: var(--aw-primary-hover);
 }
 
 /* ──────────────────────────────────────────────
@@ -115,7 +156,7 @@
 }
 
 .dark .sash:hover {
-  background-color: #4b5563 !important;
+  background-color: var(--aw-text-secondary) !important;
 }
 
 .dark .sash.vertical,
@@ -165,6 +206,11 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .animate-pulse-border {
+    animation: none !important;
+    border-color: var(--aw-status-running) !important;
   }
 }
 

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApprovedDomainManager } from '../components/auth/ApprovedDomainManager';
-import { Globe, Loader2, ShieldCheck } from 'lucide-react';
+import { Globe, ShieldCheck } from 'lucide-react';
+import { Spinner } from '../components/atoms/Spinner';
+import { StatusBadge } from '../components/molecules/StatusBadge';
+import { Panel } from '../components/molecules/Panel';
 import { authenticatedJson } from '../utils/authenticatedApi';
 import API_BASE_URL from '../utils/api';
 import { PROVIDER_DISPLAY_MAP, PROVIDER_IDS } from '../auth/providerConfig';
@@ -37,7 +40,7 @@ function SsoProviderSection() {
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8 text-text-muted">
-        <Loader2 className="w-6 h-6 animate-spin" />
+        <Spinner size="lg" className="text-primary dark:text-primary-light" />
       </div>
     );
   }
@@ -45,58 +48,55 @@ function SsoProviderSection() {
   const providerMap = new Map(providers.map((p) => [p.id, p.enabled]));
 
   return (
-    <div className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-lg overflow-hidden">
-      <table className="w-full text-sm text-left">
-        <thead className="text-xs text-text-secondary dark:text-text-secondary-dark uppercase bg-surface-raised dark:bg-surface-dark-raised border-b border-border dark:border-border-dark">
-          <tr>
-            <th className="px-6 py-3">Provider</th>
-            <th className="px-6 py-3">Status</th>
-            <th className="px-6 py-3">Configuration</th>
-          </tr>
-        </thead>
-        <tbody>
-          {PROVIDER_IDS.map((id) => {
-            const display = PROVIDER_DISPLAY_MAP[id as ProviderId];
-            const enabled = providerMap.get(id) ?? false;
-            const { IconComponent } = display;
+    <Panel title="SSO Provider Configuration">
+      <div className="overflow-hidden">
+        <table className="w-full text-sm text-left">
+          <thead className="text-xs text-text-secondary dark:text-text-secondary-dark uppercase bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark">
+            <tr>
+              <th className="px-6 py-3">Provider</th>
+              <th className="px-6 py-3">Status</th>
+              <th className="px-6 py-3">Configuration</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PROVIDER_IDS.map((id) => {
+              const display = PROVIDER_DISPLAY_MAP[id as ProviderId];
+              const enabled = providerMap.get(id) ?? false;
+              const { IconComponent } = display;
 
-            return (
-              <tr
-                key={id}
-                className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-raised dark:hover:bg-surface-dark-raised transition-colors"
-              >
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-2">
-                    <IconComponent className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
-                    <span className="font-medium text-text-primary dark:text-text-primary-dark capitalize">
-                      {id}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  {enabled ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success dark:text-success-light">
-                      <span className="w-1.5 h-1.5 rounded-full bg-success dark:bg-success-light" />
-                      Configured
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-surface-overlay dark:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark">
-                      <span className="w-1.5 h-1.5 rounded-full bg-text-muted dark:bg-text-muted-dark" />
-                      Not configured
-                    </span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-xs text-text-secondary dark:text-text-secondary-dark">
-                  {enabled
-                    ? 'Client ID and secret are set in environment variables.'
-                    : `Set ${id.toUpperCase()}_CLIENT_ID and ${id.toUpperCase()}_CLIENT_SECRET in the backend environment to enable.`}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+              return (
+                <tr
+                  key={id}
+                  className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px]"
+                  tabIndex={0}
+                >
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <IconComponent className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
+                      <span className="font-medium text-text-primary dark:text-text-primary-dark capitalize">
+                        {id}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    {enabled ? (
+                      <StatusBadge status="success" label="Configured" />
+                    ) : (
+                      <StatusBadge status="idle" label="Not configured" />
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-xs text-text-secondary dark:text-text-secondary-dark">
+                    {enabled
+                      ? 'Client ID and secret are set in environment variables.'
+                      : `Set ${id.toUpperCase()}_CLIENT_ID and ${id.toUpperCase()}_CLIENT_SECRET in the backend environment to enable.`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   );
 }
 
@@ -104,33 +104,33 @@ export default function AdminDomainsPage() {
   return (
     <main className="flex-1 overflow-y-auto p-8">
       <div className="max-w-3xl mx-auto flex flex-col gap-12">
-          {/* Approved Domains */}
-          <section>
-            <div className="flex items-center gap-2 mb-2">
-              <Globe className="w-6 h-6 text-primary" />
-              <h1 className="text-2xl font-bold">Approved Domains</h1>
-            </div>
-            <p className="text-text-secondary dark:text-text-secondary-dark mb-8">
-              Manage email domains that are automatically approved to sign up and join the workspace.
-              Users signing up with an email from an approved domain will be granted the default
-              &apos;viewer&apos; role.
-            </p>
-            <ApprovedDomainManager />
-          </section>
+        {/* Approved Domains */}
+        <section>
+          <div className="flex items-center gap-2 mb-2">
+            <Globe className="w-6 h-6 text-primary" />
+            <h1 className="text-2xl font-bold">Approved Domains</h1>
+          </div>
+          <p className="text-text-secondary dark:text-text-secondary-dark mb-8">
+            Manage email domains that are automatically approved to sign up and join the workspace.
+            Users signing up with an email from an approved domain will be granted the default
+            &apos;viewer&apos; role.
+          </p>
+          <ApprovedDomainManager />
+        </section>
 
-          {/* SSO Provider Configuration */}
-          <section>
-            <div className="flex items-center gap-2 mb-2">
-              <ShieldCheck className="w-6 h-6 text-primary" />
-              <h2 className="text-2xl font-bold">SSO Provider Configuration</h2>
-            </div>
-            <p className="text-text-secondary dark:text-text-secondary-dark mb-8">
-              View the configuration status of the supported SSO providers. Providers are enabled by
-              setting the corresponding environment variables on the backend.
-            </p>
-            <SsoProviderSection />
-          </section>
-        </div>
+        {/* SSO Provider Configuration */}
+        <section>
+          <div className="flex items-center gap-2 mb-2">
+            <ShieldCheck className="w-6 h-6 text-primary" />
+            <h2 className="text-2xl font-bold">SSO Provider Configuration</h2>
+          </div>
+          <p className="text-text-secondary dark:text-text-secondary-dark mb-8">
+            View the configuration status of the supported SSO providers. Providers are enabled by
+            setting the corresponding environment variables on the backend.
+          </p>
+          <SsoProviderSection />
+        </section>
+      </div>
     </main>
   );
 }

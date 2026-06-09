@@ -3,14 +3,9 @@ import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from './molecules/Modal';
 import { Button } from './atoms/Button';
-import type { Environment } from '../types';
-
-export interface SecretsPanelProps {
-  isOpen: boolean;
-  environment: Environment | null;
-  onSecretsChange?: (secrets: Record<string, string>) => Promise<void>;
-  onClose: () => void;
-}
+import { Input } from './atoms/Input';
+import { IconButton } from './atoms/IconButton';
+import type { SecretsPanelProps } from '../types/SecretsPanelProps';
 
 export default function SecretsPanel({
   isOpen,
@@ -78,15 +73,14 @@ export default function SecretsPanel({
                     <p className="font-mono text-sm text-text-primary dark:text-text-primary-dark break-all">{key}</p>
                     <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">Placeholder: {placeholder ?? '(none)'}</p>
                   </div>
-                  <button
-                    type="button"
+                  <IconButton
                     onClick={() => handleRemoveSecret(key)}
-                    aria-label={`Remove secret ${key}`}
-                    className="p-2 text-status-error hover:bg-status-error/10 rounded-lg transition-colors flex-shrink-0"
-                    title="Remove secret"
+                    tooltip={`Remove secret ${key}`}
+                    variant="error"
+                    size="sm"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </IconButton>
                 </div>
               ))}
             </div>
@@ -98,24 +92,24 @@ export default function SecretsPanel({
           <div className="space-y-3">
             <div>
               <label htmlFor="secret-name" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Secret Name</label>
-              <input
+              <Input
                 id="secret-name"
                 type="text"
                 value={newSecretKey}
                 onChange={(e) => setNewSecretKey(e.target.value)}
                 placeholder="e.g., API_KEY, AUTH_TOKEN"
-                className="input input-bordered w-full"
+                className="w-full"
               />
             </div>
             <div>
               <label htmlFor="secret-placeholder" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Placeholder Text (optional)</label>
-              <input
+              <Input
                 id="secret-placeholder"
                 type="text"
                 value={newSecretPlaceholder}
                 onChange={(e) => setNewSecretPlaceholder(e.target.value)}
                 placeholder="e.g., Paste your API key here"
-                className="input input-bordered w-full"
+                className="w-full"
               />
             </div>
             <Button
@@ -131,9 +125,9 @@ export default function SecretsPanel({
           </div>
         </div>
 
-        <div className="p-4 bg-info/5 rounded-lg border border-info/20">
+        <div className="p-4 bg-[var(--aw-status-info)]/5 rounded-lg border border-[var(--aw-status-info)]/20">
           <p className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">Usage in HTTP Requests:</p>
-          <p className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-raised dark:bg-surface-dark-raised p-2 rounded">
+          <p className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-raised dark:bg-surface-dark-raised p-2 rounded break-all">
             {'{{'}
             {Object.keys(secrets).length > 0 ? Object.keys(secrets)[0] : 'secretName'}
             {'}}'}

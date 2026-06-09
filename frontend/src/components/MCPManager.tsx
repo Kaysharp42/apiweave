@@ -105,12 +105,12 @@ function MCPContent({
                 Test HTTP Endpoint
               </Button>
               {testResult === 'success' && (
-                <span className="flex items-center gap-1 text-xs text-success">
+                <span className="flex items-center gap-1 text-xs text-[var(--aw-status-success)]">
                   <CheckCircle className="w-3.5 h-3.5" /> Connected
                 </span>
               )}
               {testResult === 'error' && (
-                <span className="flex items-center gap-1 text-xs text-error">
+                <span className="flex items-center gap-1 text-xs text-[var(--aw-status-error)]">
                   <XCircle className="w-3.5 h-3.5" /> Failed
                 </span>
               )}

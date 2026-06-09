@@ -8,7 +8,7 @@ export function Toast() {
         duration: 4000,
         className: 'font-sans text-sm',
         style: {
-          fontFamily: "'Open Sans', sans-serif",
+          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
         },
       }}
       theme="system"

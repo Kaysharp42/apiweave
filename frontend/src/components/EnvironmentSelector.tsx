@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Globe, ChevronDown, Settings } from 'lucide-react';
 import API_BASE_URL from '../utils/api';
 import useSidebarStore from '../stores/SidebarStore';
 import type { Environment } from '../types';
 import { authenticatedFetch } from '../utils/authenticatedApi';
-
-export interface EnvironmentSelectorProps {
-  onManageClick: () => void;
-}
+import type { EnvironmentSelectorProps } from '../types/EnvironmentSelectorProps';
 
 export default function EnvironmentSelector({ onManageClick }: EnvironmentSelectorProps) {
   const [environments, setEnvironments] = useState<Environment[]>([]);
@@ -55,45 +53,41 @@ export default function EnvironmentSelector({ onManageClick }: EnvironmentSelect
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark rounded hover:bg-surface-raised dark:hover:bg-surface-dark-raised transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
         title="Manage environments"
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-        </svg>
+        <Globe className="w-4 h-4 flex-shrink-0" />
         <span className="max-w-[120px] truncate">
           Environments
         </span>
-        <svg className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform motion-reduce:transition-none ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 py-1">
-          <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+        <div className="absolute right-0 mt-2 w-64 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-popover border border-border dark:border-border-dark z-50 py-1">
+          <div className="px-3 py-2 border-b border-border dark:border-border-dark">
+            <p className="text-xs font-medium text-text-muted dark:text-text-muted-dark uppercase">
               Available Environments
             </p>
           </div>
 
           <div className="max-h-64 overflow-auto py-1">
             {environments.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 text-center">
+              <div className="px-3 py-2 text-sm text-text-muted dark:text-text-muted-dark text-center">
                 No environments yet
               </div>
             ) : (
               environments.map((env) => (
                 <div
                   key={env.environmentId}
-                  className="px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="px-3 py-2 text-sm hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate text-gray-900 dark:text-white">
+                      <div className="font-medium truncate text-text-primary dark:text-text-primary-dark">
                         {env.name}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                      <div className="text-xs text-text-muted dark:text-text-muted-dark">
                         {Object.keys(env.variables).length} variables
                       </div>
                     </div>
@@ -103,17 +97,14 @@ export default function EnvironmentSelector({ onManageClick }: EnvironmentSelect
             )}
           </div>
 
-          <div className="border-t border-gray-200 dark:border-gray-700 py-1">
+          <div className="border-t border-border dark:border-border-dark py-1">
             <button
               type="button"
               onClick={handleManage}
-              className="w-full text-left px-3 py-2 text-sm text-cyan-900 dark:text-cyan-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors font-medium"
+              className="w-full text-left px-3 py-2 text-sm text-primary dark:text-primary-light hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
             >
               <div className="flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <Settings className="w-4 h-4 flex-shrink-0" />
                 Manage Environments
               </div>
             </button>

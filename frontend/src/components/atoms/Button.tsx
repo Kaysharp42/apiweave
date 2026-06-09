@@ -1,19 +1,6 @@
 import React from 'react';
 import { Loader2 } from 'lucide-react';
-import type { ButtonVariant } from '../../types/ButtonVariant';
-import type { ButtonIntent } from '../../types/ButtonIntent';
-import type { ButtonSize } from '../../types/ButtonSize';
-
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: ButtonVariant;
-  intent?: ButtonIntent;
-  size?: ButtonSize;
-  loading?: boolean;
-  disabled?: boolean;
-  fullWidth?: boolean;
-  icon?: React.ReactNode;
-  children?: React.ReactNode;
-}
+import type { ButtonProps } from '../../types';
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
   children,
@@ -29,9 +16,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
   onClick,
   ...rest
 }, ref) => {
-  const baseClasses = 'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded transition';
+  const baseClasses = [
+    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded',
+    'transition-[box-shadow,background-color,color,filter] duration-[var(--aw-transition-fast)] ease-in-out',
+    'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+  ].join(' ');
 
-  const sizeClasses: Record<ButtonSize, string> = {
+  const sizeClasses: Record<NonNullable<ButtonProps['size']>, string> = {
     xs: 'px-2 py-1 text-xs',
     sm: 'px-3 py-1.5 text-sm',
     md: 'px-4 py-2 text-sm',
@@ -40,34 +31,34 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
 
   const getVariantClasses = (): string => {
     if (variant === 'primary') {
-      const intentMap: Record<ButtonIntent, string> = {
-        default: 'bg-primary dark:bg-primary-light text-white border border-primary dark:border-primary-light hover:bg-primary-hover dark:hover:bg-primary-hover shadow-sm hover:shadow-md',
-        success: 'bg-green-600 border border-green-600 text-white hover:bg-green-700 shadow-sm hover:shadow-md',
-        error: 'bg-red-600 border border-red-600 text-white hover:bg-red-700 shadow-sm hover:shadow-md',
-        warning: 'bg-yellow-600 border border-yellow-600 text-white hover:bg-yellow-700 shadow-sm hover:shadow-md',
-        info: 'bg-blue-600 border border-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow-md',
+      const intentMap: Record<NonNullable<ButtonProps['intent']>, string> = {
+        default: 'bg-[var(--aw-primary)] text-white dark:text-primary-dark border border-[var(--aw-primary)] hover:bg-[var(--aw-primary-hover)] shadow-raised hover:shadow-overlay',
+        success: 'bg-status-success dark:bg-[var(--aw-status-success)] text-white dark:text-green-950 border border-status-success dark:border-[var(--aw-status-success)] hover:brightness-95 dark:hover:brightness-105 shadow-raised hover:shadow-overlay',
+        error: 'bg-status-error dark:bg-[var(--aw-status-error)] text-white dark:text-red-950 border border-status-error dark:border-[var(--aw-status-error)] hover:brightness-95 dark:hover:brightness-105 shadow-raised hover:shadow-overlay',
+        warning: 'bg-status-warning dark:bg-[var(--aw-status-warning)] text-white dark:text-amber-950 border border-status-warning dark:border-[var(--aw-status-warning)] hover:brightness-95 dark:hover:brightness-105 shadow-raised hover:shadow-overlay',
+        info: 'bg-status-info dark:bg-[var(--aw-status-info)] text-white dark:text-blue-950 border border-status-info dark:border-[var(--aw-status-info)] hover:brightness-95 dark:hover:brightness-105 shadow-raised hover:shadow-overlay',
       };
       return intentMap[intent];
     }
 
     if (variant === 'secondary') {
-      const intentMap: Record<ButtonIntent, string> = {
+      const intentMap: Record<NonNullable<ButtonProps['intent']>, string> = {
         default: 'bg-primary/5 dark:bg-primary-light/10 text-primary dark:text-primary-light border border-primary dark:border-primary-light hover:bg-primary/10 dark:hover:bg-primary-light/20',
-        success: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-600 dark:border-green-500 hover:bg-green-100 dark:hover:bg-green-900/30',
-        error: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-600 dark:border-red-500 hover:bg-red-100 dark:hover:bg-red-900/30',
-        warning: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border border-yellow-600 dark:border-yellow-500 hover:bg-yellow-100 dark:hover:bg-yellow-900/30',
-        info: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-600 dark:border-blue-500 hover:bg-blue-100 dark:hover:bg-blue-900/30',
+        success: 'bg-status-success/5 dark:bg-[var(--aw-status-success)]/10 text-status-success dark:text-[var(--aw-status-success)] border border-status-success dark:border-[var(--aw-status-success)] hover:bg-status-success/10 dark:hover:bg-[var(--aw-status-success)]/20',
+        error: 'bg-status-error/5 dark:bg-[var(--aw-status-error)]/10 text-status-error dark:text-[var(--aw-status-error)] border border-status-error dark:border-[var(--aw-status-error)] hover:bg-status-error/10 dark:hover:bg-[var(--aw-status-error)]/20',
+        warning: 'bg-status-warning/5 dark:bg-[var(--aw-status-warning)]/10 text-status-warning dark:text-[var(--aw-status-warning)] border border-status-warning dark:border-[var(--aw-status-warning)] hover:bg-status-warning/10 dark:hover:bg-[var(--aw-status-warning)]/20',
+        info: 'bg-status-info/5 dark:bg-[var(--aw-status-info)]/10 text-status-info dark:text-[var(--aw-status-info)] border border-status-info dark:border-[var(--aw-status-info)] hover:bg-status-info/10 dark:hover:bg-[var(--aw-status-info)]/20',
       };
       return intentMap[intent];
     }
 
     if (variant === 'ghost') {
-      const intentMap: Record<ButtonIntent, string> = {
-        default: 'text-text-secondary dark:text-white hover:bg-surface-overlay dark:hover:bg-white/10',
-        success: 'text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30',
-        error: 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30',
-        warning: 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30',
-        info: 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30',
+      const intentMap: Record<NonNullable<ButtonProps['intent']>, string> = {
+        default: 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
+        success: 'text-status-success dark:text-[var(--aw-status-success)] hover:bg-status-success/5 dark:hover:bg-[var(--aw-status-success)]/10',
+        error: 'text-status-error dark:text-[var(--aw-status-error)] hover:bg-status-error/5 dark:hover:bg-[var(--aw-status-error)]/10',
+        warning: 'text-status-warning dark:text-[var(--aw-status-warning)] hover:bg-status-warning/5 dark:hover:bg-[var(--aw-status-warning)]/10',
+        info: 'text-status-info dark:text-[var(--aw-status-info)] hover:bg-status-info/5 dark:hover:bg-[var(--aw-status-info)]/10',
       };
       return intentMap[intent];
     }
@@ -76,7 +67,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
   };
 
   const variantClasses = getVariantClasses();
-  const stateClasses = (disabled || loading) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer';
+  const stateClasses = (disabled || loading)
+    ? 'opacity-50 cursor-not-allowed pointer-events-none'
+    : 'cursor-pointer';
 
   return (
     <button
@@ -93,10 +86,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
         .filter(Boolean)
         .join(' ')}
       disabled={disabled || loading}
+      aria-busy={loading}
       onClick={onClick}
       {...rest}
     >
-      {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+      {loading && <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
       {icon && !loading && icon}
       {children}
     </button>

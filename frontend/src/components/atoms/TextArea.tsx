@@ -1,15 +1,5 @@
-import React, { useId, useRef, useEffect } from 'react';
-
-export interface TextAreaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'size'> {
-  label?: string;
-  error?: string;
-  helperText?: string;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
-  autoResize?: boolean;
-  id?: string;
-  value?: string;
-  onChange?: React.ChangeEventHandler<HTMLTextAreaElement>;
-}
+import { useId, useRef, useEffect } from 'react';
+import type { TextAreaProps } from '../../types';
 
 export function TextArea({
   label,
@@ -54,7 +44,13 @@ export function TextArea({
         value={value}
         onChange={onChange}
         className={[
-          'textarea textarea-bordered w-full px-3 py-2 bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
+          'textarea textarea-bordered w-full px-3 py-2',
+          'bg-surface-raised dark:bg-surface-dark-raised',
+          'text-text-primary dark:text-text-primary-dark',
+          'border-border dark:border-border-dark',
+          'placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
+          'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+          'transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out',
           sizeClass[size] ?? '',
           error && 'textarea-error',
           autoResize && 'resize-none overflow-hidden',

@@ -1,20 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
+import type { SelectOption, ButtonSelectProps } from '../types';
 
 const EMPTY_OPTIONS: SelectOption[] = [];
-
-export interface SelectOption {
-  value: string;
-  label: string;
-}
-
-export interface ButtonSelectProps {
-  options?: SelectOption[];
-  value?: string;
-  onChange?: (value: string) => void;
-  placeholder?: string;
-  buttonClass?: string;
-}
 
 export default function ButtonSelect({
   options = EMPTY_OPTIONS,

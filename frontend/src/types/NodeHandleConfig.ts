@@ -1,6 +1,7 @@
+import type { CSSProperties } from 'react';
+
 export interface NodeHandleConfig {
-  type: 'source' | 'target';
+  type?: 'source' | 'target';
   id?: string;
-  position?: 'left' | 'right' | 'top' | 'bottom';
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }

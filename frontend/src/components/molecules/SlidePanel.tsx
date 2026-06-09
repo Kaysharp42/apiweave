@@ -1,19 +1,7 @@
-import React from 'react';
 import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { X } from 'lucide-react';
 import { IconButton } from '../atoms/IconButton';
-
-export interface SlidePanelProps {
-  open: boolean;
-  onClose: () => void;
-  title: React.ReactNode;
-  children?: React.ReactNode;
-  footer?: React.ReactNode;
-  side?: 'left' | 'right';
-  size?: 'sm' | 'md' | 'lg';
-  showClose?: boolean;
-  className?: string;
-}
+import type { SlidePanelProps } from '../../types';
 
 const SIZE_MAP: Record<string, string> = {
   sm: 'max-w-xs',
@@ -45,7 +33,7 @@ export function SlidePanel({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-surface-overlay" />
+          <div className="fixed inset-0 bg-surface-overlay/80 dark:bg-surface-dark-overlay/80" />
         </TransitionChild>
 
         <div className="fixed inset-0 overflow-hidden">
@@ -65,10 +53,10 @@ export function SlidePanel({
               <Dialog.Panel
                 className={`w-screen ${SIZE_MAP[size] || SIZE_MAP.md} h-full flex flex-col
                   bg-surface dark:bg-surface-dark border-border dark:border-border-dark
-                  ${isRight ? 'border-l' : 'border-r'} shadow-xl`}
+                  ${isRight ? 'border-l' : 'border-r'} shadow-modal`}
               >
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
-                  <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark">
+                  <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark truncate">
                     {title}
                   </Dialog.Title>
                   {showClose && (

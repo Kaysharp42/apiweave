@@ -1,18 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-
-export interface AssertionValue {
-  source: string;
-  path: string;
-  operator: string;
-  expectedValue: string;
-}
-
-export interface AssertionEditorProps {
-  value: AssertionValue | null;
-  onChange: (value: AssertionValue) => void;
-  onCancel: () => void;
-  onSave: () => void;
-}
+import type { AssertionEditorProps } from '../types';
 
 export default function AssertionEditor({
   value,

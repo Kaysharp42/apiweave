@@ -2,22 +2,9 @@ import { useCallback } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '../atoms/Button';
 import { IconButton } from '../atoms/IconButton';
+import type { KeyValueEditorProps, KeyValuePair } from '../../types';
 
 const EMPTY_PAIRS: KeyValuePair[] = [];
-
-export interface KeyValuePair {
-  key: string;
-  value: string;
-}
-
-export interface KeyValueEditorProps {
-  pairs?: KeyValuePair[];
-  onChange: (pairs: KeyValuePair[]) => void;
-  keyPlaceholder?: string;
-  valuePlaceholder?: string;
-  readOnly?: boolean;
-  className?: string;
-}
 
 export function KeyValueEditor({
   pairs = EMPTY_PAIRS,
@@ -51,10 +38,10 @@ export function KeyValueEditor({
   return (
     <div className={['w-full', className].filter(Boolean).join(' ')}>
       <div className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
-        <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark px-2 py-1">
+        <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark px-2 py-1 truncate">
           {keyPlaceholder}
         </span>
-        <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark px-2 py-1">
+        <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark px-2 py-1 truncate">
           {valuePlaceholder}
         </span>
         <span className="w-8" />
@@ -69,7 +56,7 @@ export function KeyValueEditor({
             placeholder={keyPlaceholder}
             readOnly={readOnly}
             aria-label={`${keyPlaceholder} ${index + 1}`}
-            className="input input-bordered input-sm w-full"
+            className="input input-bordered input-sm w-full bg-surface dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus:border-primary dark:focus:border-primary focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light focus-visible:ring-offset-2 truncate"
           />
           <input
             type="text"
@@ -78,7 +65,7 @@ export function KeyValueEditor({
             placeholder={valuePlaceholder}
             readOnly={readOnly}
             aria-label={`${valuePlaceholder} ${index + 1}`}
-            className="input input-bordered input-sm w-full"
+            className="input input-bordered input-sm w-full bg-surface dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus:border-primary dark:focus:border-primary focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light focus-visible:ring-offset-2 truncate"
           />
           {!readOnly && (
             <IconButton

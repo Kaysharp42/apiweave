@@ -30,7 +30,7 @@ export function Card({
   const hasHeader = title || headerActions || collapsible;
 
   return (
-    <div className={`border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised overflow-hidden ${className}`}>
+    <div className={`border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised shadow-raised overflow-hidden ${className}`}>
       {/* Header */}
       {hasHeader && (
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border dark:border-border-dark">
@@ -50,7 +50,7 @@ export function Card({
               <button
                 type="button"
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="p-1 rounded text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                className="p-1 rounded text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:focus-visible:outline-primary-light focus-visible:outline-offset-2"
                 aria-expanded={isExpanded}
                 aria-label={isExpanded ? 'Collapse section' : 'Expand section'}
               >

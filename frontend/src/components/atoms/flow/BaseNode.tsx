@@ -1,34 +1,9 @@
 import React, { useState } from 'react';
 import { Handle, Position } from 'reactflow';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { NodeActionMenu } from './NodeActionMenu';
 import type { NodeStatus } from '../../../types/NodeStatus';
-
-export interface HandleConfig {
-  type?: 'source' | 'target';
-  id?: string;
-  style?: React.CSSProperties;
-}
-
-export interface BaseNodeProps {
-  children?: React.ReactNode | (({ isExpanded, setIsExpanded }: { isExpanded: boolean; setIsExpanded: React.Dispatch<React.SetStateAction<boolean>> }) => React.ReactNode);
-  title?: string;
-  icon?: React.ReactNode;
-  status?: NodeStatus;
-  selected?: boolean;
-  handleLeft?: HandleConfig | false;
-  handleRight?: HandleConfig | false;
-  extraHandles?: React.ReactNode;
-  headerBg?: string;
-  headerTextClass?: string;
-  nodeId?: string;
-  collapsible?: boolean;
-  defaultExpanded?: boolean;
-  showMenu?: boolean;
-  statusBadgeText?: string;
-  titleExtra?: React.ReactNode;
-  className?: string;
-}
+import type { BaseNodeProps } from '../../../types/BaseNodeProps';
 
 export function BaseNode({
   children,
@@ -51,33 +26,66 @@ export function BaseNode({
 }: BaseNodeProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
-  const statusBorder: Record<NodeStatus, string> = {
-    idle: 'border-border dark:border-border-dark',
-    running: 'border-status-running animate-pulse-border',
-    success: 'border-status-success',
-    error: 'border-status-error',
-    warning: 'border-amber-500',
+  const statusConfig: Record<
+    NodeStatus,
+    {
+      border: string;
+      bg: string;
+      dot: string | null;
+      badge: string;
+      icon: React.ReactNode | null;
+      ariaLabel: string;
+    }
+  > = {
+    idle: {
+      border: 'border-[var(--aw-border)] dark:border-[var(--aw-border)]',
+      bg: '',
+      dot: null,
+      badge: '',
+      icon: null,
+      ariaLabel: 'Idle',
+    },
+    running: {
+      border: 'border-status-running animate-pulse-border motion-reduce:animate-none motion-reduce:border-status-running/60',
+      bg: 'bg-status-running/[0.06]',
+      dot: 'bg-status-running',
+      badge: 'bg-status-running/15 text-status-running dark:text-[var(--aw-status-running)]',
+      icon: <Loader2 className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />,
+      ariaLabel: 'Running',
+    },
+    success: {
+      border: 'border-status-success',
+      bg: 'bg-status-success/[0.06]',
+      dot: 'bg-status-success',
+      badge: 'bg-status-success/15 text-status-success dark:text-[var(--aw-status-success)]',
+      icon: <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />,
+      ariaLabel: 'Success',
+    },
+    error: {
+      border: 'border-status-error',
+      bg: 'bg-status-error/[0.06]',
+      dot: 'bg-status-error',
+      badge: 'bg-status-error/15 text-status-error dark:text-[var(--aw-status-error)]',
+      icon: <XCircle className="w-3.5 h-3.5" aria-hidden="true" />,
+      ariaLabel: 'Error',
+    },
+    warning: {
+      border: 'border-status-warning',
+      bg: 'bg-status-warning/[0.06]',
+      dot: 'bg-status-warning',
+      badge: 'bg-status-warning/15 text-status-warning dark:text-[var(--aw-status-warning)]',
+      icon: <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />,
+      ariaLabel: 'Warning',
+    },
   };
 
-  const statusDotColor: Record<NodeStatus, string | null> = {
-    idle: null,
-    running: 'bg-status-running',
-    success: 'bg-status-success',
-    error: 'bg-status-error',
-    warning: 'bg-amber-500',
-  };
+  const config = statusConfig[status] ?? statusConfig.idle;
 
-  const statusBadgeStyle: Record<NodeStatus, string> = {
-    running: 'bg-yellow-200 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
-    success: 'bg-green-200 dark:bg-green-900 text-green-800 dark:text-green-200',
-    error: 'bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-200',
-    warning: 'bg-orange-200 dark:bg-orange-900 text-orange-800 dark:text-orange-200',
-    idle: '',
-  };
+  const selectedClasses = selected
+    ? 'ring-2 ring-[var(--aw-primary)]/50 dark:ring-[var(--aw-primary)]/50 bg-surface-overlay dark:bg-surface-dark-overlay shadow-[var(--aw-shadow-overlay)] dark:shadow-[var(--aw-shadow-overlay)]'
+    : 'bg-surface-raised dark:bg-surface-dark-raised shadow-[var(--aw-shadow-node)] dark:shadow-[var(--aw-shadow-node)]';
 
-  const borderClass = statusBorder[status] ?? statusBorder.idle;
-  const dotClass = statusDotColor[status];
-  const badgeClass = statusBadgeStyle[status];
+  const statusBg = !selected && config.bg ? config.bg : '';
 
   return (
     <>
@@ -87,26 +95,27 @@ export function BaseNode({
           position={Position.Left}
           id={handleLeft.id ?? ''}
           style={handleLeft.style ?? {}}
-          className="!w-3 !h-3 !bg-primary !border-2 !border-white dark:!border-gray-800 !rounded-full"
+          className="!w-3.5 !h-3.5 !bg-[var(--aw-primary)] !border-2 !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-dark)] !rounded-full"
         />
       )}
 
       <div
         className={[
-          'flex flex-col rounded-2xl border-2 bg-surface-raised dark:bg-surface-dark-raised min-w-[180px] max-w-node overflow-hidden transition-all duration-150 shadow-[0_8px_24px_rgba(15,23,42,0.08)] dark:shadow-[0_10px_28px_rgba(2,6,23,0.45)]',
-          borderClass,
-          selected && 'ring-2 ring-primary/70 shadow-node-selected',
-          status === 'error' && 'shadow-[0_0_8px_rgba(220,38,38,0.25)]',
+          'flex flex-col rounded-2xl border-2 min-w-[180px] max-w-node overflow-hidden transition-all duration-150',
+          selectedClasses,
+          config.border,
+          statusBg,
           className,
         ]
           .filter(Boolean)
           .join(' ')}
         style={{ fontSize: '12px' }}
+        aria-label={`Node status: ${config.ariaLabel}`}
       >
         {title && (
           <div
             className={[
-              'flex items-center gap-2.5 px-3 py-2.5 border-b border-border dark:border-border-dark',
+              'flex items-center gap-2.5 px-3 py-2.5 border-b border-[var(--aw-border)] dark:border-[var(--aw-border)]',
               headerBg || 'bg-surface-overlay dark:bg-surface-dark-overlay',
             ]
               .filter(Boolean)
@@ -125,14 +134,18 @@ export function BaseNode({
 
             {titleExtra}
 
-            {badgeClass && statusBadgeText && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${badgeClass}`}>
+            {config.badge && statusBadgeText && (
+              <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium ${config.badge}`}>
+                {config.icon}
                 {statusBadgeText}
               </span>
             )}
 
-            {dotClass && !statusBadgeText && (
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotClass}`} aria-label={`Status: ${status}`} />
+            {config.dot && !statusBadgeText && (
+              <span className="inline-flex items-center gap-1.5 flex-shrink-0">
+                {config.icon}
+                <span className={`w-2 h-2 rounded-full ${config.dot}`} aria-label={`Status: ${status}`} />
+              </span>
             )}
 
             {showMenu && nodeId && (
@@ -154,7 +167,7 @@ export function BaseNode({
               <button
                 type="button"
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="p-1 rounded-md text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus:outline-none"
+                className="p-1 rounded-md text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer"
                 style={{ background: 'transparent', border: 'none', WebkitTapHighlightColor: 'transparent' }}
                 aria-expanded={isExpanded}
                 title={isExpanded ? 'Collapse' : 'Expand'}
@@ -176,7 +189,7 @@ export function BaseNode({
           position={Position.Right}
           id={handleRight.id ?? ''}
           style={handleRight.style ?? {}}
-          className="!w-3 !h-3 !bg-primary !border-2 !border-white dark:!border-gray-800 !rounded-full"
+          className="!w-3.5 !h-3.5 !bg-[var(--aw-primary)] !border-2 !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-dark)] !rounded-full"
         />
       )}
 
