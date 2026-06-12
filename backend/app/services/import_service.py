@@ -3,13 +3,17 @@ Import service — shared business logic for OpenAPI, HAR, and curl parsing/impo
 Called by both FastAPI routes and MCP tools.
 """
 import json
+import logging
 import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from app.services.safe_http import SafeUrlError, validate_url
 from app.services.secret_utils import detect_secrets_in_value
+
+logger = logging.getLogger(__name__)
 
 
 def parse_curl_to_workflow(
@@ -637,6 +641,13 @@ async def fetch_openapi_from_url(
     if not (url.startswith("http://") or url.startswith("https://")):
         raise ValueError("URL must start with http:// or https://")
 
+    # SSRF safety: validate URL before any outbound request
+    try:
+        validate_url(url)
+    except SafeUrlError as exc:
+        logger.warning("Blocked unsafe URL in fetch_openapi_from_url: %s (%s)", url, exc)
+        raise ValueError(f"URL blocked by safety policy: {url} ({exc})") from exc
+
     def _extract_openapi_document(response: httpx.Response) -> dict[str, Any] | None:
         try:
             data = response.json()
@@ -735,6 +746,11 @@ async def fetch_openapi_from_url(
 
         for candidate in config_candidates:
             try:
+                validate_url(candidate)
+            except SafeUrlError as exc:
+                logger.warning("Blocked unsafe swagger config candidate URL: %s (%s)", candidate, exc)
+                continue
+            try:
                 response = await client.get(
                     candidate,
                     headers={
@@ -821,6 +837,17 @@ async def fetch_openapi_from_url(
                     "status": "imported",
                     "definition": definition,
                     "openapi_data": direct_spec,
+                }
+
+            try:
+                validate_url(spec_url)
+            except SafeUrlError as exc:
+                logger.warning("Blocked unsafe definition spec URL: %s (%s)", spec_url, exc)
+                return {
+                    "status": "failed",
+                    "name": definition_name,
+                    "specUrl": spec_url,
+                    "error": f"URL blocked by safety policy: {exc}",
                 }
 
             try:

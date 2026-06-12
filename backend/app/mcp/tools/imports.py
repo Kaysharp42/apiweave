@@ -54,6 +54,8 @@ async def import_openapi_url(
         sanitize=sanitize,
     )
     tags = request.tag_filter.split(",") if request.tag_filter else None
+    # SSRF protection: validate_url is called inside fetch_openapi_from_url
+    # before any outbound HTTP request (safe_http module).
     result = await fetch_openapi_from_url(
         url=request.url,
         base_url=request.base_url,

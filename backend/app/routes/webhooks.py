@@ -708,6 +708,12 @@ async def _require_hmac_when_configured(
         return
 
     if not settings.WEBHOOK_REQUIRE_HMAC:
+        if settings.APP_ENV.lower() in {"production", "prod"}:
+            logger.warning(
+                "PRODUCTION WARNING: Webhook %s called without HMAC signature. "
+                "WEBHOOK_REQUIRE_HMAC=false is insecure for production.",
+                webhook_id,
+            )
         return
 
     await WebhookLog(
@@ -794,6 +800,26 @@ async def execute_workflow_webhook(
     # ── 4. Read body ──────────────────────────────────────────────────────────
     body = await request.body()
 
+    # ── 4b. Enforce body size limit ────────────────────────────────────────────
+    if len(body) > settings.MAX_WEBHOOK_BODY_SIZE:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=413,
+            errorMessage=(
+                f"Request body too large: {len(body)} bytes "
+                f"(max: {settings.MAX_WEBHOOK_BODY_SIZE})"
+            ),
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Request body too large. Max size: {settings.MAX_WEBHOOK_BODY_SIZE} bytes",
+        )
+
     # ── 5. HMAC / replay protection ───────────────────────────────────────────
     await _require_hmac_when_configured(webhook_id, x_webhook_signature, x_webhook_timestamp, body)
 
@@ -840,13 +866,16 @@ async def execute_workflow_webhook(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
 
     # ── 9. Create run ─────────────────────────────────────────────────────────
+    from app.services.secret_utils import mask_secrets_structural
+    payload_dict = payload if isinstance(payload, dict) else {}
+    sanitized_payload = mask_secrets_structural(payload_dict, [])
     run = Run(
         runId=f"run-{uuid.uuid4().hex[:12]}",
         workflowId=webhook.resourceId,
         environmentId=webhook.environmentId,  # CRITICAL: Pass environment from webhook
         status="pending",
         trigger="webhook",
-        variables=payload if isinstance(payload, dict) else {},
+        variables=sanitized_payload,
         results=[],
         createdAt=datetime.now(UTC),
     )
@@ -966,6 +995,26 @@ async def execute_collection_webhook(
 
     # ── 4. Read body ──────────────────────────────────────────────────────────
     body = await request.body()
+
+    # ── 4b. Enforce body size limit ────────────────────────────────────────────
+    if len(body) > settings.MAX_WEBHOOK_BODY_SIZE:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=413,
+            errorMessage=(
+                f"Request body too large: {len(body)} bytes "
+                f"(max: {settings.MAX_WEBHOOK_BODY_SIZE})"
+            ),
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Request body too large. Max size: {settings.MAX_WEBHOOK_BODY_SIZE} bytes",
+        )
 
     # ── 5. HMAC / replay protection ───────────────────────────────────────────
     await _require_hmac_when_configured(webhook_id, x_webhook_signature, x_webhook_timestamp, body)

@@ -14,6 +14,8 @@ import re
 import httpx
 from bson import ObjectId
 
+logger = logging.getLogger(__name__)
+
 from app.models import Workflow, WorkflowCreate, WorkflowUpdate, PaginatedWorkflows
 from app.auth.dependencies import require_permission
 from app.auth.permissions import WORKFLOWS_CREATE, WORKFLOWS_DELETE, WORKFLOWS_EXPORT, WORKFLOWS_IMPORT, WORKFLOWS_READ, WORKFLOWS_RUN, WORKFLOWS_UPDATE
@@ -39,6 +41,7 @@ from app.services.secret_utils import (
     sanitize_secrets_in_dict,
     serialize_document_for_export,
 )
+from app.services.safe_http import SafeUrlError, validate_url
 from app.services.import_service import (
     parse_curl_to_workflow,
     parse_har_to_workflow,
@@ -880,6 +883,10 @@ async def _discover_definitions_from_swagger_ui(
 
     for candidate in config_candidates:
         try:
+            validate_url(candidate)
+        except SafeUrlError:
+            continue
+        try:
             response = await client.get(
                 candidate,
                 headers={
@@ -927,6 +934,15 @@ async def import_openapi_from_url(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="swagger_url must start with http:// or https://"
+        )
+
+    try:
+        validate_url(url)
+    except SafeUrlError as exc:
+        logger.warning("Blocked unsafe URL in import_openapi_from_url: %s (%s)", url, exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"URL blocked by safety policy: {exc}",
         )
 
     try:
@@ -998,6 +1014,16 @@ async def import_openapi_from_url(
                         "status": "imported",
                         "definition": definition,
                         "openapi_data": direct_spec,
+                    }
+
+                try:
+                    validate_url(spec_url)
+                except SafeUrlError as exc:
+                    return {
+                        "status": "failed",
+                        "name": definition_name,
+                        "specUrl": spec_url,
+                        "error": f"URL blocked by safety policy: {exc}",
                     }
 
                 try:

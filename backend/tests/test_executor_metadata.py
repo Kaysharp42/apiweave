@@ -3,12 +3,14 @@ import json
 from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import aiohttp
 import pytest
 
 from app.runner import executor as executor_module
 from app.runner.executor import WorkflowExecutor
+from app.services import safe_http as safe_http_module
 
 
 class FakeResponseHeaders(dict[str, str]):
@@ -41,6 +43,9 @@ class FakeResponse:
 
     async def text(self) -> str:
         return self._body
+
+    def close(self) -> None:
+        pass
 
 
 class FakeRequestContext:
@@ -77,13 +82,22 @@ def _node(config: dict[str, Any]) -> dict[str, Any]:
     return {"nodeId": "http-1", "type": "http-request", "config": config}
 
 
+async def _fake_safe_request(
+    method: str,
+    url: str,
+    **kwargs: Any,
+) -> FakeResponse:
+    FakeClientSession.last_request = {"method": method, "url": url, **kwargs}
+    return FakeClientSession.response
+
+
 def _install_fake_http(
     monkeypatch: pytest.MonkeyPatch,
     response: FakeResponse | None = None,
 ) -> None:
     FakeClientSession.response = response or FakeResponse('{"ok": true}')
     FakeClientSession.last_request = {}
-    monkeypatch.setattr(executor_module.aiohttp, "ClientSession", FakeClientSession)
+    monkeypatch.setattr(safe_http_module, "safe_request", _fake_safe_request)
 
 
 def _install_deterministic_timer(monkeypatch: pytest.MonkeyPatch) -> None:

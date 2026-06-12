@@ -672,34 +672,33 @@ class WorkflowExecutor:
 
     
     def _mask_result_secrets(self, obj: Any) -> Any:
-        """Recursively mask secrets in result objects for safe storage"""
+        """Recursively mask secrets in result objects for safe storage."""
         if not self.secrets:
             return obj
-        
-        if isinstance(obj, str):
-            return self._mask_secrets(obj)
-        elif isinstance(obj, dict):
-            return {k: self._mask_result_secrets(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._mask_result_secrets(item) for item in obj]
-        
-        return obj
+
+        from app.services.secret_utils import mask_secrets_structural
+        return mask_secrets_structural(obj, list(self.secrets.values()))
 
     def _mask_secrets(self, text: str) -> str:
-        """Mask secrets in text for logging"""
+        """Mask secrets in text for logging using structural policy."""
         if not text or not isinstance(text, str):
             return text
-        
-        masked_text = text
-        for secret_key in self.secrets:
-            secret_value = self.secrets[secret_key]
-            if secret_value and secret_value in masked_text:
-                masked_text = masked_text.replace(secret_value, "••••••••")
-        
-        return masked_text
 
-    def _substitute_variables(self, text: str) -> str:
-        """Replace {{variable}} placeholders with actual values from context"""
+        from app.services.secret_utils import mask_log_value
+        return mask_log_value(text, list(self.secrets.values()) if self.secrets else [])
+
+    def _substitute_variables(self, text: str, *, allow_secrets: bool = True) -> str:
+        """Replace {{variable}} placeholders with actual values from context.
+
+        Parameters
+        ----------
+        text:
+            The template string containing ``{{variable}}`` placeholders.
+        allow_secrets:
+            When ``False``, any ``{{secrets.*}}`` placeholder raises
+            :class:`ValueError` instead of being resolved.  Use this for
+            URL / query / path contexts where secret leakage is forbidden.
+        """
         if not text:
             return text
         
@@ -710,6 +709,10 @@ class WorkflowExecutor:
         def replacer(match) -> str:
             var_path = match.group(1)
             self.logger.debug(f"  Processing variable: {{{{var_path}}}}")
+            
+            if not allow_secrets and re.match(r'\s*secrets\.', var_path):
+                self.logger.warning("Blocked {{secrets.*}} substitution in URL/query/path context")
+                raise ValueError("Secret substitution not allowed in URL/query/path contexts")
             
             # Check if it's a function call: functionName(params)
             func_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$', var_path.strip())
@@ -805,7 +808,9 @@ class WorkflowExecutor:
                             return str(match.group(0))  # Return original if not found
                     
                     if value is not None:
-                        self.logger.debug(f"✓ Substituted env variable: {{{{env.{'.'.join(path_parts)}}}}} -> {value}")
+                        from app.services.secret_utils import mask_log_value
+                        safe_value_repr = mask_log_value(str(value), list(self.secrets.values()) if self.secrets else [])
+                        self.logger.debug(f"✓ Substituted env variable: {{{{env.{'.'.join(path_parts)}}}}} -> {safe_value_repr}")
                         return str(value)
                     else:
                         self.logger.warning(f"env.{'.'.join(path_parts)} is None")
@@ -1027,6 +1032,9 @@ class WorkflowExecutor:
         
         self.logger.debug(f"Resolving file upload: type={ref_type}, field={field_name}")
         
+        # Lazy import to avoid circular dependency (executor ↔ services.__init__ ↔ run_service)
+        from app.services.upload_sandbox import resolve_upload_path, UploadSandboxError
+        
         try:
             # Type 1: Base64 encoded file
             if ref_type == 'base64':
@@ -1049,22 +1057,18 @@ class WorkflowExecutor:
                 # Substitute variables in path
                 resolved_path = self._substitute_variables(value)
                 
-                # Security: Prevent path traversal
-                if '..' in resolved_path:
-                    raise Exception(f"Path traversal attempt detected in: {resolved_path}")
-                
-                path_obj = Path(resolved_path)
-                if not path_obj.exists():
-                    raise Exception(f"File not found: {resolved_path}")
-                
-                if not path_obj.is_file():
-                    raise Exception(f"Path is not a file: {resolved_path}")
+                # Validate path is within UPLOADS_BASE_DIR sandbox
+                try:
+                    path_obj = resolve_upload_path(resolved_path, must_exist=True)
+                except UploadSandboxError as exc:
+                    self.logger.error(f"Upload sandbox rejected file path: {resolved_path} ({exc})")
+                    raise Exception(f"File access denied: {exc}") from exc
                 
                 # Read file asynchronously
                 async with aiofiles.open(path_obj, 'rb') as f:
                     file_bytes = await f.read()
                 
-                # Check file size (50MB limit)
+                # Defense-in-depth: 50MB size limit (also enforced by sandbox)
                 file_size_mb = len(file_bytes) / (1024 * 1024)
                 if file_size_mb > 50:
                     raise Exception(f"File too large: {file_size_mb:.1f}MB (max 50MB)")
@@ -1095,16 +1099,20 @@ class WorkflowExecutor:
                 
                 # Check if it's a file path
                 elif resolved_value.startswith('/') or resolved_value.startswith('\\') or ':' in resolved_value:
-                    # Treat as file path
-                    if '..' in resolved_value:
-                        raise Exception(f"Path traversal attempt detected in: {resolved_value}")
-                    
-                    path_obj = Path(resolved_value)
-                    if not path_obj.exists():
-                        raise Exception(f"File not found at variable path: {resolved_value}")
+                    # Validate against upload sandbox
+                    try:
+                        path_obj = resolve_upload_path(resolved_value, must_exist=True)
+                    except UploadSandboxError as exc:
+                        self.logger.error(f"Upload sandbox rejected variable file path: {resolved_value} ({exc})")
+                        raise Exception(f"File access denied: {exc}") from exc
                     
                     async with aiofiles.open(path_obj, 'rb') as f:
                         file_bytes = await f.read()
+                    
+                    # Defense-in-depth: 50MB size limit (also enforced by sandbox)
+                    file_size_mb = len(file_bytes) / (1024 * 1024)
+                    if file_size_mb > 50:
+                        raise Exception(f"File too large: {file_size_mb:.1f}MB (max 50MB)")
                     
                     self.logger.info(f"✅ Resolved variable as file path: {resolved_value} ({len(file_bytes)} bytes)")
                     return file_bytes, field_name, mime_type
@@ -1146,6 +1154,7 @@ class WorkflowExecutor:
     async def _execute_http_request(self, node: Dict) -> Dict[str, Any]:
         """Execute HTTP request node"""
         import time
+        from app.services.safe_http import validate_url, safe_request, SafeUrlError
         
         config = node.get('config', {})
         method = config.get('method', 'GET')
@@ -1162,7 +1171,7 @@ class WorkflowExecutor:
             raise Exception("URL is required for HTTP request")
         
         # Substitute variables in URL
-        url = self._substitute_variables(url)
+        url = self._substitute_variables(url, allow_secrets=False)
         
         # Handle path variables (e.g., /users/:userId -> /users/123)
         path_variables = self._parse_key_value_pairs(path_variables_text)
@@ -1174,6 +1183,19 @@ class WorkflowExecutor:
         if query_params:
             separator = '&' if '?' in url else '?'
             url = f"{url}{separator}{urlencode(query_params)}"
+        
+        # Validate URL against SSRF policy before making the request
+        try:
+            validate_url(url)
+        except SafeUrlError as exc:
+            self.logger.warning(f"Blocked unsafe outbound URL: {url} ({exc})")
+            return {
+                "status": "error",
+                "error": f"SSRF blocked: {exc}",
+                "method": method,
+                "url": url,
+                "duration": 0,
+            }
         
         # Parse headers
         headers = self._parse_key_value_pairs(headers_text)
@@ -1361,15 +1383,15 @@ class WorkflowExecutor:
                         else:
                             data = body
             
-            async with aiohttp.ClientSession() as session:
-                async with session.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    data=data if method != 'GET' else None,
-                    json=json_payload if method != 'GET' else None,
-                    timeout=aiohttp.ClientTimeout(total=timeout)
-                ) as response:
+            response = await safe_request(
+                method,
+                url,
+                timeout=float(timeout),
+                headers=headers,
+                data=data if method != 'GET' else None,
+                json=json_payload if method != 'GET' else None,
+            )
+            try:
                     response_text = await response.text()
                     status_code = response.status
                     
@@ -1469,6 +1491,8 @@ class WorkflowExecutor:
                         self._extract_variables(extractors, result)
                     
                     return result
+            finally:
+                response.close()
         except Exception as e:
             # Network error or other request failure
             # Return an error result that can be handled downstream
