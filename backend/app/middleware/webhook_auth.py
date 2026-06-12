@@ -54,7 +54,7 @@ async def validate_webhook_token(webhook_id: str, token: str) -> bool:
     if not webhook.enabled:
         raise InvalidTokenError(f"Webhook is disabled: {webhook_id}")
     
-    if webhook.token != token:
+    if not hmac.compare_digest(webhook.token, token):
         raise InvalidTokenError("Invalid webhook token")
     
     return True

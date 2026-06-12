@@ -52,8 +52,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Webhook-Token",
+        "X-Webhook-Signature",
+        "X-Webhook-Timestamp",
+        "X-CSRF-Token",
+        "Idempotency-Key",
+    ],
 )
 
 # Include routers
@@ -115,7 +123,7 @@ async def csrf_middleware(
 
 # MCP Streamable HTTP mount
 if settings.MCP_ENABLED and settings.MCP_HTTP_ENABLED:
-    from app.mcp.auth import auth_middleware
+    from app.mcp.auth import MCPCORSMiddleware, auth_middleware
     from app.mcp.server import mcp_server, register_prompts, register_resources, register_tools
 
     register_tools()
@@ -125,6 +133,7 @@ if settings.MCP_ENABLED and settings.MCP_HTTP_ENABLED:
     app.middleware("http")(auth_middleware)
 
     mcp_streamable_http = mcp_server.streamable_http_app()
+    mcp_streamable_http.add_middleware(MCPCORSMiddleware)
     app.mount("/mcp", mcp_streamable_http)
     logger.info("MCP Streamable HTTP mounted at /mcp")
 

@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     def get_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
+    def get_rate_limiter_backend(self) -> str:
+        return self.RATE_LIMITER_BACKEND
+
     def get_mcp_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.MCP_ALLOWED_ORIGINS.split(",") if origin.strip()]
 

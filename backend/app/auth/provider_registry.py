@@ -220,7 +220,7 @@ async def fetch_userinfo(
     headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
 
     if provider.name == "github":
-        async with AsyncClient() as client:
+        async with AsyncClient(timeout=10.0) as client:
             user_response = await client.get(
                 "https://api.github.com/user",
                 headers=headers,
@@ -249,7 +249,7 @@ async def fetch_userinfo(
         )
 
     if provider.name == "gitlab":
-        async with AsyncClient() as client:
+        async with AsyncClient(timeout=10.0) as client:
             response = await client.get("https://gitlab.com/api/v4/user", headers=headers)
             response.raise_for_status()
         user = response.json()
@@ -281,7 +281,7 @@ async def fetch_userinfo(
         email = claims.get("email") or claims.get("preferred_username")
         name = claims.get("name")
         if not email:
-            async with AsyncClient() as client:
+            async with AsyncClient(timeout=10.0) as client:
                 response = await client.get("https://graph.microsoft.com/v1.0/me", headers=headers)
                 response.raise_for_status()
             profile = response.json()

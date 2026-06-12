@@ -54,6 +54,20 @@ class TestTokenValidation:
     """Tests for webhook token validation"""
 
     @pytest.mark.asyncio
+    async def test_validate_webhook_token_uses_compare_digest(self, mock_webhook):
+        """Verify token comparison uses hmac.compare_digest (constant-time) not ==/!="""
+        with (
+            patch(
+                "app.middleware.webhook_auth.WebhookRepository.get_by_id",
+                return_value=mock_webhook,
+            ),
+            patch("app.middleware.webhook_auth.hmac.compare_digest", return_value=True) as mock_cd,
+        ):
+            result = await validate_webhook_token("wh-test123", "wht_test_token_abc123")
+            assert result is True
+            mock_cd.assert_called_once_with("wht_test_token_abc123", "wht_test_token_abc123")
+
+    @pytest.mark.asyncio
     async def test_valid_token(self, mock_webhook):
         """Test validation with correct token"""
         with patch(

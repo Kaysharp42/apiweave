@@ -2,13 +2,36 @@
 API-key and Origin validation helpers for MCP Streamable HTTP.
 """
 import logging
+from collections.abc import Awaitable, Callable
 
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# CORS headers applied to every MCP response so the sub-mount
+# (which does not inherit the parent CORSMiddleware) stays usable
+# from browser-based MCP clients.
+_MCP_CORS_METHODS = "GET, POST, OPTIONS"
+_MCP_CORS_HEADERS = "Authorization, Content-Type, MCP-API-Key"
+
+
+def _mcp_cors_origin_header() -> str:
+    allowed = settings.get_mcp_allowed_origins_list()
+    if len(allowed) == 1:
+        return allowed[0]
+    return ", ".join(allowed) if allowed else "*"
+
+
+def _mcp_cors_headers() -> dict[str, str]:
+    return {
+        "Access-Control-Allow-Origin": _mcp_cors_origin_header(),
+        "Access-Control-Allow-Methods": _MCP_CORS_METHODS,
+        "Access-Control-Allow-Headers": _MCP_CORS_HEADERS,
+    }
 
 
 def validate_api_key(request: Request) -> bool:
@@ -64,3 +87,18 @@ async def auth_middleware(request: Request, call_next):
         )
 
     return await call_next(request)
+
+
+class MCPCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        cors_headers = _mcp_cors_headers()
+
+        if request.method == "OPTIONS":
+            return Response(status_code=200, headers=cors_headers)
+
+        response = await call_next(request)
+        for key, value in cors_headers.items():
+            response.headers[key] = value
+        return response
