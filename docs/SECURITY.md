@@ -31,6 +31,28 @@ APIWeave uses a double-submit cookie pattern for browser mutations:
 
 Keep `CSRF_ENABLED=true` for production. Do not replace CSRF protection with same-origin assumptions alone.
 
+## CSRF Middleware Behavior
+
+The CSRF middleware in `backend/app/main.py:80-113` enforces CSRF protection ONLY for state-changing requests (POST, PUT, PATCH, DELETE) that include a `session` cookie AND a `csrftoken` cookie.
+
+### What IS protected:
+- State-changing requests with both `session` and `csrftoken` cookies are validated. Missing or mismatched `X-CSRF-Token` header returns 403.
+- The check is enforced before the route handler runs.
+
+### What is NOT protected:
+- Requests without a `session` cookie bypass CSRF entirely. This is intentional for webhooks (`/api/webhooks/...`) and the public API endpoints that use token-based auth.
+- GET, HEAD, OPTIONS methods skip CSRF validation entirely.
+- Webhook endpoints (`/api/webhooks/.../execute`) are intentionally exempt — they authenticate via `X-Webhook-Token` header.
+
+### Regression guidance:
+If you add a new session-protected API endpoint:
+1. The CSRF middleware will automatically cover it — no additional code needed.
+2. The frontend must include the `csrftoken` cookie value as `X-CSRF-Token` header on state-changing requests.
+3. The endpoint will return 403 if either cookie is missing or the header doesn't match.
+
+If you add an endpoint that should be exempt from CSRF (e.g., a custom auth callback):
+- Add the path to `_CSRF_EXEMPT_EXACT` or `_CSRF_EXEMPT_PREFIXES` in `main.py:69-77`.
+
 ## CORS and Cookies
 
 The backend uses credentialed CORS because the browser sends session cookies. Production deployments must set exact frontend origins:
@@ -123,6 +145,30 @@ Before exposing APIWeave publicly:
 - Do not disable CSRF protection for browser-authenticated mutations.
 - Do not use password login in v1; APIWeave is SSO-only.
 - Do not use webhook tokens or MCP API keys as human login credentials.
+
+## Worker Process Exposure
+
+The APIWeave worker process (`backend/app/worker.py`) polls MongoDB for pending runs and executes them via `WorkflowExecutor.execute()`. The worker has no authentication context of its own. It claims any document in the `runs` collection whose `status` is `pending` and runs it with the executor's full privileges, which include outbound HTTP, file reads, and the `BLOCK_PRIVATE_NETWORKS` policy check.
+
+Consequences:
+
+- **MongoDB must not be reachable from untrusted networks.** Anyone who can write to the `runs` collection with `status: "pending"` can cause arbitrary workflow execution. The executor honors any `workflowId` referenced in the run, and the run's `nodes` and `variables` come from the workflow document, so a write to that collection is effectively code execution inside the executor.
+- **Deployment requirement.** Bind MongoDB to localhost or a private network. Do not expose port 27017 to the public internet, and do not share the database cluster with tenants outside your trust boundary.
+- **Defense in depth.** `BLOCK_PRIVATE_NETWORKS=true` (the default, and required in production) stops the executor from reaching `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, and other reserved ranges, so a compromised run still can't pivot to internal services.
+- **Operator access is sufficient.** A user with the `runs:write` permission can also create pending runs through the API, which is the intended path. Treat MongoDB-level access as a superset of that capability.
+
+## Rate Limiter Backend
+
+The webhook rate limiter (`backend/app/middleware/rate_limiter.py`) uses an in-memory sliding window by default. The `RATE_LIMITER_BACKEND` setting selects the storage backend:
+
+- `RATE_LIMITER_BACKEND=memory` (default). Per-process counters stored in a `defaultdict` inside the middleware instance. Counters reset on process restart and are not shared between worker processes.
+- `RATE_LIMITER_BACKEND=mongodb`. Reserved for a future MongoDB-backed implementation. Selecting this value today does not switch the backend; the middleware still uses the in-memory implementation. Do not rely on `mongodb` for cross-process limiting until the implementation lands.
+
+Operational impact:
+
+- A single-process API server (the default `uvicorn` deployment) gets correct per-webhook limits.
+- A multi-worker deployment behind a load balancer, or a horizontally scaled API, will see each process enforce its own counter. The effective limit becomes `max_requests * worker_count` until you switch to a shared store.
+- For production deployments with more than one API process, run an external limiter (Redis or another shared store) or add a worker token plus a coordinated limiter. Tracking this is out of scope for the current release.
 
 ## Related Guides
 
