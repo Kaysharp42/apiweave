@@ -39,11 +39,12 @@ class TestSecretKeyDetection:
         assert result["name"] == "test"
         assert len(secret_refs) == 1
 
-    def test_sanitize_redacts_by_value_pattern(self):
+    def test_sanitize_no_longer_redacts_by_value_pattern(self):
+        """Value-pattern heuristics removed to prevent over-redaction."""
         secret_refs = []
         data = {"config": "bearer token123"}
         result = sanitize_secrets_in_dict(data, secret_refs)
-        assert result["config"] == "<SECRET>"
+        assert result["config"] == "bearer token123"
 
     def test_sanitize_redacts_nested_by_key(self):
         secret_refs = []

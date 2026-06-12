@@ -43,6 +43,8 @@ from app.services.run_service import (
 )
 from app.services.secret_utils import (
     detect_secrets_in_value,
+    mask_log_value,
+    mask_secrets_structural,
     sanitize_secrets_in_dict,
     serialize_document_for_export,
 )

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -46,6 +48,12 @@ class Settings(BaseSettings):
     APPROVED_DOMAINS: str = ""
     SETUP_MODE_ENABLED: bool = True
 
+    # Security
+    BLOCK_PRIVATE_NETWORKS: bool = True
+    MAX_WEBHOOK_BODY_SIZE: int = 65536
+    UPLOADS_BASE_DIR: str = "backend/uploads"
+    RATE_LIMITER_BACKEND: Literal["memory", "mongodb"] = "memory"
+
     MCP_ENABLED: bool = False
     MCP_HTTP_ENABLED: bool = False
     MCP_API_KEY: str | None = None
@@ -76,6 +84,21 @@ class Settings(BaseSettings):
             if self.SETUP_MODE_ENABLED:
                 raise ValueError(
                     "SETUP_MODE_ENABLED must be False in production after initial admin is created"
+                )
+
+            allowed_origins = self.ALLOWED_ORIGINS.strip()
+            if allowed_origins == "*":
+                raise ValueError("ALLOWED_ORIGINS=* is not allowed in production")
+
+            if not self.WEBHOOK_REQUIRE_HMAC:
+                raise ValueError("WEBHOOK_REQUIRE_HMAC must be True in production")
+
+            if not self.BLOCK_PRIVATE_NETWORKS:
+                raise ValueError("BLOCK_PRIVATE_NETWORKS must be True in production")
+
+            if self.MAX_WEBHOOK_BODY_SIZE > 1_048_576:
+                raise ValueError(
+                    "MAX_WEBHOOK_BODY_SIZE must not exceed 1MB (1048576 bytes) in production"
                 )
 
             if not self.SESSION_SECRET_KEY:
