@@ -1,121 +1,72 @@
 # APIWeave
 
-APIWeave is a visual API testing workspace where you build test flows on a canvas, run them, and inspect results node-by-node.
+Visual API Test Story Builder. Build, run, and inspect API test workflows on a canvas.
 
-## What You Can Do
+## What Is APIWeave?
 
-- Build workflows with drag-and-drop nodes (HTTP, assertion, delay, merge, start/end).
-- Chain requests by extracting values from responses and reusing them in later steps.
-- Manage environments and secrets for dev/stage/prod testing.
-- Import request templates from OpenAPI/Swagger, HAR, and cURL.
-- Organize workflows into collections.
-- Trigger runs manually or through webhooks for CI/CD pipelines.
+APIWeave is a self-hostable, open-source workspace for visual API testing. You assemble test workflows on a ReactFlow canvas from drag-and-drop nodes (HTTP request, assertion, delay, merge, start, end), chain requests with extracted variables and dynamic functions, run them against any environment, and inspect results node by node. Workflows group into collections, environments hold variables and secret keys, and webhooks let CI/CD trigger runs without a manual click.
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.13+
-- Node.js 20+
-- MongoDB 7+
-
-### 1) Set Up
+Prerequisites: Python 3.13+, Node.js 20+, MongoDB 7+.
 
 Windows:
 
 ```bash
 setup.bat
-```
-
-macOS/Linux:
-
-```bash
-./setup.sh
-```
-
-If you prefer manual setup, copy environment files first:
-
-- `backend/.env.example` -> `backend/.env`
-- `frontend/.env.example` -> `frontend/.env`
-
-### 2) Start Development Services
-
-Windows:
-
-```bash
 start-dev.bat
 ```
 
-macOS/Linux:
+macOS / Linux:
 
 ```bash
+./setup.sh
 ./start-dev.sh
 ```
 
-Default local URLs:
+Open `http://localhost:3000` in a browser. The frontend is on port 3000, the backend API on port 8000, the OpenAPI docs on `/docs`, and MongoDB on 27017. Run `stop-dev.bat` or `./stop-dev.sh` to shut everything down.
 
-- Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:8000`
-- OpenAPI docs: `http://localhost:8000/docs`
+## Features
 
-### 3) Stop Services
+The seven feature guides are the deep reference for everything you can do in APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
 
-Windows:
-
-```bash
-stop-dev.bat
-```
-
-macOS/Linux:
-
-```bash
-./stop-dev.sh
-```
-
-## First Workflow (5 Minutes)
-
-1. Open `http://localhost:3000`.
-2. Create a new workflow.
-3. Drag an HTTP Request node onto the canvas and configure URL/method.
-4. Add an Assertion node and connect it.
-5. Run the workflow and inspect node execution results.
+- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the six node types, toolbar actions, resume after a failed run.
+- [Variables and Extractors](docs/features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
+- [Environments and Secrets](docs/features/environments-and-secrets.md): dev/stage/prod variables, secret keys, and the parts of secret resolution that are and are not wired in 1.0.
+- [Collections](docs/features/collections.md): group workflows, ordered execution, `.awecollection` export and import.
+- [Webhooks](docs/features/webhooks.md): trigger runs from CI/CD with token and HMAC auth.
+- [MCP Integration](docs/features/mcp-integration.md): drive APIWeave from AI coding agents over the Model Context Protocol.
+- [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
 
 ## Documentation
 
-Start here:
-
-- [Documentation Hub](docs/README.md)
-- [Navigation Guide](docs/NAVIGATION.md)
-
-Current guides:
-
-- [Authentication Setup](docs/AUTH_SETUP.md)
-- [Security and Deployment Checklist](docs/SECURITY.md)
-- [Workflows and Nodes Guide](docs/WORKFLOWS_AND_NODES.md)
-- [Variables, Extractors, and JSON Editor](docs/VARIABLES_EXTRACTORS_JSON_EDITOR.md)
-- [Environments, Secrets, and Collections](docs/ENVIRONMENTS_COLLECTIONS.md)
-- [MCP Integration Guide](docs/MCP.md)
-- [Swagger and OpenAPI Import Guide](docs/SWAGGER_UI_BASE_URL_IMPORT.md)
-- [Webhook Quick Start](docs/WEBHOOK_QUICKSTART.md)
-- [FAQ and Troubleshooting](docs/FAQ_TROUBLESHOOTING.md)
+The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the operations, reference, and feature indexes. Start there for install paths, the first-workflow tutorial, and the central FAQ.
 
 ## Tech Stack
 
-- Frontend: React, React Flow, Zustand, Tailwind, DaisyUI
-- Backend: FastAPI, Beanie (MongoDB ODM), Motor
-- Worker: Python async worker processing workflow runs
-- Database: MongoDB
+- Frontend: React 18, ReactFlow 11, Vite 5, Tailwind CSS 3, Zustand 5.
+- Backend: Python 3.13, FastAPI, Beanie ODM on MongoDB 7 (via Motor).
+- Execution: an in-process `WorkflowExecutor` plus an optional separate worker for horizontal scale.
+- Reporting: JUnit XML and HTML run artifacts.
 
 ## Project Layout
 
 ```text
 apiweave/
-  backend/   FastAPI API, worker, data models
-  frontend/  React app and workflow canvas UI
-  docs/      User-facing documentation
+  backend/   FastAPI API, Beanie models, repositories, worker, MCP server
+  frontend/  React app, ReactFlow canvas, contexts, components
+  docs/      User-facing documentation (the hub and all guides)
   progress/  Internal implementation notes and history
 ```
 
 ## License
 
-MIT - see `LICENSE`.
+MIT. See [LICENSE](LICENSE).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branching, commit style, and the pull-request flow.
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the 1.1 and beyond plan. For historical releases, see [CHANGELOG.md](CHANGELOG.md).
