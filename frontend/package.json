@@ -19,7 +19,7 @@
     "@monaco-editor/react": "^4.6.0",
     "@tippyjs/react": "^4.2.6",
     "allotment": "^1.20.4",
-    "axios": "^1.6.0",
+    "axios": "^1.17.0",
     "daisyui": "^5.5.18",
     "framer-motion": "^12.40.0",
     "json-edit-react": "^1.30.1",
