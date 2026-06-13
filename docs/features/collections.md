@@ -4,9 +4,9 @@
 
 ## Prerequisites
 
-- At least one saved workflow. See [Workflows and Nodes](WORKFLOWS_AND_NODES.md).
-- Familiarity with the `continueOnFail` per-workflow toggle, covered in [Variables, Extractors, and JSON Editor](VARIABLES_EXTRACTORS_JSON_EDITOR.md) and revisited below.
-- Optional: an environment to attach for collection runs. See [Concepts: Environment](getting-started/concepts.md#environment).
+- At least one saved workflow. See [Workflows and Nodes](workflows-and-nodes.md).
+- Familiarity with the `continueOnFail` per-workflow toggle, covered in [Variables, Extractors, and JSON Editor](variables-and-extractors.md) and revisited below.
+- Optional: an environment to attach for collection runs. See [Concepts: Environment](../getting-started/concepts.md#environment).
 
 ## Table of Contents
 
@@ -196,8 +196,8 @@ If a workflow ran fine before export but fails after import with `{{secrets.X}}`
 
 ## Related
 
-- [Workflows and Nodes](WORKFLOWS_AND_NODES.md)
-- [Variables, Extractors, and JSON Editor](VARIABLES_EXTRACTORS_JSON_EDITOR.md)
-- [Webhook Quick Start](WEBHOOK_QUICKSTART.md)
-- [Concepts: Collection](getting-started/concepts.md#collection)
-- [Concepts: Environment](getting-started/concepts.md#environment)
+- [Workflows and Nodes](workflows-and-nodes.md)
+- [Variables, Extractors, and JSON Editor](variables-and-extractors.md)
+- [Webhook Quick Start](webhooks.md)
+- [Concepts: Collection](../getting-started/concepts.md#collection)
+- [Concepts: Environment](../getting-started/concepts.md#environment)

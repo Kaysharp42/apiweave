@@ -31,5 +31,4 @@ The three guides in this section cover the surfaces APIWeave exposes to other sy
 ## Related
 
 - [Documentation Hub](../README.md)
-- [Navigation Guide](../NAVIGATION.md)
 - [Concepts](../getting-started/concepts.md)

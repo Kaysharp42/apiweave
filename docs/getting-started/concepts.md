@@ -125,5 +125,5 @@ A secret is a sensitive value, such as an API key or client secret, that you do 
 ## Related
 
 - [Installation](installation.md)
-- [Workflows and Nodes](features/workflows-and-nodes.md)
-- [Placeholders Reference](reference/placeholders.md)
+- [Workflows and Nodes](../features/workflows-and-nodes.md)
+- [Placeholders Reference](../reference/placeholders.md)

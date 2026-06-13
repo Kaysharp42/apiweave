@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- Read the [Security Guide](../security.md) for the cross-cutting posture (CSRF, CORS, secrets, worker exposure).
+- Read the [Security Guide](security.md) for the cross-cutting posture (CSRF, CORS, secrets, worker exposure).
 - A running APIWeave instance with a verified backend `BASE_URL` and a frontend origin in `ALLOWED_ORIGINS`.
 - A secret manager for `SESSION_SECRET_KEY`, `SECRET_KEY`, and the future OAuth client secrets.
 
@@ -31,7 +31,7 @@
 
 APIWeave has two distinct authentication paths, and they never share credentials.
 
-**Human users (browsers):** SSO only. The browser never sees a password field, and there is no local password login in 1.0. The backend owns the session and sends an HttpOnly cookie to the browser. The cookie is signed with `SESSION_SECRET_KEY` and validated on every state-changing request through the double-submit CSRF pattern described in the [Security Guide](../security.md).
+**Human users (browsers):** SSO only. The browser never sees a password field, and there is no local password login in 1.0. The backend owns the session and sends an HttpOnly cookie to the browser. The cookie is signed with `SESSION_SECRET_KEY` and validated on every state-changing request through the double-submit CSRF pattern described in the [Security Guide](security.md).
 
 **Machine clients (CI/CD, AI agents):** Token-based. Webhook execution uses `X-Webhook-Token` plus an HMAC-SHA256 signature. MCP HTTP uses `Authorization: Bearer <MCP_API_KEY>`. These credentials are separate from any human session and never use the browser cookie jar. See [Webhooks](../features/webhooks.md) and [MCP Integration](../features/mcp-integration.md) for the full contract.
 
@@ -103,11 +103,11 @@ Sessions are server-owned and browser-transport-only. The backend stores the ses
 
 Sessions rotate on login and on privilege-changing events. Logout revokes the current session and clears the cookie. The session is never stored in `localStorage`, `sessionStorage`, Zustand persistence, or any other JavaScript-readable browser store.
 
-For the full cookie and CSRF interaction, see the [Security Guide](../security.md).
+For the full cookie and CSRF interaction, see the [Security Guide](security.md).
 
 ## Production Auth Checklist
 
-A short list of the auth-related items a deployment must pass before going live. The complete deployment checklist lives in the [Security Guide](../security.md#deployment-security-checklist) and the [Deployment Guide](../operations/deployment.md).
+A short list of the auth-related items a deployment must pass before going live. The complete deployment checklist lives in the [Security Guide](security.md#deployment-security-checklist) and the [Deployment Guide](../operations/deployment.md).
 
 - [ ] `APP_ENV=production` (or `prod`).
 - [ ] `SESSION_SECRET_KEY` set from a secret manager, generated with `openssl rand -hex 32`.
@@ -221,7 +221,7 @@ Do not set OAuth client IDs and secrets in 1.0; the login path is not yet active
 
 ## Related
 
-- [Security Guide](../security.md) for the cross-cutting posture, CSRF, CORS, secret masking, and the worker exposure caveat.
+- [Security Guide](security.md) for the cross-cutting posture, CSRF, CORS, secret masking, and the worker exposure caveat.
 - [Environment Variables Reference](../reference/environment-variables.md) for the full `Authentication and OAuth`, `Sessions and CSRF`, and `Approved Domains` tables.
 - [Webhooks](../features/webhooks.md) for the machine-to-machine side of the authentication story.
 - [MCP Integration](../features/mcp-integration.md) for the second machine-to-machine path (HTTP MCP).

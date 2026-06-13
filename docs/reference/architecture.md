@@ -78,6 +78,14 @@ APIWeave exposes three surfaces for tools and pipelines:
 - **MCP** at `/mcp` for AI coding agents such as Claude, Cursor, and opencode. Authentication is by bearer API key.
 - **Webhook URLs** for CI/CD systems like GitHub Actions, GitLab CI, and Jenkins. Authentication is by token plus HMAC signature in production.
 
+## Known Gaps
+
+Three pieces of the system are designed end-to-end but not fully wired in 1.0. Each has a per-feature doc that covers the partial behavior in more detail.
+
+- **Webhook execution** - Webhook CRUD, token and HMAC authentication, rate limiting, idempotency replay, and the execution endpoint are all in place, but the executor path that converts a delivered webhook into a real run is not yet active. The returned `runId` does not correspond to a finished run. Manage credentials through the WebhookManager UI, and trigger runs directly through the Runs API or the CLI until execution lands in a later release. See [Webhooks](../features/webhooks.md).
+- **Secrets runtime resolution** - The data model for secrets exists and the UI accepts secret keys per environment, but the `{{secrets.NAME}}` placeholder namespace is not resolved at run time. Use an environment variable as a stand-in and follow the release notes for the runtime flow. See [Environments and Secrets](../features/environments-and-secrets.md).
+- **OAuth and OIDC multi-user login** - The four supported providers (GitHub, GitLab, Google, Microsoft) are configured in the environment reference and the callback routes are wired, but the multi-user OAuth login path is not yet enabled. The only working sign-in path today is a single local admin created through setup mode. Multi-user SSO, invite links, and approved-domain signup depend on the OAuth login path and become available together in 1.1. See [Authentication](../operations/authentication.md).
+
 ## Related
 
 - [Documentation Hub](../README.md)

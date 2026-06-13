@@ -30,5 +30,4 @@ Reference docs are for lookup, not how-to. If you want to build a workflow, run 
 ## Related
 
 - [Documentation Hub](../README.md)
-- [Navigation Guide](../NAVIGATION.md)
 - [Concepts](../getting-started/concepts.md)

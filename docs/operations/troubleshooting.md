@@ -38,11 +38,11 @@ The runner resolves `{{...}}` in a fixed order: workflow variables first, then e
 
 ### What is the secrets model in 1.0?
 
-The data model for secrets exists, and you can declare secret keys on an environment today. Runtime resolution of `{{secrets.NAME}}` is **not yet implemented in APIWeave 1.0**. Treat the secret namespace as a known gap. Use an environment variable in the meantime and follow the release notes for the runtime flow. See the [Secrets and Environments](environments-and-secrets.md) doc for the full status and the [Concepts](../getting-started/concepts.md) glossary for the distinction.
+The data model for secrets exists, and you can declare secret keys on an environment today. Runtime resolution of `{{secrets.NAME}}` is **not yet implemented in APIWeave 1.0**. Treat the secret namespace as a known gap. Use an environment variable in the meantime and follow the release notes for the runtime flow. See the [Secrets and Environments](../features/environments-and-secrets.md) doc for the full status and the [Concepts](../getting-started/concepts.md) glossary for the distinction.
 
 ### How do webhooks authenticate, and why both token and HMAC?
 
-A webhook has two independent guards. The `X-Webhook-Token` header is a long-lived shared secret that proves the caller knows the webhook ID. The `X-Webhook-Signature` and `X-Webhook-Timestamp` headers prove the request body was not tampered with: the server re-computes `HMAC-SHA256(timestamp + body)` and rejects mismatches. `WEBHOOK_REQUIRE_HMAC=true` makes the signature check mandatory. You can run with token-only on a trusted internal network, but anything reachable from the public internet should send both. The full signing scheme and example payloads are in [Webhooks](webhooks.md).
+A webhook has two independent guards. The `X-Webhook-Token` header is a long-lived shared secret that proves the caller knows the webhook ID. The `X-Webhook-Signature` and `X-Webhook-Timestamp` headers prove the request body was not tampered with: the server re-computes `HMAC-SHA256(timestamp + body)` and rejects mismatches. `WEBHOOK_REQUIRE_HMAC=true` makes the signature check mandatory. You can run with token-only on a trusted internal network, but anything reachable from the public internet should send both. The full signing scheme and example payloads are in [Webhooks](../features/webhooks.md).
 
 ## Setup and Startup
 
@@ -90,7 +90,7 @@ No. The Refresh action updates the import templates in the Add Nodes palette and
 
 ### Why does import work for the direct JSON URL but not the Swagger UI URL?
 
-A Swagger UI URL renders HTML and the importer needs the raw spec. The two URL shapes that work are the direct OpenAPI endpoint (often `/v3/api-docs` or `/openapi.json`) and a static `.json`/`.yaml` file. If you have access to the same spec file the UI loads, paste the static URL. If only the UI is reachable, fetch the spec from the UI's network tab and import the file once. The full import paths are in the [Swagger and OpenAPI Import](swagger-import.md) doc.
+A Swagger UI URL renders HTML and the importer needs the raw spec. The two URL shapes that work are the direct OpenAPI endpoint (often `/v3/api-docs` or `/openapi.json`) and a static `.json`/`.yaml` file. If you have access to the same spec file the UI loads, paste the static URL. If only the UI is reachable, fetch the spec from the UI's network tab and import the file once. The full import paths are in the [Swagger and OpenAPI Import](../features/swagger-import.md) doc.
 
 ## Webhooks
 
@@ -100,29 +100,29 @@ Each status code points at a different layer. `401` means the token or signature
 
 ### What is idempotency, and why does it return 200 instead of 202?
 
-Sending the same `Idempotency-Key` within 24 hours replays the original response. The server returns `200`, adds an `Idempotency-Replayed: true` header, and re-sends the original body. No new run starts. Use a deterministic key tied to the build, like `commit SHA + job ID`, so retries collapse but unrelated triggers do not. The replay window, the header names, and the exact response shape are documented in [Webhooks](webhooks.md).
+Sending the same `Idempotency-Key` within 24 hours replays the original response. The server returns `200`, adds an `Idempotency-Replayed: true` header, and re-sends the original body. No new run starts. Use a deterministic key tied to the build, like `commit SHA + job ID`, so retries collapse but unrelated triggers do not. The replay window, the header names, and the exact response shape are documented in [Webhooks](../features/webhooks.md).
 
 ### Why does the HMAC signature not verify?
 
-Three causes account for almost every signature failure. First, the body you sign is not byte-identical to the body you send: a trailing newline from `echo` is the classic culprit, use `printf '%s%s'`. Second, the timestamp is outside the ±300s window, which the server enforces to block replay attacks. Third, the secret was rotated and the caller is still using the old one. The signing recipe and a copy-paste shell snippet are in the [Webhooks](webhooks.md) doc.
+Three causes account for almost every signature failure. First, the body you sign is not byte-identical to the body you send: a trailing newline from `echo` is the classic culprit, use `printf '%s%s'`. Second, the timestamp is outside the ±300s window, which the server enforces to block replay attacks. Third, the secret was rotated and the caller is still using the old one. The signing recipe and a copy-paste shell snippet are in the [Webhooks](../features/webhooks.md) doc.
 
 ### Why 429, and what do the headers mean?
 
-A `429` means the webhook hit the 100 requests per hour limit. The server returns two useful headers: `Retry-After` in seconds and `X-RateLimit-Reset` as a Unix timestamp. Read either one, wait, and retry. If you need higher throughput, split the work across multiple webhooks or back off the trigger frequency. The full rate-limit contract is in the [Webhooks](webhooks.md) doc.
+A `429` means the webhook hit the 100 requests per hour limit. The server returns two useful headers: `Retry-After` in seconds and `X-RateLimit-Reset` as a Unix timestamp. Read either one, wait, and retry. If you need higher throughput, split the work across multiple webhooks or back off the trigger frequency. The full rate-limit contract is in the [Webhooks](../features/webhooks.md) doc.
 
 ## MCP
 
 ### Why does the stdio server print nothing and the agent times out?
 
-The stdio transport uses stdout for protocol frames and stderr for logs. A missing `.env` does not crash the process, it just leaves the server with no MongoDB target. The agent then waits forever for a `tools/list` response that never comes. Point the agent's `cwd` at the `backend` directory, or set `PYTHONPATH` to include it, and confirm `MCP_ENABLED=true`. The full launch recipe is in [MCP Integration](mcp-integration.md).
+The stdio transport uses stdout for protocol frames and stderr for logs. A missing `.env` does not crash the process, it just leaves the server with no MongoDB target. The agent then waits forever for a `tools/list` response that never comes. Point the agent's `cwd` at the `backend` directory, or set `PYTHONPATH` to include it, and confirm `MCP_ENABLED=true`. The full launch recipe is in [MCP Integration](../features/mcp-integration.md).
 
 ### Why does the HTTP MCP return 401 or 403?
 
-`401` means the `Authorization: Bearer <key>` header is missing or the value does not match `MCP_API_KEY` byte for byte. Trailing whitespace from a password manager copy is a common culprit. `403` means the request authenticated but the `Origin` header is not in `MCP_ALLOWED_ORIGINS`. Add the exact origin the agent calls from and restart the backend. The header contract and a working HTTP example are in [MCP Integration](mcp-integration.md).
+`401` means the `Authorization: Bearer <key>` header is missing or the value does not match `MCP_API_KEY` byte for byte. Trailing whitespace from a password manager copy is a common culprit. `403` means the request authenticated but the `Origin` header is not in `MCP_ALLOWED_ORIGINS`. Add the exact origin the agent calls from and restart the backend. The header contract and a working HTTP example are in [MCP Integration](../features/mcp-integration.md).
 
 ### How does MCP prevent secret leakage in tool responses?
 
-Every tool response runs through a redaction layer that scans for known secret patterns and replaces matches with a placeholder before the response leaves the backend. If a secret slips through, the detection patterns are missing the shape, not the redaction. Add the pattern that catches it in `secret_utils.py` and avoid pasting the secret into public channels. The detection surface and update path are documented in [MCP Integration](mcp-integration.md).
+Every tool response runs through a redaction layer that scans for known secret patterns and replaces matches with a placeholder before the response leaves the backend. If a secret slips through, the detection patterns are missing the shape, not the redaction. Add the pattern that catches it in `secret_utils.py` and avoid pasting the secret into public channels. The detection surface and update path are documented in [MCP Integration](../features/mcp-integration.md).
 
 ## Security
 
@@ -132,11 +132,11 @@ The session cookie drops the moment the browser sees a mismatch between `SESSION
 
 ### Why do I see CORS errors in the browser console after switching to HTTPS?
 
-`ALLOWED_ORIGINS` is an exact-match list. The browser sends an `Origin` header that includes the scheme, so an `http://` origin in the list will not match an `https://` request from the same host. Update the list to the new HTTPS origin and restart the backend. Wildcard origins are intentionally rejected for credentialed requests. See the [Security and Deployment Checklist](../SECURITY.md) for the full pre-launch checklist.
+`ALLOWED_ORIGINS` is an exact-match list. The browser sends an `Origin` header that includes the scheme, so an `http://` origin in the list will not match an `https://` request from the same host. Update the list to the new HTTPS origin and restart the backend. Wildcard origins are intentionally rejected for credentialed requests. See the [Security and Deployment Checklist](security.md) for the full pre-launch checklist.
 
 ### How does CSRF protection work?
 
-CSRF tokens are tied to the session and required on every state-changing request when `CSRF_ENABLED=true`. The browser must read the token from a same-origin endpoint and echo it back in the request header, which a cross-origin attacker cannot do. Disabling CSRF in APIWeave is not a supported configuration, even for "internal" deployments. The full token model and the header name are in the [Security and Deployment Checklist](../SECURITY.md).
+CSRF tokens are tied to the session and required on every state-changing request when `CSRF_ENABLED=true`. The browser must read the token from a same-origin endpoint and echo it back in the request header, which a cross-origin attacker cannot do. Disabling CSRF in APIWeave is not a supported configuration, even for "internal" deployments. The full token model and the header name are in the [Security and Deployment Checklist](security.md).
 
 ## Escalating
 
@@ -153,18 +153,18 @@ If the issue is reproducible and the per-feature troubleshooting did not resolve
 
 Operational "if X happens, do Y" guidance lives in the Troubleshooting section of each feature doc. Cross-reference them by symptom:
 
-- [Webhooks Troubleshooting](webhooks.md#troubleshooting) for 401/403/404/429 and signature failures.
-- [MCP Integration Troubleshooting](mcp-integration.md#troubleshooting) for stdio silence, HTTP 401/403, and secret leakage.
+- [Webhooks Troubleshooting](../features/webhooks.md#troubleshooting) for 401/403/404/429 and signature failures.
+- [MCP Integration Troubleshooting](../features/mcp-integration.md#troubleshooting) for stdio silence, HTTP 401/403, and secret leakage.
 - [Environment Variables Troubleshooting](../reference/environment-variables.md#troubleshooting) for startup guards, CORS, and HMAC.
-- [Variables and Extractors Troubleshooting](variables-and-extractors.md#troubleshooting) for empty values and merge branch lookup.
-- [Workflows and Nodes Troubleshooting](workflows-and-nodes.md#troubleshooting) for run failures and resume options.
-- [Swagger Import Troubleshooting](swagger-import.md#troubleshooting) for URL and refresh issues.
-- [Environments and Secrets Troubleshooting](environments-and-secrets.md#troubleshooting) for active-environment and secret-key issues.
+- [Variables and Extractors Troubleshooting](../features/variables-and-extractors.md#troubleshooting) for empty values and merge branch lookup.
+- [Workflows and Nodes Troubleshooting](../features/workflows-and-nodes.md#troubleshooting) for run failures and resume options.
+- [Swagger Import Troubleshooting](../features/swagger-import.md#troubleshooting) for URL and refresh issues.
+- [Environments and Secrets Troubleshooting](../features/environments-and-secrets.md#troubleshooting) for active-environment and secret-key issues.
 
 ## Related
 
 - [Concepts](../getting-started/concepts.md) for the vocabulary used throughout this page.
 - [Architecture Reference](../reference/architecture.md) for the request lifecycle and where each guard sits.
-- [Security and Deployment Checklist](../SECURITY.md) for the pre-launch hardening steps referenced in the Security section.
-- [Webhooks](webhooks.md) for the full signing and rate-limit contract.
-- [MCP Integration](mcp-integration.md) for the full transport and redaction contract.
+- [Security and Deployment Checklist](security.md) for the pre-launch hardening steps referenced in the Security section.
+- [Webhooks](../features/webhooks.md) for the full signing and rate-limit contract.
+- [MCP Integration](../features/mcp-integration.md) for the full transport and redaction contract.

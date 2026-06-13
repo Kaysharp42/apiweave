@@ -45,5 +45,5 @@ Participation is governed by the Contributor Covenant. Read the full text at [co
 
 - [Project README](README.md)
 - [Documentation Hub](docs/README.md)
-- [Security Guide](docs/SECURITY.md)
-- [FAQ and Troubleshooting](docs/FAQ_TROUBLESHOOTING.md)
+- [Security Guide](docs/operations/security.md)
+- [FAQ and Troubleshooting](docs/operations/troubleshooting.md)

@@ -259,7 +259,7 @@ npm run build
 ## Related
 
 - [Architecture](../reference/architecture.md)
-- [Security and Deployment Checklist](../SECURITY.md)
+- [Security and Deployment Checklist](../operations/security.md)
 - [MCP Integration Guide](../features/mcp-integration.md)
-- [Webhook Quick Start](../WEBHOOK_QUICKSTART.md)
-- [Authentication Setup](../AUTH_SETUP.md)
+- [Webhook Quick Start](../features/webhooks.md)
+- [Authentication Setup](../operations/authentication.md)

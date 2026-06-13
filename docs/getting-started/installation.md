@@ -171,7 +171,7 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 SECRET_KEY=change-me-in-development
 ```
 
-For OAuth login (GitHub, GitLab, Google, Microsoft), fill in the `*_CLIENT_ID` and `*_CLIENT_SECRET` variables. The first successful SSO login becomes the admin when `SETUP_MODE_ENABLED=true` and no users exist. Production deployment values live in the [Authentication Setup](../AUTH_SETUP.md) guide; do not reuse development secrets in production.
+For OAuth login (GitHub, GitLab, Google, Microsoft), fill in the `*_CLIENT_ID` and `*_CLIENT_SECRET` variables. The first successful SSO login becomes the admin when `SETUP_MODE_ENABLED=true` and no users exist. Production deployment values live in the [Authentication Setup](../operations/authentication.md) guide; do not reuse development secrets in production.
 
 ### frontend/.env
 

@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- Read [Security Guide](../security.md) and [Authentication Guide](../authentication.md) before exposing APIWeave to the network.
+- Read [Security Guide](security.md) and [Authentication Guide](authentication.md) before exposing APIWeave to the network.
 - A host (VM, bare metal, or K8s node) with Docker Engine 24+ and Docker Compose v2.
 - A MongoDB 7+ instance, DNS records, TLS certificates from a trusted CA, and a secret manager for `SESSION_SECRET_KEY`, OAuth client secrets, webhook tokens, HMAC secrets, and `MCP_API_KEY`.
 
@@ -40,7 +40,7 @@ MONGODB_DB_NAME=apiweave
 APP_ENV=development
 ```
 
-Production must add at minimum `APP_ENV=production`, `BASE_URL`, `PUBLIC_BASE_URL`, `ALLOWED_ORIGINS`, `TRUSTED_HOSTS`, `SESSION_SECRET_KEY`, `SESSION_COOKIE_SECURE=true`, `CSRF_ENABLED=true`, `WEBHOOK_REQUIRE_HMAC=true`, and `MCP_REQUIRE_API_KEY=true`. Treat the [Security Guide](../security.md) checklist as the source of truth.
+Production must add at minimum `APP_ENV=production`, `BASE_URL`, `PUBLIC_BASE_URL`, `ALLOWED_ORIGINS`, `TRUSTED_HOSTS`, `SESSION_SECRET_KEY`, `SESSION_COOKIE_SECURE=true`, `CSRF_ENABLED=true`, `WEBHOOK_REQUIRE_HMAC=true`, and `MCP_REQUIRE_API_KEY=true`. Treat the [Security Guide](security.md) checklist as the source of truth.
 
 ## MongoDB
 
@@ -101,7 +101,7 @@ APIWeave stores workflows, runs, environments, collections, webhooks, and execut
 - [ ] `BLOCK_PRIVATE_NETWORKS=true` so the executor cannot reach internal services.
 - [ ] First admin created via SSO; setup mode reviewed.
 
-Full source: [Security Guide](../security.md) and [Authentication Guide](../authentication.md).
+Full source: [Security Guide](security.md) and [Authentication Guide](authentication.md).
 
 ## Troubleshooting
 
@@ -116,5 +116,5 @@ Full source: [Security Guide](../security.md) and [Authentication Guide](../auth
 
 - [Architecture](../reference/architecture.md)
 - [Environment Variables](../reference/environment-variables.md)
-- [Security Guide](../security.md)
-- [Authentication Guide](../authentication.md)
+- [Security Guide](security.md)
+- [Authentication Guide](authentication.md)
