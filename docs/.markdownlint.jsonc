@@ -1,0 +1,29 @@
+{
+  // APIWeave 1.0 — documentation markdownlint configuration
+  // Enable all rules by default, then disable those that conflict
+  // with our documentation patterns (long URLs, Mermaid, front matter).
+
+  "default": true,
+
+  // MD013 — line-length: APIWeave docs contain long URLs, cURL examples,
+  // YAML/CI snippets, and code blocks that exceed 80 chars. Enforcing this
+  // would force artificial line breaks that hurt readability.
+  "MD013": false,
+
+  // MD024 — no-duplicate-headings: Many docs share common subsection names
+  // like "Troubleshooting", "Prerequisites", or "Related Resources" under
+  // different parent headings. This is intentional for scannability.
+  "MD024": false,
+
+  // MD033 — no-inline-HTML: We use inline HTML for Mermaid diagrams (<pre class="mermaid">),
+  // table alignment, and occasionally <kbd>/<br> tags. This is a project convention.
+  "MD033": false,
+
+  // MD041 — first-line-h1: Some docs start with YAML-like section headers
+  // or are sub-pages where the parent doc provides the top-level heading.
+  "MD041": false,
+
+  // MD046 — code-style: We exclusively use fenced code blocks (```) with
+  // language tags. No need to enforce the indented code style variant.
+  "MD046": false
+}
