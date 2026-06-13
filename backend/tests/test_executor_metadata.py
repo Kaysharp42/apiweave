@@ -69,9 +69,15 @@ class FakeClientSession:
     async def __aexit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
         return None
 
+    async def close(self) -> None:
+        return None
+
     def request(self, **kwargs: Any) -> FakeRequestContext:
         FakeClientSession.last_request = kwargs
         return FakeRequestContext(FakeClientSession.response)
+
+
+_fake_session_instance = FakeClientSession()
 
 
 def _executor() -> WorkflowExecutor:
@@ -86,9 +92,9 @@ async def _fake_safe_request(
     method: str,
     url: str,
     **kwargs: Any,
-) -> FakeResponse:
+) -> tuple[FakeResponse, FakeClientSession]:
     FakeClientSession.last_request = {"method": method, "url": url, **kwargs}
-    return FakeClientSession.response
+    return FakeClientSession.response, _fake_session_instance
 
 
 def _install_fake_http(

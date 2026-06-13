@@ -79,7 +79,7 @@ async def test_valid_public_url_calls_safe_request(monkeypatch: pytest.MonkeyPat
     from app.services import safe_http as safe_http_module
 
     fake_response = FakeResponse()
-    mock_safe_request = AsyncMock(return_value=fake_response)
+    mock_safe_request = AsyncMock(return_value=(fake_response, AsyncMock()))
     monkeypatch.setattr(safe_http_module, "safe_request", mock_safe_request)
 
     exe = _executor()

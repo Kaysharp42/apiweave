@@ -373,16 +373,15 @@ class TestSafeGet:
         mock_response.status = 200
         mock_session = AsyncMock()
         mock_session.get.return_value = mock_response
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
 
         with (
             _patch_settings(approved_domains_enabled=False),
             patch("app.services.safe_http.aiohttp.ClientSession", return_value=mock_session),
             patch("app.services.safe_http.aiohttp.TCPConnector"),
         ):
-            result = await safe_get("https://example.com/api")
-            assert result == mock_response
+            response, session = await safe_get("https://example.com/api")
+            assert response is mock_response
+            assert session is mock_session
 
 
 class TestSafePost:
@@ -399,16 +398,15 @@ class TestSafePost:
         mock_response.status = 201
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_response
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
 
         with (
             _patch_settings(approved_domains_enabled=False),
             patch("app.services.safe_http.aiohttp.ClientSession", return_value=mock_session),
             patch("app.services.safe_http.aiohttp.TCPConnector"),
         ):
-            result = await safe_post("https://example.com/api", json={"key": "val"})
-            assert result == mock_response
+            response, session = await safe_post("https://example.com/api", json={"key": "val"})
+            assert response is mock_response
+            assert session is mock_session
 
 
 class TestSafeRequest:
@@ -426,16 +424,42 @@ class TestSafeRequest:
 
         mock_session = AsyncMock()
         mock_session.request.return_value = mock_response
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
 
         with (
             _patch_settings(approved_domains_enabled=False),
             patch("app.services.safe_http.aiohttp.ClientSession", return_value=mock_session),
             patch("app.services.safe_http.aiohttp.TCPConnector"),
         ):
-            result = await safe_request("GET", "https://example.com/api")
-            assert result == mock_response
+            response, session = await safe_request("GET", "https://example.com/api")
+            assert response is mock_response
+            assert session is mock_session
+
+    @pytest.mark.asyncio
+    async def test_returned_session_keeps_response_readable(self):
+        """Regression: returning the response after the session closed made
+        ``response.text()`` fail with ``Connection closed`` once the caller
+        tried to read the body.  Verify that after ``safe_request`` returns
+        the caller can still read the body — the session must remain open.
+        """
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value='{"ok": true}')
+
+        mock_session = AsyncMock()
+        mock_session.request.return_value = mock_response
+        mock_session.close = AsyncMock()
+
+        with (
+            _patch_settings(approved_domains_enabled=False),
+            patch("app.services.safe_http.aiohttp.ClientSession", return_value=mock_session),
+            patch("app.services.safe_http.aiohttp.TCPConnector"),
+        ):
+            response, session = await safe_request("GET", "https://example.com/api")
+            body = await response.text()
+            assert body == '{"ok": true}'
+            mock_session.close.assert_not_awaited()
+            await session.close()
+            mock_session.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_blocks_redirect_to_private(self):
@@ -488,8 +512,9 @@ class TestSafeRequest:
             patch("app.services.safe_http.aiohttp.ClientSession", return_value=mock_session),
             patch("app.services.safe_http.aiohttp.TCPConnector"),
         ):
-            result = await safe_request("GET", "https://example.com/start")
-            assert result == final_response
+            response, session = await safe_request("GET", "https://example.com/start")
+            assert response is final_response
+            assert session is mock_session
 
     @pytest.mark.asyncio
     async def test_too_many_redirects(self):
@@ -501,8 +526,7 @@ class TestSafeRequest:
 
         mock_session = AsyncMock()
         mock_session.request.return_value = redirect_response
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.close = AsyncMock()
 
         with (
             _patch_settings(approved_domains_enabled=False),
@@ -511,6 +535,7 @@ class TestSafeRequest:
         ):
             with pytest.raises(SafeUrlError, match="Too many redirects"):
                 await safe_request("GET", "https://example.com/", max_hops=3)
+            mock_session.close.assert_awaited_once()
 
 
 class TestBlockedNetworksConfig:

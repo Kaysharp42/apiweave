@@ -202,6 +202,26 @@ All webhook payloads are now rejected with 413 if they exceed `MAX_WEBHOOK_BODY_
 
 **Action required**: If you have webhooks sending payloads > 64KB, increase the `MAX_WEBHOOK_BODY_SIZE` setting or reduce the payload size.
 
+### Post-Wave 2 Regression Fix: Parallel HTTP Branches
+
+Wave 2's rewiring of `safe_request()` into `_execute_http_request` (F1) surfaced two coupled bugs in the executor. Workflows with parallel HTTP branches (for example, two `http-request` nodes reached from a `merge` node, or any two branches that each hit the same URL) intermittently failed with `HTTP request failed ... Connection closed` and `coroutine raised StopIteration`, with `All N branches failed` reported by `asyncio.gather`.
+
+**Root cause 1 — `safe_request()` returned a response from a closed session.**
+
+`backend/app/services/safe_http.py::safe_request` was structured as `async with aiohttp.ClientSession(...) as session: response = await session.request(...); return response`. The `async with` exit closed the session (and its connection pool) *before* the response reached the caller. When `_execute_http_request` then called `await response.text()` on the detached response, aiohttp raised `Connection closed`. aiohttp's session teardown is scheduled, not synchronous, so the bug appeared as a race: one branch's read landed before teardown and succeeded, the other landed after and failed.
+
+**Root cause 2 — `raise StopIteration` in a coroutine.**
+
+`backend/app/runner/executor.py::_execute_node` used `raise StopIteration(error_msg)` as a control-flow sentinel so the `except Exception:` handlers in the executor would not catch the intentional stop from `continue_on_fail=False`. Since Python 3.7 a coroutine that raises `StopIteration` triggers PEP 479 and asyncio reports it as `RuntimeError: coroutine raised StopIteration`. This was latent for years: the HTTP path always succeeded before Wave 2, so the error-stop branch was never reached. Once Root cause 1 forced the error path, Root cause 2 fired and propagated through `asyncio.gather`.
+
+**Fix**:
+
+- `safe_request`, `safe_get`, and `safe_post` now return `tuple[ClientResponse, ClientSession]` and keep the session open. The caller (`_execute_http_request`) closes both in a `finally` block. The redirect loop reuses a single session across hops, so connection pooling still works.
+- A new internal `_StopBranch(BaseException)` class replaces `StopIteration` as the intentional-stop sentinel. Inheriting from `BaseException` (not `Exception`) preserves the original "bypass `except Exception:`" intent without triggering PEP 479.
+- A regression test `test_returned_session_keeps_response_readable` was added in `tests/test_safe_http.py` to read the body through the returned session and catch this class of bug in the future.
+
+**No action required** for existing deployments — the fix is a bug fix, not a behavior change. Workflows that exhibited the symptom will now succeed.
+
 ## Related Guides
 
 - [Authentication Setup](AUTH_SETUP.md)

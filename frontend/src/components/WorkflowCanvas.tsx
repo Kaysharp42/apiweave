@@ -135,10 +135,10 @@ export function WorkflowCanvas({
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [environments, setEnvironments] = useState<EnvironmentWithSwagger[]>([]);
 
-  const selectedEnvironmentByWorkflow = useRef<Record<string, string | null>>({});
+  const [selectedEnvironmentByWorkflow, setSelectedEnvironmentByWorkflow] = useState<Record<string, string | null>>({});
   const selectedEnvironment = useMemo<string | null>(() => {
     const workflowKey = workflowId ?? '';
-    const workflowSpecific = selectedEnvironmentByWorkflow.current[workflowKey];
+    const workflowSpecific = selectedEnvironmentByWorkflow[workflowKey];
     if (workflowSpecific !== undefined) {
       return workflowSpecific;
     }
@@ -153,7 +153,7 @@ export function WorkflowCanvas({
     }
 
     return null;
-  }, [workflowId, workflow?.environmentId]);
+  }, [workflowId, workflow?.environmentId, selectedEnvironmentByWorkflow]);
 
   // ── Hooks ──────────────────────────────────────────────────────────
 
@@ -794,7 +794,7 @@ export function WorkflowCanvas({
           const processed = (val && val.trim()) ? val.trim() : null;
           const selectedEnv = processed ? environments.find(e => e.environmentId === processed) : undefined;
           const envName = selectedEnv ? selectedEnv.name : 'No Environment';
-          selectedEnvironmentByWorkflow.current[workflowId ?? ''] = processed;
+          setSelectedEnvironmentByWorkflow((prev) => ({ ...prev, [workflowId ?? '']: processed }));
           if (processed) {
             localStorage.setItem(`selectedEnvironment_${workflowId}`, processed);
             localStorage.setItem('defaultEnvironment', processed);

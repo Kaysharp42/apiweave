@@ -165,15 +165,24 @@ async def safe_request(
     max_hops: int = MAX_REDIRECT_HOPS,
     timeout: float = 30.0,
     **kwargs: Any,
-) -> aiohttp.ClientResponse:
+) -> tuple[aiohttp.ClientResponse, aiohttp.ClientSession]:
     """Execute an HTTP request with SSRF protection and safe redirect following.
 
     * Validates the initial URL.
     * Sets ``allow_redirects=False`` on the underlying client.
     * On 3xx responses, validates the ``Location`` header before following.
     * Stops after *max_hops* redirects (default 5).
-    * Returns the final :class:`aiohttp.ClientResponse`.  The caller is
-      responsible for closing the response (or use as a context manager).
+    * Returns a ``(response, session)`` tuple.
+
+    **Caller responsibilities.** The caller must close *both* the response
+    (``response.close()``) and the session (``await session.close()``) — the
+    session is kept open across the redirect chain so connection reuse works,
+    and the final response remains readable for the lifetime of the session.
+
+    The previous implementation closed the session before returning the
+    response, which caused intermittent ``Connection closed`` errors when
+    the caller tried to read the body.  Returning the session along with the
+    response fixes that race.
 
     Raises :class:`SafeUrlError` if any URL in the chain is unsafe.
     """
@@ -182,16 +191,19 @@ async def safe_request(
     current_url = url
     client_timeout = aiohttp.ClientTimeout(total=timeout)
 
-    # We accumulate cookies / headers across hops in these containers.
+    # Single session + connector for the whole redirect chain — enables
+    # connection reuse across hops and lets the caller read the body of
+    # the final response.
     session_cookie_jar = aiohttp.CookieJar(unsafe=False)
+    connector = aiohttp.TCPConnector()
+    session = aiohttp.ClientSession(
+        connector=connector,
+        cookie_jar=session_cookie_jar,
+        timeout=client_timeout,
+    )
 
-    for hop in range(max_hops + 1):
-        connector = aiohttp.TCPConnector()
-        async with aiohttp.ClientSession(
-            connector=connector,
-            cookie_jar=session_cookie_jar,
-            timeout=client_timeout,
-        ) as session:
+    try:
+        for hop in range(max_hops + 1):
             response = await session.request(
                 method,
                 current_url,
@@ -199,14 +211,15 @@ async def safe_request(
                 **kwargs,
             )
 
-            # Not a redirect — return to caller.
+            # Not a redirect — return the live response and session so the
+            # caller can read the body.
             if response.status < 300 or response.status >= 400:
-                return response
+                return response, session
 
             # --- Redirect handling ---
             location = response.headers.get("Location")
             if not location:
-                return response
+                return response, session
 
             # Resolve relative Location
             parsed_location = urlparse(location)
@@ -222,21 +235,26 @@ async def safe_request(
 
             logger.debug("Following redirect hop %d: %s -> %s", hop + 1, current_url, location)
             current_url = location
-            # Consume and close the redirect response before following
+            # Consume and close the redirect response before following —
+            # releases the connection back to the pool for the next hop.
             await response.read()
             response.close()
 
-    raise SafeUrlError(
-        f"Too many redirects (>{max_hops}) — last URL: {current_url}"
-    )
+        raise SafeUrlError(
+            f"Too many redirects (>{max_hops}) — last URL: {current_url}"
+        )
+    except BaseException:
+        # SafeUrlError, validation errors, or cancellation: release the
+        # session before propagating.  We use BaseException so the cleanup
+        # also runs on asyncio.CancelledError and KeyboardInterrupt.
+        await session.close()
+        raise
 
 
-async def safe_get(url: str, **kwargs: Any) -> aiohttp.ClientResponse:
+async def safe_get(url: str, **kwargs: Any) -> tuple[aiohttp.ClientResponse, aiohttp.ClientSession]:
     """Safe ``GET`` — validates URL, does NOT follow redirects.
 
-    Returns the raw :class:`aiohttp.ClientResponse`.  The caller must handle
-    redirects (or use :func:`safe_request` for automatic safe redirect
-    following).
+    Returns a ``(response, session)`` tuple.  The caller must close both.
     """
     validate_url(url)
     kwargs.setdefault("allow_redirects", False)
@@ -246,20 +264,16 @@ async def safe_get(url: str, **kwargs: Any) -> aiohttp.ClientResponse:
     session = aiohttp.ClientSession(connector=connector, timeout=client_timeout)
     try:
         response = await session.get(url, **kwargs)
-        # Detach response from session lifecycle — caller must close it.
-        response._session = session  # type: ignore[attr-defined]
-        return response
-    except Exception:
+        return response, session
+    except BaseException:
         await session.close()
         raise
 
 
-async def safe_post(url: str, **kwargs: Any) -> aiohttp.ClientResponse:
+async def safe_post(url: str, **kwargs: Any) -> tuple[aiohttp.ClientResponse, aiohttp.ClientSession]:
     """Safe ``POST`` — validates URL, does NOT follow redirects.
 
-    Returns the raw :class:`aiohttp.ClientResponse`.  The caller must handle
-    redirects (or use :func:`safe_request` for automatic safe redirect
-    following).
+    Returns a ``(response, session)`` tuple.  The caller must close both.
     """
     validate_url(url)
     kwargs.setdefault("allow_redirects", False)
@@ -269,8 +283,7 @@ async def safe_post(url: str, **kwargs: Any) -> aiohttp.ClientResponse:
     session = aiohttp.ClientSession(connector=connector, timeout=client_timeout)
     try:
         response = await session.post(url, **kwargs)
-        response._session = session  # type: ignore[attr-defined]
-        return response
-    except Exception:
+        return response, session
+    except BaseException:
         await session.close()
         raise

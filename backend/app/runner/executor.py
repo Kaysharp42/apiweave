@@ -53,6 +53,22 @@ def setup_run_logger(run_id: str):
     return logger
 
 
+class _StopBranch(BaseException):
+    """Internal sentinel to stop a branch when ``continue_on_fail=False``.
+
+    Inherits from :class:`BaseException` (not :class:`Exception`) so it
+    bypasses the ``except Exception:`` handlers in the executor.  We do NOT
+    use :class:`StopIteration` for this purpose — since Python 3.7 a
+    coroutine that raises ``StopIteration`` triggers PEP 479 and surfaces
+    as ``RuntimeError: coroutine raised StopIteration``, which asyncio
+    then reports to the caller as a failed task.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 class WorkflowExecutor:
     """Executes workflows node by node"""
     
@@ -394,8 +410,8 @@ class WorkflowExecutor:
                 if isinstance(node_exec_result, dict) and node_exec_result.get('shouldContinue') is False:
                     self.logger.info(f"➡️  Node {node_id} signalled to stop downstream execution")
                     return
-            except StopIteration:
-                # Always re-raise StopIteration (intentional stop from continue_on_fail=False)
+            except _StopBranch:
+                # Always re-raise _StopBranch (intentional stop from continue_on_fail=False)
                 raise
             except Exception as e:
                 # Mark as failure
@@ -525,8 +541,8 @@ class WorkflowExecutor:
             if next_node and next_node['type'] != 'end':
                 try:
                     await self._execute_from_node(next_node_id, nodes, edges, db)
-                except StopIteration:
-                    # Always re-raise StopIteration (intentional stop from continue_on_fail=False)
+                except _StopBranch:
+                    # Always re-raise _StopBranch (intentional stop from continue_on_fail=False)
                     raise
                 except Exception as e:
                     # Mark as failure
@@ -639,12 +655,12 @@ class WorkflowExecutor:
                 self.logger.error(f"🛑 Stopping branch at {node_id} due to failure (continue_on_fail=False)")
                 self.logger.error(f"🛑 Stopping branch at {node_id}: {error_msg}")
                 # Raise a specific exception type that won't be caught by our error handler
-                raise StopIteration(error_msg)  # Use StopIteration to signal intentional stop
+                raise _StopBranch(error_msg)
 
 
             
-        except StopIteration:
-            # Re-raise StopIteration (intentional stop due to continue_on_fail=False)
+        except _StopBranch:
+            # Re-raise _StopBranch (intentional stop due to continue_on_fail=False)
             raise
         except Exception as e:
             # For errors that occur during node execution (not HTTP status code errors)
@@ -1393,7 +1409,7 @@ class WorkflowExecutor:
                         else:
                             data = body
             
-            response = await safe_request(
+            response, session = await safe_request(
                 method,
                 url,
                 timeout=float(timeout),
@@ -1503,6 +1519,7 @@ class WorkflowExecutor:
                     return result
             finally:
                 response.close()
+                await session.close()
         except Exception as e:
             # Network error or other request failure
             # Return an error result that can be handled downstream
