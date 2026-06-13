@@ -977,8 +977,18 @@ class WorkflowExecutor:
         
         return re.sub(r'\{\{([^}]+)\}\}', replacer, text)
     
-    def _parse_key_value_pairs(self, text: str) -> Dict[str, str]:
-        """Parse key=value (or key:value) pairs (one per line) into a dictionary."""
+    def _parse_key_value_pairs(self, text: str, *, allow_secrets: bool = True) -> Dict[str, str]:
+        """Parse key=value (or key:value) pairs (one per line) into a dictionary.
+
+        Parameters
+        ----------
+        text:
+            Multi-line key=value or key:value pairs.
+        allow_secrets:
+            When False, raises ValueError if any value contains ``{{secrets.*}}``.
+            Set to False for query params and path variables (F5); True for
+            headers, cookies, body, form data where secrets are legitimate.
+        """
         if not text:
             return {}
         
@@ -995,7 +1005,7 @@ class WorkflowExecutor:
             else:
                 continue
 
-            result[key.strip()] = self._substitute_variables(value.strip())
+            result[key.strip()] = self._substitute_variables(value.strip(), allow_secrets=allow_secrets)
         
         return result
     
@@ -1174,12 +1184,12 @@ class WorkflowExecutor:
         url = self._substitute_variables(url, allow_secrets=False)
         
         # Handle path variables (e.g., /users/:userId -> /users/123)
-        path_variables = self._parse_key_value_pairs(path_variables_text)
+        path_variables = self._parse_key_value_pairs(path_variables_text, allow_secrets=False)
         for var_name, var_value in path_variables.items():
             url = url.replace(f':{var_name}', var_value)
         
         # Handle query parameters
-        query_params = self._parse_key_value_pairs(query_params_text)
+        query_params = self._parse_key_value_pairs(query_params_text, allow_secrets=False)
         if query_params:
             separator = '&' if '?' in url else '?'
             url = f"{url}{separator}{urlencode(query_params)}"

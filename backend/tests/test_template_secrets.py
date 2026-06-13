@@ -73,3 +73,43 @@ class TestDebugLogRedaction:
             executor._substitute_variables("{{env.token}}")
         for record in caplog.records:
             assert "super-secret-value-123" not in record.getMessage()
+
+
+class TestSecretsBlockedInQueryAndPath:
+    """F5 partial implementation fix: secrets blocked in query params and path variables."""
+
+    def test_secrets_in_query_params_raises(self, executor):
+        """Query param values must reject secret substitution."""
+        text = "api_key={{secrets.api_key}}"
+        with pytest.raises(ValueError, match="Secret substitution not allowed"):
+            executor._parse_key_value_pairs(text, allow_secrets=False)
+
+    def test_secrets_in_path_variables_raises(self, executor):
+        """Path variable values must reject secret substitution."""
+        text = "userId={{secrets.api_key}}"
+        with pytest.raises(ValueError, match="Secret substitution not allowed"):
+            executor._parse_key_value_pairs(text, allow_secrets=False)
+
+    def test_secrets_in_query_params_default_allows(self, executor):
+        """Backward compat: default allow_secrets=True still resolves secrets."""
+        text = "api_key={{secrets.api_key}}"
+        result = executor._parse_key_value_pairs(text)
+        assert result == {"api_key": "super-secret-value-123"}
+
+    def test_env_in_query_params_allowed(self, executor):
+        """Non-secret variables in query params still work."""
+        text = "userId={{variables.userId}}"
+        result = executor._parse_key_value_pairs(text, allow_secrets=False)
+        assert result == {"userId": "user-42"}
+
+    def test_secrets_in_headers_still_resolves_via_parser(self, executor):
+        """Headers parser must still allow secrets (Bearer auth tokens)."""
+        text = "Authorization=Bearer {{secrets.api_key}}"
+        result = executor._parse_key_value_pairs(text)
+        assert result == {"Authorization": "Bearer super-secret-value-123"}
+
+    def test_secrets_in_cookies_still_resolves_via_parser(self, executor):
+        """Cookies parser must still allow secrets."""
+        text = "session={{secrets.api_key}}"
+        result = executor._parse_key_value_pairs(text)
+        assert result == {"session": "super-secret-value-123"}
