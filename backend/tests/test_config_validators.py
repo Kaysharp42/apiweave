@@ -23,7 +23,7 @@ def test_local_dev_loads() -> None:
 
     assert settings.BLOCK_PRIVATE_NETWORKS is True
     assert settings.MAX_WEBHOOK_BODY_SIZE == 65536
-    assert settings.UPLOADS_BASE_DIR == "backend/uploads"
+    assert settings.UPLOADS_BASE_DIR == "uploads"
     assert settings.RATE_LIMITER_BACKEND == "memory"
 
 

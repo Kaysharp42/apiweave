@@ -567,6 +567,19 @@ Regeneration invalidates old credentials immediately.
 
 Management actions require an authenticated APIWeave user session with the matching `webhooks:*` permission. External webhook execution still uses `X-Webhook-Token` plus HMAC headers; CI/CD systems do not use browser sessions.
 
+## HMAC Authentication Migration (F9)
+
+If you previously created webhooks without HMAC, they will continue to work in local/dev. In production (APP_ENV=production), you'll see a WARNING log for each unauthenticated request. To enable HMAC on an existing webhook:
+
+1. Open the webhook in the APIWeave UI
+2. Click "Regenerate Token & HMAC Secret" 
+3. Update your CI/CD pipeline to include the new headers:
+   - `X-Webhook-Token: <token>`
+   - `X-Webhook-Timestamp: <unix-timestamp>`
+   - `X-Webhook-Signature: HMAC-SHA256(hmac_secret, timestamp + body)`
+
+Or set `WEBHOOK_REQUIRE_HMAC=false` in your environment to suppress the warning (not recommended for production).
+
 ## Common Setup Pattern
 
 1. Create environment for your target stage.

@@ -30,6 +30,7 @@ SECRET_KEY_PATTERNS = [
     re.compile(r"^secret$", re.IGNORECASE),
     re.compile(r"^token$", re.IGNORECASE),
     re.compile(r"^password$", re.IGNORECASE),
+    re.compile(r"^authorization$", re.IGNORECASE),
     # Prefix: auth_*
     re.compile(r"^auth[_-]", re.IGNORECASE),
     # Suffix: *_api_key

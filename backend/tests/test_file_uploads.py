@@ -25,15 +25,23 @@ def executor():
 
 
 @pytest.fixture
-def temp_file():
-    """Create a temporary test file"""
-    with tempfile.NamedTemporaryFile(delete=False, mode="wb") as f:
-        test_content = b"This is test file content for upload"
-        f.write(test_content)
-        temp_path = f.name
-    yield temp_path
-    # Cleanup
-    Path(temp_path).unlink()
+def sandbox_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Create a temporary uploads sandbox and patch the sandbox resolver."""
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    monkeypatch.setattr(
+        "app.services.upload_sandbox._get_uploads_base_dir",
+        lambda: uploads.resolve(),
+    )
+    return uploads
+
+
+@pytest.fixture
+def temp_file(sandbox_dir: Path) -> str:
+    """Create a test file inside the sandbox."""
+    f = sandbox_dir / "test_upload.json"
+    f.write_bytes(b"This is test file content for upload")
+    return str(f)
 
 
 class TestFileUploadBase64:

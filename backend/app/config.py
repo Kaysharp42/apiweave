@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     # Security
     BLOCK_PRIVATE_NETWORKS: bool = True
     MAX_WEBHOOK_BODY_SIZE: int = 65536
-    UPLOADS_BASE_DIR: str = "backend/uploads"
+    UPLOADS_BASE_DIR: str = "uploads"
     RATE_LIMITER_BACKEND: Literal["memory", "mongodb"] = "memory"
 
     MCP_ENABLED: bool = False

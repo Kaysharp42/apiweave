@@ -494,6 +494,12 @@ Values matching patterns like `sk-`, `key_`, `secret`, `password`, `token`, `api
 
 ---
 
+## MCP Import Security (F2/F11)
+
+MCP import tools inherit SSRF protection from the service layer. Private IP addresses (127.0.0.1, 10.x, 192.168.x, etc.) are blocked. If your MCP workflow imports an OpenAPI spec from an internal service, you'll need to use a public-facing proxy or set `APPROVED_DOMAINS` in the environment.
+
+---
+
 ## Agent Workflow Examples
 
 ### Creating and Running a Workflow

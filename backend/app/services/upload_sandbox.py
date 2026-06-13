@@ -45,9 +45,9 @@ def _get_uploads_base_dir() -> Path:
     try:
         from app.config import settings  # type: ignore[import-untyped]
 
-        raw = getattr(settings, "UPLOADS_BASE_DIR", "backend/uploads")
+        raw = getattr(settings, "UPLOADS_BASE_DIR", "uploads")
     except Exception:
-        raw = "backend/uploads"
+        raw = "uploads"
 
     return Path(raw).resolve()
 

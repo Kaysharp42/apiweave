@@ -170,6 +170,38 @@ Operational impact:
 - A multi-worker deployment behind a load balancer, or a horizontally scaled API, will see each process enforce its own counter. The effective limit becomes `max_requests * worker_count` until you switch to a shared store.
 - For production deployments with more than one API process, run an external limiter (Redis or another shared store) or add a worker token plus a coordinated limiter. Tracking this is out of scope for the current release.
 
+## Migration Notes (Wave 2)
+
+The following breaking changes were introduced in Wave 2 of the security-remediation plan. Existing deployments must update their configuration and verify their workflows still operate correctly.
+
+### SSRF Protection (F1, F2, F12)
+
+All outbound HTTP requests from the executor, OpenAPI importer, and MCP tools are now validated against a blocklist of private/reserved IP ranges:
+- 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 (metadata), 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+- IPv6: ::/128, ::1/128, fc00::/7, fe80::/10, ff00::/8
+
+**Action required**: If your workflows use `http://127.0.0.1` or `http://localhost` to call internal services, they will now be BLOCKED. Update your workflow URLs to use the public hostname or set `APPROVED_DOMAINS` in your environment to allowlist internal hosts.
+
+### Secret Masking (F4, F10, F15, F19)
+
+The executor's secret masking now uses key-name-based detection (api_key, token, password, *_key, *_secret, etc.) plus structural walking. This is more robust but also more aggressive:
+- Fields named like `api_key`, `token`, `password`, `*_credential` are now redacted in result storage
+- Env variable debug logs no longer print raw values
+
+**Action required**: If your workflow produces non-secret values with names matching these patterns (e.g., a field literally called `token` that holds a JWT), it will now be redacted. Rename the field or remove the secret from the result.
+
+### Webhook HMAC Enforcement (F9)
+
+The `WEBHOOK_REQUIRE_HMAC` flag now triggers a WARNING log in production when disabled. This is a per-request warning, not a startup failure.
+
+**Action required**: Existing webhook integrations without HMAC will continue to work in dev/staging. In production, configure HMAC for all webhooks to avoid the warning and improve security.
+
+### Webhook Body Size Limit (F18)
+
+All webhook payloads are now rejected with 413 if they exceed `MAX_WEBHOOK_BODY_SIZE` (default: 65536 bytes / 64KB).
+
+**Action required**: If you have webhooks sending payloads > 64KB, increase the `MAX_WEBHOOK_BODY_SIZE` setting or reduce the payload size.
+
 ## Related Guides
 
 - [Authentication Setup](AUTH_SETUP.md)
