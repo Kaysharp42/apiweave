@@ -1,0 +1,295 @@
+# Webhooks
+
+*Trigger workflow and collection runs from external systems. Covers webhook management, token and HMAC authentication, idempotency, rate limiting, and CI/CD integration snippets for GitHub Actions, GitLab CI, and Jenkins.*
+
+## Prerequisites
+
+- [Concepts](../getting-started/concepts.md) for the run, workflow, and collection definitions used in this guide.
+- A running APIWeave instance with a saved workflow or collection to bind the webhook to.
+- For CI/CD snippets: shell access (`bash`), `curl`, and `openssl` on the agent that runs the pipeline.
+
+## Not Yet Supported in 1.0
+
+> **Webhook execution endpoints are partial in 1.0.** Webhook **management** (create, list, view, regenerate credentials, delete) works fully through the UI and the `/api/webhooks` CRUD endpoints. The execution path `POST /api/webhooks/{id}/execute` is wired for authentication, idempotency, and rate limiting, but the upstream run-trigger path that fans out into the executor is **not fully wired in this release**. Treat `POST /execute` as **read-only / non-executing** for now: the request will be accepted and logged, but it will not start a workflow or collection run end-to-end.
+>
+> What works in 1.0:
+>
+> - Webhook CRUD (create, read, update, delete) and credential regeneration.
+> - `X-Webhook-Token` and `X-Webhook-Signature` authentication, plus `X-Webhook-Timestamp` replay protection.
+> - `Idempotency-Key` deduplication (24h TTL) and the 100 req/hour per-webhook rate limit.
+> - Execution log inspection in the UI and through the logs API.
+>
+> What does **not** work in 1.0:
+>
+> - End-to-end execution of workflow or collection runs triggered by `POST /api/webhooks/{id}/execute`.
+> - The returned `runId` from `/execute` does not correspond to a real run. Poll URLs will not resolve to a finished run.
+>
+> Use the WebhookManager UI to manage credentials, and use the CLI or the Runs API directly until full execution lands in a later release. Track status in the [Architecture Reference](../reference/architecture.md#known-gaps) under "Known Gaps".
+
+## Table of Contents
+
+- [What Is a Webhook](#what-is-a-webhook)
+- [Webhook Management](#webhook-management)
+- [Token and HMAC Authentication](#token-and-hmac-authentication)
+- [Idempotency](#idempotency)
+- [Rate Limiting](#rate-limiting)
+- [CI/CD Integration](#cicd-integration)
+- [GitHub Actions](#github-actions)
+- [GitLab CI](#gitlab-ci)
+- [Jenkins](#jenkins)
+- [Execution Logs](#execution-logs)
+- [Troubleshooting](#troubleshooting)
+- [Related](#related)
+
+## What Is a Webhook
+
+A webhook is a URL-bound credential pair that lets an external system (a CI/CD pipeline, a deploy bot, a scheduler) start a workflow or collection run on demand. The external system calls `POST /api/webhooks/{id}/execute` with the right headers, and APIWeave is supposed to start the run. The trigger is **machine-to-machine**: the caller authenticates with the webhook token (and HMAC in production), not with a human session.
+
+In 1.0, the management half of this contract is complete and the security half (auth, idempotency, rate limit) is enforced, but the run-creation half is still being wired. See the [Not Yet Supported in 1.0](#not-yet-supported-in-10) callout above for the exact split.
+
+## Webhook Management
+
+Webhook management is a human action done in the UI or through the `/api/webhooks` CRUD API. You need an APIWeave SSO session with the `webhooks:create`, `webhooks:read`, or `webhooks:delete` permission, and the standard CSRF token for state-changing browser calls. CI/CD systems do **not** use these management endpoints; they use the execution endpoint with the machine token.
+
+### Create a webhook (UI)
+
+1. Sign in to APIWeave.
+2. Open `Webhooks` from the sidebar.
+3. Click `Create`.
+4. Pick a resource type: `Workflow` or `Collection`.
+5. Select the target workflow or collection.
+6. Optionally pick an environment to bind the run to.
+7. Save. The modal shows the **token** and the **HMAC secret** once. Copy both immediately. They are not shown again.
+
+### Create a webhook (API)
+
+```bash
+curl -X POST "$BASE_URL/api/webhooks" \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -H "Cookie: session=$SESSION_COOKIE" \
+  -d '{
+    "name": "ci-main-trigger",
+    "resourceType": "Workflow",
+    "resourceId": "wf_abc123",
+    "environmentId": "env_staging"
+  }'
+```
+
+The response includes `webhookId`, `token` (one-time), and `hmacSecret` (one-time). Persist them in your secret store right away.
+
+### Manage existing webhooks
+
+From the Webhooks list, you can:
+
+- Enable or disable a webhook (a disabled webhook rejects all execution calls with `403`).
+- View execution logs (last 30 days, see [Execution Logs](#execution-logs)).
+- Regenerate credentials (issues a new token and HMAC secret, invalidates the old pair immediately).
+- Delete a webhook (irreversible; subsequent calls return `404`).
+
+## Token and HMAC Authentication
+
+Each webhook has two credentials: a **token** (identity) and an **HMAC secret** (payload integrity). The token is always required. HMAC is required in production.
+
+### Required headers
+
+| Header | Required | Purpose |
+|--------|----------|---------|
+| `X-Webhook-Token` | Always | Identifies which webhook the call belongs to. |
+| `X-Webhook-Signature` | Production | HMAC-SHA256 over `timestamp + raw_body`. Lowercase hex, 64 characters. |
+| `X-Webhook-Timestamp` | Production | Unix epoch seconds the request was prepared. |
+| `Content-Type` | When sending a body | Must be `application/json` for JSON payloads. |
+
+### HMAC signing recipe
+
+The signature is computed over the timestamp string and the raw request body, concatenated **without any separator**:
+
+```python
+import hmac, hashlib
+
+def sign(secret: str, timestamp: str, body: bytes) -> str:
+    message = timestamp.encode("utf-8") + body
+    return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+```
+
+In `bash`, the same thing with `openssl`:
+
+```bash
+TIMESTAMP=$(date +%s)
+BODY='{"buildId":"12345","branch":"main"}'
+SIGNATURE=$(printf '%s%s' "$TIMESTAMP" "$BODY" \
+  | openssl dgst -sha256 -hmac "$APIWEAVE_HMAC_SECRET" \
+  | awk '{print $2}')
+```
+
+### Replay protection
+
+The server enforces a ±300 second (5 minute) window between `X-Webhook-Timestamp` and its own clock. Calls outside that window are rejected with `401`. Always read the timestamp from the local clock at the moment you build the body, not at the moment you build the signature alone.
+
+### Token-only mode (development)
+
+With `WEBHOOK_REQUIRE_HMAC=false`, you can call `/execute` with only `X-Webhook-Token`. Use this for local development and integration tests. Production deployments must keep `WEBHOOK_REQUIRE_HMAC=true`; setting it to `false` in production logs a per-request warning.
+
+## Idempotency
+
+A retried CI/CD call must not start a second run. Send a unique `Idempotency-Key` header:
+
+```bash
+curl -X POST "$BASE_URL/api/webhooks/$WEBHOOK_ID/execute" \
+  -H "X-Webhook-Token: $TOKEN" \
+  -H "Idempotency-Key: $CI_PIPELINE_ID-$BUILD_NUMBER" \
+  -H "Content-Type: application/json" \
+  -d '{"buildId":"12345"}'
+```
+
+Rules:
+
+- **Scope**: deduplication is scoped by `(webhookId, Idempotency-Key)`. The same key against a different webhook is a different request.
+- **TTL**: 24 hours. After that the key is forgotten and the next call with the same key starts a new run.
+- **Replay response**: a repeat call inside the TTL returns `200 OK` with the original `202` body, plus the header `Idempotency-Replayed: true`. No second run is triggered.
+
+Use a deterministic key per build (`$CI_PIPELINE_ID-$BUILD_NUMBER`, `$GITHUB_RUN_ID`, `$BUILD_TAG`) so retries collapse cleanly.
+
+## Rate Limiting
+
+Each webhook is limited to **100 requests per hour**, counted per webhook ID. When the limit is exceeded, the server returns `429 Too Many Requests` and refuses the call.
+
+Response headers on every execution call:
+
+| Header | Meaning |
+|--------|---------|
+| `X-RateLimit-Limit` | Maximum allowed in the current window (`100`). |
+| `X-RateLimit-Remaining` | Requests left in the current window. |
+| `X-RateLimit-Reset` | Unix epoch timestamp when the window resets. |
+| `Retry-After` | Seconds to wait before retrying (present on `429`). |
+
+A multi-process API deployment enforces the limit per process when using the in-memory limiter. Run a single API process for the exact 100/hour number, or put an external limiter in front until a shared-backend limiter ships.
+
+## CI/CD Integration
+
+Two patterns work for every platform:
+
+- **Fire-and-Forget**: POST to the webhook, exit immediately. The pipeline does not wait for results.
+- **Blocking Poll-and-Fail**: POST, capture the returned `runId`, poll until the run reaches a terminal state, exit non-zero on failure. The polling snippets in the old quick start are deferred in 1.0 (see callout); prefer Fire-and-Forget until full execution lands.
+
+## GitHub Actions
+
+Store `APIWEAVE_BASE_URL`, `APIWEAVE_WEBHOOK_TOKEN`, and `APIWEAVE_HMAC_SECRET` in repo or environment secrets. Fire-and-Forget with HMAC:
+
+```yaml
+name: Trigger APIWeave Tests
+on: [push]
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Webhook (HMAC)
+        env:
+          BASE_URL: ${{ secrets.APIWEAVE_BASE_URL }}
+          TOKEN: ${{ secrets.APIWEAVE_WEBHOOK_TOKEN }}
+          SECRET: ${{ secrets.APIWEAVE_HMAC_SECRET }}
+          KEY: ${{ github.run_id }}-${{ github.run_number }}
+        run: |
+          TIMESTAMP=$(date +%s)
+          BODY="{\"commit\":\"${{ github.sha }}\"}"
+          SIGNATURE=$(printf '%s%s' "$TIMESTAMP" "$BODY" \
+            | openssl dgst -sha256 -hmac "$SECRET" \
+            | awk '{print $2}')
+          echo "::add-mask::$SIGNATURE"
+          curl -X POST "$BASE_URL/api/webhooks/${{ secrets.APIWEAVE_WEBHOOK_ID }}/execute" \
+            -H "X-Webhook-Token: $TOKEN" \
+            -H "X-Webhook-Signature: $SIGNATURE" \
+            -H "X-Webhook-Timestamp: $TIMESTAMP" \
+            -H "Idempotency-Key: $KEY" \
+            -H "Content-Type: application/json" \
+            -d "$BODY"
+```
+
+## GitLab CI
+
+Set the same three variables in `Settings > CI/CD > Variables`. Mark `APIWEAVE_WEBHOOK_TOKEN` and `APIWEAVE_HMAC_SECRET` as **Masked** and **Protected**. Fire-and-Forget with HMAC:
+
+```yaml
+trigger_tests:
+  stage: test
+  script:
+    - |
+      TIMESTAMP=$(date +%s)
+      BODY="{\"commit\":\"${CI_COMMIT_SHA}\"}"
+      SIGNATURE=$(printf '%s%s' "$TIMESTAMP" "$BODY" \
+        | openssl dgst -sha256 -hmac "${APIWEAVE_HMAC_SECRET}" \
+        | awk '{print $2}')
+      curl -X POST "${APIWEAVE_BASE_URL}/api/webhooks/${APIWEAVE_WEBHOOK_ID}/execute" \
+        -H "X-Webhook-Token: ${APIWEAVE_WEBHOOK_TOKEN}" \
+        -H "X-Webhook-Signature: ${SIGNATURE}" \
+        -H "X-Webhook-Timestamp: ${TIMESTAMP}" \
+        -H "Idempotency-Key: ${CI_PIPELINE_ID}-${CI_PIPELINE_IID}" \
+        -H "Content-Type: application/json" \
+        -d "${BODY}"
+```
+
+## Jenkins
+
+Add three **Secret text** credentials in the Jenkins Credentials Provider: `apiweave-base-url`, `apiweave-token`, `apiweave-hmac-secret`. Bind them with `withCredentials` so they are auto-masked in the build log. Fire-and-Forget with HMAC (Groovy):
+
+```groovy
+pipeline {
+    agent any
+    stages {
+        stage('Trigger APIWeave') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'apiweave-base-url',     variable: 'APIWEAVE_BASE_URL'),
+                    string(credentialsId: 'apiweave-token',         variable: 'APIWEAVE_WEBHOOK_TOKEN'),
+                    string(credentialsId: 'apiweave-hmac-secret',  variable: 'APIWEAVE_HMAC_SECRET')
+                ]) {
+                    sh '''
+                        TIMESTAMP=$(date +%s)
+                        BODY="{\\"build\\":\\"${BUILD_NUMBER}\\",\\"job\\":\\"${JOB_NAME}\\"}"
+                        SIGNATURE=$(printf "%s%s" "$TIMESTAMP" "$BODY" \
+                          | openssl dgst -sha256 -hmac "$APIWEAVE_HMAC_SECRET" \
+                          | awk "{print \$2}")
+                        curl -X POST "${APIWEAVE_BASE_URL}/api/webhooks/${APIWEAVE_WEBHOOK_ID}/execute" \
+                          -H "X-Webhook-Token: ${APIWEAVE_WEBHOOK_TOKEN}" \
+                          -H "X-Webhook-Signature: ${SIGNATURE}" \
+                          -H "X-Webhook-Timestamp: ${TIMESTAMP}" \
+                          -H "Idempotency-Key: ${BUILD_TAG}" \
+                          -H "Content-Type: application/json" \
+                          -d "${BODY}"
+                    '''
+                }
+            }
+        }
+    }
+}
+```
+
+## Execution Logs
+
+Each `/execute` call writes a `WebhookLog` document with the webhook ID, the caller's IP, the headers, the response status, and the idempotency key. Logs are retained for 30 days.
+
+View logs from the UI by opening the webhook and clicking `Logs`, or fetch them through the API:
+
+```bash
+curl "$BASE_URL/api/webhooks/$WEBHOOK_ID/logs?limit=50" \
+  -H "Cookie: session=$SESSION_COOKIE"
+```
+
+The `result` field will be `accepted_not_executed` for 1.0 calls (see callout), or `rejected_*` for failed auth, idempotency, or rate-limit decisions.
+
+## Troubleshooting
+
+- **If you get `401 Invalid or missing token`**, the `X-Webhook-Token` header is missing, mistyped, or from a webhook that was regenerated. Copy the current token from the WebhookManager (you may need to regenerate) and update the CI/CD secret store.
+- **If you get `401 Missing X-Webhook-Signature header`**, the server has `WEBHOOK_REQUIRE_HMAC=true` and the request did not include `X-Webhook-Signature` and `X-Webhook-Timestamp`. Compute the signature over `timestamp + body`, send all three headers, and re-run.
+- **If you get `403 Webhook disabled`**, the webhook was disabled in the UI. Re-enable it from the Webhooks page, or call the management API to flip the `enabled` flag.
+- **If you get `404 Webhook not found`**, the webhook ID in the URL is wrong, or the webhook was deleted. Check `GET /api/webhooks` for the list of IDs and confirm the URL path matches.
+- **If you get `429 Too Many Requests`**, you hit the 100/hour limit for that webhook. Read the `Retry-After` and `X-RateLimit-Reset` headers, wait, and retry. Lower the trigger frequency, or split work across multiple webhooks.
+- **If the signature never verifies**, the most common cause is a `printf` vs `echo` mismatch. Use `printf '%s%s' "$TIMESTAMP" "$BODY"` so the trailing newline from `echo` does not contaminate the HMAC input. Also confirm the body you sign is byte-identical to the body you send.
+- **If a retried CI build starts a second run**, you did not send an `Idempotency-Key`, or the key differs between retries. Use a deterministic key tied to the build (`$CI_PIPELINE_ID-$BUILD_NUMBER`, `${{ github.run_id }}-${{ github.run_number }}`, `$BUILD_TAG`).
+- **If the call returns `202` but no run appears in the run history**, this is the expected behavior in 1.0. The execution endpoint does not start a run yet. Use the CLI or the Runs API directly until the run-trigger path ships. See the [Not Yet Supported in 1.0](#not-yet-supported-in-10) callout above.
+
+## Related
+
+- [Concepts](../getting-started/concepts.md) for run, workflow, and collection definitions.
+- [Variables and Extractors](../features/variables-and-extractors.md) for the placeholder syntax used in webhook-triggered runs.
+- [Architecture Reference](../reference/architecture.md) for the "Known Gaps" section that tracks the webhook execution wiring.
