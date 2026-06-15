@@ -1,6 +1,10 @@
 name: Backend Quality
 
-on: [push, pull_request]
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
 
 jobs:
   backend-checks:
@@ -38,3 +42,22 @@ jobs:
       run: |
         cd backend
         python -m ruff check app tests
+
+  doc-truth-check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for relevant file changes
+        id: diff
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          if echo "$CHANGED" | grep -qE '^docs/|^backend/|^frontend/src/'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run doc-truth check
+        if: steps.diff.outputs.relevant == 'true'
+        run: bash scripts/doc-truth-check.sh

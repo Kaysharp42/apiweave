@@ -103,6 +103,15 @@ APIWeave stores workflows, runs, environments, collections, webhooks, and execut
 
 Full source: [Security Guide](security.md) and [Authentication Guide](authentication.md).
 
+## Doc-Truth Check
+
+The CI pipeline includes a lightweight doc-truth check (`scripts/doc-truth-check.sh`) that runs on every pull request touching `docs/`, `backend/`, or `frontend/src/`. It greps the scoped docs for stale "Not Yet Supported" callouts and the architecture reference for a `## Known Gaps` heading. The check is advisory (it does not block the build) — it signals when documentation content is out of sync with the shipped feature set.
+
+- **Trigger**: PR touching `docs/`, `backend/`, or `frontend/src/`.
+- **Script**: `scripts/doc-truth-check.sh`
+- **Scope**: 9 feature and operations docs + `docs/reference/architecture.md`
+- **Failure**: Any match causes exit code 1; CI notes the failure but continues.
+
 ## Troubleshooting
 
 - **Backend cannot reach MongoDB.** Check `MONGODB_URL`, container DNS (`mongodb` resolves inside Compose), and that port 27017 is open on the private network. Inspect with `docker compose logs mongodb`.
