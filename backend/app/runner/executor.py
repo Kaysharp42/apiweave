@@ -151,9 +151,8 @@ class WorkflowExecutor:
         if environment_id:
             environment_doc = await EnvironmentRepository.get_by_id(environment_id)
             if environment_doc:
-                # Access Document fields - ensure proper dict conversion
                 self.environment_variables = dict(environment_doc.variables) if environment_doc.variables else {}
-                self.secrets = dict(environment_doc.secrets) if environment_doc.secrets else {}
+                self.secrets = await EnvironmentRepository.get_decrypted_secrets(environment_id)
                 self.logger.info(f"Loaded environment: {environment_doc.name} (ID: {environment_id}) with {len(self.environment_variables)} variables and {len(self.secrets)} secrets")
                 self.logger.debug(f"Environment variables: {self.environment_variables}")
             else:

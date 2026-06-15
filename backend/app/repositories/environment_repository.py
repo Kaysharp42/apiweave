@@ -213,3 +213,30 @@ class EnvironmentRepository:
 
         blob = EncryptedBlob(**raw)
         return await secret_crypto.decrypt(blob)
+
+    @staticmethod
+    async def get_decrypted_secrets(environment_id: str) -> Dict[str, str]:
+        """Retrieve and decrypt ALL secrets from an environment.
+
+        Returns a ``Dict[str, str]`` mapping secret names to their plaintext
+        values.  Legacy plaintext entries (stored before encryption was
+        introduced) are returned as-is.  Encrypted entries (``EncryptedBlob``
+        dicts) are decrypted via :func:`secret_crypto.decrypt`.
+
+        Returns an empty dict if the environment does not exist or has no
+        secrets.
+        """
+        from app.services import secret_crypto
+
+        environment = await EnvironmentRepository.get_by_id(environment_id)
+        if environment is None:
+            return {}
+
+        plaintext: Dict[str, str] = {}
+        for key, raw in environment.secrets.items():
+            if isinstance(raw, str):
+                plaintext[key] = raw
+            elif isinstance(raw, dict):
+                blob = EncryptedBlob(**raw)
+                plaintext[key] = await secret_crypto.decrypt(blob)
+        return plaintext
