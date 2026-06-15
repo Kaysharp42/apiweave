@@ -254,5 +254,86 @@ class TestQueueFullMapsTo503:
         assert "retry-after" in resp.headers or "Retry-After" in resp.headers
 
 
+class TestHmacMissing:
+    def test_hmac_missing_returns_401(self, monkeypatch):
+        """WEBHOOK_REQUIRE_HMAC=True but no X-Webhook-Signature header → 401."""
+        monkeypatch.setattr("app.routes.webhooks.settings.WEBHOOK_REQUIRE_HMAC", True)
+
+        wh = _enabled_webhook()
+        wh.hmacSecret = "test-hmac-secret"
+
+        with (
+            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=wh),
+            patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
+        ):
+            resp = client.post(
+                "/api/webhooks/workflows/wh-1/execute",
+                json={"ref": "main"},
+                headers={"X-Webhook-Token": "test-token"},
+            )
+        assert resp.status_code == 401
+        assert "signature" in resp.json()["detail"].lower() or "missing" in resp.json()["detail"].lower()
+
+
+class TestHmacMissingTimestamp:
+    def test_hmac_missing_timestamp_returns_401(self, monkeypatch):
+        """HMAC signature present but timestamp missing → 401."""
+        monkeypatch.setattr("app.routes.webhooks.settings.WEBHOOK_REQUIRE_HMAC", True)
+
+        wh = _enabled_webhook()
+        wh.hmacSecret = "test-hmac-secret"
+
+        with (
+            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=wh),
+            patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
+            patch("app.middleware.webhook_auth.WebhookRepository.get_by_id", return_value=wh),
+        ):
+            resp = client.post(
+                "/api/webhooks/workflows/wh-1/execute",
+                content=b'{"ref":"main"}',
+                headers={
+                    "X-Webhook-Token": "test-token",
+                    "X-Webhook-Signature": "deadbeef" * 8,
+                },
+            )
+        assert resp.status_code == 401
+        assert "timestamp" in resp.json()["detail"].lower() or "missing" in resp.json()["detail"].lower()
+
+
+class TestDisabledWebhook:
+    def test_disabled_webhook_returns_403(self):
+        """Webhook exists but enabled=False → 403."""
+        wh = _enabled_webhook()
+        wh.enabled = False
+
+        with (
+            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=wh),
+            patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
+        ):
+            resp = client.post(
+                "/api/webhooks/workflows/wh-1/execute",
+                json={"ref": "main"},
+                headers={"X-Webhook-Token": "test-token"},
+            )
+        assert resp.status_code == 403
+        assert "disabled" in resp.json()["detail"].lower()
+
+
+class TestWebhookNotFound:
+    def test_webhook_not_found_returns_404(self):
+        """Webhook ID doesn't exist → 404."""
+        with (
+            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=None),
+            patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
+        ):
+            resp = client.post(
+                "/api/webhooks/workflows/nonexistent-wh/execute",
+                json={"ref": "main"},
+                headers={"X-Webhook-Token": "test-token"},
+            )
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
