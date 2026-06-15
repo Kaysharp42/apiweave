@@ -225,22 +225,54 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
                 "Set SETUP_MODE_ENABLED=False in your environment configuration.",
                 userinfo.email,
             )
-        elif valid_invites:
-            invite_token_hash = hashlib.sha256((invite_token or "").encode("utf-8")).hexdigest()
-            invite = next(
-                (
-                    item
-                    for item in sorted(valid_invites, key=lambda invite: invite.expires_at)
-                    if _constant_time_match(invite_token_hash, item.token_hash)
-                ),
-                None,
-            )
-            if invite is None:
-                if invite_token is not None:
+        else:
+            invite_to_apply = None
+            if invite_token:
+                token_hash = hashlib.sha256(invite_token.encode("utf-8")).hexdigest()
+                invite_by_token = await InviteRepository.get_by_token_hash(token_hash)
+                if (
+                    invite_by_token is not None
+                    and not invite_by_token.consumed
+                    and invite_by_token.expires_at.replace(
+                        tzinfo=UTC if invite_by_token.expires_at.tzinfo is None else invite_by_token.expires_at.tzinfo
+                    )
+                    > datetime.now(UTC)
+                    and invite_by_token.email.lower() == userinfo.email.lower()
+                ):
+                    invite_to_apply = invite_by_token
+
+            if invite_to_apply is not None:
+                consumed = await InviteRepository.consume(invite_to_apply.inviteId)
+                if not consumed:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Invalid invite token",
+                        detail="Access requires an invitation",
                     )
+                try:
+                    user = await UserRepository.create(
+                        user_id=f"usr-{uuid.uuid4().hex[:12]}",
+                        verified_email=userinfo.email,
+                        display_name=userinfo.name,
+                        avatar_url=userinfo.avatar_url,
+                        roles=[invite_to_apply.role_preset],
+                        permissions=[],
+                    )
+                except DuplicateKeyError:
+                    await InviteRepository.unconsume(invite_to_apply.inviteId)
+                    logger.warning(
+                        "OAuth invited user creation raced for verified email %s; "
+                        "re-fetching existing user",
+                        userinfo.email,
+                    )
+                    user = await UserRepository.get_by_email(userinfo.email)
+                    if user is None:
+                        raise
+                except Exception:
+                    await InviteRepository.unconsume(invite_to_apply.inviteId)
+                    raise
+                updated = await UserRepository.update(user.userId, is_setup_complete=True)
+                user = updated or user
+            elif valid_invites:
                 invite = valid_invites[0]
                 consumed = await InviteRepository.consume(invite.inviteId)
                 if not consumed:
@@ -248,57 +280,54 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Access requires an invitation",
                     )
-            else:
-                consumed = await InviteRepository.consume(invite.inviteId)
-                if not consumed:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Access requires an invitation",
+                try:
+                    user = await UserRepository.create(
+                        user_id=f"usr-{uuid.uuid4().hex[:12]}",
+                        verified_email=userinfo.email,
+                        display_name=userinfo.name,
+                        avatar_url=userinfo.avatar_url,
+                        roles=[invite.role_preset],
+                        permissions=[],
                     )
-            try:
-                user = await UserRepository.create(
-                    user_id=f"usr-{uuid.uuid4().hex[:12]}",
-                    verified_email=userinfo.email,
-                    display_name=userinfo.name,
-                    avatar_url=userinfo.avatar_url,
-                    roles=[invite.role_preset],
-                    permissions=[],
-                )
-            except DuplicateKeyError:
-                logger.warning(
-                    "OAuth invited user creation raced for verified email %s; "
-                    "re-fetching existing user",
-                    userinfo.email,
-                )
-                user = await UserRepository.get_by_email(userinfo.email)
-                if user is None:
+                except DuplicateKeyError:
+                    await InviteRepository.unconsume(invite.inviteId)
+                    logger.warning(
+                        "OAuth invited user creation raced for verified email %s; "
+                        "re-fetching existing user",
+                        userinfo.email,
+                    )
+                    user = await UserRepository.get_by_email(userinfo.email)
+                    if user is None:
+                        raise
+                except Exception:
+                    await InviteRepository.unconsume(invite.inviteId)
                     raise
-            updated = await UserRepository.update(user.userId, is_setup_complete=True)
-            user = updated or user
-        elif await _is_domain_approved(userinfo.email):
-            try:
-                user = await UserRepository.create(
-                    user_id=f"usr-{uuid.uuid4().hex[:12]}",
-                    verified_email=userinfo.email,
-                    display_name=userinfo.name,
-                    avatar_url=userinfo.avatar_url,
-                    roles=[PRESET_VIEWER],
-                    permissions=[],
+                updated = await UserRepository.update(user.userId, is_setup_complete=True)
+                user = updated or user
+            elif await _is_domain_approved(userinfo.email):
+                try:
+                    user = await UserRepository.create(
+                        user_id=f"usr-{uuid.uuid4().hex[:12]}",
+                        verified_email=userinfo.email,
+                        display_name=userinfo.name,
+                        avatar_url=userinfo.avatar_url,
+                        roles=[PRESET_VIEWER],
+                        permissions=[],
+                    )
+                except DuplicateKeyError:
+                    logger.warning(
+                        "OAuth domain-approved user creation raced for verified email %s; "
+                        "re-fetching existing user",
+                        userinfo.email,
+                    )
+                    user = await UserRepository.get_by_email(userinfo.email)
+                    if user is None:
+                        raise
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access requires an invitation",
                 )
-            except DuplicateKeyError:
-                logger.warning(
-                    "OAuth domain-approved user creation raced for verified email %s; "
-                    "re-fetching existing user",
-                    userinfo.email,
-                )
-                user = await UserRepository.get_by_email(userinfo.email)
-                if user is None:
-                    raise
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access requires an invitation",
-            )
 
         # New user — add the OAuth account
         oauth_account = OAuthAccount(
@@ -477,7 +506,8 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
         )
 
     try:
-        user = await _create_or_link_user(userinfo, stored_state.invite_token)
+        invite_token = stored_state.invite_token or request.cookies.get("invite_token")
+        user = await _create_or_link_user(userinfo, invite_token)
     except OAuthLinkingBlockedError:
         raise
     except HTTPException as exc:
@@ -494,6 +524,12 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
             )
         raise
     response = RedirectResponse(_frontend_url("/"), status_code=status.HTTP_302_FOUND)
+    response.delete_cookie(
+        "invite_token",
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
     await _create_session(response, user)
     return response
 

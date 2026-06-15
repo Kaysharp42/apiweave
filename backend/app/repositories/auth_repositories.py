@@ -499,6 +499,20 @@ class InviteRepository:
         return True
 
     @staticmethod
+    async def unconsume(invite_id: str) -> bool:
+        """Restore a consumed invite (rollback on user-creation failure).
+        Returns True if restored, False if not found or was not consumed."""
+        invite = await InviteRepository.get_by_id(invite_id)
+        if not invite:
+            return False
+        if not invite.consumed:
+            return False
+        invite.consumed = False
+        invite.consumed_at = None
+        await invite.save()
+        return True
+
+    @staticmethod
     async def get_all() -> list[Invite]:
         """Return all invites"""
         return await Invite.find_all().to_list()
