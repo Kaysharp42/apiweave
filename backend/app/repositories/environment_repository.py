@@ -7,7 +7,6 @@ from datetime import datetime, UTC
 import uuid
 
 from app.models import Environment, EnvironmentCreate, EnvironmentUpdate, EncryptedBlob
-from app.services import secret_crypto
 
 
 class EnvironmentRepository:
@@ -179,6 +178,8 @@ class EnvironmentRepository:
         The plaintext is encrypted with AES-256-GCM via the envelope
         encryption layer and stored as an :class:`EncryptedBlob` dict.
         """
+        from app.services import secret_crypto
+
         environment = await EnvironmentRepository.get_by_id(environment_id)
         if environment is None:
             raise ValueError(f"Environment '{environment_id}' not found")
@@ -197,6 +198,8 @@ class EnvironmentRepository:
         (stored before encryption was introduced) are returned as-is for
         backward compatibility.
         """
+        from app.services import secret_crypto
+
         environment = await EnvironmentRepository.get_by_id(environment_id)
         if environment is None:
             return None
