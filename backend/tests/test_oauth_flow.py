@@ -128,10 +128,16 @@ def _patch_callback(
 ) -> User:
     user = _user(f"testuser@{provider}.example.com")
     monkeypatch.setattr(auth_router.settings, "SETUP_MODE_ENABLED", True)
+    monkeypatch.setattr(auth_router.settings, "OAUTH_LOGIN_ENABLED", True)
     monkeypatch.setattr(
         provider_registry,
         "get_provider_config",
         lambda name: _provider_config(name),
+    )
+    monkeypatch.setattr(
+        provider_registry,
+        "get_enabled_providers",
+        lambda: ["github", "gitlab", "google", "microsoft"],
     )
     monkeypatch.setattr(auth_router.OAuthStateRepository, "consume", AsyncMock(return_value=state))
     monkeypatch.setattr(
@@ -168,6 +174,11 @@ def _patch_callback(
         auth_router.ApprovedDomainRepository,
         "is_domain_approved",
         AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(
+        auth_router.UserRepository,
+        "add_oauth_account",
+        AsyncMock(return_value=user),
     )
     monkeypatch.setattr(auth_router.SessionRepository, "create", AsyncMock())
     return user
@@ -406,6 +417,11 @@ async def test_create_or_link_user_refetches_user_after_duplicate_key_race(
         AsyncMock(return_value=[]),
     )
     monkeypatch.setattr(auth_router, "_is_domain_approved", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        auth_router.UserRepository,
+        "add_oauth_account",
+        AsyncMock(return_value=existing_user),
+    )
 
     user = await auth_router._create_or_link_user(_userinfo(provider))
 
@@ -448,6 +464,11 @@ async def test_create_or_link_user_refetches_identity_after_duplicate_key_race(
         auth_router.InviteRepository,
         "find_active_by_email",
         AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        auth_router.UserRepository,
+        "add_oauth_account",
+        AsyncMock(return_value=existing_user),
     )
 
     user = await auth_router._create_or_link_user(_userinfo(provider))

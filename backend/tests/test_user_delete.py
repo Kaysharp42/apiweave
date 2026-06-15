@@ -109,6 +109,12 @@ def _session(session_id: str = "ses-deleted") -> Session:
 
 
 def test_deleted_user_cannot_login_via_oauth(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth_router.settings, "OAUTH_LOGIN_ENABLED", True)
+    monkeypatch.setattr(
+        provider_registry,
+        "get_enabled_providers",
+        lambda: ["github", "gitlab", "google", "microsoft"],
+    )
     monkeypatch.setattr(
         auth_router.OAuthStateRepository,
         "consume",

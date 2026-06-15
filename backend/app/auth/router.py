@@ -411,6 +411,7 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
     from app.auth.provider_registry import (
         exchange_code_for_token,
         fetch_userinfo,
+        get_enabled_providers,
         get_provider_config,
     )
 
@@ -420,6 +421,13 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing OAuth code or state",
+        )
+
+    # T8: Gate — OAuth login must be globally enabled
+    if not settings.OAUTH_LOGIN_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OAuth login is currently disabled",
         )
 
     stored_state = await OAuthStateRepository.consume(state_value)
@@ -444,6 +452,13 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
+    # T8: Gate — this specific provider must be configured and enabled
+    if provider.lower() not in get_enabled_providers():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Provider not configured",
+        )
+
     redirect_uri = stored_state.redirect_uri or _redirect_uri(request, provider_config.name)
     token_response = await exchange_code_for_token(
         provider_config,
@@ -453,8 +468,18 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
     )
     userinfo = await fetch_userinfo(provider_config, token_response, stored_state.code_verifier)
     _validate_nonce(provider_config, stored_state.nonce, userinfo)
+
+    # T8: Enforce approved-domain policy BEFORE creating/linking user
+    if userinfo.email and not enforce_approved_domain(userinfo.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Domain not approved",
+        )
+
     try:
         user = await _create_or_link_user(userinfo, stored_state.invite_token)
+    except OAuthLinkingBlockedError:
+        raise
     except HTTPException as exc:
         detail = str(exc.detail)
         login_error = "Access requires an invitation"
