@@ -194,3 +194,8 @@ export type { AuthenticatedRequestInit } from './AuthenticatedRequestInit';
 export type { NodeActionMenuItem } from './NodeActionMenuItem';
 export type { SecretPublicKey } from './SecretPublicKey';
 export type { EncryptedSecretValue } from './EncryptedSecretValue';
+export type { OAuthAccount } from './OAuthAccount';
+export type { UserAccount } from './UserAccount';
+export type { Invite } from './Invite';
+export type { OAuthProvider } from './OAuthProvider';
+export type { WebhookRun } from './WebhookRun';

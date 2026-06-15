@@ -6,6 +6,8 @@ import SetupPage from './pages/SetupPage';
 import InvitePage from './pages/InvitePage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminDomainsPage from './pages/AdminDomainsPage';
+import AccountSettingsPage from './pages/AccountSettingsPage';
+import InviteAdminPage from './pages/InviteAdminPage';
 import { PaletteProvider } from './contexts/PaletteContext';
 import { Toast } from './components/atoms/Toast';
 import { AuthProvider } from './auth/AuthProvider';
@@ -161,6 +163,22 @@ function App() {
                 element={
                   <AdminPageShell>
                     <AdminDomainsPage />
+                  </AdminPageShell>
+                }
+              />
+              <Route
+                path="/settings/account"
+                element={
+                  <ProtectedRoute>
+                    <AccountSettingsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings/invites"
+                element={
+                  <AdminPageShell>
+                    <InviteAdminPage />
                   </AdminPageShell>
                 }
               />
