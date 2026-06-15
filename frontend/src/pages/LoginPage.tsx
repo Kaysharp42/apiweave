@@ -1,52 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Shield } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
-import { Button } from '../components/atoms/Button';
 import { Spinner } from '../components/atoms/Spinner';
 import { Card } from '../components/molecules/Card';
 import { EmptyState } from '../components/molecules/EmptyState';
 import { SplitAuthLayout } from '../components/auth/SplitAuthLayout';
 import { AuthInteractiveHero } from '../components/auth/AuthInteractiveHero';
-import type { ProviderInfo } from '../types/ProviderInfo';
-import { PROVIDER_DISPLAY_MAP, getEnabledProviders, type ProviderDisplay } from '../auth/providerConfig';
-import API_BASE_URL from '../utils/api';
-import { authenticatedFetch } from '../utils/authenticatedApi';
+import { OAuthButton } from '../components/OAuthButton';
+import { useOAuthProviders } from '../hooks/useOAuthProviders';
 
 export default function LoginPage() {
   const { login, status } = useAuth();
   const [searchParams] = useSearchParams();
   const error = searchParams.get('error');
 
-  const [providers, setProviders] = useState<ProviderDisplay[]>([]);
-  const [loadingProviders, setLoadingProviders] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const { providers, loading: loadingProviders, error: fetchError } = useOAuthProviders();
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchProviders() {
-      try {
-        const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
-        if (!res.ok) throw new Error(`Failed to load providers (${res.status})`);
-        const data: ProviderInfo[] = await res.json() as ProviderInfo[];
-        if (!cancelled) {
-          setProviders(getEnabledProviders(data));
-          setFetchError(null);
-        }
-      } catch {
-        if (!cancelled) {
-          setFetchError('Unable to load sign-in options');
-        }
-      } finally {
-        if (!cancelled) setLoadingProviders(false);
-      }
-    }
-
-    void fetchProviders();
-    return () => { cancelled = true; };
-  }, []);
 
   if (status === 'loading') {
     return (
@@ -111,33 +81,17 @@ export default function LoginPage() {
           )}
 
           {!loadingProviders && providers.map((provider) => {
-            const display = PROVIDER_DISPLAY_MAP[provider.id];
-            if (!display) return null;
-            const { IconComponent, label } = display;
-            const isGoogle = provider.id === 'google';
-            const iconClass = isGoogle
-              ? 'w-5 h-5 opacity-80 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0'
-              : 'w-5 h-5 text-text-secondary dark:text-text-secondary-dark group-hover:text-text-primary dark:group-hover:text-text-primary-dark transition-colors';
             const isLoading = loadingProviderId === provider.id;
             const isDisabled = loadingProviderId !== null && !isLoading;
 
             return (
-              <Button
+              <OAuthButton
                 key={provider.id}
-                variant="secondary"
-                fullWidth
-                size="lg"
-                data-provider={provider.id}
-                onClick={() => handleProviderClick(provider.id)}
+                provider={provider}
+                onClick={handleProviderClick}
                 loading={isLoading}
                 disabled={isDisabled}
-                className="group relative overflow-hidden transition-all duration-300 rounded-xl font-medium !justify-start pl-6"
-              >
-                <div className="flex items-center gap-4 relative z-10 w-full">
-                  <IconComponent className={iconClass} />
-                  <span>{label}</span>
-                </div>
-              </Button>
+              />
             );
           })}
         </div>
