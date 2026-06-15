@@ -2,11 +2,13 @@ from datetime import UTC, datetime, timedelta
 
 from beanie.exceptions import CollectionWasNotInitialized
 
+from app.auth.exceptions import OAuthLinkingBlockedError
 from app.config import settings
 from app.models import (
     ApprovedDomain,
     DeletedUser,
     Invite,
+    OAuthAccount,
     OAuthState,
     ProviderIdentity,
     Session,
@@ -90,6 +92,66 @@ class UserRepository:
     async def find_by_role(role: str) -> list[User]:
         """Find all users that have the given role"""
         return await User.find({"roles": role}).to_list()
+
+    @staticmethod
+    async def find_by_provider(provider: str, subject: str) -> User | None:
+        """Return the first User whose oauth_accounts match (provider, providerSubject)."""
+        return await User.find_one(
+            {
+                "oauth_accounts": {
+                    "$elemMatch": {
+                        "provider": provider,
+                        "providerSubject": subject,
+                    }
+                }
+            }
+        )
+
+    @staticmethod
+    async def add_oauth_account(user: User, account: OAuthAccount) -> User:
+        """Append an OAuthAccount to the user's oauth_accounts list and persist."""
+        user.oauth_accounts.append(account)
+        user.updated_at = datetime.now(UTC)
+        await user.save()
+        return user
+
+    @staticmethod
+    async def link_oauth_account(
+        user: User,
+        provider: str,
+        subject: str,
+        email: str,
+        email_verified: bool,
+    ) -> User:
+        """
+        Link an OAuth provider account to an existing user.
+
+        Raises ``OAuthLinkingBlockedError`` (HTTP 409) when:
+        - The user already has one or more OAuth accounts linked.
+        - A **different** user already claims this ``verified_email``.
+
+        On success the account is appended to ``user.oauth_accounts``
+        and the document is saved.
+        """
+        if user.oauth_accounts:
+            raise OAuthLinkingBlockedError(
+                detail="Account linking is not supported. "
+                "A user may only have one authentication method."
+            )
+
+        existing = await UserRepository.get_by_email(email)
+        if existing is not None and existing.userId != user.userId:
+            raise OAuthLinkingBlockedError(
+                detail="This email is already associated with another user."
+            )
+
+        account = OAuthAccount(
+            provider=provider,
+            providerSubject=subject,
+            linkedAt=datetime.now(UTC),
+            emailVerified=email_verified,
+        )
+        return await UserRepository.add_oauth_account(user, account)
 
 
 class ProviderIdentityRepository:
@@ -440,6 +502,15 @@ class InviteRepository:
     async def get_all() -> list[Invite]:
         """Return all invites"""
         return await Invite.find_all().to_list()
+
+    @staticmethod
+    async def list_pending() -> list[Invite]:
+        """Return unconsumed, unexpired invites"""
+        now = datetime.now(UTC)
+        return await Invite.find(
+            Invite.consumed == False,  # noqa: E712
+            Invite.expires_at > now,
+        ).to_list()
 
 
 class ApprovedDomainRepository:

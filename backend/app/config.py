@@ -1,7 +1,13 @@
 from typing import Literal
 
+import base64
+import logging
+import os
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -25,6 +31,10 @@ class Settings(BaseSettings):
     ARTIFACTS_PATH: str = "./artifacts"
 
     SECRET_KEY: str
+
+    SECRET_ENCRYPTION_KEY: str = ""
+
+    OAUTH_LOGIN_ENABLED: bool = False
 
     GITHUB_CLIENT_ID: str | None = None
     GITHUB_CLIENT_SECRET: str | None = None
@@ -61,6 +71,14 @@ class Settings(BaseSettings):
     MCP_REQUIRE_API_KEY: bool = True
     MCP_ALLOW_SECRET_WRITES: bool = False
 
+    # SMTP (invite email delivery) — all optional; if any are missing, email is skipped
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_FROM_ADDRESS: str | None = None
+    SMTP_TLS: bool = True
+
     def get_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
@@ -69,6 +87,12 @@ class Settings(BaseSettings):
 
     def get_mcp_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.MCP_ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    def is_smtp_configured(self) -> bool:
+        return bool(
+            self.SMTP_HOST
+            and self.SMTP_FROM_ADDRESS
+        )
 
     def get_approved_domains_list(self) -> list[str]:
         return [domain.strip() for domain in self.APPROVED_DOMAINS.split(",") if domain.strip()]
@@ -83,7 +107,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_auth_configuration(self) -> "Settings":
-        if self.APP_ENV.lower() in {"production", "prod"}:
+        is_prod = self.APP_ENV.lower() in {"production", "prod"}
+
+        if not self.SECRET_ENCRYPTION_KEY:
+            if is_prod:
+                raise ValueError(
+                    "SECRET_ENCRYPTION_KEY is required in production "
+                    "(32 bytes base64: python -c \"import secrets; print(secrets.token_urlsafe(32))\")"
+                )
+            self.SECRET_ENCRYPTION_KEY = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
+            logger.warning(
+                "SECRET_ENCRYPTION_KEY not set; generated ephemeral key. "
+                "Set it in .env for persistent secret encryption."
+            )
+
+        if is_prod:
             if self.SETUP_MODE_ENABLED:
                 raise ValueError(
                     "SETUP_MODE_ENABLED must be False in production after initial admin is created"
@@ -149,6 +187,30 @@ class Settings(BaseSettings):
                         "Missing OAuth provider secrets in production: "
                         + ", ".join(missing_provider_secrets)
                     )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_oauth_login_enabled(self) -> "Settings":
+        if not self.OAUTH_LOGIN_ENABLED:
+            return self
+
+        provider_client_ids: dict[str, str | None] = {
+            "github": self.GITHUB_CLIENT_ID,
+            "gitlab": self.GITLAB_CLIENT_ID,
+            "google": self.GOOGLE_CLIENT_ID,
+            "microsoft": self.MICROSOFT_CLIENT_ID,
+        }
+
+        missing = [
+            name for name, client_id in provider_client_ids.items() if not client_id
+        ]
+        if missing:
+            logger.warning(
+                "OAUTH_LOGIN_ENABLED=true but the following OAuth providers are missing "
+                "a client ID and will be unavailable: %s",
+                ", ".join(sorted(missing)),
+            )
 
         return self
 

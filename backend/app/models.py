@@ -4,10 +4,11 @@ Pydantic models for workflows, nodes, edges, and runs
 Now using Beanie ODM for type-safe MongoDB operations
 """
 from beanie import Document
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict, Any, Optional, Literal, Annotated
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import List, Dict, Any, Optional, Literal, Annotated, Union
 from datetime import datetime
 from pymongo import IndexModel, ASCENDING, DESCENDING
+import base64
 
 
 class FileUpload(BaseModel):
@@ -190,6 +191,40 @@ class PaginatedWorkflows(BaseModel):
     hasMore: bool
 
 
+# ============================================================================
+# Encryption Models (T1 — AES-256-GCM envelope encryption)
+# ============================================================================
+
+class EncryptedBlob(BaseModel):
+    """
+    Encrypted secret value stored in Environment.secrets.
+
+    Serialized as a dict in MongoDB with base64-encoded binary fields.
+    The ``kek_id`` routes decryption to the correct DEK, enabling
+    multi-key rotation without data migration.
+    """
+    ciphertext: str   # base64-encoded AES-256-GCM ciphertext+tag
+    kek_id: str       # ID of the KEK that wrapped the DEK used for encryption
+    algorithm: str    # e.g. "aes-256-gcm"
+    nonce: str        # base64-encoded 12-byte nonce
+
+    @field_validator("ciphertext", "nonce", mode="before")
+    @classmethod
+    def _encode_bytes_to_base64(cls, v: Any) -> Any:
+        """Accept raw bytes on construction and encode to base64 str."""
+        if isinstance(v, (bytes, bytearray)):
+            return base64.b64encode(v).decode("ascii")
+        return v
+
+    def get_ciphertext_bytes(self) -> bytes:
+        """Decode the base64 ciphertext to raw bytes."""
+        return base64.b64decode(self.ciphertext)
+
+    def get_nonce_bytes(self) -> bytes:
+        """Decode the base64 nonce to raw bytes."""
+        return base64.b64decode(self.nonce)
+
+
 class EnvironmentCreate(BaseModel):
     """Request model for creating an environment"""
     name: str
@@ -250,7 +285,7 @@ class EnvironmentUpdate(BaseModel):
     description: Optional[str] = None
     swaggerDocUrl: Optional[str] = None
     variables: Optional[Dict[str, Any]] = None
-    secrets: Optional[Dict[str, str]] = None  # NEW: Secrets
+    secrets: Optional[Dict[str, Any]] = None  # NEW: Secrets
     isActive: Optional[bool] = None
 
 
@@ -261,7 +296,7 @@ class Environment(Document):
     description: Optional[str] = None
     swaggerDocUrl: Optional[str] = None
     variables: Dict[str, Any] = Field(default_factory=dict)
-    secrets: Dict[str, str] = Field(default_factory=dict)  # Secrets for this environment
+    secrets: Dict[str, Any] = Field(default_factory=dict)  # str (legacy) or EncryptedBlob dict
     isActive: bool = False
     createdAt: datetime
     updatedAt: datetime
@@ -459,6 +494,19 @@ class WebhookUpdate(BaseModel):
 # Auth Models
 # ============================================================================
 
+class OAuthAccount(BaseModel):
+    """
+    Embedded OAuth provider account linked to a User.
+
+    Stored directly on the User document for fast access — no JOIN needed
+    to check whether a user has linked accounts.
+    """
+    provider: str                # "github" | "gitlab" | "microsoft" | "google" | "local"
+    providerSubject: str         # Provider-issued unique subject ID
+    linkedAt: datetime           # When the account was linked
+    emailVerified: bool = True   # Always True — unverified emails rejected at intake
+
+
 class User(Document):
     """
     Authenticated human user.
@@ -472,6 +520,7 @@ class User(Document):
     avatar_url: Optional[str] = None
     roles: List[str] = Field(default_factory=list)          # e.g. ["admin"]
     permissions: List[str] = Field(default_factory=list)    # e.g. ["collections:write"]
+    oauth_accounts: List[OAuthAccount] = Field(default_factory=list)
     is_setup_complete: bool = False
     created_at: datetime
     updated_at: datetime
@@ -482,6 +531,14 @@ class User(Document):
             IndexModel([("userId", ASCENDING)], unique=True),
             IndexModel([("verified_email", ASCENDING)], unique=True),
             IndexModel([("created_at", DESCENDING)]),
+            IndexModel(
+                [("oauth_accounts.provider", ASCENDING),
+                 ("oauth_accounts.providerSubject", ASCENDING)],
+                unique=True,
+                partialFilterExpression={
+                    "oauth_accounts.0": {"$exists": True},
+                },
+            ),
         ]
 
 
@@ -619,6 +676,28 @@ class OAuthState(Document):
             IndexModel([("stateId", ASCENDING)], unique=True),
             IndexModel([("state", ASCENDING)], unique=True),
             IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),  # TTL
+        ]
+
+
+class EncryptionKey(Document):
+    """
+    Key encryption key record for envelope encryption.
+
+    Stores a DEK (data encryption key) wrapped by the master KEK from
+    ``SECRET_ENCRYPTION_KEY``.  Multiple records support key rotation:
+    old blobs decrypt via their ``kek_id``; new writes use the active KEK.
+    """
+    kek_id: str
+    wrapped_dek: str          # base64-encoded nonce(12) + AESGCM(master_kek, dek)
+    algorithm: str = "aes-256-gcm"
+    created_at: datetime
+    is_active: bool = True
+
+    class Settings:
+        name = "encryption_keys"
+        indexes = [
+            IndexModel([("kek_id", ASCENDING)], unique=True),
+            IndexModel([("is_active", ASCENDING)]),
         ]
 
 

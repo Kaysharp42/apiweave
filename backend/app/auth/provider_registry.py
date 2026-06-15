@@ -129,6 +129,18 @@ def get_configured_providers() -> list[dict[str, Any]]:
     return [{"id": name, "enabled": _check_provider_enabled(name)} for name in _KNOWN_PROVIDERS]
 
 
+def get_enabled_providers() -> list[str]:
+    """Return the list of providers that are fully configured AND OAuth login is enabled.
+
+    A provider is enabled only when ALL of the following are true:
+    - ``settings.OAUTH_LOGIN_ENABLED`` is ``True``
+    - The provider has both a non-empty ``client_id`` and ``client_secret``
+    """
+    if not settings.OAUTH_LOGIN_ENABLED:
+        return []
+    return [name for name in _KNOWN_PROVIDERS if _check_provider_enabled(name)]
+
+
 def get_provider_config(name: str) -> ProviderConfig:
     provider = name.lower()
     if provider not in _KNOWN_PROVIDERS:

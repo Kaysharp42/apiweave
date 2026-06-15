@@ -20,6 +20,7 @@ from app.auth.dependencies import (
     get_current_user,
     require_permission,
 )
+from app.auth.exceptions import OAuthLinkingBlockedError
 from app.auth.permissions import (
     PRESET_ADMIN,
     PRESET_VIEWER,
@@ -30,7 +31,7 @@ from app.auth.permissions import (
 )
 from app.auth.provider_registry import get_configured_providers
 from app.config import settings
-from app.models import InviteResponse, Session, User, UserResponse
+from app.models import InviteResponse, OAuthAccount, Session, User, UserResponse
 from app.repositories.auth_repositories import (
     ApprovedDomainRepository,
     DeletedUserRepository,
@@ -93,6 +94,21 @@ def _email_domain(email: str) -> str:
     if "@" not in email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email format")
     return email.rsplit("@", maxsplit=1)[-1].lower()
+
+
+def enforce_approved_domain(email: str) -> bool:
+    """Return True if the email's domain is allowed under the approved-domains policy.
+
+    Returns True when:
+    - ``APPROVED_DOMAINS_ENABLED`` is ``False`` (policy disabled — all domains pass), OR
+    - ``APPROVED_DOMAINS_ENABLED`` is ``True`` AND the email's domain appears in the
+      comma-separated ``APPROVED_DOMAINS`` env var.
+    """
+    if not settings.APPROVED_DOMAINS_ENABLED:
+        return True
+    domain = _email_domain(email)
+    approved = {item.lower() for item in settings.get_approved_domains_list()}
+    return domain in approved
 
 
 def _constant_time_match(left: str, right: str) -> bool:
@@ -167,7 +183,19 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
         )
 
     user = await UserRepository.get_by_email(userinfo.email)
-    if user is None:
+    if user is not None:
+        # Existing user — try to link OAuth account
+        # link_oauth_account raises OAuthLinkingBlockedError (409) when:
+        #   - user already has any OAuth account (incl. provider='local')
+        #   - a different user already claims this email
+        await UserRepository.link_oauth_account(
+            user=user,
+            provider=userinfo.provider,
+            subject=userinfo.subject,
+            email=userinfo.email,
+            email_verified=userinfo.email_verified,
+        )
+    else:
         user_count = await UserRepository.count()
         valid_invites = await InviteRepository.get_valid_by_email(userinfo.email)
         if settings.SETUP_MODE_ENABLED and user_count == 0:
@@ -271,6 +299,15 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access requires an invitation",
             )
+
+        # New user — add the OAuth account
+        oauth_account = OAuthAccount(
+            provider=userinfo.provider,
+            providerSubject=userinfo.subject,
+            linkedAt=datetime.now(UTC),
+            emailVerified=userinfo.email_verified,
+        )
+        user = await UserRepository.add_oauth_account(user, oauth_account)
 
     existing_identity = await ProviderIdentityRepository.get_by_provider_subject(
         userinfo.provider,
