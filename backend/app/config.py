@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     BASE_URL: str
     FRONTEND_URL: str | None = None
+    PUBLIC_BASE_URL: str = "http://localhost:3000"
 
     MONGODB_URL: str
     MONGODB_DB_NAME: str
@@ -72,6 +73,7 @@ class Settings(BaseSettings):
     MCP_ALLOW_SECRET_WRITES: bool = False
 
     # SMTP (invite email delivery) — all optional; if any are missing, email is skipped
+    SMTP_ENABLED: bool = False
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USERNAME: str | None = None
@@ -202,6 +204,13 @@ class Settings(BaseSettings):
             "microsoft": self.MICROSOFT_CLIENT_ID,
         }
 
+        provider_client_secrets: dict[str, str | None] = {
+            "github": self.GITHUB_CLIENT_SECRET,
+            "gitlab": self.GITLAB_CLIENT_SECRET,
+            "google": self.GOOGLE_CLIENT_SECRET,
+            "microsoft": self.MICROSOFT_CLIENT_SECRET,
+        }
+
         missing = [
             name for name, client_id in provider_client_ids.items() if not client_id
         ]
@@ -212,6 +221,31 @@ class Settings(BaseSettings):
                 ", ".join(sorted(missing)),
             )
 
+        # Check for mismatched pairs (ID set but secret missing, or vice versa)
+        mismatched = []
+        for name in provider_client_ids.keys():
+            client_id = provider_client_ids[name]
+            client_secret = provider_client_secrets[name]
+            if bool(client_id) != bool(client_secret):
+                mismatched.append(name)
+        
+        if mismatched:
+            logger.warning(
+                "OAUTH_LOGIN_ENABLED=true but the following OAuth providers have "
+                "mismatched client ID/secret configuration and will be unavailable: %s",
+                ", ".join(sorted(mismatched)),
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_smtp_configuration(self) -> "Settings":
+        if self.SMTP_ENABLED and not self.is_smtp_configured():
+            logger.warning(
+                "SMTP_ENABLED=true but required SMTP variables are missing "
+                "(SMTP_HOST, SMTP_FROM_ADDRESS). Invite emails will not be sent. "
+                "Set the missing variables or set SMTP_ENABLED=false."
+            )
         return self
 
     model_config = SettingsConfigDict(
