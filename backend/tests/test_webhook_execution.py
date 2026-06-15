@@ -175,19 +175,14 @@ def test_webhook_execute_missing_workflow():
 
 def test_webhook_execute_success():
     """Test successful webhook execution"""
-    mock_run_doc = MagicMock()
-    mock_run_doc.runId = "run-123"
-    mock_run_doc.insert = AsyncMock()
     with (
         patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock_webhook,
         patch("app.routes.webhooks.WorkflowRepository.get_by_id") as mock_wf,
-        patch("app.routes.webhooks.RunRepository.create") as mock_run,
-        patch("app.routes.webhooks.asyncio.create_task") as mock_task,
-        patch("app.routes.webhooks.WebhookRepository.update") as mock_update,
-        patch("app.routes.webhooks.WorkflowExecutor"),
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
-        patch("app.routes.webhooks.Run", return_value=mock_run_doc),
+        patch("app.routes.webhooks.webhook_runner") as mock_runner,
     ):
+        mock_runner.enqueue = AsyncMock(return_value="run-123")
+
         mock_webhook_obj = MagicMock()
         mock_webhook_obj.enabled = True
         mock_webhook_obj.resourceId = "wf-123"
@@ -199,10 +194,6 @@ def test_webhook_execute_success():
 
         mock_wf_obj = MagicMock()
         mock_wf.return_value = mock_wf_obj
-
-        mock_run_obj = MagicMock()
-        mock_run_obj.runId = "run-123"
-        mock_run.return_value = mock_run_obj
 
         response = client.post(
             "/api/webhooks/workflows/webhook-123/execute",
@@ -220,19 +211,14 @@ def test_webhook_execute_success():
 
 def test_webhook_execute_token_only_returns_202():
     """Token-only requests (no HMAC headers) must still return 202 — backwards compat."""
-    mock_run_doc = MagicMock()
-    mock_run_doc.runId = "run-compat"
-    mock_run_doc.insert = AsyncMock()
     with (
         patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock_webhook,
         patch("app.routes.webhooks.WorkflowRepository.get_by_id") as mock_wf,
-        patch("app.routes.webhooks.RunRepository.create") as mock_run,
-        patch("app.routes.webhooks.asyncio.create_task"),
-        patch("app.routes.webhooks.WebhookRepository.update"),
-        patch("app.routes.webhooks.WorkflowExecutor"),
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
-        patch("app.routes.webhooks.Run", return_value=mock_run_doc),
+        patch("app.routes.webhooks.webhook_runner") as mock_runner,
     ):
+        mock_runner.enqueue = AsyncMock(return_value="run-compat")
+
         mock_webhook_obj = MagicMock()
         mock_webhook_obj.enabled = True
         mock_webhook_obj.resourceId = "wf-compat"
@@ -327,20 +313,15 @@ def test_webhook_execute_valid_signature():
     timestamp = str(int(time.time()))
     signature = _make_hmac_signature(secret, timestamp, payload_bytes)
 
-    mock_run_doc = MagicMock()
-    mock_run_doc.runId = "run-456"
-    mock_run_doc.insert = AsyncMock()
     with (
         patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock_webhook,
         patch("app.routes.webhooks.WorkflowRepository.get_by_id") as mock_wf,
-        patch("app.routes.webhooks.RunRepository.create") as mock_run,
-        patch("app.routes.webhooks.asyncio.create_task") as mock_task,
-        patch("app.routes.webhooks.WebhookRepository.update") as mock_update,
-        patch("app.routes.webhooks.WorkflowExecutor"),
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
         patch("app.middleware.webhook_auth.WebhookRepository.get_by_id") as mock_auth,
-        patch("app.routes.webhooks.Run", return_value=mock_run_doc),
+        patch("app.routes.webhooks.webhook_runner") as mock_runner,
     ):
+        mock_runner.enqueue = AsyncMock(return_value="run-456")
+
         mock_webhook_obj = MagicMock()
         mock_webhook_obj.enabled = True
         mock_webhook_obj.hmacSecret = secret
@@ -354,10 +335,6 @@ def test_webhook_execute_valid_signature():
 
         mock_wf_obj = MagicMock()
         mock_wf.return_value = mock_wf_obj
-
-        mock_run_obj = MagicMock()
-        mock_run_obj.runId = "run-456"
-        mock_run.return_value = mock_run_obj
 
         response = client.post(
             "/api/webhooks/workflows/webhook-123/execute",
@@ -377,26 +354,21 @@ def test_webhook_execute_valid_signature():
 
 def test_webhook_execute_idempotency_same_run_id():
     """Two identical requests with same Idempotency-Key return same runId."""
-    mock_run_doc = MagicMock()
-    mock_run_doc.runId = "run-idem-001"
-    mock_run_doc.insert = AsyncMock()
     cached_entry = SimpleNamespace(response_body={"status": "accepted", "runId": "run-idem-001"})
 
     with (
         patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock_webhook,
         patch("app.routes.webhooks.WorkflowRepository.get_by_id") as mock_wf,
-        patch("app.routes.webhooks.RunRepository.create") as mock_run,
-        patch("app.routes.webhooks.asyncio.create_task"),
-        patch("app.routes.webhooks.WebhookRepository.update"),
-        patch("app.routes.webhooks.WorkflowExecutor"),
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
-        patch("app.routes.webhooks.Run", return_value=mock_run_doc),
+        patch("app.routes.webhooks.webhook_runner") as mock_runner,
         patch(
             "app.routes.webhooks.get_idempotency_entry",
             new=AsyncMock(side_effect=[None, cached_entry]),
         ),
         patch("app.routes.webhooks.store_idempotency_entry", new=AsyncMock()),
     ):
+        mock_runner.enqueue = AsyncMock(return_value="run-idem-001")
+
         mock_webhook_obj = MagicMock()
         mock_webhook_obj.enabled = True
         mock_webhook_obj.resourceId = "wf-idem"
@@ -426,38 +398,23 @@ def test_webhook_execute_idempotency_same_run_id():
             json={"ref": "main"},
             headers=headers,
         )
-        assert r2.status_code == 200
+        assert r2.status_code == 202
         assert r2.json()["runId"] == run_id_first
         assert r2.headers.get("idempotency-replayed") == "true"
 
 
 def test_webhook_execute_idempotency_different_webhook_creates_new_run():
     """Same Idempotency-Key on a different webhookId must create a new run."""
-    run_a = MagicMock()
-    run_a.runId = "run-wh-A"
-    run_a.insert = AsyncMock()
-
-    run_b = MagicMock()
-    run_b.runId = "run-wh-B"
-    run_b.insert = AsyncMock()
-
-    run_iter = iter([run_a, run_b])
-
-    def _next_run(*args, **kwargs):
-        return next(run_iter)
-
     with (
         patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock_webhook,
         patch("app.routes.webhooks.WorkflowRepository.get_by_id") as mock_wf,
-        patch("app.routes.webhooks.RunRepository.create"),
-        patch("app.routes.webhooks.asyncio.create_task"),
-        patch("app.routes.webhooks.WebhookRepository.update"),
-        patch("app.routes.webhooks.WorkflowExecutor"),
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
-        patch("app.routes.webhooks.Run", side_effect=_next_run),
+        patch("app.routes.webhooks.webhook_runner") as mock_runner,
         patch("app.routes.webhooks.get_idempotency_entry", new=AsyncMock(return_value=None)),
         patch("app.routes.webhooks.store_idempotency_entry", new=AsyncMock()),
     ):
+        mock_runner.enqueue = AsyncMock(side_effect=["run-wh-A", "run-wh-B"])
+
         def _webhook_for_id(wh_id: str):
             obj = MagicMock()
             obj.enabled = True
@@ -503,10 +460,11 @@ def test_webhook_execute_collection():
     with (
         patch("app.routes.webhooks.WebhookRepository.get_by_id") as mock_webhook,
         patch("app.routes.webhooks.CollectionRepository.get_by_id") as mock_col,
-        patch("app.routes.webhooks.CollectionRunRepository.create") as mock_create,
-        patch("app.routes.webhooks.asyncio.create_task") as mock_task,
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
+        patch("app.routes.webhooks.webhook_runner") as mock_runner,
     ):
+        mock_runner.enqueue = AsyncMock(return_value="crun-real-123")
+
         mock_webhook_obj = MagicMock()
         mock_webhook_obj.enabled = True
         mock_webhook_obj.resourceId = "col-123"
@@ -521,7 +479,6 @@ def test_webhook_execute_collection():
         mock_col_obj.name = "Regression Suite"
         mock_col_obj.workflowOrder = []
         mock_col.return_value = mock_col_obj
-        mock_create.return_value = SimpleNamespace(collectionRunId="crun-real-123", collectionId="col-123")
 
         response = client.post(
             "/api/webhooks/collections/webhook-123/execute",
@@ -532,8 +489,8 @@ def test_webhook_execute_collection():
         assert response.status_code == 202
         data = response.json()
         assert data["status"] == "accepted"
-        assert data["collectionRunId"].startswith("crun-")
-        mock_task.assert_called_once()
+        assert data["collectionRunId"] == "crun-real-123"
+        mock_runner.enqueue.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -38,7 +38,8 @@ from app.middleware.webhook_auth import (
     ReplayAttackError,
 )
 from app.middleware.rate_limiter import check_webhook_rate_limit, get_rate_limit_headers
-from app.idempotency import get_idempotency_entry, store_idempotency_entry
+from app.idempotency import get_idempotency_entry, store_idempotency_entry  # noqa: F401  (store kept for test patches)
+from app.services.webhook_runner import QueueFull, WebhookDelivery, webhook_runner
 
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
@@ -829,7 +830,7 @@ async def execute_workflow_webhook(
         if cached is not None:
             rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
             return JSONResponse(
-                status_code=200,
+                status_code=202,
                 content=cached.response_body,
                 headers={**rl_headers, "Idempotency-Replayed": "true"},
             )
@@ -865,65 +866,52 @@ async def execute_workflow_webhook(
         ).insert()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
 
-    # ── 9. Create run ─────────────────────────────────────────────────────────
-    from app.services.secret_utils import mask_secrets_structural
-    payload_dict = payload if isinstance(payload, dict) else {}
-    sanitized_payload = mask_secrets_structural(payload_dict, [])
-    run = Run(
-        runId=f"run-{uuid.uuid4().hex[:12]}",
-        workflowId=webhook.resourceId,
-        environmentId=webhook.environmentId,  # CRITICAL: Pass environment from webhook
-        status="pending",
-        trigger="webhook",
-        variables=sanitized_payload,
-        results=[],
-        createdAt=datetime.now(UTC),
-    )
-    await run.insert()
-
-    # ── 10. Build response body ───────────────────────────────────────────────
-    response_body = {
-        "status": "accepted",
-        "runId": run.runId,
-        "workflowId": webhook.resourceId,
-        "pollUrl": f"{settings.BASE_URL}/api/runs/{run.runId}",
-        "resultsUrl": f"{settings.BASE_URL}/api/runs/{run.runId}/results",
-    }
-
-    # ── 11. Store idempotency entry ───────────────────────────────────────────
-    if idempotency_key:
-        await store_idempotency_entry(
-            webhook_id=webhook_id,
-            idempotency_key=idempotency_key,
-            run_id=run.runId,
-            collection_run_id=None,
-            status_code=202,
-            response_body=response_body,
-        )
-
-    # ── 12. Log success ───────────────────────────────────────────────────────
+    # ── 9. Create webhook log (runner updates on completion) ──────────────────
     triggered_at = datetime.now(UTC)
     payload_str = json.dumps(payload)
+    log_id = f"log-{uuid.uuid4().hex[:12]}"
     webhook_log = WebhookLog(
-        logId=f"log-{uuid.uuid4().hex[:12]}",
+        logId=log_id,
         webhookId=webhook_id,
         timestamp=triggered_at,
-        status="success",
+        status="accepted",
         duration=0,
         httpMethod="POST",
         responseStatus=202,
-        runId=run.runId,
         requestBody=payload_str if len(payload_str) < 10000 else '{"_truncated": true}',
     )
     await webhook_log.insert()
 
-    # ── 13. Fire background execution ─────────────────────────────────────────
-    executor = WorkflowExecutor(run.runId, webhook.resourceId)
-    asyncio.create_task(
-        _run_workflow_and_update_webhook(executor, webhook_id, webhook_log, triggered_at)
+    # ── 10. Enqueue via WebhookRunner ─────────────────────────────────────────
+    delivery = WebhookDelivery(
+        webhook_id=webhook_id,
+        resource_type="workflow",
+        resource_id=webhook.resourceId,
+        environment_id=webhook.environmentId,
+        payload=payload if isinstance(payload, dict) else {},
+        idempotency_key=idempotency_key,
+        webhook_log_id=log_id,
     )
 
-    # ── 14. Return 202 with rate-limit headers ────────────────────────────────
+    try:
+        run_id = await webhook_runner.enqueue(delivery)
+    except QueueFull as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            headers={"Retry-After": "30"},
+        )
+
+    # ── 11. Build response body ───────────────────────────────────────────────
+    response_body = {
+        "status": "accepted",
+        "runId": run_id,
+        "workflowId": webhook.resourceId,
+        "pollUrl": f"{settings.BASE_URL}/api/runs/{run_id}",
+        "resultsUrl": f"{settings.BASE_URL}/api/runs/{run_id}/results",
+    }
+
+    # ── 12. Return 202 with rate-limit headers ────────────────────────────────
     rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
     return JSONResponse(status_code=202, content=response_body, headers=rl_headers)
 
@@ -1025,7 +1013,7 @@ async def execute_collection_webhook(
         if cached is not None:
             rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
             return JSONResponse(
-                status_code=200,
+                status_code=202,
                 content=cached.response_body,
                 headers={**rl_headers, "Idempotency-Replayed": "true"},
             )
@@ -1061,69 +1049,53 @@ async def execute_collection_webhook(
         ).insert()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
 
-    enabled_workflows = [item for item in collection.workflowOrder if item.enabled]
+    # ── 9. Create webhook log (runner updates on completion) ──────────────────
     triggered_at = datetime.now(UTC)
-    collection_run = await CollectionRunRepository.create({
-        "collectionRunId": f"crun-{uuid.uuid4().hex[:12]}",
-        "collectionId": collection.collectionId,
-        "collectionName": collection.name,
-        "status": "pending",
-        "startTime": triggered_at,
-        "environmentId": webhook.environmentId,
-        "totalWorkflows": len(enabled_workflows),
-        "executedWorkflows": 0,
-        "passedWorkflows": 0,
-        "failedWorkflows": 0,
-        "workflowResults": [],
-        "webhookId": webhook_id,
-        "triggeredBy": "webhook",
-    })
-
-    # ── 10. Build response body ───────────────────────────────────────────────
-    response_body = {
-        "status": "accepted",
-        "collectionRunId": collection_run.collectionRunId,
-        "collectionId": webhook.resourceId,
-        "pollUrl": (
-            f"{settings.BASE_URL}/api/collections/{webhook.resourceId}/runs/"
-            f"{collection_run.collectionRunId}"
-        ),
-    }
-
-    # ── 11. Store idempotency entry ───────────────────────────────────────────
-    if idempotency_key:
-        await store_idempotency_entry(
-            webhook_id=webhook_id,
-            idempotency_key=idempotency_key,
-            run_id=collection_run.collectionRunId,
-            collection_run_id=collection_run.collectionRunId,
-            status_code=202,
-            response_body=response_body,
-        )
-
-    # ── 12. Log success ───────────────────────────────────────────────────────
     payload_str = json.dumps(payload)
     log_id = f"log-{uuid.uuid4().hex[:12]}"
-    await WebhookLog(
+    webhook_log = WebhookLog(
         logId=log_id,
         webhookId=webhook_id,
         timestamp=triggered_at,
-        status="success",
+        status="accepted",
         duration=0,
         httpMethod="POST",
         responseStatus=202,
-        collectionRunId=collection_run.collectionRunId,
         requestBody=payload_str if len(payload_str) < 10000 else '{"_truncated": true}',
-    ).insert()
+    )
+    await webhook_log.insert()
 
-    asyncio.create_task(_run_collection_and_update_webhook(
-        collection_run.collectionRunId,
-        webhook_id,
-        log_id,
-        payload if isinstance(payload, dict) else {},
-        triggered_at,
-    ))
+    # ── 10. Enqueue via WebhookRunner ─────────────────────────────────────────
+    delivery = WebhookDelivery(
+        webhook_id=webhook_id,
+        resource_type="collection",
+        resource_id=webhook.resourceId,
+        environment_id=webhook.environmentId,
+        payload=payload if isinstance(payload, dict) else {},
+        idempotency_key=idempotency_key,
+        webhook_log_id=log_id,
+    )
 
-    # ── 14. Return 202 with rate-limit headers ────────────────────────────────
+    try:
+        collection_run_id = await webhook_runner.enqueue(delivery)
+    except QueueFull as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            headers={"Retry-After": "30"},
+        )
+
+    # ── 11. Build response body ───────────────────────────────────────────────
+    response_body = {
+        "status": "accepted",
+        "collectionRunId": collection_run_id,
+        "collectionId": webhook.resourceId,
+        "pollUrl": (
+            f"{settings.BASE_URL}/api/collections/{webhook.resourceId}/runs/"
+            f"{collection_run_id}"
+        ),
+    }
+
+    # ── 12. Return 202 with rate-limit headers ────────────────────────────────
     rl_headers = get_rate_limit_headers(webhook_id, remaining=_rate_limit)
     return JSONResponse(status_code=202, content=response_body, headers=rl_headers)

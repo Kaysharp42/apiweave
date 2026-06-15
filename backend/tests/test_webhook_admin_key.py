@@ -164,12 +164,10 @@ def test_webhook_execution_m2m_still_works() -> None:
             "app.routes.webhooks.WorkflowRepository.get_by_id",
             new=AsyncMock(return_value=MagicMock()),
         ),
-        patch("app.routes.webhooks.Run", side_effect=_mock_run),
-        patch("app.routes.webhooks.asyncio.create_task", side_effect=_close_background_task),
-        patch.object(WebhookRepository, "update", new=AsyncMock(return_value=make_webhook())),
-        patch("app.routes.webhooks.WorkflowExecutor"),
+        patch("app.routes.webhooks.webhook_runner") as mock_runner,
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
     ):
+        mock_runner.enqueue = AsyncMock(return_value="run-m2m-test")
         response = route_client().post(
             "/api/webhooks/workflows/webhook-123/execute",
             content=body,
