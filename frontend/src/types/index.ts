@@ -192,3 +192,5 @@ export type { EnvironmentOption } from './EnvironmentOption';
 export type { WorkflowJsonEditorProps } from './WorkflowJsonEditorProps';
 export type { AuthenticatedRequestInit } from './AuthenticatedRequestInit';
 export type { NodeActionMenuItem } from './NodeActionMenuItem';
+export type { SecretPublicKey } from './SecretPublicKey';
+export type { EncryptedSecretValue } from './EncryptedSecretValue';

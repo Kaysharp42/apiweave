@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "tsx --test src/**/*.test.ts src/**/*.test.js",
+    "test:ui": "vitest run",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,json,css,md}\"",
     "audit:types": "node scripts/audit-types.mjs",
@@ -29,11 +30,16 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
     "reactflow": "^11.10.0",
+    "libsodium-wrappers": "^0.7.15",
     "sonner": "^2.0.7",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/libsodium-wrappers": "^0.7.14",
     "@types/mousetrap": "^1.6.15",
     "@types/node": "^25.8.0",
     "@types/react": "^18.2.0",
@@ -44,6 +50,7 @@
     "autoprefixer": "^10.4.0",
     "eslint": "^8.55.0",
     "eslint-plugin-react": "^7.33.0",
+    "jsdom": "^25.0.1",
     "postcss": "^8.4.0",
     "prettier": "^3.1.0",
     "react-doctor": "^0.2.10",
@@ -51,6 +58,7 @@
     "tsx": "^4.22.0",
     "typescript": "^6.0.3",
     "vite": "^5.0.0",
-    "vite-plugin-checker": "^0.8.0"
+    "vite-plugin-checker": "^0.8.0",
+    "vitest": "^2.1.8"
   }
 }

@@ -48,6 +48,12 @@ from app.services.secret_utils import (
     sanitize_secrets_in_dict,
     serialize_document_for_export,
 )
+from app.services.secret_sealed_box import (
+    get_public_key_b64,
+    get_key_id as get_sealed_box_key_id,
+    get_algorithm as get_sealed_box_algorithm,
+    open_sealed_box,
+)
 from app.services.workflow_service import (
     attach_to_collection,
     create_workflow,
@@ -108,4 +114,8 @@ __all__ = [
     "detect_secrets_in_value",
     "sanitize_secrets_in_dict",
     "serialize_document_for_export",
+    "get_public_key_b64",
+    "get_sealed_box_key_id",
+    "get_sealed_box_algorithm",
+    "open_sealed_box",
 ]

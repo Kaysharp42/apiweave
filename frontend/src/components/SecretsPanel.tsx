@@ -1,11 +1,13 @@
-import { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Lock, Trash2, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from './molecules/Modal';
 import { Button } from './atoms/Button';
-import { Input } from './atoms/Input';
 import { IconButton } from './atoms/IconButton';
-import type { SecretsPanelProps } from '../types/SecretsPanelProps';
+import { EmptyState } from './molecules/EmptyState';
+import SecretValueEditor from './SecretValueEditor';
+import { deleteSecret } from '../hooks/useSecretValues';
+import type { SecretsPanelProps } from '../types';
 
 export default function SecretsPanel({
   isOpen,
@@ -13,127 +15,135 @@ export default function SecretsPanel({
   onSecretsChange,
   onClose,
 }: SecretsPanelProps) {
-  const [secrets, setSecrets] = useState<Record<string, string>>(environment?.secrets ?? {});
-  const [newSecretKey, setNewSecretKey] = useState('');
-  const [newSecretPlaceholder, setNewSecretPlaceholder] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const handleAddSecret = () => {
-    if (!newSecretKey.trim()) return;
-    setSecrets((prev) => ({ ...prev, [newSecretKey]: newSecretPlaceholder }));
-    setNewSecretKey('');
-    setNewSecretPlaceholder('');
-  };
-
-  const handleRemoveSecret = (key: string) => {
-    setSecrets((prev) => {
-      const updated = { ...prev };
-      delete updated[key];
-      return updated;
-    });
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      if (onSecretsChange) await onSecretsChange(secrets);
-      onClose();
-    } catch {
-      toast.error('Error saving secrets');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const footer = () => (
-    <div className="flex gap-3 w-full">
-      <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
-      <Button onClick={handleSave} disabled={saving} variant="primary" fullWidth>
-        {saving ? 'Saving\u2026' : 'Save Changes'}
-      </Button>
-    </div>
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [unsetting, setUnsetting] = useState<string | null>(null);
+  const [secretKeys, setSecretKeys] = useState<string[]>(() =>
+    Object.keys(environment?.secrets ?? {}),
   );
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Manage Secrets: ${environment?.name ?? ''}`} size="md" footer={footer}>
-      <div className="space-y-6">
-        <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
-          <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-            Secrets are sensitive values (API keys, tokens, passwords) that users must provide when running workflows. They are stored in browser session memory only, never persisted.
-          </p>
-        </div>
+  const environmentId = environment?.environmentId ?? environment?.id ?? '';
 
-        {Object.keys(secrets).length > 0 && (
-          <div className="space-y-3">
-            <h3 className="font-semibold text-text-primary dark:text-text-primary-dark">Secrets</h3>
+  const refreshKeys = useCallback(() => {
+    if (environment?.secrets) {
+      setSecretKeys(Object.keys(environment.secrets));
+    }
+  }, [environment?.secrets]);
+
+  const handleSetValue = useCallback((key: string) => {
+    setEditingKey(key);
+  }, []);
+
+  const handleEditorSuccess = useCallback(() => {
+    refreshKeys();
+    onSecretsChange?.(environment?.secrets ?? {}).catch(() => {});
+  }, [refreshKeys, onSecretsChange, environment?.secrets]);
+
+  const handleUnset = useCallback(
+    async (key: string) => {
+      setUnsetting(key);
+      try {
+        await deleteSecret(environmentId, key);
+        setSecretKeys((prev) => prev.filter((k) => k !== key));
+        toast.success(`Secret "${key}" removed`);
+        onSecretsChange?.(environment?.secrets ?? {}).catch(() => {});
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        toast.error(`Failed to remove secret: ${message}`);
+      } finally {
+        setUnsetting(null);
+      }
+    },
+    [environmentId, onSecretsChange, environment?.secrets],
+  );
+
+  const hasKeys = secretKeys.length > 0;
+
+  return (
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title={`Secrets: ${environment?.name ?? ''}`}
+        size="md"
+        footer={() => (
+          <Button onClick={onClose} variant="ghost" fullWidth>
+            Close
+          </Button>
+        )}
+      >
+        <div className="p-5 space-y-4">
+          <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+              Secrets are encrypted in your browser before being sent to the server.
+              Values are never displayed after saving — only their set/unset state is shown.
+            </p>
+          </div>
+
+          {!hasKeys ? (
+            <EmptyState
+              icon={<KeyRound className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+              title="No secrets configured"
+              description="Add secret keys in Environment Manager, then set their values here."
+            />
+          ) : (
             <div className="space-y-2">
-              {Object.entries(secrets).map(([key, placeholder]) => (
-                <div key={key} className="flex items-center gap-3 p-3 bg-surface-raised dark:bg-surface-dark-raised rounded-lg border border-border dark:border-border-dark">
+              {secretKeys.map((key) => (
+                <div
+                  key={key}
+                  className="flex items-center gap-3 p-3 bg-surface-raised dark:bg-surface-dark-raised rounded-lg border border-border dark:border-border-dark"
+                >
+                  <Lock className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-mono text-sm text-text-primary dark:text-text-primary-dark break-all">{key}</p>
-                    <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">Placeholder: {placeholder ?? '(none)'}</p>
+                    <p className="font-mono text-sm text-text-primary dark:text-text-primary-dark break-all">
+                      {key}
+                    </p>
+                    <p className="text-xs text-text-muted dark:text-text-muted-dark mt-0.5">
+                      Value is encrypted
+                    </p>
                   </div>
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    onClick={() => handleSetValue(key)}
+                  >
+                    Set value
+                  </Button>
                   <IconButton
-                    onClick={() => handleRemoveSecret(key)}
+                    onClick={() => handleUnset(key)}
                     tooltip={`Remove secret ${key}`}
                     variant="error"
                     size="sm"
+                    disabled={unsetting === key}
                   >
                     <Trash2 className="w-4 h-4" />
                   </IconButton>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="space-y-3 p-4 bg-surface-raised dark:bg-surface-dark-raised rounded-lg border border-border dark:border-border-dark">
-          <h3 className="font-semibold text-text-primary dark:text-text-primary-dark">Add New Secret</h3>
-          <div className="space-y-3">
-            <div>
-              <label htmlFor="secret-name" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Secret Name</label>
-              <Input
-                id="secret-name"
-                type="text"
-                value={newSecretKey}
-                onChange={(e) => setNewSecretKey(e.target.value)}
-                placeholder="e.g., API_KEY, AUTH_TOKEN"
-                className="w-full"
-              />
-            </div>
-            <div>
-              <label htmlFor="secret-placeholder" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Placeholder Text (optional)</label>
-              <Input
-                id="secret-placeholder"
-                type="text"
-                value={newSecretPlaceholder}
-                onChange={(e) => setNewSecretPlaceholder(e.target.value)}
-                placeholder="e.g., Paste your API key here"
-                className="w-full"
-              />
-            </div>
-            <Button
-              onClick={handleAddSecret}
-              disabled={!newSecretKey.trim()}
-              variant="primary"
-              size="sm"
-              fullWidth
-            >
-              <Plus className="w-4 h-4" />
-              Add Secret
-            </Button>
+          <div className="p-4 bg-[var(--aw-status-info)]/5 rounded-lg border border-[var(--aw-status-info)]/20">
+            <p className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">
+              Usage in HTTP Requests:
+            </p>
+            <p className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-raised dark:bg-surface-dark-raised p-2 rounded break-all">
+              {'{{'}
+              {hasKeys ? secretKeys[0] : 'secretName'}
+              {'}}'}
+            </p>
           </div>
         </div>
+      </Modal>
 
-        <div className="p-4 bg-[var(--aw-status-info)]/5 rounded-lg border border-[var(--aw-status-info)]/20">
-          <p className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">Usage in HTTP Requests:</p>
-          <p className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-raised dark:bg-surface-dark-raised p-2 rounded break-all">
-            {'{{'}
-            {Object.keys(secrets).length > 0 ? Object.keys(secrets)[0] : 'secretName'}
-            {'}}'}
-          </p>
-        </div>
-      </div>
-    </Modal>
+      {editingKey && (
+        <SecretValueEditor
+          isOpen={!!editingKey}
+          environmentId={environmentId}
+          secretKey={editingKey}
+          onClose={() => setEditingKey(null)}
+          onSuccess={handleEditorSuccess}
+        />
+      )}
+    </>
   );
 }
