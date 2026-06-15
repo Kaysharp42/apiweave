@@ -23,7 +23,7 @@ Four namespaces are available. They are tried in a fixed order, see the [Placeho
 | `variables.*` | Workflow variable (manual or extracted) | Token returned by a previous step                    |
 | `env.*`       | Active environment                      | Base URL, API version                                |
 | `prev.*`      | Previous node result                    | Read a field from the upstream response              |
-| `secrets.*`   | Runtime secret prompt                   | API key, client secret (not yet wired in 1.0)        |
+| `secrets.*`   | Runtime secret prompt                   | API key, client secret (encrypted at rest)            |
 
 Dynamic functions such as `{{uuid()}}` and `{{timestamp()}}` are also available; see [Dynamic Functions Reference](../reference/dynamic-functions.md).
 
@@ -76,15 +76,11 @@ For parallel branches, the index starts at 0 and matches the branch order on the
 
 ## Secrets
 
-> **Not yet supported in 1.0.**
->
-> The data model for secrets exists, and you can declare secret keys inside an environment. However, the runtime prompt that asks for secret values and the resolver that turns `{{secrets.NAME}}` into the real value are not yet implemented. If you write `{{secrets.API_KEY}}` in a workflow today, the placeholder comes back unresolved at run time.
-
-The placeholder syntax is reserved and will work once the runtime flow ships. For now, store the value as an environment variable and reference it via `{{env.NAME}}` instead. Never paste a real secret into a workflow or comment.
+Secrets are declared as named keys on an environment and encrypted at rest. The runner resolves `{{secrets.NAME}}` against the active environment and substitutes the plaintext value into the request field, header, body, or assertion path. The plaintext never appears in the canvas or in exported workflows. The at-rest model, rotation, and the threat surface are covered in the [Encryption Guide](../operations/encryption.md).
 
 ```text
-{{secrets.API_KEY}}        # declared in env, not yet resolved at run time
-{{secrets.CLIENT_SECRET}}  # declared in env, not yet resolved at run time
+{{secrets.API_KEY}}        # declared in env, encrypted at rest, resolved at run time
+{{secrets.CLIENT_SECRET}}  # declared in env, encrypted at rest, resolved at run time
 ```
 
 ## Adding Extractors in an HTTP Request
@@ -151,7 +147,7 @@ The Variables panel is also where to confirm the exact placeholder syntax for a 
 - **If a placeholder comes back as plain text in the request or response**, the namespace is misspelled or the key does not exist. The most common typo is `{{variable.token}}` (singular) instead of `{{variables.token}}` (plural). Open the Variables panel or the environment editor and confirm the key exists with the exact name.
 - **If an extractor did not set a value**, the JSONPath does not match the real response shape. Inspect the node's response body for the actual field name (including case) and update the path. Arrays use zero-based indices, so `response.body.items[0].id` reads the first element only.
 - **If a `prev.*` reference is empty after a Merge node**, the index does not match a branch. Branch indices start at 0 and follow the canvas order. Check the run results to confirm how many branches completed and which index each one received.
-- **If `{{secrets.NAME}}` is not resolved at run time**, the secret runtime is not yet supported in 1.0. Use an environment variable for the same value until the secret flow ships.
+- **If `{{secrets.NAME}}` is not resolved at run time**, the key is not declared on the active environment, or the stored ciphertext cannot be decrypted. Open the Environment Manager, confirm the key exists on the active environment, and verify `SECRET_ENCRYPTION_KEY` is set in the backend environment. The full diagnostic path is in the [Encryption Guide](../operations/encryption.md).
 
 ## Related
 

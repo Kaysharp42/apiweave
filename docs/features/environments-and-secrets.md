@@ -1,6 +1,6 @@
 # Environments and Secrets
 
-*How to create environments, declare variables, attach them to workflows, and what is and is not yet wired up around secrets in APIWeave 1.0.*
+*How to create environments, declare variables, attach them to workflows, and resolve secret values at run time in APIWeave 1.0.*
 
 ## Prerequisites
 
@@ -66,26 +66,11 @@ A secret is a sensitive value you do not want stored in plain workflow configura
 
 - Declare secret keys in an environment via the **Manage Secrets** panel in the Environment Manager.
 - See the list of secret keys for each environment, which is useful for documenting what a workflow expects.
-- Use secret names in workflow fields as `{{secrets.NAME}}` placeholders. The placeholder syntax is reserved and parses without error.
+- Use secret names in workflow fields as `{{secrets.NAME}}` placeholders. The runner resolves them against the active environment at run time and substitutes the plaintext value into the request field, header, body, or assertion path.
 - Export and import workflows with secret references preserved, with values redacted to placeholders so the bundle stays shareable.
+- Rotate the master encryption key by setting a new `SECRET_ENCRYPTION_KEY`, or rotate per-environment DEKs through the KEK rotation flow. See the [Encryption Guide](../operations/encryption.md) for the model and the rotation procedure.
 
-### Not Yet Supported in 1.0
-
-The runtime side of the secret flow is **not yet supported in 1.0**. Specifically:
-
-- **Runtime resolution is not implemented.** The runner does not look up `{{secrets.NAME}}` placeholders and substitute values. A workflow that contains a `{{secrets.API_KEY}}` placeholder will pass the literal placeholder string into the request and the run will fail with an unresolved-template error.
-- **The runtime secrets prompt is not wired up.** APIWeave does not show a "Enter missing secret value" dialog before a run starts, and there is no in-app field for entering secret values that get fed to the runner.
-- **Persisting secret values from the UI is also not wired.** The `secrets` map in the environment document accepts key names; the UI path to fill values through the regular edit flow is not exposed.
-
-In short: the data model exists and the placeholder syntax parses, but the end-to-end "declare a key, enter a value at run time, resolve it into the request" flow is not available. Plan to either keep using `{{env.NAME}}` variables for non-sensitive values, or stop your run when you reach a secret placeholder.
-
-For a single source of truth on which placeholder namespaces resolve today, see the [Variables and Extractors](variables-and-extractors.md) doc and the [Placeholders Reference](../reference/placeholders.md).
-
-### Workarounds Until Runtime Resolves
-
-- Use `{{env.NAME}}` for anything that is not actually secret, with the value stored in the environment's `variables` map.
-- Store truly sensitive values outside APIWeave (your CI/CD secret store, a `.env` file on the runner) and pass them into the workflow as workflow variables, since `{{variables.name}}` resolves at run time and is the only runtime variable namespace you can populate from outside the request payload today.
-- If you are running APIWeave through a webhook, set `WEBHOOK_REQUIRE_HMAC=true` and feed runtime values through the workflow's variables rather than the secret slot.
+For the canonical placeholder grammar and the order the runner resolves namespaces in, see the [Placeholders Reference](../reference/placeholders.md).
 
 ## Activating an Environment
 
@@ -133,13 +118,13 @@ Set the URL during environment creation or edit it later. The URL must be reacha
 - **If `{{env.BASE_URL}}` comes back as plain text in the response**, the active environment does not define that key. Open the Environment Manager, add the variable, and run again.
 - **If a workflow references a deleted environment**, the workflow continues to exist but its runs fall back to the active environment. Open the workflow's settings, pick a valid environment, and save.
 - **If deletion returns `409 Conflict`**, one or more workflows still attach to the environment. Find them via the workflow list filter, reassign or detach, then delete.
-- **If a `{{secrets.NAME}}` placeholder shows up literally in the request URL or body**, runtime secret resolution is not yet supported in 1.0. Switch the field to `{{env.NAME}}` with the value stored in the environment's variables, or move the value into a workflow variable you populate from outside the request. See [Secrets](#secrets) for the current state.
-- **If the secret prompt never appears when you click Run**, that flow is not yet wired in 1.0. The runner does not collect secret values before a run. Track release notes for when the prompt and runtime resolution land.
+- **If a `{{secrets.NAME}}` placeholder shows up literally in the request URL or body**, the key is not declared on the active environment, or the stored ciphertext cannot be decrypted. Open the Environment Manager, confirm the key exists, and check that `SECRET_ENCRYPTION_KEY` matches the value the backend was started with. The full diagnostic path is in the [Encryption Guide](../operations/encryption.md).
 
 ## Related
 
 - [Concepts](../getting-started/concepts.md)
 - [Variables and Extractors](variables-and-extractors.md)
 - [Placeholders Reference](../reference/placeholders.md)
+- [Encryption Guide](../operations/encryption.md)
 - [Swagger and OpenAPI Import](swagger-import.md)
 - [Collections](collections.md)

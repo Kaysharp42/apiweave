@@ -9,11 +9,12 @@
 
 ## Auth and Access
 
-- [Authentication](authentication.md): the SSO model, the local admin bootstrap, session policy, approved domains, and the OAuth provider setup scheduled for 1.1.
+- [Authentication](authentication.md): the SSO model, the local admin bootstrap, session policy, approved domains, and the OAuth provider setup.
 
 ## Security
 
 - [Security](security.md): the production security model, CSRF and CORS guardrails, webhook and MCP auth, SSRF protection, secret masking, the worker exposure caveat, and the pre-launch checklist.
+- [Encryption](encryption.md): the hybrid envelope for secret values, the `SECRET_ENCRYPTION_KEY` setup, key rotation, the threat model, and the workspace migration path.
 
 ## Deployment
 

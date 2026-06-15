@@ -87,7 +87,7 @@ A variable is a named value you can drop into any field of a request, header, bo
 | `variables.*` | `{{variables.token}}`         | workflow variable (manual or extracted)                      |
 | `env.*`       | `{{env.BASE_URL}}`            | active environment                                           |
 | `prev.*`      | `{{prev.response.body.id}}`   | previous node result (`prev[0]` after a merge)               |
-| `secrets.*`   | `{{secrets.API_KEY}}`         | runtime-entered value (not yet supported in 1.0)             |
+| `secrets.*`   | `{{secrets.API_KEY}}`         | runtime-entered value (encrypted at rest)                    |
 
 Dynamic functions are also available: `{{uuid()}}`, `{{randomString(12)}}`, `{{timestamp()}}`, and similar helpers.
 
@@ -108,18 +108,18 @@ Later node:
 
 ## Secret
 
-A secret is a sensitive value, such as an API key or client secret, that you do not want stored in plain workflow configuration. The data model for secrets exists today, and you can declare secret keys inside an environment, but the runtime prompt and resolution of `{{secrets.NAME}}` placeholders are **not yet implemented in APIWeave 1.0**. Treat the secret namespace as a known gap until the runtime flow ships.
+A secret is a sensitive value, such as an API key or client secret, that you do not want stored in plain workflow configuration. Secrets are encrypted at rest with the hybrid envelope described in the [Encryption Guide](../operations/encryption.md) and resolved at run time from the active environment. Use the `{{secrets.NAME}}` placeholder to inject a secret value into a request field, header, body, or assertion path.
 
 ```text
-{{secrets.API_KEY}}       # declared in env, not yet resolved at run time
-{{secrets.CLIENT_SECRET}} # declared in env, not yet resolved at run time
+{{secrets.API_KEY}}       # declared in env, encrypted at rest, resolved at run time
+{{secrets.CLIENT_SECRET}} # declared in env, encrypted at rest, resolved at run time
 ```
 
 ## Troubleshooting
 
 - **If a placeholder like `{{env.BASE_URL}}` comes back as plain text in the response**, the active environment does not define that key. Open the Environment Manager, add the variable, and re-run.
 - **If `{{variables.token}}` is empty even though the request succeeded**, the extractor name and the placeholder name do not match, or the extractor path does not point at the real response field. Open the Variables panel to inspect what was stored.
-- **If `{{secrets.X}}` does not resolve**, runtime secret resolution is not yet supported in 1.0. Use an environment variable for now and follow the release notes for the secret flow.
+- **If `{{secrets.X}}` does not resolve**, the key is not declared on the active environment, or the runtime cannot decrypt the stored value. Open the Environment Manager, confirm the key exists, and see the [Encryption Guide](../operations/encryption.md) for the at-rest key model.
 - **If a node never runs**, the canvas has no edge from an upstream node into it. Drag a connection from the previous node's output handle to this node's input handle.
 
 ## Related

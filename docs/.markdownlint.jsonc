@@ -25,5 +25,12 @@
 
   // MD046 — code-style: We exclusively use fenced code blocks (```) with
   // language tags. No need to enforce the indented code style variant.
-  "MD046": false
+  "MD046": false,
+
+  // MD060 — table-column-style: The APIWeave docs use "aligned" table
+  // formatting (padded pipes that line up under the header) for readability
+  // and review ergonomics. The markdownlint default expects "compact" tables,
+  // which would force reformatting of every comparison and reference table
+  // across the docs. Disabled to preserve the existing convention.
+  "MD060": false
 }

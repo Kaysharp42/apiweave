@@ -8,24 +8,6 @@
 - A running APIWeave instance with a saved workflow or collection to bind the webhook to.
 - For CI/CD snippets: shell access (`bash`), `curl`, and `openssl` on the agent that runs the pipeline.
 
-## Not Yet Supported in 1.0
-
-> **Webhook execution endpoints are partial in 1.0.** Webhook **management** (create, list, view, regenerate credentials, delete) works fully through the UI and the `/api/webhooks` CRUD endpoints. The execution path `POST /api/webhooks/{id}/execute` is wired for authentication, idempotency, and rate limiting, but the upstream run-trigger path that fans out into the executor is **not fully wired in this release**. Treat `POST /execute` as **read-only / non-executing** for now: the request will be accepted and logged, but it will not start a workflow or collection run end-to-end.
->
-> What works in 1.0:
->
-> - Webhook CRUD (create, read, update, delete) and credential regeneration.
-> - `X-Webhook-Token` and `X-Webhook-Signature` authentication, plus `X-Webhook-Timestamp` replay protection.
-> - `Idempotency-Key` deduplication (24h TTL) and the 100 req/hour per-webhook rate limit.
-> - Execution log inspection in the UI and through the logs API.
->
-> What does **not** work in 1.0:
->
-> - End-to-end execution of workflow or collection runs triggered by `POST /api/webhooks/{id}/execute`.
-> - The returned `runId` from `/execute` does not correspond to a real run. Poll URLs will not resolve to a finished run.
->
-> Use the WebhookManager UI to manage credentials, and use the CLI or the Runs API directly until full execution lands in a later release. Track status in the [Architecture Reference](../reference/architecture.md#known-gaps) under "Known Gaps".
-
 ## Table of Contents
 
 - [What Is a Webhook](#what-is-a-webhook)
@@ -43,9 +25,7 @@
 
 ## What Is a Webhook
 
-A webhook is a URL-bound credential pair that lets an external system (a CI/CD pipeline, a deploy bot, a scheduler) start a workflow or collection run on demand. The external system calls `POST /api/webhooks/{id}/execute` with the right headers, and APIWeave is supposed to start the run. The trigger is **machine-to-machine**: the caller authenticates with the webhook token (and HMAC in production), not with a human session.
-
-In 1.0, the management half of this contract is complete and the security half (auth, idempotency, rate limit) is enforced, but the run-creation half is still being wired. See the [Not Yet Supported in 1.0](#not-yet-supported-in-10) callout above for the exact split.
+A webhook is a URL-bound credential pair that lets an external system (a CI/CD pipeline, a deploy bot, a scheduler) start a workflow or collection run on demand. The external system calls `POST /api/webhooks/{id}/execute` with the right headers, and APIWeave starts the run. The trigger is **machine-to-machine**: the caller authenticates with the webhook token (and HMAC in production), not with a human session.
 
 ## Webhook Management
 
@@ -170,7 +150,7 @@ A multi-process API deployment enforces the limit per process when using the in-
 Two patterns work for every platform:
 
 - **Fire-and-Forget**: POST to the webhook, exit immediately. The pipeline does not wait for results.
-- **Blocking Poll-and-Fail**: POST, capture the returned `runId`, poll until the run reaches a terminal state, exit non-zero on failure. The polling snippets in the old quick start are deferred in 1.0 (see callout); prefer Fire-and-Forget until full execution lands.
+- **Blocking Poll-and-Fail**: POST, capture the returned `runId`, poll until the run reaches a terminal state, exit non-zero on failure. Useful for gates that must pass before the pipeline continues.
 
 ## GitHub Actions
 
@@ -275,7 +255,7 @@ curl "$BASE_URL/api/webhooks/$WEBHOOK_ID/logs?limit=50" \
   -H "Cookie: session=$SESSION_COOKIE"
 ```
 
-The `result` field will be `accepted_not_executed` for 1.0 calls (see callout), or `rejected_*` for failed auth, idempotency, or rate-limit decisions.
+The `result` field is `accepted` for a successful run start, or `rejected_*` for failed auth, idempotency, or rate-limit decisions. Sensitive headers and bodies are redacted in the stored log.
 
 ## Troubleshooting
 
@@ -286,10 +266,9 @@ The `result` field will be `accepted_not_executed` for 1.0 calls (see callout), 
 - **If you get `429 Too Many Requests`**, you hit the 100/hour limit for that webhook. Read the `Retry-After` and `X-RateLimit-Reset` headers, wait, and retry. Lower the trigger frequency, or split work across multiple webhooks.
 - **If the signature never verifies**, the most common cause is a `printf` vs `echo` mismatch. Use `printf '%s%s' "$TIMESTAMP" "$BODY"` so the trailing newline from `echo` does not contaminate the HMAC input. Also confirm the body you sign is byte-identical to the body you send.
 - **If a retried CI build starts a second run**, you did not send an `Idempotency-Key`, or the key differs between retries. Use a deterministic key tied to the build (`$CI_PIPELINE_ID-$BUILD_NUMBER`, `${{ github.run_id }}-${{ github.run_number }}`, `$BUILD_TAG`).
-- **If the call returns `202` but no run appears in the run history**, this is the expected behavior in 1.0. The execution endpoint does not start a run yet. Use the CLI or the Runs API directly until the run-trigger path ships. See the [Not Yet Supported in 1.0](#not-yet-supported-in-10) callout above.
 
 ## Related
 
 - [Concepts](../getting-started/concepts.md) for run, workflow, and collection definitions.
 - [Variables and Extractors](../features/variables-and-extractors.md) for the placeholder syntax used in webhook-triggered runs.
-- [Architecture Reference](../reference/architecture.md) for the "Known Gaps" section that tracks the webhook execution wiring.
+- [Architecture Reference](../reference/architecture.md) for the request lifecycle that a webhook-triggered run follows.

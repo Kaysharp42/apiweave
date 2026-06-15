@@ -39,7 +39,7 @@ All placeholders work in any request field: URL, method, query parameters, heade
 | `env.*`       | `{{env.BASE_URL}}`                   | Active environment                                           | Yes                             |
 | `variables.*` | `{{variables.token}}`                | Workflow variable (manual or extracted)                      | Yes                             |
 | `prev.*`      | `{{prev.response.body.id}}`          | Previous node result (`prev[0]` after a merge)              | Yes                             |
-| `secrets.*`   | `{{secrets.API_KEY}}`                | Runtime-entered value                                        | Not yet supported in 1.0        |
+| `secrets.*`   | `{{secrets.API_KEY}}`                | Runtime-entered value (encrypted at rest)                    | Yes                             |
 | functions     | `{{uuid()}}`                         | Dynamic helper (uuid, timestamp, randomString, etc.)        | Yes                             |
 
 The four data namespaces are tried in a fixed order. See [Substitution Order](#substitution-order) for the exact sequence.
@@ -98,16 +98,14 @@ If you reference a branch that did not complete, the placeholder resolves to an 
 
 ## Secrets
 
-> **Not yet supported in 1.0.**
->
-> The data model for secrets exists, and you can declare secret keys inside an environment today. The runtime prompt that asks for secret values and the resolver that turns `{{secrets.NAME}}` into the real value are not yet implemented. A `{{secrets.NAME}}` placeholder in a workflow comes back unresolved at run time in 1.0.
-
-The syntax is reserved and will work once the runtime flow ships. For now, store the value as an environment variable and reference it via `{{env.NAME}}` instead. Never paste a real secret into a workflow definition, a comment, a commit, or a `.awecollection` export.
+`secrets.*` reads from the active environment's secret store. Values are encrypted at rest with the hybrid envelope described in the [Encryption Guide](../operations/encryption.md) and resolved at run time without exposing the plaintext in the canvas or in exported workflows.
 
 ```text
-{{secrets.API_KEY}}        # declared in env, not yet resolved at run time
-{{secrets.CLIENT_SECRET}}  # declared in env, not yet resolved at run time
+{{secrets.API_KEY}}        # declared in env, encrypted at rest, resolved at run time
+{{secrets.CLIENT_SECRET}}  # declared in env, encrypted at rest, resolved at run time
 ```
+
+The runtime prompt that asks for a missing secret value is not part of the flow. Declare the key and its value in the Environment Manager, and the runner will resolve it on every run. Never paste a real secret into a workflow definition, a comment, a commit, or a `.awecollection` export.
 
 ## Dynamic Functions
 
@@ -130,11 +128,10 @@ The runner resolves placeholders in this exact order, on every field of every no
 1. `{{variables.name}}` resolves to workflow variables (manual or extracted).
 2. `{{env.NAME}}` resolves to environment variables from the active environment.
 3. `{{prev.response.body.field}}` and `{{prev[index]...}}` resolve to the previous node result.
-4. `{{functionName(args)}}` runs as a dynamic function call.
+4. `{{secrets.NAME}}` resolves to a secret declared on the active environment. The value is decrypted in the runtime path only and never persisted to logs or exports. See [Secrets](#secrets).
+5. `{{functionName(args)}}` runs as a dynamic function call.
 
-`{{secrets.NAME}}` is not in this list because runtime resolution is not yet implemented in 1.0. See [Secrets](#secrets).
-
-A practical consequence: if you have a workflow variable named `token` and an environment variable with the same name, the workflow variable wins. Use distinct names when you need both.
+A practical consequence: if you have a workflow variable named `token` and a secret with the same name, the workflow variable wins. Use distinct names when you need both.
 
 Resolution happens once per node, before the node executes. Extractors from that node are not available to the same node, but they are available to every later node.
 
@@ -161,6 +158,7 @@ These are the patterns that show up most often in failing runs. Each one is a co
 - **Wrong JSONPath on an extractor or `prev.*` reference.** A field name with a typo, a case mismatch, or a missing `[0]` on an array returns nothing. Fix: inspect the actual response body, copy the exact key, and remember that arrays are zero-based.
 - **Using `prev.*` across a Merge without an index.** After a Merge, `{{prev.response.body.id}}` is ambiguous because there are multiple branches. Fix: use `{{prev[0].response.body.id}}` or `{{prev[1].response.body.id}}` and confirm the index from the run results.
 - **Referencing a variable before it is defined.** A node uses `{{variables.userId}}` before any earlier node extracted `userId`. Fix: move the dependent node downstream of the extractor, or define the variable in the Variables panel before the run starts.
+- **Using a secret that is not declared on the active environment.** `{{secrets.API_KEY}}` resolves to an empty string when the active environment has no key by that name. Fix: open the Environment Manager, add the key, and re-run. The decrypted value never appears in the canvas, run history, or exported workflows.
 - **Editing JSON manually and breaking the structure.** A missing comma or quote in a request body makes the whole field invalid JSON, and every placeholder in that field comes back unresolved. Fix: use the JSON editor's validation feedback, apply small edits, and re-run.
 
 ## Related
@@ -168,4 +166,5 @@ These are the patterns that show up most often in failing runs. Each one is a co
 - [Variables and Extractors](../features/variables-and-extractors.md)
 - [Environments and Secrets](../features/environments-and-secrets.md)
 - [Dynamic Functions Reference](dynamic-functions.md)
+- [Encryption Guide](../operations/encryption.md)
 - [Concepts](../getting-started/concepts.md)

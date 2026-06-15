@@ -38,7 +38,7 @@ The runner resolves `{{...}}` in a fixed order: workflow variables first, then e
 
 ### What is the secrets model in 1.0?
 
-The data model for secrets exists, and you can declare secret keys on an environment today. Runtime resolution of `{{secrets.NAME}}` is **not yet implemented in APIWeave 1.0**. Treat the secret namespace as a known gap. Use an environment variable in the meantime and follow the release notes for the runtime flow. See the [Secrets and Environments](../features/environments-and-secrets.md) doc for the full status and the [Concepts](../getting-started/concepts.md) glossary for the distinction.
+Secrets are declared as named keys on an environment and encrypted at rest with the hybrid envelope described in the [Encryption Guide](../operations/encryption.md). At run time, the executor resolves `{{secrets.NAME}}` against the active environment without showing the plaintext in the canvas or in exported workflows. The full declaration and resolution flow lives in [Environments and Secrets](../features/environments-and-secrets.md), and the term itself is defined in [Concepts](../getting-started/concepts.md).
 
 ### How do webhooks authenticate, and why both token and HMAC?
 

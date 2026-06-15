@@ -1,31 +1,12 @@
 # Authentication
 
-*How APIWeave authenticates human users and machine clients in 1.0. Covers the SSO model, the local admin bootstrap, session policy, approved domains, and the OAuth provider setup that is scheduled for 1.1.*
+*How APIWeave authenticates human users and machine clients in 1.0. Covers the SSO model, the local admin bootstrap, session policy, approved domains, and the OAuth provider setup.*
 
 ## Prerequisites
 
 - Read the [Security Guide](security.md) for the cross-cutting posture (CSRF, CORS, secrets, worker exposure).
 - A running APIWeave instance with a verified backend `BASE_URL` and a frontend origin in `ALLOWED_ORIGINS`.
-- A secret manager for `SESSION_SECRET_KEY`, `SECRET_KEY`, and the future OAuth client secrets.
-
-## Not Yet Supported in 1.0
-
-> **OAuth and OIDC multi-user login are not yet active in 1.0.** The four supported providers (GitHub, GitLab, Google, Microsoft) are configured in the environment reference and the callback routes are wired, but the multi-user OAuth login path is **not yet enabled in this release**. The only working sign-in path today is a single local admin created through setup mode. Multi-user SSO, invite links, and approved-domain signup all depend on the OAuth login path and become available together in 1.1.
->
-> What works in 1.0:
->
-> - The first admin can sign in through setup mode and bootstrap the instance.
-> - Browser sessions are signed and stored in an HttpOnly cookie.
-> - Approved-domain settings and setup-mode flags are read by the backend (so the configuration is already in place for 1.1).
-> - OAuth client ID and secret variables can be set; they will activate when the login path ships.
->
-> What does **not** work in 1.0:
->
-> - OAuth/OIDC sign-in buttons on the login page. The buttons are not rendered.
-> - Account linking, multi-user invites, and approved-domain signup via provider login.
-> - Callback handlers responding to a real provider authorization code (the route is wired but the handshake is not yet active).
->
-> Track status under "Known Gaps" in the [Architecture Reference](../reference/architecture.md). The provider-by-provider setup instructions for 1.1 are preserved later in this page so you can prepare the credentials ahead of the release.
+- A secret manager for `SESSION_SECRET_KEY`, `SECRET_KEY`, `SECRET_ENCRYPTION_KEY`, and the OAuth client secrets for each provider you enable.
 
 ## Authentication Model
 
@@ -35,7 +16,7 @@ APIWeave has two distinct authentication paths, and they never share credentials
 
 **Machine clients (CI/CD, AI agents):** Token-based. Webhook execution uses `X-Webhook-Token` plus an HMAC-SHA256 signature. MCP HTTP uses `Authorization: Bearer <MCP_API_KEY>`. These credentials are separate from any human session and never use the browser cookie jar. See [Webhooks](../features/webhooks.md) and [MCP Integration](../features/mcp-integration.md) for the full contract.
 
-```
+```text
 +--------+     SSO callback      +-----------+     HttpOnly cookie     +----------+
 | Browser| <------------------> |  Backend  | <---------------------> |  Session |
 +--------+                       +-----------+                         +----------+
@@ -52,7 +33,7 @@ Why this split: humans hold an interactive session with a short idle window; mac
 
 ## Setup Mode
 
-Setup mode is the bootstrap path for the first admin. When no users exist and `SETUP_MODE_ENABLED=true`, the backend accepts a sign-in from the local admin account and creates that user with the admin role. After the first user exists, the bootstrap path locks and later users must enter through the path that ships in 1.1 (invite link or approved-domain signup).
+Setup mode is the bootstrap path for the first admin. When no users exist and `SETUP_MODE_ENABLED=true`, the backend accepts a sign-in from the local admin account and creates that user with the admin role. After the first user exists, the bootstrap path locks and later users must enter through an invite link or, when domain signup is enabled, by signing in through a configured provider on an approved domain.
 
 Operational rules:
 
@@ -74,19 +55,19 @@ APPROVED_DOMAINS=example.com,example.org
 
 ## Approved Domains
 
-Approved domains gate which email addresses can create accounts. Domain matching is based on the verified email returned by the provider; unverified provider emails are rejected and cannot be used for signup or account linking. Because the OAuth login path is not yet active in 1.0, this gate is read by the backend but not yet enforced end-to-end; it will enforce automatically when 1.1 turns the login path on.
+Approved domains gate which email addresses can create accounts. Domain matching is based on the verified email returned by the provider; unverified provider emails are rejected and cannot be used for signup or account linking. The gate is enforced on every OAuth sign-in once the provider is enabled.
 
-| Mode | Configuration | Behavior in 1.0 | Behavior in 1.1 |
-|------|---------------|------------------|------------------|
-| Invite-only | `APPROVED_DOMAINS_ENABLED=false` | First admin via setup mode. | Admins generate invite links; invitees sign in through OAuth. |
-| Domain signup | `APPROVED_DOMAINS_ENABLED=true` plus `APPROVED_DOMAINS` | First admin via setup mode. | Verified emails on listed domains sign in directly; admins can still send invites. |
+| Mode | Configuration | Behavior |
+|------|---------------|----------|
+| Invite-only | `APPROVED_DOMAINS_ENABLED=false` | First admin via setup mode. Admins generate invite links; invitees sign in through OAuth. |
+| Domain signup | `APPROVED_DOMAINS_ENABLED=true` plus `APPROVED_DOMAINS` | First admin via setup mode. Verified emails on listed domains sign in directly through OAuth; admins can still send invites. |
 
 ```env
 APPROVED_DOMAINS_ENABLED=true
 APPROVED_DOMAINS=example.com,example.org
 ```
 
-Admins retain the ability to issue invites in either mode once 1.1 lands. Treat `APPROVED_DOMAINS` as a tenant allowlist: include only the domains your organization owns, and review the list every time you add or remove a corporate domain.
+Admins retain the ability to issue invites in either mode. Treat `APPROVED_DOMAINS` as a tenant allowlist: include only the domains your organization owns, and review the list every time you add or remove a corporate domain.
 
 ## Session Policy
 
@@ -117,9 +98,9 @@ A short list of the auth-related items a deployment must pass before going live.
 - [ ] `SETUP_MODE_ENABLED=false` after the first admin exists.
 - [ ] `APPROVED_DOMAINS` contains only the domains your organization owns, or the gate is disabled for invite-only operation.
 
-## OAuth Provider Setup (Available in 1.1)
+## OAuth Provider Setup
 
-> **The OAuth login path is not yet active in 1.0.** The instructions below are preserved for operators who want to register applications in the provider consoles ahead of the 1.1 release. Do not advertise a sign-in button that does not yet work; the buttons will appear in 1.1.
+The login path is gated by `OAUTH_LOGIN_ENABLED` (default `false`). When the flag is off, the local admin created through setup mode is the only way to sign in; when the flag is on, the provider buttons on the login page activate and the callback handlers respond to real provider authorization codes. Register each provider application before flipping the flag on, and store the client secrets in your deployment secret manager. Account linking is blocked by policy; the error is surfaced to the operator rather than auto-linking to an existing local account.
 
 All four providers use the authorization-code flow. The callback URL is built from `PUBLIC_BASE_URL` (the public backend URL, not the frontend URL). The placeholder `{base_url}` below stands in for the value of `PUBLIC_BASE_URL` in your deployment.
 
@@ -207,17 +188,17 @@ The minimum production set:
 - `CSRF_ENABLED=true`.
 - `SETUP_MODE_ENABLED=false` after the first admin exists.
 - `APPROVED_DOMAINS_ENABLED` and `APPROVED_DOMAINS` for tenant gating.
-
-Do not set OAuth client IDs and secrets in 1.0; the login path is not yet active. When 1.1 lands, set them through your secret manager and restart the backend.
+- `OAUTH_LOGIN_ENABLED=true` once the provider applications are registered and the client secrets are in the secret manager.
+- `SECRET_ENCRYPTION_KEY` (32 bytes, base64-encoded) for secret-at-rest encryption. See the [Encryption Guide](encryption.md).
 
 ## Troubleshooting
 
-- **If you cannot sign in at all in 1.0**, the OAuth login path is not yet active. Use setup mode to create the first admin (set `SETUP_MODE_ENABLED=true`, restart, sign in once, then set it back to `false`).
+- **If you cannot sign in at all**, `OAUTH_LOGIN_ENABLED` is off and no local admin exists. Toggle setup mode to create the first admin (`SETUP_MODE_ENABLED=true`, restart, sign in once, set it back to `false`), or flip `OAUTH_LOGIN_ENABLED=true` and complete the provider registration.
 - **If the first admin sign-in is rejected**, the email you are using is not verified. Provider login requires a verified primary email. Confirm the account in the provider's email settings and retry.
 - **If setup mode refuses to create the user**, a user already exists in the database. Setup mode only works while the user collection is empty. Sign in with the existing first admin, or restore the database to a clean state if you are recovering from a broken bootstrap.
 - **If the session cookie is not set in the browser**, `SESSION_COOKIE_SECURE=true` is set while the page is served over HTTP, or `APP_ENV=development` is set in a production-like deploy. The browser silently drops an insecure cookie. Confirm the page is served over HTTPS and that `APP_ENV` matches the deployment.
 - **If the session expires faster than expected**, check `SESSION_MAX_IDLE_MINUTES` and `SESSION_MAX_ABSOLUTE_MINUTES`. The defaults are 12 hours idle and 7 days absolute. Rotation on privilege change also forces a fresh absolute clock.
-- **If `APPROVED_DOMAINS` changes are not enforced**, the OAuth login path is not yet active in 1.0. Domain matching is wired in the backend but does not gate sign-in until 1.1. The setting still takes effect the moment 1.1 turns the login path on, so set it now and let 1.1 pick it up.
+- **If `APPROVED_DOMAINS` is set but a valid domain is still rejected**, the provider returned an unverified email, or the user already exists with a different verified email. Account linking is blocked by policy; create a new account or contact an admin to merge the existing one.
 
 ## Related
 
@@ -225,4 +206,4 @@ Do not set OAuth client IDs and secrets in 1.0; the login path is not yet active
 - [Environment Variables Reference](../reference/environment-variables.md) for the full `Authentication and OAuth`, `Sessions and CSRF`, and `Approved Domains` tables.
 - [Webhooks](../features/webhooks.md) for the machine-to-machine side of the authentication story.
 - [MCP Integration](../features/mcp-integration.md) for the second machine-to-machine path (HTTP MCP).
-- [Architecture Reference](../reference/architecture.md) for the "Known Gaps" tracker that records the OAuth login path as scheduled for 1.1.
+- [Encryption Guide](encryption.md) for the `SECRET_ENCRYPTION_KEY` setup and rotation.
