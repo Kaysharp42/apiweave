@@ -424,3 +424,204 @@ class TestRoleElevationBlocked:
             )
         assert response.status_code == 403
         assert "role" in response.json()["detail"].lower()
+
+
+class TestInviteWithAdminRole:
+    """Invite with admin role preset is applied on matching OAuth signup."""
+
+    def test_admin_role_from_invite_applied(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = "github"
+        invite_email = "admin-invited@example.com"
+        invite = _make_invite(email=invite_email, role_preset="admin")
+        created_user = _user(invite_email, roles=["admin"])
+
+        monkeypatch.setattr(auth_router.settings, "SETUP_MODE_ENABLED", False)
+        monkeypatch.setattr(auth_router.settings, "OAUTH_LOGIN_ENABLED", True)
+        monkeypatch.setattr(auth_router.settings, "APPROVED_DOMAINS_ENABLED", False)
+        monkeypatch.setattr(
+            provider_registry,
+            "get_provider_config",
+            lambda name: _provider_config(name),
+        )
+        monkeypatch.setattr(
+            provider_registry,
+            "get_enabled_providers",
+            lambda: ["github"],
+        )
+        monkeypatch.setattr(
+            auth_router.OAuthStateRepository,
+            "consume",
+            AsyncMock(return_value=_oauth_state(provider, invite_token=RAW_TOKEN)),
+        )
+        monkeypatch.setattr(
+            provider_registry,
+            "exchange_code_for_token",
+            AsyncMock(return_value={"access_token": "token", "id_token": "h.p.s"}),
+        )
+        monkeypatch.setattr(
+            provider_registry,
+            "fetch_userinfo",
+            AsyncMock(return_value=_userinfo(provider, invite_email)),
+        )
+        monkeypatch.setattr(
+            auth_router.ProviderIdentityRepository,
+            "get_by_provider_subject",
+            AsyncMock(return_value=None),
+        )
+        monkeypatch.setattr(auth_router.ProviderIdentityRepository, "create", AsyncMock())
+        monkeypatch.setattr(
+            auth_router.UserRepository, "get_by_email", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=5))
+        monkeypatch.setattr(
+            auth_router.InviteRepository,
+            "get_by_token_hash",
+            AsyncMock(return_value=invite),
+        )
+        monkeypatch.setattr(
+            auth_router.InviteRepository, "consume", AsyncMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            auth_router.UserRepository, "create", AsyncMock(return_value=created_user)
+        )
+        monkeypatch.setattr(
+            auth_router.UserRepository, "update", AsyncMock(return_value=created_user)
+        )
+        monkeypatch.setattr(
+            auth_router.UserRepository,
+            "add_oauth_account",
+            AsyncMock(return_value=created_user),
+        )
+        monkeypatch.setattr(
+            auth_router.InviteRepository,
+            "get_valid_by_email",
+            AsyncMock(return_value=[]),
+        )
+        monkeypatch.setattr(
+            auth_router.ApprovedDomainRepository,
+            "is_domain_approved",
+            AsyncMock(return_value=False),
+        )
+        monkeypatch.setattr(auth_router.SessionRepository, "create", AsyncMock())
+        monkeypatch.setattr(
+            auth_router.DeletedUserRepository,
+            "is_deleted",
+            AsyncMock(return_value=False),
+        )
+        monkeypatch.setattr(
+            auth_router.DeletedUserRepository,
+            "is_email_deleted",
+            AsyncMock(return_value=False),
+        )
+
+        response = client.get(
+            f"/api/auth/callback/{provider}",
+            params={"code": "valid-code", "state": "valid-state"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        create_call = auth_router.UserRepository.create.call_args
+        assert create_call.kwargs["roles"] == ["admin"]
+
+
+class TestInviteViaGitLabProvider:
+    """Invite role applied when signing up via a non-GitHub provider."""
+
+    def test_gitlab_invite_role_applied(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = "gitlab"
+        invite_email = "gl-invited@example.com"
+        invite = _make_invite(email=invite_email, role_preset="editor")
+        created_user = _user(invite_email, roles=["editor"])
+
+        monkeypatch.setattr(auth_router.settings, "SETUP_MODE_ENABLED", False)
+        monkeypatch.setattr(auth_router.settings, "OAUTH_LOGIN_ENABLED", True)
+        monkeypatch.setattr(auth_router.settings, "APPROVED_DOMAINS_ENABLED", False)
+        monkeypatch.setattr(
+            provider_registry,
+            "get_provider_config",
+            lambda name: _provider_config(name),
+        )
+        monkeypatch.setattr(
+            provider_registry,
+            "get_enabled_providers",
+            lambda: ["gitlab"],
+        )
+        monkeypatch.setattr(
+            auth_router.OAuthStateRepository,
+            "consume",
+            AsyncMock(return_value=_oauth_state(provider, invite_token=RAW_TOKEN)),
+        )
+        monkeypatch.setattr(
+            provider_registry,
+            "exchange_code_for_token",
+            AsyncMock(return_value={"access_token": "token"}),
+        )
+        monkeypatch.setattr(
+            provider_registry,
+            "fetch_userinfo",
+            AsyncMock(return_value=_userinfo(provider, invite_email)),
+        )
+        monkeypatch.setattr(
+            auth_router.ProviderIdentityRepository,
+            "get_by_provider_subject",
+            AsyncMock(return_value=None),
+        )
+        monkeypatch.setattr(auth_router.ProviderIdentityRepository, "create", AsyncMock())
+        monkeypatch.setattr(
+            auth_router.UserRepository, "get_by_email", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=5))
+        monkeypatch.setattr(
+            auth_router.InviteRepository,
+            "get_by_token_hash",
+            AsyncMock(return_value=invite),
+        )
+        monkeypatch.setattr(
+            auth_router.InviteRepository, "consume", AsyncMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            auth_router.UserRepository, "create", AsyncMock(return_value=created_user)
+        )
+        monkeypatch.setattr(
+            auth_router.UserRepository, "update", AsyncMock(return_value=created_user)
+        )
+        monkeypatch.setattr(
+            auth_router.UserRepository,
+            "add_oauth_account",
+            AsyncMock(return_value=created_user),
+        )
+        monkeypatch.setattr(
+            auth_router.InviteRepository,
+            "get_valid_by_email",
+            AsyncMock(return_value=[]),
+        )
+        monkeypatch.setattr(
+            auth_router.ApprovedDomainRepository,
+            "is_domain_approved",
+            AsyncMock(return_value=False),
+        )
+        monkeypatch.setattr(auth_router.SessionRepository, "create", AsyncMock())
+        monkeypatch.setattr(
+            auth_router.DeletedUserRepository,
+            "is_deleted",
+            AsyncMock(return_value=False),
+        )
+        monkeypatch.setattr(
+            auth_router.DeletedUserRepository,
+            "is_email_deleted",
+            AsyncMock(return_value=False),
+        )
+
+        response = client.get(
+            f"/api/auth/callback/{provider}",
+            params={"code": "valid-code", "state": "valid-state"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        create_call = auth_router.UserRepository.create.call_args
+        assert create_call.kwargs["roles"] == ["editor"]
+        auth_router.InviteRepository.consume.assert_awaited_once_with("inv-test9")

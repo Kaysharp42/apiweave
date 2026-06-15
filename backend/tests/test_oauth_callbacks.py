@@ -302,6 +302,106 @@ class TestLinkingBlocked:
         assert "linking" in detail
 
 
+class TestGitLabCallbackHappyPath:
+    """E3: GitLab happy path — user created, session set, redirect."""
+
+    def test_gitlab_callback_happy_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        provider = "gitlab"
+        _patch_all(monkeypatch, provider, state=_oauth_state(provider), verified=True)
+        response = client.get(
+            f"/api/auth/callback/{provider}",
+            params={"code": "valid-code", "state": "valid-state"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert response.headers["location"] == "http://localhost:3000/"
+        assert "session" in response.cookies or any(
+            "session" in k.lower() for k in response.cookies
+        )
+
+
+class TestGoogleCallbackHappyPath:
+    """E3: Google OIDC happy path — nonce validated, user created, redirect."""
+
+    def test_google_callback_happy_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        provider = "google"
+        _patch_all(monkeypatch, provider, state=_oauth_state(provider), verified=True)
+        response = client.get(
+            f"/api/auth/callback/{provider}",
+            params={"code": "valid-code", "state": "valid-state"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert response.headers["location"] == "http://localhost:3000/"
+        assert "csrftoken" in response.cookies or any(
+            "csrftoken" in k.lower() for k in response.cookies
+        )
+
+
+class TestMicrosoftCallbackHappyPath:
+    """E3: Microsoft OIDC happy path — nonce validated, user created, redirect."""
+
+    def test_microsoft_callback_happy_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = "microsoft"
+        _patch_all(monkeypatch, provider, state=_oauth_state(provider), verified=True)
+        response = client.get(
+            f"/api/auth/callback/{provider}",
+            params={"code": "valid-code", "state": "valid-state"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert response.headers["location"] == "http://localhost:3000/"
+        assert "session" in response.cookies or any(
+            "session" in k.lower() for k in response.cookies
+        )
+
+
+class TestExpiredState:
+    """State exists but is expired → 400."""
+
+    def test_expired_state_returns_400(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        provider = "github"
+        expired_state = OAuthState.model_construct(
+            stateId="ost-expired",
+            state="valid-state",
+            code_verifier="verifier",
+            nonce="nonce",
+            provider=provider,
+            redirect_uri=f"http://testserver/api/auth/callback/{provider}",
+            invite_token=None,
+            expires_at=datetime.now(UTC) - timedelta(minutes=5),
+        )
+        _patch_all(monkeypatch, provider, state=expired_state, verified=True)
+        response = client.get(
+            f"/api/auth/callback/{provider}",
+            params={"code": "valid-code", "state": "valid-state"},
+        )
+        assert response.status_code == 400
+        detail = response.json().get("detail", "").lower()
+        assert "state" in detail or "expired" in detail
+
+
+class TestStateProviderMismatch:
+    """State was created for 'github' but callback hits '/callback/gitlab' → 400."""
+
+    def test_state_provider_mismatch_returns_400(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # State was created for github
+        state_for_github = _oauth_state("github")
+        # But the callback is for gitlab
+        _patch_all(monkeypatch, "gitlab", state=state_for_github, verified=True)
+        response = client.get(
+            "/api/auth/callback/gitlab",
+            params={"code": "valid-code", "state": "valid-state"},
+        )
+        assert response.status_code == 400
+        detail = response.json().get("detail", "").lower()
+        assert "mismatch" in detail or "state" in detail
+
+
 class TestProvidersEndpoint:
     def test_providers_endpoint_returns_list(self) -> None:
         response = client.get("/api/auth/providers")

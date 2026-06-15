@@ -250,3 +250,81 @@ class TestOAuthAccountModel:
             linkedAt=datetime.now(UTC),
         )
         assert account.emailVerified is True
+
+
+# ===========================================================================
+# Scenario: Email-verified flag preserved through linking
+# ===========================================================================
+
+
+class TestEmailVerifiedPreserved:
+    """The emailVerified flag on OAuthAccount reflects the provider's assertion."""
+
+    @pytest.mark.asyncio
+    async def test_link_with_unverified_email_stores_false(self) -> None:
+        """When provider says email_verified=false, the account records False."""
+        user = make_user()
+
+        with (
+            patch.object(UserRepository, "get_by_email", new=AsyncMock(return_value=user)),
+            patch.object(User, "save", new=AsyncMock()),
+        ):
+            result = await UserRepository.link_oauth_account(
+                user=user,
+                provider="github",
+                subject="gh-unverified",
+                email="user@example.com",
+                email_verified=False,
+            )
+
+        assert len(result.oauth_accounts) == 1
+        assert result.oauth_accounts[0].emailVerified is False
+
+    @pytest.mark.asyncio
+    async def test_link_with_verified_email_stores_true(self) -> None:
+        """When provider says email_verified=true, the account records True."""
+        user = make_user()
+
+        with (
+            patch.object(UserRepository, "get_by_email", new=AsyncMock(return_value=user)),
+            patch.object(User, "save", new=AsyncMock()),
+        ):
+            result = await UserRepository.link_oauth_account(
+                user=user,
+                provider="gitlab",
+                subject="gl-verified",
+                email="user@gitlab.example.com",
+                email_verified=True,
+            )
+
+        assert len(result.oauth_accounts) == 1
+        assert result.oauth_accounts[0].emailVerified is True
+        assert result.oauth_accounts[0].provider == "gitlab"
+
+
+# ===========================================================================
+# Scenario: Multi-provider accounts on a single user
+# ===========================================================================
+
+
+class TestMultiProviderAccounts:
+    """Linking a second provider is blocked — one auth method per user."""
+
+    @pytest.mark.asyncio
+    async def test_second_provider_link_is_blocked(self) -> None:
+        """User already has github → linking gitlab raises OAuthLinkingBlockedError."""
+        user = make_user(
+            oauth_accounts=[make_oauth_account(provider="github", subject="gh-sub")]
+        )
+
+        with pytest.raises(OAuthLinkingBlockedError) as exc:
+            await UserRepository.link_oauth_account(
+                user=user,
+                provider="gitlab",
+                subject="gl-sub",
+                email="user@example.com",
+                email_verified=True,
+            )
+
+        assert exc.value.status_code == 409
+        assert "linking" in exc.value.detail.lower() or "one" in exc.value.detail.lower()
