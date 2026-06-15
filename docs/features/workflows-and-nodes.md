@@ -157,6 +157,14 @@ Resume reuses what already worked and only re-executes what is needed.
 
 `continueOnFail` is a per-workflow setting in the workflow settings panel. With `continueOnFail = false` (default), the runner stops at the first error. With `continueOnFail = true`, the runner logs the error and keeps going, tracking failed node IDs for the resume actions above.
 
+## Lineage Hydration on Repeated Resume
+
+*Run from failed* targets the latest failed run, and it keeps working when a resumed run fails again. The runner treats the chain of attempts as a single lineage rather than discarding earlier work, so a `run -> fail -> resume -> fail -> resume` cycle never forces you to start from zero.
+
+The current run links back to its source through `resumeFromRunId`. On resume, the executor walks that chain from the most recent attempt back to the original run, then hydrates workflow variables and successful node results in order. Variables from the newest attempt win, but anything the original run produced stays readable, and only the nodes that still fail are re-executed.
+
+The walk is bounded by the `resumeFromRunId` link, so it cannot loop forever. Use *Run* (not resume) when you want a clean execution with no inherited state. The lineage walk and the resume endpoint surface are covered by `backend/tests/test_resume_from_last_failed.py`, including the `_hydrate_resume_context` path that rebuilds merge branch context from earlier attempts.
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
