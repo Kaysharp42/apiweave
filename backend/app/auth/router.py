@@ -64,6 +64,7 @@ def _user_response(user: User) -> UserResponse:
         avatar_url=user.avatar_url,
         roles=user.roles,
         permissions=user.permissions,
+        oauth_accounts=user.oauth_accounts,
         is_setup_complete=user.is_setup_complete,
         created_at=user.created_at,
     )
@@ -543,6 +544,33 @@ async def logout(
     response.delete_cookie(
         SESSION_COOKIE_NAME,
         httponly=True,
+        secure=settings.get_session_cookie_secure(),
+        samesite=settings.get_session_cookie_samesite().lower(),
+        path="/",
+    )
+    return {"revoked": revoked}
+
+
+@router.post("/signout", dependencies=[Depends(csrf_protect)])
+async def signout(
+    response: Response,
+    session: Session = Depends(get_current_session),
+) -> dict[str, bool]:
+    """Revoke the current session and clear the session cookie.
+
+    Alias for /logout — used by the AccountSettings sign-out flow.
+    """
+    revoked = await SessionRepository.revoke(session.sessionId)
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        httponly=True,
+        secure=settings.get_session_cookie_secure(),
+        samesite=settings.get_session_cookie_samesite().lower(),
+        path="/",
+    )
+    response.delete_cookie(
+        CSRF_COOKIE_NAME,
+        httponly=False,
         secure=settings.get_session_cookie_secure(),
         samesite=settings.get_session_cookie_samesite().lower(),
         path="/",

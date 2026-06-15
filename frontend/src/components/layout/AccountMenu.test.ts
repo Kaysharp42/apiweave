@@ -14,6 +14,7 @@ const baseUser: User = {
   avatar_url: null,
   roles: ['editor'],
   permissions: ['workflows:read'],
+  oauth_accounts: [],
   is_setup_complete: true,
   created_at: '2026-01-01T00:00:00Z',
 };

@@ -709,7 +709,7 @@ class UserResponse(BaseModel):
     """
     Public user representation.
 
-    Omits internal fields. Safe to return in API responses.
+    Does NOT include internal fields. Safe to return in API responses.
     """
     userId: str
     verified_email: str
@@ -717,6 +717,7 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     roles: List[str] = Field(default_factory=list)
     permissions: List[str] = Field(default_factory=list)
+    oauth_accounts: List[OAuthAccount] = Field(default_factory=list)
     is_setup_complete: bool
     created_at: datetime
 

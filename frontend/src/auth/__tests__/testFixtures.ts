@@ -123,6 +123,7 @@ function _makeUser(
     avatar_url: null,
     roles,
     permissions,
+    oauth_accounts: [],
     is_setup_complete: isSetupComplete,
     created_at: '2026-01-01T00:00:00Z',
   };
