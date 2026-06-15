@@ -15,6 +15,7 @@ from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import close_db, connect_db
 from app.routes import auth_admin, collections, environments, mcp_config, runs, webhooks, workflows
+from app.services.webhook_runner import webhook_runner
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     await connect_db()
+    await webhook_runner.start()
 
     if settings.MCP_ENABLED and settings.MCP_HTTP_ENABLED:
         from app.mcp.server import mcp_server, register_prompts, register_resources, register_tools
@@ -37,6 +39,7 @@ async def lifespan(app: FastAPI):
     else:
         yield
 
+    await webhook_runner.stop()
     await close_db()
 
 

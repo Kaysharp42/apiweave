@@ -1,3 +1,4 @@
+import base64
 import pytest
 from pydantic import ValidationError
 
@@ -12,6 +13,7 @@ def _base_settings_kwargs(**overrides: str) -> dict[str, str]:
         "ALLOWED_ORIGINS": "http://localhost:3000",
         "SECRET_KEY": "test-secret-key",
         "SESSION_SECRET_KEY": "test-session-secret-key",
+        "SECRET_ENCRYPTION_KEY": base64.urlsafe_b64encode(b"\x00" * 32).decode("ascii"),
     }
     kwargs.update(overrides)
     return kwargs

@@ -6,7 +6,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, UTC
 import uuid
 
-from app.models import Environment, EnvironmentCreate, EnvironmentUpdate
+from app.models import Environment, EnvironmentCreate, EnvironmentUpdate, EncryptedBlob
+from app.services import secret_crypto
 
 
 class EnvironmentRepository:
@@ -168,3 +169,44 @@ class EnvironmentRepository:
             await environment.save()
         
         return environment
+
+    @staticmethod
+    async def set_secret(
+        environment_id: str, key: str, plaintext_value: str
+    ) -> Environment:
+        """Encrypt and store a secret value in the environment.
+
+        The plaintext is encrypted with AES-256-GCM via the envelope
+        encryption layer and stored as an :class:`EncryptedBlob` dict.
+        """
+        environment = await EnvironmentRepository.get_by_id(environment_id)
+        if environment is None:
+            raise ValueError(f"Environment '{environment_id}' not found")
+
+        blob = await secret_crypto.encrypt(plaintext_value)
+        environment.secrets[key] = blob.model_dump()
+        environment.updatedAt = datetime.now(UTC)
+        await environment.save()
+        return environment
+
+    @staticmethod
+    async def get_secret(environment_id: str, key: str) -> str | None:
+        """Retrieve and decrypt a secret value from the environment.
+
+        Returns *None* if the key does not exist.  Legacy plaintext values
+        (stored before encryption was introduced) are returned as-is for
+        backward compatibility.
+        """
+        environment = await EnvironmentRepository.get_by_id(environment_id)
+        if environment is None:
+            return None
+
+        raw = environment.secrets.get(key)
+        if raw is None:
+            return None
+
+        if isinstance(raw, str):
+            return raw
+
+        blob = EncryptedBlob(**raw)
+        return await secret_crypto.decrypt(blob)

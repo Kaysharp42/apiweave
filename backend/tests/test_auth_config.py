@@ -21,6 +21,7 @@ def test_setup_mode_enabled_in_production_is_invalid() -> None:
             **_base_settings_kwargs(),
             APP_ENV="production",
             SETUP_MODE_ENABLED=True,
+            SECRET_ENCRYPTION_KEY="eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=",
         )
 
     assert "SETUP_MODE_ENABLED must be False in production" in str(exc_info.value)
@@ -32,6 +33,7 @@ def test_setup_mode_enabled_in_prod_alias_is_invalid() -> None:
             **_base_settings_kwargs(),
             APP_ENV="prod",
             SETUP_MODE_ENABLED=True,
+            SECRET_ENCRYPTION_KEY="eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=",
         )
 
     assert "SETUP_MODE_ENABLED must be False in production" in str(exc_info.value)
@@ -44,6 +46,7 @@ def test_provider_missing_secret_is_invalid_in_prod() -> None:
             APP_ENV="production",
             SETUP_MODE_ENABLED=False,
             GOOGLE_CLIENT_ID="google-client-id",
+            SECRET_ENCRYPTION_KEY="eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=",
         )
 
     assert "GOOGLE_CLIENT_SECRET" in str(exc_info.value)

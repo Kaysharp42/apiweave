@@ -167,6 +167,31 @@ class RunRepository:
         return counts
     
     @staticmethod
+    async def create_webhook_run(
+        run_id: str,
+        workflow_id: str,
+        environment_id: Optional[str],
+        variables: Dict[str, Any],
+    ) -> Run:
+        """Create a run triggered by a webhook.
+
+        Unlike :meth:`create`, this supports webhook-specific fields
+        (``trigger='webhook'`` and ``environmentId``).
+        """
+        run = Run(
+            runId=run_id,
+            workflowId=workflow_id,
+            environmentId=environment_id,
+            status="pending",
+            trigger="webhook",
+            variables=variables,
+            results=[],
+            createdAt=datetime.now(UTC),
+        )
+        await run.insert()
+        return run
+
+    @staticmethod
     async def update_fields(run_id: str, **fields) -> Optional[Run]:
         """Update specific fields of a run"""
         run = await RunRepository.get_by_id(run_id)
