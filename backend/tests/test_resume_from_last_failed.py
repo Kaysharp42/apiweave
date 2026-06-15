@@ -437,3 +437,193 @@ def test_fail_run_persists_variables_and_failed_nodes_for_followup_resume_attemp
     assert kwargs["status"] == "failed"
     assert kwargs["variables"] == {"catID": "abc123"}
     assert kwargs["failedNodes"] == ["http-request-1761477525560"]
+
+
+# ---------------------------------------------------------------------------
+# T23 — Lineage / resume-trace tests
+# ---------------------------------------------------------------------------
+
+
+def _three_node_workflow():
+    """Workflow: start → http-1 → http-2 → http-3 → end."""
+    return SimpleNamespace(
+        workflowId=WORKFLOW_ID,
+        variables={},
+        nodes=[
+            Node(
+                nodeId="start-1",
+                type="start",
+                label="Start",
+                position={"x": 0, "y": 0},
+                config={},
+            ),
+            Node(
+                nodeId="http-1",
+                type="http-request",
+                label="Get Token",
+                position={"x": 1, "y": 0},
+                config={},
+            ),
+            Node(
+                nodeId="http-2",
+                type="http-request",
+                label="Use Token",
+                position={"x": 2, "y": 0},
+                config={},
+            ),
+            Node(
+                nodeId="http-3",
+                type="http-request",
+                label="Cleanup",
+                position={"x": 3, "y": 0},
+                config={},
+            ),
+            Node(
+                nodeId="end-1",
+                type="end",
+                label="End",
+                position={"x": 4, "y": 0},
+                config={},
+            ),
+        ],
+    )
+
+
+def test_resume_skips_first():
+    """Workflow with 3 HTTP nodes, node 2 fails.
+
+    Resume API must set startNodeIds to [http-2] — skipping http-1 which
+    already succeeded.
+    """
+    workflow = _three_node_workflow()
+    source_run = _run(
+        "run-skip-first-src",
+        "failed",
+        failed_nodes=["http-2"],
+        node_statuses={
+            "http-1": {"status": "success", "timestamp": "2026-05-30T10:00:00Z"},
+            "http-2": {"status": "error", "timestamp": "2026-05-30T10:00:01Z"},
+        },
+    )
+
+    session_patch, touch_patch, user_patch = _auth_patches()
+    with (
+        session_patch,
+        touch_patch,
+        user_patch,
+        patch(
+            "app.routes.workflows.WorkflowRepository.get_by_id",
+            return_value=workflow,
+        ),
+        patch(
+            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            return_value=SimpleNamespace(environmentId=ENV_ID),
+        ),
+        patch(
+            "app.routes.workflows.RunRepository.get_by_id",
+            return_value=source_run,
+        ),
+        patch("app.models.Run", _DummyRunInsert),
+        patch(
+            "app.routes.workflows.asyncio.create_task",
+            side_effect=_close_scheduled_coroutine,
+        ),
+    ):
+        response = client.post(
+            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            json={
+                "resume": {
+                    "mode": "all-failed",
+                    "sourceRunId": "run-skip-first-src",
+                }
+            },
+        )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["resumeMode"] == "all-failed"
+    # http-1 succeeded — must NOT appear in startNodeIds
+    assert "http-1" not in (body["startNodeIds"] or [])
+    # http-2 failed — must be the resume entry point
+    assert body["startNodeIds"] == ["http-2"]
+
+
+def test_lineage_hydration():
+    """Node 1 extracts a variable; resume run has that variable available.
+
+    Directly exercises ``WorkflowExecutor._hydrate_resume_context`` to verify
+    that workflow-level variables and per-node results from the source run
+    lineage are restored into the executor state.
+    """
+    from app.runner.executor import WorkflowExecutor
+
+    source_run = SimpleNamespace(
+        runId="run-lineage-src",
+        workflowId=WORKFLOW_ID,
+        status="failed",
+        variables={"auth_token": "extracted-abc-123"},
+        failedNodes=["http-2"],
+        nodeStatuses={
+            "http-1": {"status": "success", "timestamp": "2026-05-30T10:00:00Z"},
+            "http-2": {"status": "error", "timestamp": "2026-05-30T10:00:01Z"},
+        },
+        resumeFromRunId=None,
+    )
+
+    # Mock DB that returns a stored node result for http-1
+    mock_db = AsyncMock()
+    stored_result = {
+        "status": "success",
+        "statusCode": 200,
+        "body": {"token": "extracted-abc-123"},
+    }
+
+    async def _fake_find_one(query):
+        if query.get("nodeId") == "http-1":
+            return {"result": stored_result, "stored_in_gridfs": False}
+        return None
+
+    mock_db.node_results.find_one = _fake_find_one
+
+    nodes = {
+        "start-1": {"nodeId": "start-1", "type": "start"},
+        "http-1": {"nodeId": "http-1", "type": "http-request"},
+        "http-2": {"nodeId": "http-2", "type": "http-request"},
+        "http-3": {"nodeId": "http-3", "type": "http-request"},
+        "end-1": {"nodeId": "end-1", "type": "end"},
+    }
+    edges = [
+        {"source": "start-1", "target": "http-1"},
+        {"source": "http-1", "target": "http-2"},
+        {"source": "http-2", "target": "http-3"},
+        {"source": "http-3", "target": "end-1"},
+    ]
+
+    executor = WorkflowExecutor(
+        run_id="run-lineage-resume",
+        workflow_id=WORKFLOW_ID,
+        resume_from_run_id="run-lineage-src",
+    )
+    executor.start_time = None
+
+    with (
+        patch(
+            "app.runner.executor.RunRepository.get_by_id",
+            new=AsyncMock(return_value=source_run),
+        ),
+        patch(
+            "app.runner.executor.AsyncIOMotorGridFSBucket",
+            return_value=AsyncMock(),
+        ),
+    ):
+        asyncio.run(executor._hydrate_resume_context(mock_db, nodes, edges))
+
+    # Variable extracted by node 1 in the source run must be available
+    assert executor.workflow_variables.get("auth_token") == "extracted-abc-123"
+
+    # Node 1 result must be hydrated so prev references resolve
+    assert "http-1" in executor.results
+    assert executor.results["http-1"].get("body") == {"token": "extracted-abc-123"}
+
+    # Failed node must NOT be in results (it will be re-executed)
+    assert "http-2" not in executor.results
