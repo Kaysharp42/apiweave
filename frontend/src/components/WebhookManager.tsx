@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, RefreshCw, Plus, Check, Copy, AlertTriangle } from 'lucide-react';
+import { Trash2, RefreshCw, Plus, Check, Copy, AlertTriangle, Play, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from './molecules/Modal';
 import { ConfirmDialog } from './molecules/ConfirmDialog';
@@ -21,6 +21,8 @@ import type { WebhookCredentials } from '../types/WebhookCredentials';
 import type { WebhookLog } from '../types/WebhookLog';
 import type { NewWebhookFormData } from '../types/NewWebhookFormData';
 import type { CopySuccessState } from '../types/CopySuccessState';
+import type { WebhookRun } from '../types/WebhookRun';
+import { useWebhookRuns } from '../hooks/useWebhookRuns';
 
 const buildManagementHeaders = (contentType?: boolean): HeadersInit => {
   const headers: Record<string, string> = {};
@@ -49,6 +51,8 @@ export function WebhookManager() {
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
   const [copySuccess, setCopySuccess] = useState<CopySuccessState>({});
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [webhookRuns, setWebhookRuns] = useState<WebhookRun[]>([]);
+  const { triggerTestDelivery, fetchWebhookRuns, isTriggering } = useWebhookRuns();
 
   useEffect(() => {
     (async () => {
@@ -187,7 +191,19 @@ export function WebhookManager() {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}/logs?limit=50`, { headers: buildManagementHeaders() });
       if (res.ok) { const d = await res.json(); setWebhookLogs(d.logs || []); }
+      const runs = await fetchWebhookRuns(webhook.webhookId);
+      setWebhookRuns(runs);
     } catch (e) { console.error('Error fetching webhook logs:', e); }
+  };
+
+  const handleTestDelivery = async (webhook: Webhook) => {
+    await triggerTestDelivery(webhook);
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}/logs?limit=50`, { headers: buildManagementHeaders() });
+      if (res.ok) { const d = await res.json(); setWebhookLogs(d.logs || []); }
+      const runs = await fetchWebhookRuns(webhook.webhookId);
+      setWebhookRuns(runs);
+    } catch (e) { console.error('Error refreshing logs after test delivery:', e); }
   };
 
   const copyToClipboard = async (text: string, key: string) => {
@@ -298,6 +314,9 @@ export function WebhookManager() {
 
             {/* Actions */}
             <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-border-dark flex-wrap">
+              <Button onClick={() => handleTestDelivery(wh)} variant="primary" size="sm" disabled={isTriggering || !wh.enabled}>
+                <Play className="w-3.5 h-3.5" /> {isTriggering ? 'Triggering…' : 'Test Delivery'}
+              </Button>
               <Button onClick={() => viewLogs(wh)} variant="ghost" size="sm">View Logs</Button>
               <Button onClick={() => { setWebhookToRegenerate(wh); setShowRegenerateModal(true); }} variant="ghost" size="sm" intent="warning">
                 <RefreshCw className="w-3.5 h-3.5" /> Regenerate
@@ -383,22 +402,73 @@ export function WebhookManager() {
       </Modal>
 
       {/* Logs Modal */}
-      <Modal isOpen={showLogsModal && !!selectedWebhook} onClose={() => { setShowLogsModal(false); setSelectedWebhook(null); setWebhookLogs([]); }} title="Webhook Execution Logs" size="lg">
-        {webhookLogs.length === 0 ? (
+      <Modal isOpen={showLogsModal && !!selectedWebhook} onClose={() => { setShowLogsModal(false); setSelectedWebhook(null); setWebhookLogs([]); setWebhookRuns([]); }} title="Webhook Execution Logs" size="lg">
+        {webhookLogs.length === 0 && webhookRuns.length === 0 ? (
           <div className="text-center py-8 text-text-muted dark:text-text-muted-dark">No execution logs yet</div>
         ) : (
-          <div className="space-y-2">
-            {webhookLogs.map((log) => (
-              <div key={log.logId} className="border border-border dark:border-border-dark rounded-lg p-3 bg-surface-raised dark:bg-surface-dark-raised">
-                <div className="flex items-center justify-between mb-2">
-                  <Badge variant={statusBadgeVariant(log.status)} size="sm">{log.status}</Badge>
-                  <span className="text-xs text-text-muted dark:text-text-muted-dark">{formatDate(log.timestamp)}</span>
+          <div className="space-y-3">
+            {/* Real runs section */}
+            {webhookRuns.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">Runs</h3>
+                <div className="space-y-2">
+                  {webhookRuns.map((run) => (
+                    <div key={run.id} className="border border-border dark:border-border-dark rounded-lg p-3 bg-surface-raised dark:bg-surface-dark-raised">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={statusBadgeVariant(run.status)} size="sm">{run.status}</Badge>
+                          <span className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark">Run: {run.runId}</span>
+                        </div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">{formatDate(run.triggeredAt)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-text-secondary dark:text-text-secondary-dark">Duration: {(run.duration / 1000).toFixed(2)}s</span>
+                        <a
+                          href={`${API_BASE_URL}/api/runs/${run.runId}/results`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                        >
+                          View Results <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                {log.duration && <div className="text-xs text-text-secondary dark:text-text-secondary-dark">Duration: {(log.duration / 1000).toFixed(2)}s</div>}
-                {log.errorMessage && <div className="text-xs text-status-error mt-1">Error: {log.errorMessage}</div>}
-                {log.runId && <div className="text-xs text-primary mt-1">Run ID: {log.runId}</div>}
               </div>
-            ))}
+            )}
+
+            {/* Auth / idempotency / rate-limit logs */}
+            {webhookLogs.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">Delivery Logs</h3>
+                <div className="space-y-2">
+                  {webhookLogs.map((log) => (
+                    <div key={log.logId} className="border border-border dark:border-border-dark rounded-lg p-3 bg-surface-raised dark:bg-surface-dark-raised">
+                      <div className="flex items-center justify-between mb-2">
+                        <Badge variant={statusBadgeVariant(log.status)} size="sm">{log.status}</Badge>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">{formatDate(log.timestamp)}</span>
+                      </div>
+                      {log.duration && <div className="text-xs text-text-secondary dark:text-text-secondary-dark">Duration: {(log.duration / 1000).toFixed(2)}s</div>}
+                      {log.errorMessage && <div className="text-xs text-status-error mt-1">Error: {log.errorMessage}</div>}
+                      {log.runId && (
+                        <div className="flex items-center gap-1 text-xs text-primary mt-1">
+                          <span>Run ID: {log.runId}</span>
+                          <a
+                            href={`${API_BASE_URL}/api/runs/${log.runId}/results`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline flex items-center gap-1"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Modal>
