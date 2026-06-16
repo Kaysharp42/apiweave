@@ -1,4 +1,5 @@
 from collections.abc import Awaitable, Callable
+from enum import StrEnum
 from typing import Any, Final
 
 from fastapi import Depends, HTTPException, status
@@ -275,8 +276,264 @@ def has_permission(user: Any, required_permission: str) -> bool:
     return PermissionEvaluator.has_permission(effective, required_permission)
 
 
+class OrgRole(StrEnum):
+    OWNER = "owner"
+    MEMBER = "member"
+    BILLING = "billing"
+    SECURITY = "security"
+
+
+class WorkspaceRole(StrEnum):
+    READ = "read"
+    TRIAGE = "triage"
+    WRITE = "write"
+    MAINTAIN = "maintain"
+    ADMIN = "admin"
+
+
+class PermissionScope(StrEnum):
+    GLOBAL_ROLE = "global_role"
+    ORG_ROLE = "org_role"
+    TEAM_GRANT = "team_grant"
+    WORKSPACE_ROLE = "workspace_role"
+    OUTSIDE_COLLABORATOR = "outside_collaborator"
+    SERVICE_TOKEN = "service_token"
+
+
+WORKSPACE_ROLE_PERMISSIONS: Final[dict[str, set[str]]] = {
+    WorkspaceRole.READ: {
+        WORKFLOWS_READ,
+        COLLECTIONS_READ,
+        ENVIRONMENTS_READ,
+        WEBHOOKS_READ,
+        RUNS_READ,
+    },
+    WorkspaceRole.TRIAGE: {
+        WORKFLOWS_READ,
+        COLLECTIONS_READ,
+        ENVIRONMENTS_READ,
+        WEBHOOKS_READ,
+        RUNS_READ,
+        WORKFLOWS_RUN,
+        COLLECTIONS_RUN,
+    },
+    WorkspaceRole.WRITE: {
+        WORKFLOWS_READ,
+        WORKFLOWS_CREATE,
+        WORKFLOWS_UPDATE,
+        WORKFLOWS_DELETE,
+        WORKFLOWS_RUN,
+        COLLECTIONS_READ,
+        COLLECTIONS_CREATE,
+        COLLECTIONS_UPDATE,
+        COLLECTIONS_DELETE,
+        COLLECTIONS_RUN,
+        ENVIRONMENTS_READ,
+        ENVIRONMENTS_CREATE,
+        ENVIRONMENTS_UPDATE,
+        WEBHOOKS_READ,
+        RUNS_READ,
+    },
+    WorkspaceRole.MAINTAIN: {
+        WORKFLOWS_READ,
+        WORKFLOWS_CREATE,
+        WORKFLOWS_UPDATE,
+        WORKFLOWS_DELETE,
+        WORKFLOWS_RUN,
+        WORKFLOWS_EXPORT,
+        WORKFLOWS_IMPORT,
+        COLLECTIONS_READ,
+        COLLECTIONS_CREATE,
+        COLLECTIONS_UPDATE,
+        COLLECTIONS_DELETE,
+        COLLECTIONS_RUN,
+        COLLECTIONS_EXPORT,
+        COLLECTIONS_IMPORT,
+        ENVIRONMENTS_READ,
+        ENVIRONMENTS_CREATE,
+        ENVIRONMENTS_UPDATE,
+        WEBHOOKS_READ,
+        WEBHOOKS_CREATE,
+        WEBHOOKS_UPDATE,
+        WEBHOOKS_DELETE,
+        RUNS_READ,
+    },
+    WorkspaceRole.ADMIN: {
+        WORKFLOWS_READ,
+        WORKFLOWS_CREATE,
+        WORKFLOWS_UPDATE,
+        WORKFLOWS_DELETE,
+        WORKFLOWS_RUN,
+        WORKFLOWS_EXPORT,
+        WORKFLOWS_IMPORT,
+        COLLECTIONS_READ,
+        COLLECTIONS_CREATE,
+        COLLECTIONS_UPDATE,
+        COLLECTIONS_DELETE,
+        COLLECTIONS_RUN,
+        COLLECTIONS_EXPORT,
+        COLLECTIONS_IMPORT,
+        ENVIRONMENTS_READ,
+        ENVIRONMENTS_CREATE,
+        ENVIRONMENTS_UPDATE,
+        ENVIRONMENTS_DELETE,
+        ENVIRONMENTS_SET_SECRET,
+        WEBHOOKS_READ,
+        WEBHOOKS_CREATE,
+        WEBHOOKS_UPDATE,
+        WEBHOOKS_DELETE,
+        WEBHOOKS_ROTATE,
+        WEBHOOKS_EXECUTE,
+        RUNS_READ,
+        RUNS_CANCEL,
+        USERS_INVITE,
+        USERS_UPDATE_ROLE,
+    },
+}
+
+ORG_ROLE_PERMISSIONS: Final[dict[str, set[str]]] = {
+    OrgRole.OWNER: {
+        USERS_READ,
+        USERS_INVITE,
+        USERS_UPDATE_ROLE,
+        USERS_DELETE,
+        SETTINGS_READ,
+        SETTINGS_UPDATE,
+    },
+    OrgRole.MEMBER: set(),
+    OrgRole.BILLING: {
+        SETTINGS_READ,
+        SETTINGS_UPDATE,
+    },
+    OrgRole.SECURITY: {
+        SETTINGS_READ,
+    },
+}
+
+WORKSPACE_ROLE_HIERARCHY: Final[list[str]] = [
+    WorkspaceRole.READ,
+    WorkspaceRole.TRIAGE,
+    WorkspaceRole.WRITE,
+    WorkspaceRole.MAINTAIN,
+    WorkspaceRole.ADMIN,
+]
+
+
+class LastOwnerError(HTTPException):
+    def __init__(self, detail: str = "Cannot remove or demote the last organization owner") -> None:
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=detail,
+            headers={"X-Error-Code": "last_owner"},
+        )
+
+
+class ScopedPermissionEvaluator:
+    @staticmethod
+    def permissions_for_workspace_role(role: str) -> set[str]:
+        return WORKSPACE_ROLE_PERMISSIONS.get(role, set())
+
+    @staticmethod
+    def permissions_for_org_role(role: str) -> set[str]:
+        return ORG_ROLE_PERMISSIONS.get(role, set())
+
+    @staticmethod
+    def _higher_workspace_role(role_a: str, role_b: str) -> str:
+        try:
+            idx_a = WORKSPACE_ROLE_HIERARCHY.index(role_a)
+        except ValueError:
+            idx_a = -1
+        try:
+            idx_b = WORKSPACE_ROLE_HIERARCHY.index(role_b)
+        except ValueError:
+            idx_b = -1
+        if idx_a >= idx_b:
+            return role_a
+        return role_b
+
+    @staticmethod
+    def evaluate(
+        *,
+        org_role: str | None = None,
+        workspace_role: str | None = None,
+        team_grants: list[set[str]] | None = None,
+        outside_collaborator_permissions: set[str] | None = None,
+        service_token_permissions: set[str] | None = None,
+        global_roles: list[str] | None = None,
+        global_permissions: list[str] | None = None,
+    ) -> set[str]:
+        effective: set[str] = set()
+
+        if global_roles or global_permissions:
+            legacy = PermissionEvaluator.get_effective_permissions(
+                list(global_roles or []),
+                list(global_permissions or []),
+            )
+            effective.update(legacy)
+
+        if org_role:
+            effective.update(ScopedPermissionEvaluator.permissions_for_org_role(org_role))
+
+        if workspace_role:
+            effective.update(
+                ScopedPermissionEvaluator.permissions_for_workspace_role(workspace_role)
+            )
+
+        if team_grants:
+            for grant_set in team_grants:
+                effective.update(grant_set)
+
+        if outside_collaborator_permissions:
+            effective.update(outside_collaborator_permissions)
+
+        if service_token_permissions:
+            effective.update(service_token_permissions)
+
+        return effective
+
+    @staticmethod
+    def has_permission(
+        effective_permissions: set[str],
+        required_permission: str,
+    ) -> bool:
+        return required_permission in effective_permissions
+
+    @staticmethod
+    def effective_workspace_role(
+        direct_role: str | None,
+        team_roles: list[str] | None = None,
+        outside_collab_role: str | None = None,
+    ) -> str | None:
+        candidates: list[str] = []
+        if direct_role:
+            candidates.append(direct_role)
+        if team_roles:
+            candidates.extend(team_roles)
+        if outside_collab_role:
+            candidates.append(outside_collab_role)
+
+        if not candidates:
+            return None
+
+        best = candidates[0]
+        for role in candidates[1:]:
+            best = ScopedPermissionEvaluator._higher_workspace_role(best, role)
+        return best
+
+
+def check_last_owner(owner_count: int) -> None:
+    if owner_count <= 1:
+        raise LastOwnerError()
+
+
 __all__ = [name for name in globals() if name.isupper()] + [
     "PermissionEvaluator",
+    "ScopedPermissionEvaluator",
+    "OrgRole",
+    "WorkspaceRole",
+    "PermissionScope",
+    "LastOwnerError",
+    "check_last_owner",
     "get_current_user",
     "has_permission",
     "permission",

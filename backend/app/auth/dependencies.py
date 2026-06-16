@@ -6,7 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, Request, status
 
-from app.auth.permissions import PermissionEvaluator
+from app.auth.permissions import PermissionEvaluator, ScopedPermissionEvaluator
+from app.auth.scope_resolver import ResourceScopeResolver
 from app.config import settings
 from app.models import Session, User
 from app.repositories.auth_repositories import SessionRepository, UserRepository
@@ -86,6 +87,34 @@ def require_permission(permission: str):
         return current_user
 
     return Depends(_check_permission)
+
+
+def require_scoped_permission(resource: str, action: str):
+    async def _check_scoped_permission(
+        request: Request,
+        current_user: User = Depends(get_current_active_user),
+    ) -> User:
+        resolved = ResourceScopeResolver.from_request(request, resource, action)
+        scope_context = ResourceScopeResolver.build_scope_context(current_user, resolved)
+
+        effective = ScopedPermissionEvaluator.evaluate(
+            org_role=scope_context["org_role"],
+            workspace_role=scope_context["workspace_role"],
+            team_grants=scope_context["team_grants"],
+            outside_collaborator_permissions=scope_context["outside_collaborator_permissions"],
+            service_token_permissions=scope_context["service_token_permissions"],
+            global_roles=scope_context["global_roles"],
+            global_permissions=scope_context["global_permissions"],
+        )
+
+        if not ScopedPermissionEvaluator.has_permission(effective, resolved.required_permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required permission: {resolved.required_permission}",
+            )
+        return current_user
+
+    return Depends(_check_scoped_permission)
 
 
 async def csrf_protect(request: Request) -> None:

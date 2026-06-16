@@ -16,11 +16,9 @@ from app.repositories import EnvironmentRepository
 from app.services import (
     list_environments as svc_list_environments,
     get_environment as svc_get_environment,
-    get_active_environment as svc_get_active_environment,
     create_environment as svc_create_environment,
     update_environment as svc_update_environment,
     delete_environment as svc_delete_environment,
-    activate_environment as svc_activate_environment,
     duplicate_environment as svc_duplicate_environment,
     get_public_key_b64,
     get_sealed_box_key_id,
@@ -58,15 +56,6 @@ async def get_environment(environment_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/active/current", response_model=Environment, dependencies=[require_permission(ENVIRONMENTS_READ)])
-async def get_active_environment():
-    """Get the currently active environment"""
-    try:
-        return await svc_get_active_environment()
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-
-
 @router.put("/{environment_id}", response_model=Environment, dependencies=[require_permission(ENVIRONMENTS_UPDATE)])
 async def update_environment(environment_id: str, update: EnvironmentUpdate):
     """Update an environment"""
@@ -83,15 +72,6 @@ async def delete_environment(environment_id: str):
         await svc_delete_environment(environment_id)
     except ConflictError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-
-
-@router.post("/{environment_id}/activate", response_model=Environment, dependencies=[require_permission(ENVIRONMENTS_UPDATE)])
-async def activate_environment(environment_id: str):
-    """Set an environment as active - deactivates all others"""
-    try:
-        return await svc_activate_environment(environment_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 

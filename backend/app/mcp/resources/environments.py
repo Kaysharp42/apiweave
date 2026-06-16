@@ -20,7 +20,6 @@ def _environment_to_dict(env: Any) -> dict:
         "environment_id": env.id,
         "name": env.name,
         "description": getattr(env, "description", None),
-        "is_active": getattr(env, "isActive", False),
         "variables": getattr(env, "variables", {}) or {},
         "created_at": str(getattr(env, "createdAt", "")),
         "updated_at": str(getattr(env, "updatedAt", "")),

@@ -30,7 +30,6 @@ class EnvironmentRepository:
             swaggerDocUrl=EnvironmentRepository._normalize_swagger_doc_url(env_data.swaggerDocUrl),
             variables=env_data.variables,
             secrets=env_data.secrets,
-            isActive=False,
             createdAt=datetime.now(UTC),
             updatedAt=datetime.now(UTC)
         )
@@ -83,29 +82,6 @@ class EnvironmentRepository:
         
         await environment.delete()
         return True
-    
-    @staticmethod
-    async def get_active() -> Optional[Environment]:
-        """Get the currently active environment"""
-        return await Environment.find_one(Environment.isActive == True)
-    
-    @staticmethod
-    async def set_active(environment_id: str) -> Optional[Environment]:
-        """Set an environment as active (deactivates all others)"""
-        # Deactivate all environments
-        all_envs = await Environment.find_all().to_list()
-        for env in all_envs:
-            env.isActive = False
-            await env.save()
-        
-        # Activate the specified environment
-        environment = await EnvironmentRepository.get_by_id(environment_id)
-        if environment:
-            environment.isActive = True
-            environment.updatedAt = datetime.now(UTC)
-            await environment.save()
-        
-        return environment
     
     @staticmethod
     async def update_variable(

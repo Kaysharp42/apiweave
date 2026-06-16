@@ -16,7 +16,6 @@ class EnvironmentSummary(BaseModel):
     swagger_doc_url: str | None = Field(default=None, description="Swagger/OpenAPI source URL.")
     variables: dict[str, Any] = Field(description="Variables with secret-like values redacted.")
     secrets: dict[str, str] = Field(description="Persisted secret names with redacted values.")
-    is_active: bool = Field(description="Whether this is the active environment.")
     created_at: datetime = Field(description="Environment creation timestamp.")
     updated_at: datetime = Field(description="Environment last update timestamp.")
 
@@ -26,12 +25,6 @@ class EnvironmentListResponse(BaseModel):
 
     environments: list[EnvironmentSummary] = Field(description="Secret-safe environments.")
     total: int = Field(description="Number of environments returned.")
-
-
-class EnvironmentActiveResponse(BaseModel):
-    """Output for environment_get_active."""
-
-    environment: EnvironmentSummary = Field(description="Secret-safe active environment.")
 
 
 class EnvironmentCreateRequest(BaseModel):
@@ -100,18 +93,3 @@ class EnvironmentDeleteResponse(BaseModel):
 
     message: str = Field(description="Deletion confirmation message.")
     environment_id: str = Field(description="Deleted environment ID.")
-
-
-class EnvironmentActivateRequest(BaseModel):
-    """Input for environment_activate."""
-
-    environment_id: str = Field(description="Environment ID to activate.")
-
-
-class EnvironmentActivateResponse(BaseModel):
-    """Output for environment_activate."""
-
-    message: str = Field(description="Activation confirmation message.")
-    environment: EnvironmentSummary = Field(
-        description="Activated environment with secrets redacted.",
-    )

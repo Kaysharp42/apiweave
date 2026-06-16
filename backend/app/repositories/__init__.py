@@ -8,6 +8,7 @@ from app.repositories.environment_repository import EnvironmentRepository
 from app.repositories.collection_repository import CollectionRepository
 from app.repositories.webhook_repository import WebhookRepository
 from app.repositories.collection_run_repository import CollectionRunRepository
+from app.repositories.audit_repository import AuditRepository
 from app.repositories.auth_repositories import (
     UserRepository,
     ProviderIdentityRepository,
@@ -15,6 +16,13 @@ from app.repositories.auth_repositories import (
     InviteRepository,
     ApprovedDomainRepository,
 )
+from app.repositories.organization_repository import OrganizationRepository
+from app.repositories.workspace_repository import WorkspaceRepository
+from app.repositories.project_repository import ProjectRepository
+from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
+from app.repositories.secret_repository import SecretRepository, SecretBindingRepository
+from app.repositories.team_repository import TeamRepository
+from app.repositories.service_token_repository import ServiceTokenRepository
 
 __all__ = [
     "WorkflowRepository",
@@ -23,9 +31,18 @@ __all__ = [
     "CollectionRepository",
     "WebhookRepository",
     "CollectionRunRepository",
+    "AuditRepository",
     "UserRepository",
     "ProviderIdentityRepository",
     "SessionRepository",
     "InviteRepository",
     "ApprovedDomainRepository",
+    "OrganizationRepository",
+    "WorkspaceRepository",
+    "ProjectRepository",
+    "ScopedEnvironmentRepository",
+    "SecretRepository",
+    "SecretBindingRepository",
+    "TeamRepository",
+    "ServiceTokenRepository",
 ]

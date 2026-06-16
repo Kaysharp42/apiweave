@@ -3,12 +3,67 @@ Data models for APIWeave
 Pydantic models for workflows, nodes, edges, and runs
 Now using Beanie ODM for type-safe MongoDB operations
 """
+from enum import Enum
 from beanie import Document
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Dict, Any, Optional, Literal, Annotated, Union
 from datetime import datetime
 from pymongo import IndexModel, ASCENDING, DESCENDING
 import base64
+
+
+# ============================================================================
+# Enums for GitHub-style multi-tenant architecture
+# ============================================================================
+
+class OrgMemberRole(str, Enum):
+    """Organization membership roles (GitHub-like)."""
+    OWNER = "owner"
+    MEMBER = "member"
+    BILLING = "billing"
+    SECURITY = "security"
+
+
+class WorkspaceRole(str, Enum):
+    """Workspace membership roles (GitHub repository roles)."""
+    READ = "read"
+    TRIAGE = "triage"
+    WRITE = "write"
+    MAINTAIN = "maintain"
+    ADMIN = "admin"
+
+
+class OwnerType(str, Enum):
+    """Owner type for scoped resources."""
+    USER = "user"
+    ORGANIZATION = "organization"
+
+
+class SecretScope(str, Enum):
+    """Secret scope for GitHub-like override chain."""
+    USER = "user"
+    ORGANIZATION = "organization"
+    WORKSPACE = "workspace"
+    ENVIRONMENT = "environment"
+
+
+# ============================================================================
+# Pydantic helpers for scoped references
+# ============================================================================
+
+class ScopedEnvRef(BaseModel):
+    """Reference to a scoped environment for run selection."""
+    scopeType: Literal["user", "organization", "workspace"]
+    scopeId: str
+    environmentId: str
+
+
+class EnvironmentProtectionPolicy(BaseModel):
+    """Protection policy for a scoped environment."""
+    requiredReviewers: List[str] = Field(default_factory=list)  # userIds
+    allowSelfApproval: bool = False
+    bypassPolicy: Literal["none", "trusted_token_only"] = "none"
+    bypassAllowlist: List[str] = Field(default_factory=list)  # serviceTokenIds
 
 
 class FileUpload(BaseModel):
@@ -113,9 +168,13 @@ class Workflow(Document):
     edges: List[Edge] = Field(default_factory=list)
     variables: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
-    collectionId: Optional[str] = None  # Link to collection
-    environmentId: Optional[str] = None  # Link to environment (default environment for workflow)
+    collectionId: Optional[str] = None  # Link to collection/project (legacy)
+    selectedEnvironmentId: Optional[str] = None  # Scoped environment selection
+    environmentId: Optional[str] = None  # Legacy field, kept for migration
     nodeTemplates: List[Dict[str, Any]] = Field(default_factory=list)
+    workspaceId: Optional[str] = None
+    orgId: Optional[str] = None
+    ownerType: Optional[str] = None  # "user" | "organization"
     createdAt: datetime
     updatedAt: datetime
     version: int = 1
@@ -126,7 +185,9 @@ class Workflow(Document):
             IndexModel([("workflowId", ASCENDING)], unique=True),
             IndexModel([("createdAt", DESCENDING)]),
             IndexModel([("collectionId", ASCENDING)]),
-            IndexModel([("environmentId", ASCENDING)]),
+            IndexModel([("selectedEnvironmentId", ASCENDING)]),
+            IndexModel([("workspaceId", ASCENDING)]),
+            IndexModel([("orgId", ASCENDING)]),
             IndexModel([("tags", ASCENDING)])
         ]
 
@@ -153,7 +214,8 @@ class Run(Document):
     """Workflow run/execution - Beanie Document"""
     runId: str
     workflowId: str
-    environmentId: Optional[str] = None  # Environment to use for this run
+    selectedEnvironmentId: Optional[str] = None  # Scoped environment for this run
+    environmentId: Optional[str] = None  # Legacy field, kept for migration
     status: Literal["pending", "running", "completed", "failed", "cancelled"]
     trigger: Literal["manual", "webhook", "schedule"]
     variables: Dict[str, Any] = Field(default_factory=dict)
@@ -169,7 +231,12 @@ class Run(Document):
     nodeStatuses: Dict[str, Any] = Field(default_factory=dict)  # Node execution statuses
     resumeFromRunId: Optional[str] = None  # Source run used to resume context
     resumeFromNodeIds: Optional[List[str]] = None  # Entry nodes used for resumed run
-    resumeMode: Optional[Literal["single", "all-failed"]] = None
+    resumeMode: Optional[Literal["single", "all-fail"]] = None
+    workspaceId: Optional[str] = None
+    orgId: Optional[str] = None
+    ownerType: Optional[str] = None  # "user" | "organization"
+    actorType: Optional[str] = None  # "user" | "service_token" | "webhook" | "system"
+    actorId: Optional[str] = None
     
     class Settings:
         name = "runs"
@@ -177,7 +244,8 @@ class Run(Document):
             IndexModel([("runId", ASCENDING)], unique=True),
             IndexModel([("status", ASCENDING), ("createdAt", ASCENDING)]),
             IndexModel([("workflowId", ASCENDING)]),
-            IndexModel([("environmentId", ASCENDING)]),
+            IndexModel([("selectedEnvironmentId", ASCENDING)]),
+            IndexModel([("workspaceId", ASCENDING)]),
             IndexModel([("createdAt", DESCENDING)])
         ]
 
@@ -256,27 +324,43 @@ class CollectionUpdate(BaseModel):
     color: Optional[str] = None
 
 
-class Collection(Document):
-    """Collection model - groups workflows together - Beanie Document"""
-    collectionId: str
+class Project(Document):
+    """Project model - groups workflows together - Beanie Document
+    
+    Renamed from Collection in the public domain. DB collection name stays
+    'collections' for migration compatibility. projectId is an alias for collectionId.
+    """
+    collectionId: str  # Legacy field, kept for backward compat
+    projectId: Optional[str] = None  # Public-domain alias for collectionId
     name: str
     description: Optional[str] = None
     color: Optional[str] = None  # e.g., #FF5733
     workflowCount: int = 0
     
-    # NEW: Ordered execution configuration
+    # Ordered execution configuration
     workflowOrder: List[WorkflowOrderItem] = Field(default_factory=list)
     continueOnFail: bool = True  # Default: show all results, don't stop at first failure
+    
+    # Scoped ownership
+    workspaceId: Optional[str] = None
+    orgId: Optional[str] = None
+    ownerType: Optional[str] = None  # "user" | "organization"
     
     createdAt: datetime
     updatedAt: datetime
     
     class Settings:
-        name = "collections"
+        name = "collections"  # Keep old DB name for migration
         indexes = [
             IndexModel([("collectionId", ASCENDING)], unique=True),
+            IndexModel([("projectId", ASCENDING)], unique=True, partialFilterExpression={"projectId": {"$type": "string"}}),
+            IndexModel([("workspaceId", ASCENDING)]),
             IndexModel([("createdAt", DESCENDING)])
         ]
+
+
+# Backward compatibility alias — existing code imports Collection
+Collection = Project
 
 
 class EnvironmentUpdate(BaseModel):
@@ -286,18 +370,22 @@ class EnvironmentUpdate(BaseModel):
     swaggerDocUrl: Optional[str] = None
     variables: Optional[Dict[str, Any]] = None
     secrets: Optional[Dict[str, Any]] = None  # NEW: Secrets
-    isActive: Optional[bool] = None
 
 
 class Environment(Document):
-    """Environment model with variables and secrets - Beanie Document"""
+    """Environment model with variables and secrets - Beanie Document
+    
+    Scoped to user, organization, or workspace. No global isActive.
+    """
     environmentId: str
     name: str
     description: Optional[str] = None
     swaggerDocUrl: Optional[str] = None
     variables: Dict[str, Any] = Field(default_factory=dict)
     secrets: Dict[str, Any] = Field(default_factory=dict)  # str (legacy) or EncryptedBlob dict
-    isActive: bool = False
+    scopeType: Literal["user", "organization", "workspace"] = "user"
+    scopeId: Optional[str] = None  # userId, orgId, or workspaceId
+    ownerType: Optional[str] = None  # "user" | "organization"
     createdAt: datetime
     updatedAt: datetime
     
@@ -305,6 +393,7 @@ class Environment(Document):
         name = "environments"
         indexes = [
             IndexModel([("environmentId", ASCENDING)], unique=True),
+            IndexModel([("scopeType", ASCENDING), ("scopeId", ASCENDING)]),
             IndexModel([("createdAt", DESCENDING)])
         ]
 
@@ -702,6 +791,56 @@ class EncryptionKey(Document):
 
 
 # ============================================================================
+# Scoped Keypair Models (GitHub-style per-scope Libsodium keypairs)
+# ============================================================================
+
+class ScopedKeypair(Document):
+    """
+    Per-scope Libsodium Curve25519 keypair for sealed-box secret encryption.
+
+    Each scope (user, organization, workspace, environment) has an active
+    keypair whose public key is served to clients for encrypting secret
+    values before POST.  The private key is encrypted at rest using the
+    master KEK derived from ``SECRET_ENCRYPTION_KEY``.
+
+    On rotation the old keypair is marked inactive but retained so that
+    previously encrypted ciphertexts can still be decrypted by the trusted
+    runtime resolver.
+
+    The compound unique index on (scopeType, scopeId, keyId) ensures that
+    each key version for a scope is unique.
+    """
+    scopeType: Literal["user", "organization", "workspace", "environment"]
+    scopeId: str
+    publicKey: str              # base64-encoded Curve25519 public key
+    privateKey: str             # base64-encoded encrypted private key (at rest)
+    algorithm: str = "libsodium-sealed-box"
+    keyId: str                  # unique key version identifier, e.g. "kp-<timestamp>"
+    isActive: bool = True
+    createdAt: datetime
+    rotatedAt: Optional[datetime] = None
+
+    class Settings:
+        name = "scoped_keypairs"
+        indexes = [
+            IndexModel(
+                [("scopeType", ASCENDING), ("scopeId", ASCENDING), ("keyId", ASCENDING)],
+                unique=True,
+            ),
+            IndexModel(
+                [("scopeType", ASCENDING), ("scopeId", ASCENDING), ("isActive", ASCENDING)],
+            ),
+        ]
+
+
+class PublicKeyResponse(BaseModel):
+    """Public key metadata returned by the GET public-key endpoint."""
+    keyId: str
+    publicKey: str
+    algorithm: str
+
+
+# ============================================================================
 # Auth Response DTOs (redacted — no sensitive fields)
 # ============================================================================
 
@@ -753,4 +892,294 @@ class InviteResponse(BaseModel):
     consumed: bool
     consumed_at: Optional[datetime] = None
     invite_url: Optional[str] = None
+
+
+# ============================================================================
+# Audit Event Model (Append-Only)
+# ============================================================================
+
+# Actor types that can produce audit events
+AuditActorType = Literal[
+    "user",
+    "org_app",
+    "service_token",
+    "mcp_client",
+    "webhook_token",
+    "system_migration",
+]
+
+# Scope types for audit events
+AuditScopeType = Literal[
+    "org",
+    "workspace",
+    "environment",
+]
+
+
+class AuditEvent(Document):
+    """
+    Append-only audit event.
+
+    Records every significant action in the system with full context.
+    NEVER stores secret values, ciphertext, or private keys.
+    The repository layer exposes only append and query — no update or delete.
+    """
+    eventId: str
+    actor: AuditActorType
+    actorId: str
+    action: str
+    scope: AuditScopeType
+    scopeId: str
+    resourceType: str
+    resourceId: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+    createdAt: datetime
+
+    class Settings:
+        name = "audit_events"
+        indexes = [
+            IndexModel([("actor", ASCENDING), ("actorId", ASCENDING), ("eventId", ASCENDING)], unique=True),
+            IndexModel([("createdAt", DESCENDING)]),
+            IndexModel([("action", ASCENDING)]),
+            IndexModel([("scope", ASCENDING), ("scopeId", ASCENDING)]),
+            IndexModel([("resourceType", ASCENDING), ("resourceId", ASCENDING)]),
+        ]
+
+
+class AuditEventCreate(BaseModel):
+    """Request model for creating an audit event."""
+    actor: AuditActorType
+    actorId: str
+    action: str
+    scope: AuditScopeType
+    scopeId: str
+    resourceType: str
+    resourceId: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditEventResponse(BaseModel):
+    """
+    Audit event returned in API responses.
+    Safe to expose — contains no secret values.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    eventId: str
+    actor: AuditActorType
+    actorId: str
+    action: str
+    scope: AuditScopeType
+    scopeId: str
+    resourceType: str
+    resourceId: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+    createdAt: datetime
+
+
+# ============================================================================
+# GitHub-Style Multi-Tenant Models
+# ============================================================================
+
+
+class Organization(Document):
+    orgId: str
+    slug: str
+    name: str
+    description: Optional[str] = None
+    avatarUrl: Optional[str] = None
+    ownerUserId: str
+    createdAt: datetime
+    updatedAt: datetime
+    deletedAt: Optional[datetime] = None
+
+    class Settings:
+        name = "organizations"
+        indexes = [
+            IndexModel([("orgId", ASCENDING)], unique=True),
+            IndexModel([("slug", ASCENDING)], unique=True),
+            IndexModel([("ownerUserId", ASCENDING)]),
+        ]
+
+
+class OrganizationMember(Document):
+    memberId: str
+    orgId: str
+    userId: str
+    role: str  # OrgMemberRole value
+    createdAt: datetime
+    updatedAt: datetime
+
+    class Settings:
+        name = "organization_members"
+        indexes = [
+            IndexModel([("memberId", ASCENDING)], unique=True),
+            IndexModel([("orgId", ASCENDING), ("userId", ASCENDING)], unique=True),
+            IndexModel([("userId", ASCENDING)]),
+        ]
+
+
+class Team(Document):
+    teamId: str
+    orgId: str
+    slug: str
+    name: str
+    description: Optional[str] = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    class Settings:
+        name = "teams"
+        indexes = [
+            IndexModel([("teamId", ASCENDING)], unique=True),
+            IndexModel([("orgId", ASCENDING), ("slug", ASCENDING)], unique=True),
+            IndexModel([("orgId", ASCENDING)]),
+        ]
+
+
+class TeamMember(Document):
+    memberId: str
+    teamId: str
+    userId: str
+    role: str = "member"
+    createdAt: datetime
+
+    class Settings:
+        name = "team_members"
+        indexes = [
+            IndexModel([("memberId", ASCENDING)], unique=True),
+            IndexModel([("teamId", ASCENDING), ("userId", ASCENDING)], unique=True),
+            IndexModel([("userId", ASCENDING)]),
+        ]
+
+
+class Workspace(Document):
+    workspaceId: str
+    slug: str
+    name: str
+    description: Optional[str] = None
+    ownerType: str  # "user" | "organization"
+    ownerUserId: Optional[str] = None
+    orgId: Optional[str] = None
+    isPersonal: bool = False
+    createdAt: datetime
+    updatedAt: datetime
+    deletedAt: Optional[datetime] = None
+
+    class Settings:
+        name = "workspaces"
+        indexes = [
+            IndexModel([("workspaceId", ASCENDING)], unique=True),
+            IndexModel([("ownerType", ASCENDING), ("ownerUserId", ASCENDING), ("slug", ASCENDING)], unique=True),
+            IndexModel([("orgId", ASCENDING), ("slug", ASCENDING)], unique=True),
+        ]
+
+
+class WorkspaceMember(Document):
+    memberId: str
+    workspaceId: str
+    userId: str
+    role: str  # WorkspaceRole value
+    createdAt: datetime
+    updatedAt: datetime
+
+    class Settings:
+        name = "workspace_members"
+        indexes = [
+            IndexModel([("memberId", ASCENDING)], unique=True),
+            IndexModel([("workspaceId", ASCENDING), ("userId", ASCENDING)], unique=True),
+            IndexModel([("userId", ASCENDING)]),
+        ]
+
+
+class OutsideCollaborator(Document):
+    collaboratorId: str
+    workspaceId: str
+    userId: str
+    role: str = "read"
+    grantedBy: str
+    createdAt: datetime
+
+    class Settings:
+        name = "outside_collaborators"
+        indexes = [
+            IndexModel([("collaboratorId", ASCENDING)], unique=True),
+            IndexModel([("workspaceId", ASCENDING), ("userId", ASCENDING)], unique=True),
+            IndexModel([("userId", ASCENDING)]),
+        ]
+
+
+class Secret(Document):
+    secretId: str
+    name: str
+    scopeType: str  # SecretScope value
+    scopeId: str
+    keyId: str  # ScopedKeypair keyId used for encryption
+    createdAt: datetime
+    updatedAt: datetime
+
+    class Settings:
+        name = "secrets"
+        indexes = [
+            IndexModel([("secretId", ASCENDING)], unique=True),
+            IndexModel([("scopeType", ASCENDING), ("scopeId", ASCENDING), ("name", ASCENDING)], unique=True),
+            IndexModel([("scopeType", ASCENDING), ("scopeId", ASCENDING)]),
+        ]
+
+
+class SecretBinding(Document):
+    bindingId: str
+    secretId: str
+    userId: str
+    targetScopeType: str  # "workspace" | "environment"
+    targetScopeId: str
+    createdAt: datetime
+
+    class Settings:
+        name = "secret_bindings"
+        indexes = [
+            IndexModel([("bindingId", ASCENDING)], unique=True),
+            IndexModel([("secretId", ASCENDING), ("targetScopeType", ASCENDING), ("targetScopeId", ASCENDING)], unique=True),
+            IndexModel([("userId", ASCENDING)]),
+        ]
+
+
+class EnvironmentProtection(Document):
+    protectionId: str
+    environmentId: str
+    requiredReviewers: List[str] = Field(default_factory=list)
+    allowSelfApproval: bool = False
+    bypassPolicy: str = "none"
+    bypassAllowlist: List[str] = Field(default_factory=list)
+    createdAt: datetime
+    updatedAt: datetime
+
+    class Settings:
+        name = "environment_protections"
+        indexes = [
+            IndexModel([("protectionId", ASCENDING)], unique=True),
+            IndexModel([("environmentId", ASCENDING)], unique=True),
+        ]
+
+
+class ServiceToken(Document):
+    tokenId: str
+    name: str
+    tokenHash: str
+    scopeType: str  # "workspace" | "organization"
+    scopeId: str
+    permissions: List[str] = Field(default_factory=list)
+    createdBy: str
+    createdAt: datetime
+    expiresAt: Optional[datetime] = None
+    revokedAt: Optional[datetime] = None
+
+    class Settings:
+        name = "service_tokens"
+        indexes = [
+            IndexModel([("tokenId", ASCENDING)], unique=True),
+            IndexModel([("tokenHash", ASCENDING)], unique=True),
+            IndexModel([("scopeType", ASCENDING), ("scopeId", ASCENDING)]),
+            IndexModel([("createdBy", ASCENDING)]),
+        ]
 

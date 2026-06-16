@@ -10,9 +10,6 @@ from app.config import settings
 from app.mcp.database import ensure_mcp_database
 from app.mcp.datetime_utils import utc_datetime
 from app.mcp.schemas.environments import (
-    EnvironmentActivateRequest,
-    EnvironmentActivateResponse,
-    EnvironmentActiveResponse,
     EnvironmentCreateRequest,
     EnvironmentCreateResponse,
     EnvironmentDeleteRequest,
@@ -26,9 +23,6 @@ from app.mcp.schemas.environments import (
 )
 from app.models import EnvironmentCreate, EnvironmentUpdate
 from app.services.environment_service import (
-    activate_environment as svc_activate_environment,
-)
-from app.services.environment_service import (
     create_environment as svc_create_environment,
 )
 from app.services.environment_service import (
@@ -36,9 +30,6 @@ from app.services.environment_service import (
 )
 from app.services.environment_service import (
     duplicate_environment as svc_duplicate_environment,
-)
-from app.services.environment_service import (
-    get_active_environment_redacted as svc_get_active_environment_redacted,
 )
 from app.services.environment_service import (
     get_environment_redacted as svc_get_environment_redacted,
@@ -60,7 +51,6 @@ def environment_from_dict(environment: dict[str, Any]) -> EnvironmentSummary:
         swagger_doc_url=cast(str | None, environment.get("swaggerDocUrl")),
         variables=cast(dict[str, Any], environment.get("variables", {})),
         secrets=cast(dict[str, str], environment.get("secrets", {})),
-        is_active=bool(environment.get("isActive", False)),
         created_at=utc_datetime(environment.get("createdAt")),
         updated_at=utc_datetime(environment.get("updatedAt")),
     )
@@ -72,16 +62,6 @@ async def environment_list() -> EnvironmentListResponse:
     environments = await svc_list_environments_redacted()
     summaries = [environment_from_dict(environment) for environment in environments]
     return EnvironmentListResponse(environments=summaries, total=len(summaries))
-
-
-async def environment_get_active() -> EnvironmentActiveResponse:
-    """Get the active environment with persisted secrets redacted."""
-    await ensure_mcp_database()
-    try:
-        environment = await svc_get_active_environment_redacted()
-    except ValueError as exc:
-        raise ValueError(str(exc)) from exc
-    return EnvironmentActiveResponse(environment=environment_from_dict(environment))
 
 
 async def environment_create(
@@ -115,7 +95,6 @@ async def environment_create(
         "swaggerDocUrl": created.swaggerDocUrl,
         "variables": created.variables or {},
         "secrets": {},
-        "isActive": created.isActive,
         "createdAt": created.createdAt,
         "updatedAt": created.updatedAt,
     }
@@ -180,7 +159,6 @@ async def environment_update(
         "swaggerDocUrl": updated.swaggerDocUrl,
         "variables": updated.variables or {},
         "secrets": {k: "<SECRET>" for k in (updated.secrets or {})},
-        "isActive": updated.isActive,
         "createdAt": updated.createdAt,
         "updatedAt": updated.updatedAt,
     }
@@ -206,33 +184,6 @@ async def environment_delete(
     )
 
 
-async def environment_activate(
-    environment_id: Annotated[str, Field(description="Environment ID to activate.")],
-) -> EnvironmentActivateResponse:
-    """Set an environment as active. Deactivates any previously active environment."""
-    await ensure_mcp_database()
-    request = EnvironmentActivateRequest(environment_id=environment_id)
-    try:
-        activated = await svc_activate_environment(request.environment_id)
-    except ValueError as exc:
-        raise ValueError(str(exc)) from exc
-    redacted = {
-        "environmentId": activated.environmentId,
-        "name": activated.name,
-        "description": activated.description,
-        "swaggerDocUrl": activated.swaggerDocUrl,
-        "variables": activated.variables or {},
-        "secrets": {k: "<SECRET>" for k in (activated.secrets or {})},
-        "isActive": True,
-        "createdAt": activated.createdAt,
-        "updatedAt": activated.updatedAt,
-    }
-    return EnvironmentActivateResponse(
-        message="Environment activated successfully",
-        environment=environment_from_dict(redacted),
-    )
-
-
 async def environment_duplicate(
     environment_id: Annotated[str, Field(description="Environment ID to duplicate.")],
 ) -> EnvironmentCreateResponse:
@@ -246,7 +197,6 @@ async def environment_duplicate(
         "swaggerDocUrl": duplicated.swaggerDocUrl,
         "variables": duplicated.variables or {},
         "secrets": {k: "<SECRET>" for k in (duplicated.secrets or {})},
-        "isActive": duplicated.isActive,
         "createdAt": duplicated.createdAt,
         "updatedAt": duplicated.updatedAt,
     }
@@ -277,10 +227,6 @@ def register_environment_tools(server: FastMCP) -> None:
         ),
     )(environment_list)
     server.tool(
-        name="environment_get_active",
-        description="Get the active environment for workflow context with secrets redacted.",
-    )(environment_get_active)
-    server.tool(
         name="environment_create",
         description=(
             "Create a new environment with variables. Persisted secrets are not accepted; "
@@ -302,10 +248,6 @@ def register_environment_tools(server: FastMCP) -> None:
         name="environment_delete",
         description="Delete an environment. Blocked if any workflows reference it.",
     )(environment_delete)
-    server.tool(
-        name="environment_activate",
-        description="Set an environment as active. Deactivates any previously active environment.",
-    )(environment_activate)
 
     server.tool(
         name="environment_duplicate",

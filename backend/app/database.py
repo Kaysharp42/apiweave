@@ -9,20 +9,33 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from app.config import settings
 from app.models import (
     ApprovedDomain,
-    Collection,
+    AuditEvent,
     CollectionRun,
     DeletedUser,
     Environment,
+    EnvironmentProtection,
     IdempotencyKey,
     Invite,
     OAuthState,
+    Organization,
+    OrganizationMember,
+    OutsideCollaborator,
+    Project,
     ProviderIdentity,
     Run,
+    ScopedKeypair,
+    Secret,
+    SecretBinding,
+    ServiceToken,
     Session,
+    Team,
+    TeamMember,
     User,
     Webhook,
     WebhookLog,
     Workflow,
+    Workspace,
+    WorkspaceMember,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,14 +56,16 @@ async def connect_db():
     await init_beanie(
         database=db,
         document_models=[
+            # Core workflow models
             Workflow,
             Run,
             Environment,
-            Collection,
+            Project,  # Collection alias — same document class
             Webhook,
             CollectionRun,
             WebhookLog,
             IdempotencyKey,
+            # Auth models
             User,
             DeletedUser,
             ProviderIdentity,
@@ -58,6 +73,21 @@ async def connect_db():
             Invite,
             ApprovedDomain,
             OAuthState,
+            # Encryption / secrets / audit
+            AuditEvent,
+            ScopedKeypair,
+            Secret,
+            SecretBinding,
+            # Multi-tenant models
+            Organization,
+            OrganizationMember,
+            Team,
+            TeamMember,
+            Workspace,
+            WorkspaceMember,
+            OutsideCollaborator,
+            EnvironmentProtection,
+            ServiceToken,
         ]
     )
 

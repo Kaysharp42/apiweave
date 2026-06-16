@@ -1,6 +1,26 @@
 """
 Routes package
 """
-from app.routes import workflows, runs, environments, collections
+from app.routes import (
+    collections,
+    environments,
+    keys,
+    orgs,
+    projects,
+    runs,
+    webhooks,
+    workflows,
+    workspaces,
+)
 
-__all__ = ["workflows", "runs", "environments", "collections"]
+__all__ = [
+    "collections",
+    "environments",
+    "keys",
+    "orgs",
+    "projects",
+    "runs",
+    "webhooks",
+    "workflows",
+    "workspaces",
+]
