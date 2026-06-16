@@ -101,6 +101,15 @@ function assertProviderPageSource(fileName: string, emptyMessage: string): void 
   assertIncludes(content, 'Spinner');
 }
 
+function assertOAuthHookPageSource(fileName: string, emptyMessage: string): void {
+  const content = readPage(fileName);
+
+  assertIncludes(content, 'useOAuthProviders');
+  assertIncludes(content, 'Sign-in options unavailable');
+  assertIncludes(content, emptyMessage);
+  assertIncludes(content, 'Spinner');
+}
+
 test('LoginPage renders only enabled providers and hides disabled ones', async () => {
   const { calls, restore } = mockFetch(async () => {
     const providers: ProviderInfo[] = [
@@ -198,7 +207,7 @@ test('LoginPage shows loading state while provider request is pending', async ()
 });
 
 test('LoginPage source keeps provider visibility UI and loading/error states', () => {
-  assertProviderPageSource('LoginPage.tsx', 'No sign-in providers configured');
+  assertOAuthHookPageSource('LoginPage.tsx', 'No sign-in providers configured');
 });
 
 test('SetupPage source keeps provider visibility UI and loading/error states', () => {
