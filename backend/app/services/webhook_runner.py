@@ -25,20 +25,12 @@ from app.repositories import (
 from app.services.secret_utils import mask_secrets_structural
 
 
-# ---------------------------------------------------------------------------
-# Public exceptions
-# ---------------------------------------------------------------------------
-
 class QueueFull(Exception):
     """Raised when the webhook delivery queue has reached capacity.
 
     Route handlers should map this to HTTP 503.
     """
 
-
-# ---------------------------------------------------------------------------
-# Data transfer objects
-# ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class WebhookDelivery:
@@ -62,13 +54,7 @@ class _QueueItem:
     triggered_at: datetime
 
 
-# ---------------------------------------------------------------------------
-# Runner
-# ---------------------------------------------------------------------------
-
 _QUEUE_MAXSIZE = 1000
-
-logger = logging.getLogger(__name__)
 
 
 class WebhookRunner:
@@ -89,8 +75,6 @@ class WebhookRunner:
         self._queue: asyncio.Queue[_QueueItem] = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
         self._task: Optional[asyncio.Task[None]] = None
         self.logger = logging.getLogger(f"{__name__}.WebhookRunner")
-
-    # -- public API ---------------------------------------------------------
 
     async def enqueue(self, delivery: WebhookDelivery) -> str:
         """Persist a run, record idempotency, and queue for execution.
@@ -116,10 +100,7 @@ class WebhookRunner:
                 )
                 return existing.run_id
 
-        # ── Secret-mask the payload before storing on the Run ────────────────
         masked_payload = mask_secrets_structural(delivery.payload, [])
-
-        # ── Persist run document ─────────────────────────────────────────────
         triggered_at = datetime.now(UTC)
 
         if delivery.resource_type == "workflow":
@@ -135,7 +116,7 @@ class WebhookRunner:
             collection = await CollectionRepository.get_by_id(delivery.resource_id)
             collection_name = collection.name if collection else delivery.resource_id
             enabled_count = (
-                len([i for i in collection.workflowOrder if i.enabled])
+                sum(1 for i in collection.workflowOrder if i.enabled)
                 if collection
                 else 0
             )
@@ -159,7 +140,6 @@ class WebhookRunner:
         else:
             raise ValueError(f"Unknown resource_type: {delivery.resource_type}")
 
-        # ── Store idempotency entry ──────────────────────────────────────────
         if delivery.idempotency_key:
             response_body: dict[str, Any] = {
                 "status": "accepted",
@@ -180,7 +160,6 @@ class WebhookRunner:
                 response_body=response_body,
             )
 
-        # ── Enqueue ──────────────────────────────────────────────────────────
         item = _QueueItem(
             delivery=delivery,
             run_id=run_id,
@@ -226,8 +205,6 @@ class WebhookRunner:
                 pass
             self._task = None
             self.logger.info("WebhookRunner stopped")
-
-    # -- internal -----------------------------------------------------------
 
     async def _consume(self) -> None:
         """Long-running loop that drains the queue and dispatches executions."""

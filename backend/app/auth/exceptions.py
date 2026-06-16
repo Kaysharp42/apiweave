@@ -1,6 +1,4 @@
 """
-Custom exceptions for the auth module.
-
 OAuthLinkingBlockedError is raised when the account-linking guard
 prevents an OAuth provider from being linked to an existing user.
 """

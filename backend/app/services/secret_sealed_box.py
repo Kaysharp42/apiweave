@@ -12,14 +12,12 @@ store the keypair in a vault; here we derive it from the existing master key.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
-import logging
 
 from nacl.public import PrivateKey, SealedBox
 
 from app.config import settings
-
-logger = logging.getLogger(__name__)
 
 _SEALED_BOX_KEY_ID = "sealed-box-v1"
 _ALGORITHM = "libsodium-sealed-box"
@@ -46,7 +44,6 @@ def _derive_private_key() -> PrivateKey:
 
 
 def get_private_key() -> PrivateKey:
-    """Return the cached or freshly-derived Curve25519 private key."""
     global _cached_private_key
     if _cached_private_key is None:
         _cached_private_key = _derive_private_key()
@@ -54,22 +51,18 @@ def get_private_key() -> PrivateKey:
 
 
 def get_public_key_b64() -> str:
-    """Return the base64-encoded public key (cached)."""
     global _cached_public_key_b64
     if _cached_public_key_b64 is None:
-        import base64
         pk = get_private_key().public_key
         _cached_public_key_b64 = base64.b64encode(pk.encode()).decode("ascii")
     return _cached_public_key_b64
 
 
 def get_key_id() -> str:
-    """Return the key identifier for this sealed-box keypair."""
     return _SEALED_BOX_KEY_ID
 
 
 def get_algorithm() -> str:
-    """Return the algorithm identifier."""
     return _ALGORITHM
 
 
@@ -86,7 +79,6 @@ def open_sealed_box(ciphertext_b64: str) -> str:
     nacl.exceptions.CryptoError
         If the ciphertext is invalid or was encrypted for a different key.
     """
-    import base64
     ciphertext = base64.b64decode(ciphertext_b64)
     private_key = get_private_key()
     sealed_box = SealedBox(private_key)
@@ -95,7 +87,6 @@ def open_sealed_box(ciphertext_b64: str) -> str:
 
 
 def reset_cache() -> None:
-    """Reset cached keys — useful for testing."""
     global _cached_private_key, _cached_public_key_b64
     _cached_private_key = None
     _cached_public_key_b64 = None

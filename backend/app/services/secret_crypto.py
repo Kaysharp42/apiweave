@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import secrets
 
-from cryptography.exceptions import InvalidTag  # noqa: F401 — re-exported
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.models import EncryptedBlob

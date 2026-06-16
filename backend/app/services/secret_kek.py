@@ -8,9 +8,11 @@ by the master KEK, and stored in the ``encryption_keys`` MongoDB collection.
 from __future__ import annotations
 
 import base64
+import binascii
 import logging
 import secrets
-from datetime import datetime, UTC
+import time
+from datetime import UTC, datetime
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -23,10 +25,6 @@ _NONCE_SIZE = 12  # AES-GCM standard nonce size in bytes
 _DEK_SIZE = 32    # 256-bit DEK
 _KEK_ID_DEFAULT = "kek-default"
 
-
-# ---------------------------------------------------------------------------
-# Master key helpers
-# ---------------------------------------------------------------------------
 
 def get_master_key() -> bytes:
     """Return the raw 32-byte master KEK from configuration.
@@ -45,7 +43,7 @@ def get_master_key() -> bytes:
         )
     try:
         key = base64.urlsafe_b64decode(raw)
-    except Exception as exc:
+    except binascii.Error as exc:
         raise ValueError(
             f"SECRET_ENCRYPTION_KEY is not valid base64: {exc}"
         ) from exc
@@ -55,10 +53,6 @@ def get_master_key() -> bytes:
         )
     return key
 
-
-# ---------------------------------------------------------------------------
-# DEK wrap / unwrap (symmetric envelope)
-# ---------------------------------------------------------------------------
 
 def wrap_dek(dek: bytes, master_key: bytes | None = None) -> bytes:
     """Wrap (encrypt) a DEK with the master KEK.
@@ -93,10 +87,6 @@ def unwrap_dek(wrapped_dek: bytes, master_key: bytes | None = None) -> bytes:
     aesgcm = AESGCM(master_key)
     return aesgcm.decrypt(nonce, ciphertext, None)
 
-
-# ---------------------------------------------------------------------------
-# KEK document management (async — requires Beanie/MongoDB)
-# ---------------------------------------------------------------------------
 
 async def get_active_kek_id() -> str:
     """Return the ``kek_id`` of the currently active KEK record.
@@ -159,10 +149,6 @@ async def unwrap_dek_for_kek(kek_id: str) -> bytes:
     return unwrap_dek(wrapped)
 
 
-# ---------------------------------------------------------------------------
-# KEK rotation
-# ---------------------------------------------------------------------------
-
 async def rotate_kek() -> str:
     """Rotate to a new KEK: deactivate all existing KEKs, create a new one.
 
@@ -170,8 +156,6 @@ async def rotate_kek() -> str:
     Old KEK records remain in the database (``is_active=False``) so that
     existing encrypted blobs can still be decrypted via their ``kek_id``.
     """
-    import time
-
     all_keks = await EncryptionKey.find(
         EncryptionKey.is_active == True  # noqa: E712
     ).to_list()
@@ -207,8 +191,6 @@ async def add_kek(wrapped_dek_bytes: bytes) -> str:
 
     Returns the ``kek_id`` of the newly created KEK record.
     """
-    import time
-
     new_kek_id = f"kek-{int(time.time())}"
     kek_doc = EncryptionKey(
         kek_id=new_kek_id,
