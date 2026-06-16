@@ -10,7 +10,6 @@ correct DEK, enabling key rotation without re-encrypting existing data.
 """
 from __future__ import annotations
 
-import base64
 import secrets
 
 from cryptography.exceptions import InvalidTag  # noqa: F401 — re-exported

@@ -6,7 +6,6 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
-from typing import Any
 from urllib.parse import urljoin
 
 from app.config import settings

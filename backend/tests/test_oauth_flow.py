@@ -305,9 +305,15 @@ def test_callback_rejects_invalid_invite_token(
     monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
     monkeypatch.setattr(
         auth_router.InviteRepository,
-        "get_valid_by_email",
-        AsyncMock(return_value=[_invite(email, "correct-token")]),
+        "get_by_token_hash",
+        AsyncMock(return_value=None),
     )
+    monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "get_valid_by_email",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(auth_router, "_is_domain_approved", AsyncMock(return_value=False))
     consume = AsyncMock(return_value=True)
     monkeypatch.setattr(auth_router.InviteRepository, "consume", consume)
 
@@ -317,8 +323,8 @@ def test_callback_rejects_invalid_invite_token(
         follow_redirects=False,
     )
 
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Invalid invite token"
+    assert response.status_code == 302
+    assert "error=Access+requires+an+invitation" in response.headers.get("location", "")
     consume.assert_not_awaited()
 
 
@@ -336,6 +342,11 @@ def test_callback_consumes_valid_invite_token(
     )
     email = f"testuser@{provider}.example.com"
     monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
+    monkeypatch.setattr(
+        auth_router.InviteRepository,
+        "get_by_token_hash",
+        AsyncMock(return_value=_invite(email, invite_token)),
+    )
     monkeypatch.setattr(
         auth_router.InviteRepository,
         "get_valid_by_email",

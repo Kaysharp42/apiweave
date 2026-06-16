@@ -1,139 +1,140 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import assert from 'node:assert/strict';
-import test from 'node:test';
+import { describe, it, expect } from 'vitest';
 
-const source = readFileSync(join(process.cwd(), 'src/components/WebhookManager.tsx'), 'utf8');
+const source = readFileSync(join(process.cwd(), 'src/components/WebhookCiCdExamples.tsx'), 'utf8');
 
-// ---------------------------------------------------------------------------
-// GitHub Actions snippets
-// ---------------------------------------------------------------------------
+describe('WebhookManager CI/CD snippets', () => {
+  // ---------------------------------------------------------------------------
+  // GitHub Actions snippets
+  // ---------------------------------------------------------------------------
 
-test('GitHub Actions token-only snippet references secrets.APIWEAVE_WEBHOOK_TOKEN', () => {
-  assert.match(source, /secrets\.APIWEAVE_WEBHOOK_TOKEN/);
-});
+  it('GitHub Actions token-only snippet references secrets.APIWEAVE_WEBHOOK_TOKEN', () => {
+    expect(source).toMatch(/secrets\.APIWEAVE_WEBHOOK_TOKEN/);
+  });
 
-test('GitHub Actions snippet uses curl POST with X-Webhook-Token header', () => {
-  assert.match(source, /X-Webhook-Token: \$\{\{ secrets\.APIWEAVE_WEBHOOK_TOKEN \}\}/);
-});
+  it('GitHub Actions snippet uses curl POST with X-Webhook-Token header', () => {
+    expect(source).toMatch(/X-Webhook-Token: \$\{\{ secrets\.APIWEAVE_WEBHOOK_TOKEN \}\}/);
+  });
 
-test('GitHub Actions HMAC snippet references secrets.APIWEAVE_HMAC_SECRET', () => {
-  assert.match(source, /secrets\.APIWEAVE_HMAC_SECRET/);
-});
+  it('GitHub Actions HMAC snippet references secrets.APIWEAVE_HMAC_SECRET', () => {
+    expect(source).toMatch(/secrets\.APIWEAVE_HMAC_SECRET/);
+  });
 
-test('GitHub Actions snippet includes fire-and-forget mode label', () => {
-  assert.match(source, /Trigger APIWeave \(fire-and-forget\)/);
-});
+  it('GitHub Actions snippet includes fire-and-forget mode label', () => {
+    expect(source).toMatch(/Trigger APIWeave \(fire-and-forget\)/);
+  });
 
-test('GitHub Actions snippet includes blocking mode label', () => {
-  assert.match(source, /Trigger APIWeave \(blocking\)/);
-});
+  it('GitHub Actions snippet includes blocking mode label', () => {
+    expect(source).toMatch(/Trigger APIWeave \(blocking\)/);
+  });
 
-// ---------------------------------------------------------------------------
-// GitLab CI snippets
-// ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // GitLab CI snippets
+  // ---------------------------------------------------------------------------
 
-test('GitLab CI token-only snippet references $APIWEAVE_WEBHOOK_TOKEN', () => {
-  assert.match(source, /\$APIWEAVE_WEBHOOK_TOKEN/);
-});
+  it('GitLab CI token-only snippet references $APIWEAVE_WEBHOOK_TOKEN', () => {
+    expect(source).toMatch(/\$APIWEAVE_WEBHOOK_TOKEN/);
+  });
 
-test('GitLab CI snippet uses X-Webhook-Token header with variable placeholder', () => {
-  assert.match(source, /X-Webhook-Token: \$APIWEAVE_WEBHOOK_TOKEN/);
-});
+  it('GitLab CI snippet uses X-Webhook-Token header with variable placeholder', () => {
+    expect(source).toMatch(/X-Webhook-Token: \$APIWEAVE_WEBHOOK_TOKEN/);
+  });
 
-test('GitLab CI HMAC snippet references $APIWEAVE_HMAC_SECRET', () => {
-  assert.match(source, /\$APIWEAVE_HMAC_SECRET/);
-});
+  it('GitLab CI HMAC snippet references $APIWEAVE_HMAC_SECRET', () => {
+    expect(source).toMatch(/\$APIWEAVE_HMAC_SECRET/);
+  });
 
-test('GitLab CI snippet includes trigger_apiweave job name', () => {
-  assert.match(source, /trigger_apiweave/);
-});
+  it('GitLab CI snippet includes trigger_apiweave job name', () => {
+    expect(source).toMatch(/trigger_apiweave/);
+  });
 
-// ---------------------------------------------------------------------------
-// Jenkins snippets
-// ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Jenkins snippets
+  // ---------------------------------------------------------------------------
 
-test('Jenkins snippet uses withCredentials with APIWEAVE_WEBHOOK_TOKEN variable', () => {
-  assert.match(source, /variable: 'APIWEAVE_WEBHOOK_TOKEN'/);
-});
+  it('Jenkins snippet uses withCredentials with APIWEAVE_WEBHOOK_TOKEN variable', () => {
+    expect(source).toMatch(/variable: 'APIWEAVE_WEBHOOK_TOKEN'/);
+  });
 
-test('Jenkins snippet uses credentialsId apiweave-token', () => {
-  assert.match(source, /credentialsId: 'apiweave-token'/);
-});
+  it('Jenkins snippet uses credentialsId apiweave-token', () => {
+    expect(source).toMatch(/credentialsId: 'apiweave-token'/);
+  });
 
-test('Jenkins HMAC snippet uses credentialsId apiweave-secret', () => {
-  assert.match(source, /credentialsId: 'apiweave-secret'/);
-});
+  it('Jenkins HMAC snippet uses credentialsId apiweave-secret', () => {
+    expect(source).toMatch(/credentialsId: 'apiweave-secret'/);
+  });
 
-test('Jenkins snippet includes pipeline block', () => {
-  assert.match(source, /pipeline \{/);
-});
+  it('Jenkins snippet includes pipeline block', () => {
+    expect(source).toMatch(/pipeline \{/);
+  });
 
-test('Jenkins snippet includes withCredentials block', () => {
-  assert.match(source, /withCredentials\(\[/);
-});
+  it('Jenkins snippet includes withCredentials block', () => {
+    expect(source).toMatch(/withCredentials\(\[/);
+  });
 
-// ---------------------------------------------------------------------------
-// No raw secret/token values in snippets
-// ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // No raw secret/token values in snippets
+  // ---------------------------------------------------------------------------
 
-test('No raw webhook token values (wh_ prefix) appear in snippet strings', () => {
-  assert.doesNotMatch(source, /wh_[a-f0-9]+/);
-});
+  it('No raw webhook token values (wh_ prefix) appear in snippet strings', () => {
+    expect(source).not.toMatch(/wh_[a-f0-9]+/);
+  });
 
-test('No raw HMAC secret values (hs_ prefix) appear in snippet strings', () => {
-  assert.doesNotMatch(source, /hs_[a-f0-9]+/);
-});
+  it('No raw HMAC secret values (hs_ prefix) appear in snippet strings', () => {
+    expect(source).not.toMatch(/hs_[a-f0-9]+/);
+  });
 
-// ---------------------------------------------------------------------------
-// Snippet builder functions are exported / present
-// ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Snippet builder functions are exported / present
+  // ---------------------------------------------------------------------------
 
-test('buildGithubSnippet function is defined', () => {
-  assert.match(source, /function buildGithubSnippet/);
-});
+  it('buildGithubSnippet function is defined', () => {
+    expect(source).toMatch(/function buildGithubSnippet/);
+  });
 
-test('buildGitlabSnippet function is defined', () => {
-  assert.match(source, /function buildGitlabSnippet/);
-});
+  it('buildGitlabSnippet function is defined', () => {
+    expect(source).toMatch(/function buildGitlabSnippet/);
+  });
 
-test('buildJenkinsSnippet function is defined', () => {
-  assert.match(source, /function buildJenkinsSnippet/);
-});
+  it('buildJenkinsSnippet function is defined', () => {
+    expect(source).toMatch(/function buildJenkinsSnippet/);
+  });
 
-test('getSnippet dispatcher function is defined', () => {
-  assert.match(source, /function getSnippet/);
-});
+  it('getSnippet dispatcher function is defined', () => {
+    expect(source).toMatch(/function getSnippet/);
+  });
 
-// ---------------------------------------------------------------------------
-// CiCdExamples component structure
-// ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // WebhookCiCdExamples component structure
+  // ---------------------------------------------------------------------------
 
-test('CiCdExamples component is defined', () => {
-  assert.match(source, /function CiCdExamples/);
-});
+  it('WebhookCiCdExamples component is defined', () => {
+    expect(source).toMatch(/function WebhookCiCdExamples/);
+  });
 
-test('CiCdExamples renders GitHub Actions provider button', () => {
-  assert.match(source, /GitHub Actions/);
-});
+  it('WebhookCiCdExamples renders GitHub Actions provider button', () => {
+    expect(source).toMatch(/GitHub Actions/);
+  });
 
-test('CiCdExamples renders GitLab CI provider button', () => {
-  assert.match(source, /GitLab CI/);
-});
+  it('WebhookCiCdExamples renders GitLab CI provider button', () => {
+    expect(source).toMatch(/GitLab CI/);
+  });
 
-test('CiCdExamples renders Jenkins provider button', () => {
-  assert.match(source, /Jenkins/);
-});
+  it('WebhookCiCdExamples renders Jenkins provider button', () => {
+    expect(source).toMatch(/Jenkins/);
+  });
 
-test('CiCdExamples renders Fire-and-Forget mode button', () => {
-  assert.match(source, /Fire-and-Forget/);
-});
+  it('WebhookCiCdExamples renders Fire-and-Forget mode button', () => {
+    expect(source).toMatch(/Fire-and-Forget/);
+  });
 
-test('CiCdExamples renders Blocking mode button', () => {
-  assert.match(source, /Blocking/);
-});
+  it('WebhookCiCdExamples renders Blocking mode button', () => {
+    expect(source).toMatch(/Blocking/);
+  });
 
-test('Snippets use environment variable placeholders, not actual secret values', () => {
-  // The disclaimer text must be present
-  assert.match(source, /Snippets use environment variable\s+placeholders — never actual secret values/s);
+  it('Snippets use environment variable placeholders, not actual secret values', () => {
+    // The disclaimer text must be present
+    expect(source).toMatch(/Snippets use environment variable\s+placeholders\s*--\s*never actual secret values/s);
+  });
 });
