@@ -8,7 +8,12 @@ import AdminUsersPage from './pages/AdminUsersPage';
 import AdminDomainsPage from './pages/AdminDomainsPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
 import InviteAdminPage from './pages/InviteAdminPage';
+import AuditPage from './pages/AuditPage';
+import { WorkspaceSecretsPage } from './pages/WorkspaceSecretsPage';
+import { WorkspaceTokensPage } from './pages/WorkspaceTokensPage';
+import WorkspaceEnvironmentsPage from './pages/WorkspaceEnvironmentsPage';
 import { PaletteProvider } from './contexts/PaletteContext';
+import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { Toast } from './components/atoms/Toast';
 import { AuthProvider } from './auth/AuthProvider';
 import { useAuth } from './auth/useAuth';
@@ -183,10 +188,95 @@ function App() {
                 }
               />
               <Route
+                path="/audit"
+                element={
+                  <ProtectedRoute>
+                    <AuditPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug/settings/secrets"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceSecretsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug/settings/tokens"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceTokensPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug/settings/environments"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceEnvironmentsPage />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Slug-based workspace routes */}
+              <Route
+                path="/:orgSlug/personal"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <Navigate to="workflows" replace />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <Navigate to="workflows" replace />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug/projects/:projectId"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <Home />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug/workflows/:workflowId"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <Home />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug/workflows"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <Home />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/*"
                 element={
                   <ProtectedRoute>
-                    <Home />
+                    <WorkspaceProvider>
+                      <Home />
+                    </WorkspaceProvider>
                   </ProtectedRoute>
                 }
               />

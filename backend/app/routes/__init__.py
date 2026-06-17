@@ -2,6 +2,7 @@
 Routes package
 """
 from app.routes import (
+    audit,
     collections,
     environments,
     keys,
@@ -16,6 +17,7 @@ from app.routes import (
 )
 
 __all__ = [
+    "audit",
     "collections",
     "environments",
     "keys",

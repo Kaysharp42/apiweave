@@ -3,4 +3,5 @@ export interface EnvironmentFormData {
   description: string;
   swaggerDocUrl: string;
   variables: Record<string, string>;
+  allowedWorkspaceIds?: string[];
 }

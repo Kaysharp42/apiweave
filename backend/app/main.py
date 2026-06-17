@@ -14,7 +14,7 @@ from app.auth.dependencies import STATE_CHANGING_METHODS, csrf_protect
 from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import close_db, connect_db
-from app.routes import auth_admin, environment_protection, invites, keys, mcp_config, orgs, projects, runs, scoped_environments, secrets, service_tokens, webhooks, workspaces
+from app.routes import audit, auth_admin, environment_protection, invites, keys, mcp_config, orgs, projects, runs, scoped_environments, secrets, service_tokens, webhooks, workspaces
 from app.services.webhook_runner import webhook_runner
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ app.include_router(scoped_environments.router)
 app.include_router(secrets.router)
 app.include_router(service_tokens.router)
 app.include_router(environment_protection.router)
+app.include_router(audit.router)
 
 _CSRF_EXEMPT_PREFIXES = (
     "/api/auth/login",

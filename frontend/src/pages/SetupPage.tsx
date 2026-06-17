@@ -56,7 +56,7 @@ export default function SetupPage() {
   }
 
   if (status === 'authenticated') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/personal/workflows" replace />;
   }
 
   const handleProviderClick = (providerId: string) => {
