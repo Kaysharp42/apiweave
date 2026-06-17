@@ -4,6 +4,7 @@ import { SidebarAction } from './SidebarAction';
 import { WorkflowItem } from './WorkflowItem';
 import { getSidebarItemLabel } from '../../../utils/sidebarItemLabel';
 import type { ProjectItemProps } from '../../../types';
+import type { Collection } from '../../../types/Collection';
 
 /**
  * Renders a single project item with expand/collapse toggle,
@@ -94,7 +95,7 @@ export function ProjectItem({
                 collections={projects.map((p) => ({
                   collectionId: p.projectId ?? p.collectionId,
                   name: p.name,
-                }))}
+                })) as Collection[]}
                 environments={environments}
                 onWorkflowClick={onWorkflowClick}
                 onExportWorkflow={onExportWorkflow}

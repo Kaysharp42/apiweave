@@ -50,7 +50,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     if (navigationSelectedValue === 'workflows') {
       resetPagination();
       void refreshAll(navigationSelectedValue);
-    } else if (navigationSelectedValue === 'collections') {
+    } else if (navigationSelectedValue === 'projects') {
       void refreshAll(navigationSelectedValue);
     }
   }, [navigationSelectedValue, refreshAll, resetPagination]);

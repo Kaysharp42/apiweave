@@ -9,6 +9,5 @@ export interface Environment {
   createdAt: string;
   updatedAt: string;
   isDefault?: boolean;
-  isActive?: boolean;
   secrets?: Record<string, string>;
 }

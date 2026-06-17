@@ -8,6 +8,5 @@ export interface EnvironmentListItem {
   createdAt: string;
   updatedAt: string;
   isDefault?: boolean;
-  isActive?: boolean;
   secrets?: Record<string, string>;
 }

@@ -1,6 +1,6 @@
 export { SidebarAction } from './SidebarAction';
 export { WorkflowItem } from './WorkflowItem';
 export { WorkflowList } from './WorkflowList';
-export { CollectionItem } from './CollectionItem';
-export { CollectionList } from './CollectionList';
+export { ProjectItem } from './ProjectItem';
+export { ProjectList } from './ProjectList';
 export { SettingsContent } from './SettingsContent';

@@ -67,6 +67,10 @@ def _workflow_dict_to_summary(workflow: dict[str, Any]) -> WorkflowSummary:
     )
 
 
+# Public alias for cross-module use (collections.py)
+workflow_to_summary = _workflow_dict_to_summary
+
+
 def _workflow_dict_to_detail(workflow: dict[str, Any]) -> WorkflowDetail:
     """Convert a scoped workflow response dict into a redacted MCP detail DTO."""
     summary = _workflow_dict_to_summary(workflow)

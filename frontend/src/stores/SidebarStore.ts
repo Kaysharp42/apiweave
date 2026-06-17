@@ -167,7 +167,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
   refreshAll: async (selectedNav: string) => {
     set({ isRefreshing: true });
-    const { fetchWorkflows, fetchCollections, fetchProjects, fetchEnvironments } = get();
+    const { fetchWorkflows, fetchProjects, fetchEnvironments } = get();
     await fetchEnvironments();
     if (selectedNav === 'workflows') {
       await fetchWorkflows(0);

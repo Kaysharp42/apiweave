@@ -179,30 +179,34 @@ export function WorkspaceProjectPage() {
         ) : (
           <div className="space-y-2">
             {workflows.map((workflow) => (
-              <Card
+              <div
                 key={workflow.workflowId}
-                className="p-4 cursor-pointer hover:border-[var(--aw-primary)]/50 transition-colors"
                 onClick={() => navigate(
                   `/${orgSlugValue}/${wsSlugValue}/workflows/${workflow.workflowId}`,
                 )}
+                className="cursor-pointer"
               >
-                <div className="flex items-center gap-3">
-                  <FileText className="w-5 h-5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">
-                      {workflow.name}
-                    </div>
-                    {workflow.description && (
-                      <div className="text-xs text-text-secondary dark:text-text-secondary-dark truncate mt-0.5">
-                        {workflow.description}
+                <Card
+                  className="p-4 hover:border-[var(--aw-primary)]/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">
+                        {workflow.name}
                       </div>
-                    )}
+                      {workflow.description && (
+                        <div className="text-xs text-text-secondary dark:text-text-secondary-dark truncate mt-0.5">
+                          {workflow.description}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      {workflow.nodes?.length ?? 0} nodes
+                    </span>
                   </div>
-                  <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                    {workflow.nodes?.length ?? 0} nodes
-                  </span>
-                </div>
-              </Card>
+                </Card>
+              </div>
             ))}
           </div>
         )}
