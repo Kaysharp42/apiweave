@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FolderKanban, ArrowLeft, FileText } from 'lucide-react';
 import { Button } from '../components/atoms/Button';
-import { Card } from '../components/atoms/Card';
+import { Card } from '../components/molecules/Card';
 import { Badge } from '../components/atoms/Badge';
 import { Spinner } from '../components/atoms/Spinner';
 import { EmptyState } from '../components/molecules/EmptyState';
