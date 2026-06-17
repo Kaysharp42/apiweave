@@ -166,7 +166,7 @@ async def update_workspace(
 async def delete_workspace(
     workspace_id: str,
     current_user: User = Depends(get_current_active_user),
-) -> None:
+):
     """Soft-delete a workspace."""
     try:
         await workspace_service.delete_workspace(workspace_id, current_user.userId)
@@ -250,7 +250,7 @@ async def remove_member(
     workspace_id: str,
     user_id: str,
     current_user: User = Depends(get_current_active_user),
-) -> None:
+):
     """Remove a member from a workspace."""
     try:
         await workspace_service.remove_member(workspace_id, user_id, current_user.userId)
@@ -306,7 +306,7 @@ async def remove_collaborator(
     workspace_id: str,
     collaborator_id: str,
     current_user: User = Depends(get_current_active_user),
-) -> None:
+):
     """Remove an outside collaborator."""
     try:
         await workspace_service.remove_outside_collaborator(
@@ -404,7 +404,7 @@ async def delete_project(
     workspace_id: str,
     project_id: str,
     current_user: User = Depends(get_current_active_user),
-) -> None:
+):
     """Delete a project."""
     try:
         await project_service.delete_project(project_id, current_user.userId)
@@ -498,7 +498,7 @@ async def delete_workflow(
     workspace_id: str,
     workflow_id: str,
     current_user: User = Depends(get_current_active_user),
-) -> None:
+):
     """Delete a workflow scoped to a workspace."""
     try:
         await scoped_workflow_service.delete_scoped_workflow(

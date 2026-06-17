@@ -1,5 +1,8 @@
 """
-MCP run execution and monitoring tools.
+MCP run execution and monitoring tools — scoped to workspace.
+
+Runtime/ad-hoc secrets have been removed. All secrets must be stored
+before runs through the scoped secret API with client-encrypted writes.
 """
 from typing import Annotated, Any, Literal, cast
 
@@ -13,23 +16,17 @@ from app.mcp.schemas.runs import (
     NodeStatusSummary,
     PollingHint,
     ResumeRunRequest,
-    RunCancelRequest,
     RunCancelResponse,
-    RunGetNodeResultRequest,
-    RunGetResultsRequest,
-    RunGetStatusRequest,
-    RunLatestFailedRequest,
     RunLatestFailedResponse,
     RunListItem,
-    RunListRequest,
     RunListResponse,
     RunNodeResultResponse,
     RunResultNodeSummary,
     RunResultsResponse,
     RunStatusResponse,
-    WorkflowRunRequest,
     WorkflowRunResponse,
 )
+from app.mcp.scope_context import require_scope
 from app.services.run_service import cancel_run as svc_cancel_run
 from app.services.run_service import get_latest_failed_run as svc_get_latest_failed_run
 from app.services.run_service import get_node_result as svc_get_node_result
@@ -62,7 +59,6 @@ def _workflow_run_response_from_dict(data: dict[str, Any]) -> WorkflowRunRespons
         resume_from_run_id=cast(str | None, data.get("resumeFromRunId")),
         start_node_ids=cast(list[str] | None, data.get("startNodeIds")),
         status=str(data.get("status", "pending")),
-        runtime_secret_count=int(data.get("runtimeSecretCount", 0)),
         polling_hint=_polling_hint_from_dict(polling),
     )
 
@@ -201,10 +197,6 @@ async def workflow_run(
         str | None,
         Field(description="Optional environment ID for this run."),
     ] = None,
-    runtime_secrets: Annotated[
-        dict[str, str] | None,
-        Field(description="Runtime-only secrets. Values are never persisted or echoed back."),
-    ] = None,
     resume_mode: Annotated[
         Literal["single", "all-failed"] | None,
         Field(description="Optional resume mode for failed-run retry flows."),
@@ -218,8 +210,21 @@ async def workflow_run(
         Field(description="Failed node IDs to restart from. Derived if omitted."),
     ] = None,
 ) -> WorkflowRunResponse:
-    """Trigger workflow execution and return polling instructions without echoing secrets."""
+    """Trigger workflow execution. Runtime secrets are NOT accepted — use scoped secret API."""
     await ensure_mcp_database()
+    scope = require_scope()
+
+    # Verify workflow belongs to scope
+    from app.services.scoped_workflow_service import get_scoped_workflow
+    try:
+        await get_scoped_workflow(
+            workspace_id=scope.scope_id,
+            workflow_id=workflow_id,
+            actor_user_id=scope.actor_id,
+        )
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+
     resume: ResumeRunRequest | None = None
     if resume_mode or resume_source_run_id or resume_start_node_ids:
         if not resume_mode:
@@ -232,18 +237,13 @@ async def workflow_run(
             start_node_ids=resume_start_node_ids or [],
         )
 
-    request = WorkflowRunRequest(
-        workflow_id=workflow_id,
-        environment_id=environment_id,
-        runtime_secrets=runtime_secrets or {},
-        resume=resume,
-    )
+    # No runtime secrets — all secrets must be stored via scoped secret API
     try:
         result = await svc_trigger_workflow_run(
-            request.workflow_id,
-            environment_id=request.environment_id,
-            runtime_secrets=request.runtime_secrets,
-            resume=request.resume.model_dump() if request.resume else None,
+            workflow_id,
+            environment_id=environment_id,
+            resume=resume.model_dump() if resume else None,
+            workspace_id=scope.scope_id,
         )
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
@@ -254,15 +254,14 @@ async def run_get_status(
     workflow_id: Annotated[str, Field(description="Workflow ID that owns the run.")],
     run_id: Annotated[str, Field(description="Run ID to poll.")],
 ) -> RunStatusResponse:
-    """Get run status and compact node status summaries without full node payloads."""
+    """Get run status and compact node status summaries."""
     await ensure_mcp_database()
-    request = RunGetStatusRequest(workflow_id=workflow_id, run_id=run_id)
     try:
-        run = await svc_get_run(request.run_id)
+        run = await svc_get_run(run_id)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
-    if run.workflowId != request.workflow_id:
-        raise ValueError(f"Run {request.run_id} not found")
+    if run.workflowId != workflow_id:
+        raise ValueError(f"Run {run_id} not found")
     return _run_to_status_response(run)
 
 
@@ -272,13 +271,12 @@ async def run_get_results(
 ) -> RunResultsResponse:
     """Get a human-readable payload-free run results summary."""
     await ensure_mcp_database()
-    request = RunGetResultsRequest(workflow_id=workflow_id, run_id=run_id)
     try:
-        results = await svc_get_run_results(request.run_id)
+        results = await svc_get_run_results(run_id)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
-    if results.get("workflowId") != request.workflow_id:
-        raise ValueError(f"Run {request.run_id} not found")
+    if results.get("workflowId") != workflow_id:
+        raise ValueError(f"Run {run_id} not found")
 
     node_results = [
         _result_node_summary(cast(dict[str, Any], result))
@@ -307,14 +305,13 @@ async def run_get_node_result(
     run_id: Annotated[str, Field(description="Run ID containing the node result.")],
     node_id: Annotated[str, Field(description="Node ID to retrieve.")],
 ) -> RunNodeResultResponse:
-    """Fetch the full result for one node, including GridFS-backed payloads when present."""
+    """Fetch the full result for one node. Secret-like values are redacted."""
     await ensure_mcp_database()
-    request = RunGetNodeResultRequest(workflow_id=workflow_id, run_id=run_id, node_id=node_id)
     try:
         node_result = await svc_get_node_result(
-            request.run_id,
-            request.workflow_id,
-            request.node_id,
+            run_id,
+            workflow_id,
+            node_id,
         )
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
@@ -352,9 +349,8 @@ async def run_latest_failed(
 ) -> RunLatestFailedResponse:
     """Get latest failed run metadata and failed nodes for resume flows."""
     await ensure_mcp_database()
-    request = RunLatestFailedRequest(workflow_id=workflow_id)
     try:
-        result = await svc_get_latest_failed_run(request.workflow_id)
+        result = await svc_get_latest_failed_run(workflow_id)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
 
@@ -391,19 +387,13 @@ async def run_list(
     skip: Annotated[int, Field(ge=0, description="Number of runs to skip.")] = 0,
     limit: Annotated[int, Field(ge=1, le=100, description="Maximum runs to return.")] = 20,
 ) -> RunListResponse:
-    """List runs with optional workflow/status filters and pagination."""
+    """List runs scoped to the authenticated workspace."""
     await ensure_mcp_database()
-    request = RunListRequest(
+    runs = await svc_list_runs(
         workflow_id=workflow_id,
         status_filter=status_filter,
         skip=skip,
         limit=limit,
-    )
-    runs = await svc_list_runs(
-        workflow_id=request.workflow_id,
-        status_filter=request.status_filter,
-        skip=request.skip,
-        limit=request.limit,
     )
     items = [
         RunListItem(
@@ -421,75 +411,56 @@ async def run_list(
     return RunListResponse(
         runs=items,
         total=len(items),
-        has_more=len(items) == request.limit,
+        has_more=len(items) == limit,
     )
 
 
 async def run_cancel(
     run_id: Annotated[str, Field(description="Run ID to cancel.")],
 ) -> RunCancelResponse:
-    """Cancel a pending or running workflow execution.
-
-    Only works for runs in pending or running status.
-    """
+    """Cancel a pending or running workflow execution."""
     await ensure_mcp_database()
-    request = RunCancelRequest(run_id=run_id)
     try:
-        result = await svc_cancel_run(request.run_id)
+        result = await svc_cancel_run(run_id)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
     return RunCancelResponse(
         message=str(result.get("message", "Run cancelled")),
-        run_id=str(result.get("runId", request.run_id)),
+        run_id=str(result.get("runId", run_id)),
         status=str(result.get("status", "cancelled")),
     )
 
 
 def register_run_tools(server: FastMCP) -> None:
-    """Register execution and monitoring tools."""
+    """Register scoped execution and monitoring tools."""
     server.tool(
         name="workflow_run",
         description=(
-            "Trigger workflow execution with optional environment, resume config, and "
-            "runtime-only secrets. Secret values are never persisted or returned."
+            "Trigger workflow execution. Runtime secrets are NOT accepted — "
+            "use the scoped secret API to store secrets before runs."
         ),
     )(workflow_run)
     server.tool(
         name="run_get_status",
-        description=(
-            "Poll a run and get compact node status summaries. Full node payloads are "
-            "excluded; use run_get_node_result for one node when needed."
-        ),
+        description="Poll a run and get compact node status summaries.",
     )(run_get_status)
     server.tool(
         name="run_get_results",
-        description=(
-            "Get a human-readable run result summary without request/response payloads. "
-            "Use run_get_node_result for full details of a single node."
-        ),
+        description="Get a human-readable run result summary without payloads.",
     )(run_get_results)
     server.tool(
         name="run_get_node_result",
-        description=(
-            "Fetch the full result for one node, including GridFS-backed results. "
-            "Secret-like values are redacted from the returned payload."
-        ),
+        description="Fetch the full result for one node. Secret-like values are redacted.",
     )(run_get_node_result)
     server.tool(
         name="run_latest_failed",
-        description="Get latest failed run metadata and failed nodes for resume workflows.",
+        description="Get latest failed run metadata and failed nodes for resume flows.",
     )(run_latest_failed)
     server.tool(
         name="run_list",
-        description=(
-            "List runs with optional workflow or status filters and pagination. "
-            "Returns compact run metadata without full node results."
-        ),
+        description="List runs with optional workflow/status filters and pagination.",
     )(run_list)
     server.tool(
         name="run_cancel",
-        description=(
-            "Cancel a pending or running workflow execution. Only works for runs "
-            "in pending or running status. Terminal runs cannot be cancelled."
-        ),
+        description="Cancel a pending or running workflow execution.",
     )(run_cancel)

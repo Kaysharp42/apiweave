@@ -1,6 +1,11 @@
 """
 Run service — shared business logic for run creation, status, results, and node results.
 Called by both FastAPI routes and MCP tools.
+
+Runs are workspace-owned. The actor (user/service_token/webhook/system) is recorded
+separately from workspace ownership. Edge cases:
+- Soft-deleted env while queued: run fails with audit.
+- User removed mid-run: run continues (secrets resolved at start), audit records removal.
 """
 import asyncio
 import json
@@ -13,11 +18,16 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from app import models
+from app.auth.permissions import WORKFLOWS_RUN, ScopedPermissionEvaluator
 from app.database import get_database
-from app.models import Run, RunCreate
+from app.models import Run, RunActorContext, RunCreate
 from app.repositories import EnvironmentRepository, RunRepository, WorkflowRepository
-from app.runner.executor import WorkflowExecutor
-from app.services.exceptions import ConflictError
+from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
+from app.repositories.workspace_repository import WorkspaceRepository
+from app.runner.executor import RunContext, WorkflowExecutor
+from app.services import audit_service
+from app.services.exceptions import ConflictError, ResourceNotFoundError
+from app.services.secret_utils import SecretMasker
 
 logger = logging.getLogger(__name__)
 VALID_RESUME_MODES = {"single", "all-failed"}
@@ -46,6 +56,24 @@ def _get_cancel_event(run_id: str) -> asyncio.Event | None:
     return _active_cancel_events.get(run_id)
 
 
+async def _build_masker_for_run(run_doc: Any) -> SecretMasker:
+    """Build a SecretMasker from the run's environment secrets (defense in depth)."""
+    env_id = getattr(run_doc, "environmentId", None) or (
+        run_doc.get("environmentId") if isinstance(run_doc, dict) else None
+    )
+    if not env_id:
+        return SecretMasker()
+    try:
+        env_secrets = await EnvironmentRepository.get_decrypted_secrets(env_id)
+        return SecretMasker(env_secrets)
+    except Exception:
+        logger.debug(
+            "Could not resolve env secrets for masking on run %s",
+            getattr(run_doc, "runId", "?"),
+        )
+        return SecretMasker()
+
+
 async def create_run(run_request: RunCreate) -> Run:
     """Create a run, merging workflow variables."""
     workflow = await WorkflowRepository.get_by_id(run_request.workflowId)
@@ -63,19 +91,19 @@ async def create_run(run_request: RunCreate) -> Run:
 async def _execute_workflow_background(
     run_id: str,
     workflow_id: str,
-    runtime_secrets: dict[str, str],
     start_node_ids: list[str] | None,
     resume_from_run_id: str | None,
     cancel_event: asyncio.Event,
+    run_context: RunContext | None = None,
 ) -> None:
     """Run the workflow executor as a background task."""
     executor = WorkflowExecutor(
         run_id,
         workflow_id,
-        runtime_secrets=runtime_secrets,
         start_node_ids=start_node_ids,
         resume_from_run_id=resume_from_run_id,
         cancel_event=cancel_event,
+        run_context=run_context,
     )
     _register_executor(run_id, executor, cancel_event)
     try:
@@ -111,15 +139,24 @@ def _normalize_start_node_ids(value: Any) -> list[str]:
 async def trigger_workflow_run(
     workflow_id: str,
     environment_id: str | None = None,
-    runtime_secrets: dict[str, str] | None = None,
     resume: dict[str, Any] | None = None,
+    workspace_id: str | None = None,
+    actor: RunActorContext | None = None,
 ) -> dict[str, Any]:
-    """Trigger workflow execution and return run metadata without persisting secrets."""
+    """Trigger workflow execution and return run metadata.
+
+    Runtime/ad-hoc secrets are NOT supported. All secrets must be stored
+    before runs and are resolved through the scoped Environment > Workspace
+    > Organization chain.
+
+    When workspace_id and actor are provided, the run is workspace-scoped with
+    full audit trail. Legacy calls without workspace/actor still work for
+    backward compatibility during migration.
+    """
     workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
         raise ValueError(f"Workflow {workflow_id} not found")
 
-    runtime_secret_values = dict(runtime_secrets or {})
     resume_mode = _resume_value(resume, "mode", "mode")
     resume_from_run_id = _resume_value(resume, "source_run_id", "sourceRunId")
     start_node_ids = _normalize_start_node_ids(
@@ -161,17 +198,26 @@ async def trigger_workflow_run(
         raise ValueError("Resume source and start nodes require a resume mode.")
 
     if environment_id:
-        environment = await EnvironmentRepository.get_by_id(environment_id)
+        environment = await ScopedEnvironmentRepository.get_by_id(environment_id)
+        if not environment:
+            environment = await EnvironmentRepository.get_by_id(environment_id)
         if not environment:
             raise ValueError(f"Environment {environment_id} not found")
 
     run_id = str(uuid.uuid4())
     now = datetime.now(UTC)
     workflow_variables = workflow.variables.copy() if workflow.variables else {}
+
+    # Resolve workspace ownership from workflow or explicit param
+    effective_workspace_id = workspace_id or workflow.workspaceId
+    effective_org_id = workflow.orgId
+    effective_owner_type = workflow.ownerType
+
     run = models.Run(
         runId=run_id,
         workflowId=workflow_id,
         environmentId=environment_id,
+        selectedEnvironmentId=environment_id,
         status="pending",
         trigger="manual",
         variables=workflow_variables,
@@ -185,18 +231,91 @@ async def trigger_workflow_run(
         completedAt=None,
         duration=None,
         error=None,
+        workspaceId=effective_workspace_id,
+        orgId=effective_org_id,
+        ownerType=effective_owner_type,
+        actorType=actor.actorType if actor else None,
+        actorId=actor.actorId if actor else None,
     )
     await run.insert()
 
+    # Audit: run created
+    if effective_workspace_id and actor:
+        try:
+            evt = await audit_service.append_event(
+                actor=actor.actorType,  # type: ignore[arg-type]
+                actor_id=actor.actorId,
+                action="run.created",
+                scope="workspace",
+                scope_id=effective_workspace_id,
+                resource_type="run",
+                resource_id=run_id,
+                context={
+                    "workflowId": workflow_id,
+                    "environmentId": environment_id,
+                    "trigger": "manual",
+                },
+            )
+            run.auditEventIds.append(evt.eventId)
+            await run.save()
+        except Exception:
+            logger.warning("Audit write failed for run.created %s", run_id, exc_info=True)
+
     cancel_event = asyncio.Event()
+
+    # Build RunContext for scoped execution
+    run_context: RunContext | None = None
+    if effective_workspace_id and actor:
+        # Resolve environment scope info
+        env_scope_type = "workspace"
+        env_scope_id = effective_workspace_id
+        if environment_id:
+            env_doc = await ScopedEnvironmentRepository.get_by_id(environment_id)
+            if env_doc:
+                env_scope_type = env_doc.scopeType
+                env_scope_id = env_doc.scopeId or effective_workspace_id
+
+        # Resolve actor's workspace role for permission check
+        workspace_role: str | None = None
+        if actor.actorType == "user":
+            member = await WorkspaceRepository.get_member(effective_workspace_id, actor.actorId)
+            if member:
+                workspace_role = member.role
+            elif effective_owner_type == "user" and workflow.ownerUserId == actor.actorId:
+                workspace_role = "admin"  # Owner gets admin
+
+        # Evaluate effective permissions
+        effective_perms = ScopedPermissionEvaluator.evaluate(
+            workspace_role=workspace_role,
+            service_token_permissions=set() if actor.actorType != "service_token" else None,
+        )
+
+        # Permission check: actor must have workflows:run
+        if not ScopedPermissionEvaluator.has_permission(effective_perms, WORKFLOWS_RUN):
+            raise ConflictError(
+                f"Actor {actor.actorType}:{actor.actorId} lacks permission to run workflows "
+                f"in workspace {effective_workspace_id}"
+            )
+
+        run_context = RunContext(
+            workspace_id=effective_workspace_id,
+            org_id=effective_org_id,
+            actor_type=actor.actorType,
+            actor_id=actor.actorId,
+            environment_id=environment_id,
+            environment_scope_type=env_scope_type,
+            environment_scope_id=env_scope_id,
+            effective_permissions=effective_perms,
+        )
+
     asyncio.create_task(
         _execute_workflow_background(
             run_id,
             workflow_id,
-            runtime_secret_values,
             start_node_ids or None,
             resume_from_run_id,
             cancel_event,
+            run_context=run_context,
         )
     )
 
@@ -205,11 +324,13 @@ async def trigger_workflow_run(
         "runId": run_id,
         "workflowId": workflow_id,
         "environmentId": environment_id,
+        "workspaceId": effective_workspace_id,
+        "actorType": actor.actorType if actor else None,
+        "actorId": actor.actorId if actor else None,
         "resumeMode": resume_mode if resume_mode in VALID_RESUME_MODES else None,
         "resumeFromRunId": resume_from_run_id,
         "startNodeIds": start_node_ids or None,
         "status": "pending",
-        "runtimeSecretCount": len(runtime_secret_values),
         "polling": {
             "tool": "run_get_status",
             "recommendedIntervalSeconds": 1,
@@ -277,6 +398,7 @@ async def get_run_with_node_results(run_id: str, workflow_id: str) -> dict[str, 
     if not run_doc or run_doc.workflowId != workflow_id:
         raise ValueError(f"Run {run_id} not found")
 
+    masker = await _build_masker_for_run(run_doc)
     run = run_doc.model_dump(by_alias=True)
     run.pop("_id", None)
 
@@ -302,7 +424,10 @@ async def get_run_with_node_results(run_id: str, workflow_id: str) -> dict[str, 
                             actual_result = json.loads(file_data.decode("utf-8"))
                             run["nodeStatuses"][node_id] = {
                                 "status": full_result.get("status"),
-                                "result": actual_result,
+                                "result": (
+                                    masker.mask_struct(actual_result)
+                                    if masker.has_secrets else actual_result
+                                ),
                                 "timestamp": full_result.get("timestamp"),
                                 "metadata": {
                                     "stored_in_gridfs": True,
@@ -320,7 +445,7 @@ async def get_run_with_node_results(run_id: str, workflow_id: str) -> dict[str, 
                 else:
                     run["nodeStatuses"][node_id] = {
                         "status": full_result.get("status"),
-                        "result": result,
+                        "result": masker.mask_struct(result) if masker.has_secrets else result,
                         "timestamp": full_result.get("timestamp"),
                     }
 
@@ -335,6 +460,7 @@ async def get_node_result(
     if not run or run.workflowId != workflow_id:
         raise ValueError(f"Run {run_id} not found")
 
+    masker = await _build_masker_for_run(run)
     db = get_database()
     node_result = await db.node_results.find_one(
         {"runId": run_id, "nodeId": node_id},
@@ -362,7 +488,7 @@ async def get_node_result(
                 "runId": run_id,
                 "status": node_result.get("status"),
                 "timestamp": node_result.get("timestamp"),
-                "result": full_result,
+                "result": masker.mask_struct(full_result) if masker.has_secrets else full_result,
                 "metadata": {
                     "stored_in_gridfs": True,
                     "size_mb": result.get("size_mb"),
@@ -377,7 +503,7 @@ async def get_node_result(
         "runId": run_id,
         "status": node_result.get("status"),
         "timestamp": node_result.get("timestamp"),
-        "result": result,
+        "result": masker.mask_struct(result) if masker.has_secrets else result,
         "metadata": {"stored_in_gridfs": False},
     }
 
@@ -388,6 +514,7 @@ async def get_run_results(run_id: str) -> dict[str, Any]:
     if not run:
         raise ValueError(f"Run {run_id} not found")
 
+    masker = await _build_masker_for_run(run)
     workflow = await WorkflowRepository.get_by_id(run.workflowId)
     workflow_name = workflow.name if workflow else "Unknown Workflow"
 
@@ -413,6 +540,9 @@ async def get_run_results(run_id: str) -> dict[str, Any]:
     status_map = {"success": "passed", "error": "failed", "skipped": "skipped"}
     for result in node_results_data:
         node_status = status_map.get(result.get("status", ""), "unknown")
+        raw_response = result.get("response")
+        raw_request = result.get("request")
+        err = result.get("error")
         formatted_results.append(
             {
                 "nodeId": result.get("nodeId"),
@@ -420,9 +550,18 @@ async def get_run_results(run_id: str) -> dict[str, Any]:
                 "status": node_status.upper(),
                 "duration": f"{result.get('duration', 0)}ms",
                 "durationSeconds": round(result.get("duration", 0) / 1000, 2),
-                "error": result.get("error"),
-                "request": result.get("request"),
-                "response": result.get("response"),
+                "error": (
+                    masker.mask_text(err)
+                    if masker.has_secrets and err else err
+                ),
+                "request": (
+                    masker.mask_struct(raw_request)
+                    if masker.has_secrets and raw_request else raw_request
+                ),
+                "response": (
+                    masker.mask_struct(raw_response)
+                    if masker.has_secrets and raw_response else raw_response
+                ),
                 "assertions": result.get("assertions", []),
             }
         )
@@ -543,4 +682,135 @@ async def get_latest_failed_run(workflow_id: str) -> dict[str, Any]:
         "failedNodeIds": failed_node_ids,
         "failedCount": len(failed_nodes),
         "createdAt": latest_run.createdAt,
+    }
+
+
+# ============================================================================
+# Edge Case: Soft-deleted environment while run is queued
+# ============================================================================
+
+
+async def check_and_handle_deleted_env(run_id: str) -> dict[str, Any]:
+    """Check if a pending/queued run's environment has been soft-deleted.
+
+    If the environment no longer exists, fail the run with an audit event.
+    Returns a dict with the outcome: {"action": "failed"|"proceed", "reason": ...}.
+    """
+    run = await RunRepository.get_by_id(run_id)
+    if not run:
+        raise ResourceNotFoundError(f"Run {run_id} not found")
+
+    if run.status not in ("pending", "pending_approval"):
+        return {"action": "proceed", "reason": "run already active"}
+
+    env_id = run.selectedEnvironmentId or run.environmentId
+    if not env_id:
+        return {"action": "proceed", "reason": "no environment selected"}
+
+    env = await ScopedEnvironmentRepository.get_by_id(env_id)
+    if env is not None:
+        return {"action": "proceed", "reason": "environment exists"}
+
+    # Environment has been deleted — fail the run
+    await RunRepository.update_status(
+        run_id, "failed", error="Environment was deleted while run was queued"
+    )
+
+    if run.workspaceId and run.actorType and run.actorId:
+        try:
+            evt = await audit_service.append_event(
+                actor=run.actorType,  # type: ignore[arg-type]
+                actor_id=run.actorId,
+                action="run.failed.env_deleted",
+                scope="workspace",
+                scope_id=run.workspaceId,
+                resource_type="run",
+                resource_id=run_id,
+                context={
+                    "environmentId": env_id,
+                    "reason": "environment_deleted_while_queued",
+                },
+            )
+            run.auditEventIds.append(evt.eventId)
+            await run.save()
+        except Exception:
+            logger.warning(
+                "Audit write failed for run.failed.env_deleted %s", run_id, exc_info=True
+            )
+
+    logger.info(
+        "Run %s failed: environment %s deleted while queued", run_id, env_id
+    )
+    return {
+        "action": "failed",
+        "reason": "environment_deleted_while_queued",
+        "environmentId": env_id,
+    }
+
+
+# ============================================================================
+# Edge Case: User removed mid-run
+# ============================================================================
+
+
+async def notify_actor_removed_during_run(
+    run_id: str,
+    removed_user_id: str,
+    removed_by_user_id: str,
+) -> dict[str, Any]:
+    """Record that the run's actor (user) was removed from the workspace mid-run.
+
+    Policy: The run continues to completion because secrets are resolved at start.
+    The removal is recorded in the run document and an audit event is created.
+    No new secrets are resolved after this point.
+
+    Returns a dict with the outcome.
+    """
+    run = await RunRepository.get_by_id(run_id)
+    if not run:
+        raise ResourceNotFoundError(f"Run {run_id} not found")
+
+    if run.status in ("completed", "failed", "cancelled"):
+        return {"action": "no_op", "reason": "run already terminal"}
+
+    run.actorRemovedDuringRun = True
+    await run.save()
+
+    if run.workspaceId:
+        try:
+            evt = await audit_service.append_event(
+                actor="user",
+                actor_id=removed_by_user_id,
+                action="run.actor_removed_mid_run",
+                scope="workspace",
+                scope_id=run.workspaceId,
+                resource_type="run",
+                resource_id=run_id,
+                context={
+                    "removedUserId": removed_user_id,
+                    "actorType": run.actorType,
+                    "actorId": run.actorId,
+                    "runStatus": run.status,
+                    "policy": "run_continues_secrets_already_resolved",
+                },
+            )
+            run.auditEventIds.append(evt.eventId)
+            await run.save()
+        except Exception:
+            logger.warning(
+                "Audit write failed for run.actor_removed_mid_run %s",
+                run_id,
+                exc_info=True,
+            )
+
+    logger.info(
+        "Actor %s removed during run %s — run continues, no new secret resolution",
+        removed_user_id,
+        run_id,
+    )
+    return {
+        "action": "recorded",
+        "runId": run_id,
+        "removedUserId": removed_user_id,
+        "policy": "run_continues_secrets_already_resolved",
     }

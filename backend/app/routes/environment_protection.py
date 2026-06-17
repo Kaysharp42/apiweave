@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["environment-protection"])
 
 
-def _handle_service_error(exc: Exception) -> None:
+def _handle_service_error(exc: Exception):
     if isinstance(exc, SelfApprovalDeniedError):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

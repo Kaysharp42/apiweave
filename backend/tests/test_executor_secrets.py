@@ -110,9 +110,12 @@ class TestNoResultLeak:
         assert masked["response"]["body"]["token"] == REDACTED
 
     def test_mask_result_secrets_masks_by_key_name(self, executor):
+        """Wave 3 Task 18: key-name heuristic removed; only resolved values are masked.
+        A value under a secret-sounding key that is NOT a resolved secret value
+        should pass through unchanged."""
         data = {"response": {"api_key": "some-value", "safe": "ok"}}
         masked = executor._mask_result_secrets(data)
-        assert masked["response"]["api_key"] == REDACTED
+        assert masked["response"]["api_key"] == "some-value"
         assert masked["response"]["safe"] == "ok"
 
 

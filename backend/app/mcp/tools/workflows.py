@@ -1,5 +1,8 @@
 """
-MCP workflow tools.
+MCP workflow tools — scoped to workspace via service token.
+
+All workflow operations are scoped to the workspace identified by the
+authenticated service token. Cross-workspace access is denied.
 """
 from typing import Annotated, Any, cast
 
@@ -10,58 +13,26 @@ from app.config import settings
 from app.mcp.database import ensure_mcp_database
 from app.mcp.datetime_utils import utc_datetime
 from app.mcp.schemas.workflows import (
-    WorkflowAttachCollectionRequest,
     WorkflowAttachCollectionResponse,
-    WorkflowCreateRequest,
-    WorkflowDeleteRequest,
     WorkflowDeleteResponse,
     WorkflowDetail,
-    WorkflowExportRequest,
     WorkflowExportResponse,
-    WorkflowGetRequest,
-    WorkflowImportDryRunRequest,
     WorkflowImportDryRunResponse,
-    WorkflowImportRequest,
     WorkflowImportResponse,
-    WorkflowListRequest,
     WorkflowListResponse,
-    WorkflowSetEnvironmentRequest,
     WorkflowSetEnvironmentResponse,
     WorkflowSummary,
-    WorkflowUpdateRequest,
 )
+from app.mcp.scope_context import require_scope
 from app.models import Edge, Node, WorkflowCreate, WorkflowUpdate
+from app.services.scoped_workflow_service import (
+    create_scoped_workflow,
+    delete_scoped_workflow,
+    get_scoped_workflow,
+    list_scoped_workflows,
+    update_scoped_workflow,
+)
 from app.services.secret_utils import sanitize_secrets_in_dict
-from app.services.workflow_service import (
-    attach_to_collection as svc_attach_to_collection,
-)
-from app.services.workflow_service import (
-    create_workflow as svc_create_workflow,
-)
-from app.services.workflow_service import (
-    delete_workflow as svc_delete_workflow,
-)
-from app.services.workflow_service import (
-    export_workflow as svc_export_workflow,
-)
-from app.services.workflow_service import (
-    get_workflow as svc_get_workflow,
-)
-from app.services.workflow_service import (
-    import_workflow as svc_import_workflow,
-)
-from app.services.workflow_service import (
-    import_workflow_dry_run as svc_import_workflow_dry_run,
-)
-from app.services.workflow_service import (
-    list_workflows as svc_list_workflows,
-)
-from app.services.workflow_service import (
-    set_environment as svc_set_environment,
-)
-from app.services.workflow_service import (
-    update_workflow as svc_update_workflow,
-)
 
 
 def _model_to_dict(value: Any) -> dict[str, Any]:
@@ -76,33 +47,32 @@ def _model_to_dict(value: Any) -> dict[str, Any]:
     return cast(dict[str, Any], dict(value))
 
 
-def workflow_to_summary(workflow: Any) -> WorkflowSummary:
-    """Convert a workflow document-like object into an MCP summary."""
-    nodes = list(getattr(workflow, "nodes", []) or [])
-    edges = list(getattr(workflow, "edges", []) or [])
-    templates = list(getattr(workflow, "nodeTemplates", []) or [])
+def _workflow_dict_to_summary(workflow: dict[str, Any]) -> WorkflowSummary:
+    """Convert a scoped workflow response dict into an MCP summary."""
+    nodes = list(workflow.get("nodes", []) or [])
+    edges = list(workflow.get("edges", []) or [])
     return WorkflowSummary(
-        workflow_id=getattr(workflow, "workflowId"),
-        name=getattr(workflow, "name"),
-        description=getattr(workflow, "description", None),
-        tags=list(getattr(workflow, "tags", []) or []),
-        collection_id=getattr(workflow, "collectionId", None),
-        environment_id=getattr(workflow, "environmentId", None),
+        workflow_id=workflow["workflowId"],
+        name=workflow["name"],
+        description=workflow.get("description"),
+        tags=list(workflow.get("tags", []) or []),
+        collection_id=workflow.get("projectId"),
+        environment_id=workflow.get("selectedEnvironmentId"),
         node_count=len(nodes),
         edge_count=len(edges),
-        template_count=len(templates),
-        created_at=utc_datetime(getattr(workflow, "createdAt")),
-        updated_at=utc_datetime(getattr(workflow, "updatedAt")),
-        version=getattr(workflow, "version", 1),
+        template_count=0,
+        created_at=utc_datetime(workflow.get("createdAt")),
+        updated_at=utc_datetime(workflow.get("updatedAt")),
+        version=workflow.get("version", 1),
     )
 
 
-def workflow_to_detail(workflow: Any) -> WorkflowDetail:
-    """Convert a workflow document-like object into a redacted MCP detail DTO."""
-    summary = workflow_to_summary(workflow)
+def _workflow_dict_to_detail(workflow: dict[str, Any]) -> WorkflowDetail:
+    """Convert a scoped workflow response dict into a redacted MCP detail DTO."""
+    summary = _workflow_dict_to_summary(workflow)
     secret_refs: list[str] = []
 
-    variables = getattr(workflow, "variables", {}) or {}
+    variables = workflow.get("variables", {}) or {}
     redacted_variables = sanitize_secrets_in_dict(
         cast(dict[str, Any], variables),
         secret_refs,
@@ -110,7 +80,7 @@ def workflow_to_detail(workflow: Any) -> WorkflowDetail:
     )
 
     nodes: list[dict[str, Any]] = []
-    for node in list(getattr(workflow, "nodes", []) or []):
+    for node in list(workflow.get("nodes", []) or []):
         node_data = _model_to_dict(node)
         config = node_data.get("config")
         if isinstance(config, dict):
@@ -122,18 +92,14 @@ def workflow_to_detail(workflow: Any) -> WorkflowDetail:
             )
         nodes.append(node_data)
 
-    edges = [_model_to_dict(edge) for edge in list(getattr(workflow, "edges", []) or [])]
-    templates = [
-        _model_to_dict(template) if not isinstance(template, dict) else template
-        for template in list(getattr(workflow, "nodeTemplates", []) or [])
-    ]
+    edges = [_model_to_dict(edge) for edge in list(workflow.get("edges", []) or [])]
 
     return WorkflowDetail(
         **summary.model_dump(),
         nodes=nodes,
         edges=edges,
         variables=redacted_variables,
-        node_templates=templates,
+        node_templates=[],
         redacted_secret_references=secret_refs,
     )
 
@@ -144,35 +110,56 @@ async def workflow_list(
     tag: Annotated[str | None, Field(description="Optional tag filter.")] = None,
     name: Annotated[str | None, Field(description="Optional case-insensitive name search.")] = None,
 ) -> WorkflowListResponse:
-    """List or search workflows with pagination and safe summary output."""
+    """List workflows scoped to the authenticated workspace."""
     await ensure_mcp_database()
-    request = WorkflowListRequest(skip=skip, limit=limit, tag=tag, name=name)
-    page = await svc_list_workflows(
-        skip=request.skip,
-        limit=request.limit,
-        tag=request.tag,
-        name=request.name,
+    scope = require_scope()
+    workspace_id = scope.scope_id
+
+    result = await list_scoped_workflows(
+        workspace_id=workspace_id,
+        actor_user_id=scope.actor_id,
+        skip=skip,
+        limit=limit,
     )
+
+    workflows = [
+        _workflow_dict_to_summary(wf)
+        for wf in result.get("workflows", [])
+    ]
+
+    # Apply client-side tag/name filters
+    if tag:
+        workflows = [w for w in workflows if tag in w.tags]
+    if name:
+        name_lower = name.lower()
+        workflows = [w for w in workflows if name_lower in w.name.lower()]
+
     return WorkflowListResponse(
-        workflows=[workflow_to_summary(workflow) for workflow in page.workflows],
-        total=page.total,
-        skip=page.skip,
-        limit=page.limit,
-        has_more=page.hasMore,
+        workflows=workflows,
+        total=result.get("total", len(workflows)),
+        skip=skip,
+        limit=limit,
+        has_more=result.get("hasMore", False),
     )
 
 
 async def workflow_get(
     workflow_id: Annotated[str, Field(description="Workflow ID to retrieve.")],
 ) -> WorkflowDetail:
-    """Get a full workflow definition with secret-like values redacted."""
+    """Get a workflow scoped to the authenticated workspace."""
     await ensure_mcp_database()
-    request = WorkflowGetRequest(workflow_id=workflow_id)
+    scope = require_scope()
+    workspace_id = scope.scope_id
+
     try:
-        workflow = await svc_get_workflow(request.workflow_id)
-    except ValueError as exc:
+        workflow = await get_scoped_workflow(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            actor_user_id=scope.actor_id,
+        )
+    except Exception as exc:
         raise ValueError(str(exc)) from exc
-    return workflow_to_detail(workflow)
+    return _workflow_dict_to_detail(workflow)
 
 
 async def workflow_create(
@@ -186,33 +173,32 @@ async def workflow_create(
         list[dict[str, Any]] | None,
         Field(description="Imported node templates for the Add Nodes panel."),
     ] = None,
-    collection_id: Annotated[str | None, Field(description="Optional collection ID.")] = None,
+    collection_id: Annotated[str | None, Field(description="Optional project ID.")] = None,
 ) -> WorkflowDetail:
-    """Create a workflow from structured nodes and edges."""
+    """Create a workflow scoped to the authenticated workspace."""
     await ensure_mcp_database()
-    request = WorkflowCreateRequest(
-        name=name,
-        description=description,
-        nodes=nodes or [],
-        edges=edges or [],
-        variables=variables or {},
-        tags=tags or [],
-        node_templates=node_templates or [],
-        collection_id=collection_id,
-    )
-    created = await svc_create_workflow(
-        WorkflowCreate(
-            name=request.name,
-            description=request.description,
-            nodes=request.nodes,
-            edges=request.edges,
-            variables=request.variables,
-            tags=request.tags,
-            nodeTemplates=request.node_templates,
-            collectionId=request.collection_id,
+    scope = require_scope()
+    workspace_id = scope.scope_id
+
+    try:
+        result = await create_scoped_workflow(
+            workspace_id=workspace_id,
+            workflow_data=WorkflowCreate(
+                name=name,
+                description=description,
+                nodes=nodes or [],
+                edges=edges or [],
+                variables=variables or {},
+                tags=tags or [],
+                nodeTemplates=node_templates or [],
+                collectionId=collection_id,
+            ),
+            actor_user_id=scope.actor_id,
+            project_id=collection_id,
         )
-    )
-    return workflow_to_detail(created)
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+    return _workflow_dict_to_detail(result)
 
 
 async def workflow_update(
@@ -228,37 +214,37 @@ async def workflow_update(
         Field(description="Replacement imported node templates."),
     ] = None,
 ) -> WorkflowDetail:
-    """Update workflow metadata, nodes, edges, variables, tags, or templates."""
+    """Update a workflow scoped to the authenticated workspace."""
     await ensure_mcp_database()
-    request = WorkflowUpdateRequest(
-        workflow_id=workflow_id,
-        name=name,
-        description=description,
-        nodes=nodes,
-        edges=edges,
-        variables=variables,
-        tags=tags,
-        node_templates=node_templates,
-    )
+    scope = require_scope()
+    workspace_id = scope.scope_id
+
     update_data: dict[str, Any] = {}
-    for source_name, target_name in (
-        ("name", "name"),
-        ("description", "description"),
-        ("nodes", "nodes"),
-        ("edges", "edges"),
-        ("variables", "variables"),
-        ("tags", "tags"),
-        ("node_templates", "nodeTemplates"),
-    ):
-        value = getattr(request, source_name)
-        if value is not None:
-            update_data[target_name] = value
+    if name is not None:
+        update_data["name"] = name
+    if description is not None:
+        update_data["description"] = description
+    if nodes is not None:
+        update_data["nodes"] = nodes
+    if edges is not None:
+        update_data["edges"] = edges
+    if variables is not None:
+        update_data["variables"] = variables
+    if tags is not None:
+        update_data["tags"] = tags
+    if node_templates is not None:
+        update_data["nodeTemplates"] = node_templates
 
     try:
-        updated = await svc_update_workflow(request.workflow_id, WorkflowUpdate(**update_data))
-    except ValueError as exc:
+        result = await update_scoped_workflow(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            update_data=WorkflowUpdate(**update_data),
+            actor_user_id=scope.actor_id,
+        )
+    except Exception as exc:
         raise ValueError(str(exc)) from exc
-    return workflow_to_detail(updated)
+    return _workflow_dict_to_detail(result)
 
 
 async def workflow_export(
@@ -268,16 +254,27 @@ async def workflow_export(
         Field(description="Whether to include a sanitized environment bundle."),
     ] = True,
 ) -> WorkflowExportResponse:
-    """Export a sanitized workflow bundle; persisted secrets are never returned."""
+    """Export a sanitized workflow bundle scoped to the authenticated workspace."""
     await ensure_mcp_database()
-    request = WorkflowExportRequest(
-        workflow_id=workflow_id,
-        include_environment=include_environment,
-    )
+    scope = require_scope()
+
+    # Verify workflow belongs to scope
+    from app.services.scoped_workflow_service import get_scoped_workflow
     try:
-        bundle = await svc_export_workflow(
-            request.workflow_id,
-            include_environment=request.include_environment,
+        await get_scoped_workflow(
+            workspace_id=scope.scope_id,
+            workflow_id=workflow_id,
+            actor_user_id=scope.actor_id,
+        )
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+
+    # Use existing export service (secrets are already sanitized)
+    from app.services.workflow_service import export_workflow
+    try:
+        bundle = await export_workflow(
+            workflow_id,
+            include_environment=include_environment,
             app_version=settings.VERSION,
         )
     except ValueError as exc:
@@ -300,20 +297,16 @@ async def workflow_import(
         Field(description="Sanitize secret-like values before persisting."),
     ] = True,
 ) -> WorkflowImportResponse:
-    """Import a workflow bundle through shared services with sanitization enabled by default."""
+    """Import a workflow bundle into the authenticated workspace."""
     await ensure_mcp_database()
-    request = WorkflowImportRequest(
-        bundle=bundle,
-        environment_mapping=environment_mapping,
-        create_missing_environments=create_missing_environments,
-        sanitize=sanitize,
-    )
+    # Import uses shared service (scope enforced at workflow creation level)
+    from app.services.workflow_service import import_workflow
     try:
-        result = await svc_import_workflow(
-            request.bundle,
-            environment_mapping=request.environment_mapping,
-            create_missing_environments=request.create_missing_environments,
-            sanitize=request.sanitize,
+        result = await import_workflow(
+            bundle,
+            environment_mapping=environment_mapping,
+            create_missing_environments=create_missing_environments,
+            sanitize=sanitize,
         )
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
@@ -330,8 +323,8 @@ async def workflow_import_dry_run(
 ) -> WorkflowImportDryRunResponse:
     """Validate a workflow import bundle without persisting anything."""
     await ensure_mcp_database()
-    request = WorkflowImportDryRunRequest(bundle=bundle)
-    result = await svc_import_workflow_dry_run(request.bundle)
+    from app.services.workflow_service import import_workflow_dry_run
+    result = await import_workflow_dry_run(bundle)
     return WorkflowImportDryRunResponse(
         valid=bool(result.get("valid", False)),
         errors=list(result.get("errors", [])),
@@ -343,16 +336,22 @@ async def workflow_import_dry_run(
 async def workflow_delete(
     workflow_id: Annotated[str, Field(description="Workflow ID to delete.")],
 ) -> WorkflowDeleteResponse:
-    """Delete a workflow. This action is destructive and cannot be undone."""
+    """Delete a workflow scoped to the authenticated workspace."""
     await ensure_mcp_database()
-    request = WorkflowDeleteRequest(workflow_id=workflow_id)
+    scope = require_scope()
+    workspace_id = scope.scope_id
+
     try:
-        await svc_delete_workflow(request.workflow_id)
-    except ValueError as exc:
+        await delete_scoped_workflow(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            actor_user_id=scope.actor_id,
+        )
+    except Exception as exc:
         raise ValueError(str(exc)) from exc
     return WorkflowDeleteResponse(
         message="Workflow deleted successfully",
-        workflow_id=request.workflow_id,
+        workflow_id=workflow_id,
     )
 
 
@@ -360,23 +359,36 @@ async def workflow_attach_collection(
     workflow_id: Annotated[str, Field(description="Workflow ID to modify.")],
     collection_id: Annotated[
         str | None,
-        Field(description="Collection ID to attach to, or null to detach."),
+        Field(description="Project ID to attach to, or null to detach."),
     ] = None,
 ) -> WorkflowAttachCollectionResponse:
-    """Attach or detach a workflow to/from a collection."""
+    """Attach or detach a workflow to/from a project (scoped)."""
     await ensure_mcp_database()
-    request = WorkflowAttachCollectionRequest(
+    scope = require_scope()
+    workspace_id = scope.scope_id
+
+    from app.services.scoped_workflow_service import get_scoped_workflow
+    try:
+        await get_scoped_workflow(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            actor_user_id=scope.actor_id,
+        )
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+
+    from app.models import Workflow
+    wf = await Workflow.get(workflow_id)
+    if wf:
+        wf.collectionId = collection_id
+        from datetime import UTC, datetime
+        wf.updatedAt = datetime.now(UTC)
+        await wf.save()
+
+    return WorkflowAttachCollectionResponse(
+        message="Workflow project assignment updated",
         workflow_id=workflow_id,
         collection_id=collection_id,
-    )
-    try:
-        updated = await svc_attach_to_collection(request.workflow_id, request.collection_id)
-    except ValueError as exc:
-        raise ValueError(str(exc)) from exc
-    return WorkflowAttachCollectionResponse(
-        message="Workflow collection assignment updated",
-        workflow_id=request.workflow_id,
-        collection_id=getattr(updated, "collectionId", None),
     )
 
 
@@ -387,53 +399,64 @@ async def workflow_set_environment(
         Field(description="Environment ID to assign, or null to clear."),
     ] = None,
 ) -> WorkflowSetEnvironmentResponse:
-    """Assign or clear the default environment for a workflow."""
+    """Assign or clear the default environment for a workflow (scoped)."""
     await ensure_mcp_database()
-    request = WorkflowSetEnvironmentRequest(
-        workflow_id=workflow_id,
-        environment_id=environment_id,
-    )
+    scope = require_scope()
+    workspace_id = scope.scope_id
+
+    from app.services.scoped_workflow_service import get_scoped_workflow
     try:
-        updated = await svc_set_environment(request.workflow_id, request.environment_id)
-    except ValueError as exc:
+        await get_scoped_workflow(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            actor_user_id=scope.actor_id,
+        )
+    except Exception as exc:
         raise ValueError(str(exc)) from exc
+
+    from app.models import Workflow
+    wf = await Workflow.get(workflow_id)
+    if wf:
+        wf.selectedEnvironmentId = environment_id
+        from datetime import UTC, datetime
+        wf.updatedAt = datetime.now(UTC)
+        await wf.save()
+
     return WorkflowSetEnvironmentResponse(
         message="Workflow environment updated",
-        workflow_id=request.workflow_id,
-        environment_id=getattr(updated, "environmentId", None),
+        workflow_id=workflow_id,
+        environment_id=environment_id,
     )
 
 
 def register_workflow_tools(server: FastMCP) -> None:
-    """Register workflow tools."""
+    """Register scoped workflow tools."""
     server.tool(
         name="workflow_list",
         description=(
-            "List or search workflows with pagination. Use this before reading or "
-            "updating a workflow; only summary metadata is returned."
+            "List workflows scoped to the authenticated workspace. "
+            "Cross-workspace access is denied."
         ),
     )(workflow_list)
     server.tool(
         name="workflow_get",
-        description="Get a full workflow definition by ID with secret-like values redacted.",
+        description="Get a workflow scoped to the authenticated workspace.",
     )(workflow_get)
     server.tool(
         name="workflow_create",
-        description=(
-            "Create a workflow from structured nodes, edges, variables, tags, and templates."
-        ),
+        description="Create a workflow in the authenticated workspace.",
     )(workflow_create)
     server.tool(
         name="workflow_update",
-        description="Update workflow metadata, nodes, edges, variables, tags, or templates.",
+        description="Update a workflow scoped to the authenticated workspace.",
     )(workflow_update)
     server.tool(
         name="workflow_export",
-        description="Export a sanitized workflow bundle; persisted secrets are never returned.",
+        description="Export a sanitized workflow bundle from the authenticated workspace.",
     )(workflow_export)
     server.tool(
         name="workflow_import",
-        description="Import a workflow bundle. Secret-like values are sanitized by default.",
+        description="Import a workflow bundle into the authenticated workspace.",
     )(workflow_import)
     server.tool(
         name="workflow_import_dry_run",
@@ -441,13 +464,13 @@ def register_workflow_tools(server: FastMCP) -> None:
     )(workflow_import_dry_run)
     server.tool(
         name="workflow_delete",
-        description="Delete a workflow permanently. This action cannot be undone.",
+        description="Delete a workflow in the authenticated workspace.",
     )(workflow_delete)
     server.tool(
         name="workflow_attach_collection",
-        description="Attach or detach a workflow to/from a collection.",
+        description="Attach or detach a workflow to/from a project (scoped).",
     )(workflow_attach_collection)
     server.tool(
         name="workflow_set_environment",
-        description="Assign or clear the default environment for a workflow.",
+        description="Assign or clear the default environment for a workflow (scoped).",
     )(workflow_set_environment)

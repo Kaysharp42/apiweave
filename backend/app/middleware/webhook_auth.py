@@ -271,11 +271,11 @@ async def resolve_webhook_actor(webhook_id: str) -> WebhookTokenActor:
             detail=f"Webhook is disabled: {webhook_id}",
         )
 
-    # Determine scope from the webhook's resource binding
-    scope_type = "workspace"
-    scope_id = webhook.environmentId
+    # Determine scope from the webhook's workspace binding
+    scope_type = getattr(webhook, "scopeType", None) or "workspace"
+    scope_id = getattr(webhook, "scopeId", None) or getattr(webhook, "workspaceId", None) or ""
 
-    permissions = []
+    permissions: list[str] = []
     if webhook.resourceType == "workflow":
         permissions = ["workflows:run", "workflows:read", "runs:read"]
     elif webhook.resourceType == "collection":

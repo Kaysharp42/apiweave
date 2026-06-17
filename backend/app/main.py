@@ -14,7 +14,7 @@ from app.auth.dependencies import STATE_CHANGING_METHODS, csrf_protect
 from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import close_db, connect_db
-from app.routes import auth_admin, collections, environment_protection, environments, invites, keys, mcp_config, orgs, projects, runs, scoped_environments, secrets, service_tokens, webhooks, workflows, workspaces
+from app.routes import auth_admin, environment_protection, invites, keys, mcp_config, orgs, projects, runs, scoped_environments, secrets, service_tokens, webhooks, workspaces
 from app.services.webhook_runner import webhook_runner
 
 logger = logging.getLogger(__name__)
@@ -68,10 +68,7 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(workflows.router)
 app.include_router(runs.router)
-app.include_router(environments.router)
-app.include_router(collections.router)
 app.include_router(webhooks.router)
 app.include_router(mcp_config.router)
 app.include_router(auth_router)

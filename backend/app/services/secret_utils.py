@@ -198,6 +198,82 @@ def mask_secrets_structural(
     return data
 
 
+class SecretMasker:
+    """Value-based secret masker built from a resolved secret set.
+
+    Unlike :func:`mask_secrets_structural` (which combines key-name heuristics
+    with value replacement), ``SecretMasker`` performs **pure value-based**
+    masking.  A secret value is redacted wherever it appears — even under a
+    key named ``message`` or ``data`` — because the masker knows the actual
+    resolved values from the scoped secret resolver.
+
+    This is the masking class that log, result, export, and audit boundaries
+    should use in the scoped-tenancy era (Wave 3 Task 18+).
+
+    Parameters
+    ----------
+    resolved_secrets:
+        Mapping of secret name → plaintext value as returned by the trusted
+        scoped secret resolver.  Only the *values* are used for masking;
+        names are ignored.  Empty values are skipped.
+    """
+
+    __slots__ = ("_sorted_values",)
+
+    def __init__(self, resolved_secrets: dict[str, str] | None = None) -> None:
+        if resolved_secrets:
+            self._sorted_values: list[str] = sorted(
+                [v for v in resolved_secrets.values() if isinstance(v, str) and v],
+                key=len,
+                reverse=True,
+            )
+        else:
+            self._sorted_values = []
+
+    @property
+    def has_secrets(self) -> bool:
+        """Return True if this masker has at least one secret value."""
+        return bool(self._sorted_values)
+
+    @property
+    def secret_count(self) -> int:
+        """Number of distinct secret values being masked."""
+        return len(self._sorted_values)
+
+    def mask_text(self, text: str) -> str:
+        """Mask all known secret values in a flat string.
+
+        Returns ``<REDACTED>`` for exact matches, otherwise performs
+        longest-first inline replacement.
+        """
+        if not isinstance(text, str) or not self._sorted_values:
+            return text
+        if text in self._sorted_values:
+            return REDACTED
+        return _replace_longest_first(text, self._sorted_values)
+
+    def mask_struct(self, data: Any) -> Any:
+        """Walk an arbitrary JSON-like structure and mask secret values.
+
+        **No key-name heuristic is applied.**  Only the actual resolved
+        secret values are searched for and replaced.  This means a secret
+        value stored under a key like ``message`` or ``body`` will still
+        be redacted.
+        """
+        if not self._sorted_values:
+            return data
+        return self._walk(data)
+
+    def _walk(self, node: Any) -> Any:
+        if isinstance(node, dict):
+            return {k: self._walk(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [self._walk(item) for item in node]
+        if isinstance(node, str):
+            return self.mask_text(node)
+        return node
+
+
 def serialize_document_for_export(document: Any) -> dict[str, Any]:
     """Convert Beanie documents into JSON-safe dictionaries for exports."""
     serialized = document.model_dump(by_alias=True)

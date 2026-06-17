@@ -33,10 +33,6 @@ class WorkflowRunRequest(BaseModel):
         default=None,
         description="Optional environment ID for this run.",
     )
-    runtime_secrets: dict[str, str] = Field(
-        default_factory=dict,
-        description="Runtime-only secret values. They are passed to execution but never persisted.",
-    )
     resume: ResumeRunRequest | None = Field(
         default=None,
         description="Optional resume configuration for failed-run retry flows.",
@@ -66,9 +62,6 @@ class WorkflowRunResponse(BaseModel):
         description="Entry node IDs used for resumed execution.",
     )
     status: str = Field(description="Initial run status.")
-    runtime_secret_count: int = Field(
-        description="Number of runtime secret values accepted without echoing them back."
-    )
     polling_hint: PollingHint = Field(description="How an agent should poll this run.")
 
 

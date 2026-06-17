@@ -39,6 +39,7 @@ from app.services.run_service import (
     trigger_workflow_run,
 )
 from app.services.secret_utils import (
+    SecretMasker,
     detect_secrets_in_value,
     mask_log_value,
     mask_secrets_structural,
@@ -141,6 +142,7 @@ __all__ = [
     "detect_secrets_in_value",
     "sanitize_secrets_in_dict",
     "serialize_document_for_export",
+    "SecretMasker",
     "get_public_key_b64",
     "get_sealed_box_key_id",
     "get_sealed_box_algorithm",

@@ -71,7 +71,7 @@ class RunRepository:
         if not run:
             return None
         
-        run.status = status
+        run.status = status  # type: ignore[assignment]
         if error:
             run.error = error
         
@@ -172,11 +172,14 @@ class RunRepository:
         workflow_id: str,
         environment_id: Optional[str],
         variables: Dict[str, Any],
+        actor_type: str = "webhook_token",
+        actor_id: str = "",
+        workspace_id: Optional[str] = None,
     ) -> Run:
         """Create a run triggered by a webhook.
 
         Unlike :meth:`create`, this supports webhook-specific fields
-        (``trigger='webhook'`` and ``environmentId``).
+        (``trigger='webhook'``, ``environmentId``, and actor context).
         """
         run = Run(
             runId=run_id,
@@ -187,6 +190,9 @@ class RunRepository:
             variables=variables,
             results=[],
             createdAt=datetime.now(UTC),
+            workspaceId=workspace_id,
+            actorType=actor_type,
+            actorId=actor_id,
         )
         await run.insert()
         return run

@@ -43,6 +43,10 @@ class WebhookDelivery:
     payload: dict[str, Any]
     idempotency_key: Optional[str] = None
     webhook_log_id: str = ""
+    actor_type: str = "webhook_token"
+    actor_id: str = ""
+    workspace_id: Optional[str] = None
+    bypass_reason: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +114,9 @@ class WebhookRunner:
                 workflow_id=delivery.resource_id,
                 environment_id=delivery.environment_id,
                 variables=masked_payload,
+                actor_type=delivery.actor_type,
+                actor_id=delivery.actor_id,
+                workspace_id=delivery.workspace_id,
             )
         elif delivery.resource_type == "collection":
             run_id = f"crun-{uuid.uuid4().hex[:12]}"

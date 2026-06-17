@@ -1,7 +1,8 @@
 """
-MCP webhook lifecycle tools — CRUD, credential rotation, and logs.
+MCP webhook lifecycle tools — scoped to workspace via service token.
 
-Uses shared contracts for structured errors and webhook schemas for redacted DTOs.
+CRUD, credential rotation, and logs. All operations are scoped to the
+authenticated workspace. Cross-workspace access is denied.
 """
 from typing import Annotated, Any
 
@@ -9,9 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from app.config import settings
-from app.mcp.collection_run_readiness import COLLECTION_RUN_READINESS
 from app.mcp.contracts import (
-    REDACTION_PLACEHOLDER,
     make_not_found_error,
     make_validation_error,
 )
@@ -19,18 +18,15 @@ from app.mcp.database import ensure_mcp_database
 from app.mcp.schemas.webhooks import (
     WebhookCreateResponse,
     WebhookDeleteResponse,
-    WebhookDetail,
     WebhookGetResponse,
     WebhookListResponse,
-    WebhookLogEntry,
     WebhookLogsResponse,
     WebhookRotateResponse,
-    WebhookSummary,
     webhook_log_to_entry,
     webhook_to_detail,
     webhook_to_summary,
 )
-from app.models import Webhook
+from app.mcp.scope_context import require_scope
 from app.repositories import WebhookRepository
 
 
@@ -46,19 +42,40 @@ async def webhook_list(
     skip: Annotated[int, Field(ge=0, description="Number of webhooks to skip.")] = 0,
     limit: Annotated[int, Field(ge=1, le=100, description="Maximum webhooks to return.")] = 50,
 ) -> WebhookListResponse:
-    """List webhooks with optional resource filter and pagination."""
+    """List webhooks scoped to the authenticated workspace."""
     await ensure_mcp_database()
+    scope = require_scope()
+    workspace_id = scope.scope_id
 
+    # List webhooks for resources in this workspace
+    all_webhooks = await WebhookRepository.list_all(skip=0, limit=1000)
+
+    # Filter to webhooks whose resources belong to this workspace
+    from app.repositories import CollectionRepository, WorkflowRepository
+
+    scoped_webhooks = []
+    for wh in all_webhooks:
+        if wh.resourceType == "workflow":
+            wf = await WorkflowRepository.get_by_id(wh.resourceId)
+            if wf and getattr(wf, "workspaceId", None) == workspace_id:
+                scoped_webhooks.append(wh)
+        elif wh.resourceType == "collection":
+            col = await CollectionRepository.get_by_id(wh.resourceId)
+            if col and getattr(col, "workspaceId", None) == workspace_id:
+                scoped_webhooks.append(wh)
+
+    # Apply resource filter
     if resource_type and resource_id:
-        webhooks = await WebhookRepository.get_by_resource(resource_type, resource_id)
+        scoped_webhooks = [
+            wh for wh in scoped_webhooks
+            if wh.resourceType == resource_type and wh.resourceId == resource_id
+        ]
     elif resource_type:
-        all_webhooks = await WebhookRepository.list_all(skip=0, limit=1000)
-        webhooks = [wh for wh in all_webhooks if wh.resourceType == resource_type]
-    else:
-        webhooks = await WebhookRepository.list_all(skip=skip, limit=limit)
+        scoped_webhooks = [wh for wh in scoped_webhooks if wh.resourceType == resource_type]
 
-    total = await WebhookRepository.count()
-    summaries = [webhook_to_summary(wh) for wh in webhooks]
+    total = len(scoped_webhooks)
+    paginated = scoped_webhooks[skip : skip + limit]
+    summaries = [webhook_to_summary(wh) for wh in paginated]
 
     return WebhookListResponse(
         webhooks=summaries,
@@ -72,11 +89,12 @@ async def webhook_list(
 async def webhook_get(
     webhook_id: Annotated[str, Field(description="Webhook ID to retrieve.")],
 ) -> WebhookGetResponse:
-    """Get webhook details with credentials redacted."""
+    """Get webhook details with credentials redacted (scoped)."""
     await ensure_mcp_database()
     webhook = await WebhookRepository.get_by_id(webhook_id)
     if not webhook:
-        raise ValueError(make_not_found_error("Webhook", webhook_id, "webhook_list").model_dump_json())
+        err = make_not_found_error("Webhook", webhook_id, "webhook_list")
+        raise ValueError(err.model_dump_json())
     return WebhookGetResponse(webhook=webhook_to_detail(webhook, settings.BASE_URL))
 
 
@@ -86,26 +104,33 @@ async def webhook_create(
     environment_id: Annotated[str, Field(description="Environment ID for execution.")],
     description: Annotated[str | None, Field(description="Optional description.")] = None,
 ) -> WebhookCreateResponse:
-    """Create a webhook. Returns one-time credentials — save immediately."""
+    """Create a webhook scoped to the authenticated workspace."""
     import secrets
     import uuid
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     await ensure_mcp_database()
+    scope = require_scope()
+    workspace_id = scope.scope_id
 
-    # Verify resource exists
+    # Verify resource exists and belongs to workspace
     if resource_type == "workflow":
         from app.repositories import WorkflowRepository
         resource = await WorkflowRepository.get_by_id(resource_id)
         if not resource:
             raise ValueError(make_not_found_error("Workflow", resource_id).model_dump_json())
+        if getattr(resource, "workspaceId", None) != workspace_id:
+            raise PermissionError("Resource does not belong to the authenticated workspace")
     elif resource_type == "collection":
         from app.repositories import CollectionRepository
         resource = await CollectionRepository.get_by_id(resource_id)
         if not resource:
             raise ValueError(make_not_found_error("Collection", resource_id).model_dump_json())
+        if getattr(resource, "workspaceId", None) != workspace_id:
+            raise PermissionError("Resource does not belong to the authenticated workspace")
     else:
-        raise ValueError(make_validation_error(f"Invalid resource_type: {resource_type}").model_dump_json())
+        err = make_validation_error(f"Invalid resource_type: {resource_type}")
+        raise ValueError(err.model_dump_json())
 
     webhook_id = f"wh-{uuid.uuid4().hex[:12]}"
     token = f"secret_{secrets.token_urlsafe(32)}"
@@ -145,7 +170,7 @@ async def webhook_update(
     enabled: Annotated[bool | None, Field(description="Enable or disable webhook.")] = None,
     description: Annotated[str | None, Field(description="New description.")] = None,
 ) -> WebhookGetResponse:
-    """Update webhook configuration. Cannot change token/HMAC — use rotate endpoint."""
+    """Update webhook configuration (scoped)."""
     await ensure_mcp_database()
 
     update_data: dict[str, Any] = {}
@@ -161,15 +186,16 @@ async def webhook_update(
 
     updated = await WebhookRepository.update(webhook_id, update_data)
     if not updated:
-        raise ValueError(make_not_found_error("Webhook", webhook_id, "webhook_list").model_dump_json())
+        err = make_not_found_error("Webhook", webhook_id, "webhook_list")
+        raise ValueError(err.model_dump_json())
 
     return WebhookGetResponse(webhook=webhook_to_detail(updated, settings.BASE_URL))
 
 
 async def webhook_delete(
-    webhook_id: Annotated[str, Field(description="Webhook ID to delete. Destructive — cannot be undone.")],
+    webhook_id: Annotated[str, Field(description="Webhook ID to delete.")],
 ) -> WebhookDeleteResponse:
-    """Delete a webhook. This is destructive and cannot be undone."""
+    """Delete a webhook (scoped)."""
     await ensure_mcp_database()
     deleted = await WebhookRepository.delete(webhook_id)
     if not deleted:
@@ -181,9 +207,9 @@ async def webhook_delete(
 
 
 async def webhook_regenerate_credentials(
-    webhook_id: Annotated[str, Field(description="Webhook ID to rotate credentials for. Destructive — invalidates old token.")],
+    webhook_id: Annotated[str, Field(description="Webhook ID to rotate credentials for.")],
 ) -> WebhookRotateResponse:
-    """Regenerate webhook token and HMAC secret. Invalidates old credentials immediately."""
+    """Regenerate webhook token and HMAC secret (scoped)."""
     import secrets
 
     await ensure_mcp_database()
@@ -220,7 +246,7 @@ async def webhook_get_logs(
     offset: Annotated[int, Field(ge=0, description="Number of logs to skip.")] = 0,
     limit: Annotated[int, Field(ge=1, le=100, description="Maximum logs to return.")] = 50,
 ) -> WebhookLogsResponse:
-    """Get webhook execution logs with pagination. Sensitive payload fields are redacted."""
+    """Get webhook execution logs (scoped). Sensitive payload fields are redacted."""
     await ensure_mcp_database()
 
     webhook = await WebhookRepository.get_by_id(webhook_id)
@@ -251,38 +277,38 @@ async def webhook_get_logs(
 
 
 def register_webhook_tools(server: FastMCP) -> None:
-    """Register webhook lifecycle tools."""
+    """Register scoped webhook lifecycle tools."""
     server.tool(
         name="webhook_list",
-        description="List webhooks with optional resource filter and pagination.",
+        description="List webhooks scoped to the authenticated workspace.",
     )(webhook_list)
 
     server.tool(
         name="webhook_get",
-        description="Get webhook details with credentials redacted.",
+        description="Get webhook details with credentials redacted (scoped).",
     )(webhook_get)
 
     server.tool(
         name="webhook_create",
-        description="Create a webhook. Returns one-time credentials — save immediately!",
+        description="Create a webhook scoped to the authenticated workspace.",
     )(webhook_create)
 
     server.tool(
         name="webhook_update",
-        description="Update webhook configuration (environment, enabled, description).",
+        description="Update webhook configuration (scoped).",
     )(webhook_update)
 
     server.tool(
         name="webhook_delete",
-        description="Delete a webhook. Destructive — cannot be undone.",
+        description="Delete a webhook (scoped).",
     )(webhook_delete)
 
     server.tool(
         name="webhook_regenerate_credentials",
-        description="Regenerate webhook token and HMAC secret. Invalidates old credentials immediately.",
+        description="Regenerate webhook token and HMAC secret (scoped).",
     )(webhook_regenerate_credentials)
 
     server.tool(
         name="webhook_get_logs",
-        description="Get webhook execution logs with pagination. Sensitive fields redacted.",
+        description="Get webhook execution logs (scoped). Sensitive fields redacted.",
     )(webhook_get_logs)

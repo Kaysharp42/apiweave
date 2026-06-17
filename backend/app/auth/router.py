@@ -116,7 +116,7 @@ def _constant_time_match(left: str, right: str) -> bool:
     return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
 
 
-def _validate_nonce(provider_config: Any, stored_nonce: str, userinfo: Any) -> None:
+def _validate_nonce(provider_config: Any, stored_nonce: str, userinfo: Any):
     if not provider_config.oidc:
         return
     claims = userinfo.claims or {}
@@ -372,7 +372,7 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
     return await _reconcile_orphan_invite(user, invite_token)
 
 
-async def _create_session(response: Response, user: User) -> None:
+async def _create_session(response: Response, user: User):
     now = datetime.now(UTC)
     token = secrets.token_hex(32)
     await SessionRepository.create(
@@ -763,7 +763,7 @@ async def add_approved_domain(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[require_permission(SETTINGS_UPDATE)],
 )
-async def remove_approved_domain(domain_id: str) -> None:
+async def remove_approved_domain(domain_id: str):
     deleted = await ApprovedDomainRepository.delete(domain_id)
     if not deleted:
         raise HTTPException(

@@ -19,7 +19,7 @@ from app.models import (
     WebhookCreate,
     WebhookUpdate,
     WebhookLog,
-    Run
+    Run,
 )
 from app.auth.dependencies import require_permission
 from app.auth.permissions import PRESET_ADMIN, WEBHOOKS_CREATE, WEBHOOKS_DELETE, WEBHOOKS_READ, WEBHOOKS_ROTATE, WEBHOOKS_UPDATE
@@ -34,16 +34,29 @@ from app.config import settings
 from app.runner.executor import WorkflowExecutor
 from app.middleware.webhook_auth import (
     validate_hmac_signature,
+    resolve_webhook_actor,
     InvalidSignatureError,
     ReplayAttackError,
 )
 from app.middleware.rate_limiter import check_webhook_rate_limit, get_rate_limit_headers
 from app.idempotency import get_idempotency_entry, store_idempotency_entry  # noqa: F401  (store kept for test patches)
 from app.services.webhook_runner import QueueFull, WebhookDelivery, webhook_runner
+from app.services import audit_service
+from app.services.environment_protection_service import (
+    check_protection_and_maybe_gate,
+    bypass_protection,
+    BypassNotAllowedError,
+)
 
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 logger = logging.getLogger(__name__)
+
+
+async def _get_protection(environment_id: str):
+    """Fetch environment protection config, returning None if not found."""
+    from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
+    return await ScopedEnvironmentRepository.get_protection(environment_id)
 
 
 async def _run_workflow_and_update_webhook(
@@ -51,7 +64,7 @@ async def _run_workflow_and_update_webhook(
     webhook_id: str,
     log_doc: "WebhookLog",
     triggered_at: datetime,
-) -> None:
+):
     terminal_status: Literal["success", "failure"] = "failure"
     run_id: Optional[str] = executor.run_id
     error_message: Optional[str] = None
@@ -96,7 +109,7 @@ async def _run_collection_and_update_webhook(
     log_id: str,
     payload: dict,
     triggered_at: datetime,
-) -> None:
+):
     terminal_status: Literal["success", "failure"] = "failure"
     collection_status = "failed"
     error_message: Optional[str] = None
@@ -303,6 +316,9 @@ async def create_webhook(webhook_data: WebhookCreate, current_user: User = requi
         "resourceType": webhook_data.resourceType,
         "resourceId": webhook_data.resourceId,
         "environmentId": webhook_data.environmentId,
+        "workspaceId": webhook_data.workspaceId,
+        "scopeType": "workspace",
+        "scopeId": webhook_data.workspaceId,
         "token": token,
         "hmacSecret": hmac_secret,
         "enabled": True,
@@ -642,7 +658,7 @@ async def _validate_hmac_or_raise(
     signature: str,
     timestamp: Optional[str],
     body: bytes,
-) -> None:
+):
     """
     Validate HMAC signature + timestamp using the canonical `timestamp + body` scheme.
     Raises HTTPException 401 on any failure.
@@ -703,7 +719,7 @@ async def _require_hmac_when_configured(
     signature: Optional[str],
     timestamp: Optional[str],
     body: bytes,
-) -> None:
+):
     if signature:
         await _validate_hmac_or_raise(webhook_id, signature, timestamp, body)
         return
@@ -866,6 +882,70 @@ async def execute_workflow_webhook(
         ).insert()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
 
+    # ── 8b. Resolve webhook actor and enforce scope ───────────────────────────
+    actor = await resolve_webhook_actor(webhook_id)
+    webhook_workspace = getattr(webhook, "workspaceId", None) or getattr(webhook, "scopeId", None)
+    workflow_workspace = getattr(workflow, "workspaceId", None)
+
+    if webhook_workspace and workflow_workspace and webhook_workspace != workflow_workspace:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=403,
+            errorMessage="Webhook scope does not match workflow workspace",
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Webhook token scope does not match target workspace",
+        )
+
+    # ── 8c. Environment protection bypass check ───────────────────────────────
+    bypass_reason: Optional[str] = None
+    gate_result, gate_record = await check_protection_and_maybe_gate(
+        run_id=f"run-pending-{webhook_id}",
+        environment_id=webhook.environmentId,
+        workspace_id=webhook_workspace or "",
+        actor_type="webhook_token",
+        actor_id=actor.tokenId,
+    )
+    if gate_result == "pending_approval" and gate_record:
+        protection = await _get_protection(webhook.environmentId)
+        allowlist = getattr(protection, "bypassAllowlist", []) or []
+        if actor.tokenId in allowlist:
+            try:
+                await bypass_protection(
+                    approval_id=gate_record.approvalId,
+                    token_id=actor.tokenId,
+                    reason=f"Webhook {webhook_id} automated bypass",
+                )
+                bypass_reason = f"Webhook {webhook_id} automated bypass"
+            except BypassNotAllowedError:
+                pass
+
+    # ── 8d. Audit webhook execution ───────────────────────────────────────────
+    try:
+        await audit_service.append_event(
+            actor="webhook_token",
+            actor_id=actor.tokenId,
+            action="webhook_executed",
+            scope="workspace",
+            scope_id=webhook_workspace or "",
+            resource_type="webhook",
+            resource_id=webhook_id,
+            context={
+                "resourceType": webhook.resourceType,
+                "resourceId": webhook.resourceId,
+                "environmentId": webhook.environmentId,
+                "bypassReason": bypass_reason,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Audit write failed for webhook %s — proceeding", webhook_id)
+
     # ── 9. Create webhook log (runner updates on completion) ──────────────────
     triggered_at = datetime.now(UTC)
     payload_str = json.dumps(payload)
@@ -891,6 +971,10 @@ async def execute_workflow_webhook(
         payload=payload if isinstance(payload, dict) else {},
         idempotency_key=idempotency_key,
         webhook_log_id=log_id,
+        actor_type="webhook_token",
+        actor_id=actor.tokenId,
+        workspace_id=webhook_workspace,
+        bypass_reason=bypass_reason,
     )
 
     try:
@@ -1049,6 +1133,69 @@ async def execute_collection_webhook(
         ).insert()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
 
+    # ── 8b. Resolve webhook actor and enforce scope ───────────────────────────
+    actor = await resolve_webhook_actor(webhook_id)
+    webhook_workspace = getattr(webhook, "workspaceId", None) or getattr(webhook, "scopeId", None)
+    collection_workspace = getattr(collection, "workspaceId", None)
+
+    if webhook_workspace and collection_workspace and webhook_workspace != collection_workspace:
+        await WebhookLog(
+            logId=f"log-{uuid.uuid4().hex[:12]}",
+            webhookId=webhook_id,
+            timestamp=datetime.now(UTC),
+            status="validation_error",
+            duration=0,
+            httpMethod="POST",
+            responseStatus=403,
+            errorMessage="Webhook scope does not match collection workspace",
+        ).insert()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Webhook token scope does not match target workspace",
+        )
+
+    # ── 8c. Environment protection bypass check ───────────────────────────────
+    bypass_reason: Optional[str] = None
+    gate_result, gate_record = await check_protection_and_maybe_gate(
+        run_id=f"crun-pending-{webhook_id}",
+        environment_id=webhook.environmentId,
+        workspace_id=webhook_workspace or "",
+        actor_type="webhook_token",
+        actor_id=actor.tokenId,
+    )
+    if gate_result == "pending_approval" and gate_record:
+        protection = await _get_protection(webhook.environmentId)
+        if protection and actor.tokenId in (protection.bypassAllowlist or []):
+            try:
+                await bypass_protection(
+                    approval_id=gate_record.approvalId,
+                    token_id=actor.tokenId,
+                    reason=f"Webhook {webhook_id} automated bypass",
+                )
+                bypass_reason = f"Webhook {webhook_id} automated bypass"
+            except BypassNotAllowedError:
+                pass
+
+    # ── 8d. Audit webhook execution ───────────────────────────────────────────
+    try:
+        await audit_service.append_event(
+            actor="webhook_token",
+            actor_id=actor.tokenId,
+            action="webhook_executed",
+            scope="workspace",
+            scope_id=webhook_workspace or "",
+            resource_type="webhook",
+            resource_id=webhook_id,
+            context={
+                "resourceType": webhook.resourceType,
+                "resourceId": webhook.resourceId,
+                "environmentId": webhook.environmentId,
+                "bypassReason": bypass_reason,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Audit write failed for webhook %s — proceeding", webhook_id)
+
     # ── 9. Create webhook log (runner updates on completion) ──────────────────
     triggered_at = datetime.now(UTC)
     payload_str = json.dumps(payload)
@@ -1074,6 +1221,10 @@ async def execute_collection_webhook(
         payload=payload if isinstance(payload, dict) else {},
         idempotency_key=idempotency_key,
         webhook_log_id=log_id,
+        actor_type="webhook_token",
+        actor_id=actor.tokenId,
+        workspace_id=webhook_workspace,
+        bypass_reason=bypass_reason,
     )
 
     try:

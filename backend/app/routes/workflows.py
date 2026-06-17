@@ -169,22 +169,20 @@ async def run_workflow(
     environmentId: Optional[str] = Query(None),
     body: Optional[Dict[str, Any]] = None,
 ):
-    """Trigger a workflow run with optional environment and runtime secrets.
+    """Trigger a workflow run with optional environment selection.
     
     Body (optional JSON):
-        { "secrets": { "API_KEY": "actual-value", ... } }
+        { "resume": { "mode": "all-failed", ... } }
     
-    Runtime secrets override the placeholder descriptions stored in the
-    environment document so that real values are substituted at execution
-    time without ever being persisted to the database.
+    Runtime/ad-hoc secrets are NOT supported. All secrets must be stored
+    before runs and are resolved through the scoped Environment > Workspace
+    > Organization chain.
     """
-    runtime_secrets = (body or {}).get('secrets', {}) if body else {}
     resume_payload = (body or {}).get('resume', {}) if body else {}
     try:
         return await svc_trigger_workflow_run(
             workflow_id,
             environment_id=environmentId,
-            runtime_secrets=runtime_secrets,
             resume=resume_payload,
         )
     except ValueError as e:

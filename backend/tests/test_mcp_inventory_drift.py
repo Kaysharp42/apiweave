@@ -1,22 +1,21 @@
 """
-MCP inventory drift detection test.
+MCP inventory drift detection test — scoped tool inventory.
 
-Ensures docs/MCP.md tool/resource/prompt inventory matches actual registration.
-Fails when docs drift from implementation.
+Ensures the registered MCP tool inventory matches the expected scoped
+tool set. Old flat tools (collection_*, environment_set_secret,
+environment_get_active, environment_activate) must NOT be present.
 """
-import re
-from pathlib import Path
+import pytest
 
-# Project root is two levels up from this test file
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-DOCS_MCP = PROJECT_ROOT / "docs" / "MCP.md"
+from app.mcp.server import mcp_server, register_tools
 
-# ── Source-of-truth: actual registered capabilities ──────────────────────────
 
-EXPECTED_TOOLS = sorted([
+# ── Source-of-truth: expected scoped tool inventory ──────────────────────────
+
+EXPECTED_SCOPED_TOOLS = sorted([
     # Server info
     "server_info",
-    # Workflow tools (10)
+    # Scoped workflow tools (10)
     "workflow_list",
     "workflow_get",
     "workflow_create",
@@ -27,17 +26,56 @@ EXPECTED_TOOLS = sorted([
     "workflow_delete",
     "workflow_attach_collection",
     "workflow_set_environment",
-    # Environment tools (7)
+    # Scoped environment tools (7)
     "environment_list",
-    "environment_get_active",
     "environment_create",
     "environment_get",
     "environment_update",
     "environment_delete",
-    "environment_activate",
     "environment_duplicate",
     "mcp_get_config_summary",
-    # Collection tools (11)
+    # Scoped project tools (5) — replaces collection tools
+    "project_list",
+    "project_create",
+    "project_get",
+    "project_update",
+    "project_delete",
+    # Scoped project-run tools (1) — replaces collection-run tools
+    "project_run_list",
+    # Scoped run tools (7) — no runtime_secrets
+    "workflow_run",
+    "run_get_status",
+    "run_get_results",
+    "run_get_node_result",
+    "run_latest_failed",
+    "run_list",
+    "run_cancel",
+    # Import tools (6) — utility, no scope needed
+    "import_openapi_url",
+    "import_openapi",
+    "import_openapi_dry_run",
+    "import_har",
+    "import_har_dry_run",
+    "import_curl",
+    # Scoped secret tools (5) — encrypted, metadata-only
+    "secret_get_public_key",
+    "secret_list",
+    "secret_create",
+    "secret_update",
+    "secret_delete",
+    # Scoped webhook tools (7)
+    "webhook_list",
+    "webhook_get",
+    "webhook_create",
+    "webhook_update",
+    "webhook_delete",
+    "webhook_regenerate_credentials",
+    "webhook_get_logs",
+])
+
+# Old flat tools that MUST NOT be present
+FORBIDDEN_TOOLS = sorted([
+    # Old collection tools
     "collection_list",
     "collection_list_workflows",
     "collection_create",
@@ -49,151 +87,111 @@ EXPECTED_TOOLS = sorted([
     "collection_import_dry_run",
     "collection_add_workflow",
     "collection_remove_workflow",
-    # Run tools (7)
-    "workflow_run",
-    "run_get_status",
-    "run_get_results",
-    "run_get_node_result",
-    "run_latest_failed",
-    "run_list",
-    "run_cancel",
-    # Import tools (6)
-    "import_openapi_url",
-    "import_openapi",
-    "import_openapi_dry_run",
-    "import_har",
-    "import_har_dry_run",
-    "import_curl",
-    # Secret tools removed — use scoped API routes instead
-    # Webhook tools (7)
-    "webhook_list",
-    "webhook_get",
-    "webhook_create",
-    "webhook_update",
-    "webhook_delete",
-    "webhook_regenerate_credentials",
-    "webhook_get_logs",
-    # Collection-run read tools (3)
+    # Old collection-run tools
     "collection_run_list",
     "collection_run_get",
     "collection_run_latest",
+    # Old plaintext secret tools
+    "environment_set_secret",
+    "environment_delete_secret",
+    # Old flat environment tools
+    "environment_get_active",
+    "environment_activate",
 ])
 
-EXPECTED_RESOURCES = sorted([
-    "environment://{environment_id}",
-    "environments://list",
-    "run://{run_id}",
-    "workflow://{workflow_id}",
-])
-
-EXPECTED_PROMPTS = sorted([
-    "create_test_from_openapi",
-    "create_test_from_curl",
-    "debug_failed_run",
-    "resume_failed_workflow",
-])
-
-EXPECTED_TOOL_COUNT = len(EXPECTED_TOOLS)  # 56
-EXPECTED_RESOURCE_COUNT = len(EXPECTED_RESOURCES)  # 5
-EXPECTED_PROMPT_COUNT = len(EXPECTED_PROMPTS)  # 4
+EXPECTED_TOOL_COUNT = len(EXPECTED_SCOPED_TOOLS)
 
 
-def _extract_tools_from_docs(docs_text: str) -> list[str]:
-    """Extract tool names from docs/MCP.md tool inventory tables only."""
-    # Extract only the Tool Inventory section (before Resources section)
-    inventory_end = docs_text.find("### Resources")
-    if inventory_end == -1:
-        inventory_end = docs_text.find("## Setup Instructions")
-    inventory_section = docs_text[:inventory_end]
-
-    # Match tool names in backticks within table rows: | `tool_name` |
-    pattern = r"\| `(\w+)` \|[^|]*\|"
-    matches = re.findall(pattern, inventory_section)
-    return sorted(set(matches))
+@pytest.fixture(autouse=True)
+def _register():
+    """Ensure tools are registered before each test."""
+    register_tools()
 
 
-def _extract_resource_uris_from_docs(docs_text: str) -> list[str]:
-    """Extract resource URIs from docs/MCP.md."""
-    # Match resource URI patterns like environment://{...}
-    pattern = r"(`\w+://\{[^}]+\}`|`[\w]+://[\w]+`)"
-    matches = re.findall(pattern, docs_text)
-    return sorted(set(m.strip("`") for m in matches))
-
-
-def _extract_prompt_names_from_docs(docs_text: str) -> list[str]:
-    """Extract prompt names from docs/MCP.md."""
-    # Match prompt names in backticks
-    pattern = r"`(\w+)`"
-    all_matches = re.findall(pattern, docs_text)
-    # Filter to known prompt names
-    prompt_names = [m for m in all_matches if m in EXPECTED_PROMPTS]
-    return sorted(set(prompt_names))
-
-
-def test_tool_count_matches_docs():
-    """Verify docs/MCP.md claims the correct total tool count."""
-    docs_text = DOCS_MCP.read_text(encoding="utf-8")
-    # Look for the claim like "exposes **42 tools**"
-    count_pattern = r"\*\*(\d+) tools\*\*"
-    match = re.search(count_pattern, docs_text)
-    assert match is not None, "docs/MCP.md must contain a tool count like '**N tools**'"
-    claimed_count = int(match.group(1))
-    assert claimed_count == EXPECTED_TOOL_COUNT, (
-        f"docs/MCP.md claims {claimed_count} tools but {EXPECTED_TOOL_COUNT} are registered. "
-        f"Update the tool count in docs/MCP.md."
+@pytest.mark.asyncio
+async def test_scoped_tool_count():
+    """Verify the total scoped tool count matches expected."""
+    tools = await mcp_server.list_tools()
+    tool_names = sorted([t.name for t in tools])
+    assert len(tool_names) == EXPECTED_TOOL_COUNT, (
+        f"Expected {EXPECTED_TOOL_COUNT} scoped tools but found {len(tool_names)}. "
+        f"Tools: {tool_names}"
     )
 
 
-def test_all_tools_documented():
-    """Verify every registered tool appears in docs/MCP.md."""
-    docs_text = DOCS_MCP.read_text(encoding="utf-8")
-    doc_tools = _extract_tools_from_docs(docs_text)
+@pytest.mark.asyncio
+async def test_all_scoped_tools_registered():
+    """Verify every expected scoped tool is registered."""
+    tools = await mcp_server.list_tools()
+    tool_names = sorted([t.name for t in tools])
 
-    missing = set(EXPECTED_TOOLS) - set(doc_tools)
-    extra = set(doc_tools) - set(EXPECTED_TOOLS)
+    missing = set(EXPECTED_SCOPED_TOOLS) - set(tool_names)
+    extra = set(tool_names) - set(EXPECTED_SCOPED_TOOLS)
 
     assert not missing, (
-        f"Tools registered but NOT in docs/MCP.md: {sorted(missing)}. "
-        f"Add them to the Tool Inventory section."
+        f"Expected scoped tools NOT registered: {sorted(missing)}"
     )
     assert not extra, (
-        f"Tools in docs/MCP.md but NOT registered: {sorted(extra)}. "
-        f"Remove them or register them."
+        f"Unexpected tools registered: {sorted(extra)}"
     )
 
 
-def test_secret_tools_documented_as_gated():
-    """Verify old plaintext secret tools are no longer registered."""
-    docs_text = DOCS_MCP.read_text(encoding="utf-8")
+@pytest.mark.asyncio
+async def test_no_old_flat_tools():
+    """Verify old flat tools are NOT registered."""
+    tools = await mcp_server.list_tools()
+    tool_names = [t.name for t in tools]
 
-    # Old plaintext secret tools should NOT appear in the tool inventory
-    doc_tools = _extract_tools_from_docs(docs_text)
-    assert "environment_set_secret" not in doc_tools, (
+    present_forbidden = set(FORBIDDEN_TOOLS) & set(tool_names)
+    assert not present_forbidden, (
+        f"Old flat tools still registered: {sorted(present_forbidden)}. "
+        f"These must be removed in the scoped refactor."
+    )
+
+
+@pytest.mark.asyncio
+async def test_no_plaintext_secret_tools():
+    """Verify old plaintext secret tools are absent."""
+    tools = await mcp_server.list_tools()
+    tool_names = [t.name for t in tools]
+
+    assert "environment_set_secret" not in tool_names, (
         "environment_set_secret was removed in scoped secrets refactor"
     )
-    assert "environment_delete_secret" not in doc_tools, (
+    assert "environment_delete_secret" not in tool_names, (
         "environment_delete_secret was removed in scoped secrets refactor"
     )
 
 
-def test_resources_documented():
-    """Verify MCP resources are documented (not labeled as future/deferred)."""
-    docs_text = DOCS_MCP.read_text(encoding="utf-8")
+@pytest.mark.asyncio
+async def test_scoped_secret_tools_present():
+    """Verify new scoped encrypted secret tools are registered."""
+    tools = await mcp_server.list_tools()
+    tool_names = [t.name for t in tools]
 
-    # Resources should be documented, not labeled as future
-    for resource in EXPECTED_RESOURCES:
-        # Check the resource URI pattern appears (without backticks for flexibility)
-        resource_key = resource.split("://")[0]
-        assert resource_key in docs_text, (
-            f"Resource '{resource}' must be documented in docs/MCP.md"
+    expected_secret_tools = [
+        "secret_get_public_key",
+        "secret_list",
+        "secret_create",
+        "secret_update",
+        "secret_delete",
+    ]
+    for tool_name in expected_secret_tools:
+        assert tool_name in tool_names, (
+            f"Scoped secret tool '{tool_name}' not registered"
         )
 
 
-def test_prompts_documented():
-    """Verify MCP prompts are documented (not labeled as future/deferred)."""
-    docs_text = DOCS_MCP.read_text(encoding="utf-8")
+@pytest.mark.asyncio
+async def test_project_tools_replace_collection_tools():
+    """Verify project tools exist and collection tools do not."""
+    tools = await mcp_server.list_tools()
+    tool_names = [t.name for t in tools]
 
-    for prompt in EXPECTED_PROMPTS:
-        assert prompt in docs_text, (
-            f"Prompt '{prompt}' must be documented in docs/MCP.md"
-        )
+    # Project tools should exist
+    for tool_name in ["project_list", "project_create", "project_get", "project_update", "project_delete"]:
+        assert tool_name in tool_names, f"Project tool '{tool_name}' not registered"
+
+    # Collection tools should NOT exist
+    for tool_name in ["collection_list", "collection_create", "collection_get"]:
+        assert tool_name not in tool_names, f"Old collection tool '{tool_name}' still registered"

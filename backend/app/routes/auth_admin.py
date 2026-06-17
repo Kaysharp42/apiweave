@@ -66,7 +66,7 @@ async def list_users() -> list[UserResponse]:
     return [_user_response(u) for u in users]
 
 
-async def _ensure_not_removing_last_admin(user_id: str, new_roles: list[str] | None = None) -> None:
+async def _ensure_not_removing_last_admin(user_id: str, new_roles: list[str] | None = None):
     """Prevent demoting or deleting the last admin user."""
     users = await UserRepository.get_all()
     target_user = next((u for u in users if u.userId == user_id), None)
@@ -119,7 +119,7 @@ async def update_user_roles(
 async def delete_user(
     user_id: str,
     current_user: User = Depends(get_current_user),
-) -> None:
+):
     if current_user.userId == user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -425,7 +425,7 @@ async def update_invite_role(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[require_permission(SETTINGS_UPDATE)],
 )
-async def settings_remove_domain(domain_id: str) -> None:
+async def settings_remove_domain(domain_id: str):
     deleted = await ApprovedDomainRepository.delete(domain_id)
     if not deleted:
         raise HTTPException(

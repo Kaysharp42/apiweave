@@ -12,9 +12,13 @@ class FakeRun:
 
     def __init__(self, **kwargs: Any) -> None:
         self.__dict__.update(kwargs)
+        self.auditEventIds: list[str] = getattr(self, "auditEventIds", [])
 
     async def insert(self) -> None:
         FakeRun.inserted = dict(self.__dict__)
+
+    async def save(self) -> None:
+        pass
 
 
 def _patch_background_task(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -35,7 +39,15 @@ async def test_trigger_workflow_run_does_not_persist_or_return_runtime_secrets(
                 workflowId=workflow_id,
                 variables={"baseUrl": "https://api.example.test"},
                 nodes=[SimpleNamespace(nodeId="start")],
+                workspaceId=None,
+                orgId=None,
+                ownerType=None,
             )
+
+    class FakeScopedEnvironmentRepository:
+        @staticmethod
+        async def get_by_id(env_id: str) -> SimpleNamespace | None:
+            return None
 
     class FakeEnvironmentRepository:
         @staticmethod
@@ -44,6 +56,9 @@ async def test_trigger_workflow_run_does_not_persist_or_return_runtime_secrets(
 
     FakeRun.inserted = {}
     monkeypatch.setattr(run_service, "WorkflowRepository", FakeWorkflowRepository)
+    monkeypatch.setattr(
+        run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository
+    )
     monkeypatch.setattr(run_service, "EnvironmentRepository", FakeEnvironmentRepository)
     monkeypatch.setattr(run_service.models, "Run", FakeRun)
     _patch_background_task(monkeypatch)
@@ -51,16 +66,12 @@ async def test_trigger_workflow_run_does_not_persist_or_return_runtime_secrets(
     result = await run_service.trigger_workflow_run(
         "wf-1",
         environment_id="env-1",
-        runtime_secrets={"API_KEY": "super-secret-value"},
     )
 
     assert result["workflowId"] == "wf-1"
     assert result["environmentId"] == "env-1"
-    assert result["runtimeSecretCount"] == 1
     assert result["polling"]["tool"] == "run_get_status"
     assert FakeRun.inserted["variables"] == {"baseUrl": "https://api.example.test"}
-    assert "super-secret-value" not in str(FakeRun.inserted)
-    assert "super-secret-value" not in str(result)
 
 
 @pytest.mark.asyncio
@@ -81,6 +92,9 @@ async def test_trigger_workflow_run_resolves_latest_failed_run_for_single_resume
                 workflowId=workflow_id,
                 variables={},
                 nodes=[SimpleNamespace(nodeId="node-a"), SimpleNamespace(nodeId="node-b")],
+                workspaceId=None,
+                orgId=None,
+                ownerType=None,
             )
 
     class FakeRunRepository:
@@ -94,9 +108,17 @@ async def test_trigger_workflow_run_resolves_latest_failed_run_for_single_resume
             assert run_id == "failed-1"
             return failed_run
 
+    class FakeScopedEnvironmentRepository:
+        @staticmethod
+        async def get_by_id(env_id: str) -> SimpleNamespace | None:
+            return None
+
     FakeRun.inserted = {}
     monkeypatch.setattr(run_service, "WorkflowRepository", FakeWorkflowRepository)
     monkeypatch.setattr(run_service, "RunRepository", FakeRunRepository)
+    monkeypatch.setattr(
+        run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository
+    )
     monkeypatch.setattr(run_service.models, "Run", FakeRun)
     _patch_background_task(monkeypatch)
 

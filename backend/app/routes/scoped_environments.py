@@ -35,7 +35,7 @@ router = APIRouter(tags=["scoped-environments"])
 # ======================================================================
 
 
-def _handle_service_error(exc: Exception) -> None:
+def _handle_service_error(exc: Exception):
     """Convert service exceptions to HTTP errors."""
     if isinstance(exc, ResourceNotFoundError):
         raise HTTPException(
@@ -149,7 +149,7 @@ async def delete_user_environment(
     user_id: str,
     environment_id: str,
     _user: User = require_scoped_permission("environments", "delete"),
-) -> None:
+):
     """Delete a user-scoped environment."""
     try:
         env = await svc.get_scoped_environment(environment_id)
@@ -269,7 +269,7 @@ async def delete_org_environment(
     org_id: str,
     environment_id: str,
     _user: User = require_scoped_permission("environments", "delete"),
-) -> None:
+):
     """Delete an organization-scoped environment."""
     try:
         env = await svc.get_scoped_environment(environment_id)
@@ -432,7 +432,7 @@ async def delete_workspace_environment(
     workspace_id: str,
     environment_id: str,
     _user: User = require_scoped_permission("environments", "delete"),
-) -> None:
+):
     """Delete a workspace-scoped environment.
 
     Cannot delete the default workspace environment.
@@ -568,7 +568,7 @@ async def delete_environment_protection(
     workspace_id: str,
     environment_id: str,
     _user: User = require_scoped_permission("environments", "update"),
-) -> None:
+):
     """Remove protection config from a workspace environment."""
     try:
         env = await svc.get_scoped_environment(environment_id)

@@ -1,7 +1,10 @@
 """
-MCP environment tools.
+MCP environment tools — scoped to workspace/organization via service token.
+
+All environment operations use the scoped environment service.
+Each workspace has exactly one default environment.
 """
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -10,57 +13,42 @@ from app.config import settings
 from app.mcp.database import ensure_mcp_database
 from app.mcp.datetime_utils import utc_datetime
 from app.mcp.schemas.environments import (
-    EnvironmentCreateRequest,
     EnvironmentCreateResponse,
-    EnvironmentDeleteRequest,
     EnvironmentDeleteResponse,
-    EnvironmentGetRequest,
     EnvironmentGetResponse,
     EnvironmentListResponse,
     EnvironmentSummary,
-    EnvironmentUpdateRequest,
     EnvironmentUpdateResponse,
 )
-from app.models import EnvironmentCreate, EnvironmentUpdate
-from app.services.environment_service import (
-    create_environment as svc_create_environment,
-)
-from app.services.environment_service import (
-    delete_environment as svc_delete_environment,
-)
-from app.services.environment_service import (
-    duplicate_environment as svc_duplicate_environment,
-)
-from app.services.environment_service import (
-    get_environment_redacted as svc_get_environment_redacted,
-)
-from app.services.environment_service import (
-    list_environments_redacted as svc_list_environments_redacted,
-)
-from app.services.environment_service import (
-    update_environment as svc_update_environment,
-)
+from app.mcp.scope_context import require_scope
+from app.models import ScopedEnvironmentCreate, ScopedEnvironmentUpdate
+from app.services import scoped_environment_service
 
 
-def environment_from_dict(environment: dict[str, Any]) -> EnvironmentSummary:
-    """Convert a redacted service environment dict into an MCP DTO."""
+def _env_to_summary(env: Any) -> EnvironmentSummary:
+    """Convert a scoped Environment document to an MCP summary."""
     return EnvironmentSummary(
-        environment_id=str(environment.get("environmentId")),
-        name=str(environment.get("name")),
-        description=cast(str | None, environment.get("description")),
-        swagger_doc_url=cast(str | None, environment.get("swaggerDocUrl")),
-        variables=cast(dict[str, Any], environment.get("variables", {})),
-        secrets=cast(dict[str, str], environment.get("secrets", {})),
-        created_at=utc_datetime(environment.get("createdAt")),
-        updated_at=utc_datetime(environment.get("updatedAt")),
+        environment_id=env.environmentId,
+        name=env.name,
+        description=getattr(env, "description", None),
+        swagger_doc_url=getattr(env, "swaggerDocUrl", None),
+        variables=getattr(env, "variables", {}) or {},
+        secrets={},  # Scoped secrets are separate — no plaintext secrets in env
+        created_at=utc_datetime(getattr(env, "createdAt")),
+        updated_at=utc_datetime(getattr(env, "updatedAt")),
     )
 
 
 async def environment_list() -> EnvironmentListResponse:
-    """List all environments with persisted secrets redacted."""
+    """List environments accessible from the authenticated scope."""
     await ensure_mcp_database()
-    environments = await svc_list_environments_redacted()
-    summaries = [environment_from_dict(environment) for environment in environments]
+    scope = require_scope()
+
+    envs = await scoped_environment_service.list_scoped_environments(
+        scope_type=scope.scope_type,
+        scope_id=scope.scope_id,
+    )
+    summaries = [_env_to_summary(env) for env in envs]
     return EnvironmentListResponse(environments=summaries, total=len(summaries))
 
 
@@ -70,51 +58,37 @@ async def environment_create(
     swagger_doc_url: Annotated[str | None, Field(description="Swagger/OpenAPI source URL.")] = None,
     variables: Annotated[dict[str, Any] | None, Field(description="Environment variables.")] = None,
 ) -> EnvironmentCreateResponse:
-    """Create a new environment. Persisted secrets are not accepted;
-    use runtime secrets during execution instead."""
+    """Create a new environment scoped to the authenticated workspace/org."""
     await ensure_mcp_database()
-    request = EnvironmentCreateRequest(
-        name=name,
-        description=description,
-        swagger_doc_url=swagger_doc_url,
-        variables=variables or {},
+    scope = require_scope()
+
+    created = await scoped_environment_service.create_scoped_environment(
+        scope_type=scope.scope_type,
+        scope_id=scope.scope_id,
+        data=ScopedEnvironmentCreate(
+            name=name,
+            description=description,
+            swaggerDocUrl=swagger_doc_url,
+            variables=variables or {},
+        ),
     )
-    created = await svc_create_environment(
-        EnvironmentCreate(
-            name=request.name,
-            description=request.description,
-            swaggerDocUrl=request.swagger_doc_url,
-            variables=request.variables,
-            secrets={},
-        )
-    )
-    redacted = {
-        "environmentId": created.environmentId,
-        "name": created.name,
-        "description": created.description,
-        "swaggerDocUrl": created.swaggerDocUrl,
-        "variables": created.variables or {},
-        "secrets": {},
-        "createdAt": created.createdAt,
-        "updatedAt": created.updatedAt,
-    }
+
     return EnvironmentCreateResponse(
         message="Environment created successfully",
-        environment=environment_from_dict(redacted),
+        environment=_env_to_summary(created),
     )
 
 
 async def environment_get(
     environment_id: Annotated[str, Field(description="Environment ID to retrieve.")],
 ) -> EnvironmentGetResponse:
-    """Get an environment by ID with persisted secrets redacted."""
+    """Get an environment by ID (scoped)."""
     await ensure_mcp_database()
-    request = EnvironmentGetRequest(environment_id=environment_id)
     try:
-        environment = await svc_get_environment_redacted(request.environment_id)
-    except ValueError as exc:
+        env = await scoped_environment_service.get_scoped_environment(environment_id)
+    except Exception as exc:
         raise ValueError(str(exc)) from exc
-    return EnvironmentGetResponse(environment=environment_from_dict(environment))
+    return EnvironmentGetResponse(environment=_env_to_summary(env))
 
 
 async def environment_update(
@@ -124,85 +98,73 @@ async def environment_update(
     swagger_doc_url: Annotated[str | None, Field(description="New Swagger/OpenAPI URL.")] = None,
     variables: Annotated[dict[str, Any] | None, Field(description="Replacement variables.")] = None,
 ) -> EnvironmentUpdateResponse:
-    """Update environment metadata and variables.
-    Persisted secrets cannot be modified through MCP."""
+    """Update environment metadata and variables (scoped)."""
     await ensure_mcp_database()
-    request = EnvironmentUpdateRequest(
-        environment_id=environment_id,
-        name=name,
-        description=description,
-        swagger_doc_url=swagger_doc_url,
-        variables=variables,
-    )
-    update_data: dict[str, Any] = {}
-    for source_name, target_name in (
-        ("name", "name"),
-        ("description", "description"),
-        ("swagger_doc_url", "swaggerDocUrl"),
-        ("variables", "variables"),
-    ):
-        value = getattr(request, source_name)
-        if value is not None:
-            update_data[target_name] = value
+
+    update_fields: dict[str, Any] = {}
+    if name is not None:
+        update_fields["name"] = name
+    if description is not None:
+        update_fields["description"] = description
+    if swagger_doc_url is not None:
+        update_fields["swaggerDocUrl"] = swagger_doc_url
+    if variables is not None:
+        update_fields["variables"] = variables
 
     try:
-        updated = await svc_update_environment(
-            request.environment_id, EnvironmentUpdate(**update_data)
+        updated = await scoped_environment_service.update_scoped_environment(
+            environment_id,
+            ScopedEnvironmentUpdate(**update_fields),
         )
-    except ValueError as exc:
+    except Exception as exc:
         raise ValueError(str(exc)) from exc
 
-    redacted = {
-        "environmentId": updated.environmentId,
-        "name": updated.name,
-        "description": updated.description,
-        "swaggerDocUrl": updated.swaggerDocUrl,
-        "variables": updated.variables or {},
-        "secrets": {k: "<SECRET>" for k in (updated.secrets or {})},
-        "createdAt": updated.createdAt,
-        "updatedAt": updated.updatedAt,
-    }
     return EnvironmentUpdateResponse(
         message="Environment updated successfully",
-        environment=environment_from_dict(redacted),
+        environment=_env_to_summary(updated),
     )
 
 
 async def environment_delete(
     environment_id: Annotated[str, Field(description="Environment ID to delete.")],
 ) -> EnvironmentDeleteResponse:
-    """Delete an environment. Blocked if any workflows reference it."""
+    """Delete an environment (scoped). Blocked if it's the workspace default."""
     await ensure_mcp_database()
-    request = EnvironmentDeleteRequest(environment_id=environment_id)
     try:
-        await svc_delete_environment(request.environment_id)
-    except ValueError as exc:
+        await scoped_environment_service.delete_scoped_environment(environment_id)
+    except Exception as exc:
         raise ValueError(str(exc)) from exc
     return EnvironmentDeleteResponse(
         message="Environment deleted successfully",
-        environment_id=request.environment_id,
+        environment_id=environment_id,
     )
 
 
 async def environment_duplicate(
     environment_id: Annotated[str, Field(description="Environment ID to duplicate.")],
 ) -> EnvironmentCreateResponse:
-    """Duplicate an environment. Variables are copied; secrets metadata copied but no raw values returned."""
+    """Duplicate an environment within the authenticated scope."""
     await ensure_mcp_database()
-    duplicated = await svc_duplicate_environment(environment_id)
-    redacted = {
-        "environmentId": duplicated.environmentId,
-        "name": duplicated.name,
-        "description": duplicated.description,
-        "swaggerDocUrl": duplicated.swaggerDocUrl,
-        "variables": duplicated.variables or {},
-        "secrets": {k: "<SECRET>" for k in (duplicated.secrets or {})},
-        "createdAt": duplicated.createdAt,
-        "updatedAt": duplicated.updatedAt,
-    }
+    scope = require_scope()
+
+    # Get source environment
+    source = await scoped_environment_service.get_scoped_environment(environment_id)
+
+    # Create copy in same scope
+    created = await scoped_environment_service.create_scoped_environment(
+        scope_type=scope.scope_type,
+        scope_id=scope.scope_id,
+        data=ScopedEnvironmentCreate(
+            name=f"{source.name} (copy)",
+            description=source.description,
+            swaggerDocUrl=getattr(source, "swaggerDocUrl", None),
+            variables=source.variables or {},
+        ),
+    )
+
     return EnvironmentCreateResponse(
         message="Environment duplicated successfully",
-        environment=environment_from_dict(redacted),
+        environment=_env_to_summary(created),
     )
 
 
@@ -211,50 +173,39 @@ async def mcp_get_config_summary() -> dict:
     return {
         "mcp_enabled": settings.MCP_ENABLED,
         "http_enabled": settings.MCP_HTTP_ENABLED,
-        "secret_writes_enabled": settings.MCP_ALLOW_SECRET_WRITES,
-        "require_api_key": getattr(settings, "MCP_REQUIRE_API_KEY", False),
+        "scoped_auth": True,
         "version": settings.VERSION,
-        "note": "No API keys, database URLs, or secret values are returned.",
+        "note": "All MCP access requires scoped service tokens. No secret values returned.",
     }
 
 
 def register_environment_tools(server: FastMCP) -> None:
-    """Register environment tools."""
+    """Register scoped environment tools."""
     server.tool(
         name="environment_list",
-        description=(
-            "List environments for workflow context. Persisted secrets are always redacted."
-        ),
+        description="List environments accessible from the authenticated scope.",
     )(environment_list)
     server.tool(
         name="environment_create",
-        description=(
-            "Create a new environment with variables. Persisted secrets are not accepted; "
-            "use runtime secrets during workflow execution instead."
-        ),
+        description="Create a new environment scoped to the authenticated workspace/org.",
     )(environment_create)
     server.tool(
         name="environment_get",
-        description="Get an environment by ID with persisted secrets redacted.",
+        description="Get an environment by ID (scoped).",
     )(environment_get)
     server.tool(
         name="environment_update",
-        description=(
-            "Update environment metadata and variables. "
-            "Persisted secrets cannot be modified through MCP."
-        ),
+        description="Update environment metadata and variables (scoped).",
     )(environment_update)
     server.tool(
         name="environment_delete",
-        description="Delete an environment. Blocked if any workflows reference it.",
+        description="Delete an environment (scoped). Blocked if it's the workspace default.",
     )(environment_delete)
-
     server.tool(
         name="environment_duplicate",
-        description="Duplicate an environment. Variables are copied; secrets are copied as metadata only (no raw values).",
+        description="Duplicate an environment within the authenticated scope.",
     )(environment_duplicate)
-
     server.tool(
         name="mcp_get_config_summary",
-        description="Get MCP server configuration summary. Returns capability flags only — no secrets, API keys, or database URLs.",
+        description="Get MCP server configuration summary. Returns capability flags only.",
     )(mcp_get_config_summary)

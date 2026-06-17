@@ -23,6 +23,28 @@ client = TestClient(app)
 def _allow_token_only_webhooks(monkeypatch):
     monkeypatch.setattr("app.routes.webhooks.settings.WEBHOOK_REQUIRE_HMAC", False)
 
+@pytest.fixture(autouse=True)
+def _mock_task16_deps(monkeypatch):
+    """Auto-mock Task 16 dependencies for existing tests."""
+    from unittest.mock import AsyncMock, MagicMock
+    monkeypatch.setattr(
+        "app.routes.webhooks.resolve_webhook_actor",
+        AsyncMock(return_value=MagicMock(tokenId="wh-test")),
+    )
+    monkeypatch.setattr(
+        "app.routes.webhooks.check_protection_and_maybe_gate",
+        AsyncMock(return_value=("proceed", None)),
+    )
+    monkeypatch.setattr(
+        "app.routes.webhooks.audit_service",
+        MagicMock(append_event=AsyncMock()),
+    )
+    monkeypatch.setattr(
+        "app.routes.webhooks._get_protection",
+        AsyncMock(return_value=None),
+    )
+
+
 
 def _mock_webhook_log(*args, **kwargs):
     """Create a mock WebhookLog that supports async .insert()"""
@@ -180,8 +202,13 @@ def test_webhook_execute_success():
         patch("app.routes.webhooks.WorkflowRepository.get_by_id") as mock_wf,
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
         patch("app.routes.webhooks.webhook_runner") as mock_runner,
+        patch("app.routes.webhooks.resolve_webhook_actor") as mock_actor,
+        patch("app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)),
+        patch("app.routes.webhooks.audit_service") as mock_audit,
     ):
         mock_runner.enqueue = AsyncMock(return_value="run-123")
+        mock_actor.return_value = MagicMock(tokenId="wh-webhook-123")
+        mock_audit.append_event = AsyncMock()
 
         mock_webhook_obj = MagicMock()
         mock_webhook_obj.enabled = True
@@ -189,10 +216,13 @@ def test_webhook_execute_success():
         mock_webhook_obj.usageCount = 0
         mock_webhook_obj.token = "test-token"
         mock_webhook_obj.environmentId = "env-test"
+        mock_webhook_obj.workspaceId = "ws-test"
+        mock_webhook_obj.scopeId = "ws-test"
         mock_webhook_obj.save = AsyncMock()
         mock_webhook.return_value = mock_webhook_obj
 
         mock_wf_obj = MagicMock()
+        mock_wf_obj.workspaceId = "ws-test"
         mock_wf.return_value = mock_wf_obj
 
         response = client.post(
@@ -216,8 +246,13 @@ def test_webhook_execute_token_only_returns_202():
         patch("app.routes.webhooks.WorkflowRepository.get_by_id") as mock_wf,
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
         patch("app.routes.webhooks.webhook_runner") as mock_runner,
+        patch("app.routes.webhooks.resolve_webhook_actor") as mock_actor,
+        patch("app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)),
+        patch("app.routes.webhooks.audit_service") as mock_audit,
     ):
         mock_runner.enqueue = AsyncMock(return_value="run-compat")
+        mock_actor.return_value = MagicMock(tokenId="wh-wh-compat")
+        mock_audit.append_event = AsyncMock()
 
         mock_webhook_obj = MagicMock()
         mock_webhook_obj.enabled = True
@@ -225,6 +260,8 @@ def test_webhook_execute_token_only_returns_202():
         mock_webhook_obj.usageCount = 0
         mock_webhook_obj.token = "my-token"
         mock_webhook_obj.environmentId = None
+        mock_webhook_obj.workspaceId = None
+        mock_webhook_obj.scopeId = None
         mock_webhook.return_value = mock_webhook_obj
         mock_wf.return_value = MagicMock()
 
@@ -329,6 +366,8 @@ def test_webhook_execute_valid_signature():
         mock_webhook_obj.usageCount = 0
         mock_webhook_obj.token = token
         mock_webhook_obj.environmentId = "env-test"
+        mock_webhook_obj.workspaceId = None
+        mock_webhook_obj.scopeId = None
         mock_webhook_obj.save = AsyncMock()
         mock_webhook.return_value = mock_webhook_obj
         mock_auth.return_value = mock_webhook_obj
@@ -375,6 +414,8 @@ def test_webhook_execute_idempotency_same_run_id():
         mock_webhook_obj.usageCount = 0
         mock_webhook_obj.token = "idem-token"
         mock_webhook_obj.environmentId = None
+        mock_webhook_obj.workspaceId = None
+        mock_webhook_obj.scopeId = None
         mock_webhook.return_value = mock_webhook_obj
         mock_wf.return_value = MagicMock()
 
@@ -422,6 +463,8 @@ def test_webhook_execute_idempotency_different_webhook_creates_new_run():
             obj.usageCount = 0
             obj.token = "shared-token"
             obj.environmentId = None
+            obj.workspaceId = None
+            obj.scopeId = None
             return obj
 
         mock_webhook.side_effect = _webhook_for_id
@@ -470,6 +513,8 @@ def test_webhook_execute_collection():
         mock_webhook_obj.resourceId = "col-123"
         mock_webhook_obj.token = "test-token"
         mock_webhook_obj.environmentId = "env-test"
+        mock_webhook_obj.workspaceId = None
+        mock_webhook_obj.scopeId = None
         mock_webhook_obj.usageCount = 0
         mock_webhook_obj.save = AsyncMock()
         mock_webhook.return_value = mock_webhook_obj
@@ -478,6 +523,7 @@ def test_webhook_execute_collection():
         mock_col_obj.collectionId = "col-123"
         mock_col_obj.name = "Regression Suite"
         mock_col_obj.workflowOrder = []
+        mock_col_obj.workspaceId = None
         mock_col.return_value = mock_col_obj
 
         response = client.post(

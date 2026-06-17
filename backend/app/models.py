@@ -199,6 +199,16 @@ class RunCreate(BaseModel):
     callbackUrl: Optional[str] = None  # For CI/CD integration
 
 
+class RunActorContext(BaseModel):
+    """Typed actor context for run creation.
+    
+    Separates who triggered the run (actor) from who owns the run (workspace).
+    The actor can be a user, service token, webhook token, or system.
+    """
+    actorType: Literal["user", "service_token", "webhook_token", "system"]
+    actorId: str
+
+
 class RunResult(BaseModel):
     """Result of a single node execution"""
     nodeId: str
@@ -211,12 +221,19 @@ class RunResult(BaseModel):
 
 
 class Run(Document):
-    """Workflow run/execution - Beanie Document"""
+    """Workflow run/execution - Beanie Document
+    
+    Runs are workspace-owned. The actor (user/service_token/webhook/system)
+    is recorded separately from workspace ownership. Audit event IDs are
+    linked for full traceability. Edge cases:
+    - Soft-deleted env while queued: run fails with audit.
+    - User removed mid-run: run continues (secrets resolved at start), audit records removal.
+    """
     runId: str
     workflowId: str
     selectedEnvironmentId: Optional[str] = None  # Scoped environment for this run
     environmentId: Optional[str] = None  # Legacy field, kept for migration
-    status: Literal["pending", "running", "completed", "failed", "cancelled"]
+    status: Literal["pending", "pending_approval", "running", "completed", "failed", "cancelled"]
     trigger: Literal["manual", "webhook", "schedule"]
     variables: Dict[str, Any] = Field(default_factory=dict)
     callbackUrl: Optional[str] = None
@@ -231,12 +248,19 @@ class Run(Document):
     nodeStatuses: Dict[str, Any] = Field(default_factory=dict)  # Node execution statuses
     resumeFromRunId: Optional[str] = None  # Source run used to resume context
     resumeFromNodeIds: Optional[List[str]] = None  # Entry nodes used for resumed run
-    resumeMode: Optional[Literal["single", "all-fail"]] = None
+    resumeMode: Optional[Literal["single", "all-failed"]] = None
+    # Workspace ownership (resource ownership — NOT actor ownership)
     workspaceId: Optional[str] = None
     orgId: Optional[str] = None
     ownerType: Optional[str] = None  # "user" | "organization"
-    actorType: Optional[str] = None  # "user" | "service_token" | "webhook" | "system"
+    # Actor — who triggered this run (separate from workspace ownership)
+    actorType: Optional[Literal["user", "service_token", "webhook_token", "system"]] = None
     actorId: Optional[str] = None
+    # Audit trail linking
+    auditEventIds: List[str] = Field(default_factory=list)
+    pendingApprovalId: Optional[str] = None  # Links to PendingRunApproval if gated
+    # Edge-case tracking
+    actorRemovedDuringRun: bool = False  # True if actor was removed mid-run
     
     class Settings:
         name = "runs"
@@ -246,6 +270,7 @@ class Run(Document):
             IndexModel([("workflowId", ASCENDING)]),
             IndexModel([("selectedEnvironmentId", ASCENDING)]),
             IndexModel([("workspaceId", ASCENDING)]),
+            IndexModel([("actorType", ASCENDING), ("actorId", ASCENDING)]),
             IndexModel([("createdAt", DESCENDING)])
         ]
 
@@ -464,9 +489,13 @@ class CollectionImportDryRunRequest(BaseModel):
 class Webhook(Document):
     """
     Webhook for CI/CD integration
-    
+
     Provides stable URL for workflow/collection execution
     that remains valid even when resource is edited.
+
+    Webhooks execute as scoped actors (WebhookTokenActor) — NOT as the
+    webhook creator's current user permissions. The workspaceId/scopeType/
+    scopeId fields bind the webhook to a specific workspace scope.
     """
     webhookId: str  # e.g., "wh-abc123xyz789"
     
@@ -476,6 +505,11 @@ class Webhook(Document):
     
     # Environment binding
     environmentId: str
+    
+    # Scoped ownership (webhook actor scope)
+    workspaceId: Optional[str] = None
+    scopeType: str = "workspace"  # "workspace" | "organization"
+    scopeId: Optional[str] = None  # workspaceId or orgId
     
     # Authentication (shown only once!)
     token: str  # Webhook token for X-Webhook-Token header
@@ -502,6 +536,8 @@ class Webhook(Document):
             IndexModel([("resourceType", ASCENDING), ("resourceId", ASCENDING)]),
             IndexModel([("environmentId", ASCENDING)]),
             IndexModel([("token", ASCENDING)], unique=True),
+            IndexModel([("workspaceId", ASCENDING)]),
+            IndexModel([("scopeType", ASCENDING), ("scopeId", ASCENDING)]),
             IndexModel([("createdAt", DESCENDING)])
         ]
 
@@ -612,6 +648,7 @@ class WebhookCreate(BaseModel):
     resourceType: Literal["workflow", "collection"]
     resourceId: str  # workflowId or collectionId
     environmentId: str
+    workspaceId: Optional[str] = None  # Scoped workspace binding
     description: Optional[str] = None
 
 

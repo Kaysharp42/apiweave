@@ -8,7 +8,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from app.mcp.database import ensure_mcp_database
-from app.mcp.tools.workflows import workflow_to_detail
+from app.mcp.tools.workflows import _workflow_dict_to_detail as workflow_to_detail
 from app.services.workflow_service import get_workflow
 
 logger = logging.getLogger(__name__)

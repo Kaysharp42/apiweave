@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/scopes", tags=["service_tokens"])
 VALID_TOKEN_SCOPE_TYPES = {"workspace", "organization"}
 
 
-def _validate_scope(scope_type: str) -> None:
+def _validate_scope(scope_type: str):
     """Validate scope type is one of the allowed values for tokens."""
     if scope_type not in VALID_TOKEN_SCOPE_TYPES:
         valid_types = ", ".join(sorted(VALID_TOKEN_SCOPE_TYPES))

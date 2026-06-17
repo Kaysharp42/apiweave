@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.repositories.audit_repository import AuditRepository
 from app.services.exceptions import AuditWriteUnavailableError
+from app.services.secret_utils import SecretMasker
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,19 @@ def _sanitize_context(context: Dict[str, Any]) -> Dict[str, Any]:
     return dict(context)
 
 
+def mask_context_values(
+    context: Dict[str, Any], masker: SecretMasker
+) -> Dict[str, Any]:
+    """Apply value-based masking to all string values in audit context.
+
+    Defense-in-depth: even though callers should never pass secret values
+    in context, this ensures any accidental inclusion is masked before storage.
+    """
+    if not masker.has_secrets:
+        return dict(context)
+    return {k: masker.mask_text(v) if isinstance(v, str) else v for k, v in context.items()}
+
+
 async def append_event(
     actor: AuditActorType,
     actor_id: str,
@@ -66,12 +80,19 @@ async def append_event(
     resource_type: str,
     resource_id: str,
     context: Optional[Dict[str, Any]] = None,
+    masker: Optional[SecretMasker] = None,
 ) -> AuditEvent:
     """
     Append a new audit event. Sanitizes context and raises
     AuditWriteUnavailableError on write failure for fail-closed behaviour.
+
+    If *masker* is provided, all string values in context are value-masked
+    as defense-in-depth before forbidden-key check.
     """
-    safe_context = _sanitize_context(context or {})
+    raw_context = dict(context or {})
+    if masker is not None:
+        raw_context = mask_context_values(raw_context, masker)
+    safe_context = _sanitize_context(raw_context)
     event_data = AuditEventCreate(
         actor=actor,
         actorId=actor_id,

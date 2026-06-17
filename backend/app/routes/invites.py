@@ -174,7 +174,7 @@ async def list_invites(
 async def delete_invite(
     invite_id: str,
     current_user: User = require_permission(USERS_DELETE),
-) -> None:
+):
     deleted = await InviteRepository.delete_invite(invite_id)
     if not deleted:
         raise HTTPException(

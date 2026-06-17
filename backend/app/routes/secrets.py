@@ -39,7 +39,7 @@ router = APIRouter(prefix="/api/scopes", tags=["secrets"])
 VALID_SCOPE_TYPES = {"user", "organization", "workspace", "environment"}
 
 
-def _validate_scope(scope_type: str) -> None:
+def _validate_scope(scope_type: str):
     """Validate scope type is one of the allowed values."""
     if scope_type not in VALID_SCOPE_TYPES:
         raise HTTPException(
