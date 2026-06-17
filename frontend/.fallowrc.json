@@ -1,0 +1,57 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "src/index.{ts,tsx,js,jsx}",
+    "src/main.{ts,tsx,js,jsx}"
+  ],
+  "ignorePatterns": [
+    "**/*.generated.ts",
+    "**/*.d.ts"
+  ],
+  "ignoreDependencies": [
+    "@fallow-cli/beacon",
+    "autoprefixer",
+    "postcss",
+    "tailwindcss",
+    "react-doctor"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "rules": {
+    "unused-files": "error",
+    "unused-exports": "error",
+    "unused-types": "warn",
+    "unresolved-imports": "error",
+    "unused-dependencies": "warn",
+    "circular-dependencies": "warn"
+  },
+  "duplicates": {
+    "minTokens": 50,
+    "minLines": 5,
+    "mode": "semantic",
+    "ignore": [
+      "**/lib/**",
+      "**/legacy/**",
+      "**/__generated__/**",
+      "**/generated/**"
+    ]
+  },
+  "health": {
+    "maxCyclomatic": 20,
+    "maxCognitive": 15,
+    "maxCrap": 30
+  },
+  "audit": {
+    "gate": "new-only",
+    "deadCodeBaseline": "fallow-baselines/dead-code.json",
+    "healthBaseline": "fallow-baselines/health.json",
+    "dupesBaseline": "fallow-baselines/dupes.json"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.test.{ts,tsx}", "e2e/**/*.ts"],
+      "rules": {
+        "unused-exports": "off"
+      }
+    }
+  ]
+}

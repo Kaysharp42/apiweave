@@ -1,0 +1,38 @@
+name: Fallow analysis
+on: [push, pull_request]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  fallow:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install fallow
+        run: npm install
+
+      - name: Run fallow audit
+        id: fallow-audit
+        uses: fallow-rs/fallow@v2
+        with:
+          root: frontend
+          command: audit
+          format: sarif
+          gate: new-only
+          annotations: true
+          review-comments: true
+          review-guidance: true
+          fail-on-issues: true
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: fallow-results.sarif
+          category: fallow
+        if: always()
