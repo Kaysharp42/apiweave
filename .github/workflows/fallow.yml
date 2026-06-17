@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install fallow
+      - name: Install dependencies
         run: npm install
 
       - name: Run fallow audit
@@ -35,4 +35,5 @@ jobs:
         with:
           sarif_file: fallow-results.sarif
           category: fallow
-        if: always()
+        if: always() && steps.fallow-audit.outputs.sarif_file
+        continue-on-error: true
