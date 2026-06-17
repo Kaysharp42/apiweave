@@ -1,87 +1,32 @@
 """
-MCP environment secret tools — config-gated, write-only secret management.
+MCP secret tools — REMOVED.
+
+Old plaintext environment_set_secret and environment_delete_secret tools
+have been removed as part of the GitHub-style scoped secrets refactor.
+
+Secret management is now handled through the scoped secret API routes:
+    POST /api/scopes/{scope_type}/{scope_id}/secrets
+    PUT  /api/scopes/{scope_type}/{scope_id}/secrets/{secret_id}
+    DELETE /api/scopes/{scope_type}/{scope_id}/secrets/{secret_id}
+
+All writes require client-encrypted sealed-box ciphertext.
+Metadata-only reads return no values/ciphertext.
 """
 import logging
-from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import Field
-
-from app.config import settings
-from app.mcp.database import ensure_mcp_database
-from app.services.environment_service import (
-    delete_environment_secret as svc_delete_secret,
-)
-from app.services.environment_service import (
-    set_environment_secret as svc_set_secret,
-)
 
 logger = logging.getLogger(__name__)
 
-_SECRET_WRITE_DISABLED = (
-    "Persisted secret writes are disabled. Set MCP_ALLOW_SECRET_WRITES=true to enable."
-)
-
-
-async def environment_set_secret(
-    environment_id: Annotated[str, Field(description="Environment ID to update.")],
-    key: Annotated[str, Field(description="Secret key name.")],
-    value: Annotated[str, Field(description="Secret value. This is write-only and never returned.")],
-) -> dict[str, str]:
-    """Set a persisted secret on an environment.
-
-    WARNING: This tool is write-only. The value is stored but never echoed back.
-    Requires MCP_ALLOW_SECRET_WRITES=true in server configuration.
-    """
-    if not settings.MCP_ALLOW_SECRET_WRITES:
-        raise PermissionError(_SECRET_WRITE_DISABLED)
-
-    await ensure_mcp_database()
-    await svc_set_secret(environment_id, key, value)
-    return {
-        "message": f"Secret '{key}' set on environment {environment_id}",
-        "environment_id": environment_id,
-        "key": key,
-        "note": "Value stored but not returned for security.",
-    }
-
-
-async def environment_delete_secret(
-    environment_id: Annotated[str, Field(description="Environment ID to update.")],
-    key: Annotated[str, Field(description="Secret key to delete.")],
-) -> dict[str, str]:
-    """Delete a persisted secret from an environment.
-
-    Requires MCP_ALLOW_SECRET_WRITES=true in server configuration.
-    """
-    if not settings.MCP_ALLOW_SECRET_WRITES:
-        raise PermissionError(_SECRET_WRITE_DISABLED)
-
-    await ensure_mcp_database()
-    await svc_delete_secret(environment_id, key)
-    return {
-        "message": f"Secret '{key}' deleted from environment {environment_id}",
-        "environment_id": environment_id,
-        "key": key,
-    }
-
 
 def register_secret_tools(server: FastMCP) -> None:
-    """Register environment secret management tools."""
-    server.tool(
-        name="environment_set_secret",
-        description=(
-            "Set a persisted secret on an environment. Write-only — the value is stored "
-            "but never returned. Requires MCP_ALLOW_SECRET_WRITES=true."
-        ),
-    )(environment_set_secret)
+    """
+    No-op: old plaintext secret tools removed.
 
-    server.tool(
-        name="environment_delete_secret",
-        description=(
-            "Delete a persisted secret from an environment. "
-            "Requires MCP_ALLOW_SECRET_WRITES=true."
-        ),
-    )(environment_delete_secret)
-
-    logger.info("MCP environment secret tools registered")
+    Secret management is now through scoped API routes with
+    client-encrypted writes only.
+    """
+    logger.info(
+        "MCP secret tools: old plaintext tools removed. "
+        "Use scoped secret API routes instead."
+    )

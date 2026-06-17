@@ -204,3 +204,15 @@ class RunRepository:
         
         await run.save()
         return run
+
+    @staticmethod
+    async def list_by_workspace(
+        workspace_id: str,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> tuple[List[Run], int]:
+        """List runs scoped to a workspace."""
+        query = Run.find(Run.workspaceId == workspace_id)
+        total = await query.count()
+        runs = await query.sort(-Run.createdAt).skip(skip).limit(limit).to_list()
+        return runs, total

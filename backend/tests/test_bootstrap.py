@@ -45,7 +45,10 @@ class TestBootstrapFirstOwner:
             WorkspaceRepository, "create", new_callable=AsyncMock
         ) as mock_create, patch.object(
             WorkspaceRepository, "add_member", new_callable=AsyncMock
-        ) as mock_add_member:
+        ) as mock_add_member, patch(
+            "app.services.bootstrap.create_default_workspace_environment",
+            new_callable=AsyncMock,
+        ) as mock_create_env:
             mock_get.return_value = None
             mock_workspace = Workspace.model_construct(
                 workspaceId="ws-test123",
@@ -67,6 +70,7 @@ class TestBootstrapFirstOwner:
             assert result.isPersonal is True
             mock_create.assert_called_once()
             mock_add_member.assert_called_once()
+            mock_create_env.assert_called_once()
 
     async def test_skips_if_personal_workspace_exists(self):
         """Does not create duplicate workspace if one already exists."""

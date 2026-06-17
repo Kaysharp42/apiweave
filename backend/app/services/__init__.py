@@ -64,6 +64,39 @@ from app.services.workflow_service import (
     list_workflows,
     update_workflow,
 )
+from app.services.workspace_service import (
+    create_workspace,
+    get_workspace,
+    get_workspace_by_slug,
+    update_workspace,
+    delete_workspace,
+    restore_workspace,
+    list_workspaces_for_user,
+    list_workspaces_for_org,
+    add_member,
+    update_member_role,
+    remove_member,
+    list_members,
+    add_outside_collaborator,
+    remove_outside_collaborator,
+    list_outside_collaborators,
+    get_workspace_role,
+)
+from app.services.project_service import (
+    create_project,
+    get_project,
+    update_project,
+    delete_project,
+    list_projects,
+)
+from app.services.scoped_workflow_service import (
+    create_scoped_workflow,
+    get_scoped_workflow,
+    update_scoped_workflow,
+    delete_scoped_workflow,
+    list_scoped_workflows,
+    list_scoped_runs,
+)
 
 __all__ = [
     "list_workflows",
@@ -112,4 +145,34 @@ __all__ = [
     "get_sealed_box_key_id",
     "get_sealed_box_algorithm",
     "open_sealed_box",
+    # Workspace services
+    "create_workspace",
+    "get_workspace",
+    "get_workspace_by_slug",
+    "update_workspace",
+    "delete_workspace",
+    "restore_workspace",
+    "list_workspaces_for_user",
+    "list_workspaces_for_org",
+    "add_member",
+    "update_member_role",
+    "remove_member",
+    "list_members",
+    "add_outside_collaborator",
+    "remove_outside_collaborator",
+    "list_outside_collaborators",
+    "get_workspace_role",
+    # Project services
+    "create_project",
+    "get_project",
+    "update_project",
+    "delete_project",
+    "list_projects",
+    # Scoped workflow services
+    "create_scoped_workflow",
+    "get_scoped_workflow",
+    "update_scoped_workflow",
+    "delete_scoped_workflow",
+    "list_scoped_workflows",
+    "list_scoped_runs",
 ]

@@ -78,7 +78,6 @@ def sample_environment_doc(**overrides):
         "swaggerDocUrl": "https://example.com/openapi.json",
         "variables": {"baseUrl": "https://example.com"},
         "secrets": {"API_TOKEN": "secret-value"},
-        "isActive": True,
         "createdAt": datetime(2026, 1, 1, tzinfo=UTC),
         "updatedAt": datetime(2026, 1, 2, tzinfo=UTC),
     }
@@ -247,7 +246,6 @@ async def test_environment_get_redacts_secrets(monkeypatch):
             "swaggerDocUrl": None,
             "variables": {"baseUrl": "https://prod.example.com"},
             "secrets": {"API_KEY": "<SECRET>"},
-            "isActive": False,
             "createdAt": datetime(2026, 1, 1, tzinfo=UTC),
             "updatedAt": datetime(2026, 1, 2, tzinfo=UTC),
         }
@@ -300,22 +298,6 @@ async def test_environment_delete_calls_service(monkeypatch):
 
     assert captured["environment_id"] == "env-1"
     assert response.environment_id == "env-1"
-
-
-@pytest.mark.asyncio
-async def test_environment_activate_calls_service(monkeypatch):
-    captured = {}
-
-    async def fake_activate(environment_id):
-        captured["environment_id"] = environment_id
-        return sample_environment_doc(environmentId=environment_id, isActive=True)
-
-    monkeypatch.setattr(environment_tools, "svc_activate_environment", fake_activate)
-
-    response = await environment_tools.environment_activate("env-1")
-
-    assert captured["environment_id"] == "env-1"
-    assert response.environment.is_active is True
 
 
 # --- Collection Phase 5 tools ---
@@ -522,7 +504,6 @@ async def test_registers_all_phase5_tools():
         "environment_get",
         "environment_update",
         "environment_delete",
-        "environment_activate",
         "collection_create",
         "collection_get",
         "collection_update",

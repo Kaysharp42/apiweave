@@ -23,6 +23,8 @@ from app.repositories.scoped_environment_repository import ScopedEnvironmentRepo
 from app.repositories.secret_repository import SecretRepository, SecretBindingRepository
 from app.repositories.team_repository import TeamRepository
 from app.repositories.service_token_repository import ServiceTokenRepository
+from app.repositories.org_invite_repository import OrgInviteRepository
+from app.repositories.team_permission_grant_repository import TeamPermissionGrantRepository
 
 __all__ = [
     "WorkflowRepository",
@@ -45,4 +47,6 @@ __all__ = [
     "SecretBindingRepository",
     "TeamRepository",
     "ServiceTokenRepository",
+    "OrgInviteRepository",
+    "TeamPermissionGrantRepository",
 ]

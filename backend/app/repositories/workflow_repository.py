@@ -162,3 +162,70 @@ class WorkflowRepository:
         """Delete all workflows in a collection - returns count deleted"""
         result = await Workflow.find(Workflow.collectionId == collection_id).delete()
         return result.deleted_count if result else 0
+
+    @staticmethod
+    async def list_by_workspace(
+        workspace_id: str,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> tuple[List[Workflow], int]:
+        """List workflows scoped to a workspace."""
+        query = Workflow.find(Workflow.workspaceId == workspace_id)
+        total = await query.count()
+        workflows = await query.sort(-Workflow.createdAt).skip(skip).limit(limit).to_list()
+        return workflows, total
+
+    @staticmethod
+    async def list_by_workspace_and_project(
+        workspace_id: str,
+        project_id: str,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> tuple[List[Workflow], int]:
+        """List workflows scoped to a workspace and project."""
+        query = Workflow.find(
+            Workflow.workspaceId == workspace_id,
+            Workflow.collectionId == project_id,
+        )
+        total = await query.count()
+        workflows = await query.sort(-Workflow.createdAt).skip(skip).limit(limit).to_list()
+        return workflows, total
+
+    @staticmethod
+    async def get_by_id_in_workspace(
+        workflow_id: str,
+        workspace_id: str,
+    ) -> Optional[Workflow]:
+        """Get a workflow ensuring it belongs to the given workspace."""
+        return await Workflow.find_one(
+            Workflow.workflowId == workflow_id,
+            Workflow.workspaceId == workspace_id,
+        )
+
+    @staticmethod
+    async def create_scoped(
+        workflow_data: WorkflowCreate,
+        workspace_id: str,
+        org_id: str | None = None,
+        owner_type: str | None = None,
+    ) -> Workflow:
+        """Create a workflow scoped to a workspace."""
+        workflow = Workflow(
+            workflowId=str(uuid.uuid4()),
+            name=workflow_data.name,
+            description=workflow_data.description,
+            nodes=workflow_data.nodes,
+            edges=workflow_data.edges,
+            variables=workflow_data.variables,
+            tags=workflow_data.tags,
+            nodeTemplates=workflow_data.nodeTemplates,
+            collectionId=workflow_data.collectionId,
+            workspaceId=workspace_id,
+            orgId=org_id,
+            ownerType=owner_type,
+            createdAt=datetime.now(UTC),
+            updatedAt=datetime.now(UTC),
+            version=1,
+        )
+        await workflow.insert()
+        return workflow

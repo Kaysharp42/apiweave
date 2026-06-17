@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from typing import Optional
 
 from app.models import Organization, OrganizationMember
 
@@ -27,12 +26,67 @@ class OrganizationRepository:
         return org
 
     @staticmethod
-    async def get_by_id(org_id: str) -> Optional[Organization]:
+    async def get_by_id(org_id: str) -> Organization | None:
         return await Organization.find_one(Organization.orgId == org_id)
 
     @staticmethod
-    async def get_by_slug(slug: str) -> Optional[Organization]:
+    async def get_by_slug(slug: str) -> Organization | None:
         return await Organization.find_one(Organization.slug == slug)
+
+    @staticmethod
+    async def update(
+        org_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        slug: str | None = None,
+    ) -> Organization | None:
+        org = await OrganizationRepository.get_by_id(org_id)
+        if not org:
+            return None
+        if name is not None:
+            org.name = name
+        if description is not None:
+            org.description = description
+        if slug is not None:
+            org.slug = slug
+        org.updatedAt = datetime.now(UTC)
+        await org.save()
+        return org
+
+    @staticmethod
+    async def soft_delete(org_id: str) -> Organization | None:
+        org = await OrganizationRepository.get_by_id(org_id)
+        if not org:
+            return None
+        org.deletedAt = datetime.now(UTC)
+        org.updatedAt = datetime.now(UTC)
+        await org.save()
+        return org
+
+    @staticmethod
+    async def restore(org_id: str) -> Organization | None:
+        org = await OrganizationRepository.get_by_id(org_id)
+        if not org:
+            return None
+        org.deletedAt = None
+        org.updatedAt = datetime.now(UTC)
+        await org.save()
+        return org
+
+    @staticmethod
+    async def list_by_user(user_id: str) -> list[Organization]:
+        member_recs = await OrganizationMember.find(
+            OrganizationMember.userId == user_id
+        ).to_list()
+        org_ids = [m.orgId for m in member_recs]
+        if not org_ids:
+            return []
+        from beanie.operators import In
+        return await Organization.find(
+            In(Organization.orgId, org_ids),
+            Organization.deletedAt == None,  # noqa: E711
+        ).to_list()
 
     @staticmethod
     async def add_member(
@@ -54,7 +108,7 @@ class OrganizationRepository:
         return member
 
     @staticmethod
-    async def get_member(org_id: str, user_id: str) -> Optional[OrganizationMember]:
+    async def get_member(org_id: str, user_id: str) -> OrganizationMember | None:
         return await OrganizationMember.find_one(
             OrganizationMember.orgId == org_id,
             OrganizationMember.userId == user_id,
@@ -65,6 +119,28 @@ class OrganizationRepository:
         return await OrganizationMember.find(
             OrganizationMember.orgId == org_id
         ).to_list()
+
+    @staticmethod
+    async def update_member_role(
+        org_id: str,
+        user_id: str,
+        new_role: str,
+    ) -> OrganizationMember | None:
+        member = await OrganizationRepository.get_member(org_id, user_id)
+        if not member:
+            return None
+        member.role = new_role
+        member.updatedAt = datetime.now(UTC)
+        await member.save()
+        return member
+
+    @staticmethod
+    async def remove_member(org_id: str, user_id: str) -> bool:
+        member = await OrganizationRepository.get_member(org_id, user_id)
+        if not member:
+            return False
+        await member.delete()
+        return True
 
     @staticmethod
     async def count_owners(org_id: str) -> int:

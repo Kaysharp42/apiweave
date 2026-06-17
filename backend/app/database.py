@@ -19,7 +19,9 @@ from app.models import (
     OAuthState,
     Organization,
     OrganizationMember,
+    OrgInvite,
     OutsideCollaborator,
+    PendingRunApproval,
     Project,
     ProviderIdentity,
     Run,
@@ -30,6 +32,7 @@ from app.models import (
     Session,
     Team,
     TeamMember,
+    TeamPermissionGrant,
     User,
     Webhook,
     WebhookLog,
@@ -88,6 +91,9 @@ async def connect_db():
             OutsideCollaborator,
             EnvironmentProtection,
             ServiceToken,
+            OrgInvite,
+            TeamPermissionGrant,
+            PendingRunApproval,
         ]
     )
 

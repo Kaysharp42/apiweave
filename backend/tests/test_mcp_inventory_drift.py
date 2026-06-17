@@ -64,9 +64,7 @@ EXPECTED_TOOLS = sorted([
     "import_har",
     "import_har_dry_run",
     "import_curl",
-    # Secret tools (2) — config-gated, but SHIPPED
-    "environment_set_secret",
-    "environment_delete_secret",
+    # Secret tools removed — use scoped API routes instead
     # Webhook tools (7)
     "webhook_list",
     "webhook_get",
@@ -165,23 +163,16 @@ def test_all_tools_documented():
 
 
 def test_secret_tools_documented_as_gated():
-    """Verify secret tools are documented as shipped-but-gated, not future/deferred."""
+    """Verify old plaintext secret tools are no longer registered."""
     docs_text = DOCS_MCP.read_text(encoding="utf-8")
 
-    # Secret tools must appear in the tool inventory
+    # Old plaintext secret tools should NOT appear in the tool inventory
     doc_tools = _extract_tools_from_docs(docs_text)
-    assert "environment_set_secret" in doc_tools, (
-        "environment_set_secret must be listed in docs/MCP.md tool inventory"
+    assert "environment_set_secret" not in doc_tools, (
+        "environment_set_secret was removed in scoped secrets refactor"
     )
-    assert "environment_delete_secret" in doc_tools, (
-        "environment_delete_secret must be listed in docs/MCP.md tool inventory"
-    )
-
-    # They should NOT be described as "future" or "deferred" or "planned"
-    # Check the section around secret tools
-    secret_section_pattern = r"(?:Secret|secret|Environment Secret)"
-    assert re.search(secret_section_pattern, docs_text), (
-        "docs/MCP.md must have a section documenting secret tools"
+    assert "environment_delete_secret" not in doc_tools, (
+        "environment_delete_secret was removed in scoped secrets refactor"
     )
 
 

@@ -376,6 +376,8 @@ class Environment(Document):
     """Environment model with variables and secrets - Beanie Document
     
     Scoped to user, organization, or workspace. No global isActive.
+    Each workspace has exactly one default environment (isDefault=True).
+    Organization environments can restrict access via allowedWorkspaceIds.
     """
     environmentId: str
     name: str
@@ -386,6 +388,8 @@ class Environment(Document):
     scopeType: Literal["user", "organization", "workspace"] = "user"
     scopeId: Optional[str] = None  # userId, orgId, or workspaceId
     ownerType: Optional[str] = None  # "user" | "organization"
+    isDefault: bool = False  # True for the default workspace environment
+    allowedWorkspaceIds: List[str] = Field(default_factory=list)  # Org env policy: which workspaces can use this env
     createdAt: datetime
     updatedAt: datetime
     
@@ -394,8 +398,47 @@ class Environment(Document):
         indexes = [
             IndexModel([("environmentId", ASCENDING)], unique=True),
             IndexModel([("scopeType", ASCENDING), ("scopeId", ASCENDING)]),
+            IndexModel([("scopeType", ASCENDING), ("scopeId", ASCENDING), ("isDefault", ASCENDING)]),
             IndexModel([("createdAt", DESCENDING)])
         ]
+
+
+class ScopedEnvironmentCreate(BaseModel):
+    """Request model for creating a scoped environment."""
+    name: str
+    description: Optional[str] = None
+    swaggerDocUrl: Optional[str] = None
+    variables: Dict[str, Any] = Field(default_factory=dict)
+    allowedWorkspaceIds: List[str] = Field(default_factory=list)  # Org env policy
+
+
+class ScopedEnvironmentUpdate(BaseModel):
+    """Request model for updating a scoped environment."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    swaggerDocUrl: Optional[str] = None
+    variables: Optional[Dict[str, Any]] = None
+    allowedWorkspaceIds: Optional[List[str]] = None  # Org env policy
+
+
+class RunEnvironmentSelection(BaseModel):
+    """Resolved environment selection for a run.
+    
+    Each run selects exactly one environment. If no explicit environment
+    is provided, the workspace default is used.
+    """
+    environmentId: str
+    scopeType: str  # "user" | "organization" | "workspace"
+    scopeId: str
+    name: str
+
+
+class EnvironmentProtectionUpdate(BaseModel):
+    """Request model for updating environment protection config."""
+    requiredReviewers: Optional[List[str]] = None
+    allowSelfApproval: Optional[bool] = None
+    bypassPolicy: Optional[Literal["none", "trusted_token_only"]] = None
+    bypassAllowlist: Optional[List[str]] = None
 
 
 class CollectionImportRequest(BaseModel):
@@ -1110,10 +1153,21 @@ class OutsideCollaborator(Document):
 
 
 class Secret(Document):
+    """
+    GitHub-style scoped secret metadata + sealed-box ciphertext.
+
+    The ciphertext is the base64-encoded libsodium sealed-box ciphertext
+    encrypted by the client using the scope's public key.  The server
+    NEVER holds plaintext outside the trusted runtime resolver.
+
+    Metadata list/get responses strip the ciphertext field — only the
+    trusted runtime resolver (scoped_secret_resolver) may decrypt.
+    """
     secretId: str
     name: str
     scopeType: str  # SecretScope value
     scopeId: str
+    ciphertext: str  # base64-encoded sealed-box ciphertext
     keyId: str  # ScopedKeypair keyId used for encryption
     createdAt: datetime
     updatedAt: datetime
@@ -1144,6 +1198,49 @@ class SecretBinding(Document):
         ]
 
 
+class SecretCreateRequest(BaseModel):
+    """Request body for creating/updating a scoped secret."""
+    name: str
+    ciphertext: str  # base64-encoded sealed-box ciphertext
+    keyId: str  # keyId of the public key used to encrypt
+
+
+class SecretMetadataResponse(BaseModel):
+    """
+    Secret metadata returned by list/get endpoints.
+
+    NEVER includes ciphertext or plaintext value.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    secretId: str
+    name: str
+    scopeType: str
+    scopeId: str
+    keyId: str
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class SecretBindingCreateRequest(BaseModel):
+    """Request body for binding a user secret to a workspace/environment."""
+    secretId: str
+    targetScopeType: str  # "workspace" | "environment"
+    targetScopeId: str
+
+
+class SecretBindingResponse(BaseModel):
+    """Secret binding metadata returned by list endpoints."""
+    model_config = ConfigDict(from_attributes=True)
+
+    bindingId: str
+    secretId: str
+    userId: str
+    targetScopeType: str
+    targetScopeId: str
+    createdAt: datetime
+
+
 class EnvironmentProtection(Document):
     protectionId: str
     environmentId: str
@@ -1163,16 +1260,29 @@ class EnvironmentProtection(Document):
 
 
 class ServiceToken(Document):
+    """
+    Scoped service token for MCP/webhooks/workers.
+
+    The raw token value is shown ONCE at creation/rotation time and never stored.
+    Only the SHA-256 hash is persisted for validation. Tokens are scoped to a
+    workspace or organization and carry explicit permissions.
+
+    Revocation (revokedAt set) and scope narrowing immediately affect subsequent
+    API/MCP/webhook calls — the token resolver checks scope and permissions on
+    every request.
+    """
     tokenId: str
     name: str
-    tokenHash: str
+    tokenHash: str  # SHA-256 hash of the raw token value
     scopeType: str  # "workspace" | "organization"
     scopeId: str
     permissions: List[str] = Field(default_factory=list)
-    createdBy: str
+    createdBy: str  # userId of the creator
     createdAt: datetime
     expiresAt: Optional[datetime] = None
     revokedAt: Optional[datetime] = None
+    lastUsedAt: Optional[datetime] = None
+    description: Optional[str] = None
 
     class Settings:
         name = "service_tokens"
@@ -1182,4 +1292,331 @@ class ServiceToken(Document):
             IndexModel([("scopeType", ASCENDING), ("scopeId", ASCENDING)]),
             IndexModel([("createdBy", ASCENDING)]),
         ]
+
+
+class ServiceTokenCreateRequest(BaseModel):
+    """Request body for creating a scoped service token."""
+    name: str
+    description: Optional[str] = None
+    permissions: List[str] = Field(default_factory=list)
+    expiresAt: Optional[datetime] = None
+
+
+class ServiceTokenCreateResponse(BaseModel):
+    """
+    Response at token creation time — includes the one-time raw token value.
+
+    WARNING: The `token` field is shown ONLY once. Subsequent GET/metadata
+    calls will NEVER return the token value.
+    """
+    tokenId: str
+    name: str
+    token: str  # One-time raw token value — shown only at creation
+    scopeType: str
+    scopeId: str
+    permissions: List[str]
+    createdAt: datetime
+    expiresAt: Optional[datetime] = None
+
+
+class ServiceTokenMetadataResponse(BaseModel):
+    """
+    Service token metadata returned by list/get endpoints.
+
+    NEVER includes the raw token value or hash.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    tokenId: str
+    name: str
+    description: Optional[str] = None
+    scopeType: str
+    scopeId: str
+    permissions: List[str]
+    createdBy: str
+    createdAt: datetime
+    expiresAt: Optional[datetime] = None
+    revokedAt: Optional[datetime] = None
+    lastUsedAt: Optional[datetime] = None
+
+
+class ServiceTokenRotateResponse(BaseModel):
+    """
+    Response at token rotation time — includes the new one-time raw token value.
+
+    The old token is immediately invalidated. The new token is shown ONLY once.
+    """
+    tokenId: str
+    name: str
+    token: str  # New one-time raw token value — shown only at rotation
+    rotatedAt: datetime
+
+
+class WebhookTokenActor(BaseModel):
+    """
+    Webhook execution actor context.
+
+    Webhooks execute as scoped actors with explicit workspace permissions,
+    NOT as the webhook creator's current user permissions. This model
+    captures the token's scope and permissions for the executor.
+    """
+    actorType: Literal["webhook_token"] = "webhook_token"
+    tokenId: str
+    webhookId: str
+    scopeType: str  # "workspace" | "organization"
+    scopeId: str
+    permissions: List[str] = Field(default_factory=list)
+
+
+# ============================================================================
+# Organization Invite Model (GitHub-like org-scoped invites)
+# ============================================================================
+
+
+class OrgInvite(Document):
+    """
+    Organization-scoped invitation.
+
+    Distinct from the platform-level Invite model. Org invites grant membership
+    in a specific organization with a specific role. 7-day expiry, rate-limited
+    per org per email, token shown once.
+    """
+    inviteId: str
+    orgId: str
+    email: str
+    token_hash: str
+    role: str  # OrgMemberRole value
+    invited_by: str  # userId of the inviter
+    created_at: datetime
+    expires_at: datetime
+    consumed_at: Optional[datetime] = None
+    consumed: bool = False
+
+    class Settings:
+        name = "org_invites"
+        indexes = [
+            IndexModel([("inviteId", ASCENDING)], unique=True),
+            IndexModel([("orgId", ASCENDING), ("email", ASCENDING)]),
+            IndexModel([("token_hash", ASCENDING)], unique=True),
+            IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),
+        ]
+
+
+# ============================================================================
+# Team Permission Grant Model
+# ============================================================================
+
+
+class TeamPermissionGrant(Document):
+    """
+    Permission grant from a team to a specific resource.
+
+    Teams can be granted permissions on workspaces, environments, or secrets.
+    When a user is a member of a team, they inherit all of the team's grants
+    through the ScopedPermissionEvaluator's highest-allow-wins logic.
+    """
+    grantId: str
+    teamId: str
+    orgId: str
+    resourceType: str  # "workspace" | "environment" | "secret"
+    resourceId: str
+    permissions: List[str] = Field(default_factory=list)
+    grantedBy: str  # userId
+    createdAt: datetime
+
+    class Settings:
+        name = "team_permission_grants"
+        indexes = [
+            IndexModel([("grantId", ASCENDING)], unique=True),
+            IndexModel([("teamId", ASCENDING), ("resourceType", ASCENDING), ("resourceId", ASCENDING)], unique=True),
+            IndexModel([("teamId", ASCENDING)]),
+            IndexModel([("orgId", ASCENDING)]),
+        ]
+
+
+# ============================================================================
+# Response DTOs for Organization APIs
+# ============================================================================
+
+
+class OrganizationResponse(BaseModel):
+    """Public organization representation."""
+    model_config = ConfigDict(from_attributes=True)
+
+    orgId: str
+    slug: str
+    name: str
+    description: Optional[str] = None
+    avatarUrl: Optional[str] = None
+    ownerUserId: str
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class OrganizationMemberResponse(BaseModel):
+    """Organization member representation."""
+    model_config = ConfigDict(from_attributes=True)
+
+    memberId: str
+    orgId: str
+    userId: str
+    role: str
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class TeamResponse(BaseModel):
+    """Public team representation."""
+    model_config = ConfigDict(from_attributes=True)
+
+    teamId: str
+    orgId: str
+    slug: str
+    name: str
+    description: Optional[str] = None
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class TeamMemberResponse(BaseModel):
+    """Team member representation."""
+    model_config = ConfigDict(from_attributes=True)
+
+    memberId: str
+    teamId: str
+    userId: str
+    role: str
+    createdAt: datetime
+
+
+class TeamPermissionGrantResponse(BaseModel):
+    """Team permission grant representation."""
+    model_config = ConfigDict(from_attributes=True)
+
+    grantId: str
+    teamId: str
+    orgId: str
+    resourceType: str
+    resourceId: str
+    permissions: List[str] = Field(default_factory=list)
+    grantedBy: str
+    createdAt: datetime
+
+
+class OrgInviteResponse(BaseModel):
+    """Organization invite representation (no token_hash)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    inviteId: str
+    orgId: str
+    email: str
+    role: str
+    invited_by: str
+    created_at: datetime
+    expires_at: datetime
+    consumed: bool
+    consumed_at: Optional[datetime] = None
+
+
+class OrgInviteCreateResponse(BaseModel):
+    """Response at invite creation time — includes the one-time token."""
+    inviteId: str
+    orgId: str
+    email: str
+    role: str
+    token: str  # One-time raw token — shown only at creation
+    expires_at: datetime
+
+
+class OutsideCollaboratorResponse(BaseModel):
+    """Outside collaborator representation."""
+    model_config = ConfigDict(from_attributes=True)
+
+    collaboratorId: str
+    workspaceId: str
+    userId: str
+    role: str
+    grantedBy: str
+    createdAt: datetime
+
+
+# ============================================================================
+# Environment Protection — Pending Run Approval Model
+# ============================================================================
+
+
+class PendingRunApproval(Document):
+    """
+    Tracks a run that is waiting for environment protection approval.
+
+    Created when a run targets a protected environment and no bypass applies.
+    The run stays in 'pending_approval' status until a qualified reviewer
+    approves it or a trusted token bypasses protection with an audited reason.
+
+    Fields:
+    - approvalId: unique identifier for this approval record
+    - runId: the run awaiting approval
+    - environmentId: the protected environment
+    - workspaceId: the workspace that owns the run
+    - requestedByUserId: the user who triggered the run (if human actor)
+    - requestedByActorType: "user" | "service_token" | "webhook" | "system"
+    - requestedByActorId: the actor ID (userId or tokenId)
+    - status: "pending" | "approved" | "bypassed" | "rejected"
+    - resolvedBy: the userId or tokenId that approved/bypassed
+    - resolvedByActorType: actor type of the resolver
+    - bypassReason: required when status is "bypassed"
+    - resolvedAt: when the approval was resolved
+    """
+    approvalId: str
+    runId: str
+    environmentId: str
+    workspaceId: str
+    requestedByUserId: Optional[str] = None
+    requestedByActorType: str  # "user" | "service_token" | "webhook" | "system"
+    requestedByActorId: str
+    status: Literal["pending", "approved", "bypassed", "rejected"] = "pending"
+    resolvedBy: Optional[str] = None
+    resolvedByActorType: Optional[str] = None
+    bypassReason: Optional[str] = None
+    createdAt: datetime
+    resolvedAt: Optional[datetime] = None
+
+    class Settings:
+        name = "pending_run_approvals"
+        indexes = [
+            IndexModel([("approvalId", ASCENDING)], unique=True),
+            IndexModel([("runId", ASCENDING)], unique=True),
+            IndexModel([("environmentId", ASCENDING), ("status", ASCENDING)]),
+            IndexModel([("workspaceId", ASCENDING), ("status", ASCENDING)]),
+            IndexModel([("createdAt", DESCENDING)]),
+        ]
+
+
+class ApprovalActionRequest(BaseModel):
+    """Request body for approving a pending run."""
+    # No body fields required — the actor is derived from the session/token.
+
+
+class BypassActionRequest(BaseModel):
+    """Request body for bypassing environment protection with a trusted token."""
+    reason: str  # Required: human-readable reason for the bypass
+
+
+class PendingApprovalResponse(BaseModel):
+    """Pending approval record returned by list/get endpoints."""
+    model_config = ConfigDict(from_attributes=True)
+
+    approvalId: str
+    runId: str
+    environmentId: str
+    workspaceId: str
+    requestedByUserId: Optional[str] = None
+    requestedByActorType: str
+    requestedByActorId: str
+    status: Literal["pending", "approved", "bypassed", "rejected"]
+    resolvedBy: Optional[str] = None
+    resolvedByActorType: Optional[str] = None
+    bypassReason: Optional[str] = None
+    createdAt: datetime
+    resolvedAt: Optional[datetime] = None
 

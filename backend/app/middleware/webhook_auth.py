@@ -1,14 +1,19 @@
 """
 Webhook Authentication Middleware
-Provides HMAC signature validation and token authentication for webhook endpoints
+Provides HMAC signature validation and token authentication for webhook endpoints.
+
+Webhooks execute as scoped actors (WebhookTokenActor) — NOT as the webhook
+creator's current user permissions. The actor context includes the webhook's
+scope and permissions for the executor.
 """
-import hmac
 import hashlib
+import hmac
 import time
 from typing import Optional, Tuple
 
-from fastapi import Request, HTTPException, status
+from fastapi import HTTPException, Request, status
 
+from app.models import WebhookTokenActor
 from app.repositories.webhook_repository import WebhookRepository
 
 
@@ -237,3 +242,49 @@ async def require_webhook_auth(request: Request, webhook_id: str):
             detail=error_message,
             headers={"WWW-Authenticate": "Webhook"}
         )
+
+
+async def resolve_webhook_actor(webhook_id: str) -> WebhookTokenActor:
+    """
+    Resolve a webhook into a scoped actor context for execution.
+
+    Webhooks execute as their own scoped actor (WebhookTokenActor), NOT as
+    the webhook creator's current user permissions. This ensures that:
+    - Token scope is enforced (workspace/org boundaries)
+    - Permissions are explicit and auditable
+    - Creator permission changes don't affect webhook execution
+
+    Returns a WebhookTokenActor with the webhook's scope and permissions.
+    Raises HTTPException if the webhook is not found or disabled.
+    """
+    webhook = await WebhookRepository.get_by_id(webhook_id)
+
+    if not webhook:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Webhook not found: {webhook_id}",
+        )
+
+    if not webhook.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Webhook is disabled: {webhook_id}",
+        )
+
+    # Determine scope from the webhook's resource binding
+    scope_type = "workspace"
+    scope_id = webhook.environmentId
+
+    permissions = []
+    if webhook.resourceType == "workflow":
+        permissions = ["workflows:run", "workflows:read", "runs:read"]
+    elif webhook.resourceType == "collection":
+        permissions = ["collections:run", "collections:read", "runs:read"]
+
+    return WebhookTokenActor(
+        tokenId=f"wh-{webhook_id}",
+        webhookId=webhook_id,
+        scopeType=scope_type,
+        scopeId=scope_id,
+        permissions=permissions,
+    )

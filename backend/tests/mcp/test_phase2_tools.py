@@ -249,27 +249,16 @@ async def test_environment_tools_return_redacted_environments(monkeypatch):
     async def fake_list_environments_redacted():
         return [sample_environment()]
 
-    async def fake_get_active_environment_redacted():
-        return sample_environment(name="Active")
-
     monkeypatch.setattr(
         environment_tools,
         "svc_list_environments_redacted",
         fake_list_environments_redacted,
     )
-    monkeypatch.setattr(
-        environment_tools,
-        "svc_get_active_environment_redacted",
-        fake_get_active_environment_redacted,
-    )
 
     listed = await environment_tools.environment_list()
-    active = await environment_tools.environment_get_active()
 
     assert listed.total == 1
     assert listed.environments[0].secrets == {"API_TOKEN": "<SECRET>"}
-    assert active.environment.name == "Active"
-    assert active.environment.secrets == {"API_TOKEN": "<SECRET>"}
 
 
 @pytest.mark.asyncio
@@ -315,7 +304,6 @@ async def test_registers_all_phase2_tools():
         "workflow_import",
         "workflow_import_dry_run",
         "environment_list",
-        "environment_get_active",
         "collection_list",
         "collection_list_workflows",
     }.issubset(tool_names)

@@ -11,6 +11,7 @@ RESOURCE_WEBHOOKS: Final = "webhooks"
 RESOURCE_USERS: Final = "users"
 RESOURCE_SETTINGS: Final = "settings"
 RESOURCE_RUNS: Final = "runs"
+RESOURCE_SECRETS: Final = "secrets"
 
 ACTION_CREATE: Final = "create"
 ACTION_READ: Final = "read"
@@ -71,6 +72,11 @@ SETTINGS_UPDATE: Final = permission(RESOURCE_SETTINGS, ACTION_UPDATE)
 RUNS_READ: Final = permission(RESOURCE_RUNS, ACTION_READ)
 RUNS_CANCEL: Final = permission(RESOURCE_RUNS, ACTION_CANCEL)
 
+SECRETS_READ: Final = permission(RESOURCE_SECRETS, ACTION_READ)
+SECRETS_CREATE: Final = permission(RESOURCE_SECRETS, ACTION_CREATE)
+SECRETS_UPDATE: Final = permission(RESOURCE_SECRETS, ACTION_UPDATE)
+SECRETS_DELETE: Final = permission(RESOURCE_SECRETS, ACTION_DELETE)
+
 PERMISSIONS_BY_RESOURCE: Final[dict[str, list[str]]] = {
     RESOURCE_WORKFLOWS: [
         WORKFLOWS_CREATE,
@@ -108,6 +114,7 @@ PERMISSIONS_BY_RESOURCE: Final[dict[str, list[str]]] = {
     RESOURCE_USERS: [USERS_READ, USERS_INVITE, USERS_UPDATE_ROLE, USERS_DELETE],
     RESOURCE_SETTINGS: [SETTINGS_READ, SETTINGS_UPDATE],
     RESOURCE_RUNS: [RUNS_READ, RUNS_CANCEL],
+    RESOURCE_SECRETS: [SECRETS_READ, SECRETS_CREATE, SECRETS_UPDATE, SECRETS_DELETE],
 }
 
 ALL_PERMISSIONS: Final[list[str]] = [
@@ -155,6 +162,10 @@ ROLE_PRESETS: Final[dict[str, list[str]]] = {
         SETTINGS_UPDATE,
         RUNS_READ,
         RUNS_CANCEL,
+        SECRETS_READ,
+        SECRETS_CREATE,
+        SECRETS_UPDATE,
+        SECRETS_DELETE,
     ],
     PRESET_EDITOR: [
         WORKFLOWS_CREATE,
@@ -184,6 +195,9 @@ ROLE_PRESETS: Final[dict[str, list[str]]] = {
         WEBHOOKS_EXECUTE,
         RUNS_READ,
         RUNS_CANCEL,
+        SECRETS_READ,
+        SECRETS_CREATE,
+        SECRETS_UPDATE,
     ],
     PRESET_VIEWER: [
         WORKFLOWS_READ,
@@ -191,6 +205,7 @@ ROLE_PRESETS: Final[dict[str, list[str]]] = {
         ENVIRONMENTS_READ,
         WEBHOOKS_READ,
         RUNS_READ,
+        SECRETS_READ,
     ],
 }
 
@@ -307,6 +322,7 @@ WORKSPACE_ROLE_PERMISSIONS: Final[dict[str, set[str]]] = {
         ENVIRONMENTS_READ,
         WEBHOOKS_READ,
         RUNS_READ,
+        SECRETS_READ,
     },
     WorkspaceRole.TRIAGE: {
         WORKFLOWS_READ,
@@ -316,6 +332,7 @@ WORKSPACE_ROLE_PERMISSIONS: Final[dict[str, set[str]]] = {
         RUNS_READ,
         WORKFLOWS_RUN,
         COLLECTIONS_RUN,
+        SECRETS_READ,
     },
     WorkspaceRole.WRITE: {
         WORKFLOWS_READ,
@@ -333,6 +350,7 @@ WORKSPACE_ROLE_PERMISSIONS: Final[dict[str, set[str]]] = {
         ENVIRONMENTS_UPDATE,
         WEBHOOKS_READ,
         RUNS_READ,
+        SECRETS_READ,
     },
     WorkspaceRole.MAINTAIN: {
         WORKFLOWS_READ,
@@ -357,6 +375,7 @@ WORKSPACE_ROLE_PERMISSIONS: Final[dict[str, set[str]]] = {
         WEBHOOKS_UPDATE,
         WEBHOOKS_DELETE,
         RUNS_READ,
+        SECRETS_READ,
     },
     WorkspaceRole.ADMIN: {
         WORKFLOWS_READ,
@@ -388,6 +407,10 @@ WORKSPACE_ROLE_PERMISSIONS: Final[dict[str, set[str]]] = {
         RUNS_CANCEL,
         USERS_INVITE,
         USERS_UPDATE_ROLE,
+        SECRETS_READ,
+        SECRETS_CREATE,
+        SECRETS_UPDATE,
+        SECRETS_DELETE,
     },
 }
 

@@ -15,6 +15,7 @@ class ServiceTokenRepository:
         created_by: str,
         permissions: list[str] | None = None,
         expires_at: datetime | None = None,
+        description: str | None = None,
     ) -> ServiceToken:
         now = datetime.now(UTC)
         token = ServiceToken(
@@ -27,6 +28,7 @@ class ServiceTokenRepository:
             permissions=permissions or [],
             createdAt=now,
             expiresAt=expires_at,
+            description=description,
         )
         await token.insert()
         return token

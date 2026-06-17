@@ -27,18 +27,18 @@ client = TestClient(_build_app())
 class TestNewSkeletonRoutes:
     """New nested route skeletons must resolve (200), not 404."""
 
-    def test_orgs_list(self) -> None:
+    def test_orgs_list_requires_auth(self) -> None:
         response = client.get("/api/orgs")
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        assert response.status_code == 401, f"Expected 401 (auth required), got {response.status_code}"
 
     def test_orgs_healthz(self) -> None:
         response = client.get("/api/orgs/healthz")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
-    def test_workspaces_list(self) -> None:
+    def test_workspaces_list_requires_auth(self) -> None:
         response = client.get("/api/workspaces")
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        assert response.status_code == 401, f"Expected 401 (auth required), got {response.status_code}"
 
     def test_workspaces_healthz(self) -> None:
         response = client.get("/api/workspaces/healthz")
