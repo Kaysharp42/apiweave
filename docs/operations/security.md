@@ -1,11 +1,13 @@
 # Security
 
-*Production security model and deployment guardrails for APIWeave. Read this before exposing the platform to anyone outside your laptop.*
+*Production security model and deployment guardrails for APIWeave 2.0. Read this before exposing the platform to anyone outside your laptop.*
 
 ## Prerequisites
 
-- [Authentication](authentication.md) for the human SSO model
+- [Authentication](authentication.md) for the per-instance owner, the SSO model, and the organization and workspace context
 - [Deployment](deployment.md) for environment variables and reverse proxies
+- [Encryption](encryption.md) for the per-scope Libsodium keypair model and the master KEK
+- [Audit Log](audit.md) for the append-only event log that every meaningful action writes
 - [Webhooks](../features/webhooks.md) if you trigger runs from CI/CD
 - [MCP Integration](../features/mcp-integration.md) if AI agents call the platform
 
@@ -18,9 +20,11 @@
 - [Trusted Hosts and HTTPS](#trusted-hosts-and-https)
 - [Webhook Authentication](#webhook-authentication)
 - [MCP Authentication](#mcp-authentication)
+- [Scoped Trust Boundaries](#scoped-trust-boundaries)
 - [Worker Process Exposure](#worker-process-exposure)
 - [SSRF Protection](#ssrf-protection)
 - [Secret Masking](#secret-masking)
+- [Audit Trail](#audit-trail)
 - [Deployment Security Checklist](#deployment-security-checklist)
 - [What NOT To Do](#what-not-to-do)
 - [Troubleshooting](#troubleshooting)
@@ -28,19 +32,20 @@
 
 ## Authentication Model
 
-APIWeave separates three credential systems on purpose. Do not blur them.
+APIWeave separates four credential systems on purpose. Do not blur them.
 
 | Surface | Audience | Credential | Lifetime |
 | --- | --- | --- | --- |
 | Browser UI | Human users | OAuth/OIDC SSO session cookie | Idle 12h, absolute 7d |
-| Webhook URLs | CI/CD systems | `X-Webhook-Token` plus HMAC | Per-webhook, regenerable |
-| MCP HTTP endpoint | AI agents | `Authorization: Bearer <MCP_API_KEY>` | Static until rotated |
+| Workspace webhooks | CI/CD systems | `X-Webhook-Token` plus HMAC | Per-webhook, regenerable |
+| Scoped service tokens | MCP, webhooks, future integrations | `Authorization: Bearer <scoped-token>` | Token expiry, revocable, narrowable |
+| OAuth provider callbacks | Public | Provider authorization code | Single use |
 
-Each system uses a different header, a different key store, and a different audit trail. A webhook token must never appear in a browser request. A user SSO cookie must never appear in a CI/CD job. An MCP API key must never appear in a workflow configuration value.
+Each system uses a different header, a different key store, and a different audit trail. A webhook token must never appear in a browser request. A user SSO cookie must never appear in a CI/CD job. A scoped service token must never appear in a workflow configuration value.
 
 Human users sign in through OAuth or OIDC providers (GitHub, GitLab, Google, Microsoft). The browser receives an HttpOnly session cookie. The backend never sees the OAuth access token in user-space. There is no password login and no browser-visible admin secret.
 
-Machine integrations (webhooks, MCP) authenticate with their own keys and never touch the browser session. See [Authentication](authentication.md) for the full SSO setup walkthrough.
+Machine integrations (webhooks, MCP, scoped service tokens) authenticate with their own keys and never touch the browser session. See [Authentication](authentication.md) for the full SSO setup walkthrough.
 
 ## Session Security
 
@@ -121,26 +126,27 @@ Webhook management (create, edit, delete, regenerate) is a human action that use
 
 ## MCP Authentication
 
-The MCP HTTP endpoint is for AI agents and remote IDE integrations. It uses a bearer API key, not a session cookie. See [MCP Integration](../features/mcp-integration.md) for the transport details.
+The MCP HTTP endpoint is for AI agents and remote IDE integrations. It uses a scoped service token, not a global API key and not a session cookie. See [MCP Integration](../features/mcp-integration.md) for the transport details.
 
 Production settings:
 
 ```env
 MCP_ENABLED=true
 MCP_HTTP_ENABLED=true
-MCP_REQUIRE_API_KEY=true
-MCP_API_KEY=<strong-random-key>
 MCP_ALLOWED_ORIGINS=https://trusted-agent-host.example.com
 ```
 
+The bearer token is a scoped service token created in the workspace or organization settings, with the narrowest permission set that the agent actually needs. There is no `MCP_API_KEY` in 2.0.
+
 Rules:
 
-- Every request to `/mcp` must carry `Authorization: Bearer <MCP_API_KEY>`.
+- Every request to `/mcp` must carry `Authorization: Bearer <scoped-service-token>`.
 - The `Origin` header is validated against `MCP_ALLOWED_ORIGINS`. Add only the exact origins of trusted agent hosts.
-- The MCP API key is intentionally separate from SSO sessions, CSRF cookies, and browser permissions. Do not use it as a user login credential, and do not expose it to frontend code.
+- A token whose permission set does not include the called tool returns 403 with the missing permission. There is no implicit grant.
+- The token is intentionally separate from SSO sessions, CSRF cookies, and browser permissions. Do not use it as a user login credential, and do not expose it to frontend code.
 - Stdio MCP is local-subprocess access and is appropriate only for trusted local agents. Do not run a stdio MCP client over a network boundary.
 
-The MCP read and export tools redact persisted secrets in their responses. Runtime secrets are accepted only on the `workflow_run` tool and are never persisted or echoed back. Persisted secrets are not accepted on create or update tools; use the explicit secret-management tools with the matching server flag enabled.
+The MCP read and export tools redact persisted secrets in their responses. Runtime secret input was removed in 2.0; secret writes require a `secrets.write` permission on a scoped service token and a Libsodium sealed-box payload. The `MCP_ALLOW_SECRET_WRITES` flag from 1.0 is gone.
 
 ## Worker Process Exposure
 
@@ -166,17 +172,33 @@ Impact for existing workflows:
 - Workflows that call `http://127.0.0.1` or `http://localhost` to reach internal services are now blocked. Update the URLs to public hostnames, or add the host to the allowlist.
 - MCP import tools inherit the same block. See the MCP import notes in [MCP Integration](../features/mcp-integration.md) for the recommended workaround when an OpenAPI spec lives on an internal host.
 
+## Scoped Trust Boundaries
+
+Every resource in 2.0 lives at a scope. The scopes are `org`, `workspace`, `environment`, `secret`, and `service_token`. A user with permission on a workspace is not automatically a member of the organization; a team with a grant on one environment does not have it on the next. The permission model is the first line of defense.
+
+Rules:
+
+- A user with the `workflows:run` permission on a workspace cannot read the workspace's secrets. The runner resolves `{{secrets.NAME}}` and the masking layer scrubs the value before the result is persisted.
+- A user with the `secrets:write` permission on a scope cannot read the value back. The write path accepts a Libsodium sealed box; the read path returns metadata only.
+- A scoped service token cannot exceed its declared permission set. The `secrets.write` permission lets it write sealed boxes; without the `secrets.read.metadata` permission, it cannot even see the secret list.
+- A user removed from an organization loses access to every workspace, environment, secret, and service token that the organization owns. A user removed from a workspace loses access to that workspace's resources but keeps their org membership and other workspaces.
+- Slug reuse after soft delete is blocked. Once a slug is retired, no future resource can claim it. The check applies to organization slugs, workspace slugs, team slugs, and environment names.
+
 ## Secret Masking
 
-Persisted secret values are redacted in stored results, exports, and most log output. The masking detector uses key-name patterns plus structural walking.
+Persisted secret values are redacted in stored results, exports, and most log output. The masking detector uses key-name patterns plus structural walking, and the secret service also runs value-aware masking on the resolved secret set before any persistence layer sees it.
 
-Fields whose names match `api_key`, `token`, `password`, `*_key`, `*_secret`, `*_credential`, and similar patterns are replaced with `<SECRET>` placeholders. The detection runs on the JSON tree of every result, so nested objects and arrays are covered.
+Fields whose names match `api_key`, `token`, `password`, `*_key`, `*_secret`, `*_credential`, and similar patterns are replaced with `<SECRET>` placeholders. The detection runs on the JSON tree of every result, so nested objects and arrays are covered. The value-aware masking layer also scrubs any value that matches the resolved secret set, even when the field name does not look like a secret.
 
 Implications:
 
 - A non-secret value whose name happens to match a secret pattern (a field literally called `token` that holds a JWT, for example) will be redacted. Rename the field or move the value out of the result if you need it visible.
-- Collection and workflow exports sanitize persisted secrets to placeholders while keeping the secret-key list intact. The importer knows which keys to prompt for on the destination instance.
+- Project and workflow exports carry references only, not values, ciphertext, or per-scope private keys. The `.awecollection` v2 bundle never includes a secret value. The destination operator re-creates the values through the Libsodium write flow.
 - Environment variable debug logs do not print raw values. Use the redaction-safe log format when investigating a run.
+
+## Audit Trail
+
+Every meaningful action in 2.0 writes an append-only audit event. The audit log is the canonical record of who did what, when, against which scope, and which resource. Take a JSON export before any destructive operation, including the destructive database reset that the 2.0 install requires. See the [Audit Log guide](audit.md) for the event model, the filter set, and the export flow.
 
 ## Deployment Security Checklist
 
@@ -191,12 +213,13 @@ Walk through this list before opening the platform to anyone outside the deploym
 - [ ] `ALLOWED_ORIGINS` contains the exact HTTPS frontend origin only. No wildcards. No development hosts.
 - [ ] `TRUSTED_HOSTS` (or the reverse proxy host allowlist) contains only the expected public hostnames.
 - [ ] `WEBHOOK_REQUIRE_HMAC=true` so webhook execution requires an HMAC signature.
-- [ ] `MCP_REQUIRE_API_KEY=true` when HTTP MCP is enabled, and `MCP_API_KEY` is a strong random value from a secret manager.
-- [ ] `MCP_ALLOWED_ORIGINS` is restricted to trusted agent hosts.
-- [ ] OAuth client secrets, webhook tokens, HMAC secrets, and the MCP API key are stored outside source control (CI/CD secret store, vault, KMS).
+- [ ] `MCP_HTTP_ENABLED=true` only when the Streamable HTTP transport is actually used, and `MCP_ALLOWED_ORIGINS` is restricted to trusted agent hosts.
+- [ ] Scoped service tokens for MCP, webhooks, and CI/CD are created with the narrowest permission set the consumer needs. The 1.0 `MCP_API_KEY` is not used.
+- [ ] OAuth client secrets, webhook tokens, HMAC secrets, and the master `SECRET_ENCRYPTION_KEY` are stored outside source control (CI/CD secret store, vault, KMS).
 - [ ] MongoDB is bound to localhost or a private network. Port 27017 is not exposed to the public internet.
+- [ ] The destructive database reset ran before the first sign-in, and the audit log was exported to a separate host before the reset.
 - [ ] Approved-domain signup is either disabled or restricted to owned domains.
-- [ ] The first admin account was created through a verified SSO email and has been audited.
+- [ ] The first owner account was created through a verified SSO email and has been audited.
 - [ ] TLS termination enforces HTTPS redirects and modern TLS settings (TLS 1.2 or higher, modern cipher list).
 
 ## What NOT To Do
@@ -209,10 +232,12 @@ Anti-patterns that bypass the security model. Each of these is a known footgun.
 - Do not run a public production deployment with `SESSION_COOKIE_SECURE=false`. Plain-HTTP cookies are sniffable.
 - Do not disable CSRF protection for browser-authenticated mutations. The double-submit cookie check is the defense against cross-site form posts.
 - Do not introduce password login. APIWeave is SSO-only in v1; there is no password store to leak.
-- Do not use webhook tokens or MCP API keys as human login credentials. They are machine credentials with different lifecycle and audit requirements.
+- Do not use webhook tokens or scoped service tokens as human login credentials. They are machine credentials with different lifecycle and audit requirements.
 - Do not expose MongoDB to the public internet, and do not share the database cluster across trust boundaries. The runs collection is a write surface for arbitrary workflow execution.
 - Do not turn off the SSRF blocklist (`BLOCK_PRIVATE_NETWORKS`) in production. If a workflow needs to call an internal service, add the host to the approved-domains allowlist instead.
 - Do not use a weak or shared `SESSION_SECRET_KEY`. Rotate it like any other secret, and treat the value as production data.
+- Do not paste a plaintext secret value into a write endpoint. The 2.0 write path is Libsodium sealed-box only; the backend rejects plaintext.
+- Do not ship a secret value or ciphertext in a `.awecollection` bundle. The v2 schema is references only.
 
 ## Troubleshooting
 
@@ -227,6 +252,9 @@ Anti-patterns that bypass the security model. Each of these is a known footgun.
 
 - [Authentication](authentication.md)
 - [Deployment](deployment.md)
+- [Encryption](encryption.md)
+- [Audit Log](audit.md)
+- [Environment Protection](environment-protection.md)
 - [Webhooks](../features/webhooks.md)
 - [MCP Integration](../features/mcp-integration.md)
 - [Environment Variables](../reference/environment-variables.md)

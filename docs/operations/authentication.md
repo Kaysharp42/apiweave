@@ -1,57 +1,74 @@
 # Authentication
 
-*How APIWeave authenticates human users and machine clients in 1.0. Covers the SSO model, the local admin bootstrap, session policy, approved domains, and the OAuth provider setup.*
+*How APIWeave 2.0 authenticates human users and machine clients. Covers the SSO model, the per-instance owner bootstrap, the personal workspace created on first sign-in, the organization and workspace context that every session carries, the invite flow, session policy, approved domains, and the OAuth provider setup.*
 
 ## Prerequisites
 
 - Read the [Security Guide](security.md) for the cross-cutting posture (CSRF, CORS, secrets, worker exposure).
-- A running APIWeave instance with a verified backend `BASE_URL` and a frontend origin in `ALLOWED_ORIGINS`.
+- A running APIWeave 2.0 instance with a verified backend `BASE_URL` and a frontend origin in `ALLOWED_ORIGINS`. The database must be clean (post-2.0 destructive reset).
 - A secret manager for `SESSION_SECRET_KEY`, `SECRET_KEY`, `SECRET_ENCRYPTION_KEY`, and the OAuth client secrets for each provider you enable.
 
 ## Authentication Model
 
-APIWeave has two distinct authentication paths, and they never share credentials.
+APIWeave has three distinct authentication paths, and they never share credentials.
 
-**Human users (browsers):** SSO only. The browser never sees a password field, and there is no local password login in 1.0. The backend owns the session and sends an HttpOnly cookie to the browser. The cookie is signed with `SESSION_SECRET_KEY` and validated on every state-changing request through the double-submit CSRF pattern described in the [Security Guide](security.md).
+**Human users (browsers):** SSO only. The browser never sees a password field, and there is no local password login in 2.0. The backend owns the session and sends an HttpOnly cookie to the browser. The cookie is signed with `SESSION_SECRET_KEY` and validated on every state-changing request through the double-submit CSRF pattern described in the [Security Guide](security.md). Every session is bound to a user and carries the user's current organization and workspace context through the URL.
 
-**Machine clients (CI/CD, AI agents):** Token-based. Webhook execution uses `X-Webhook-Token` plus an HMAC-SHA256 signature. MCP HTTP uses `Authorization: Bearer <MCP_API_KEY>`. These credentials are separate from any human session and never use the browser cookie jar. See [Webhooks](../features/webhooks.md) and [MCP Integration](../features/mcp-integration.md) for the full contract.
+**Machine clients (CI/CD, AI agents):** Token-based, scoped to an organization or workspace. Scoped webhooks use `X-Webhook-Token` plus an HMAC-SHA256 signature. MCP HTTP and other API consumers use a scoped service token in `Authorization: Bearer <token>`. These credentials are separate from any human session and never use the browser cookie jar. See [Webhooks](../features/webhooks.md) and [MCP Integration](../features/mcp-integration.md) for the full contract.
 
 ```text
 +--------+     SSO callback      +-----------+     HttpOnly cookie     +----------+
 | Browser| <------------------> |  Backend  | <---------------------> |  Session |
 +--------+                       +-----------+                         +----------+
-                                       |
-                                       | Bearer / Token
-                                       v
-                                 +-----------+
-                                 | Webhook / |
-                                 | MCP HTTP  |
-                                 +-----------+
+                                        |
+                                        | Bearer / Token
+                                        v
+                                  +-----------+
+                                  | Webhook / |
+                                  | MCP HTTP  |
+                                  +-----------+
 ```
 
-Why this split: humans hold an interactive session with a short idle window; machines hold a long-lived token tied to a specific integration. Mixing them would either lock humans out at automation scale or leak automation tokens into the browser.
+Why this split: humans hold an interactive session with a short idle window; machines hold a long-lived scoped token tied to a specific integration. Mixing them would either lock humans out at automation scale or leak automation tokens into the browser.
 
-## Setup Mode
+## Per-Instance Owner Bootstrap
 
-Setup mode is the bootstrap path for the first admin. When no users exist and `SETUP_MODE_ENABLED=true`, the backend accepts a sign-in from the local admin account and creates that user with the admin role. After the first user exists, the bootstrap path locks and later users must enter through an invite link or, when domain signup is enabled, by signing in through a configured provider on an approved domain.
+APIWeave 2.0 has a single per-instance owner. The first user to sign in through any enabled provider becomes the owner, and the backend auto-creates a default personal workspace at the slug `personal` for that user. The owner can then create the first organization, invite teammates, and create organization-owned workspaces.
+
+The 1.0 `SETUP_MODE_ENABLED` first-admin bootstrap is gone. There is no separate "setup mode" flag. The first sign-in is the bootstrap. Subsequent sign-ins are normal logins.
 
 Operational rules:
 
-- Enable setup mode only while bootstrapping. Set `SETUP_MODE_ENABLED=false` after the first admin is created.
-- Use a real, verified email for the first admin. Unverified emails are rejected and cannot bootstrap.
-- Verify the first user has the admin role before you turn setup mode off. Without an admin, the instance is locked out of further onboarding.
-- Do not expose an unhardened instance to the public internet while setup mode is on. Anyone who can reach the login page can become the first admin.
+- The first sign-in happens on a clean database. Run the destructive reset in [Installation](../getting-started/installation.md#destructive-database-reset) before the first sign-in if you are upgrading from 1.0.
+- Use a real, verified email for the owner. Unverified provider emails are rejected and cannot bootstrap.
+- Verify the owner has the org-owner role before inviting others. Without an owner, no further signups are possible.
+- Do not expose an unhardened instance to the public internet before the owner is created and the OAuth providers are locked down.
 
 ```env
-# During first-admin bootstrap
-SETUP_MODE_ENABLED=true
+# During first-owner bootstrap
 APPROVED_DOMAINS_ENABLED=false
 
-# After the first admin exists
-SETUP_MODE_ENABLED=false
+# After the first owner exists
 APPROVED_DOMAINS_ENABLED=true
 APPROVED_DOMAINS=example.com,example.org
 ```
+
+## Organization and Workspace Context
+
+After the owner is created, the user lives in two scopes at once:
+
+- **Personal workspace** (`/personal/...`): the auto-created personal workspace, owned by the user, with the slug `personal`. Available to the user from any browser session.
+- **Organization-owned workspaces** (`/<orgSlug>/<workspaceSlug>/...`): workspaces the user creates inside an organization. The user has a role on the org (`owner`, `member`, `billing`, `security`) and a role on the workspace (`read`, `triage`, `write`, `maintain`, `admin`).
+
+The org and workspace switcher in the header shows the current selection. The URL pattern tells the backend which scope every API call applies to. The session cookie does not encode the current org or workspace; the URL does. Switching the dropdown changes the URL, and the page re-renders against the new scope.
+
+A user can be a member of multiple organizations. A user can be a direct member of a workspace, a team member with a grant on the workspace, or an outside collaborator on the workspace. The user does not need to be an org member to collaborate on a single workspace.
+
+## Invites and Team Membership
+
+Organization invites are sent by email from the org settings page. Each invite carries a one-time token, an expiry, and a role (`member`, `billing`, or `security`; the `owner` role is reserved for the bootstrap owner and a hand-off flow). Invites can be resent and cancelled before acceptance.
+
+Team membership is a separate layer. A team lives inside an organization, has members, and receives permission grants for workspaces, environments, secrets, and approvals. Outside collaborators join a single workspace without becoming a team or org member.
 
 ## Approved Domains
 
@@ -59,15 +76,15 @@ Approved domains gate which email addresses can create accounts. Domain matching
 
 | Mode | Configuration | Behavior |
 |------|---------------|----------|
-| Invite-only | `APPROVED_DOMAINS_ENABLED=false` | First admin via setup mode. Admins generate invite links; invitees sign in through OAuth. |
-| Domain signup | `APPROVED_DOMAINS_ENABLED=true` plus `APPROVED_DOMAINS` | First admin via setup mode. Verified emails on listed domains sign in directly through OAuth; admins can still send invites. |
+| Invite-only | `APPROVED_DOMAINS_ENABLED=false` | First owner via first sign-in. Admins and owners generate invite links; invitees sign in through OAuth. |
+| Domain signup | `APPROVED_DOMAINS_ENABLED=true` plus `APPROVED_DOMAINS` | First owner via first sign-in. Verified emails on listed domains sign in directly through OAuth; admins and owners can still send invites. |
 
 ```env
 APPROVED_DOMAINS_ENABLED=true
 APPROVED_DOMAINS=example.com,example.org
 ```
 
-Admins retain the ability to issue invites in either mode. Treat `APPROVED_DOMAINS` as a tenant allowlist: include only the domains your organization owns, and review the list every time you add or remove a corporate domain.
+Owners retain the ability to issue invites in either mode. Treat `APPROVED_DOMAINS` as a tenant allowlist: include only the domains your organization owns, and review the list every time you add or remove a corporate domain.
 
 ## Session Policy
 
@@ -95,12 +112,13 @@ A short list of the auth-related items a deployment must pass before going live.
 - [ ] `SESSION_COOKIE_SECURE=true` (the backend rejects `false` outside development).
 - [ ] `CSRF_ENABLED=true`.
 - [ ] `ALLOWED_ORIGINS` lists the exact HTTPS frontend origin, no wildcards.
-- [ ] `SETUP_MODE_ENABLED=false` after the first admin exists.
+- [ ] Database wiped with the destructive reset in [Installation](../getting-started/installation.md#destructive-database-reset) before the first sign-in.
+- [ ] First sign-in completed through a verified SSO email, owner role confirmed.
 - [ ] `APPROVED_DOMAINS` contains only the domains your organization owns, or the gate is disabled for invite-only operation.
 
 ## OAuth Provider Setup
 
-The login path is gated by `OAUTH_LOGIN_ENABLED` (default `false`). When the flag is off, the local admin created through setup mode is the only way to sign in; when the flag is on, the provider buttons on the login page activate and the callback handlers respond to real provider authorization codes. Register each provider application before flipping the flag on, and store the client secrets in your deployment secret manager. Account linking is blocked by policy; the error is surfaced to the operator rather than auto-linking to an existing local account.
+The login path is gated by `OAUTH_LOGIN_ENABLED` (default `false`). When the flag is off, the per-instance owner created through the first sign-in on a clean database is the only way to sign in; when the flag is on, the provider buttons on the login page activate and the callback handlers respond to real provider authorization codes. Register each provider application before flipping the flag on, and store the client secrets in your deployment secret manager. Account linking is blocked by policy; the error is surfaced to the operator rather than auto-linking to an existing account.
 
 All four providers use the authorization-code flow. The callback URL is built from `PUBLIC_BASE_URL` (the public backend URL, not the frontend URL). The placeholder `{base_url}` below stands in for the value of `PUBLIC_BASE_URL` in your deployment.
 
@@ -186,24 +204,25 @@ The minimum production set:
 - `SESSION_MAX_IDLE_MINUTES=720` (12 hours, default).
 - `SESSION_MAX_ABSOLUTE_MINUTES=10080` (7 days, default).
 - `CSRF_ENABLED=true`.
-- `SETUP_MODE_ENABLED=false` after the first admin exists.
 - `APPROVED_DOMAINS_ENABLED` and `APPROVED_DOMAINS` for tenant gating.
 - `OAUTH_LOGIN_ENABLED=true` once the provider applications are registered and the client secrets are in the secret manager.
-- `SECRET_ENCRYPTION_KEY` (32 bytes, base64-encoded) for secret-at-rest encryption. See the [Encryption Guide](encryption.md).
+- `SECRET_ENCRYPTION_KEY` (32 bytes, base64-encoded) for secret-at-rest envelope encryption. See the [Encryption Guide](encryption.md).
 
 ## Troubleshooting
 
-- **If you cannot sign in at all**, `OAUTH_LOGIN_ENABLED` is off and no local admin exists. Toggle setup mode to create the first admin (`SETUP_MODE_ENABLED=true`, restart, sign in once, set it back to `false`), or flip `OAUTH_LOGIN_ENABLED=true` and complete the provider registration.
-- **If the first admin sign-in is rejected**, the email you are using is not verified. Provider login requires a verified primary email. Confirm the account in the provider's email settings and retry.
-- **If setup mode refuses to create the user**, a user already exists in the database. Setup mode only works while the user collection is empty. Sign in with the existing first admin, or restore the database to a clean state if you are recovering from a broken bootstrap.
+- **If you cannot sign in at all**, `OAUTH_LOGIN_ENABLED` is off and no owner exists. Drop the database, restart the backend, complete the first sign-in through a verified SSO email, and the owner role is created.
+- **If the first sign-in is rejected**, the email you are using is not verified. Provider login requires a verified primary email. Confirm the account in the provider's email settings and retry.
+- **If the first sign-in lands on a blank page or 404s on `/personal/workflows`**, the database was not dropped before the first sign-in. Run the destructive reset and try again.
 - **If the session cookie is not set in the browser**, `SESSION_COOKIE_SECURE=true` is set while the page is served over HTTP, or `APP_ENV=development` is set in a production-like deploy. The browser silently drops an insecure cookie. Confirm the page is served over HTTPS and that `APP_ENV` matches the deployment.
 - **If the session expires faster than expected**, check `SESSION_MAX_IDLE_MINUTES` and `SESSION_MAX_ABSOLUTE_MINUTES`. The defaults are 12 hours idle and 7 days absolute. Rotation on privilege change also forces a fresh absolute clock.
-- **If `APPROVED_DOMAINS` is set but a valid domain is still rejected**, the provider returned an unverified email, or the user already exists with a different verified email. Account linking is blocked by policy; create a new account or contact an admin to merge the existing one.
+- **If `APPROVED_DOMAINS` is set but a valid domain is still rejected**, the provider returned an unverified email, or the user already exists with a different verified email. Account linking is blocked by policy; create a new account or contact an owner to merge the existing one.
+- **If a user cannot see an organization or workspace**, the user is not a member. Owners can invite the user from the org settings page, or an outside collaborator invitation can be issued for a single workspace.
 
 ## Related
 
 - [Security Guide](security.md) for the cross-cutting posture, CSRF, CORS, secret masking, and the worker exposure caveat.
 - [Environment Variables Reference](../reference/environment-variables.md) for the full `Authentication and OAuth`, `Sessions and CSRF`, and `Approved Domains` tables.
 - [Webhooks](../features/webhooks.md) for the machine-to-machine side of the authentication story.
-- [MCP Integration](../features/mcp-integration.md) for the second machine-to-machine path (HTTP MCP).
+- [MCP Integration](../features/mcp-integration.md) for the second machine-to-machine path (HTTP MCP with scoped service tokens).
 - [Encryption Guide](encryption.md) for the `SECRET_ENCRYPTION_KEY` setup and rotation.
+- [Audit Log](audit.md) for the events that every authentication action writes.

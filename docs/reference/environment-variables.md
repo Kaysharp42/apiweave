@@ -1,6 +1,6 @@
 # Environment Variables
 
-*Canonical reference for every environment variable read by the APIWeave backend and frontend. Use this page to find a variable's name, default, and what it controls. All secret values shown here are placeholders. Never commit real keys to a repository or a `.env` file in version control.*
+*Canonical reference for every environment variable read by the APIWeave 2.0 backend and frontend. Use this page to find a variable's name, default, and what it controls. All secret values shown here are placeholders. Never commit real keys to a repository or a `.env` file in version control.*
 
 ## Prerequisites
 
@@ -24,8 +24,9 @@ Variables are grouped by feature. Within each group, the table lists every varia
 10. Network Safety
 11. Rate Limiter
 12. MCP
-13. Worker
-14. Frontend
+13. Secrets and Keyring
+14. Worker
+15. Frontend
 
 ## App
 
@@ -45,7 +46,7 @@ MongoDB connection settings.
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `MONGODB_URL` | Yes | none | Full MongoDB connection string. Local default: `mongodb://localhost:27017`. Use a credentials URL for Atlas or a replica set. |
-| `MONGODB_DB_NAME` | Yes | `apiweave` | Database name inside the MongoDB instance. All collections are created under this name. |
+| `MONGODB_DB_NAME` | Yes | `apiweave` | Database name inside the MongoDB instance. The 2.0 install requires a clean database; the destructive reset is documented in [Installation](../getting-started/installation.md#destructive-database-reset). |
 
 ## CORS and Trusted Hosts
 
@@ -82,6 +83,8 @@ Client credentials for the supported OAuth providers. Leave unused providers bla
 | `GOOGLE_CLIENT_ID` | No | empty | Google OAuth client ID. |
 | `GOOGLE_CLIENT_SECRET` | No | empty | Google OAuth client secret. |
 
+The first sign-in on a clean database becomes the per-instance owner. The 1.0 `SETUP_MODE_ENABLED` first-admin bootstrap is gone in 2.0.
+
 ## Sessions and CSRF
 
 Browser session lifetime and CSRF protection. The defaults match the recommended production posture.
@@ -102,11 +105,10 @@ Restrict signup to a list of email domains. Useful for single-tenant deployments
 | --- | --- | --- | --- |
 | `APPROVED_DOMAINS_ENABLED` | No | `false` | Enables the approved-domain gate. When `true`, signup is restricted to the domains listed in `APPROVED_DOMAINS`. |
 | `APPROVED_DOMAINS` | No | empty | Comma-separated email domains allowed to sign up. Example: `example.com,example.org`. |
-| `SETUP_MODE_ENABLED` | No | `true` | Allows the first admin to create an account without domain approval. Must be `false` in production after the first admin exists. |
 
 ## Webhooks
 
-Outbound webhook execution and payload limits.
+Scoped webhook execution and payload limits. Webhook authentication now uses a scoped service token bound to a workspace.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -140,16 +142,24 @@ Backend used by the token bucket rate limiter. Choose based on whether you run o
 
 ## MCP
 
-Settings for the Model Context Protocol server, used by AI agents for machine-to-machine access. HTTP MCP is separate from human browser sessions.
+Settings for the Model Context Protocol server, used by AI agents for machine-to-machine access. HTTP MCP is separate from human browser sessions. 2.0 uses scoped service tokens for MCP; the 1.0 global `MCP_API_KEY` flow is gone.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `MCP_ENABLED` | No | `false` | Enables the MCP server. Set to `true` to expose MCP tools to AI agents. |
 | `MCP_HTTP_ENABLED` | No | `false` | Enables the HTTP transport for MCP. Stdio MCP is always available locally. |
-| `MCP_API_KEY` | No (Yes if HTTP) | empty | API key clients send in `Authorization: Bearer <key>`. Required when `MCP_HTTP_ENABLED=true` and `MCP_REQUIRE_API_KEY=true`. Generate with `openssl rand -hex 32`. |
 | `MCP_ALLOWED_ORIGINS` | No | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated origins allowed to call the MCP HTTP endpoint. Replace with your agent host in production. |
-| `MCP_REQUIRE_API_KEY` | No | `true` | When `true`, MCP HTTP requests must include a valid `MCP_API_KEY`. |
-| `MCP_ALLOW_SECRET_WRITES` | No | `false` | Permits MCP tools to write to environment secrets. Keep `false` unless you trust every connected agent. |
+
+The bearer token for MCP is now a scoped service token. Create one in the workspace or organization settings and pass it as `Authorization: Bearer <token>` on every HTTP MCP request.
+
+## Secrets and Keyring
+
+Per-scope Libsodium keypairs and the master KEK. The full model is in the [Encryption Guide](../operations/encryption.md).
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `SECRET_ENCRYPTION_KEY` | No | empty | Master KEK for envelope encryption of stored secret ciphertext. 32 bytes, base64-encoded. Set this in production so secrets survive restart. Leave empty in development for an ephemeral key. |
+| `SECRET_KEYRING_BACKEND` | No | `mongodb` | Valid values: `mongodb`, `memory`. The keyring stores old per-scope Libsodium keypairs so rotation never strands existing ciphertexts. |
 
 ## Worker
 
@@ -187,18 +197,17 @@ Required in `production` or `prod` (`APP_ENV`):
 - `SESSION_COOKIE_SECURE=true`. The startup check rejects `false` outside development.
 - `WEBHOOK_REQUIRE_HMAC=true`.
 - `BLOCK_PRIVATE_NETWORKS=true`.
-- `SETUP_MODE_ENABLED=false` after the first admin exists. Leaving it `true` in production fails startup.
 - `ALLOWED_ORIGINS` set to a comma-separated list of exact HTTPS frontend origins. The startup check rejects `*` in production.
 - `MAX_WEBHOOK_BODY_SIZE` at or below `1048576` (1 MB). Larger values fail startup.
-- `MONGODB_URL` and `MONGODB_DB_NAME` pointing at the production database.
+- `MONGODB_URL` and `MONGODB_DB_NAME` pointing at the production database (clean, post-2.0 reset).
 - `BASE_URL` and `PUBLIC_BASE_URL` set to the public HTTPS backend URL.
 - `TRUSTED_HOSTS` set to the public API hostname(s) only.
+- `SECRET_ENCRYPTION_KEY` set to a 32-byte base64 value so stored secrets survive restart.
 
 Required when MCP HTTP is exposed:
 
-- `MCP_API_KEY` set to a strong random value.
+- A scoped service token with the right permissions. Create it in the workspace or organization settings; there is no global `MCP_API_KEY` in 2.0.
 - `MCP_ALLOWED_ORIGINS` set to the trusted agent host origin(s).
-- `MCP_REQUIRE_API_KEY=true`.
 
 Required for each OAuth provider you actually enable:
 
@@ -238,7 +247,11 @@ SESSION_SECRET_KEY=
 SESSION_SECRET_KEY=<output of openssl rand -hex 32>
 ```
 
-### Mistake 3: Changing VITE_API_URL after the frontend has built
+### Mistake 3: Pasting a plaintext secret value into a write endpoint
+
+The 2.0 secret write flow is Libsodium sealed-box only. The backend rejects plaintext on the wire and the UI does not offer a paste field. If you are trying to add a secret through curl, fetch the scope's public key first, encrypt the value with a sealed box, and submit the ciphertext.
+
+### Mistake 4: Changing VITE_API_URL after the frontend has built
 
 Vite injects these values at build time, then the browser bundle no longer reads `.env`. If you change the value in `frontend/.env` and forget to rebuild, the running app keeps the old URL. The fix is always `npm run build` after editing `frontend/.env`.
 
@@ -250,10 +263,10 @@ npm run build
 
 ## Troubleshooting
 
-- **If the backend fails to start with `SETUP_MODE_ENABLED must be False in production after initial admin is created`**, flip `SETUP_MODE_ENABLED=false` and restart. This guard is a startup check, not a runtime warning.
+- **If the backend fails to start with a first-owner error**, the database still has 1.0 collections or a previous 2.0 install already created the owner. Run the destructive reset in [Installation](../getting-started/installation.md#destructive-database-reset) and restart.
 - **If CORS errors appear in the browser console after switching to HTTPS**, the most common cause is `ALLOWED_ORIGINS` still listing the old `http://` origin. Update the list to your new HTTPS origin and restart the backend.
 - **If webhooks return 401 with `HMAC signature required`**, `WEBHOOK_REQUIRE_HMAC` is on and the caller did not send the `X-Webhook-Signature` and `X-Webhook-Timestamp` headers. Confirm both headers are set, then check that the signed payload uses `printf '%s%s'` (timestamp then body) rather than `echo` (which adds a trailing newline).
-- **If MCP HTTP requests return 401 even though the agent sends the header**, confirm `MCP_REQUIRE_API_KEY=true` and that the value in `Authorization: Bearer <key>` matches `MCP_API_KEY` byte for byte. Whitespace and trailing newlines are common culprits when copying from a password manager.
+- **If MCP HTTP requests return 401**, confirm the bearer token is a current scoped service token. The 1.0 `MCP_API_KEY` is no longer accepted.
 - **If sessions log the user out immediately after login in production**, `SESSION_COOKIE_SECURE` is almost certainly `false` and the browser is dropping the cookie because the connection is HTTPS. Set it to `true`.
 
 ## Related
@@ -263,3 +276,4 @@ npm run build
 - [MCP Integration Guide](../features/mcp-integration.md)
 - [Webhook Quick Start](../features/webhooks.md)
 - [Authentication Setup](../operations/authentication.md)
+- [Encryption Guide](../operations/encryption.md)

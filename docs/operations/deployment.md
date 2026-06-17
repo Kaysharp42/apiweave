@@ -1,12 +1,20 @@
 # Deployment
 
-*Short guide for self-hosters. Covers the four runtime components (Frontend, Backend, Worker, MongoDB) and the production concerns that come up first: env vars, reverse proxy, scaling, backups, and a pre-production checklist. For deep security or auth setup, follow the links in Prerequisites.*
+*Short guide for self-hosters. Covers the runtime components (Frontend, Backend, Worker, MongoDB) and the production concerns that come up first: env vars, the destructive database reset on upgrade, reverse proxy, scaling, backups, and a pre-production checklist. For deep security or auth setup, follow the links in Prerequisites.*
 
 ## Prerequisites
 
 - Read [Security Guide](security.md) and [Authentication Guide](authentication.md) before exposing APIWeave to the network.
 - A host (VM, bare metal, or K8s node) with Docker Engine 24+ and Docker Compose v2.
-- A MongoDB 7+ instance, DNS records, TLS certificates from a trusted CA, and a secret manager for `SESSION_SECRET_KEY`, OAuth client secrets, webhook tokens, HMAC secrets, and `MCP_API_KEY`.
+- A MongoDB 7+ instance, DNS records, TLS certificates from a trusted CA, and a secret manager for `SESSION_SECRET_KEY`, `SECRET_ENCRYPTION_KEY`, OAuth client secrets, webhook tokens, and HMAC secrets. Scoped service tokens for MCP and webhooks are issued by the running backend; there is no `MCP_API_KEY` to manage in 2.0.
+
+## Destructive Database Reset
+
+> **Read this before any other step in this guide.** APIWeave 2.0 has not yet shipped a stable public release. The 2.0 model (personal and organization workspaces, scoped environments, scoped secrets, projects, scoped service tokens) is a hard cut from the 1.0 line, and the supported upgrade path is to wipe the database and start over.
+
+Before bringing the 2.0 backend up against an existing database, drop the database. The full reasoning and the exact commands are in [Installation](../getting-started/installation.md#destructive-database-reset). The short version: the 2.0 install requires a clean database with no 1.0 collections, no `Environment.isActive`, no `runtime_secrets`, and no flat `/api/*` paths.
+
+Before the reset, take a JSON export of the audit log. The destructive reset wipes the audit log with the rest of the database. The export is the only way to preserve history across an upgrade. See the [Audit Log guide](audit.md) for the export flow.
 
 ## Deployment Options
 
@@ -20,13 +28,16 @@ Pick the option that matches your operational experience:
 
 The repo ships a `docker-compose.yml` at the project root with four services: `mongodb`, `backend`, `worker`, `frontend`, plus an `mcp-stdio` helper.
 
+The first time you bring the stack up after the 2.0 upgrade, run the destructive reset:
+
 ```bash
-docker compose up -d
+docker compose down -v
+docker compose up -d --build
 docker compose ps
 docker compose logs -f backend worker
 ```
 
-Mount a host directory for `backend/artifacts` so run reports and GridFS blobs survive container recreation. See the `volumes:` blocks in the compose file for the exact paths.
+The first `down -v` removes the named MongoDB volume so the 2.0 model can take effect. Subsequent restarts do not need the `-v` flag. Mount a host directory for `backend/artifacts` so run reports and GridFS blobs survive container recreation. See the `volumes:` blocks in the compose file for the exact paths.
 
 ## Environment Variables
 
@@ -40,16 +51,19 @@ MONGODB_DB_NAME=apiweave
 APP_ENV=development
 ```
 
-Production must add at minimum `APP_ENV=production`, `BASE_URL`, `PUBLIC_BASE_URL`, `ALLOWED_ORIGINS`, `TRUSTED_HOSTS`, `SESSION_SECRET_KEY`, `SESSION_COOKIE_SECURE=true`, `CSRF_ENABLED=true`, `WEBHOOK_REQUIRE_HMAC=true`, and `MCP_REQUIRE_API_KEY=true`. Treat the [Security Guide](security.md) checklist as the source of truth.
+Production must add at minimum `APP_ENV=production`, `BASE_URL`, `PUBLIC_BASE_URL`, `ALLOWED_ORIGINS`, `TRUSTED_HOSTS`, `SESSION_SECRET_KEY`, `SESSION_COOKIE_SECURE=true`, `CSRF_ENABLED=true`, `WEBHOOK_REQUIRE_HMAC=true`, `SECRET_ENCRYPTION_KEY`, and the OAuth client credentials for any provider you enable. Treat the [Security Guide](security.md) checklist as the source of truth.
+
+The 1.0 `MCP_API_KEY` and `MCP_REQUIRE_API_KEY` variables are gone. The bearer token for HTTP MCP is a scoped service token created in the workspace or organization settings. The 1.0 `SETUP_MODE_ENABLED` first-admin bootstrap is gone; the first sign-in becomes the per-instance owner.
 
 ## MongoDB
 
-MongoDB is the system of record. The worker reads `runs` documents directly, so anyone with write access to that collection can trigger arbitrary workflow execution.
+MongoDB is the system of record. The worker reads `runs` documents directly, so anyone with write access to that collection can trigger arbitrary workflow execution against any workspace.
 
 - Bind MongoDB to a private network. Never expose port 27017 to the public internet.
 - Use authentication (`--auth` or managed equivalent) and a strong password.
 - Prefer a replica set so single-node loss does not stop runs.
 - Do not share the cluster with tenants outside your trust boundary.
+- The 2.0 install requires a clean database. Run the destructive reset in [Installation](../getting-started/installation.md#destructive-database-reset) before the first 2.0 sign-in.
 
 ## Reverse Proxy
 
@@ -71,46 +85,45 @@ Terminate TLS at a reverse proxy in front of the backend and frontend. Required 
 
 ## Backups
 
-APIWeave stores workflows, runs, environments, collections, webhooks, and execution logs in MongoDB. Use the standard MongoDB backup tooling:
+APIWeave stores organizations, teams, workspaces, members, projects, workflows, runs, environments, scoped secrets, service tokens, protection policies, and the append-only audit log in MongoDB. Use the standard MongoDB backup tooling:
 
 - **Self-hosted**: `mongodump` for logical backups, filesystem snapshots (LVM/ZFS) for physical backups, or MongoDB's own ops manager / cloud backup for managed setups.
 - **MongoDB Atlas**: enable continuous cloud backup and periodic restore drills.
 - Test a restore at least once per quarter. An untested backup is not a backup.
 - Store backup files encrypted and on separate infrastructure from the database host.
+- Take a JSON export of the audit log before any destructive operation. The audit log is part of the database, so the destructive reset wipes it with everything else. See the [Audit Log guide](audit.md) for the export flow.
 
 ## Observability
 
 - **Logs**: backend and worker print to stdout; mirror to your log stack. Per-run traces live at `backend/logs/run_{runId}.log`.
 - **Health**: `GET /api/health` returns liveness. Hit it from your proxy or uptime monitor.
-- **Run state**: the frontend polls `GET /api/runs/{runId}` (fast 100 ms for 2 s, then 1 s) and shows live status on the canvas.
-- **Audit**: webhook logs and admin actions land in MongoDB collections; surface them through MCP read tools.
+- **Run state**: the frontend polls the workspace run endpoint (fast 100 ms for 2 s, then 1 s) and shows live status on the canvas.
+- **Audit**: the append-only audit log is queryable through the audit page. Use the JSON export to take offline snapshots and pipe to your log stack. See the [Audit Log guide](audit.md).
 
 ## Pre-Production Checklist
 
 - [ ] `APP_ENV=production`; `DEBUG=false`.
+- [ ] Database wiped with the destructive reset in [Installation](../getting-started/installation.md#destructive-database-reset) before the first sign-in.
+- [ ] Audit log exported to a separate host before the destructive reset.
 - [ ] HTTPS-only with HSTS; HTTP redirects to HTTPS.
 - [ ] `BASE_URL` and `PUBLIC_BASE_URL` set to the real HTTPS backend URL.
 - [ ] `ALLOWED_ORIGINS` lists the exact HTTPS frontend origin; no wildcard.
 - [ ] `TRUSTED_HOSTS` lists the public hostnames only.
 - [ ] `SESSION_SECRET_KEY` is a strong random value from a secret manager.
+- [ ] `SECRET_ENCRYPTION_KEY` is a 32-byte base64 value from a secret manager.
 - [ ] `SESSION_COOKIE_SECURE=true`, `CSRF_ENABLED=true`.
 - [ ] OAuth callback URLs in the provider console match `PUBLIC_BASE_URL`.
 - [ ] `WEBHOOK_REQUIRE_HMAC=true`; webhook tokens and HMAC secrets stored in CI secret store.
-- [ ] `MCP_REQUIRE_API_KEY=true` with a strong `MCP_API_KEY`; `MCP_ALLOWED_ORIGINS` restricted.
+- [ ] Scoped service tokens created with the narrowest permission set the consumer needs. The 1.0 `MCP_API_KEY` is not used.
 - [ ] MongoDB bound to the private network, auth enabled, backups verified.
 - [ ] `BLOCK_PRIVATE_NETWORKS=true` so the executor cannot reach internal services.
-- [ ] First admin created via SSO; setup mode reviewed.
+- [ ] First owner created via SSO through a verified email; org and team membership reviewed.
 
 Full source: [Security Guide](security.md) and [Authentication Guide](authentication.md).
 
 ## Doc-Truth Check
 
-The CI pipeline includes a lightweight doc-truth check (`scripts/doc-truth-check.sh`) that runs on every pull request touching `docs/`, `backend/`, or `frontend/src/`. It greps the scoped docs for stale "Not Yet Supported" callouts and the architecture reference for a `## Known Gaps` heading. The check is advisory (it does not block the build) — it signals when documentation content is out of sync with the shipped feature set.
-
-- **Trigger**: PR touching `docs/`, `backend/`, or `frontend/src/`.
-- **Script**: `scripts/doc-truth-check.sh`
-- **Scope**: 9 feature and operations docs + `docs/reference/architecture.md`
-- **Failure**: Any match causes exit code 1; CI notes the failure but continues.
+The CI pipeline includes a lightweight doc-truth check that runs on every pull request touching the documentation. It greps the docs for references to features that are no longer in the new model, including the global active-environment flag, runtime secret input, flat unscoped API paths, the global `MCP_API_KEY`, and the 1.0 first-admin setup flow. The check is advisory and does not block the build; it surfaces drift between the shipped feature set and the documentation.
 
 ## Troubleshooting
 
@@ -127,3 +140,7 @@ The CI pipeline includes a lightweight doc-truth check (`scripts/doc-truth-check
 - [Environment Variables](../reference/environment-variables.md)
 - [Security Guide](security.md)
 - [Authentication Guide](authentication.md)
+- [Encryption Guide](encryption.md)
+- [Audit Log](audit.md)
+- [Environment Protection](environment-protection.md)
+- [Installation](../getting-started/installation.md#destructive-database-reset)

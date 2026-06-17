@@ -1,14 +1,16 @@
 # Workflows and Nodes
 
-*How to build, edit, and run a workflow on the APIWeave canvas. Covers every node type, the canvas actions in the toolbar, resume behavior after a failed run, and the keyboard shortcuts worth memorizing.*
+*How to build, edit, and run a workflow inside a workspace on the APIWeave 2.0 canvas. Covers every node type, the canvas actions in the toolbar, resume behavior after a failed run, the keyboard shortcuts worth memorizing, and the workspace context that every workflow lives in.*
 
 ## Prerequisites
 
-- [Concepts](../getting-started/concepts.md) for the basic vocabulary (workflow, node, edge, run, variable, extractor).
+- [Concepts](../getting-started/concepts.md) for the basic vocabulary (workflow, node, edge, run, variable, extractor, workspace, environment).
 - [Installation](../getting-started/installation.md) so the canvas and runner are both running.
+- A workspace you can edit. Personal workspace is fine for solo work, organization-owned workspace for team projects.
 
 ## Table of Contents
 
+- [Where Workflows Live](#where-workflows-live)
 - [Building a Workflow](#building-a-workflow)
 - [Node Types](#node-types)
   - [Start](#start)
@@ -19,16 +21,30 @@
   - [Merge](#merge)
 - [Canvas Actions](#canvas-actions)
 - [Resume Behavior](#resume-behavior)
+- [Lineage Hydration on Repeated Resume](#lineage-hydration-on-repeated-resume)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Recommended Build Pattern](#recommended-build-pattern)
 
+## Where Workflows Live
+
+Every workflow in APIWeave 2.0 belongs to exactly one workspace. The URL pattern tells you which:
+
+- `/personal/workflows` and `/personal/workflows/{id}` are workflows in the current user's personal workspace.
+- `/<orgSlug>/<workspaceSlug>/workflows` and `/<orgSlug>/<workspaceSlug>/workflows/{id}` are workflows in an organization-owned workspace.
+
+Use the org and workspace switcher in the header to navigate. The switcher always shows the current selection, and the URL updates to match. If you do not see a workflow you expect, you are in the wrong workspace.
+
+Workflows are also members of a project. A workflow can be inside one project at a time, and the project decides the run order. See [Projects](projects.md) for the grouping flow and the `.awecollection` v2 export.
+
 ## Building a Workflow
 
-1. Open APIWeave and create a new workflow from the empty state or the Workflows panel. A Start node is placed for you.
-2. Open the Add Nodes panel (the plus button at the bottom-right of the canvas) and drag nodes onto the canvas.
-3. Connect nodes by dragging from the output handle of one node to the input handle of the next.
-4. Double-click any node to open its editor, or use the inline body for quick edits. Changes auto-save after 700ms.
-5. Pick an active environment from the selector at the top, then click **Run** to execute the full graph.
+1. Open the workflows list for the workspace you want to use (`/personal/workflows` or `/<orgSlug>/<workspaceSlug>/workflows`).
+2. Click `New Workflow` from the sidebar or the empty-state button. A Start node is placed for you.
+3. Open the Add Nodes panel (the plus button at the bottom-right of the canvas) and drag nodes onto the canvas.
+4. Connect nodes by dragging from the output handle of one node to the input handle of the next.
+5. Double-click any node to open its editor, or use the inline body for quick edits. Changes auto-save after 700ms.
+6. Pick the environment for the run from the canvas toolbar. The environment must be visible to the current workspace (workspace environments are always visible; organization environments need to allowlist the workspace).
+7. Click `Run` to execute the full graph. If the environment is protected, the run queues behind approvals first. See [Environment Protection](../operations/environment-protection.md).
 
 A simple login flow looks like this on the canvas:
 
@@ -53,8 +69,6 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 
 **Handles:** output only. One workflow should have exactly one Start node.
 
-**Example:** a Start node named "Begin checkout" sits at the left of the canvas and connects to the first HTTP Request node.
-
 ### End
 
 **Purpose:** Marks the terminal point of a path. A workflow can have more than one End node for different success or cleanup paths.
@@ -66,8 +80,6 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 
 **Handles:** input only. When a run reaches an End node, that path is considered complete.
 
-**Example:** connect the `pass` handle of an Assertion to an End node labeled "Logged in" and the `fail` handle to an End node labeled "Auth failed".
-
 ### HTTP Request
 
 **Purpose:** Sends an HTTP call to an upstream service and optionally extracts values from the response into workflow variables.
@@ -75,7 +87,7 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 | Field | What it does |
 | --- | --- |
 | `method` | `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, or `OPTIONS` |
-| `url` | Full request URL. Supports placeholders like `{{env.BASE_URL}}/users` |
+| `url` | Full request URL. Supports placeholders like `{{env.BASE_URL}}/users` and `{{secrets.API_KEY}}` |
 | `query params` | `key=value`, one per line |
 | `headers` | `key=value`, one per line |
 | `cookies` | `key=value`, one per line |
@@ -84,8 +96,6 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
 
 **Handles:** one input, one output.
-
-**Example:** `POST {{env.BASE_URL}}/login` with a JSON body `{"user":"{{variables.username}}","pass":"{{variables.password}}"}` and an extractor named `token` with path `response.body.access_token`. The next node can read it as `{{variables.token}}`.
 
 ### Assertion
 
@@ -101,8 +111,6 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 
 **Handles:** one input, two outputs. `pass` fires when every rule passes; `fail` fires when at least one rule fails.
 
-**Example:** after a `GET /users/{{variables.userId}}` call, assert that `response.body.email` `contains` `@example.com` and `response.statusCode` `equals` `200`. On pass, continue; on fail, route to a cleanup call.
-
 ### Delay
 
 **Purpose:** Pauses execution for a fixed time before continuing, useful for polling or pacing rate-limited calls.
@@ -113,8 +121,6 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 | `label` | Optional display name |
 
 **Handles:** one input, one output.
-
-**Example:** place a Delay node with `duration = 2000` between two HTTP Request nodes to give an async job two seconds to finish before polling its status.
 
 ### Merge
 
@@ -128,23 +134,21 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 
 **Handles:** many inputs (one per upstream branch), one output.
 
-**Example:** fan out to two HTTP calls (one to `/profile`, one to `/orders`), then merge with `strategy = all` so the next node only runs once both responses are in. Use `{{prev[0].response.body.name}}` and `{{prev[1].response.body.total}}` to read from each branch by index.
-
 ## Canvas Actions
 
 The top toolbar exposes the actions that operate on the whole workflow.
 
 | Action | What it does |
 | --- | --- |
-| **Run** | Executes the full workflow from the Start node |
-| **Run from failed** | Resumes the most recent failed run from the first failed node. Only available when the latest run failed |
-| **Run all failed nodes and continue** | Resumes from every failed node in the latest failed run, then continues downstream |
-| **Run from this node** | Resumes from a specific failed node (entry appears per failed node) |
-| **JSON editor** | Opens the workflow's `nodes`, `edges`, and `variables` in a raw JSON view for targeted edits |
-| **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow |
-| **Refresh** | Re-fetches Swagger or OpenAPI templates from the active environment's base URL |
+| **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. |
+| **Run from failed** | Resumes the most recent failed run from the first failed node. Only available when the latest run failed. |
+| **Run all failed nodes and continue** | Resumes from every failed node in the latest failed run, then continues downstream. |
+| **Run from this node** | Resumes from a specific failed node (entry appears per failed node). |
+| **JSON editor** | Opens the workflow's `nodes`, `edges`, and `variables` in a raw JSON view for targeted edits. |
+| **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow. |
+| **Refresh** | Re-fetches Swagger or OpenAPI templates from the active environment's base URL. |
 
-The Run dropdown hides resume options when the latest run succeeded. They reappear the next time a run ends in a failed state.
+The Run dropdown hides resume options when the latest run succeeded. They reappear the next time a run ends in a failed state. If the environment is protected, every run queues behind approvals first.
 
 ## Resume Behavior
 
@@ -154,6 +158,7 @@ Resume reuses what already worked and only re-executes what is needed.
 - **One failed node or many.** Use *Run from failed* to retry a single failed node, or *Run all failed nodes and continue* to retry every failed branch in parallel and keep going downstream.
 - **Lineage-aware retries.** If resume attempt A fails and attempt B fails again, the next resume still hydrates context from the earliest successful upstream attempt. You do not have to start from zero unless you want to.
 - **Success locks the options out.** When the latest run succeeds, the resume actions hide until a new failure occurs. If you want a clean re-run, click **Run** instead.
+- **Protected environment.** A resume against a protected environment re-enters the approval queue. A trusted service token on the bypass allowlist skips the gate.
 
 `continueOnFail` is a per-workflow setting in the workflow settings panel. With `continueOnFail = false` (default), the runner stops at the first error. With `continueOnFail = true`, the runner logs the error and keeps going, tracking failed node IDs for the resume actions above.
 
@@ -163,7 +168,7 @@ Resume reuses what already worked and only re-executes what is needed.
 
 The current run links back to its source through `resumeFromRunId`. On resume, the executor walks that chain from the most recent attempt back to the original run, then hydrates workflow variables and successful node results in order. Variables from the newest attempt win, but anything the original run produced stays readable, and only the nodes that still fail are re-executed.
 
-The walk is bounded by the `resumeFromRunId` link, so it cannot loop forever. Use *Run* (not resume) when you want a clean execution with no inherited state. The lineage walk and the resume endpoint surface are covered by `backend/tests/test_resume_from_last_failed.py`, including the `_hydrate_resume_context` path that rebuilds merge branch context from earlier attempts.
+The walk is bounded by the `resumeFromRunId` link, so it cannot loop forever. Use *Run* (not resume) when you want a clean execution with no inherited state.
 
 ## Keyboard Shortcuts
 
@@ -184,17 +189,23 @@ The copy and paste shortcuts are context-aware. When the cursor is inside a text
 2. Add an Assertion after each critical call to lock in the contract.
 3. Add a fail branch from each Assertion to a recovery or logging call, if you have one.
 4. Add Delay and Merge nodes only when the flow actually needs them.
-5. Run and inspect node-level results before adding more complexity.
+5. Pick the right environment from the toolbar. If the environment is protected, expect the run to wait for approvals on the first try.
+6. Run and inspect node-level results before adding more complexity.
 
 ## Troubleshooting
 
+- **If the workflows list is empty and you expected to see existing work**, you are in the wrong workspace. Use the org and workspace switcher in the header to navigate to the right `org/workspace` pair.
 - **If a node never runs**, the canvas has no edge from an upstream node into its input handle. Drag a connection from the previous node's output handle to this node's input handle.
 - **If the Run dropdown only shows plain Run** and no resume options, the latest run succeeded. Resume actions are hidden on success. Use **Run** for a fresh execution, or introduce a failure to bring them back.
 - **If Run from failed replays too much of the workflow**, the failed node sits upstream of nodes whose results you wanted to keep. Re-run the whole flow, or split the workflow so the failing call is isolated.
+- **If the run queues behind approvals and you expected it to start immediately**, the environment is protected. See [Environment Protection](../operations/environment-protection.md).
+- **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in any scope in the override chain. Open Secrets for the selected environment or the workspace, add the key through the Libsodium write flow, and re-run.
 - **If paste drops a node on top of the source**, copy and paste are canvas-only; click on the canvas first so the focus is not in a text field.
 
 ## Related
 
 - [Concepts](../getting-started/concepts.md)
 - [Variables and Extractors](variables-and-extractors.md)
+- [Projects](projects.md)
+- [Environments and Secrets](environments-and-secrets.md)
 - [Troubleshooting](../operations/troubleshooting.md)

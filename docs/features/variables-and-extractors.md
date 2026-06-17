@@ -1,12 +1,13 @@
 # Variables and Extractors
 
-*How to pass data between steps in a workflow: the four placeholder namespaces, how to extract values from responses, and how to manage workflow-level variables.*
+*How to pass data between steps in a workflow: the four placeholder namespaces, how to extract values from responses, and how to manage workflow-level variables. This guide also explains how `{{secrets.NAME}}` resolves through the scope override chain.*
 
 ## Prerequisites
 
 - [Concepts](../getting-started/concepts.md) for the basic variable and extractor definitions.
 - [Workflows and Nodes](workflows-and-nodes.md) for the HTTP Request node where extractors live.
 - [Placeholders Reference](../reference/placeholders.md) for the full placeholder grammar, resolution order, and edge cases.
+- [Environments and Secrets](environments-and-secrets.md) for how the secret override chain is set up.
 
 ## Placeholder Syntax
 
@@ -21,15 +22,15 @@ Four namespaces are available. They are tried in a fixed order, see the [Placeho
 | Namespace     | Source                                  | Typical use                                          |
 | ------------- | --------------------------------------- | ---------------------------------------------------- |
 | `variables.*` | Workflow variable (manual or extracted) | Token returned by a previous step                    |
-| `env.*`       | Active environment                      | Base URL, API version                                |
+| `env.*`       | Selected environment                    | Base URL, API version                                |
 | `prev.*`      | Previous node result                    | Read a field from the upstream response              |
-| `secrets.*`   | Runtime secret prompt                   | API key, client secret (encrypted at rest)            |
+| `secrets.*`   | Scope override chain                    | API key, client secret (write-only at rest)          |
 
 Dynamic functions such as `{{uuid()}}` and `{{timestamp()}}` are also available; see [Dynamic Functions Reference](../reference/dynamic-functions.md).
 
 ## Environment Variables
 
-Environment variables come from the active environment, so the same workflow can target staging or production without editing the canvas.
+Environment variables come from the environment selected for the run. A workflow can run against staging or production by switching the environment between runs, with no canvas edit.
 
 ```text
 {{env.BASE_URL}}
@@ -76,12 +77,16 @@ For parallel branches, the index starts at 0 and matches the branch order on the
 
 ## Secrets
 
-Secrets are declared as named keys on an environment and encrypted at rest. The runner resolves `{{secrets.NAME}}` against the active environment and substitutes the plaintext value into the request field, header, body, or assertion path. The plaintext never appears in the canvas or in exported workflows. The at-rest model, rotation, and the threat surface are covered in the [Encryption Guide](../operations/encryption.md).
+Secrets are declared as named keys at user, organization, workspace, or environment scope. The runner resolves `{{secrets.NAME}}` through the [scope override chain](../reference/placeholders.md#secret-override-chain): the selected environment wins, then the workspace, then the organization, then a user personal secret that has been bound to the workspace or environment.
+
+Secret values are write-only at every layer. The browser or agent encrypts the value with a Libsodium sealed box against the scope's public key before the write request leaves. The backend never accepts a plaintext secret value, and no UI, API, or MCP tool can read a stored value back. The runtime substitutes the plaintext into the field, header, body, or assertion path, and the masking layer scrubs the value before any result is persisted.
 
 ```text
-{{secrets.API_KEY}}        # declared in env, encrypted at rest, resolved at run time
-{{secrets.CLIENT_SECRET}}  # declared in env, encrypted at rest, resolved at run time
+{{secrets.API_KEY}}        # resolved from the override chain, never persisted
+{{secrets.CLIENT_SECRET}}  # same chain, same masking
 ```
+
+There is no runtime secret prompt in 2.0. The value must exist in the scope before the run starts. See [Environments and Secrets](environments-and-secrets.md) for the full write flow.
 
 ## Adding Extractors in an HTTP Request
 
@@ -147,7 +152,7 @@ The Variables panel is also where to confirm the exact placeholder syntax for a 
 - **If a placeholder comes back as plain text in the request or response**, the namespace is misspelled or the key does not exist. The most common typo is `{{variable.token}}` (singular) instead of `{{variables.token}}` (plural). Open the Variables panel or the environment editor and confirm the key exists with the exact name.
 - **If an extractor did not set a value**, the JSONPath does not match the real response shape. Inspect the node's response body for the actual field name (including case) and update the path. Arrays use zero-based indices, so `response.body.items[0].id` reads the first element only.
 - **If a `prev.*` reference is empty after a Merge node**, the index does not match a branch. Branch indices start at 0 and follow the canvas order. Check the run results to confirm how many branches completed and which index each one received.
-- **If `{{secrets.NAME}}` is not resolved at run time**, the key is not declared on the active environment, or the stored ciphertext cannot be decrypted. Open the Environment Manager, confirm the key exists on the active environment, and verify `SECRET_ENCRYPTION_KEY` is set in the backend environment. The full diagnostic path is in the [Encryption Guide](../operations/encryption.md).
+- **If `{{secrets.NAME}}` is not resolved at run time**, no scope in the override chain declares the key. Open Secrets for the selected environment, the workspace, or the organization, and add the key through the Libsodium write flow. The plaintext never appears in the canvas, run history, audit export, or `.awecollection` bundle.
 
 ## Related
 
