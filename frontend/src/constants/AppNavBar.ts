@@ -8,9 +8,9 @@ export const AppNavBarItems: Record<string, AppNavBarItemConfig> = {
     active: true,
     disable: false,
   },
-  collections: {
-    displayValue: 'Collections',
-    value: 'collections',
+  projects: {
+    displayValue: 'Projects',
+    value: 'projects',
     active: false,
     disable: false,
   },

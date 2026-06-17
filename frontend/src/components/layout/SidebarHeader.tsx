@@ -120,7 +120,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
   const getNavLabel = (): string => {
     switch (selectedNav) {
       case 'workflows': return 'Workflows';
-      case 'collections': return 'Collections';
+      case 'projects': return 'Projects';
       case 'webhooks': return 'Webhooks';
       case 'mcp': return 'MCP';
       case 'settings': return 'Settings';
@@ -142,9 +142,9 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
     { label: 'cURL', icon: Terminal, action: () => dispatch({ type: 'open-collection-import', mode: 'import-curl' }) },
   ];
 
-  const importItems = selectedNav === 'collections' ? collectionImportItems : workflowImportItems;
-  const showActions = selectedNav === 'workflows' || selectedNav === 'collections';
-  const showSearch = selectedNav === 'workflows' || selectedNav === 'collections';
+  const importItems = selectedNav === 'projects' ? collectionImportItems : workflowImportItems;
+  const showActions = selectedNav === 'workflows' || selectedNav === 'projects';
+  const showSearch = selectedNav === 'workflows' || selectedNav === 'projects';
 
   return (
     <>
@@ -171,7 +171,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
               icon={<Plus className="w-4 h-4" />}
               className="flex-1"
             >
-              <span>{selectedNav === 'collections' ? 'Create' : 'New'}</span>
+              <span>{selectedNav === 'projects' ? 'Create' : 'New'}</span>
             </Button>
 
             <div className="relative flex-1" ref={importMenuRef}>

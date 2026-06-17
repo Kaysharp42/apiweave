@@ -12,6 +12,8 @@ import AuditPage from './pages/AuditPage';
 import { WorkspaceSecretsPage } from './pages/WorkspaceSecretsPage';
 import { WorkspaceTokensPage } from './pages/WorkspaceTokensPage';
 import WorkspaceEnvironmentsPage from './pages/WorkspaceEnvironmentsPage';
+import { WorkspaceProjectPage } from './pages/WorkspaceProjectPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { PaletteProvider } from './contexts/PaletteContext';
 import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { Toast } from './components/atoms/Toast';
@@ -245,7 +247,7 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <WorkspaceProvider>
-                      <Home />
+                      <WorkspaceProjectPage />
                     </WorkspaceProvider>
                   </ProtectedRoute>
                 }
@@ -275,7 +277,7 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <WorkspaceProvider>
-                      <Home />
+                      <NotFoundPage />
                     </WorkspaceProvider>
                   </ProtectedRoute>
                 }

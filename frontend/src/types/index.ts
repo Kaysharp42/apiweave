@@ -236,3 +236,7 @@ export type { TeamPermissionGrant } from './TeamPermissionGrant';
 export type { OrgInvite, OrgInviteCreate } from './OrgInvite';
 export type { OutsideCollaborator, WorkspaceRole } from './OutsideCollaborator';
 export type { WorkspaceContextValue, WorkspaceEntry } from './WorkspaceContextValue';
+export type { Project } from './Project';
+export type { WorkspaceProjectListResponse, WorkspaceWorkflowListResponse, WorkspaceScopeParams } from './WorkspaceScope';
+export type { ProjectListProps } from './ProjectListProps';
+export type { ProjectItemProps } from './ProjectItemProps';

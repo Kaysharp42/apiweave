@@ -1,0 +1,33 @@
+/**
+ * Project — workspace-scoped grouping of workflows.
+ * Maps to the backend Project document (DB collection: "collections").
+ * The `projectId` field is the public-domain alias for the legacy `collectionId`.
+ */
+export interface Project {
+  /** Internal document ID. */
+  id: string;
+  /** Legacy collection ID (still used as primary key in DB). */
+  collectionId: string;
+  /** Public-domain project ID (alias for collectionId). */
+  projectId?: string;
+  /** Display name. */
+  name: string;
+  /** Optional description. */
+  description?: string;
+  /** Optional colour hex code, e.g. "#FF5733". */
+  color?: string;
+  /** Number of workflows in this project. */
+  workflowCount: number;
+  /** Ordered list of workflow IDs for sequential execution. */
+  workflowOrder?: Array<{ workflowId: string; continueOnFail?: boolean }>;
+  /** Whether to continue execution when a workflow fails. */
+  continueOnFail?: boolean;
+  /** ID of the workspace this project belongs to. */
+  workspaceId?: string;
+  /** ID of the org that owns this project (null for personal). */
+  orgId?: string;
+  /** Owner type: "user" or "organization". */
+  ownerType?: string;
+  createdAt: string;
+  updatedAt: string;
+}

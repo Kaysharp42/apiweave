@@ -7,7 +7,7 @@ import WebhookManager from '../WebhookManager';
 import MCPManager from '../MCPManager';
 import { SidebarHeader } from './SidebarHeader';
 import { WorkflowList } from './sidebar/WorkflowList';
-import { CollectionList } from './sidebar/CollectionList';
+import { ProjectList } from './sidebar/ProjectList';
 import { SettingsContent } from './sidebar/SettingsContent';
 import WorkflowExportImport from '../WorkflowExportImport';
 import CollectionExportImport from '../CollectionExportImport';
@@ -17,9 +17,10 @@ import useSidebarStore from '../../stores/SidebarStore';
 import useTabStore from '../../stores/TabStore';
 import { requestCollectionDeletion, requestWorkflowDeletion } from '../../utils/sidebarDeletion';
 import type { Workflow } from '../../types/Workflow';
-import type { Collection } from '../../types/Collection';
+import type { Project } from '../../types/Project';
 import { authenticatedFetch } from '../../utils/authenticatedApi';
 import useNavigationStore from '../../stores/NavigationStore';
+import { useWorkspace } from '../../contexts/WorkspaceContext';
 import API_BASE_URL from '../../utils/api';
 
 export function Sidebar() {
@@ -29,16 +30,17 @@ export function Sidebar() {
   const [showCollectionManager, setShowCollectionManager] = useState(false);
   const [exportingWorkflowId, setExportingWorkflowId] = useState<string | null>(null);
   const [exportingWorkflowName, setExportingWorkflowName] = useState<string | null>(null);
-  const [expandedCollections, setExpandedCollections] = useState<Set<string>>(new Set());
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [exportingCollectionId, setExportingCollectionId] = useState<string | null>(null);
   const [exportingCollectionName, setExportingCollectionName] = useState<string | null>(null);
   const [showNewWorkflowPrompt, setShowNewWorkflowPrompt] = useState(false);
   const [deleteWorkflowTarget, setDeleteWorkflowTarget] = useState<{ workflowId: string; name: string } | null>(null);
-  const [deleteCollectionTarget, setDeleteCollectionTarget] = useState<{ collectionId: string; name: string } | null>(null);
+  const [deleteProjectTarget, setDeleteProjectTarget] = useState<{ collectionId: string; name: string } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleScrollRef = useRef<() => void>(() => {});
 
   const workflows = useSidebarStore((s) => s.workflows);
+  const projects = useSidebarStore((s) => s.projects);
   const collections = useSidebarStore((s) => s.collections);
   const environments = useSidebarStore((s) => s.environments);
   const pagination = useSidebarStore((s) => s.pagination);
@@ -50,8 +52,17 @@ export function Sidebar() {
   const fetchEnvironments = useSidebarStore((s) => s.fetchEnvironments);
   const refreshAll = useSidebarStore((s) => s.refreshAll);
   const setIsLoadingMore = useSidebarStore((s) => s.setIsLoadingMore);
+  const setActiveWorkspaceId = useSidebarStore((s) => s.setActiveWorkspaceId);
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
+
+  // Workspace context — scope sidebar data to the active workspace
+  const { currentWorkspace } = useWorkspace();
+
+  // Sync workspace ID to the sidebar store so fetches are workspace-scoped
+  useEffect(() => {
+    setActiveWorkspaceId(currentWorkspace?.workspaceId ?? null);
+  }, [currentWorkspace, setActiveWorkspaceId]);
 
   useEffect(() => {
     void fetchEnvironments();
@@ -137,15 +148,16 @@ export function Sidebar() {
     setExportingWorkflowName(workflow.name);
   };
 
-  const handleExportCollection = (collection: Collection) => {
-    setExportingCollectionId(collection.collectionId);
-    setExportingCollectionName(collection.name);
+  const handleExportProject = (project: Project) => {
+    // Projects use collectionId for export (backward compat with .awecollection)
+    setExportingCollectionId(project.collectionId);
+    setExportingCollectionName(project.name);
   };
 
   const handleCreateNew = () => {
     if (selectedNav === 'workflows') {
       createNewWorkflow();
-    } else if (selectedNav === 'collections') {
+    } else if (selectedNav === 'projects') {
       setShowCollectionManager(true);
     }
   };
@@ -174,10 +186,10 @@ export function Sidebar() {
     }
   };
 
-  const handleDeleteCollection = async () => {
+  const handleDeleteProject = async () => {
     try {
       const result = await requestCollectionDeletion({
-        target: deleteCollectionTarget,
+        target: deleteProjectTarget,
         apiBaseUrl: API_BASE_URL,
       });
 
@@ -186,18 +198,18 @@ export function Sidebar() {
       const collectionId = result.collectionId;
       if (!collectionId) return;
 
-      toast.success('Collection deleted permanently');
-      setExpandedCollections((prev) => {
+      toast.success('Project deleted permanently');
+      setExpandedProjects((prev) => {
         const next = new Set(prev);
         next.delete(collectionId);
         return next;
       });
       await refreshAll(selectedNav);
     } catch (error) {
-      console.error('Error deleting collection:', error);
-      toast.error((error as Error).message || 'Error deleting collection');
+      console.error('Error deleting project:', error);
+      toast.error((error as Error).message || 'Error deleting project');
     } finally {
-      setDeleteCollectionTarget(null);
+      setDeleteProjectTarget(null);
     }
   };
 
@@ -211,16 +223,16 @@ export function Sidebar() {
     );
   }, [workflows, searchQuery]);
 
-  const filteredCollections = useMemo(() => {
-    if (!searchQuery) return collections;
+  const filteredProjects = useMemo(() => {
+    if (!searchQuery) return projects;
     const q = searchQuery.toLowerCase();
-    return collections.filter((c) => c.name?.toLowerCase().includes(q));
-  }, [collections, searchQuery]);
+    return projects.filter((p) => p.name?.toLowerCase().includes(q));
+  }, [projects, searchQuery]);
 
-  const toggleCollection = (collectionId: string) => {
-    setExpandedCollections((prev) => {
+  const toggleProject = (projectId: string) => {
+    setExpandedProjects((prev) => {
       const next = new Set(prev);
-      next.has(collectionId) ? next.delete(collectionId) : next.add(collectionId);
+      next.has(projectId) ? next.delete(projectId) : next.add(projectId);
       return next;
     });
   };
@@ -270,28 +282,28 @@ export function Sidebar() {
               </div>
             </div>
           )}
-          {selectedNav === 'collections' && (
+          {selectedNav === 'projects' && (
             <div
               className={[
                 'h-full overflow-y-auto overflow-x-hidden p-1.5 transition-opacity duration-300',
                 isRefreshing ? 'opacity-50' : 'opacity-100',
               ].join(' ')}
             >
-              <CollectionList
-                collections={filteredCollections}
+              <ProjectList
+                projects={filteredProjects}
                 workflows={workflows}
                 environments={environments}
                 selectedWorkflowId={selectedWorkflowId}
                 isRefreshing={isRefreshing}
                 searchQuery={searchQuery}
-                expandedCollections={expandedCollections}
-                onToggleCollection={toggleCollection}
+                expandedProjects={expandedProjects}
+                onToggleProject={toggleProject}
                 onWorkflowClick={handleWorkflowClick}
                 onExportWorkflow={handleExportWorkflow}
-onDeleteWorkflow={(workflowId: string, name: string) => setDeleteWorkflowTarget({ workflowId, name })}
-                  onExportCollection={handleExportCollection}
-                  onDeleteCollection={(collectionId: string, name: string) => setDeleteCollectionTarget({ collectionId, name })}
-                onCreateCollection={() => setShowCollectionManager(true)}
+                onDeleteWorkflow={(workflowId: string, name: string) => setDeleteWorkflowTarget({ workflowId, name })}
+                onExportProject={handleExportProject}
+                onDeleteProject={(projectId: string, name: string) => setDeleteProjectTarget({ collectionId: projectId, name })}
+                onCreateProject={() => setShowCollectionManager(true)}
               />
             </div>
           )}
@@ -352,15 +364,15 @@ onDeleteWorkflow={(workflowId: string, name: string) => setDeleteWorkflowTarget(
       />
 
       <ConfirmDialog
-        open={!!deleteCollectionTarget}
-        onClose={() => setDeleteCollectionTarget(null)}
-        onConfirm={handleDeleteCollection}
-        title="Delete Collection Permanently"
+        open={!!deleteProjectTarget}
+        onClose={() => setDeleteProjectTarget(null)}
+        onConfirm={handleDeleteProject}
+        title="Delete Project Permanently"
         message={
           <span>
-            Permanently delete collection{' '}
-            <strong className="text-text-primary dark:text-text-primary-dark">&quot;{deleteCollectionTarget?.name ?? 'Untitled collection'}&quot;</strong>
-            ? Workflows will stay in your workspace but lose this collection assignment. This cannot be undone.
+            Permanently delete project{' '}
+            <strong className="text-text-primary dark:text-text-primary-dark">&quot;{deleteProjectTarget?.name ?? 'Untitled project'}&quot;</strong>
+            ? Workflows will stay in your workspace but lose this project assignment. This cannot be undone.
           </span>
         }
         confirmLabel="Delete Permanently"

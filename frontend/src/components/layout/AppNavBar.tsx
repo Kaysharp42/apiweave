@@ -26,8 +26,8 @@ const navItems: NavItemConfig[] = [
     icon: Home,
   },
   {
-    id: AppNavBarItems.collections!.value,
-    label: AppNavBarItems.collections!.displayValue,
+    id: AppNavBarItems.projects!.value,
+    label: AppNavBarItems.projects!.displayValue,
     icon: LayoutGrid,
   },
   {
