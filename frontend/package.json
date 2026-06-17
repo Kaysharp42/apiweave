@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "tsx --test src/**/*.test.ts src/**/*.test.js",
+    "test": "tsx --test 'src/**/*.test.ts' 'src/**/*.test.tsx'",
     "test:ui": "vitest run",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,json,css,md}\"",
@@ -16,6 +16,7 @@
     "qa:ui": "playwright test"
   },
   "dependencies": {
+    "@fallow-cli/beacon": "^0.5.1",
     "@headlessui/react": "^2.2.9",
     "@monaco-editor/react": "^4.6.0",
     "@tippyjs/react": "^4.2.6",
@@ -47,8 +48,10 @@
     "@typescript-eslint/parser": "^8.59.3",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.0",
+    "baseline-browser-mapping": "^2.10.38",
     "eslint": "^8.55.0",
     "eslint-plugin-react": "^7.33.0",
+    "fallow": "^2.98.0",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.0",
     "prettier": "^3.1.0",
