@@ -31,6 +31,7 @@ export function BaseNode({
     {
       border: string;
       bg: string;
+      ring: string;
       dot: string | null;
       badge: string;
       icon: React.ReactNode | null;
@@ -40,6 +41,7 @@ export function BaseNode({
     idle: {
       border: 'border-border dark:border-border-dark',
       bg: '',
+      ring: '',
       dot: null,
       badge: '',
       icon: null,
@@ -48,30 +50,34 @@ export function BaseNode({
     running: {
       border: 'border-border dark:border-border-dark',
       bg: '',
+      ring: 'animate-pulse motion-reduce:animate-none ring-2 ring-status-running/40 dark:ring-status-running/30',
       dot: 'bg-status-running',
       badge: 'bg-status-running/15 text-status-running dark:text-[var(--aw-status-running)]',
       icon: <Loader2 className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />,
       ariaLabel: 'Running',
     },
     success: {
-      border: 'border-border dark:border-border-dark',
+      border: 'border-status-success/60 dark:border-status-success/40',
       bg: '',
+      ring: 'ring-1 ring-status-success/30 dark:ring-status-success/20',
       dot: 'bg-status-success',
       badge: 'bg-status-success/15 text-status-success dark:text-[var(--aw-status-success)]',
       icon: <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />,
       ariaLabel: 'Success',
     },
     error: {
-      border: 'border-border dark:border-border-dark',
+      border: 'border-status-error/60 dark:border-status-error/40',
       bg: '',
+      ring: 'ring-1 ring-status-error/30 dark:ring-status-error/20',
       dot: 'bg-status-error',
       badge: 'bg-status-error/15 text-status-error dark:text-[var(--aw-status-error)]',
       icon: <XCircle className="w-3.5 h-3.5" aria-hidden="true" />,
       ariaLabel: 'Error',
     },
     warning: {
-      border: 'border-border dark:border-border-dark',
+      border: 'border-status-warning/60 dark:border-status-warning/40',
       bg: '',
+      ring: 'ring-1 ring-status-warning/30 dark:ring-status-warning/20',
       dot: 'bg-status-warning',
       badge: 'bg-status-warning/15 text-status-warning dark:text-[var(--aw-status-warning)]',
       icon: <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />,
@@ -104,6 +110,7 @@ export function BaseNode({
           'flex flex-col rounded-sm border min-w-[180px] max-w-node overflow-hidden transition-shadow transition-colors duration-150 motion-reduce:transition-none',
           selectedClasses,
           config.border,
+          config.ring,
           statusBg,
           className,
         ]
