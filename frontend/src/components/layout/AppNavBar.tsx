@@ -5,6 +5,7 @@ import { Transition } from '@headlessui/react';
 import Tippy from '@tippyjs/react';
 import { IconButton } from '../atoms/IconButton';
 import useNavigationStore from '../../stores/NavigationStore';
+import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { AppNavBarItems } from '../../constants/AppNavBar';
 import type { NavSection } from '../../types/NavSection';
 
@@ -53,8 +54,9 @@ export function AppNavBar() {
   const updateNavigationSelectedValue = useNavigationStore((state) => state.setNavState);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
   const toggleNavBarCollapse = useNavigationStore((state) => state.toggleNavBarCollapse);
+  const { currentOrg, currentWorkspace } = useWorkspace();
 
-  const isOnSettingsRoute = location.pathname.startsWith('/settings/');
+  const isOnSettingsRoute = location.pathname.includes('/settings/') || location.pathname === '/audit';
 
   return (
     <nav
@@ -84,7 +86,9 @@ export function AppNavBar() {
                 if (id === 'settings') {
                   if (!isOnSettingsRoute) navigate('/settings/users');
                 } else if (isOnSettingsRoute) {
-                  navigate('/');
+                  const orgSlug = currentOrg?.slug ?? 'personal';
+                  const wsSlug = currentWorkspace?.slug ?? 'workflows';
+                  navigate(`/${orgSlug}/${wsSlug}/workflows`);
                 }
               }}
               disabled={disabled}

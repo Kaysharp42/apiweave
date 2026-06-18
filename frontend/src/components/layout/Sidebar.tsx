@@ -430,6 +430,7 @@ export function Sidebar() {
             <SettingsContent
               hasPermission={hasPermission}
               onNavigate={(path: string) => navigate(path)}
+              onSwitchNav={(section) => setNavState(section)}
             />
           )}
         </div>

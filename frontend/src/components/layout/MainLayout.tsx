@@ -29,7 +29,8 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, [fetchEnvironments]);
 
   useEffect(() => {
-    if (!location.pathname.startsWith('/settings/') && navigationSelectedValue === 'settings') {
+    const isSettingsRoute = location.pathname.includes('/settings/') || location.pathname === '/audit';
+    if (!isSettingsRoute && navigationSelectedValue === 'settings') {
       setNavState('workflows');
     }
   }, [location.pathname, navigationSelectedValue, setNavState]);

@@ -7,26 +7,18 @@ import { SecretForm } from '../components/SecretForm';
 import { ScopedSecretList } from '../components/ScopedSecretList';
 import { UserSecretBindingForm } from '../components/UserSecretBindingForm';
 import { useParams } from 'react-router-dom';
+import { useWorkspace } from '../contexts/WorkspaceContext';
+import { Spinner } from '../components/atoms/Spinner';
 
-/**
- * WorkspaceSecretsPage — scoped secret management for a workspace.
- *
- * Provides:
- * - Secret creation form (public-key encrypted write flow)
- * - Metadata-only secret list (no values/ciphertext)
- * - Override indicator for environment scope
- * - Delete confirmation modal
- * - User-secret binding UI
- */
 export function WorkspaceSecretsPage() {
   const { orgSlug, workspaceSlug } = useParams<{ orgSlug: string; workspaceSlug: string }>();
+  const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
   const [showAddForm, setShowAddForm] = useState(false);
   const [showBindings, setShowBindings] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // In a real implementation, these would come from a workspace context or API lookup
   const scopeType = 'workspace' as const;
-  const scopeId = workspaceSlug ?? '';
+  const scopeId = currentWorkspace?.workspaceId ?? '';
 
   const handleSecretCreated = useCallback(() => {
     setShowAddForm(false);
@@ -36,6 +28,14 @@ export function WorkspaceSecretsPage() {
   const handleChanged = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
+
+  if (isWorkspaceLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8">

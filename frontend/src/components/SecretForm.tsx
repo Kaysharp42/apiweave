@@ -51,9 +51,21 @@ export function SecretForm({
     if (!name.trim()) {
       setNameError('Secret name is required');
       valid = false;
-    } else if (!/^[A-Z0-9_]+$/.test(name.trim())) {
-      setNameError('Use uppercase letters, digits, and underscores only');
-      valid = false;
+    } else {
+      const trimmed = name.trim();
+      const firstChar = trimmed[0];
+      if (!/[A-Za-z_]/.test(firstChar ?? '')) {
+        setNameError('Secret name must start with a letter or underscore');
+        valid = false;
+      } else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+        const invalidChar = trimmed.match(/[^A-Za-z0-9_]/);
+        setNameError(
+          invalidChar
+            ? `Secret name cannot contain "${invalidChar[0]}" — only letters, digits, and underscores are allowed`
+            : 'Secret name can only contain letters, digits, and underscores',
+        );
+        valid = false;
+      }
     }
 
     if (!value) {
@@ -68,34 +80,36 @@ export function SecretForm({
     e.preventDefault();
     if (!validate()) return;
 
+    if (!scopeId) {
+      setError('Workspace is still loading. Please wait a moment and try again.');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
+    let step = 'Failed to fetch encryption key';
     try {
-      // 1. Fetch the scope's public key
       const publicKeyInfo = await authenticatedJson<PublicKey>(
         `${API_BASE_URL}/api/secrets/public-key?scope=${encodeURIComponent(scopeType)}&id=${encodeURIComponent(scopeId)}`,
       );
 
-      // 2. Encrypt the value using libsodium sealed-box
+      step = 'Failed to encrypt secret value';
       const ciphertext = await encryptSecretValue(value, {
         keyId: publicKeyInfo.keyId,
         publicKey: publicKeyInfo.publicKey,
         algorithm: 'libsodium-sealed-box',
       });
 
-      // 3. Clear plaintext from state immediately
       setValue('');
 
-      // 4. POST the ciphertext
+      step = 'Failed to save secret';
       const url = isUpdate
         ? `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets/${encodeURIComponent(existingSecretId)}`
         : `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets`;
 
-      const method = isUpdate ? 'PUT' : 'POST';
-
       await authenticatedJson(url, {
-        method,
+        method: isUpdate ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
@@ -104,21 +118,20 @@ export function SecretForm({
         }),
       });
 
-      // 5. Clear form and notify parent
       setName('');
       setValue('');
       onCreated();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save secret';
-      setError(message);
+      const reason = err instanceof Error ? err.message : String(err);
+      setError(`${step}: ${reason}`);
     } finally {
       setSubmitting(false);
     }
   }, [validate, scopeType, scopeId, name, value, isUpdate, existingSecretId, onCreated]);
 
   return (
-    <form onSubmit={handleSubmit} className={`space-y-4 ${className}`}>
-      <FormField label="Secret name" required {...(nameError && { error: nameError })} hint="UPPERCASE_LETTERS, digits, underscores">
+    <form onSubmit={handleSubmit} noValidate className={`space-y-4 ${className}`}>
+      <FormField label="Secret name" required {...(nameError && { error: nameError })} hint="Letters, digits, underscores — must start with a letter or underscore">
         <Input
           type="text"
           placeholder="API_TOKEN"

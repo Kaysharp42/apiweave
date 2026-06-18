@@ -154,6 +154,28 @@ function AdminPageShell({ children }: { children: ReactNode }) {
   );
 }
 
+function WorkspacePageShell({ children }: { children: ReactNode }) {
+  const setNavState = useNavigationStore((state) => state.setNavState);
+  const hasSet = useRef(false);
+
+  useEffect(() => {
+    if (!hasSet.current) {
+      setNavState('settings');
+      hasSet.current = true;
+    }
+  }, [setNavState]);
+
+  return (
+    <ProtectedRoute>
+      <WorkspaceProvider>
+        <div className="relative flex flex-col h-screen font-sans text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised">
+          <MainLayout>{children}</MainLayout>
+        </div>
+      </WorkspaceProvider>
+    </ProtectedRoute>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
@@ -267,9 +289,9 @@ function App() {
               <Route
                 path="/settings/account"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <AccountSettingsPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
                 }
               />
               <Route
@@ -283,33 +305,33 @@ function App() {
               <Route
                 path="/audit"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <AuditPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
                 }
               />
               <Route
                 path="/:orgSlug/:workspaceSlug/settings/secrets"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <WorkspaceSecretsPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
                 }
               />
               <Route
                 path="/:orgSlug/:workspaceSlug/settings/tokens"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <WorkspaceTokensPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
                 }
               />
               <Route
                 path="/:orgSlug/:workspaceSlug/settings/environments"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <WorkspaceEnvironmentsPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
                 }
               />
               {/* Slug-based workspace routes */}
@@ -336,11 +358,9 @@ function App() {
               <Route
                 path="/:orgSlug/:workspaceSlug/projects/:projectId"
                 element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <WorkspaceProjectPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
+                  <WorkspacePageShell>
+                    <WorkspaceProjectPage />
+                  </WorkspacePageShell>
                 }
               />
               <Route

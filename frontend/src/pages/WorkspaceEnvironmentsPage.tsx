@@ -17,6 +17,7 @@ import { PendingApprovalsList } from '../components/organisms/PendingApprovalsLi
 import { ProtectionSummary } from '../components/organisms/ProtectionSummary';
 import { authenticatedJson } from '../utils/authenticatedApi';
 import { useAuth } from '../auth/useAuth';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 import type {
   ScopedEnvironment,
   EnvironmentProtectionPolicy,
@@ -33,8 +34,8 @@ type ViewMode = 'list' | 'create' | 'edit' | 'protection' | 'approvals';
 export default function WorkspaceEnvironmentsPage() {
   const { orgSlug, workspaceSlug } = useParams<{ orgSlug: string; workspaceSlug: string }>();
   const { user } = useAuth();
+  const { currentOrg, currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
 
-  // Data state
   const [userEnvs, setUserEnvs] = useState<ScopedEnvironment[]>([]);
   const [orgEnvs, setOrgEnvs] = useState<ScopedEnvironment[]>([]);
   const [workspaceEnvs, setWorkspaceEnvs] = useState<ScopedEnvironment[]>([]);
@@ -43,40 +44,15 @@ export default function WorkspaceEnvironmentsPage() {
   const [protection, setProtection] = useState<EnvironmentProtectionPolicy | null>(null);
   const [reviewerOptions, setReviewerOptions] = useState<ReviewerOption[]>([]);
 
-  // UI state
   const [selectedEnv, setSelectedEnv] = useState<ScopedEnvironment | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // IDs resolved from slugs (in a real app these would come from a lookup)
   const userId = user?.userId ?? '';
-  const [orgId, setOrgId] = useState('');
-  const [workspaceId, setWorkspaceId] = useState('');
-
-  // Resolve slugs to IDs
-  useEffect(() => {
-    async function resolveIds() {
-      try {
-        if (orgSlug) {
-          const org = await authenticatedJson<{ orgId: string }>(`/api/orgs/by-slug/${orgSlug}`);
-          setOrgId(org.orgId);
-        }
-        if (workspaceSlug) {
-          const ws = await authenticatedJson<{ workspaceId: string }>(
-            `/api/workspaces/by-slug/${workspaceSlug}`,
-          );
-          setWorkspaceId(ws.workspaceId);
-        }
-      } catch {
-        // Slug resolution may not be available yet — use placeholder IDs
-        setOrgId(orgSlug ?? 'org-placeholder');
-        setWorkspaceId(workspaceSlug ?? 'ws-placeholder');
-      }
-    }
-    void resolveIds();
-  }, [orgSlug, workspaceSlug]);
+  const orgId = currentOrg?.orgId ?? '';
+  const workspaceId = currentWorkspace?.workspaceId ?? '';
 
   // Fetch all environments
   const fetchEnvironments = useCallback(async () => {
@@ -318,7 +294,7 @@ export default function WorkspaceEnvironmentsPage() {
 
   // ---- Render ----
 
-  if (loading) {
+  if (isWorkspaceLoading || loading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Spinner size="lg" />

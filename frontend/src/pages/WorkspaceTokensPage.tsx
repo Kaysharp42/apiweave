@@ -7,25 +7,19 @@ import { ServiceTokenCreateForm } from '../components/ServiceTokenCreateForm';
 import { ServiceTokenList } from '../components/ServiceTokenList';
 import { TokenValueDisplay } from '../components/TokenValueDisplay';
 import { useParams } from 'react-router-dom';
+import { useWorkspace } from '../contexts/WorkspaceContext';
+import { Spinner } from '../components/atoms/Spinner';
 import type { ServiceTokenCreateResponse } from '../types';
 
-/**
- * WorkspaceTokensPage — scoped service token management for a workspace.
- *
- * Provides:
- * - Token creation form with name/scopes/expiry
- * - One-time token value display with copy and warning
- * - Token list with metadata (no values after creation)
- * - Revoke/narrow actions
- */
 export function WorkspaceTokensPage() {
   const { orgSlug, workspaceSlug } = useParams<{ orgSlug: string; workspaceSlug: string }>();
+  const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newToken, setNewToken] = useState<ServiceTokenCreateResponse | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const scopeType = 'workspace' as const;
-  const scopeId = workspaceSlug ?? '';
+  const scopeId = currentWorkspace?.workspaceId ?? '';
 
   const handleTokenCreated = useCallback((response: ServiceTokenCreateResponse) => {
     setShowCreateForm(false);
@@ -40,6 +34,14 @@ export function WorkspaceTokensPage() {
   const handleChanged = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
+
+  if (isWorkspaceLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
