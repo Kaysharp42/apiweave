@@ -10,7 +10,7 @@ export interface TeamPermissionRowProps {
 
 export function TeamPermissionRow({ grant, onRevoke }: TeamPermissionRowProps) {
   return (
-    <tr className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors">
+    <tr className="border-b border-border transition-colors last:border-0 hover:bg-surface-overlay dark:border-border-dark dark:hover:bg-surface-dark-overlay">
       <td className="px-4 py-2.5">
         <span className="font-mono text-xs text-text-primary dark:text-text-primary-dark">
           {grant.resourceType}
@@ -24,7 +24,7 @@ export function TeamPermissionRow({ grant, onRevoke }: TeamPermissionRowProps) {
       <td className="px-4 py-2.5">
         <div className="flex gap-1 flex-wrap">
           {grant.permissions.map((perm) => (
-            <Badge key={perm} variant="info" size="xs">
+            <Badge key={perm} variant="outline" size="xs">
               {perm}
             </Badge>
           ))}

@@ -73,7 +73,7 @@ export default function EnvironmentSelector({ onManageClick }: EnvironmentSelect
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-popover border border-border dark:border-border-dark z-50 py-1">
+        <div className="absolute right-0 mt-2 w-64 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark z-50 py-1">
           <div className="px-3 py-2 border-b border-border dark:border-border-dark">
             <p className="text-xs font-medium text-text-muted dark:text-text-muted-dark uppercase">
               Available Environments

@@ -111,7 +111,7 @@ export function EnvironmentProtectionPanel({
               onChange={(e) =>
                 update('bypassPolicy', e.target.value as ProtectionFormState['bypassPolicy'])
               }
-              className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-sm"
+              className="select select-bordered w-full rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-sm focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
             >
               <option value="none">None — approval always required</option>
               <option value="trusted_token_only">Trusted Token Only — service tokens can bypass</option>
@@ -203,9 +203,9 @@ function BypassTokenInput({ onAdd }: { onAdd: (tokenId: string) => void }) {
           }
         }}
         placeholder="Enter service token ID"
-        className="flex-1 input input-bordered input-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-xs font-mono"
+        className="flex-1 input input-bordered input-sm rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)]"
       />
-      <Button variant="secondary" size="xs" onClick={handleAdd} disabled={!value.trim()}>
+      <Button variant="outline" size="xs" onClick={handleAdd} disabled={!value.trim()}>
         Add
       </Button>
     </div>

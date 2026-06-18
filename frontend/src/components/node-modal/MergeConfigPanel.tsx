@@ -90,7 +90,7 @@ export function MergeConfigPanel({ initialConfig, workingDataRef }: MergeConfigP
                     setActiveTab('conditions');
                   }
                 }}
-                className="w-full px-3 py-2 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded focus:outline-none focus:ring-2 focus:ring-[var(--aw-primary)] focus:border-transparent cursor-pointer"
+                className="w-full cursor-pointer rounded-sm border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
               >
                 <option value="all">Wait for All (AND)</option>
                 <option value="any">Wait for Any (OR)</option>
@@ -99,15 +99,15 @@ export function MergeConfigPanel({ initialConfig, workingDataRef }: MergeConfigP
               </select>
             </FormField>
 
-            <div className="mt-6 p-4 bg-[var(--aw-branch-edge)]/5 border border-[var(--aw-branch-edge)]/20 dark:border-[var(--aw-branch-edge)]/30 rounded-lg">
-              <h4 className="text-sm font-semibold text-[var(--aw-branch-edge)] mb-2">How Merge Works</h4>
+            <div className="mt-6 rounded-sm border border-border bg-surface-overlay p-4 dark:border-border-dark dark:bg-surface-dark-overlay">
+              <h4 className="mb-2 text-sm font-semibold text-text-primary dark:text-text-primary-dark">How Merge Works</h4>
               <ul className="text-xs text-text-secondary dark:text-text-secondary-dark space-y-1">
                 <li> Multiple edges leading to this node create parallel branches</li>
-                <li> Access branch results using: <code className="bg-surface dark:bg-surface-dark px-1 py-0.5 rounded">{'{{prev[0].response}}'}</code></li>
+                <li> Access branch results using: <code className="rounded-sm bg-surface px-1 py-0.5 font-mono dark:bg-surface-dark">{'{{prev[0].response}}'}</code></li>
                 <li> Index [0], [1], [2]... corresponds to branch execution order</li>
-                <li> Use <code className="bg-surface dark:bg-surface-dark px-1 py-0.5 rounded">{'{{prev.response}}'}</code> for single predecessor (backward compatible)</li>
+                <li> Use <code className="rounded-sm bg-surface px-1 py-0.5 font-mono dark:bg-surface-dark">{'{{prev.response}}'}</code> for single predecessor (backward compatible)</li>
                 {currentStrategy === 'conditional' && (
-                  <li className="mt-2 pt-2 border-t border-[var(--aw-branch-edge)]/30">
+                  <li className="mt-2 border-t border-border pt-2 dark:border-border-dark">
                     <strong>Conditional:</strong> Define conditions to filter which branches to merge
                   </li>
                 )}
@@ -133,7 +133,7 @@ export function MergeConfigPanel({ initialConfig, workingDataRef }: MergeConfigP
             </div>
 
             {conditions.length > 1 && (
-              <div className="mb-4 p-3 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-lg">
+              <div className="mb-4 rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
                 <div className="block text-xs font-medium text-text-secondary dark:text-text-secondary-dark mb-2">
                   Evaluation Logic:
                 </div>
@@ -189,7 +189,7 @@ export function MergeConfigPanel({ initialConfig, workingDataRef }: MergeConfigP
             )}
 
             {conditions.length === 0 ? (
-              <div className="text-sm text-text-muted dark:text-text-muted-dark text-center py-8 border-2 border-dashed border-border dark:border-border-dark rounded-lg">
+              <div className="rounded-sm border border-dashed border-border py-8 text-center text-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark">
                 No conditions defined. Click &quot;Add Condition&quot; to start.
               </div>
             ) : (
@@ -197,7 +197,7 @@ export function MergeConfigPanel({ initialConfig, workingDataRef }: MergeConfigP
                 {conditions.map((condition, index) => (
                   <div
                     key={`${condition.branchIndex}-${condition.field}-${condition.operator}-${condition.value}`}
-                    className="p-3 border border-border dark:border-border-dark rounded-lg bg-surface dark:bg-surface-dark"
+                    className="rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">
@@ -256,7 +256,7 @@ export function MergeConfigPanel({ initialConfig, workingDataRef }: MergeConfigP
                           id={`merge-condition-operator-${index}`}
                           value={condition.operator}
                           onChange={(e) => updateCondition(index, { operator: e.target.value })}
-                          className="w-full px-2 py-1 text-xs border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark cursor-pointer"
+                          className="w-full cursor-pointer rounded-sm border border-border bg-surface-raised px-2 py-1 text-xs text-text-primary focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
                         >
                           <option value="equals">Equals</option>
                           <option value="notEquals">Not Equals</option>
@@ -285,7 +285,7 @@ export function MergeConfigPanel({ initialConfig, workingDataRef }: MergeConfigP
                       </div>
                     </div>
 
-                    <div className="mt-2 text-[10px] text-text-muted dark:text-text-muted-dark bg-surface-overlay dark:bg-surface-dark-overlay rounded p-1.5">
+                    <div className="mt-2 rounded-sm bg-surface-overlay p-1.5 text-[10px] text-text-muted dark:bg-surface-dark-overlay dark:text-text-muted-dark">
                       Examples: <code className="text-[var(--aw-branch-edge)]">200</code>,
                       <code className="ml-1 text-[var(--aw-branch-edge)]">{'{{prev[0].response.body.status}}'}</code>,
                       <code className="ml-1 text-[var(--aw-branch-edge)]">{'{{variables.expectedCode}}'}</code>
@@ -295,7 +295,7 @@ export function MergeConfigPanel({ initialConfig, workingDataRef }: MergeConfigP
               </div>
             )}
 
-            <div className="mt-4 p-3 bg-[var(--aw-status-info)]/5 border border-[var(--aw-status-info)]/20 dark:border-[var(--aw-status-info)]/30 rounded-lg">
+            <div className="mt-4 rounded-sm border border-status-info/30 bg-status-info/10 p-3 dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10">
               <p className="text-xs text-[var(--aw-status-info)] flex items-start gap-2">
                 <span><strong>How it works:</strong> {conditionLogic === 'OR'
                   ? 'Each branch is evaluated independently. If a branch matches ANY condition, it passes.'
@@ -306,7 +306,7 @@ export function MergeConfigPanel({ initialConfig, workingDataRef }: MergeConfigP
                 <span><strong>Important:</strong> If ANY branch fails its conditions, the entire merge FAILS and the workflow stops (like an assertion).</span>
               </p>
               <p className="text-xs text-[var(--aw-status-info)] mt-2 flex items-start gap-2">
-                <span><strong>Variable support:</strong> Use <code className="bg-surface dark:bg-surface-dark px-1 rounded">{'{{prev[N].path}}'}</code> to reference other branch data or <code className="bg-surface dark:bg-surface-dark px-1 rounded">{'{{variables.name}}'}</code> for workflow variables.</span>
+                <span><strong>Variable support:</strong> Use <code className="rounded-sm bg-surface px-1 font-mono dark:bg-surface-dark">{'{{prev[N].path}}'}</code> to reference other branch data or <code className="rounded-sm bg-surface px-1 font-mono dark:bg-surface-dark">{'{{variables.name}}'}</code> for workflow variables.</span>
               </p>
             </div>
           </div>

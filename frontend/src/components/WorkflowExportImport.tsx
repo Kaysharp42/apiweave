@@ -228,14 +228,14 @@ export function WorkflowExportImport({
               </p>
             </div>
 
-            <div className="bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 border border-[var(--aw-primary)]/20 dark:border-[var(--aw-primary)]/30 rounded-lg p-4">
+            <div className="bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded p-4">
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-[var(--aw-primary)] flex-shrink-0 mt-0.5" />
                 <div className="text-sm text-text-primary dark:text-text-primary-dark">
                   <p className="font-medium mb-1">Secret values are never exported</p>
                   <p>
                     Any detected secrets (API keys, tokens, passwords) will be replaced with{' '}
-                    <code className="bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 px-1 rounded">&lt;SECRET&gt;</code>{' '}
+                    <code className="bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark px-1 rounded font-mono">&lt;SECRET&gt;</code>{' '}
                     placeholders. You&apos;ll need to re-enter these values after importing.
                   </p>
                 </div>
@@ -257,7 +257,7 @@ export function WorkflowExportImport({
             </div>
 
             {error && (
-              <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded-lg p-4 text-sm text-status-error dark:text-status-error-dark">
+              <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded p-4 text-sm text-status-error dark:text-status-error-dark">
                 {error}
               </div>
             )}
@@ -296,7 +296,7 @@ export function WorkflowExportImport({
                   onChange={handleFileSelect}
                   className="block w-full text-sm text-text-muted dark:text-text-muted-dark
                     file:mr-4 file:py-2 file:px-4
-                    file:rounded-lg file:border-0
+                    file:rounded file:border-0
                     file:text-sm file:font-medium
                     file:bg-[var(--aw-primary)]/5 file:text-[var(--aw-primary)]
                     hover:file:bg-[var(--aw-primary)]/10
@@ -341,7 +341,7 @@ export function WorkflowExportImport({
 
             {/* Dry run result */}
             {dryRunResult && (
-              <div className={`border rounded-lg p-4 ${
+              <div className={`border rounded p-4 ${
                 dryRunResult.valid
                   ? 'bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 border-[var(--aw-status-success)]/20 dark:border-[var(--aw-status-success)]/30'
                   : 'bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30'
@@ -397,7 +397,7 @@ export function WorkflowExportImport({
 
             {/* Import result */}
             {importResult && (
-              <div className="bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 border border-[var(--aw-status-success)]/20 dark:border-[var(--aw-status-success)]/30 rounded-lg p-4">
+              <div className="bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 border border-[var(--aw-status-success)]/20 dark:border-[var(--aw-status-success)]/30 rounded p-4">
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-[var(--aw-status-success)] flex-shrink-0" />
                   <div className="min-w-0">
@@ -419,7 +419,7 @@ export function WorkflowExportImport({
             )}
 
             {error && (
-              <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded-lg p-4 text-sm text-status-error dark:text-status-error-dark">
+              <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded p-4 text-sm text-status-error dark:text-status-error-dark">
                 {error}
               </div>
             )}
@@ -429,7 +429,7 @@ export function WorkflowExportImport({
               <Button
                 onClick={handleDryRun}
                 disabled={!importJson}
-                variant="secondary"
+                variant="outline"
                 fullWidth
                 icon={<FileText className="w-4 h-4" />}
               >

@@ -13,7 +13,7 @@ export function EmptyState({
   return (
     <div
       className={[
-        'flex flex-col items-center justify-center gap-3 py-12 px-6 text-center',
+        'flex flex-col items-center justify-center gap-3 px-6 py-12 text-center',
         className,
       ]
         .filter(Boolean)
@@ -22,7 +22,7 @@ export function EmptyState({
       <div className="flex items-center justify-center">
         {icon ?? defaultIcon}
       </div>
-      <h3 className="text-lg font-semibold font-display text-text-primary dark:text-text-primary-dark">
+      <h3 className="font-display text-xl font-semibold text-text-primary dark:text-text-primary-dark">
         {title}
       </h3>
       {description && (

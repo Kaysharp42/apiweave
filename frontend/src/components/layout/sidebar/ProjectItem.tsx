@@ -36,12 +36,12 @@ export function ProjectItem({
 
   return (
     <li>
-      <div className="group flex items-center gap-2 rounded-xl border border-transparent px-2.5 py-2 transition-all hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:border-[var(--aw-border)]/70">
+      <div className="group flex items-center gap-2 rounded border border-transparent px-2.5 py-2 transition-colors duration-150 hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none">
         <button
           type="button"
           className={[
             'flex min-w-0 flex-1 items-center gap-2 text-left',
-            'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+            'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
             'cursor-pointer rounded',
           ].join(' ')}
           onClick={() => onToggle(projectId)}
@@ -50,7 +50,7 @@ export function ProjectItem({
           {isExpanded
             ? <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
             : <ChevronRight className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />}
-          <FolderKanban className="w-4 h-4 text-[var(--aw-primary)] flex-shrink-0" />
+          <FolderKanban className="w-4 h-4 flex-shrink-0 text-primary dark:text-primary-light" />
           <span
             className="font-medium text-text-primary dark:text-text-primary-dark truncate"
             title={projectLabel.fullLabel}
@@ -83,7 +83,7 @@ export function ProjectItem({
       </div>
 
       {isExpanded && (
-        <ul className="relative ml-3 mt-0.5 space-y-1 pl-3 before:absolute before:bottom-0 before:left-0 before:top-0 before:w-px before:bg-[var(--aw-border)]">
+        <ul className="relative ml-3 mt-0.5 space-y-1 pl-3 before:absolute before:bottom-0 before:left-0 before:top-0 before:w-px before:bg-border dark:before:bg-border-dark">
           {projectWorkflows.length === 0 && (
             <li className="py-2 text-center">
               <span className="text-xs text-text-muted dark:text-text-muted-dark block mb-2">
@@ -119,7 +119,7 @@ export function ProjectItem({
             </IconButton>
             <button
               type="button"
-              className="text-xs text-text-secondary dark:text-text-secondary-dark hover:text-[var(--aw-primary)] transition-colors"
+                className="cursor-pointer rounded text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light dark:focus-visible:outline-primary-light"
               onClick={() => onAddWorkflowToProject(projectId)}
             >
               Add workflow
@@ -128,7 +128,7 @@ export function ProjectItem({
             {unassignedWorkflows.length > 0 && (
               <button
                 type="button"
-                className="ml-auto flex items-center gap-0.5 text-xs text-text-muted dark:text-text-muted-dark hover:text-text-secondary dark:hover:text-text-secondary-dark transition-colors"
+                className="ml-auto flex cursor-pointer items-center gap-0.5 rounded text-xs text-text-muted transition-colors hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-muted-dark dark:hover:text-text-secondary-dark dark:focus-visible:outline-primary-light"
                 onClick={() => setShowAssignDropdown(!showAssignDropdown)}
               >
                 <FilePlus className="w-3 h-3" />
@@ -140,12 +140,12 @@ export function ProjectItem({
 
           {showAssignDropdown && unassignedWorkflows.length > 0 && (
             <li className="py-1">
-              <div className="rounded border border-[var(--aw-border)] bg-surface-raised dark:bg-surface-dark-raised shadow-sm max-h-40 overflow-y-auto">
+              <div className="max-h-40 overflow-y-auto rounded border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
                 {unassignedWorkflows.map((wf) => (
                   <button
                     key={wf.workflowId}
                     type="button"
-                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                    className="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px] dark:hover:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
                     onClick={() => {
                       onAssignWorkflowToProject(projectId, wf.workflowId);
                       setShowAssignDropdown(false);

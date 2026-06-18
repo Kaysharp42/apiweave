@@ -182,7 +182,7 @@ export function WorkspaceProjectPage() {
   return (
     <div className="flex flex-col h-full overflow-auto">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 px-6 py-4 border-b border-[var(--aw-border)]">
+      <div className="flex items-center gap-2 px-6 py-4 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
         <Button
           variant="ghost"
           size="sm"
@@ -206,10 +206,10 @@ export function WorkspaceProjectPage() {
       </div>
 
       {/* Project header */}
-      <div className="px-6 py-5">
+      <div className="px-6 py-8 border-b border-border dark:border-border-dark">
         <div className="flex items-center gap-3">
           <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center"
+            className="w-10 h-10 rounded flex items-center justify-center border border-border dark:border-border-dark"
             style={{ backgroundColor: project.color ? `${project.color}20` : 'var(--aw-primary)' + '20' }}
           >
             <FolderKanban
@@ -218,7 +218,7 @@ export function WorkspaceProjectPage() {
             />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-text-primary dark:text-text-primary-dark">
+            <h1 className="text-3xl font-display font-bold tracking-tight text-text-primary dark:text-text-primary-dark">
               {project.name}
             </h1>
             {project.description && (
@@ -255,14 +255,14 @@ export function WorkspaceProjectPage() {
                   {unassignedWorkflows.length > 0 && (
                     <div className="relative">
                       <Button
-                        variant="secondary"
+                        variant="outline"
                         size="sm"
                         onClick={() => setShowAssignDropdown(!showAssignDropdown)}
                       >
                         Assign Existing Workflow
                       </Button>
                       {showAssignDropdown && (
-                        <div className="absolute top-full left-0 right-0 mt-1 rounded border border-[var(--aw-border)] bg-surface-raised dark:bg-surface-dark-raised shadow-lg max-h-60 overflow-y-auto z-10">
+                        <div className="absolute top-full left-0 right-0 mt-1 rounded border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised max-h-60 overflow-y-auto z-10">
                           {unassignedWorkflows.map((wf) => (
                             <button
                               key={wf.workflowId}
@@ -293,7 +293,7 @@ export function WorkspaceProjectPage() {
                 className="cursor-pointer"
               >
                 <Card
-                  className="p-4 hover:border-[var(--aw-primary)]/50 transition-colors"
+                  className="p-4 hover:border-primary dark:hover:border-primary-light transition-colors duration-200 motion-reduce:transition-none rounded"
                 >
                   <div className="flex items-center gap-3">
                     <FileText className="w-5 h-5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />

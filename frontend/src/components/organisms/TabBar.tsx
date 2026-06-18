@@ -90,7 +90,7 @@ export function TabBar() {
                   'relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors min-w-0 flex-1 cursor-pointer',
                   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2',
                   isActive
-                    ? 'bg-surface dark:bg-surface-dark text-[var(--aw-primary)] font-medium'
+                    ? 'bg-surface-raised dark:bg-surface-dark-raised text-primary dark:text-primary-light font-medium'
                     : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
                 ]
                   .filter(Boolean)
@@ -143,7 +143,7 @@ export function TabBar() {
 
       {contextMenu && (
         <div
-          className="fixed z-50 min-w-[160px] rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-popover py-1 text-sm"
+          className="fixed z-50 min-w-[160px] rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node py-1 text-sm"
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
           <button

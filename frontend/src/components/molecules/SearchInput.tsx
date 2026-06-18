@@ -14,9 +14,9 @@ export function SearchInput({
   const id = useId();
 
   const sizeClass: Record<string, string> = {
-    xs: 'input-xs',
-    sm: 'input-sm',
-    md: '',
+    xs: 'h-7 text-xs',
+    sm: 'h-8 text-sm',
+    md: 'h-10 text-sm',
   };
 
   const iconSize: Record<string, string> = {
@@ -42,13 +42,13 @@ export function SearchInput({
         placeholder={placeholder}
         autoFocus={autoFocus}
         className={[
-          'input input-bordered w-full pl-8 pr-7',
-          sizeClass[size] ?? 'input-sm',
-          'bg-surface dark:bg-surface-dark',
+          'w-full rounded-sm border border-border pl-8 pr-7 transition-[border-color,outline] duration-[var(--aw-transition-fast)]',
+          sizeClass[size] ?? 'h-8 text-sm',
+          'bg-surface-raised dark:bg-surface-dark-raised',
           'text-text-primary dark:text-text-primary-dark',
           'placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
-          'focus:outline-none focus:border-primary dark:focus:border-primary-light',
-          'focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light focus-visible:ring-offset-2',
+          'focus:border-primary focus:outline-none dark:focus:border-primary-light',
+          'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
         ].join(' ')}
         {...rest}
       />
@@ -57,7 +57,7 @@ export function SearchInput({
         <button
           type="button"
           onClick={() => onChange('')}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:focus-visible:outline-primary-light focus-visible:outline-offset-2"
+          className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer rounded-sm p-0.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
           aria-label="Clear search"
         >
           <X className={iconSize[size] ?? 'w-3.5 h-3.5'} />

@@ -35,8 +35,8 @@ export default function AccountSettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-8 p-6">
-      <header>
-        <h1 className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
+      <header className="pb-6 border-b border-border dark:border-border-dark">
+        <h1 className="text-3xl font-display font-bold tracking-tight text-text-primary dark:text-text-primary-dark">
           Account Settings
         </h1>
         <p className="mt-1 text-sm text-text-secondary dark:text-text-secondary-dark">
@@ -47,7 +47,7 @@ export default function AccountSettingsPage() {
       {/* Sign-in method section */}
       <section
         aria-labelledby="signin-method-heading"
-        className="rounded-xl border border-border/80 bg-surface-raised p-6 shadow-sm dark:border-border-dark/80 dark:bg-surface-dark-raised"
+        className="rounded border border-border bg-surface-raised p-6 dark:border-border-dark dark:bg-surface-dark-raised"
       >
         <h2
           id="signin-method-heading"
@@ -58,7 +58,7 @@ export default function AccountSettingsPage() {
 
         {isLocal ? (
           <div className="mt-4 space-y-4">
-            <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-surface/50 p-4 dark:border-border-dark/60 dark:bg-surface-dark/50">
+            <div className="flex items-center gap-3 rounded border border-border bg-surface p-4 dark:border-border-dark dark:bg-surface-dark">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 dark:bg-primary-light/10">
                 <UserIcon className="h-5 w-5 text-primary dark:text-primary-light" />
               </div>
@@ -85,7 +85,7 @@ export default function AccountSettingsPage() {
           </div>
         ) : (
           <div className="mt-4 space-y-4">
-            <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-surface/50 p-4 dark:border-border-dark/60 dark:bg-surface-dark/50">
+            <div className="flex items-center gap-3 rounded border border-border bg-surface p-4 dark:border-border-dark dark:bg-surface-dark">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 dark:bg-primary-light/10">
                 {ProviderIcon ? (
                   <ProviderIcon className="h-5 w-5 text-primary dark:text-primary-light" />

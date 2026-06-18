@@ -412,7 +412,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
                       <label className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
                         Secrets ({Object.keys(state.selectedEnv.secrets || {}).length})
                       </label>
-                      <Button variant="secondary" size="xs" onClick={() => dispatch({ type: 'open-secrets' })}>
+                      <Button variant="outline" size="xs" onClick={() => dispatch({ type: 'open-secrets' })}>
                         <Lock className="w-3 h-3 mr-1" /> Manage
                       </Button>
                     </div>
@@ -495,7 +495,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
                   <Button variant="primary" size="sm" onClick={() => handleEdit(state.selectedEnv!)}>
                     <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
                   </Button>
-                  <Button variant="secondary" size="sm" onClick={() => dispatch({ type: 'open-secrets' })}>
+                  <Button variant="outline" size="sm" onClick={() => dispatch({ type: 'open-secrets' })}>
                     <Lock className="w-3.5 h-3.5 mr-1" /> Manage Secrets
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => handleDuplicate(state.selectedEnv!.environmentId)}>

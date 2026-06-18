@@ -85,12 +85,12 @@ export default function OrgSettingsPage() {
     <main className="flex-1 overflow-y-auto p-6 lg:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary/10 dark:bg-primary-light/20 flex items-center justify-center">
+        <div className="flex items-center gap-3 pb-6 border-b border-border dark:border-border-dark">
+          <div className="w-10 h-10 rounded border border-border dark:border-border-dark bg-primary/10 dark:bg-primary-light/20 flex items-center justify-center">
             <Building2 className="w-5 h-5 text-primary dark:text-primary-light" />
           </div>
           <div>
-            <h1 className="text-xl font-bold font-display text-text-primary dark:text-text-primary-dark">
+            <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
               {org.name}
             </h1>
             <p className="text-xs text-text-muted dark:text-text-muted-dark">
@@ -101,7 +101,7 @@ export default function OrgSettingsPage() {
         </div>
 
         {/* Tabs */}
-        <div className="border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised shadow-raised overflow-hidden">
+          <div className="border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised overflow-hidden">
           <PanelTabs
             tabs={TABS.map((t) => ({ key: t.key, icon: t.icon, label: t.label }))}
             activeTab={activeTab}

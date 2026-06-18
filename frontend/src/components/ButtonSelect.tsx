@@ -40,7 +40,7 @@ export default function ButtonSelect({
       </button>
 
       {open && (
-        <ul className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 overflow-auto max-h-56">
+        <ul className="absolute right-0 mt-2 w-56 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark z-50 overflow-auto max-h-56">
           {options.map((opt) => (
             <li key={opt.value}>
               <button
@@ -51,8 +51,8 @@ export default function ButtonSelect({
                 }}
                 className={`w-full text-left px-3 py-2 text-sm transition-colors ${
                   opt.value === value
-                    ? 'bg-cyan-100 dark:bg-cyan-900 text-cyan-900 dark:text-cyan-100 font-medium'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-primary/10 dark:bg-primary-light/10 text-primary dark:text-primary-light font-medium font-mono'
+                    : 'text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
                 }`}
               >
                 {opt.label}

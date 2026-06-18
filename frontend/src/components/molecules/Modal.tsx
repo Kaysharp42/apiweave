@@ -43,7 +43,7 @@ export function Modal({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-slate-950/40" aria-hidden="true" />
+          <div className="fixed inset-0 bg-text-primary/40 dark:bg-surface-dark/80" aria-hidden="true" />
         </Transition.Child>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -58,8 +58,8 @@ export function Modal({
           >
             <Dialog.Panel
               className={[
-                'w-full rounded-lg bg-surface-raised dark:bg-surface-dark-raised',
-                'shadow-modal border border-border dark:border-border-dark',
+                'w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised',
+                'border border-border shadow-modal dark:border-border-dark',
                 'flex flex-col',
                 size === 'fullscreen' ? 'h-[90vh]' : 'max-h-[90vh]',
                 panelSize,
@@ -69,8 +69,8 @@ export function Modal({
                 .join(' ')}
             >
               {title && (
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-border dark:border-border-dark flex-shrink-0">
-                  <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark truncate">
+                <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-5 py-3 dark:border-border-dark">
+                  <Dialog.Title className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
                     {title}
                   </Dialog.Title>
                   <div className="flex items-center gap-2 flex-shrink-0">
@@ -79,7 +79,7 @@ export function Modal({
                       <button
                         type="button"
                         onClick={onClose}
-                        className="p-1 rounded text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:focus-visible:outline-primary-light focus-visible:outline-offset-2"
+                        className="cursor-pointer rounded-sm border border-transparent p-1 text-text-secondary transition-colors hover:border-border hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-text-secondary-dark dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
                         aria-label="Close"
                       >
                         <X className="w-5 h-5" />
@@ -101,7 +101,7 @@ export function Modal({
               </div>
 
               {footer && (
-                <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border dark:border-border-dark flex-shrink-0">
+                <div className="flex flex-shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-3 dark:border-border-dark">
                   {typeof footer === 'function' ? footer() : footer}
                 </div>
               )}

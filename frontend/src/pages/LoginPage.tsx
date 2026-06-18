@@ -3,7 +3,6 @@ import { Navigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Shield } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 import { Spinner } from '../components/atoms/Spinner';
-import { Card } from '../components/molecules/Card';
 import { EmptyState } from '../components/molecules/EmptyState';
 import { SplitAuthLayout } from '../components/auth/SplitAuthLayout';
 import { AuthInteractiveHero } from '../components/auth/AuthInteractiveHero';
@@ -27,7 +26,7 @@ export default function LoginPage() {
   }
 
   if (status === 'authenticated') {
-    return <Navigate to="/personal/workflows" replace />;
+    return <Navigate to="/app" replace />;
   }
 
   const handleProviderClick = (providerId: string) => {
@@ -37,44 +36,44 @@ export default function LoginPage() {
 
   return (
     <SplitAuthLayout hero={() => <AuthInteractiveHero />}>
-      <Card className="w-full shadow-modal rounded-xl overflow-hidden relative">
-        {/* Inner subtle glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-1 bg-gradient-to-r from-transparent via-[var(--aw-primary)]/30 to-transparent blur-sm" />
+      <div className="flex flex-col w-full max-w-sm md:max-w-md lg:max-w-lg">
+        {/* Oversized typographic hierarchy — Swiss minimalism */}
+        <h1 className="font-display font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark text-[clamp(2.25rem,4vw,3.5rem)] leading-[0.95]">
+          Sign in
+        </h1>
+        <p className="mt-3 text-sm text-text-secondary dark:text-text-secondary-dark">
+          to your APIWeave workspace
+        </p>
 
-        <div className="p-10 text-center relative z-10">
-          <h1 className="text-3xl font-display font-extrabold text-text-primary dark:text-text-primary-dark mb-3 drop-shadow-sm">
-            Welcome Back
-          </h1>
-          <p className="text-sm text-text-secondary dark:text-text-secondary-dark font-medium">
-            Sign in to APIWeave to continue
-          </p>
-        </div>
+        <div className="my-8 h-px bg-border dark:bg-border-dark" />
 
-        <div className="px-10 pb-10 flex flex-col gap-4 relative z-10">
+        <div className="flex flex-col gap-4">
           {error && (
-            <div className="p-4 mb-2 rounded-lg bg-status-error/10 text-status-error dark:text-[var(--aw-status-error)] text-sm border border-status-error/20 shadow-inner">
+            <div className="border border-status-error/30 bg-status-error/5 text-status-error dark:text-[var(--aw-status-error)] text-sm px-4 py-3 rounded-sm">
               {error}
             </div>
           )}
 
           {fetchError && (
             <EmptyState
-              icon={<AlertTriangle className="w-12 h-12 text-status-error" strokeWidth={1.5} />}
+              icon={<AlertTriangle className="w-10 h-10 text-status-error" strokeWidth={1.5} />}
               title="Sign-in options unavailable"
               description={fetchError}
             />
           )}
 
           {loadingProviders && (
-            <div className="flex flex-col items-center gap-3 py-8">
+            <div className="flex flex-col items-center gap-3 py-10">
               <Spinner size="lg" className="text-primary dark:text-primary-light" />
-              <p className="text-sm text-text-muted dark:text-text-muted-dark">Loading sign-in options...</p>
+              <p className="font-mono text-xs text-text-muted dark:text-text-muted-dark">
+                Loading sign-in options...
+              </p>
             </div>
           )}
 
           {!loadingProviders && !fetchError && providers.length === 0 && (
             <EmptyState
-              icon={<Shield className="w-12 h-12 text-status-warning" strokeWidth={1.5} />}
+              icon={<Shield className="w-10 h-10 text-status-warning" strokeWidth={1.5} />}
               title="No sign-in providers configured"
               description="Contact your administrator to enable authentication providers."
             />
@@ -95,7 +94,11 @@ export default function LoginPage() {
             );
           })}
         </div>
-      </Card>
+
+        <p className="mt-10 font-mono text-[10px] text-text-muted dark:text-text-muted-dark">
+          Open-source. Self-hosted. MIT licensed.
+        </p>
+      </div>
     </SplitAuthLayout>
   );
 }

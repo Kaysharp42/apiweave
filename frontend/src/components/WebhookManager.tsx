@@ -288,7 +288,7 @@ export function WebhookManager() {
             }
           />
         ) : webhooks.map((wh) => (
-          <div key={wh.webhookId} className="border border-border dark:border-border-dark rounded-lg p-3 bg-surface-raised dark:bg-surface-dark-raised">
+          <div key={wh.webhookId} className="border border-border dark:border-border-dark rounded p-3 bg-surface-raised dark:bg-surface-dark-raised">
             {/* Header row */}
             <div className="flex items-start justify-between mb-2">
               <div className="flex-1 min-w-0">
@@ -382,7 +382,7 @@ export function WebhookManager() {
       <Modal isOpen={showCredentialsModal && !!webhookCredentials} onClose={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} title="Webhook Credentials" size="md"
         footer={() => <Button onClick={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} variant="primary" fullWidth>I've Saved the Credentials</Button>}>
         <div className="space-y-4 p-5">
-          <div className="p-3 bg-[var(--aw-status-warning)]/10 border border-[var(--aw-status-warning)]/30 rounded-lg">
+          <div className="p-3 bg-[var(--aw-status-warning)]/10 border border-[var(--aw-status-warning)]/30 rounded">
             <p className="text-sm text-text-primary dark:text-text-primary-dark flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-[var(--aw-status-warning)] flex-shrink-0" />
               <strong>Important:</strong> Copy these credentials now. They will not be shown again!
@@ -404,7 +404,7 @@ export function WebhookManager() {
           })}
           {webhookCredentials && (
             <FormField label="cURL Example">
-              <pre className="text-xs bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg p-3 overflow-x-auto font-mono">
+              <pre className="text-xs bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded p-3 overflow-x-auto font-mono">
 {`curl -X POST "${webhookCredentials.url}" \\
   -H "X-Webhook-Token: ${webhookCredentials.token}" \\
   -H "Content-Type: application/json" \\
@@ -430,7 +430,7 @@ export function WebhookManager() {
                 <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">Runs</h3>
                 <div className="space-y-2">
                   {webhookRuns.map((run) => (
-                    <div key={run.id} className="border border-border dark:border-border-dark rounded-lg p-3 bg-surface-raised dark:bg-surface-dark-raised">
+                    <div key={run.id} className="border border-border dark:border-border-dark rounded p-3 bg-surface-raised dark:bg-surface-dark-raised">
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                           <Badge variant={statusBadgeVariant(run.status)} size="sm">{run.status}</Badge>
@@ -461,7 +461,7 @@ export function WebhookManager() {
                 <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">Delivery Logs</h3>
                 <div className="space-y-2">
                   {webhookLogs.map((log) => (
-                    <div key={log.logId} className="border border-border dark:border-border-dark rounded-lg p-3 bg-surface-raised dark:bg-surface-dark-raised">
+                    <div key={log.logId} className="border border-border dark:border-border-dark rounded p-3 bg-surface-raised dark:bg-surface-dark-raised">
                       <div className="flex items-center justify-between mb-2">
                         <Badge variant={statusBadgeVariant(log.status)} size="sm">{log.status}</Badge>
                         <span className="text-xs text-text-muted dark:text-text-muted-dark">{formatDate(log.timestamp)}</span>

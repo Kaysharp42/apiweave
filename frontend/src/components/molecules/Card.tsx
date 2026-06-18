@@ -30,10 +30,10 @@ export function Card({
   const hasHeader = title || headerActions || collapsible;
 
   return (
-    <div className={`border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised shadow-raised overflow-hidden ${className}`}>
+    <div className={`overflow-hidden rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised ${className}`}>
       {/* Header */}
       {hasHeader && (
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border dark:border-border-dark">
+        <div className="flex items-center justify-between border-b border-border px-4 py-2.5 dark:border-border-dark">
           <div className="flex items-center gap-2 min-w-0">
             {Icon && <Icon className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />}
             {title && (
@@ -50,7 +50,7 @@ export function Card({
               <button
                 type="button"
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="p-1 rounded text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:focus-visible:outline-primary-light focus-visible:outline-offset-2"
+                className="cursor-pointer rounded-sm p-1 text-text-secondary transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-text-secondary-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
                 aria-expanded={isExpanded}
                 aria-label={isExpanded ? 'Collapse section' : 'Expand section'}
               >

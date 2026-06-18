@@ -3,8 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Home, Settings, Webhook, LayoutGrid, ChevronLeft, ChevronRight, Server } from 'lucide-react';
 import { Transition } from '@headlessui/react';
 import Tippy from '@tippyjs/react';
-// @ts-expect-error CSS import without types
-import 'tippy.js/dist/tippy.css';
 import { IconButton } from '../atoms/IconButton';
 import useNavigationStore from '../../stores/NavigationStore';
 import { AppNavBarItems } from '../../constants/AppNavBar';
@@ -61,7 +59,7 @@ export function AppNavBar() {
   return (
     <nav
       className={[
-        'relative flex h-full flex-col transition-all duration-300 ease-in-out',
+        'relative flex h-full flex-col transition-all duration-300 ease-in-out motion-reduce:transition-none',
         'bg-surface-raised dark:bg-surface-dark-raised',
         'border-r border-border dark:border-border-dark',
         'w-14 lg:w-auto',
@@ -69,7 +67,7 @@ export function AppNavBar() {
       ].join(' ')}
       aria-label="Main navigation"
     >
-      <div className="flex-1 pt-1">
+      <div className="flex-1 p-1">
         {navItems.map(({ id, label, icon: Icon, disabled }) => {
           const isSelected = navigationSelectedValue === id;
 
@@ -78,7 +76,7 @@ export function AppNavBar() {
               type="button"
               key={id}
               className={[
-                'relative w-full focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-0 focus-visible:z-10',
+                'relative w-full rounded focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light',
               ].join(' ')}
               onClick={() => {
                 if (disabled) return;
@@ -94,15 +92,15 @@ export function AppNavBar() {
               aria-label={disabled ? `${label} (coming soon)` : label}
             >
               {isSelected && (
-                <span className="absolute left-0 top-0 h-full w-1 bg-[var(--aw-primary)] rounded-r-sm" />
+                <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r-sm bg-primary dark:bg-primary-light" />
               )}
               <div
                 className={[
-                  'flex w-full items-center gap-3 px-4 py-3 transition-all duration-200',
+                  'flex w-full items-center gap-3 rounded px-3 py-2.5 transition-colors duration-200 motion-reduce:transition-none',
                   'justify-center',
                   !isNavBarCollapsed && 'lg:justify-start',
                   isSelected
-                    ? 'bg-[var(--aw-primary)]/10 text-[var(--aw-primary)]'
+                    ? 'bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light'
                     : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark',
                   disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
                 ].join(' ')}
@@ -122,7 +120,7 @@ export function AppNavBar() {
                   </span>
                 </Transition>
                 {disabled && !isNavBarCollapsed && (
-                  <span className="badge badge-ghost badge-xs ml-auto text-xxs">Soon</span>
+                  <span className="ml-auto rounded-full border border-border px-1.5 py-0.5 font-mono text-xxs text-text-muted dark:border-border-dark dark:text-text-muted-dark">Soon</span>
                 )}
               </div>
             </button>
@@ -147,7 +145,7 @@ export function AppNavBar() {
           tooltip={isNavBarCollapsed ? 'Expand Navigation' : 'Collapse Navigation'}
           size="sm"
           onClick={toggleNavBarCollapse}
-          className="w-full rounded-none border-t border-border dark:border-border-dark justify-start focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-0"
+          className="w-full justify-start rounded-none border-t border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light"
         >
           {isNavBarCollapsed ? (
             <ChevronRight className="w-4 h-4" />

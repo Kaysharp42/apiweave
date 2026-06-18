@@ -7,7 +7,7 @@ const StartNode = ({ id, selected }: StartNodeProps) => {
   return (
     <BaseNode
       title="Start"
-      icon={<Play className="w-4 h-4 fill-current" style={{ color: 'var(--aw-status-success)' }} />}
+      icon={<Play className="w-4 h-4 fill-current text-text-secondary dark:text-text-secondary-dark" />}
       status="idle"
       selected={selected ?? false}
       nodeId={id}
@@ -19,14 +19,13 @@ const StartNode = ({ id, selected }: StartNodeProps) => {
       {({ isExpanded }) => (
         <div className="p-3">
           {!isExpanded && (
-            <div className="text-[9px]" style={{ color: 'var(--aw-text-muted)' }}>
+            <div className="text-[9px] font-mono uppercase tracking-[0.12em] text-text-muted dark:text-text-muted-dark">
               Entry point
             </div>
           )}
           {isExpanded && (
             <div
-              className="text-[10px] leading-relaxed rounded p-2"
-              style={{ backgroundColor: 'var(--aw-status-success)/5', color: 'var(--aw-text-secondary)' }}
+              className="text-[10px] leading-relaxed rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark"
             >
               Entry point for workflow execution. Connect this node to your first request or control step.
             </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Shield } from 'lucide-react';
+import { Button } from '../components/atoms/Button';
 import { Panel } from '../components/molecules/Panel';
 import { AuditEventTable } from '../components/audit/AuditEventTable';
 import { AuditFilters } from '../components/audit/AuditFilters';
@@ -65,10 +66,10 @@ export default function AuditPage() {
   const hasNext = currentSkip + limit < total;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex items-center justify-between pb-6 border-b border-border dark:border-border-dark">
         <div>
-          <h1 className="text-2xl font-bold font-display text-text-primary dark:text-text-primary-dark flex items-center gap-2">
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark flex items-center gap-2">
             <Shield className="w-6 h-6 text-primary" aria-hidden="true" />
             Audit Log
           </h1>
@@ -92,22 +93,22 @@ export default function AuditPage() {
               Showing {currentSkip + 1}–{Math.min(currentSkip + limit, total)} of {total}
             </span>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
+              <Button
+                variant="ghost"
+                size="sm"
                 disabled={!hasPrev}
                 onClick={() => handlePageChange('prev')}
               >
                 Previous
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 disabled={!hasNext}
                 onClick={() => handlePageChange('next')}
               >
                 Next
-              </button>
+              </Button>
             </div>
           </div>
         )}

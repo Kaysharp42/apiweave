@@ -71,7 +71,7 @@ export function ScopedEnvironmentList({
             <div
               key={env.environmentId}
               className={[
-                'group flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors cursor-pointer',
+                'group flex items-center gap-3 px-3 py-2.5 rounded border transition-colors cursor-pointer',
                 isSelected
                   ? 'border-[var(--aw-primary)] bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10'
                   : 'border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',

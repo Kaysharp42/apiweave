@@ -106,9 +106,9 @@ export default function AdminDomainsPage() {
       <div className="max-w-3xl mx-auto flex flex-col gap-12">
         {/* Approved Domains */}
         <section>
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 pb-4 border-b border-border dark:border-border-dark">
             <Globe className="w-6 h-6 text-primary" />
-            <h1 className="text-2xl font-bold">Approved Domains</h1>
+            <h1 className="text-3xl font-display font-bold tracking-tight text-text-primary dark:text-text-primary-dark">Approved Domains</h1>
           </div>
           <p className="text-text-secondary dark:text-text-secondary-dark mb-8">
             Manage email domains that are automatically approved to sign up and join the workspace.
@@ -120,9 +120,9 @@ export default function AdminDomainsPage() {
 
         {/* SSO Provider Configuration */}
         <section>
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 pb-4 border-b border-border dark:border-border-dark">
             <ShieldCheck className="w-6 h-6 text-primary" />
-            <h2 className="text-2xl font-bold">SSO Provider Configuration</h2>
+            <h2 className="text-3xl font-display font-bold tracking-tight text-text-primary dark:text-text-primary-dark">SSO Provider Configuration</h2>
           </div>
           <p className="text-text-secondary dark:text-text-secondary-dark mb-8">
             View the configuration status of the supported SSO providers. Providers are enabled by

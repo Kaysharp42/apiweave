@@ -3,11 +3,8 @@ import { AppContext } from '../../App';
 import EnvironmentManager from '../EnvironmentManager';
 import { Moon, Sun, Folder, Save, Menu } from 'lucide-react';
 import Tippy from '@tippyjs/react';
-// @ts-expect-error CSS import without types
-import 'tippy.js/dist/tippy.css';
 import { Button } from '../atoms/Button';
 import { IconButton } from '../atoms/IconButton';
-import { IconSwitch } from '../atoms/IconSwitch';
 import type { AppContextType } from '../../types/AppContextType';
 import { AccountMenu } from './AccountMenu';
 import { OrgWorkspaceSwitcher } from '../organisms/OrgWorkspaceSwitcher';
@@ -19,7 +16,7 @@ export function MainHeader() {
   const toggleMobileSidebar = useNavigationStore((state) => state.toggleMobileSidebar);
 
   return (
-    <header className="navbar h-header min-h-0 w-full gap-3 px-4 bg-surface-raised dark:bg-surface-dark-raised border-b border-border dark:border-border-dark transition-colors">
+    <header className="navbar h-header min-h-0 w-full gap-3 border-b border-border bg-surface-raised px-4 text-text-primary transition-colors dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark">
       <div className="navbar-start min-w-0 flex-shrink-0 gap-3">
         <IconButton
           tooltip="Toggle sidebar"
@@ -34,9 +31,9 @@ export function MainHeader() {
         <img
           src="/public/apiweave.png"
           alt="APIWeave Logo"
-          className="h-7 w-7 rounded-lg shadow-sm object-cover"
+          className="h-7 w-7 rounded object-cover"
         />
-        <h1 className="text-lg font-display font-bold tracking-tight text-[var(--aw-primary)]">
+        <h1 className="font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark">
           APIWeave
         </h1>
 
@@ -49,41 +46,40 @@ export function MainHeader() {
 
       <div className="navbar-end min-w-0 flex-shrink gap-2">
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
           onClick={() => setShowEnvManager(true)}
           title="Manage Environments"
-          className="min-w-0 max-w-[11rem] flex-shrink focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+          className="min-w-0 max-w-[11rem] flex-shrink focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light"
           icon={<Folder className="w-4 h-4 flex-shrink-0" />}
         >
           <span className="hidden truncate text-xs font-medium sm:inline">Environments</span>
         </Button>
 
-        <Tippy content={autoSaveEnabled ? 'Auto-save enabled' : 'Auto-save disabled'} placement="bottom">
-          <div className="flex flex-shrink-0 items-center rounded px-1">
-            <IconSwitch
-              checked={autoSaveEnabled}
-              onCheckedChange={setAutoSaveEnabled}
-              checkedIcon={<Save className="h-3.5 w-3.5" />}
-              uncheckedIcon={<Save className="h-3.5 w-3.5" />}
-              checkedLabel="Disable auto-save"
-              uncheckedLabel="Enable auto-save"
-              intent="success"
-            />
-          </div>
+      <Tippy content={autoSaveEnabled ? 'Auto-save enabled' : 'Auto-save disabled'} placement="bottom">
+          <button
+            type="button"
+            onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
+            aria-label={autoSaveEnabled ? 'Disable auto-save' : 'Enable auto-save'}
+            className={`inline-flex items-center justify-center w-9 h-9 rounded-sm border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2 ${
+              autoSaveEnabled
+                ? 'border-status-success/40 bg-status-success/10 text-status-success hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
+                : 'border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
+            }`}
+          >
+            <Save className="w-4 h-4" />
+          </button>
         </Tippy>
 
-        <Tippy content={darkMode ? 'Switch to Light mode' : 'Switch to Dark mode'} placement="bottom">
-          <div className="flex flex-shrink-0 items-center rounded px-1">
-            <IconSwitch
-              checked={darkMode}
-              onCheckedChange={setDarkMode}
-              checkedIcon={<Moon className="h-3.5 w-3.5" />}
-              uncheckedIcon={<Sun className="h-3.5 w-3.5" />}
-              checkedLabel="Switch to light mode"
-              uncheckedLabel="Switch to dark mode"
-            />
-          </div>
+      <Tippy content={darkMode ? 'Switch to Light mode' : 'Switch to Dark mode'} placement="bottom">
+          <button
+            type="button"
+            onClick={() => setDarkMode(!darkMode)}
+            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+          >
+            {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
         </Tippy>
 
         <AccountMenu />

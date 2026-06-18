@@ -18,7 +18,7 @@ export function AdminRoute({ children }: { children: ReactNode }) {
   }
 
   if (!hasPermission('users:invite')) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/app" replace />;
   }
 
   return <>{children}</>;

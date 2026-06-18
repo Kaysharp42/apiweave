@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Button } from './atoms/Button';
 import type { AssertionEditorProps } from '../types';
 
 export default function AssertionEditor({
@@ -49,7 +50,7 @@ export default function AssertionEditor({
           onChange={(e) => onChange({ ...local, source: e.target.value })}
           onKeyDown={handleKey}
           aria-label="Assertion source"
-          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded"
+          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
         >
           <option value="prev">prev</option>
           <option value="variables">variables</option>
@@ -66,9 +67,9 @@ export default function AssertionEditor({
             onKeyDown={handleKey}
             placeholder="path or name"
             aria-label="Assertion path or name"
-            className={`w-full px-2 py-1 text-sm border rounded font-mono ${errors.path ? 'border-red-500 dark:border-red-400' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
+            className={`w-full px-2 py-1 text-sm border rounded font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${errors.path ? 'border-status-error dark:border-[var(--aw-status-error)]' : 'border-border dark:border-border-dark'}`}
           />
-          {errors.path && <div className="text-[11px] text-red-600 dark:text-red-400 mt-1">{errors.path}</div>}
+          {errors.path && <div className="text-[11px] text-status-error dark:text-[var(--aw-status-error)] mt-1">{errors.path}</div>}
         </div>
       </div>
 
@@ -78,7 +79,7 @@ export default function AssertionEditor({
           onChange={(e) => onChange({ ...local, operator: e.target.value })}
           onKeyDown={handleKey}
           aria-label="Assertion operator"
-          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded"
+          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
         >
           <option value="equals">Equals (==)</option>
           <option value="notEquals">Not Equals (!=)</option>
@@ -102,9 +103,9 @@ export default function AssertionEditor({
               onKeyDown={handleKey}
               placeholder="expected value"
               aria-label="Assertion expected value"
-              className={`w-full px-2 py-1 text-sm border rounded font-mono ${errors.expectedValue ? 'border-red-500 dark:border-red-400' : 'border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark'}`}
+              className={`w-full px-2 py-1 text-sm border rounded font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${errors.expectedValue ? 'border-status-error dark:border-[var(--aw-status-error)]' : 'border-border dark:border-border-dark'}`}
             />
-            {errors.expectedValue && <div className="text-[11px] text-red-600 dark:text-red-400 mt-1">{errors.expectedValue}</div>}
+            {errors.expectedValue && <div className="text-[11px] text-status-error dark:text-[var(--aw-status-error)] mt-1">{errors.expectedValue}</div>}
           </div>
         ) : (
           <div className="text-sm text-text-muted dark:text-text-muted-dark flex items-center px-2">No value required</div>
@@ -112,20 +113,12 @@ export default function AssertionEditor({
       </div>
 
       <div className="flex gap-2 justify-end">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1 bg-surface dark:bg-surface-dark-raised text-text-secondary dark:text-text-primary-dark rounded text-sm"
-        >
+        <Button type="button" variant="outline" size="xs" onClick={onCancel}>
           Cancel
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          className="px-3 py-1 bg-primary text-white rounded text-sm"
-        >
+        </Button>
+        <Button type="button" variant="primary" size="xs" onClick={handleSave}>
           Save
-        </button>
+        </Button>
       </div>
     </form>
   );

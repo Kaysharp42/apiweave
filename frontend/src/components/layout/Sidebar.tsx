@@ -359,7 +359,7 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="flex flex-col h-full w-full bg-surface-raised dark:bg-surface-dark-raised" aria-label="Sidebar">
+      <aside className="flex h-full w-full flex-col bg-surface-raised text-text-primary dark:bg-surface-dark-raised dark:text-text-primary-dark" aria-label="Sidebar">
         <SidebarHeader
           selectedNav={selectedNav}
           onCreateNew={handleCreateNew}
@@ -398,7 +398,7 @@ export function Sidebar() {
           {selectedNav === 'projects' && (
             <div
               className={[
-                'h-full overflow-y-auto overflow-x-hidden p-1.5 transition-opacity duration-300',
+                'h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity duration-300 motion-reduce:transition-none',
                 isRefreshing ? 'opacity-50' : 'opacity-100',
               ].join(' ')}
             >

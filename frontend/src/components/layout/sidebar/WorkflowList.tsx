@@ -50,7 +50,7 @@ export function WorkflowList({
         }
         action={
           !searchQuery && (
-            <Button variant="primary" intent="success" size="sm" onClick={onCreateWorkflow} icon={<FileText className="w-4 h-4" />}>
+            <Button variant="primary" intent="default" size="sm" onClick={onCreateWorkflow} icon={<FileText className="w-4 h-4" />}>
               Create Workflow
             </Button>
           )
@@ -61,7 +61,7 @@ export function WorkflowList({
 
   return (
     <>
-      <ul className="w-full list-none p-2 space-y-1">
+      <ul className="w-full list-none space-y-1 p-2 font-sans">
         {workflows.map((workflow) => (
           <WorkflowItem
             key={workflow.workflowId}
@@ -82,7 +82,7 @@ export function WorkflowList({
         </div>
       )}
       {!pagination.hasMore && workflows.length > 0 && (
-        <div className="text-center py-3 text-text-muted dark:text-text-muted-dark text-xs border-t border-[var(--aw-border)] mx-3 mt-1">
+        <div className="mx-3 mt-1 border-t border-border py-3 text-center font-mono text-xs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
           Showing all {pagination.total} workflow{pagination.total !== 1 ? 's' : ''}
         </div>
       )}

@@ -133,7 +133,7 @@ export function OrgWorkspaceSwitcher() {
 
       {open && (
         <div
-          className="absolute left-0 mt-1.5 w-72 overflow-hidden rounded-xl border border-border/80 bg-surface-raised/95 shadow-xl backdrop-blur-sm z-50 dark:border-border-dark/80 dark:bg-surface-dark-raised/95"
+          className="absolute left-0 mt-1.5 w-72 overflow-hidden rounded border border-border bg-surface-raised z-50 dark:border-border-dark dark:bg-surface-dark-raised"
           role="listbox"
           aria-label="Workspaces"
         >
@@ -248,14 +248,14 @@ function WorkspaceItem({
       aria-selected={isActive}
       onClick={() => onSelect(entry)}
       onKeyDown={(e) => onKeyDown(e, index)}
-      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors focus:outline-none ${
+        className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus:outline-none ${
         isActive
           ? 'bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light'
           : 'text-text-primary hover:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay'
       }`}
     >
       <span
-        className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md ${
+        className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border ${
           isActive
             ? 'bg-primary/15 text-primary dark:bg-primary-light/15 dark:text-primary-light'
             : 'bg-border/30 text-text-secondary dark:bg-border-dark/30 dark:text-text-secondary-dark'

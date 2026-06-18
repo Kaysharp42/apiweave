@@ -80,16 +80,16 @@ function AssertionFormModal({ onAdd }: AssertionFormModalInternalProps) {
   };
 
   return (
-    <div className="space-y-3 p-4 bg-[var(--aw-status-success)]/5 border border-[var(--aw-status-success)]/20 dark:border-[var(--aw-status-success)]/30 rounded-lg">
+    <div className="space-y-3 rounded-sm border border-border bg-surface-raised p-4 dark:border-border-dark dark:bg-surface-dark-raised">
       <div>
-        <label htmlFor="assertion-source" className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
+        <label htmlFor="assertion-source" className="mb-1.5 block text-sm font-medium text-text-primary dark:text-text-primary-dark">
           Assert On
         </label>
         <select
           id="assertion-source"
           value={source}
           onChange={(e) => setSource(e.target.value)}
-          className="w-full px-3 py-2 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-sm focus:outline-none focus:ring-2 focus:ring-[var(--aw-primary)] cursor-pointer"
+          className="w-full cursor-pointer rounded-sm border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
         >
           <option value="prev">Previous Node Result (prev.*)</option>
           <option value="variables">Workflow Variables (variables.*)</option>
@@ -101,7 +101,7 @@ function AssertionFormModal({ onAdd }: AssertionFormModalInternalProps) {
 
       {source !== 'status' && (
         <div>
-          <label htmlFor="assertion-path" className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
+          <label htmlFor="assertion-path" className="mb-1.5 block text-sm font-medium text-text-primary dark:text-text-primary-dark">
             {source === 'prev' ? 'JSONPath (e.g., body.status)' :
              source === 'variables' ? 'Variable name' :
              source === 'cookies' ? 'Cookie name' : 'Header name'}
@@ -120,14 +120,14 @@ function AssertionFormModal({ onAdd }: AssertionFormModalInternalProps) {
       )}
 
       <div>
-        <label htmlFor="assertion-operator" className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
+        <label htmlFor="assertion-operator" className="mb-1.5 block text-sm font-medium text-text-primary dark:text-text-primary-dark">
           Operator
         </label>
         <select
           id="assertion-operator"
           value={operator}
           onChange={(e) => setOperator(e.target.value)}
-          className="w-full px-3 py-2 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-sm focus:outline-none focus:ring-2 focus:ring-[var(--aw-primary)] cursor-pointer"
+          className="w-full cursor-pointer rounded-sm border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
         >
           <option value="equals">Equals (==)</option>
           <option value="notEquals">Not Equals (!=)</option>
@@ -145,7 +145,7 @@ function AssertionFormModal({ onAdd }: AssertionFormModalInternalProps) {
 
       {!['exists', 'notExists'].includes(operator) && (
         <div>
-          <label htmlFor="assertion-expected-value" className="block text-xs font-semibold text-text-secondary dark:text-text-secondary-dark mb-1.5">
+          <label htmlFor="assertion-expected-value" className="mb-1.5 block text-sm font-medium text-text-primary dark:text-text-primary-dark">
             {operator === 'count' ? 'Expected Count' : 'Expected Value'}
           </label>
           <div>
@@ -219,7 +219,7 @@ export function AssertionConfigPanel({ initialConfig, workingDataRef }: Assertio
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'parameters' && (
           <div className="space-y-4">
-            <div className="p-3 bg-[var(--aw-status-info)]/5 border border-[var(--aw-status-info)]/20 dark:border-[var(--aw-status-info)]/30 rounded-lg text-sm text-[var(--aw-status-info)]">
+            <div className="rounded-sm border border-status-info/30 bg-status-info/10 p-3 text-sm text-status-info dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10 dark:text-[var(--aw-status-info)]">
               <p className="font-medium mb-1 flex items-center gap-2">
                 <Info className="w-4 h-4" />
                 <span>Assertion Configuration</span>
@@ -242,7 +242,7 @@ export function AssertionConfigPanel({ initialConfig, workingDataRef }: Assertio
                 {assertions.map((assertion, index) => (
                   <div
                     key={`${assertion.source}-${assertion.path}-${assertion.operator}-${assertion.expectedValue}`}
-                    className="p-3 bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded-lg space-y-2"
+                    className="space-y-2 rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay"
                   >
                     {editingIndex === index ? (
                       <AssertionEditor
@@ -285,7 +285,7 @@ export function AssertionConfigPanel({ initialConfig, workingDataRef }: Assertio
                             <span className="font-medium">{assertion.operator}</span>
                             {assertion.expectedValue && (
                               <>
-                                {' '}<code className="bg-surface dark:bg-surface-dark-raised px-1.5 py-0.5 rounded">{assertion.expectedValue}</code>
+                                {' '}<code className="rounded-sm bg-surface px-1.5 py-0.5 font-mono dark:bg-surface-dark-raised">{assertion.expectedValue}</code>
                               </>
                             )}
                           </div>
@@ -321,17 +321,17 @@ export function AssertionConfigPanel({ initialConfig, workingDataRef }: Assertio
                 ))}
               </div>
             ) : (
-              <div className="text-sm text-text-muted dark:text-text-muted-dark italic text-center py-6 border-2 border-dashed border-border dark:border-border-dark rounded-lg">
+              <div className="rounded-sm border border-dashed border-border py-6 text-center text-sm italic text-text-muted dark:border-border-dark dark:text-text-muted-dark">
                 No assertions yet. Add one above to get started.
               </div>
             )}
 
-            <div className="text-xs text-text-muted dark:text-text-muted-dark space-y-1 p-3 bg-surface-overlay dark:bg-surface-dark-overlay rounded-lg border border-border dark:border-border-dark">
+            <div className="space-y-1 rounded-sm border border-border bg-surface-overlay p-3 text-xs text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
               <p><strong>Tips:</strong></p>
               <ul className="list-disc list-inside space-y-0.5 ml-2">
-                <li>Use <code className="bg-surface dark:bg-surface-dark-raised px-1">prev.*</code> to reference the previous node&apos;s response</li>
-                <li>Use <code className="bg-surface dark:bg-surface-dark-raised px-1">variables.*</code> to reference workflow variables</li>
-                <li>JSONPath example: <code className="bg-surface dark:bg-surface-dark-raised px-1">body.data[0].id</code></li>
+                <li>Use <code className="rounded-sm bg-surface px-1 font-mono dark:bg-surface-dark-raised">prev.*</code> to reference the previous node&apos;s response</li>
+                <li>Use <code className="rounded-sm bg-surface px-1 font-mono dark:bg-surface-dark-raised">variables.*</code> to reference workflow variables</li>
+                <li>JSONPath example: <code className="rounded-sm bg-surface px-1 font-mono dark:bg-surface-dark-raised">body.data[0].id</code></li>
               </ul>
             </div>
           </div>

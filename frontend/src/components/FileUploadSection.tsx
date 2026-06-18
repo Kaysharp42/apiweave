@@ -85,7 +85,7 @@ export default function FileUploadSection({
   };
 
   return (
-    <div className="border-t dark:border-gray-700 pt-2 mt-2">
+    <div className="border-t border-border dark:border-border-dark pt-2 mt-2">
       <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5 flex items-center gap-1">
         File Attachments
         <span className="text-text-muted dark:text-text-muted-dark font-normal text-[9px]">
@@ -96,7 +96,7 @@ export default function FileUploadSection({
       <div className="space-y-1 mb-2">
         {fileUploads.length > 0 ? (
           fileUploads.map((file, idx) => (
-            <div key={`${file.fieldName}-${file.name}`} className="flex gap-1 items-center text-[9px] p-1 bg-surface dark:bg-surface-dark/30 rounded">
+            <div key={`${file.fieldName}-${file.name}`} className="flex gap-1 items-center text-[9px] p-1 bg-surface dark:bg-surface-dark/30 rounded border border-border dark:border-border-dark">
               <div className="flex-1">
                 <div className="font-semibold text-text-primary dark:text-text-primary-dark">{file.name}</div>
                 <div className="text-[8px] text-text-muted dark:text-text-muted-dark">
@@ -137,7 +137,7 @@ export default function FileUploadSection({
           <span>Add File</span>
         </button>
       ) : (
-        <div className="space-y-1 p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded border border-dashed border-blue-300 dark:border-blue-600">
+        <div className="space-y-1 p-1.5 bg-surface-overlay dark:bg-surface-dark-overlay rounded border border-dashed border-border dark:border-border-dark">
           <div>
             <label htmlFor="file-upload-name" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
               File Name (identifier)

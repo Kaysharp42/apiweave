@@ -22,9 +22,9 @@ export function ConfirmDialog({
   const confirmIntent = resolveConfirmDialogIntent(intent);
 
   const intentConfig = {
-    error: { icon: XCircle, iconBg: 'bg-status-error/10', iconText: 'text-status-error' },
-    warning: { icon: AlertTriangle, iconBg: 'bg-status-warning/10', iconText: 'text-status-warning' },
-    info: { icon: Info, iconBg: 'bg-status-info/10', iconText: 'text-status-info' },
+    error: { icon: XCircle, iconBg: 'bg-status-error/10 dark:bg-[var(--aw-status-error)]/10', iconText: 'text-status-error dark:text-[var(--aw-status-error)]' },
+    warning: { icon: AlertTriangle, iconBg: 'bg-status-warning/10 dark:bg-[var(--aw-status-warning)]/10', iconText: 'text-status-warning dark:text-[var(--aw-status-warning)]' },
+    info: { icon: Info, iconBg: 'bg-status-info/10 dark:bg-[var(--aw-status-info)]/10', iconText: 'text-status-info dark:text-[var(--aw-status-info)]' },
   };
 
   const config = intentConfig[intent];
@@ -47,7 +47,7 @@ export function ConfirmDialog({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-slate-950/30" aria-hidden="true" />
+          <div className="fixed inset-0 bg-text-primary/30 dark:bg-surface-dark/80" aria-hidden="true" />
         </Transition.Child>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -60,13 +60,13 @@ export function ConfirmDialog({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-md rounded-lg bg-surface-raised dark:bg-surface-dark-raised p-6 shadow-modal border border-border dark:border-border-dark">
-              <div className="flex items-start gap-3">
-                <div className={`flex-shrink-0 p-1 rounded-full ${config.iconBg}`}>
+            <Dialog.Panel className="w-full max-w-md rounded-sm border border-border bg-surface-raised shadow-modal dark:border-border-dark dark:bg-surface-dark-raised">
+              <div className="flex items-start gap-3 border-b border-border p-5 dark:border-border-dark">
+                <div className={`flex-shrink-0 rounded-full p-1 ${config.iconBg}`}>
                   <IntentIcon className={`w-5 h-5 ${config.iconText}`} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark truncate">
+                  <Dialog.Title className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
                     {title}
                   </Dialog.Title>
                   {message && (
@@ -77,7 +77,7 @@ export function ConfirmDialog({
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 mt-6">
+              <div className="flex justify-end gap-2 border-t border-border px-5 py-3 dark:border-border-dark">
                 <Button
                   ref={cancelRef}
                   variant="ghost"

@@ -201,7 +201,7 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
 
       <div
         ref={modalRef}
-        className="relative z-10 bg-surface-raised dark:bg-surface-dark-raised rounded-3xl overflow-hidden shadow-2xl transition-transform duration-300 flex flex-col"
+        className="relative z-10 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark overflow-hidden transition-transform duration-300 flex flex-col"
         style={{
           width: '500px',
           maxHeight: '600px',
@@ -211,8 +211,8 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
         <div className="flex-shrink-0 px-5 py-4 border-b border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-cyan-600 dark:bg-cyan-700 rounded-lg">
-                <History className="w-5 h-5 text-white" />
+              <div className="p-2 bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded">
+                <History className="w-5 h-5 text-primary dark:text-primary-light" />
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
@@ -231,7 +231,7 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
             <button
               type="button"
               onClick={handleClose}
-              className="p-2 text-text-muted hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors rounded-lg"
+              className="p-2 text-text-muted hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors rounded"
               title="Close"
             >
               <X className="w-5 h-5" />
@@ -339,7 +339,7 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
                 type="button"
                 onClick={() => handlePageChange(pagination.page - 1)}
                 disabled={!pagination.hasPrevious || isLoading}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Previous
               </button>
@@ -352,7 +352,7 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
                 type="button"
                 onClick={() => handlePageChange(pagination.page + 1)}
                 disabled={!pagination.hasNext || isLoading}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-lg hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Next
               </button>

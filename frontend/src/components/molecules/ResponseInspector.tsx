@@ -352,7 +352,7 @@ export function ResponseInspector({
   if (!response) {
     return (
       <Card title="Response inspector" icon={EyeCardIcon}>
-        <div className="rounded-lg border border-dashed border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
+        <div className="rounded-sm border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay">
           <EmptyState
             icon={<Gauge className="h-10 w-10 text-text-muted dark:text-text-muted-dark" strokeWidth={1.75} />}
             title="No response captured yet"
@@ -391,7 +391,7 @@ export function ResponseInspector({
             aria-label="Filter response headers"
           />
 
-          <div className="overflow-auto rounded-lg border border-border dark:border-border-dark">
+          <div className="overflow-auto rounded-sm border border-border dark:border-border-dark">
             <table className="min-w-full divide-y divide-border dark:divide-border-dark text-sm">
               <thead className="bg-surface-overlay dark:bg-surface-dark-overlay text-left text-xs uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
                 <tr>
@@ -423,7 +423,7 @@ export function ResponseInspector({
 
   const renderCookies = () => (
     <Card title={`Cookies (${cookieRows.length})`} icon={CookieCardIcon}>
-      <div className="overflow-auto rounded-lg border border-border dark:border-border-dark">
+      <div className="overflow-auto rounded-sm border border-border dark:border-border-dark">
         <table className="min-w-full divide-y divide-border dark:divide-border-dark text-sm">
           <thead className="bg-surface-overlay dark:bg-surface-dark-overlay text-left text-xs uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
             <tr>
@@ -472,7 +472,7 @@ export function ResponseInspector({
     if (showJsonPreview) {
       return (
         <Card title="JSON preview" icon={BracesCardIcon} className="flex min-h-0 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1">
-          <div className="h-full overflow-auto rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised p-3">
+          <div className="h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
             <JsonEditor
               data={treeData}
               restrictEdit={true}
@@ -493,7 +493,7 @@ export function ResponseInspector({
             title="Response HTML preview"
             srcDoc={bodyText}
             sandbox="allow-scripts"
-            className="h-96 w-full rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised"
+            className="h-96 w-full rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
           />
         </Card>
       );
@@ -502,7 +502,7 @@ export function ResponseInspector({
     if (showImagePreview) {
       return (
         <Card title="Image preview" icon={EyeCardIcon}>
-          <div className="flex min-h-64 items-center justify-center rounded-lg border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-4">
+          <div className="flex min-h-64 items-center justify-center rounded-sm border border-border bg-surface-overlay p-4 dark:border-border-dark dark:bg-surface-dark-overlay">
             <img src={getImageSource(contentType, bodyText)} alt="Response preview" className="max-h-96 max-w-full object-contain" />
           </div>
         </Card>
@@ -512,7 +512,7 @@ export function ResponseInspector({
     if (showTextPreview && !showBinaryPreview) {
       return (
         <Card title="Text preview" icon={FileCodeCardIcon}>
-          <pre className="max-h-96 overflow-auto rounded-lg border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 font-mono text-xs text-text-primary dark:text-text-primary-dark whitespace-pre-wrap break-words">
+          <pre className="max-h-96 overflow-auto rounded-sm border border-border bg-surface-overlay p-3 font-mono text-xs text-text-primary whitespace-pre-wrap break-words dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
             {bodyText}
           </pre>
         </Card>
@@ -521,7 +521,7 @@ export function ResponseInspector({
 
     return (
       <Card title="Binary preview" icon={HardDriveDownloadCardIcon}>
-        <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-6 text-center">
+        <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-sm border border-dashed border-border bg-surface-overlay p-6 text-center dark:border-border-dark dark:bg-surface-dark-overlay">
           <HardDriveDownload className="h-8 w-8 text-text-secondary dark:text-text-secondary-dark" />
             <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">Binary content -- download to view</p>
           <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Preview is disabled for non-text response bodies.</p>
@@ -532,7 +532,7 @@ export function ResponseInspector({
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised px-3.5 py-2.5 shadow-raised">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-border bg-surface-raised px-3.5 py-2.5 dark:border-border-dark dark:bg-surface-dark-raised">
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant={response.status >= 200 && response.status < 400 ? 'success' : 'error'} size="sm">
             {response.status}
@@ -556,7 +556,7 @@ export function ResponseInspector({
       <div id={`panel-tab-${activeTab}`} role="tabpanel" className="flex flex-1 min-h-0 flex-col gap-4">
         {activeTab === 'tree' && (
           <Card title="Response body tree" icon={BracesCardIcon} className="flex min-h-0 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1">
-            <div className="h-full overflow-auto rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised p-3">
+            <div className="h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
               <JsonEditor
                 data={treeData}
                 restrictEdit={true}
@@ -580,7 +580,7 @@ export function ResponseInspector({
               </IconButton>
             )}
           >
-            <pre className="h-full overflow-auto rounded-lg border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 font-mono text-xs text-text-primary dark:text-text-primary-dark whitespace-pre-wrap break-words">
+            <pre className="h-full overflow-auto rounded-sm border border-border bg-surface-overlay p-3 font-mono text-xs text-text-primary whitespace-pre-wrap break-words dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
               {bodyText}
             </pre>
           </Card>

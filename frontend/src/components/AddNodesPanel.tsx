@@ -6,11 +6,13 @@ import { getNextNodeFilterValue, shouldClearNodeFilter } from '../utils/nodeFilt
 import type { AddNodesPanelProps } from '../types';
 
 const methodBadge: Record<string, string> = {
-  GET: 'bg-method-get',
-  POST: 'bg-method-post',
-  PUT: 'bg-method-put',
-  DELETE: 'bg-method-delete',
-  PATCH: 'bg-method-patch',
+  GET: 'text-method-get bg-method-get/10 border-method-get/30',
+  POST: 'text-method-post bg-method-post/10 border-method-post/30',
+  PUT: 'text-method-put bg-method-put/10 border-method-put/30',
+  DELETE: 'text-method-delete bg-method-delete/10 border-method-delete/30',
+  PATCH: 'text-method-patch bg-method-patch/10 border-method-patch/30',
+  HEAD: 'text-method-head bg-method-head/10 border-method-head/30',
+  OPTIONS: 'text-method-options bg-method-options/10 border-method-options/30',
 };
 
 const sectionIcons: Record<string, LucideIcon> = {
@@ -181,13 +183,13 @@ export default function AddNodesPanel({
     <div
       className={`fixed bottom-20 right-5 sm:right-6 z-[9999] flex flex-col gap-2.5 ${
         isModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
-      } transition-opacity duration-200`}
+      } transition-opacity duration-200 motion-reduce:transition-none`}
     >
       {!showVariablesPanel && (
         <button
           type="button"
           onClick={() => onShowVariablesPanel(true)}
-          className="flex items-center justify-center w-11 h-11 rounded-full bg-primary text-white shadow-lg ring-1 ring-primary/40 hover:brightness-110 transition-all"
+          className="flex items-center justify-center w-11 h-11 rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-primary dark:text-primary-light border border-border dark:border-border-dark shadow-node hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
           title="Show Side Panel (Variables, Functions, Settings)"
           aria-label="Show panel"
         >
@@ -200,7 +202,7 @@ export default function AddNodesPanel({
           <>
             <Popover.Button
               disabled={isModalOpen}
-              className="flex items-center justify-center w-11 h-11 rounded-full border-2 border-primary bg-primary text-white shadow-xl hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="flex items-center justify-center w-11 h-11 rounded-sm border border-primary bg-primary dark:bg-primary-light text-surface-raised dark:text-surface-dark-raised shadow-node hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors motion-reduce:transition-none"
               aria-label={open ? 'Close node palette' : 'Add nodes'}
             >
               {open ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
@@ -219,11 +221,11 @@ export default function AddNodesPanel({
                 );
               }}
             >
-              <Popover.Panel className="absolute bottom-full mb-2 right-0 w-72 max-h-[60vh] flex flex-col rounded-xl bg-surface-raised dark:bg-surface-dark-raised shadow-2xl border border-border-default dark:border-border-default-dark overflow-hidden">
-                <div className="p-3 border-b border-border-default dark:border-border-default-dark">
-                  <h3 className="text-sm font-bold text-primary dark:text-primary-dark mb-2">
+              <Popover.Panel className="absolute bottom-full mb-2 right-0 w-72 max-h-[60vh] flex flex-col rounded-sm bg-surface-raised dark:bg-surface-dark-raised shadow-node border border-border dark:border-border-dark overflow-hidden">
+                <div className="p-3 border-b border-border dark:border-border-dark">
+                  <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2 tracking-[-0.01em]">
                     Add Nodes
-                    <span className="ml-1 text-text-muted dark:text-text-muted-dark font-normal text-xs"> -- drag to canvas</span>
+                    <span className="ml-1 text-text-muted dark:text-text-muted-dark font-normal text-xs">— drag to canvas</span>
                   </h3>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark" />
@@ -240,7 +242,7 @@ export default function AddNodesPanel({
                         }
                       }}
                       placeholder="Filter nodes…"
-                      className="w-full pl-8 pr-8 py-1.5 text-sm rounded-lg border border-border-default dark:border-border-default-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-primary-dark"
+                      className="w-full pl-8 pr-8 py-1.5 text-sm rounded-sm border border-border dark:border-border-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark focus:outline-none focus:ring-2 focus:ring-primary"
                     />
 
                     {searchQuery && (
@@ -251,7 +253,7 @@ export default function AddNodesPanel({
                             getNextNodeFilterValue({ currentValue, clearRequested: true }),
                           );
                         }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
                         aria-label="Clear node filter"
                         title="Clear filter"
                       >
@@ -301,12 +303,12 @@ interface NodeSectionProps {
 
 function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }: NodeSectionProps) {
   return (
-    <div className="collapse collapse-arrow rounded-none border-b border-border-default dark:border-border-default-dark last:border-b-0">
+    <div className="collapse collapse-arrow rounded-none border-b border-border dark:border-border-dark last:border-b-0">
       <input type="checkbox" defaultChecked={defaultOpen} aria-label={`Toggle ${title}`} />
       <div className="collapse-title text-sm font-medium py-2 min-h-0 flex items-center gap-2 text-text-primary dark:text-text-primary-dark">
         <Icon className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />
         <span>{title}</span>
-        <span className="badge badge-xs badge-ghost ml-auto">{nodes.length}</span>
+        <span className="ml-auto rounded-full border border-border dark:border-border-dark px-1.5 py-0.5 text-[9px] font-mono text-text-muted dark:text-text-muted-dark">{nodes.length}</span>
       </div>
       <div className="collapse-content px-2 pb-1">
         <div className="space-y-0.5">
@@ -315,17 +317,17 @@ function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }: Nod
               key={`${node.type}-${node.label}`}
               draggable
               onDragStart={(e) => onDragStart(e, node)}
-              className="group flex flex-col gap-0.5 px-2.5 py-1.5 rounded-md cursor-grab hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay active:cursor-grabbing transition-colors"
+              className="group flex flex-col gap-0.5 px-2.5 py-1.5 rounded-sm cursor-grab border border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay active:cursor-grabbing transition-colors motion-reduce:transition-none"
               title={`Drag ${node.label} to canvas`}
             >
               <div className="flex items-center gap-1.5 text-sm text-text-primary dark:text-text-primary-dark">
                 {node.method && node.method !== 'WORKFLOW' && (
-                  <span className={`inline-block px-1.5 py-px text-[10px] font-bold text-white rounded ${methodBadge[node.method] ?? 'bg-primary'}`}>
+                  <span className={`inline-block px-1.5 py-0.5 text-[10px] font-mono border rounded-sm ${methodBadge[node.method] ?? 'text-primary bg-primary/10 border-primary/30'}`}>
                     {node.method}
                   </span>
                 )}
                 {node.method === 'WORKFLOW' && (
-                  <span className="inline-block px-1.5 py-px text-[10px] font-bold text-white bg-purple-600 rounded">
+                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded-sm">
                     WF
                   </span>
                 )}

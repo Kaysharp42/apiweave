@@ -84,7 +84,7 @@ export default function DynamicFunctionsHelper() {
   return (
     <div className="w-full h-full flex flex-col bg-surface-raised dark:bg-surface-dark-raised overflow-hidden">
       {/* Sticky header */}
-      <div className="sticky top-0 z-10 bg-gradient-to-r from-[var(--aw-primary)]/5 to-[var(--aw-primary)]/10 border-b border-border dark:border-border-dark p-3">
+      <div className="sticky top-0 z-10 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark p-3">
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles className="w-5 h-5 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" />
           <h2 className="font-bold text-sm text-text-primary dark:text-text-primary-dark min-w-0 truncate">Dynamic Functions</h2>
@@ -114,7 +114,7 @@ export default function DynamicFunctionsHelper() {
           return (
             <div
               key={category}
-              className="border border-border dark:border-border-dark rounded-lg bg-surface dark:bg-surface-dark overflow-hidden"
+              className="border border-border dark:border-border-dark rounded bg-surface dark:bg-surface-dark overflow-hidden"
             >
               <button
                 type="button"

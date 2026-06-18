@@ -44,7 +44,7 @@ export function AuditJsonExportButton({ filters }: AuditJsonExportButtonProps) {
 
   return (
     <Button
-      variant="secondary"
+      variant="outline"
       size="sm"
       icon={<Download className="w-4 h-4" aria-hidden="true" />}
       onClick={handleExport}

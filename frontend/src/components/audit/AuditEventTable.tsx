@@ -28,8 +28,8 @@ export function AuditEventTable({ events, loading }: AuditEventTableProps) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="table table-sm w-full">
+    <div className="overflow-x-auto rounded border border-border dark:border-border-dark">
+      <table className="w-full border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
             <th className="px-3 py-2 text-xs font-semibold text-text-secondary dark:text-text-secondary-dark uppercase tracking-wider">
@@ -52,7 +52,7 @@ export function AuditEventTable({ events, loading }: AuditEventTableProps) {
             </th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="bg-surface-raised dark:bg-surface-dark-raised">
           {events.map((event) => (
             <AuditEventRow key={event.eventId} event={event} />
           ))}

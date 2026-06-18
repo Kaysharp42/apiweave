@@ -184,12 +184,12 @@ export default function AdminUsersPage() {
     <>
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+          <div className="flex items-center justify-between mb-6 pb-6 border-b border-border dark:border-border-dark">
+            <h1 className="text-3xl font-display font-bold tracking-tight flex items-center gap-2 text-text-primary dark:text-text-primary-dark">
               <Shield className="w-6 h-6 text-primary" />
               User Management
             </h1>
-            <Button onClick={() => dispatch({ type: 'set-invite-modal-open', value: true })}>Invite User</Button>
+            <Button variant="primary" onClick={() => dispatch({ type: 'set-invite-modal-open', value: true })}>Invite User</Button>
           </div>
 
           <Panel title="Users">
@@ -279,7 +279,7 @@ export default function AdminUsersPage() {
                                   {pendingInvite?.invite_url && (
                                     <Button
                                       size="xs"
-                                      variant="secondary"
+                                      variant="outline"
                                       onClick={() =>
                                         handleCopyInviteLink(
                                           pendingInvite.inviteId,
@@ -350,7 +350,7 @@ export default function AdminUsersPage() {
                                 {inv.invite_url && (
                                   <Button
                                     size="xs"
-                                    variant="secondary"
+                                    variant="outline"
                                     onClick={() => handleCopyInviteLink(inv.inviteId, inv.invite_url!)}
                                   >
                                     {state.copyingInviteId === inv.inviteId ? 'Copied!' : 'Copy Link'}

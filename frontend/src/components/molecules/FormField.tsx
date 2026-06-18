@@ -30,7 +30,7 @@ export function FormField({
     <div className={`form-control w-full ${className}`}>
       {label && (
         <label htmlFor={id} className="label py-1 px-0">
-          <span className="label-text text-xs font-medium text-text-primary dark:text-text-primary-dark">
+          <span className="label-text text-sm font-medium text-text-primary dark:text-text-primary-dark">
             {label}
             {required && <span className="text-status-error ml-0.5" aria-hidden="true">*</span>}
           </span>
@@ -44,7 +44,7 @@ export function FormField({
       {(error || hint) && (
         <label className="label py-1 px-0" id={hintId}>
           {error ? (
-            <span className="label-text-alt text-xs text-status-error flex items-center gap-1">
+            <span className="label-text-alt flex items-center gap-1 text-xs text-status-error dark:text-[var(--aw-status-error)]">
               <AlertTriangle className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
               {error}
             </span>

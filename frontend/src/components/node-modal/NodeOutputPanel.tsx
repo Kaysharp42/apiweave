@@ -3,7 +3,7 @@ import type { NodeOutputPanelProps } from '../../types/NodeOutputPanelProps';
 
 function CodeBlock({ value }: { value: unknown }) {
   return (
-    <pre className="h-full w-full overflow-auto rounded-lg border border-border/70 bg-surface p-4 font-mono text-xs leading-relaxed text-text-secondary dark:border-border-dark/70 dark:bg-surface-dark dark:text-text-secondary-dark">
+    <pre className="h-full w-full overflow-auto rounded-sm border border-border bg-surface-raised p-4 font-mono text-xs leading-relaxed text-text-secondary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark">
       {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
     </pre>
   );
@@ -12,8 +12,8 @@ function CodeBlock({ value }: { value: unknown }) {
 export function NodeOutputPanel({ output }: NodeOutputPanelProps) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
-      <div className="flex flex-shrink-0 items-center justify-between border-b border-border/30 dark:border-border-dark/30 bg-surface/50 dark:bg-surface-dark/50 px-5 py-4 backdrop-blur-sm">
-        <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2 tracking-wide uppercase text-xs">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-surface-overlay px-5 py-3 dark:border-border-dark dark:bg-surface-dark-overlay">
+        <h3 className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wide text-text-primary dark:text-text-primary-dark">
           <FileText className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
           Node Output
         </h3>

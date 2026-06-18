@@ -36,10 +36,10 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
       scrollable={false}
       showClose={false}
       initialFocus={nameLabelRef}
-      className="!max-w-[1800px] !rounded-2xl !shadow-[var(--aw-shadow-modal)]"
+      className="!max-w-[1800px] !rounded-sm !shadow-[var(--aw-shadow-modal)]"
     >
-      <div className="flex h-full w-full flex-col xl:flex-row backdrop-blur-md">
-        <div className="flex h-full min-h-0 flex-col xl:basis-[56%] xl:min-w-0 border-r border-border/40 dark:border-border-dark/40 bg-surface-raised/60 dark:bg-surface-dark-raised/60">
+      <div className="flex h-full w-full flex-col xl:flex-row">
+        <div className="flex h-full min-h-0 flex-col xl:basis-[56%] xl:min-w-0 border-r border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
           <div className="flex h-full min-h-0 flex-col p-4 sm:p-5">
             <NodeModalHeader
               nodeType={node.type}
@@ -48,7 +48,7 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
               onClose={handleClose}
             />
 
-            <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border/50 dark:border-border-dark/50 bg-surface dark:bg-surface-dark shadow-inner">
+            <div className="min-h-0 flex-1 overflow-hidden rounded-sm border border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
               <div className="h-full overflow-y-auto p-4">
                 {node.type === 'http-request' && (
                   <HTTPRequestConfigPanel

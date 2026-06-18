@@ -37,14 +37,14 @@
 /* Edge label background */
 .react-flow__edge-text rect,
 .react-flow__edge-textbg {
-  fill: rgba(255, 255, 255, 0.95) !important;
-  stroke: rgba(0, 0, 0, 0.05) !important;
+  fill: var(--aw-surface-raised) !important;
+  stroke: color-mix(in srgb, var(--aw-border) 70%, transparent) !important;
 }
 
 .dark .react-flow__edge-text rect,
 .dark .react-flow__edge-textbg {
-  fill: rgba(31, 41, 55, 0.95) !important;
-  stroke: rgba(255, 255, 255, 0.04) !important;
+  fill: var(--aw-surface-raised) !important;
+  stroke: color-mix(in srgb, var(--aw-border) 80%, transparent) !important;
 }
 
 .react-flow__edge-text {
@@ -55,8 +55,9 @@
 .react-flow__controls {
   background-color: var(--aw-surface-raised);
   border: 1px solid var(--aw-border);
-  border-radius: var(--aw-radius-lg);
+  border-radius: var(--aw-radius-sm);
   box-shadow: var(--aw-shadow-raised);
+  overflow: hidden;
 }
 
 .react-flow__controls button {
@@ -84,51 +85,52 @@
 /* Minimap — token-based styling, both themes */
 .react-flow__minimap {
   background-color: var(--aw-surface-raised);
-  border: 2px solid var(--aw-border);
-  border-radius: var(--aw-radius-lg);
+  border: 1px solid var(--aw-border);
+  border-radius: var(--aw-radius-sm);
 }
 
 .react-flow__minimap:focus-visible {
   outline: var(--aw-focus-ring-width) solid var(--aw-primary);
   outline-offset: var(--aw-focus-ring-offset);
-  border-radius: var(--aw-radius-lg);
+  border-radius: var(--aw-radius-sm);
 }
 
 .react-flow__minimap-mask {
-  fill: rgba(15, 23, 42, 0.05);
+  fill: color-mix(in srgb, var(--aw-text-primary) 5%, transparent);
 }
 
 .dark .react-flow__minimap-mask {
-  fill: rgba(0, 0, 0, 0.6);
+  fill: color-mix(in srgb, var(--aw-surface) 64%, transparent);
 }
 
 /* Background & attribution */
 .react-flow__attribution {
-  background-color: rgba(255, 255, 255, 0.9);
+  background-color: color-mix(in srgb, var(--aw-surface-raised) 90%, transparent);
   color: var(--aw-text-muted);
 }
 
 .dark .react-flow__attribution {
-  background-color: rgba(31, 41, 55, 0.9);
+  background-color: color-mix(in srgb, var(--aw-surface-raised) 90%, transparent);
   color: var(--aw-text-muted);
 }
 
 /* Selection box */
 .react-flow__selectionpane {
-  background: rgba(13, 92, 110, 0.15);
+  background: color-mix(in srgb, var(--aw-primary) 12%, transparent);
   border: 1px solid var(--aw-primary);
 }
 
 .dark .react-flow__selectionpane {
-  background: rgba(34, 211, 238, 0.15);
+  background: color-mix(in srgb, var(--aw-primary) 14%, transparent);
   border: 1px solid var(--aw-primary);
 }
 
 
 /* Node handles — token-based styling */
 .react-flow__handle {
-  background-color: var(--aw-primary-light);
+  background-color: var(--aw-primary);
   border-color: var(--aw-surface-raised);
+  border-width: 1px;
 }
 
 .react-flow__handle:hover {

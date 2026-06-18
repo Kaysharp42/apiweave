@@ -96,8 +96,8 @@ export default function InviteAdminPage() {
     <>
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+          <div className="flex items-center justify-between mb-6 pb-6 border-b border-border dark:border-border-dark">
+            <h1 className="text-3xl font-display font-bold tracking-tight flex items-center gap-2 text-text-primary dark:text-text-primary-dark">
               <Mail className="w-6 h-6 text-primary" />
               Invite Management
             </h1>
@@ -150,7 +150,7 @@ export default function InviteAdminPage() {
 
             {/* Copy link banner when SMTP not configured */}
             {pendingLink && (
-              <div className="mt-4 p-4 rounded-lg bg-status-warning/10 border border-status-warning/20">
+              <div className="mt-4 p-4 rounded bg-status-warning/10 border border-status-warning/20">
                 <p className="text-sm text-text-primary dark:text-text-primary-dark mb-2">
                   Email not sent — SMTP is not configured. Share this link manually:
                 </p>
@@ -158,7 +158,7 @@ export default function InviteAdminPage() {
                   <code className="flex-1 text-xs font-mono truncate bg-surface dark:bg-surface-dark px-3 py-2 rounded border border-border dark:border-border-dark">
                     {pendingLink}
                   </code>
-                  <Button size="xs" variant="secondary" onClick={handleCopyPendingLink}>
+                  <Button size="xs" variant="outline" onClick={handleCopyPendingLink}>
                     <Copy className="w-3.5 h-3.5 mr-1" />
                     Copy Link
                   </Button>
@@ -214,7 +214,7 @@ export default function InviteAdminPage() {
                             {inv.token && (
                               <Button
                                 size="xs"
-                                variant="secondary"
+                                variant="outline"
                                 onClick={() => handleCopyLink(inv.id, inv.token!)}
                               >
                                 <Copy className="w-3.5 h-3.5 mr-1" />
@@ -223,7 +223,7 @@ export default function InviteAdminPage() {
                             )}
                             <Button
                               size="xs"
-                              variant="secondary"
+                              variant="outline"
                               intent="error"
                               onClick={() => setRevokeTarget({ id: inv.id, email: inv.email })}
                             >

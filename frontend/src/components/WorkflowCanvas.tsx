@@ -15,7 +15,6 @@ import ReactFlow, {
   type EdgeTypes,
   type ReactFlowInstance,
 } from 'reactflow';
-// @ts-expect-error reactflow CSS import has no type declarations
 import 'reactflow/dist/style.css';
 
 import HTTPRequestNode from './nodes/HTTPRequestNode';
@@ -57,6 +56,9 @@ import { authenticatedFetch } from '../utils/authenticatedApi';
 const branchEdgeColor = 'var(--aw-branch-edge)';
 const branchLabelColor = 'var(--aw-branch-label)';
 
+const NOISE_DATA_URI =
+  "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
+
 const nodeTypes: NodeTypes = {
   'http-request': HTTPRequestNode as NodeTypes[string],
   'assertion': AssertionNode as NodeTypes[string],
@@ -73,7 +75,7 @@ const edgeTypes: EdgeTypes = {
 // Module-scope on purpose: inline definitions create new refs every render and re-trigger ReactFlow layout work during pan/drag.
 const reactFlowStyle = { width: '100%', height: '100%' };
 
-const defaultEdgeOptions = { type: 'custom' as const, animated: true };
+const defaultEdgeOptions = { type: 'custom' as const, animated: false };
 
 const fitViewOptions = {
   padding: 0.25,
@@ -83,8 +85,8 @@ const fitViewOptions = {
 
 const miniMapStyle = {
   backgroundColor: 'var(--aw-surface-raised)',
-  border: '2px solid var(--aw-border)',
-  borderRadius: 'var(--aw-radius-lg)',
+  border: '1px solid var(--aw-border)',
+  borderRadius: 'var(--aw-radius-sm)',
   width: 220,
   height: 150,
 };
@@ -353,7 +355,7 @@ export function WorkflowCanvas({
               stroke: edge.sourceHandle === 'pass'
                 ? assertionEdgeColor('pass')
                 : assertionEdgeColor('fail'),
-              strokeWidth: 2,
+      strokeWidth: 1,
             },
             labelStyle: {
               fill: edge.sourceHandle === 'pass'
@@ -483,7 +485,7 @@ export function WorkflowCanvas({
                 animated: true,
                 style: {
                   stroke: branchEdgeColor,
-                  strokeWidth: 2
+      strokeWidth: 1
                 },
                 label: `Branch ${branchIndex}`,
                 labelStyle: {
@@ -506,7 +508,7 @@ export function WorkflowCanvas({
             animated: true,
             style: {
               stroke: branchEdgeColor,
-              strokeWidth: 2
+              strokeWidth: 1
             },
             label: `Branch ${parallelEdges.length}`,
             labelStyle: {
@@ -745,8 +747,15 @@ export function WorkflowCanvas({
   );
 
   return (
-    <main className="w-full h-full min-h-0 relative bg-[var(--aw-surface)] transition-colors duration-300" aria-label="Workflow canvas">
+    <main className="w-full h-full min-h-0 relative overflow-hidden bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark transition-colors duration-300" aria-label="Workflow canvas">
+      <div className="absolute inset-0 opacity-[0.05] dark:opacity-[0.07] bg-[linear-gradient(currentColor_1px,transparent_1px),linear-gradient(90deg,currentColor_1px,transparent_1px)] bg-[size:32px_32px] text-text-primary dark:text-text-primary-dark pointer-events-none" aria-hidden="true" />
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 opacity-[0.04] dark:opacity-[0.07] pointer-events-none mix-blend-multiply dark:mix-blend-screen"
+        style={{ backgroundImage: NOISE_DATA_URI, backgroundSize: '240px 240px' }}
+      />
       <ReactFlow
+        className="relative z-10 bg-transparent"
         style={reactFlowStyle}
         nodes={nodes}
         edges={edges}
@@ -788,8 +797,8 @@ export function WorkflowCanvas({
           <MiniMap
             nodeColor={getNodeColor}
             nodeStrokeColor={getNodeStrokeColor}
-            nodeStrokeWidth={2}
-            maskColor={darkMode ? 'rgba(15, 23, 42, 0.6)' : 'rgba(15, 23, 42, 0.05)'}
+            nodeStrokeWidth={1}
+            maskColor={darkMode ? 'color-mix(in srgb, var(--aw-surface) 64%, transparent)' : 'color-mix(in srgb, var(--aw-text-primary) 5%, transparent)'}
             style={miniMapStyle}
             zoomable
             pannable

@@ -1,6 +1,5 @@
 import { useReducer, useEffect, useCallback } from 'react';
 import { Allotment } from 'allotment';
-// @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
 import WorkflowCanvas from '../WorkflowCanvas';
 import VariablesPanel from '../VariablesPanel';
@@ -170,8 +169,8 @@ export function Workspace(_props: WorkspaceProps) {
           >
             {/* Environment banner — compact, only when active */}
             {activeTab.workflow?.environmentId && (
-              <div className="px-3 py-1.5 bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 border-b border-[var(--aw-primary)]/20 dark:border-[var(--aw-primary)]/20 flex items-center gap-2 text-xs min-w-0">
-                <Globe className="w-3.5 h-3.5 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" aria-hidden="true" />
+              <div className="flex min-w-0 items-center gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 text-xs dark:border-primary-light/20 dark:bg-primary-light/10">
+                <Globe className="w-3.5 h-3.5 flex-shrink-0 text-primary dark:text-primary-light" aria-hidden="true" />
                 <span className="text-text-secondary dark:text-text-secondary-dark flex-shrink-0">Environment:</span>
                 <Badge variant="primary" size="sm" className="min-w-0 truncate">
                   <span className="min-w-0 truncate">
@@ -199,7 +198,7 @@ export function Workspace(_props: WorkspaceProps) {
                 {state.showVariablesPanel && (
                   <Allotment.Pane preferredSize={320} minSize={280}>
                     <Panel
-                      className="h-full border-0 rounded-none"
+                      className="h-full rounded-none border-l border-border dark:border-border-dark"
                       title=""
                       collapsible={false}
                       headerActions={

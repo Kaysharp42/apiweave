@@ -114,7 +114,7 @@ export function EnvironmentForm({
             {availableWorkspaces.map((ws) => (
               <label
                 key={ws.workspaceId}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay cursor-pointer transition-colors"
+                className="flex items-center gap-2 px-3 py-2 rounded border border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay cursor-pointer transition-colors"
               >
                 <input
                   type="checkbox"
@@ -138,7 +138,7 @@ export function EnvironmentForm({
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel} disabled={submitting}>
+        <Button variant="outline" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
         <Button variant="primary" intent="success" loading={submitting} type="submit">

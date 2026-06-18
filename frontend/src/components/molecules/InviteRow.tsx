@@ -15,14 +15,14 @@ export function InviteRow({ invite, onResend, onCancel, resending = false }: Inv
   const isConsumed = invite.consumed;
 
   return (
-    <tr className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors">
+    <tr className="border-b border-border transition-colors last:border-0 hover:bg-surface-overlay dark:border-border-dark dark:hover:bg-surface-dark-overlay">
       <td className="px-6 py-3">
         <span className="font-medium text-text-primary dark:text-text-primary-dark">
           {invite.email}
         </span>
       </td>
       <td className="px-6 py-3">
-        <span className="px-2 py-0.5 bg-primary/10 text-primary dark:text-primary-light rounded-full text-xs font-medium">
+        <span className="rounded-full border border-border bg-surface-raised px-1.5 py-0.5 font-mono text-[10px] font-medium text-text-secondary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark">
           {invite.role}
         </span>
       </td>

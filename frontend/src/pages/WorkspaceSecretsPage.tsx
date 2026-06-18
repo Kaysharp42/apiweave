@@ -38,11 +38,11 @@ export function WorkspaceSecretsPage() {
   }, []);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pb-6 border-b border-border dark:border-border-dark">
         <div>
-          <h1 className="text-2xl font-bold font-display text-text-primary dark:text-text-primary-dark flex items-center gap-2">
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark flex items-center gap-2">
             <KeyRound className="w-6 h-6 text-primary" aria-hidden="true" />
             Secrets
           </h1>
@@ -52,7 +52,7 @@ export function WorkspaceSecretsPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            variant="secondary"
+            variant="outline"
             size="sm"
             onClick={() => setShowBindings(!showBindings)}
           >

@@ -368,7 +368,7 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
                           </span>
                           <Button
                             size="xs"
-                            variant="secondary"
+                            variant="outline"
                             onClick={() => setGrantOpen(true)}
                           >
                             <Shield className="w-3 h-3" />
@@ -382,8 +382,8 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
                             No permissions granted.
                           </p>
                         ) : (
-                          <table className="w-full text-xs text-left">
-                            <thead className="text-text-muted dark:text-text-muted-dark uppercase">
+                          <table className="w-full text-xs text-left border-collapse border border-border dark:border-border-dark">
+                            <thead className="text-text-secondary dark:text-text-secondary-dark uppercase bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark">
                               <tr>
                                 <th className="px-4 py-1.5">Type</th>
                                 <th className="px-4 py-1.5">Resource</th>
@@ -420,7 +420,7 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
         size="sm"
         footer={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setCreateOpen(false)}>
+            <Button variant="outline" size="sm" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
             <Button
@@ -468,7 +468,7 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
         size="sm"
         footer={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setRenameOpen(false)}>
+            <Button variant="outline" size="sm" onClick={() => setRenameOpen(false)}>
               Cancel
             </Button>
             <Button size="sm" onClick={handleRename} disabled={!renameName.trim()}>
@@ -495,7 +495,7 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
         size="sm"
         footer={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setGrantOpen(false)}>
+            <Button variant="outline" size="sm" onClick={() => setGrantOpen(false)}>
               Cancel
             </Button>
             <Button
@@ -512,7 +512,7 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
         <div className="p-5 space-y-4">
           <FormField label="Resource type">
             <select
-              className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-sm"
+              className="select select-bordered w-full rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-sm focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)]"
               value={grantResourceType}
               onChange={(e) => setGrantResourceType(e.target.value)}
             >

@@ -14,18 +14,18 @@ export function HttpRequestOutputPanel({ node, initialConfig, output }: HttpRequ
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
-      <div className="flex flex-shrink-0 items-center justify-between border-b border-border/30 dark:border-border-dark/30 bg-surface/50 dark:bg-surface-dark/50 px-5 py-4 backdrop-blur-sm">
-        <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2 tracking-wide uppercase text-xs">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-surface-overlay px-5 py-3 dark:border-border-dark dark:bg-surface-dark-overlay">
+        <h3 className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wide text-text-primary dark:text-text-primary-dark">
           <FileText className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
           Response Output
         </h3>
         {node.type === 'http-request' && statusCode && (
           <div className="flex items-center gap-2">
-            <span className={`text-xs font-semibold px-2 py-1 rounded ${statusColor}`}>
+            <span className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold ${statusColor}`}>
               {statusCode}
             </span>
             {durationLabel && (
-              <span className="text-xs font-semibold px-2 py-1 rounded bg-[var(--aw-status-info)]/10 text-[var(--aw-status-info)]">
+              <span className="rounded-full border border-status-info/30 bg-status-info/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-status-info dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10 dark:text-[var(--aw-status-info)]">
                 {durationLabel}
               </span>
             )}
@@ -46,9 +46,9 @@ export function HttpRequestOutputPanel({ node, initialConfig, output }: HttpRequ
 
       {output && node.type === 'http-request' && (
         <>
-          <div className="flex-shrink-0 border-b border-border/30 bg-surface-raised/30 px-5 py-3 dark:border-border-dark/30 dark:bg-surface-dark-raised/30">
+          <div className="flex-shrink-0 border-b border-border bg-surface-raised px-5 py-3 dark:border-border-dark dark:bg-surface-dark-raised">
             <div className="flex items-center gap-3 text-xs">
-              <span className="font-bold px-2 py-0.5 rounded bg-[var(--aw-primary)]/10 text-[var(--aw-primary)] dark:text-cyan-400">
+              <span className="rounded-full border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary dark:border-primary-light/30 dark:bg-primary-light/10 dark:text-primary-light">
                 {initialConfig.method || 'GET'}
               </span>
               <span className="text-text-primary dark:text-text-primary-dark truncate font-mono text-xs opacity-90 min-w-0">

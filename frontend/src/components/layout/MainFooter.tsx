@@ -1,7 +1,5 @@
 import { Github, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import Tippy from '@tippyjs/react';
-// @ts-expect-error CSS import without types
-import 'tippy.js/dist/tippy.css';
 import { IconButton } from '../atoms/IconButton';
 import useNavigationStore from '../../stores/NavigationStore';
 
@@ -10,13 +8,13 @@ export function MainFooter() {
   const toggleNavBarCollapse = useNavigationStore((state) => state.toggleNavBarCollapse);
 
   return (
-    <footer className="flex items-center justify-between px-4 h-footer min-h-0 bg-surface-raised dark:bg-surface-dark-raised border-t border-border dark:border-border-dark text-xs transition-colors">
+    <footer className="flex h-footer min-h-0 items-center justify-between border-t border-border bg-surface-raised px-4 font-mono text-xs text-text-secondary transition-colors dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark">
       <div className="flex items-center gap-2">
-        <span className="badge badge-ghost badge-xs font-mono">v0.1.0</span>
+        <span className="rounded-full border border-border bg-surface-overlay px-2 py-0.5 text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">v0.1.0</span>
       </div>
 
       <div className="flex items-center gap-1.5 text-text-secondary dark:text-text-secondary-dark">
-        <span className="w-1.5 h-1.5 rounded-full bg-[var(--aw-status-success)]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-status-success dark:bg-status-success-dark" />
         <span>Ready</span>
       </div>
 
@@ -25,7 +23,7 @@ export function MainFooter() {
           tooltip={isNavBarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           size="xs"
           onClick={toggleNavBarCollapse}
-          className="hidden lg:inline-flex focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+          className="hidden rounded lg:inline-flex focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light"
         >
           {isNavBarCollapsed ? (
             <PanelLeftOpen className="w-3.5 h-3.5" />
@@ -38,7 +36,7 @@ export function MainFooter() {
             href="https://github.com/Kaysharp42/apiweave"
             target="_blank"
             rel="noopener noreferrer"
-            className="btn btn-ghost btn-xs btn-square text-text-muted dark:text-text-muted-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+            className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark dark:focus-visible:outline-primary-light"
             aria-label="View on GitHub"
           >
             <Github className="w-3.5 h-3.5" />

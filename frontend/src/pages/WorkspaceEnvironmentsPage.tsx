@@ -329,20 +329,20 @@ export default function WorkspaceEnvironmentsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-border dark:border-border-dark">
+      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
         <button
           type="button"
           onClick={() => {
             setViewMode('list');
             setSelectedEnv(null);
           }}
-          className="p-1.5 rounded-lg text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer"
+          className="p-1.5 rounded text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
         <div>
-          <h1 className="text-lg font-bold font-display text-text-primary dark:text-text-primary-dark">
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
             Environments
           </h1>
           <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
@@ -355,7 +355,7 @@ export default function WorkspaceEnvironmentsPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="mx-6 mt-4 p-3 rounded-lg bg-status-error/10 dark:bg-status-error/20 border border-status-error/30 text-sm text-status-error">
+        <div className="mx-6 mt-4 p-3 rounded bg-status-error/10 dark:bg-status-error/20 border border-status-error/30 text-sm text-status-error">
           {error}
           <button
             type="button"

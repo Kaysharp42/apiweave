@@ -241,7 +241,7 @@ export function WorkflowSettingsPanel() {
                 ) : collections && collections.length > 0 ? (
                   <div className="relative min-w-0">
                     <Button
-                      variant="secondary"
+                      variant="outline"
                       size="sm"
                       fullWidth
                        onClick={() => setShowProjectDropdown(!showProjectDropdown)}
@@ -258,7 +258,7 @@ export function WorkflowSettingsPanel() {
                     </Button>
 
                     {showProjectDropdown && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-md shadow-[var(--aw-shadow-popover)] max-h-60 overflow-y-auto overflow-x-hidden">
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded max-h-60 overflow-y-auto overflow-x-hidden">
                         <div className="py-1">
                           {collections.map((collection) => {
                             const c = collection as unknown as LocalProject;

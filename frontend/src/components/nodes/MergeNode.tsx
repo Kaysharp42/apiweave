@@ -8,7 +8,7 @@ const BranchMapping = ({ branches }: { branches: BranchInfo[] }) => (
     {branches.map((b) => (
       <div
         key={b.index}
-        className="text-[10px] p-1.5 rounded border"
+      className="text-[10px] p-1.5 rounded-sm border"
         style={{ backgroundColor: 'var(--aw-surface-raised)', borderColor: 'var(--aw-border)' }}
       >
         <span className="font-medium truncate" style={{ color: 'var(--aw-text-primary)' }}>
@@ -47,7 +47,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
   const result = executionResult ?? data.result;
 
   const icon = useMemo(() => (
-    <GitMerge className="w-4 h-4" style={{ color: 'var(--aw-branch-edge)' }} />
+    <GitMerge className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
   ), []);
 
   const titleExtra = useMemo(() => {
@@ -55,11 +55,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
 
     return (
       <span
-        className="text-[9px] px-1.5 py-0.5 rounded font-semibold"
-        style={{
-          backgroundColor: 'var(--aw-branch-edge)/15',
-          color: 'var(--aw-branch-edge)',
-        }}
+        className="text-[9px] px-1.5 py-0.5 rounded-sm font-mono border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark"
         title={`Merging ${data.incomingBranchCount} branches`}
       >
         &larr; {data.incomingBranchCount}x
@@ -117,7 +113,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
                   onChange={() => {}}
                   disabled
                   title="Double-click node to change strategy"
-                  className="w-full px-1.5 py-0.5 text-xs border rounded cursor-not-allowed opacity-75"
+                  className="w-full px-1.5 py-0.5 text-xs border rounded-sm cursor-not-allowed opacity-75"
                   style={{ borderColor: 'var(--aw-border)', backgroundColor: 'var(--aw-surface-raised)', color: 'var(--aw-text-primary)' }}
                 >
                   <option value="all">Wait for All (AND)</option>
@@ -132,7 +128,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
 
               {result && (
                 <div
-                  className="text-xs p-2 rounded border"
+                  className="text-xs p-2 rounded-sm border"
                   style={{ backgroundColor: 'var(--aw-surface-raised)', borderColor: 'var(--aw-border)', color: 'var(--aw-text-secondary)' }}
                 >
                   <div className="font-medium mb-1 flex items-center gap-2">
@@ -148,8 +144,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
 
                   {result.warning && (
                     <div
-                      className="mt-2 p-1.5 border rounded"
-                      style={{ backgroundColor: 'var(--aw-status-warning)/5', borderColor: 'var(--aw-status-warning)' }}
+                      className="mt-2 p-1.5 border rounded-sm bg-[var(--aw-status-warning)]/5 border-status-warning/30"
                     >
                       <div className="text-[10px] flex items-center gap-1" style={{ color: 'var(--aw-status-warning)' }}>
                         <AlertTriangle className="w-3 h-3 flex-shrink-0" />
@@ -175,8 +170,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
 
               {data.incomingBranchCount && data.incomingBranchCount > 1 && !result && (
                 <div
-                  className="text-xs rounded border p-2"
-                  style={{ backgroundColor: 'var(--aw-branch-edge)/5', borderColor: 'var(--aw-branch-edge)' }}
+                  className="text-xs rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2"
                 >
                   <div className="font-semibold mb-1 text-[10px] flex items-center gap-1" style={{ color: 'var(--aw-branch-edge)' }}>
                     <GitMerge className="w-3 h-3" />

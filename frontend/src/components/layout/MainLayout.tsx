@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { Allotment } from 'allotment';
-// @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
 import { useLocation } from 'react-router-dom';
 import { AppNavBar } from './AppNavBar';
@@ -65,7 +64,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       {/* Skip to main content link */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-surface-raised focus:text-text-primary focus:shadow-modal focus:rounded-lg focus:outline-2 focus:outline-[var(--aw-primary)] focus:outline-offset-2"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:border focus:border-border focus:bg-surface-raised focus:px-4 focus:py-2 focus:text-text-primary focus:outline-2 focus:outline-primary focus:outline-offset-2 dark:focus:border-border-dark dark:focus:bg-surface-dark-raised dark:focus:text-text-primary-dark dark:focus:outline-primary-light"
       >
         Skip to main content
       </a>
@@ -117,12 +116,12 @@ export function MainLayout({ children }: MainLayoutProps) {
         {mobileSidebarOpen && (
           <>
             <div
-              className="fixed inset-0 bg-black/30 z-40 motion-reduce:transition-none"
+              className="fixed inset-0 z-40 bg-text-primary/30 motion-reduce:transition-none dark:bg-text-primary-dark/30"
               onClick={() => setMobileSidebarOpen(false)}
               aria-hidden="true"
             />
             <aside
-              className="fixed left-14 top-12 bottom-8 w-80 z-50 bg-surface-raised dark:bg-surface-dark-raised border-r border-border dark:border-border-dark shadow-modal overflow-hidden flex flex-col"
+              className="fixed bottom-8 left-14 top-12 z-50 flex w-80 flex-col overflow-hidden border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
               aria-label="Sidebar"
             >
               <Sidebar />

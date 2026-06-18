@@ -4,15 +4,15 @@ import type { WorkspaceEmptyStateProps } from '../../types';
 
 export function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCollection }: WorkspaceEmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-8 select-none px-6 motion-reduce:animate-none">
+    <div className="flex h-full select-none flex-col items-center justify-center gap-8 px-6 py-12 motion-reduce:animate-none">
       {/* Icon */}
-      <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-[var(--aw-primary)]/10 dark:bg-[var(--aw-primary)]/20 shadow-[var(--aw-shadow-raised)]">
-        <LayoutGrid className="w-8 h-8 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" strokeWidth={1.5} />
+      <div className="flex h-16 w-16 items-center justify-center rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
+        <LayoutGrid className="h-8 w-8 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />
       </div>
 
       {/* Text */}
       <div className="text-center space-y-2 max-w-sm">
-        <h2 className="text-xl font-display font-semibold text-text-primary dark:text-text-primary-dark">
+        <h2 className="font-display text-xl font-semibold text-text-primary dark:text-text-primary-dark">
           Welcome to APIWeave
         </h2>
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark leading-relaxed">
@@ -32,13 +32,13 @@ export function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCollection 
 
         <div className="flex items-center justify-center gap-2 w-full">
           {onImport && (
-            <Button variant="ghost" size="xs" onClick={onImport} className="flex-1">
+            <Button variant="outline" size="xs" onClick={onImport} className="flex-1">
               <Upload className="w-3.5 h-3.5" />
               Import Workflow
             </Button>
           )}
           {onOpenCollection && (
-            <Button variant="ghost" size="xs" onClick={onOpenCollection} className="flex-1">
+            <Button variant="outline" size="xs" onClick={onOpenCollection} className="flex-1">
               <FolderOpen className="w-3.5 h-3.5" />
               Open Collection
             </Button>
@@ -49,37 +49,37 @@ export function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCollection 
       {/* Shortcuts */}
       <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[11px] text-text-muted dark:text-text-muted-dark">
         <span className="inline-flex items-center gap-1">
-          <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark font-mono text-[10px] text-text-secondary dark:text-text-secondary-dark">
+          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
             Ctrl
           </kbd>
           <span>+</span>
-          <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark font-mono text-[10px] text-text-secondary dark:text-text-secondary-dark">
+          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
             N
           </kbd>
           <span className="ml-0.5">New</span>
         </span>
         <span className="inline-flex items-center gap-1">
-          <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark font-mono text-[10px] text-text-secondary dark:text-text-secondary-dark">
+          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
             Ctrl
           </kbd>
           <span>+</span>
-          <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark font-mono text-[10px] text-text-secondary dark:text-text-secondary-dark">
+          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
             Tab
           </kbd>
           <span className="ml-0.5">Cycle</span>
         </span>
         <span className="inline-flex items-center gap-1">
-          <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark font-mono text-[10px] text-text-secondary dark:text-text-secondary-dark">
+          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
             Ctrl
           </kbd>
           <span>+</span>
-          <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark font-mono text-[10px] text-text-secondary dark:text-text-secondary-dark">
+          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
             W
           </kbd>
           <span className="ml-0.5">Close</span>
         </span>
         <span className="inline-flex items-center gap-1">
-          <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark font-mono text-[10px] text-text-secondary dark:text-text-secondary-dark">
+          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
             ?
           </kbd>
           <span className="ml-0.5">Shortcuts</span>

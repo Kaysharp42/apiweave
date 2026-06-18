@@ -6,13 +6,12 @@ export function Toast() {
       position="top-right"
       toastOptions={{
         duration: 4000,
-        className: 'font-sans text-sm',
+        className: 'font-sans text-sm rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark shadow-popover',
         style: {
-          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+          fontFamily: 'inherit',
         },
       }}
       theme="system"
-      richColors
       closeButton
     />
   );

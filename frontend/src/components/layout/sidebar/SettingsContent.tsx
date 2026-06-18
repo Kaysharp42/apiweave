@@ -18,7 +18,7 @@ export function SettingsContent({
   const wsBase = `/${orgSlug}/${workspaceSlug}`;
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="h-full overflow-auto bg-surface-raised dark:bg-surface-dark-raised">
       {/* Workspace-scoped settings */}
       <div className="px-3 pt-3 pb-1">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
@@ -30,9 +30,9 @@ export function SettingsContent({
           <button
             type="button"
             className={[
-              'flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left',
-              'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-              'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+              'flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left',
+              'hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay',
+              'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
               'cursor-pointer transition-colors',
             ].join(' ')}
             onClick={() => onNavigate(`${wsBase}/projects`)}
@@ -48,9 +48,9 @@ export function SettingsContent({
           <button
             type="button"
             className={[
-              'flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left',
-              'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-              'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+              'flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left',
+              'hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay',
+              'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
               'cursor-pointer transition-colors',
             ].join(' ')}
             onClick={() => onNavigate(`${wsBase}/settings/environments`)}
@@ -66,9 +66,9 @@ export function SettingsContent({
           <button
             type="button"
             className={[
-              'flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left',
-              'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-              'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+              'flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left',
+              'hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay',
+              'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
               'cursor-pointer transition-colors',
             ].join(' ')}
             onClick={() => onNavigate(`${wsBase}/settings/secrets`)}
@@ -84,9 +84,9 @@ export function SettingsContent({
           <button
             type="button"
             className={[
-              'flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left',
-              'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-              'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+              'flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left',
+              'hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay',
+              'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
               'cursor-pointer transition-colors',
             ].join(' ')}
             onClick={() => onNavigate(`${wsBase}/settings/tokens`)}
@@ -113,9 +113,9 @@ export function SettingsContent({
               <button
                 type="button"
                 className={[
-                  'flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left',
-                  'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-                  'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+                  'flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left',
+                  'hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay',
+                  'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
                   'cursor-pointer transition-colors',
                 ].join(' ')}
                 onClick={() => onNavigate('/settings/users')}
@@ -131,9 +131,9 @@ export function SettingsContent({
               <button
                 type="button"
                 className={[
-                  'flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left',
-                  'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-                  'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+                  'flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left',
+                  'hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay',
+                  'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
                   'cursor-pointer transition-colors',
                 ].join(' ')}
                 onClick={() => onNavigate('/settings/invites')}
@@ -149,9 +149,9 @@ export function SettingsContent({
               <button
                 type="button"
                 className={[
-                  'flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left',
-                  'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-                  'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+                  'flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left',
+                  'hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay',
+                  'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
                   'cursor-pointer transition-colors',
                 ].join(' ')}
                 onClick={() => onNavigate('/settings/domains')}

@@ -79,7 +79,7 @@ export function HTTPRequestConfigPanel({ initialConfig, workingDataRef }: HTTPRe
                       setMethodValue(method);
                       updateRef();
                     }}
-                    className="cursor-pointer"
+                    className="font-mono cursor-pointer"
                   >
                     {method}
                   </Button>
@@ -114,7 +114,7 @@ export function HTTPRequestConfigPanel({ initialConfig, workingDataRef }: HTTPRe
                   queryParamsRef.current = e.target.value;
                 }}
                 className="font-mono"
-                placeholder="page=1&#10;limit=10"
+                placeholder={'page=1\nlimit=10'}
                 rows={3}
               />
             </FormField>
@@ -130,7 +130,7 @@ export function HTTPRequestConfigPanel({ initialConfig, workingDataRef }: HTTPRe
                   headersRef.current = e.target.value;
                 }}
                 className="font-mono"
-                placeholder="Content-Type=application/json&#10;Authorization=Bearer {{variables.token}}"
+                placeholder={'Content-Type=application/json\nAuthorization=Bearer {{variables.token}}'}
                 rows={3}
               />
             </FormField>

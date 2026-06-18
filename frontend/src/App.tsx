@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, type ReactNode, useRef, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SetupPage from './pages/SetupPage';
 import InvitePage from './pages/InvitePage';
@@ -39,7 +40,7 @@ const setStoredValue = (key: string, value: string): void => {
   localStorage.setItem(key, value);
 };
 
-interface AppContextValue {
+export interface AppContextValue {
   darkMode: boolean;
   setDarkMode: React.Dispatch<React.SetStateAction<boolean>>;
   autoSaveEnabled: boolean;
@@ -214,6 +215,10 @@ function App() {
             <Routes>
               <Route
                 path="/"
+                element={<LandingPage />}
+              />
+              <Route
+                path="/app"
                 element={
                   <ProtectedRoute>
                     <DefaultWorkspaceRedirect />

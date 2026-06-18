@@ -44,7 +44,7 @@ export function PromptDialog({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-slate-950/30" aria-hidden="true" />
+          <div className="fixed inset-0 bg-text-primary/30 dark:bg-surface-dark/80" aria-hidden="true" />
         </Transition.Child>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -57,13 +57,13 @@ export function PromptDialog({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-md rounded-lg bg-surface-raised dark:bg-surface-dark-raised p-6 shadow-modal border border-border dark:border-border-dark">
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 p-1 rounded-full bg-primary/10">
-                  <FileText className="w-5 h-5 text-primary dark:text-primary" />
+            <Dialog.Panel className="w-full max-w-md rounded-sm border border-border bg-surface-raised shadow-modal dark:border-border-dark dark:bg-surface-dark-raised">
+              <div className="flex items-start gap-3 border-b border-border p-5 dark:border-border-dark">
+                <div className="flex-shrink-0 rounded-full bg-primary/10 p-1 dark:bg-primary-light/10">
+                  <FileText className="h-5 w-5 text-primary dark:text-primary-light" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark truncate">
+                  <Dialog.Title className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
                     {title}
                   </Dialog.Title>
                   {message && (
@@ -74,7 +74,7 @@ export function PromptDialog({
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} className="mt-4">
+              <form onSubmit={handleSubmit} className="p-5">
                 <input
                   ref={inputRef}
                   type="text"
@@ -82,7 +82,7 @@ export function PromptDialog({
                   onChange={(e) => setValue(e.target.value)}
                   placeholder={placeholder}
                   aria-label={title}
-                  className="input input-bordered input-sm w-full bg-surface dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus:border-primary dark:focus:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:focus-visible:outline-primary-light focus-visible:outline-offset-2"
+                  className="h-8 w-full rounded-sm border border-border bg-surface-raised px-2.5 text-sm text-text-primary placeholder:text-text-muted transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-primary-light"
                 />
 
                 <div className="flex justify-end gap-2 mt-4">
