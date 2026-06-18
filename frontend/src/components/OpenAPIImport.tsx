@@ -4,12 +4,16 @@ import { usePalette } from '../contexts/PaletteContext';
 import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { Input } from './atoms/Input';
+import { useScopeContext } from '../hooks/useScopeContext';
+import { authenticatedFetch } from '../utils/authenticatedApi';
+import { workflowImportOpenapiUrl } from '../utils/scopedApi';
 import type { OpenAPIImportProps } from '../types/OpenAPIImportProps';
 import type { PreviewNode } from '../types/PreviewNode';
 import type { PreviewData } from '../types/PreviewData';
 import type { ImportedItem } from '../types/ImportedItem';
 
 export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) {
+  const { workspaceId } = useScopeContext();
   const [openapiFile, setOpenapiFile] = useState<File | null>(null);
   const [openapiJson, setOpenapiJson] = useState<Record<string, unknown> | null>(null);
   const [baseUrl, setBaseUrl] = useState<string>('');
@@ -87,7 +91,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
       if (selectedTags.length > 0) params.append('tag_filter', selectedTags.join(','));
       params.append('sanitize', String(sanitize));
 
-      const response = await fetch(`/api/workflows/import/openapi/dry-run?${params}`, {
+      const response = await authenticatedFetch(`${workflowImportOpenapiUrl(workspaceId || '', true)}?${params}`, {
         method: 'POST',
         body: formData,
       });

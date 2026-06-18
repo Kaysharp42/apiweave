@@ -1,8 +1,12 @@
 import { useState, useRef, useCallback, useEffect, useMemo, type MutableRefObject } from 'react';
 import { toast } from 'sonner';
 import type { Node } from 'reactflow';
-import API_BASE_URL from '../utils/api';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import {
+  workflowRunUrl,
+  workflowRunStatusUrl,
+  workflowLatestFailedUrl,
+} from '../utils/scopedApi';
 
 interface NodeStatusUpdate {
   status: string;
@@ -38,11 +42,6 @@ function selectiveNodeUpdate(currentNodes: Node[], nodeStatuses: NodeStatuses): 
   });
 }
 
-interface Environment {
-  environmentId: string;
-  secrets?: Record<string, string>;
-}
-
 interface FailedNodeOption {
   nodeId: string;
   label: string;
@@ -58,11 +57,11 @@ interface RunOptions {
 }
 
 interface UseWorkflowPollingParams {
+  workspaceId: string | null;
   workflowId: string | undefined;
   nodes: Node[];
   setNodes: (updater: (nds: Node[]) => Node[]) => void;
   selectedEnvironment: string | null | undefined;
-  environments: Environment[];
   reactFlowInstanceRef: MutableRefObject<{
     setCenter: (x: number, y: number, opts: { zoom: number }) => void;
   } | null> | null;
@@ -79,35 +78,29 @@ interface UseWorkflowPollingResult {
   resumeSourceRunId: string | null;
   isResumeLoading: boolean;
   refreshLatestFailedRun: () => Promise<{ runId: string | null; failedNodes: FailedNodeOption[] }>;
-  showSecretsPrompt: boolean;
-  setShowSecretsPrompt: React.Dispatch<React.SetStateAction<boolean>>;
-  pendingRunRef: MutableRefObject<RunOptions | null>;
-  handleSecretsProvided: (secrets: Record<string, string>) => void;
   loadHistoricalRun: (run: { runId: string }) => Promise<void>;
 }
 
 export default function useWorkflowPolling({
+  workspaceId,
   workflowId,
   nodes,
   setNodes,
   selectedEnvironment,
-  environments,
   reactFlowInstanceRef,
 }: UseWorkflowPollingParams): UseWorkflowPollingResult {
   const [isRunning, setIsRunning] = useState(false);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
-  const [showSecretsPrompt, setShowSecretsPrompt] = useState(false);
   const [isResumeLoading, setIsResumeLoading] = useState(false);
   const [latestFailedRun, setLatestFailedRun] = useState<{ runId: string | null; failedNodes: FailedNodeOption[] } | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pendingRunRef = useRef<RunOptions | null>(null);
   const latestFailedRunRef = useRef<{ runId: string | null; failedNodes: FailedNodeOption[] } | null>(null);
 
   const resumeOptions = useMemo(() => latestFailedRun?.failedNodes ?? [], [latestFailedRun]);
   const resumeSourceRunId = useMemo(() => latestFailedRun?.runId ?? null, [latestFailedRun]);
 
   const refreshLatestFailedRun = useCallback(async () => {
-    if (!workflowId) {
+    if (!workspaceId || !workflowId) {
       latestFailedRunRef.current = null;
       setLatestFailedRun(null);
       return { runId: null, failedNodes: [] };
@@ -115,7 +108,7 @@ export default function useWorkflowPolling({
 
     setIsResumeLoading(true);
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs/latest-failed`);
+      const response = await authenticatedFetch(workflowLatestFailedUrl(workspaceId, workflowId));
       if (!response.ok) {
         latestFailedRunRef.current = null;
         setLatestFailedRun(null);
@@ -150,25 +143,10 @@ export default function useWorkflowPolling({
     } finally {
       setIsResumeLoading(false);
     }
-  }, [workflowId]);
+  }, [workspaceId, workflowId]);
 
-  const executeRunWithSecrets = useCallback(async (runOptions: RunOptions = {}) => {
-    const envId =
-      selectedEnvironment && selectedEnvironment.trim()
-        ? selectedEnvironment.trim()
-        : null;
-
-    let runtimeSecrets: Record<string, string> = {};
-    if (envId) {
-      const selectedEnv = environments.find(
-        (e) => e.environmentId === envId,
-      );
-      const envSecrets = selectedEnv?.secrets ?? {};
-      Object.keys(envSecrets).forEach((key) => {
-        const val = sessionStorage.getItem(`secret_${key}`);
-        if (val) runtimeSecrets[key] = val;
-      });
-    }
+  const executeWorkflow = useCallback(async (runOptions: RunOptions = {}) => {
+    if (!workspaceId || !workflowId) return;
 
     const invalidSummary: { nodeId: string; missing: string[] }[] = [];
     nodes.forEach((n) => {
@@ -258,14 +236,9 @@ export default function useWorkflowPolling({
           ? selectedEnvironment.trim()
           : null;
 
-      const url = runEnvId
-        ? `${API_BASE_URL}/api/workflows/${workflowId}/run?environmentId=${runEnvId}`
-        : `${API_BASE_URL}/api/workflows/${workflowId}/run`;
+      const url = workflowRunUrl(workspaceId, workflowId, runEnvId);
 
       const payload: Record<string, unknown> = {};
-      if (Object.keys(runtimeSecrets).length > 0) {
-        payload.secrets = runtimeSecrets;
-      }
       if (runOptions.resume) {
         payload.resume = runOptions.resume;
       }
@@ -287,7 +260,7 @@ export default function useWorkflowPolling({
         const pollForStatus = async () => {
           try {
             const statusResponse = await authenticatedFetch(
-              `${API_BASE_URL}/api/workflows/${workflowId}/runs/${result.runId}`,
+              workflowRunStatusUrl(workspaceId, workflowId, result.runId),
             );
             if (statusResponse.ok) {
               const runData = await statusResponse.json() as {
@@ -339,50 +312,19 @@ export default function useWorkflowPolling({
       toast.error('Failed to trigger workflow run');
     }
   }, [
+    workspaceId,
     workflowId,
     setNodes,
     selectedEnvironment,
-    environments,
     nodes,
     reactFlowInstanceRef,
     refreshLatestFailedRun,
   ]);
 
-  const ensureSecretsThenRun = useCallback((runOptions: RunOptions = {}) => {
-    if (!workflowId) {
-      return;
-    }
-
-    const envId =
-      selectedEnvironment && selectedEnvironment.trim()
-        ? selectedEnvironment.trim()
-        : null;
-
-    if (envId) {
-      const selectedEnv = environments.find(
-        (e) => e.environmentId === envId,
-      );
-      const envSecrets = selectedEnv?.secrets ?? {};
-      const secretKeys = Object.keys(envSecrets);
-
-      if (secretKeys.length > 0) {
-        const missingSecrets = secretKeys.filter(
-          (k) => !sessionStorage.getItem(`secret_${k}`)?.trim(),
-        );
-        if (missingSecrets.length > 0) {
-          pendingRunRef.current = runOptions;
-          setShowSecretsPrompt(true);
-          return;
-        }
-      }
-    }
-
-    executeRunWithSecrets(runOptions);
-  }, [workflowId, selectedEnvironment, environments, executeRunWithSecrets]);
-
   const runWorkflow = useCallback(async () => {
-    ensureSecretsThenRun({});
-  }, [ensureSecretsThenRun]);
+    if (!workspaceId || !workflowId) return;
+    executeWorkflow({});
+  }, [workspaceId, workflowId, executeWorkflow]);
 
   const runFromFailedNodes = useCallback((nodeIds: string[], sourceRunId: string, mode = 'single') => {
     if (!Array.isArray(nodeIds) || nodeIds.length === 0) {
@@ -402,8 +344,8 @@ export default function useWorkflowPolling({
       toast.info(`Running from failed node: ${nodeIds[0] ?? ''}`);
     }
 
-    ensureSecretsThenRun({ resume });
-  }, [ensureSecretsThenRun]);
+    executeWorkflow({ resume });
+  }, [executeWorkflow]);
 
   const runFromLastFailed = useCallback(async () => {
     const latest = latestFailedRunRef.current;
@@ -447,23 +389,12 @@ export default function useWorkflowPolling({
     );
   }, [runFromFailedNodes]);
 
-  const handleSecretsProvided = useCallback(
-    (_secrets: Record<string, string>) => {
-      setShowSecretsPrompt(false);
-      if (pendingRunRef.current) {
-        const pending = pendingRunRef.current;
-        pendingRunRef.current = null;
-        executeRunWithSecrets(pending);
-      }
-    },
-    [executeRunWithSecrets],
-  );
-
   const loadHistoricalRun = useCallback(
     async (run: { runId: string }) => {
+      if (!workspaceId || !workflowId) return;
       try {
         const response = await authenticatedFetch(
-          `${API_BASE_URL}/api/workflows/${workflowId}/runs/${run.runId}`,
+          workflowRunStatusUrl(workspaceId, workflowId, run.runId),
         );
         if (response.ok) {
           const fullRunData = await response.json() as {
@@ -481,7 +412,7 @@ export default function useWorkflowPolling({
         // ignore
       }
     },
-    [workflowId, setNodes],
+    [workspaceId, workflowId, setNodes],
   );
 
   useEffect(() => {
@@ -506,10 +437,6 @@ export default function useWorkflowPolling({
     resumeSourceRunId,
     isResumeLoading,
     refreshLatestFailedRun,
-    showSecretsPrompt,
-    setShowSecretsPrompt,
-    pendingRunRef,
-    handleSecretsProvided,
     loadHistoricalRun,
   };
 }

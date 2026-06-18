@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react';
+import { memo, useMemo, type CSSProperties } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useReactFlow, type EdgeProps } from 'reactflow';
 import { X } from 'lucide-react';
 
@@ -10,7 +10,7 @@ type CustomEdgeProps = EdgeProps<CustomEdgeData>;
 
 const EMPTY_EDGE_STYLE: CSSProperties = {};
 
-export default function CustomEdge({
+function CustomEdge({
   id,
   sourceX,
   sourceY,
@@ -24,15 +24,19 @@ export default function CustomEdge({
 }: CustomEdgeProps) {
   const { deleteElements } = useReactFlow();
 
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-    borderRadius: 12,
-  });
+  const [edgePath, labelX, labelY] = useMemo(
+    () =>
+      getSmoothStepPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        borderRadius: 12,
+      }),
+    [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition],
+  );
 
   const isRunning = data?.animated;
 
@@ -78,3 +82,5 @@ export default function CustomEdge({
     </>
   );
 }
+
+export default memo(CustomEdge);

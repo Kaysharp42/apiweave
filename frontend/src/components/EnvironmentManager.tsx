@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useReducer } from 'react';
 import { toast } from 'sonner';
 import { Plus, Trash2, Copy, Pencil, Lock, X, Link2, Globe } from 'lucide-react';
-import API_BASE_URL from '../utils/api';
 import { Modal } from './molecules/Modal';
 import { ConfirmDialog } from './molecules/ConfirmDialog';
 import { EmptyState } from './molecules/EmptyState';
@@ -18,6 +17,8 @@ import type { EnvironmentFormData } from '../types/EnvironmentFormData';
 import type { EnvironmentListItem } from '../types/EnvironmentListItem';
 import type { EnvironmentManagerState } from '../types/EnvironmentManagerState';
 import type { EnvironmentManagerAction } from '../types/EnvironmentManagerAction';
+import { useScopeContext } from '../hooks/useScopeContext';
+import * as scopedApi from '../utils/scopedApi';
 
 const initialEnvironmentFormData: EnvironmentFormData = {
   name: '',
@@ -97,10 +98,16 @@ function environmentManagerReducer(
 export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
   const [environments, setEnvironments] = useState<EnvironmentListItem[]>([]);
   const [state, dispatch] = useReducer(environmentManagerReducer, initialEnvironmentManagerState);
+  const { workspaceId, isReady } = useScopeContext();
 
   const fetchEnvironments = useCallback(async (): Promise<void> => {
+    if (!isReady || !workspaceId) {
+      setEnvironments([]);
+      return;
+    }
+
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
+      const response = await authenticatedFetch(scopedApi.environmentsUrl(workspaceId));
       if (response.ok) {
         const data = await response.json() as EnvironmentListItem[];
         setEnvironments(data);
@@ -108,7 +115,7 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
     } catch (error: unknown) {
       console.error('Error fetching environments:', error);
     }
-  }, []);
+  }, [isReady, workspaceId]);
 
   useEffect(() => {
     fetchEnvironments();
@@ -123,10 +130,16 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
   };
 
   const handleSave = async (): Promise<void> => {
+    if (!workspaceId) {
+      toast.error('Workspace context is not ready');
+      return;
+    }
+
     try {
+      const baseUrl = scopedApi.environmentsUrl(workspaceId);
       const url = state.selectedEnv
-        ? `${API_BASE_URL}/api/environments/${state.selectedEnv.environmentId}`
-        : `${API_BASE_URL}/api/environments`;
+        ? `${baseUrl}/${encodeURIComponent(state.selectedEnv.environmentId)}`
+        : baseUrl;
       const method = state.selectedEnv ? 'PUT' : 'POST';
 
       const response = await authenticatedFetch(url, {
@@ -149,8 +162,13 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
 
   const handleDeleteConfirm = async (): Promise<void> => {
     if (!state.deleteTarget) return;
+    if (!workspaceId) {
+      toast.error('Workspace context is not ready');
+      return;
+    }
+
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments/${state.deleteTarget}`, {
+      const response = await authenticatedFetch(`${scopedApi.environmentsUrl(workspaceId)}/${encodeURIComponent(state.deleteTarget)}`, {
         method: 'DELETE'
       });
 
@@ -174,8 +192,13 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
   };
 
   const handleDuplicate = async (envId: string): Promise<void> => {
+    if (!workspaceId) {
+      toast.error('Workspace context is not ready');
+      return;
+    }
+
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments/${envId}/duplicate`, {
+      const response = await authenticatedFetch(`${scopedApi.environmentsUrl(workspaceId)}/${encodeURIComponent(envId)}/duplicate`, {
         method: 'POST'
       });
 
@@ -212,19 +235,10 @@ export function EnvironmentManager({ open, onClose }: EnvironmentManagerProps) {
   const handleSecretsChange = async (secrets: Record<string, string>): Promise<void> => {
     if (!state.selectedEnv) return;
     try {
-      const url = `${API_BASE_URL}/api/environments/${state.selectedEnv.environmentId}`;
-      const response = await authenticatedFetch(url, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...state.formData, secrets })
-      });
-
-      if (response.ok) {
-        toast.success('Secrets updated');
-        await fetchEnvironments();
-        dispatch({ type: 'close-secrets' });
-        useSidebarStore.getState().signalEnvironmentsRefresh();
-      }
+      void secrets;
+      await fetchEnvironments();
+      dispatch({ type: 'close-secrets' });
+      useSidebarStore.getState().signalEnvironmentsRefresh();
     } catch (error: unknown) {
       console.error('Error updating secrets:', error);
       toast.error('Failed to update secrets');

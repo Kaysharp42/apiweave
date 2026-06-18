@@ -15,7 +15,8 @@ from app.auth.permissions import (
 from app.models import Collection, Session, User, Webhook
 from app.repositories import WebhookRepository
 from app.repositories.auth_repositories import SessionRepository, UserRepository
-from app.routes import collections, environments, webhooks, workflows
+from app.routes import webhooks
+from app.routes._legacy_disabled import collections, environments, workflows
 
 
 def make_session(token: str = "test-session-token", user_id: str = "user-1") -> tuple[Session, str]:

@@ -22,6 +22,10 @@ import { useAuth } from './auth/useAuth';
 import { AdminRoute } from './auth/AdminRoute';
 import MainLayout from './components/layout/MainLayout';
 import useNavigationStore from './stores/NavigationStore';
+import { authenticatedJson } from './utils/authenticatedApi';
+import API_BASE_URL from './utils/api';
+import type { Workspace } from './types/Workspace';
+import type { Organization } from './types/Organization';
 
 const STORAGE_PREFIX = 'apiweave:v1:';
 
@@ -71,6 +75,58 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function DefaultWorkspaceRedirect() {
+  const [targetPath, setTargetPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const [orgs, response] = await Promise.all([
+        authenticatedJson<Organization[]>(`${API_BASE_URL}/api/orgs`),
+        authenticatedJson<{ workspaces: Workspace[]; total: number }>(
+          `${API_BASE_URL}/api/workspaces`,
+        ),
+      ]);
+      if (cancelled) return;
+
+      const workspace = response.workspaces.find((entry) => entry.isPersonal) ?? response.workspaces[0];
+      if (!workspace) {
+        setTargetPath('/setup');
+        return;
+      }
+
+      if (workspace.isPersonal) {
+        setTargetPath(`/${workspace.slug}/workflows`);
+        return;
+      }
+
+      const orgSlug = orgs.find((org) => org.orgId === workspace.orgId)?.slug;
+      if (!orgSlug) {
+        setTargetPath('/login');
+        return;
+      }
+      setTargetPath(`/${orgSlug}/${workspace.slug}/workflows`);
+    })().catch(() => {
+      if (!cancelled) setTargetPath('/login');
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (targetPath) {
+    return <Navigate to={targetPath} replace />;
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
+      <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // AdminPageShell — wraps admin pages in the full app layout
 // ---------------------------------------------------------------------------
@@ -88,9 +144,11 @@ function AdminPageShell({ children }: { children: ReactNode }) {
 
   return (
     <AdminRoute>
-      <div className="relative flex flex-col h-screen font-sans text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised">
-        <MainLayout>{children}</MainLayout>
-      </div>
+      <WorkspaceProvider>
+        <div className="relative flex flex-col h-screen font-sans text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised">
+          <MainLayout>{children}</MainLayout>
+        </div>
+      </WorkspaceProvider>
     </AdminRoute>
   );
 }
@@ -154,9 +212,37 @@ function App() {
         <AuthProvider>
           <Router>
             <Routes>
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <DefaultWorkspaceRedirect />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/setup" element={<SetupPage />} />
               <Route path="/invite/:token" element={<InvitePage />} />
+              <Route
+                path="/personal/workflows/:workflowId"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <Home />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/personal/workflows"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <Home />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/settings/users"
                 element={

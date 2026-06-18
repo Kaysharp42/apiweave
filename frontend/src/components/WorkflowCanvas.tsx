@@ -30,7 +30,6 @@ import NodeModal from './NodeModal';
 import HistoryModal from './HistoryModal';
 import ImportToNodesPanel from './ImportToNodesPanel';
 import WorkflowJsonEditor from './WorkflowJsonEditor';
-import SecretsPrompt from './SecretsPrompt';
 import { AppContext } from '../App';
 import { useWorkflow } from '../contexts/WorkflowContext';
 import { toast } from 'sonner';
@@ -45,8 +44,9 @@ import { useClipboardActions } from '../hooks/useClipboardActions';
 import { useHydration, assertionEdgeColor, edgeLabelBackground } from '../hooks/useHydration';
 import { useNodeBranchCounts } from '../hooks/useNodeBranchCounts';
 import { useSwaggerRefresh } from '../hooks/useSwaggerRefresh';
-import API_BASE_URL from '../utils/api';
 import { shouldBlockDestructiveAutosave } from '../utils/workflowSaveSafety';
+import { environmentsUrl, workflowDetailUrl } from '../utils/scopedApi';
+import { useScopeContext } from '../hooks/useScopeContext';
 import type { WorkflowCanvasNodeData } from '../types/WorkflowCanvasNodeData';
 import type { WorkflowCanvasEdgeData } from '../types/WorkflowCanvasEdgeData';
 import type { WorkflowCanvasProps } from '../types/WorkflowCanvasProps';
@@ -70,6 +70,29 @@ const edgeTypes: EdgeTypes = {
   'custom': CustomEdge as EdgeTypes[string],
 };
 
+// Module-scope on purpose: inline definitions create new refs every render and re-trigger ReactFlow layout work during pan/drag.
+const reactFlowStyle = { width: '100%', height: '100%' };
+
+const defaultEdgeOptions = { type: 'custom' as const, animated: true };
+
+const fitViewOptions = {
+  padding: 0.25,
+  minZoom: 0.02,
+  includeHiddenNodes: true,
+};
+
+const miniMapStyle = {
+  backgroundColor: 'var(--aw-surface-raised)',
+  border: '2px solid var(--aw-border)',
+  borderRadius: 'var(--aw-radius-lg)',
+  width: 220,
+  height: 150,
+};
+
+// WeakMap IDs track extractor-config identity by ref so the signature doesn't churn during position-only drag frames.
+const extractorConfigIdMap = new WeakMap<object, number>();
+let nextExtractorConfigId = 0;
+
 const initialNodes: Node<WorkflowCanvasNodeData>[] = [
   {
     id: 'start-1',
@@ -87,6 +110,7 @@ export function WorkflowCanvas({
 }: WorkflowCanvasProps) {
   const context = useContext(AppContext);
   const { darkMode, autoSaveEnabled } = context || { darkMode: false, autoSaveEnabled: true };
+  const scope = useScopeContext();
 
   const darkModeRef = useRef(darkMode);
   useEffect(() => {
@@ -193,31 +217,43 @@ export function WorkflowCanvas({
     resumeOptions,
     resumeSourceRunId,
     isResumeLoading,
-    showSecretsPrompt,
-    setShowSecretsPrompt,
-    pendingRunRef,
-    handleSecretsProvided,
     loadHistoricalRun,
   } = useWorkflowPolling({
+    workspaceId: scope.workspaceId,
     workflowId,
     nodes,
     setNodes,
     selectedEnvironment,
-    environments,
     reactFlowInstanceRef,
   });
 
   // ── Extractors effect ───────────────────────────────────────────────
 
+  const extractorsSig = useMemo(() => {
+    const parts: string[] = [];
+    for (const node of nodes) {
+      if (node.type === 'http-request' && node.data?.config?.extractors) {
+        const extractors = node.data.config.extractors as object;
+        let id = extractorConfigIdMap.get(extractors);
+        if (id === undefined) {
+          id = nextExtractorConfigId++;
+          extractorConfigIdMap.set(extractors, id);
+        }
+        parts.push(`${node.id}:${id}`);
+      }
+    }
+    return parts.join('|');
+  }, [nodes]);
+
   useEffect(() => {
     const extractorsFromNodes: Record<string, unknown> = {};
-    nodes.forEach(node => {
+    nodesRef.current.forEach(node => {
       if (node.type === 'http-request' && node.data?.config?.extractors) {
         Object.assign(extractorsFromNodes, node.data.config.extractors);
       }
     });
     registerExtractors(extractorsFromNodes);
-  }, [nodes, registerExtractors]);
+  }, [extractorsSig, registerExtractors]);
 
   // ── Variables deletion effect ───────────────────────────────────────
 
@@ -253,8 +289,15 @@ export function WorkflowCanvas({
   // ── Environments fetching ───────────────────────────────────────────
 
   const fetchEnvironments = useCallback(async () => {
+    if (!scope.isReady || !scope.workspaceId) {
+      setEnvironments([]);
+      return;
+    }
+
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
+      const response = await authenticatedFetch(
+        environmentsUrl(scope.workspaceId, 'all-accessible', scope.orgId),
+      );
       if (response.ok) {
         const data = await response.json() as EnvironmentWithSwagger[];
         setEnvironments(data);
@@ -262,7 +305,7 @@ export function WorkflowCanvas({
     } catch (error) {
       console.error('Error fetching environments:', error);
     }
-  }, []);
+  }, [scope.isReady, scope.orgId, scope.workspaceId]);
 
   useEffect(() => {
     void fetchEnvironments();
@@ -278,10 +321,10 @@ export function WorkflowCanvas({
   // ── Workflow reload from server ─────────────────────────────────────
 
   const reloadWorkflowFromServer = useCallback(async () => {
-    if (!workflowId) return;
+    if (!workflowId || !scope.workspaceId) return;
 
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`);
+      const response = await authenticatedFetch(workflowDetailUrl(scope.workspaceId, workflowId));
       if (response.ok) {
         const data = await response.json() as {
           nodes?: Array<{ nodeId: string; type: string; position: { x: number; y: number }; config?: Record<string, unknown>; label?: string }>;
@@ -333,7 +376,7 @@ export function WorkflowCanvas({
     } catch (err) {
       console.error('Error reloading workflow:', err);
     }
-  }, [workflowId, setNodes, setEdges]);
+  }, [workflowId, scope.workspaceId, setNodes, setEdges]);
 
   useEffect(() => {
     if (!workflowId) return;
@@ -490,6 +533,8 @@ export function WorkflowCanvas({
   // ── Save workflow ────────────────────────────────────────────────────
 
   const saveWorkflow = useCallback(async (silent = false) => {
+    if (!scope.workspaceId) return;
+
     const workflowPayload = {
       nodes: nodesRef.current.map(node => ({
         nodeId: node.id,
@@ -523,8 +568,8 @@ export function WorkflowCanvas({
     }
 
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
-        method: 'PUT',
+      const response = await authenticatedFetch(workflowDetailUrl(scope.workspaceId, workflowId ?? ''), {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(workflowPayload),
       });
@@ -538,7 +583,7 @@ export function WorkflowCanvas({
     } catch (error) {
       console.error('Save error:', error);
     }
-  }, [workflowId]);
+  }, [workflowId, scope.workspaceId]);
 
   // ── JSON editor ──────────────────────────────────────────────────────
 
@@ -608,8 +653,9 @@ export function WorkflowCanvas({
     })) as Edge<WorkflowCanvasEdgeData>[];
 
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}`, {
-        method: 'PUT',
+      if (!scope.workspaceId || !workflowId) return;
+      const response = await authenticatedFetch(workflowDetailUrl(scope.workspaceId, workflowId), {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nodes: parsed.nodes,
@@ -652,7 +698,7 @@ export function WorkflowCanvas({
       console.error('JSON editor save error:', err);
       toast.error('Network error -- see console');
     }
-  }, [setNodes, setEdges, workflowId, workflowVariables, updateVariable]);
+  }, [setNodes, setEdges, workflowId, scope.workspaceId, workflowVariables, updateVariable]);
 
   // ── Auto-save ────────────────────────────────────────────────────────
 
@@ -688,25 +734,15 @@ export function WorkflowCanvas({
     return 'var(--aw-border)';
   }, []);
 
-  const miniMapStyle = {
-    backgroundColor: 'var(--aw-surface-raised)',
-    border: '2px solid var(--aw-border)',
-    borderRadius: 'var(--aw-radius-lg)',
-    width: 220,
-    height: 150,
-  };
-
-  const defaultEdgeOptions = { type: 'custom' as const, animated: true };
-
-  const reactFlowStyle = { width: '100%', height: '100%' };
-
-  const fitViewOptions = {
-    padding: 0.25,
-    minZoom: 0.02,
-    includeHiddenNodes: true,
-  };
-
   const rfInstanceRef = useRef<Parameters<NonNullable<Parameters<typeof ReactFlow>[0]['onInit']>>[0] | null>(null);
+
+  const handleInit = useCallback<NonNullable<Parameters<typeof ReactFlow>[0]['onInit']>>(
+    (instance) => {
+      rfInstanceRef.current = instance;
+      (reactFlowInstanceRef as React.MutableRefObject<unknown>).current = instance;
+    },
+    [],
+  );
 
   return (
     <main className="w-full h-full min-h-0 relative bg-[var(--aw-surface)] transition-colors duration-300" aria-label="Workflow canvas">
@@ -722,10 +758,7 @@ export function WorkflowCanvas({
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
-        onInit={(instance) => {
-          rfInstanceRef.current = instance;
-          (reactFlowInstanceRef as React.MutableRefObject<unknown>).current = instance;
-        }}
+        onInit={handleInit}
         onDrop={onDrop}
         onDragOver={onDragOver}
         nodeTypes={nodeTypes}
@@ -829,6 +862,7 @@ export function WorkflowCanvas({
       {showHistory && (
         <HistoryModal
           workflowId={workflowId ?? ''}
+          workspaceId={scope.workspaceId ?? ''}
           onClose={() => setShowHistory(false)}
           onSelectRun={loadHistoricalRun}
         />
@@ -850,15 +884,6 @@ export function WorkflowCanvas({
           onClose={() => {
             setShowJsonEditor(false);
           }}
-        />
-      )}
-
-      {showSecretsPrompt && !!selectedEnvironment?.trim() && !!environments.find(e => e.environmentId === selectedEnvironment.trim()) && (
-        <SecretsPrompt
-          isOpen={true}
-          environment={selectedEnvironment?.trim() ? (environments.find(e => e.environmentId === selectedEnvironment.trim()) ?? null) : null}
-          onClose={() => { setShowSecretsPrompt(false); pendingRunRef.current = null; }}
-          onSecretsProvided={handleSecretsProvided}
         />
       )}
 

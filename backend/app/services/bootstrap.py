@@ -16,13 +16,7 @@ from app.services.scoped_environment_service import create_default_workspace_env
 logger = logging.getLogger(__name__)
 
 
-async def bootstrap_first_owner(user: User) -> Workspace:
-    """Create the first user as system/org owner and a default personal workspace.
-
-    This is called once during setup mode when the very first user registers.
-    The user becomes the owner of the system and gets a default personal workspace
-    with a default environment.
-    """
+async def ensure_personal_workspace(user: User) -> Workspace:
     existing = await WorkspaceRepository.get_personal_for_user(user.userId)
     if existing:
         logger.info("Personal workspace already exists for user %s", user.userId)
@@ -56,6 +50,16 @@ async def bootstrap_first_owner(user: User) -> Workspace:
         user.userId,
     )
     return workspace
+
+
+async def bootstrap_first_owner(user: User) -> Workspace:
+    """Create the first user as system/org owner and a default personal workspace.
+
+    This is called once during setup mode when the very first user registers.
+    The user becomes the owner of the system and gets a default personal workspace
+    with a default environment.
+    """
+    return await ensure_personal_workspace(user)
 
 
 async def create_workspace_with_default_env(

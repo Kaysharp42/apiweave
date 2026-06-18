@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from app.auth.permissions import WORKFLOWS_IMPORT
 from app.models import Session, User
 from app.repositories.auth_repositories import SessionRepository, UserRepository
-from app.routes import workflows
+from app.routes._legacy_disabled import workflows
 
 
 def _make_session(token: str = "test-session-token", user_id: str = "user-1") -> tuple[Session, str]:

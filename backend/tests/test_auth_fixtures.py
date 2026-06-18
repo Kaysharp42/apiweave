@@ -206,7 +206,7 @@ def test_admin_fixture_can_access_protected_route() -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from app.routes import workflows
+    from app.routes._legacy_disabled import workflows
 
     app = FastAPI()
     app.include_router(workflows.router)
@@ -234,7 +234,7 @@ def test_viewer_fixture_cannot_create_workflow() -> None:
     """Viewer fixture is rejected when attempting a write operation."""
     from fastapi import FastAPI
 
-    from app.routes import workflows
+    from app.routes._legacy_disabled import workflows
 
     app = FastAPI()
     app.include_router(workflows.router)
@@ -250,7 +250,7 @@ def test_logged_out_fixture_cannot_list_workflows() -> None:
     """Logged-out fixture returns 401 on any authenticated route."""
     from fastapi import FastAPI
 
-    from app.routes import workflows
+    from app.routes._legacy_disabled import workflows
 
     app = FastAPI()
     app.include_router(workflows.router)

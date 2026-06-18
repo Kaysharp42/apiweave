@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { GitMerge, CheckCircle, SquareCheckBig, Filter, AlertTriangle, Clock, ArrowRight, Sparkles } from 'lucide-react';
 import { BaseNode } from '../atoms/flow/BaseNode';
 import type { MergeNodeProps, BranchInfo } from '../../types/MergeNodeProps';
@@ -202,4 +202,4 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
   );
 };
 
-export default MergeNode;
+export default memo(MergeNode);

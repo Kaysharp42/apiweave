@@ -1,7 +1,7 @@
 import { useState, useEffect, useReducer, useRef, useCallback, useSyncExternalStore } from 'react';
-import API_BASE_URL from '../utils/api';
 import { CheckCircle, XCircle, RefreshCw, Clock, Circle, History, X, ClipboardList, ChevronRight, Timer, Zap } from 'lucide-react';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import { workflowRunsListUrl } from '../utils/scopedApi';
 import type { RunRecord, HistoryModalProps } from '../types';
 
 interface PaginationInfo {
@@ -82,7 +82,7 @@ function requestReducer(_state: RequestState, action: RequestAction): RequestSta
   }
 }
 
-export default function HistoryModal({ workflowId, onClose, onSelectRun }: HistoryModalProps) {
+export default function HistoryModal({ workflowId, workspaceId, onClose, onSelectRun }: HistoryModalProps) {
   const [requestState, dispatchRequest] = useReducer(requestReducer, { status: 'loading' });
   const [isAnimating, setIsAnimating] = useState(true);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -99,7 +99,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
     dispatchRequest({ type: 'start-loading' });
     setHistoryModalStoreState({ isLoading: true });
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflowId}/runs?page=${page}&limit=10`);
+      const response = await authenticatedFetch(workflowRunsListUrl(workspaceId, workflowId, page, 10));
       if (response.ok) {
         const data: RunHistoryResponse = await response.json();
         setHistoryModalStoreState({ runs: data.runs, pagination: data.pagination });
@@ -110,7 +110,7 @@ export default function HistoryModal({ workflowId, onClose, onSelectRun }: Histo
       dispatchRequest({ type: 'finish-loading' });
       setHistoryModalStoreState({ isLoading: false });
     }
-  }, [workflowId]);
+  }, [workspaceId, workflowId]);
 
   useEffect(() => {
     fetchRunHistory(1);

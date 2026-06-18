@@ -23,7 +23,7 @@ import app.auth.router as auth_router
 from app.auth.exceptions import OAuthLinkingBlockedError
 from app.auth.provider_registry import ProviderConfig, ProviderUserInfo
 from app.main import app
-from app.models import OAuthState, User
+from app.models import OAuthState, User, Workspace
 
 pytest_plugins = ("tests.fixtures.oauth_mocks",)
 
@@ -77,6 +77,21 @@ def _user(email: str) -> User:
     )
 
 
+def _workspace(slug: str = "personal") -> Workspace:
+    now = datetime.now(UTC)
+    return Workspace.model_construct(
+        workspaceId="ws-test",
+        slug=slug,
+        name="My Workspace",
+        ownerType="user",
+        ownerUserId="usr-test",
+        orgId=None,
+        isPersonal=True,
+        createdAt=now,
+        updatedAt=now,
+    )
+
+
 def _userinfo(
     provider: str, *, verified: bool = True, email: str | None = None
 ) -> ProviderUserInfo:
@@ -103,6 +118,7 @@ def _patch_all(
     enabled_providers: list[str] | None = None,
 ) -> User:
     user = _user(email or f"testuser@{provider}.example.com")
+    monkeypatch.setattr(auth_router.settings, "FRONTEND_URL", "http://localhost:3000")
     monkeypatch.setattr(auth_router.settings, "SETUP_MODE_ENABLED", True)
     monkeypatch.setattr(auth_router.settings, "OAUTH_LOGIN_ENABLED", oauth_enabled)
     monkeypatch.setattr(auth_router.settings, "APPROVED_DOMAINS_ENABLED", False)
@@ -166,6 +182,11 @@ def _patch_all(
         AsyncMock(return_value=False),
     )
     monkeypatch.setattr(auth_router.SessionRepository, "create", AsyncMock())
+    monkeypatch.setattr(
+        auth_router,
+        "ensure_personal_workspace",
+        AsyncMock(return_value=_workspace()),
+    )
     return user
 
 
@@ -179,7 +200,8 @@ class TestGitHubCallbackHappyPath:
             follow_redirects=False,
         )
         assert response.status_code == 302
-        assert response.headers["location"] == "http://localhost:3000/"
+        assert response.headers["location"] == "http://localhost:3000/personal/workflows"
+        auth_router.ensure_personal_workspace.assert_awaited_once()
         assert "session" in response.cookies or any(
             "session" in k.lower() for k in response.cookies
         )
@@ -283,9 +305,7 @@ class TestLinkingBlocked:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         provider = "github"
-        user = _patch_all(
-            monkeypatch, provider, state=_oauth_state(provider), verified=True
-        )
+        _patch_all(monkeypatch, provider, state=_oauth_state(provider), verified=True)
 
         async def _raise_linking_blocked(*_args: object, **_kwargs: object) -> User:
             raise OAuthLinkingBlockedError(
@@ -314,7 +334,7 @@ class TestGitLabCallbackHappyPath:
             follow_redirects=False,
         )
         assert response.status_code == 302
-        assert response.headers["location"] == "http://localhost:3000/"
+        assert response.headers["location"] == "http://localhost:3000/personal/workflows"
         assert "session" in response.cookies or any(
             "session" in k.lower() for k in response.cookies
         )
@@ -332,7 +352,7 @@ class TestGoogleCallbackHappyPath:
             follow_redirects=False,
         )
         assert response.status_code == 302
-        assert response.headers["location"] == "http://localhost:3000/"
+        assert response.headers["location"] == "http://localhost:3000/personal/workflows"
         assert "csrftoken" in response.cookies or any(
             "csrftoken" in k.lower() for k in response.cookies
         )
@@ -352,7 +372,7 @@ class TestMicrosoftCallbackHappyPath:
             follow_redirects=False,
         )
         assert response.status_code == 302
-        assert response.headers["location"] == "http://localhost:3000/"
+        assert response.headers["location"] == "http://localhost:3000/personal/workflows"
         assert "session" in response.cookies or any(
             "session" in k.lower() for k in response.cookies
         )

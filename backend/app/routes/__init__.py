@@ -3,8 +3,6 @@ Routes package
 """
 from app.routes import (
     audit,
-    collections,
-    environments,
     keys,
     orgs,
     projects,
@@ -12,14 +10,11 @@ from app.routes import (
     scoped_environments,
     secrets,
     webhooks,
-    workflows,
     workspaces,
 )
 
 __all__ = [
     "audit",
-    "collections",
-    "environments",
     "keys",
     "orgs",
     "projects",
@@ -27,6 +22,5 @@ __all__ = [
     "scoped_environments",
     "secrets",
     "webhooks",
-    "workflows",
     "workspaces",
 ]

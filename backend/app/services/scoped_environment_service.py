@@ -89,6 +89,27 @@ async def update_scoped_environment(
     return updated
 
 
+async def duplicate_scoped_environment(environment_id: str) -> Environment:
+    source = await ScopedEnvironmentRepository.get_by_id(environment_id)
+    if not source:
+        raise ResourceNotFoundError(f"Environment {environment_id} not found")
+
+    data = ScopedEnvironmentCreate(
+        name=f"{source.name} (Copy)",
+        description=source.description,
+        swaggerDocUrl=source.swaggerDocUrl,
+        variables=dict(source.variables or {}),
+        allowedWorkspaceIds=list(source.allowedWorkspaceIds or []),
+    )
+    return await create_scoped_environment(
+        scope_type=source.scopeType,
+        scope_id=source.scopeId or "",
+        data=data,
+        owner_type=source.ownerType,
+        is_default=False,
+    )
+
+
 async def delete_scoped_environment(environment_id: str) -> None:
     """Delete a scoped environment.
 

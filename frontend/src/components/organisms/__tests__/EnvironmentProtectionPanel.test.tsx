@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { EnvironmentProtectionPanel } from '../EnvironmentProtectionPanel';
-import type { EnvironmentProtectionPanelProps, ProtectionFormState } from '../../../types';
+import type { EnvironmentProtectionPanelProps } from '../../../types';
 import type { EnvironmentProtectionPolicy } from '../../../types/EnvironmentProtectionPolicy';
 import type { ReviewerOption } from '../../../types/ReviewerSelectorProps';
 

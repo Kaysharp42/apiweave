@@ -1,11 +1,12 @@
 import { useState, useEffect, type ChangeEvent, type DragEvent } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, X, Copy, Trash2 } from 'lucide-react';
-import API_BASE_URL from '../utils/api';
 import useCanvasStore from '../stores/CanvasStore';
 import { Button } from './atoms/Button';
 import { TextArea } from './atoms/TextArea';
 import { IconButton } from './atoms/IconButton';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import { useScopeContext } from '../hooks/useScopeContext';
+import { workflowsUrl, workflowImportCurlUrl } from '../utils/scopedApi';
 
 interface Workflow {
   workflowId: string;
@@ -31,6 +32,7 @@ interface CurlImportProps {
 }
 
 export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: CurlImportProps) {
+  const { workspaceId } = useScopeContext();
   const [curlInput, setCurlInput] = useState<string>('');
   const [sanitize, setSanitize] = useState<boolean>(true);
   const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null);
@@ -45,7 +47,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
   useEffect(() => {
     (async () => {
       try {
-        const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows?limit=100`);
+        const response = await authenticatedFetch(workflowsUrl(workspaceId || '', { limit: 100 }));
         if (response.ok) {
           const data = await response.json();
           setWorkflows(data.workflows || []);
@@ -131,7 +133,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
       params.append('curl_command', curlInput);
       params.append('sanitize', String(sanitize));
 
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/import/curl/dry-run?${params}`, {
+      const response = await authenticatedFetch(`${workflowImportCurlUrl(workspaceId || '', true)}?${params}`, {
         method: 'POST',
       });
 
@@ -169,7 +171,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
         params.append('workflowId', selectedWorkflowId);
       }
 
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
+      const response = await authenticatedFetch(`${workflowImportCurlUrl(workspaceId || '')}?${params}`, {
         method: 'POST',
       });
 

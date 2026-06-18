@@ -1,27 +1,36 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Globe, ChevronDown, Settings } from 'lucide-react';
-import API_BASE_URL from '../utils/api';
 import useSidebarStore from '../stores/SidebarStore';
-import type { Environment } from '../types';
+import type { ScopedEnvironment } from '../types';
 import { authenticatedFetch } from '../utils/authenticatedApi';
 import type { EnvironmentSelectorProps } from '../types/EnvironmentSelectorProps';
+import { useScopeContext } from '../hooks/useScopeContext';
+import * as scopedApi from '../utils/scopedApi';
 
 export default function EnvironmentSelector({ onManageClick }: EnvironmentSelectorProps) {
-  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [environments, setEnvironments] = useState<ScopedEnvironment[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { workspaceId, orgId, isReady } = useScopeContext();
 
   const fetchEnvironments = useCallback(async () => {
+    if (!isReady || !workspaceId) {
+      setEnvironments([]);
+      return;
+    }
+
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
+      const response = await authenticatedFetch(
+        scopedApi.environmentsUrl(workspaceId, 'all-accessible', orgId),
+      );
       if (response.ok) {
-        const data: Environment[] = await response.json();
+        const data = await response.json() as ScopedEnvironment[];
         setEnvironments(data);
       }
     } catch {
       // Silently fail - environments will be fetched on next attempt
     }
-  }, []);
+  }, [isReady, orgId, workspaceId]);
 
   useEffect(() => {
     fetchEnvironments();
@@ -88,7 +97,7 @@ export default function EnvironmentSelector({ onManageClick }: EnvironmentSelect
                         {env.name}
                       </div>
                       <div className="text-xs text-text-muted dark:text-text-muted-dark">
-                        {Object.keys(env.variables).length} variables
+                        {Object.keys(env.variables).length} variables · {env.scopeType}
                       </div>
                     </div>
                   </div>

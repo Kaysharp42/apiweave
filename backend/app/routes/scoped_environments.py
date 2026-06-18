@@ -374,6 +374,70 @@ async def create_workspace_environment(
 
 
 @router.get(
+    "/api/workspaces/{workspace_id}/environments/default",
+    response_model=Environment,
+)
+async def get_workspace_default_environment(
+    workspace_id: str,
+    _user: User = require_scoped_permission("environments", "read"),
+) -> Environment:
+    """Get the default environment for a workspace."""
+    try:
+        return await svc.get_default_workspace_environment(workspace_id)
+    except Exception as exc:
+        _handle_service_error(exc)
+        raise
+
+
+@router.post(
+    "/api/workspaces/{workspace_id}/environments/resolve",
+    response_model=RunEnvironmentSelection,
+)
+async def resolve_run_environment(
+    workspace_id: str,
+    body: dict[str, Any] | None = None,
+    _user: User = require_scoped_permission("environments", "read"),
+) -> RunEnvironmentSelection:
+    """Resolve the environment for a run.
+
+    Each run selects exactly one environment. If no explicit environment
+    is provided in the body, the workspace default is used.
+
+    Body (optional): {"environmentId": "env-xxx", "orgId": "org-xxx"}
+    """
+    body = body or {}
+    try:
+        return await svc.resolve_run_environment(
+            workspace_id=workspace_id,
+            org_id=body.get("orgId"),
+            explicit_environment_id=body.get("environmentId"),
+        )
+    except Exception as exc:
+        _handle_service_error(exc)
+        raise
+
+
+@router.get(
+    "/api/workspaces/{workspace_id}/environments/all-accessible",
+    response_model=list[Environment],
+)
+async def list_all_accessible_environments(
+    workspace_id: str,
+    org_id: str | None = None,
+    user: User = require_scoped_permission("environments", "read"),
+) -> list[Environment]:
+    """List all environments accessible for a workspace.
+
+    Includes workspace, user, and org environments (filtered by policy).
+    """
+    return await svc.list_all_accessible_environments(
+        workspace_id=workspace_id,
+        user_id=user.userId,
+        org_id=org_id,
+    )
+
+
+@router.get(
     "/api/workspaces/{workspace_id}/environments/{environment_id}",
     response_model=Environment,
 )
@@ -452,58 +516,33 @@ async def delete_workspace_environment(
         raise
 
 
-@router.get(
-    "/api/workspaces/{workspace_id}/environments/default",
-    response_model=Environment,
-)
-async def get_workspace_default_environment(
-    workspace_id: str,
-    _user: User = require_scoped_permission("environments", "read"),
-) -> Environment:
-    """Get the default environment for a workspace."""
-    try:
-        return await svc.get_default_workspace_environment(workspace_id)
-    except Exception as exc:
-        _handle_service_error(exc)
-        raise
-
-
-# ======================================================================
-# Run Environment Selection
-# ======================================================================
-
-
 @router.post(
-    "/api/workspaces/{workspace_id}/environments/resolve",
-    response_model=RunEnvironmentSelection,
+    "/api/workspaces/{workspace_id}/environments/{environment_id}/duplicate",
+    response_model=Environment,
+    status_code=status.HTTP_201_CREATED,
 )
-async def resolve_run_environment(
+async def duplicate_workspace_environment(
     workspace_id: str,
-    body: dict[str, Any] | None = None,
-    _user: User = require_scoped_permission("environments", "read"),
-) -> RunEnvironmentSelection:
-    """Resolve the environment for a run.
-
-    Each run selects exactly one environment. If no explicit environment
-    is provided in the body, the workspace default is used.
-
-    Body (optional): {"environmentId": "env-xxx", "orgId": "org-xxx"}
-    """
-    body = body or {}
+    environment_id: str,
+    _user: User = require_scoped_permission("environments", "create"),
+) -> Environment:
     try:
-        return await svc.resolve_run_environment(
-            workspace_id=workspace_id,
-            org_id=body.get("orgId"),
-            explicit_environment_id=body.get("environmentId"),
-        )
+        env = await svc.get_scoped_environment(environment_id)
+        if env.scopeType != "workspace" or env.scopeId != workspace_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Environment {environment_id} not found in workspace scope",
+            )
+        return await svc.duplicate_scoped_environment(environment_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         _handle_service_error(exc)
         raise
 
 
-# ======================================================================
-# Environment Protection Config
-# ======================================================================
+
+
 
 
 @router.get(
@@ -585,25 +624,4 @@ async def delete_environment_protection(
         raise
 
 
-# ======================================================================
-# All accessible environments for a workspace
-# ======================================================================
 
-
-@router.get(
-    "/api/workspaces/{workspace_id}/environments/all-accessible",
-    response_model=list[Environment],
-)
-async def list_all_accessible_environments(
-    workspace_id: str,
-    org_id: str | None = None,
-    _user: User = require_scoped_permission("environments", "read"),
-) -> list[Environment]:
-    """List all environments accessible for a workspace.
-
-    Includes workspace, user, and org environments (filtered by policy).
-    """
-    return await svc.list_all_accessible_environments(
-        workspace_id=workspace_id,
-        org_id=org_id,
-    )

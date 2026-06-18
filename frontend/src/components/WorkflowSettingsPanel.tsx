@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useWorkflow } from '../contexts/WorkflowContext';
-import API_BASE_URL from '../utils/api';
 import { toast } from 'sonner';
 import { ToggleLeft, Check, X, RefreshCw, Plus, Info, ChevronDown, LayoutGrid, Search } from 'lucide-react';
 import { Button } from './atoms/Button';
@@ -9,11 +8,14 @@ import { Spinner } from './atoms/Spinner';
 import { Input } from './atoms/Input';
 import { EmptyState } from './molecules/EmptyState';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import { useScopeContext } from '../hooks/useScopeContext';
+import { projectWorkflowAssignUrl, projectWorkflowRemoveUrl } from '../utils/scopedApi';
 
 type BackgroundColor = string;
 
-interface LocalCollection {
+interface LocalProject {
   collectionId: string;
+  projectId?: string;
   name: string;
   description?: string;
   color?: BackgroundColor;
@@ -31,7 +33,8 @@ export function WorkflowSettingsPanel() {
     setCurrentCollectionId,
   } = useWorkflow();
   const [assignmentLoading, setAssignmentLoading] = useState(false);
-  const [showCollectionDropdown, setShowCollectionDropdown] = useState(false);
+  const { workspaceId } = useScopeContext();
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   const normalizedQuery = searchTerm.trim().toLowerCase();
@@ -42,8 +45,8 @@ export function WorkflowSettingsPanel() {
   const showExecutionSection = executionSectionMatch || continueOnFailItemMatch;
   const showExecutionItem = executionSectionMatch || continueOnFailItemMatch;
 
-  const collectionsSectionMatch = matchesSearch('collections collection assignment add remove');
-  const collectionAssignmentItemMatch = matchesSearch('add to collection remove from collection workflow collection assignment');
+  const collectionsSectionMatch = matchesSearch('projects project assignment add remove');
+  const collectionAssignmentItemMatch = matchesSearch('add to project remove from project workflow project assignment');
   const showCollectionsSection = collectionsSectionMatch || collectionAssignmentItemMatch;
   const showCollectionsItem = collectionsSectionMatch || collectionAssignmentItemMatch;
 
@@ -57,54 +60,64 @@ export function WorkflowSettingsPanel() {
     });
   };
 
-  const handleAssignToCollection = async (collectionId: string): Promise<void> => {
+  const handleAssignToProject = async (projectId: string): Promise<void> => {
     if (!workflowId) {
       toast.error('Workflow ID not found');
       return;
     }
+    if (!workspaceId) {
+      toast.error('Workspace scope is not ready');
+      return;
+    }
 
-    const selectedCollection = collections.find((c) => c.collectionId === collectionId);
-    if (!selectedCollection) {
-      toast.error('Collection not found');
+    const selectedProject = collections.find(
+      (project) => (project.projectId ?? project.collectionId) === projectId,
+    );
+    if (!selectedProject) {
+      toast.error('Project not found');
       return;
     }
 
     setAssignmentLoading(true);
     try {
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/collections/${collectionId}/workflows/${workflowId}`,
+        projectWorkflowAssignUrl(workspaceId, projectId, workflowId),
         { method: 'POST' }
       );
 
       if (response.ok) {
-        setCurrentCollectionId(selectedCollection.collectionId);
-        toast.success(`Workflow added to "${selectedCollection.name}"`);
+        setCurrentCollectionId(selectedProject.collectionId);
+        toast.success(`Workflow added to "${selectedProject.name}"`);
 
         if (refreshCollectionsAndWorkflows) {
           refreshCollectionsAndWorkflows();
         }
       } else {
         const errorData = await response.json() as { message?: string };
-        toast.error(errorData.message ?? 'Failed to add workflow to collection');
+        toast.error(errorData.message ?? 'Failed to add workflow to project');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to add workflow to collection: ${message}`);
+      toast.error(`Failed to add workflow to project: ${message}`);
     } finally {
       setAssignmentLoading(false);
     }
   };
 
-  const handleRemoveFromCollection = async (): Promise<void> => {
+  const handleRemoveFromProject = async (): Promise<void> => {
     if (!workflowId || !currentCollection) {
-      toast.error('No collection assignment to remove');
+      toast.error('No project assignment to remove');
+      return;
+    }
+    if (!workspaceId) {
+      toast.error('Workspace scope is not ready');
       return;
     }
 
     setAssignmentLoading(true);
     try {
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/collections/${currentCollection.collectionId}/workflows/${workflowId}`,
+        projectWorkflowRemoveUrl(workspaceId, currentCollection.collectionId, workflowId),
         { method: 'DELETE' }
       );
 
@@ -117,11 +130,11 @@ export function WorkflowSettingsPanel() {
         }
       } else {
         const errorData = await response.json() as { message?: string };
-        toast.error(errorData.message ?? 'Failed to remove workflow from collection');
+        toast.error(errorData.message ?? 'Failed to remove workflow from project');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to remove workflow from collection: ${message}`);
+      toast.error(`Failed to remove workflow from project: ${message}`);
     } finally {
       setAssignmentLoading(false);
     }
@@ -181,36 +194,35 @@ export function WorkflowSettingsPanel() {
           </div>
         )}
 
-        {/* Collection Assignment Section */}
         {showCollectionsSection && (
           <div className="space-y-2">
             <div className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2 min-w-0">
               <LayoutGrid className="w-4 h-4 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" />
-              <span className="min-w-0 truncate">Collections</span>
+              <span className="min-w-0 truncate">Projects</span>
             </div>
             {showCollectionsItem && (
               <div className="relative min-w-0">
                 {isLoadingCollections ? (
                   <div className="flex items-center justify-center py-3 px-4 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded">
                     <Spinner size="sm" />
-                    <span className="ml-2 text-sm text-text-secondary dark:text-text-secondary-dark">Loading collections…</span>
+                    <span className="ml-2 text-sm text-text-secondary dark:text-text-secondary-dark">Loading projects…</span>
                   </div>
                 ) : currentCollection ? (
                   <div className="flex items-center justify-between px-4 py-3 text-sm bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 border border-[var(--aw-primary)]/20 dark:border-[var(--aw-primary)]/30 rounded min-w-0 gap-3">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                      {(currentCollection as unknown as LocalCollection).color && (
+                      {(currentCollection as unknown as LocalProject).color && (
                         <div
                           className="w-3 h-3 rounded-full flex-shrink-0 border border-[var(--aw-primary)]/30 dark:border-[var(--aw-primary)]/50"
-                          style={{ backgroundColor: (currentCollection as unknown as LocalCollection).color }}
+                          style={{ backgroundColor: (currentCollection as unknown as LocalProject).color }}
                         />
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)] truncate">
-                          {(currentCollection as unknown as LocalCollection).name}
+                          {(currentCollection as unknown as LocalProject).name}
                         </div>
-                        {(currentCollection as unknown as LocalCollection).description && (
+                        {(currentCollection as unknown as LocalProject).description && (
                           <div className="text-xs text-text-secondary dark:text-text-secondary-dark truncate">
-                            {(currentCollection as unknown as LocalCollection).description}
+                            {(currentCollection as unknown as LocalProject).description}
                           </div>
                         )}
                       </div>
@@ -219,7 +231,7 @@ export function WorkflowSettingsPanel() {
                       variant="ghost"
                       intent="error"
                       size="xs"
-                      onClick={handleRemoveFromCollection}
+                      onClick={handleRemoveFromProject}
                       disabled={assignmentLoading}
                       icon={assignmentLoading ? <RefreshCw className="w-3 h-3 animate-spin motion-reduce:animate-none" /> : <X className="w-3 h-3" />}
                     >
@@ -232,31 +244,32 @@ export function WorkflowSettingsPanel() {
                       variant="secondary"
                       size="sm"
                       fullWidth
-                      onClick={() => setShowCollectionDropdown(!showCollectionDropdown)}
+                       onClick={() => setShowProjectDropdown(!showProjectDropdown)}
                       disabled={assignmentLoading}
                       className="justify-between"
                       icon={<Plus className="w-4 h-4" />}
                     >
-                      <span className="min-w-0 truncate">Add to Collection</span>
+                       <span className="min-w-0 truncate">Add to Project</span>
                       <ChevronDown
                         className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 motion-reduce:transition-none ${
-                          showCollectionDropdown ? 'rotate-180' : ''
+                           showProjectDropdown ? 'rotate-180' : ''
                         }`}
                       />
                     </Button>
 
-                    {showCollectionDropdown && (
+                    {showProjectDropdown && (
                       <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-md shadow-[var(--aw-shadow-popover)] max-h-60 overflow-y-auto overflow-x-hidden">
                         <div className="py-1">
                           {collections.map((collection) => {
-                            const c = collection as unknown as LocalCollection;
+                            const c = collection as unknown as LocalProject;
+                            const cId = c.projectId ?? c.collectionId;
                             return (
                               <button
                                 type="button"
-                                key={c.collectionId}
+                                key={cId}
                                 onClick={() => {
-                                  handleAssignToCollection(c.collectionId);
-                                  setShowCollectionDropdown(false);
+                                  void handleAssignToProject(cId);
+                                  setShowProjectDropdown(false);
                                 }}
                                 disabled={assignmentLoading}
                                 className="w-full px-4 py-2 text-left text-sm hover:bg-surface dark:hover:bg-surface-dark transition-colors motion-reduce:transition-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
@@ -289,18 +302,18 @@ export function WorkflowSettingsPanel() {
                   </div>
                 ) : (
                   <EmptyState
-                    title="No collections available"
-                    description="Create a collection to organize workflows"
+                    title="No projects available"
+                    description="Create a project to organize workflows"
                     className="py-4 border border-dashed border-border dark:border-border-dark rounded"
                   />
                 )}
 
-                {showCollectionDropdown && (
+                {showProjectDropdown && (
                   <button
                     type="button"
-                    aria-label="Close collection dropdown"
+                    aria-label="Close project dropdown"
                     className="fixed inset-0 z-40 cursor-default"
-                    onClick={() => setShowCollectionDropdown(false)}
+                    onClick={() => setShowProjectDropdown(false)}
                   />
                 )}
               </div>

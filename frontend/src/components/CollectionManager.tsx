@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, type ChangeEvent, type DragEvent } from 'react';
 import { toast } from 'sonner';
 import { Trash2, Plus, X, GripVertical, Eye, EyeOff, ArrowLeft, Pencil, ListOrdered } from 'lucide-react';
-import API_BASE_URL from '../utils/api';
 import { Modal } from './molecules/Modal';
 import { ConfirmDialog } from './molecules/ConfirmDialog';
+import { PromptDialog } from './molecules/PromptDialog';
 import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { Input } from './atoms/Input';
@@ -11,15 +11,22 @@ import { TextArea } from './atoms/TextArea';
 import { Toggle } from './atoms/Toggle';
 import useSidebarStore from '../stores/SidebarStore';
 import { DefaultCollectionColor, PresetCollectionColors } from '../constants/CollectionColors';
-import type { Collection } from '../types/Collection';
+import { useScopeContext } from '../hooks/useScopeContext';
+import { projectsUrl, workflowsUrl, workflowsCreateInProjectUrl } from '../utils/scopedApi';
+import type { Project } from '../types/Project';
 import type { Workflow } from '../types/Workflow';
 import { authenticatedFetch } from '../utils/authenticatedApi';
 
-interface ExtendedCollection extends Collection {
+interface ExtendedProject extends Project {
   color?: string;
   workflowOrder?: Array<{ workflowId: string; order: number; enabled: boolean; continueOnFail: boolean }>;
   continueOnFail?: boolean;
-  workflowCount?: number;
+  workflowCount: number;
+}
+
+interface ProjectListResponse {
+  projects: ExtendedProject[];
+  total: number;
 }
 
 interface WorkflowOrderItem {
@@ -30,30 +37,30 @@ interface WorkflowOrderItem {
   workflow: Workflow | undefined;
 }
 
-interface CollectionFormData {
+interface ProjectFormData {
   name: string;
   description: string;
   color: string;
 }
 
-interface CollectionManagerState {
-  collections: ExtendedCollection[];
+interface ProjectManagerState {
+  projects: ExtendedProject[];
   workflows: Workflow[];
-  selectedCol: ExtendedCollection | null;
+  selectedProject: ExtendedProject | null;
   isEditing: boolean;
   isManagingWorkflows: boolean;
   workflowOrder: WorkflowOrderItem[];
   draggedIndex: number | null;
   continueOnFail: boolean;
-  formData: CollectionFormData;
+  formData: ProjectFormData;
   error: string;
   deleteTarget: string | null;
 }
 
-const createInitialState = (): CollectionManagerState => ({
-  collections: [],
+const createInitialState = (): ProjectManagerState => ({
+  projects: [],
   workflows: [],
-  selectedCol: null,
+  selectedProject: null,
   isEditing: false,
   isManagingWorkflows: false,
   workflowOrder: [],
@@ -64,18 +71,20 @@ const createInitialState = (): CollectionManagerState => ({
   deleteTarget: null,
 });
 
-interface CollectionManagerProps {
+interface ProjectManagerProps {
   open: boolean;
   onClose: () => void;
 }
 
-export function CollectionManager({ open, onClose }: CollectionManagerProps) {
-  const [state, setState] = useState<CollectionManagerState>(() => createInitialState());
+export function CollectionManager({ open, onClose }: ProjectManagerProps) {
+  const [state, setState] = useState<ProjectManagerState>(() => createInitialState());
+  const [showCreateWorkflowPrompt, setShowCreateWorkflowPrompt] = useState(false);
+  const { workspaceId, isReady } = useScopeContext();
 
   const {
-    collections,
+    projects,
     workflows,
-    selectedCol,
+    selectedProject,
     isEditing,
     isManagingWorkflows,
     workflowOrder,
@@ -86,9 +95,14 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
     deleteTarget,
   } = state;
 
+  const getProjectId = useCallback((project: ExtendedProject): string => project.projectId ?? project.collectionId, []);
+
   const fetchWorkflows = useCallback(async (): Promise<Workflow[]> => {
+    if (!isReady || !workspaceId) {
+      return [];
+    }
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows`);
+      const response = await authenticatedFetch(workflowsUrl(workspaceId, { skip: 0, limit: 100 }));
       if (response.ok) {
         const data: unknown = await response.json();
         const workflowArray: Workflow[] = Array.isArray(data) ? data : (data as { workflows: Workflow[] }).workflows || [];
@@ -98,33 +112,37 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
       console.error('Error fetching workflows:', err);
     }
     return [];
-  }, []);
+  }, [isReady, workspaceId]);
 
-  const fetchCollections = useCallback(async (): Promise<ExtendedCollection[]> => {
+  const fetchProjects = useCallback(async (): Promise<ExtendedProject[]> => {
+    if (!isReady || !workspaceId) {
+      return [];
+    }
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(projectsUrl(workspaceId));
       if (response.ok) {
-        const data: ExtendedCollection[] = await response.json();
-        return data;
+        const data: ProjectListResponse = await response.json();
+        return data.projects;
       }
     } catch (err: unknown) {
-      console.error('Error fetching collections:', err);
+      console.error('Error fetching projects:', err);
     }
     return [];
-  }, []);
+  }, [isReady, workspaceId]);
 
   useEffect(() => {
+    if (!isReady || !workspaceId) return;
     (async () => {
-      const [nextCollections, nextWorkflows] = await Promise.all([fetchCollections(), fetchWorkflows()]);
-      setState((prev) => ({ ...prev, collections: nextCollections, workflows: nextWorkflows }));
+      const [nextProjects, nextWorkflows] = await Promise.all([fetchProjects(), fetchWorkflows()]);
+      setState((prev) => ({ ...prev, projects: nextProjects, workflows: nextWorkflows }));
     })();
-  }, [fetchCollections, fetchWorkflows]);
+  }, [fetchProjects, fetchWorkflows, isReady, workspaceId]);
 
   const resetEditingState = useCallback(() => {
     setState((prev) => ({
       ...prev,
       isEditing: false,
-      selectedCol: null,
+      selectedProject: null,
       error: '',
     }));
   }, []);
@@ -133,12 +151,12 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
     setState((prev) => ({
       ...prev,
       isManagingWorkflows: false,
-      selectedCol: null,
+      selectedProject: null,
       workflowOrder: [],
     }));
   }, []);
 
-  const updateFormData = useCallback((patch: Partial<CollectionFormData>) => {
+  const updateFormData = useCallback((patch: Partial<ProjectFormData>) => {
     setState((prev) => ({
       ...prev,
       formData: { ...prev.formData, ...patch },
@@ -149,32 +167,36 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
     setState((prev) => ({
       ...prev,
       isEditing: true,
-      selectedCol: null,
+      selectedProject: null,
       formData: { name: '', description: '', color: DefaultCollectionColor },
       error: '',
     }));
   };
 
-  const handleEdit = (col: ExtendedCollection) => {
+  const handleEdit = (project: ExtendedProject) => {
     setState((prev) => ({
       ...prev,
       isEditing: true,
-      selectedCol: col,
-      formData: { name: col.name, description: col.description || '', color: col.color || DefaultCollectionColor },
+      selectedProject: project,
+      formData: { name: project.name, description: project.description || '', color: project.color || DefaultCollectionColor },
       error: '',
     }));
   };
 
   const handleSave = async () => {
     if (!formData.name.trim()) {
-      setState((prev) => ({ ...prev, error: 'Collection name is required' }));
+      setState((prev) => ({ ...prev, error: 'Project name is required' }));
+      return;
+    }
+    if (!workspaceId) {
+      setState((prev) => ({ ...prev, error: 'Workspace scope is not ready' }));
       return;
     }
     try {
-      const url = selectedCol
-        ? `${API_BASE_URL}/api/collections/${selectedCol.collectionId}`
-        : `${API_BASE_URL}/api/collections`;
-      const method = selectedCol ? 'PUT' : 'POST';
+      const url = selectedProject
+        ? projectsUrl(workspaceId, getProjectId(selectedProject))
+        : projectsUrl(workspaceId);
+      const method = selectedProject ? 'PATCH' : 'POST';
 
       const response = await authenticatedFetch(url, {
         method,
@@ -183,47 +205,51 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
       });
 
       if (response.ok) {
-        toast.success(selectedCol ? 'Collection updated' : 'Collection created');
-        const nextCollections = await fetchCollections();
+        toast.success(selectedProject ? 'Project updated' : 'Project created');
+        const nextProjects = await fetchProjects();
         setState((prev) => ({
           ...prev,
-          collections: nextCollections,
+          projects: nextProjects,
           isEditing: false,
-          selectedCol: null,
+          selectedProject: null,
           error: '',
         }));
-        useSidebarStore.getState().signalCollectionsRefresh();
+        useSidebarStore.getState().signalProjectsRefresh();
       } else {
         const errorData: { detail?: string } = await response.json();
-        setState((prev) => ({ ...prev, error: errorData.detail || 'Failed to save collection' }));
+        setState((prev) => ({ ...prev, error: errorData.detail || 'Failed to save project' }));
       }
     } catch (err: unknown) {
-      console.error('Error saving collection:', err);
-      setState((prev) => ({ ...prev, error: 'Error saving collection' }));
+      console.error('Error saving project:', err);
+      setState((prev) => ({ ...prev, error: 'Error saving project' }));
     }
   };
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
+    if (!workspaceId) {
+      toast.error('Workspace scope is not ready');
+      return;
+    }
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections/${deleteTarget}`, {
+      const response = await authenticatedFetch(projectsUrl(workspaceId, deleteTarget), {
         method: 'DELETE'
       });
       if (response.ok) {
-        toast.success('Collection deleted');
-        const nextCollections = await fetchCollections();
-        if (selectedCol?.collectionId === deleteTarget) {
-          setState((prev) => ({ ...prev, selectedCol: null, isEditing: false }));
+        toast.success('Project deleted');
+        const nextProjects = await fetchProjects();
+        if (selectedProject && getProjectId(selectedProject) === deleteTarget) {
+          setState((prev) => ({ ...prev, selectedProject: null, isEditing: false }));
         }
-        setState((prev) => ({ ...prev, collections: nextCollections }));
-        useSidebarStore.getState().signalCollectionsRefresh();
+        setState((prev) => ({ ...prev, projects: nextProjects }));
+        useSidebarStore.getState().signalProjectsRefresh();
       } else {
         const errorData: { detail?: string } = await response.json();
-        toast.error(errorData.detail || 'Failed to delete collection');
+        toast.error(errorData.detail || 'Failed to delete project');
       }
     } catch (err: unknown) {
-      console.error('Error deleting collection:', err);
-      toast.error('Error deleting collection');
+      console.error('Error deleting project:', err);
+      toast.error('Error deleting project');
     } finally {
       setState((prev) => ({ ...prev, deleteTarget: null }));
     }
@@ -233,22 +259,29 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
     resetEditingState();
   };
 
-  const handleManageWorkflows = (col: ExtendedCollection) => {
+  const handleManageWorkflows = (project: ExtendedProject) => {
+    const projectId = getProjectId(project);
     setState((prev) => ({
       ...prev,
-      selectedCol: col,
+      selectedProject: project,
       isManagingWorkflows: true,
-      continueOnFail: col.continueOnFail !== undefined ? col.continueOnFail : true,
+      continueOnFail: project.continueOnFail !== undefined ? project.continueOnFail : true,
     }));
-    const collectionWorkflows = workflows.filter(w => w.collectionId === col.collectionId);
-    if (col.workflowOrder && col.workflowOrder.length > 0) {
-      const sorted = col.workflowOrder.toSorted((a: { order: number }, b: { order: number }) => a.order - b.order);
+    const projectWorkflows = workflows.filter(w => w.collectionId === projectId);
+    if (project.workflowOrder && project.workflowOrder.length > 0) {
+      const sorted = project.workflowOrder.toSorted((a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0));
       const orderedWorkflows: WorkflowOrderItem[] = sorted
-        .map((wo: { workflowId: string; order: number; enabled: boolean; continueOnFail: boolean }) => ({ ...wo, workflow: collectionWorkflows.find(w => w.workflowId === wo.workflowId) }))
+        .map((wo: { workflowId: string; order?: number; enabled?: boolean; continueOnFail?: boolean }) => ({
+          workflowId: wo.workflowId,
+          order: wo.order ?? 0,
+          enabled: wo.enabled ?? true,
+          continueOnFail: wo.continueOnFail ?? true,
+          workflow: projectWorkflows.find(w => w.workflowId === wo.workflowId),
+        }))
         .filter((wo: WorkflowOrderItem) => wo.workflow !== undefined);
       setState((prev) => ({ ...prev, workflowOrder: orderedWorkflows }));
     } else {
-      setState((prev) => ({ ...prev, workflowOrder: collectionWorkflows.map((workflow, index) => ({
+      setState((prev) => ({ ...prev, workflowOrder: projectWorkflows.map((workflow, index) => ({
         workflowId: workflow.workflowId, order: index, enabled: true, continueOnFail: true, workflow
       })) }));
     }
@@ -259,27 +292,27 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
   };
 
   const handleSaveWorkflowOrder = async () => {
-    if (!selectedCol) return;
+    if (!selectedProject || !workspaceId) return;
     try {
       const orderData = workflowOrder.map((wo, index) => ({
         workflowId: wo.workflowId, order: index, enabled: wo.enabled, continueOnFail: wo.continueOnFail
       }));
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections/${selectedCol.collectionId}`, {
-        method: 'PUT',
+      const response = await authenticatedFetch(projectsUrl(workspaceId, getProjectId(selectedProject)), {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workflowOrder: orderData, continueOnFail })
       });
       if (response.ok) {
         toast.success('Workflow order saved');
-        const nextCollections = await fetchCollections();
+        const nextProjects = await fetchProjects();
         setState((prev) => ({
           ...prev,
-          collections: nextCollections,
+          projects: nextProjects,
           isManagingWorkflows: false,
-          selectedCol: null,
+          selectedProject: null,
           workflowOrder: [],
         }));
-        useSidebarStore.getState().signalCollectionsRefresh();
+        useSidebarStore.getState().signalProjectsRefresh();
       } else {
         const errorData: { detail?: string } = await response.json();
         toast.error(errorData.detail || 'Failed to save workflow order');
@@ -329,21 +362,61 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
   };
 
   const handleSelectChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    if (e.target.value) {
-      addWorkflowToOrder(e.target.value);
+    const value = e.target.value;
+    if (value === '__new__') {
+      setShowCreateWorkflowPrompt(true);
+      e.target.value = '';
+      return;
+    }
+    if (value) {
+      addWorkflowToOrder(value);
       e.target.value = '';
     }
   };
 
+  const handleCreateNewWorkflowInProject = async (name: string): Promise<void> => {
+    if (!workspaceId || !selectedProject) return;
+    const projectId = getProjectId(selectedProject);
+    try {
+      const response = await authenticatedFetch(
+        workflowsCreateInProjectUrl(workspaceId, projectId),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            description: '',
+            nodes: [{ nodeId: 'start-1', type: 'start', label: 'Start', position: { x: 100, y: 100 }, config: {} }],
+            edges: [],
+            variables: {},
+          }),
+        },
+      );
+      if (response.ok) {
+        const workflow = await response.json() as Workflow;
+        addWorkflowToOrder(workflow.workflowId);
+        useSidebarStore.getState().signalWorkflowsRefresh();
+        toast.success(`Workflow "${name}" created and added to project`);
+      } else {
+        const errBody = await response.json() as { detail?: string };
+        toast.error(errBody.detail ?? 'Failed to create workflow');
+      }
+    } catch {
+      toast.error('Failed to create workflow in project');
+    } finally {
+      setShowCreateWorkflowPrompt(false);
+    }
+  };
+
   const availableWorkflows = workflows.filter(
-    w => w.collectionId === selectedCol?.collectionId && !workflowOrder.some(wo => wo.workflowId === w.workflowId)
+    w => w.collectionId !== (selectedProject ? getProjectId(selectedProject) : undefined) && !workflowOrder.some(wo => wo.workflowId === w.workflowId)
   );
 
   const modalTitle = isManagingWorkflows
-    ? `Manage Workflows: ${selectedCol?.name}`
+    ? `Manage Workflows: ${selectedProject?.name}`
     : isEditing
-      ? (selectedCol ? 'Edit Collection' : 'Create Collection')
-      : 'Collections';
+      ? (selectedProject ? 'Edit Project' : 'Create Project')
+      : 'Projects';
 
   return (
     <>
@@ -352,13 +425,13 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
           {isManagingWorkflows ? (
             <div className="space-y-4">
               <Button variant="ghost" size="sm" onClick={handleBackFromWorkflows} className="flex items-center gap-1 text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark">
-                <ArrowLeft className="w-4 h-4" /> Back to collections
+                <ArrowLeft className="w-4 h-4" /> Back to projects
               </Button>
 
               <div className="p-3 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded">
                 <div className="flex items-center gap-2 cursor-pointer">
           <Toggle checked={continueOnFail} onChange={(e) => setState((prev) => ({ ...prev, continueOnFail: e.target.checked }))} variant="primary" size="sm" />
-                  <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">Continue on Failure (Collection-wide)</span>
+                  <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">Continue on Failure (Project-wide)</span>
                 </div>
                 <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">When enabled, execution continues even if a workflow fails</p>
               </div>
@@ -366,7 +439,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
               <div>
                 <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark mb-2">Execution Order (drag to reorder)</h3>
                 {workflowOrder.length === 0 ? (
-                  <div className="text-center py-8 text-text-muted dark:text-text-muted-dark text-sm">No workflows in this collection yet</div>
+                  <div className="text-center py-8 text-text-muted dark:text-text-muted-dark text-sm">No workflows in this project yet</div>
                 ) : (
                   <div className="space-y-2">
                     {workflowOrder.map((wo, index) => (
@@ -421,7 +494,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                 )}
               </div>
 
-              {availableWorkflows.length > 0 && (
+              {(availableWorkflows.length > 0 || selectedProject) && (
                 <div>
                   <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark mb-2">Add More Workflows</h3>
                   <select
@@ -429,6 +502,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                     className="w-full rounded border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   >
                     <option value="">Select a workflow to add…</option>
+                    <option value="__new__">+ Create New Workflow</option>
                     {availableWorkflows.map((w) => <option key={w.workflowId} value={w.workflowId}>{w.name}</option>)}
                   </select>
                 </div>
@@ -445,9 +519,9 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                 <div className="p-3 bg-status-error/5 border border-status-error/20 rounded text-sm text-status-error">{error}</div>
               )}
               <div>
-                <label htmlFor="collection-name" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Collection Name *</label>
+                <label htmlFor="project-name" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Project Name *</label>
                   <Input
-                    id="collection-name"
+                    id="project-name"
                     type="text"
                     value={formData.name}
                     onChange={(e) => updateFormData({ name: e.target.value })}
@@ -457,9 +531,9 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                 />
               </div>
               <div>
-                <label htmlFor="collection-description" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Description</label>
+                <label htmlFor="project-description" className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-1">Description</label>
                   <TextArea
-                    id="collection-description"
+                    id="project-description"
                     value={formData.description}
                     onChange={(e) => updateFormData({ description: e.target.value })}
                   size="sm"
@@ -469,7 +543,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
                 />
               </div>
               <div>
-                <div className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">Collection Color</div>
+                <div className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">Project Color</div>
                 <div className="flex gap-2 flex-wrap">
                   {PresetCollectionColors.map((color) => (
                     <button
@@ -486,35 +560,35 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
               </div>
               <div className="flex gap-2 justify-end pt-4">
                 <Button variant="ghost" size="sm" onClick={handleCancel}>Cancel</Button>
-                <Button variant="primary" size="sm" onClick={handleSave}>{selectedCol ? 'Update' : 'Create'}</Button>
+                <Button variant="primary" size="sm" onClick={handleSave}>{selectedProject ? 'Update' : 'Create'}</Button>
               </div>
             </div>
           ) : (
             <div className="space-y-2">
-              {collections.length === 0 ? (
+              {projects.length === 0 ? (
                 <div className="text-center py-8 text-text-muted dark:text-text-muted-dark">
-                  <p>No collections yet</p>
+                  <p>No projects yet</p>
                   <p className="text-sm mt-2">Create one to organize your workflows</p>
                 </div>
               ) : (
-                collections.map((col) => (
-                  <div key={col.collectionId} className="p-3 border border-border dark:border-border-dark rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors">
+                projects.map((project) => (
+                  <div key={getProjectId(project)} className="p-3 border border-border dark:border-border-dark rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        {col.color && <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />}
+                        {project.color && <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: project.color }} />}
                         <div className="min-w-0 flex-1">
-                          <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">{col.name}</div>
-                          {col.description && <div className="text-xs text-text-secondary dark:text-text-secondary-dark truncate">{col.description}</div>}
-                          <div className="text-xs text-text-muted dark:text-text-muted-dark mt-1">{col.workflowCount} workflow{col.workflowCount !== 1 ? 's' : ''}</div>
+                          <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">{project.name}</div>
+                          {project.description && <div className="text-xs text-text-secondary dark:text-text-secondary-dark truncate">{project.description}</div>}
+                          <div className="text-xs text-text-muted dark:text-text-muted-dark mt-1">{project.workflowCount} workflow{project.workflowCount !== 1 ? 's' : ''}</div>
                         </div>
                       </div>
                       <div className="flex gap-1.5 flex-shrink-0">
-                        <Button variant="ghost" size="xs" onClick={() => handleManageWorkflows(col)} title="Manage workflow order"><ListOrdered className="w-3.5 h-3.5" /></Button>
-                        <Button variant="ghost" size="xs" onClick={() => handleEdit(col)} title="Edit collection"><Pencil className="w-3.5 h-3.5" /></Button>
+                        <Button variant="ghost" size="xs" onClick={() => handleManageWorkflows(project)} title="Manage workflow order"><ListOrdered className="w-3.5 h-3.5" /></Button>
+                        <Button variant="ghost" size="xs" onClick={() => handleEdit(project)} title="Edit project"><Pencil className="w-3.5 h-3.5" /></Button>
                         <IconButton
                           variant="ghost"
                           size="xs"
-                          onClick={() => setState((prev) => ({ ...prev, deleteTarget: col.collectionId }))}
+                          onClick={() => setState((prev) => ({ ...prev, deleteTarget: getProjectId(project) }))}
                           className="text-status-error hover:bg-status-error/10"
                           tooltip="Delete"
                         >
@@ -527,7 +601,7 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
               )}
 
               <div className="pt-4 border-t border-border dark:border-border-dark">
-                <Button variant="primary" size="sm" onClick={handleCreate}><Plus className="w-4 h-4 mr-1" /> New Collection</Button>
+                <Button variant="primary" size="sm" onClick={handleCreate}><Plus className="w-4 h-4 mr-1" /> New Project</Button>
               </div>
             </div>
           )}
@@ -538,10 +612,20 @@ export function CollectionManager({ open, onClose }: CollectionManagerProps) {
         open={!!deleteTarget}
         onClose={() => setState((prev) => ({ ...prev, deleteTarget: null }))}
         onConfirm={handleDeleteConfirm}
-        title="Delete Collection"
-        message="Are you sure you want to delete this collection? All workflows will be unassigned. This action cannot be undone."
+        title="Delete Project"
+        message="Are you sure you want to delete this project? All workflows will be unassigned. This action cannot be undone."
         confirmLabel="Delete"
         intent="error"
+      />
+
+      <PromptDialog
+        open={showCreateWorkflowPrompt}
+        onClose={() => setShowCreateWorkflowPrompt(false)}
+        onSubmit={handleCreateNewWorkflowInProject}
+        title="New Workflow in Project"
+        message="Enter a name for the new workflow. It will be created and added to this project."
+        placeholder="My Workflow"
+        submitLabel="Create & Add"
       />
     </>
   );

@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { usePalette } from '../contexts/PaletteContext';
-import API_BASE_URL from '../utils/api';
 import { authenticatedFetch } from '../utils/authenticatedApi';
 import { buildSwaggerRefreshSummary } from '../utils/swaggerRefreshSummary';
+import { useScopeContext } from '../hooks/useScopeContext';
+import { workflowImportOpenapiRemoteUrl } from '../utils/scopedApi';
 import type { Node } from 'reactflow';
 import type { WorkflowCanvasNodeData } from '../types/WorkflowCanvasNodeData';
 import type { EnvironmentWithSwagger } from '../types/EnvironmentWithSwagger';
@@ -24,6 +25,7 @@ export function useSwaggerRefresh({
   setNodes,
 }: UseSwaggerRefreshParams) {
   const { addImportedGroup, removeImportedGroup } = usePalette();
+  const { workspaceId } = useScopeContext();
   const [isSwaggerRefreshing, setIsSwaggerRefreshing] = useState(false);
   const swaggerRefreshSignatureRef = useRef('');
   const swaggerRefreshRequestIdRef = useRef(0);
@@ -87,7 +89,7 @@ export function useSwaggerRefresh({
 
     try {
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/workflows/import/openapi/url?swagger_url=${encodeURIComponent(swaggerDocUrl)}&sanitize=true`
+        workflowImportOpenapiRemoteUrl(workspaceId || '', swaggerDocUrl, true)
       );
 
       if (!response.ok) {
@@ -275,6 +277,7 @@ export function useSwaggerRefresh({
     }
   }, [
     workflowId,
+    workspaceId,
     selectedEnvironment,
     environments,
     envSwaggerGroupId,

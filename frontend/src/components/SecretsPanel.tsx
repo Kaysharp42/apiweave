@@ -6,8 +6,8 @@ import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { EmptyState } from './molecules/EmptyState';
 import SecretValueEditor from './SecretValueEditor';
-import { deleteSecret } from '../hooks/useSecretValues';
-import type { SecretsPanelProps } from '../types';
+import { deleteScopedSecret } from '../hooks/useSecretValues';
+import type { SecretsPanelProps, SecretScopeType } from '../types';
 
 export default function SecretsPanel({
   isOpen,
@@ -22,6 +22,8 @@ export default function SecretsPanel({
   );
 
   const environmentId = environment?.environmentId ?? environment?.id ?? '';
+  const scopeType: SecretScopeType = 'environment';
+  const scopeId = environmentId;
 
   const refreshKeys = useCallback(() => {
     if (environment?.secrets) {
@@ -39,12 +41,12 @@ export default function SecretsPanel({
   }, [refreshKeys, onSecretsChange, environment?.secrets]);
 
   const handleUnset = useCallback(
-    async (key: string) => {
-      setUnsetting(key);
+    async (secretName: string) => {
+      setUnsetting(secretName);
       try {
-        await deleteSecret(environmentId, key);
-        setSecretKeys((prev) => prev.filter((k) => k !== key));
-        toast.success(`Secret "${key}" removed`);
+        await deleteScopedSecret(scopeType, scopeId, secretName);
+        setSecretKeys((prev) => prev.filter((k) => k !== secretName));
+        toast.success(`Secret "${secretName}" removed`);
         onSecretsChange?.(environment?.secrets ?? {}).catch(() => {});
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -53,7 +55,7 @@ export default function SecretsPanel({
         setUnsetting(null);
       }
     },
-    [environmentId, onSecretsChange, environment?.secrets],
+    [scopeId, onSecretsChange, environment?.secrets],
   );
 
   const hasKeys = secretKeys.length > 0;
@@ -138,8 +140,9 @@ export default function SecretsPanel({
       {editingKey && (
         <SecretValueEditor
           isOpen={!!editingKey}
-          environmentId={environmentId}
-          secretKey={editingKey}
+          scopeType={scopeType}
+          scopeId={scopeId}
+          secretName={editingKey}
           onClose={() => setEditingKey(null)}
           onSuccess={handleEditorSuccess}
         />

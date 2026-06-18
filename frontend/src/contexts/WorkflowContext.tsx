@@ -1,8 +1,8 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef, type ReactNode } from 'react';
-import API_BASE_URL from '../utils/api';
 import { usePalette } from './PaletteContext';
 import useSidebarStore from '../stores/SidebarStore';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import { projectsUrl } from '../utils/scopedApi';
 
 interface WorkflowVariables {
   [key: string]: unknown;
@@ -162,11 +162,16 @@ export const WorkflowProvider = ({ children, workflowId, initialWorkflow }: Work
 
   const fetchCollections = useCallback(async () => {
     dispatch({ type: 'set-loading-collections', value: true });
+    const workspaceId = useSidebarStore.getState().activeWorkspaceId;
+    if (!workspaceId) {
+      dispatch({ type: 'set-loading-collections', value: false });
+      return;
+    }
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(projectsUrl(workspaceId));
       if (response.ok) {
-        const data = await response.json() as Collection[];
-        dispatch({ type: 'set-collections', value: data });
+        const data = await response.json() as { projects: Collection[]; total: number };
+        dispatch({ type: 'set-collections', value: data.projects });
       }
     } catch {
       // ignore

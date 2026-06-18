@@ -189,3 +189,4 @@ frontend/react-doctor.json
 frontend/react-doctor.config.json
 frontend/package-lock.json
 .opencode/
+.agents/

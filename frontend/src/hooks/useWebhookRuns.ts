@@ -2,8 +2,8 @@ import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import type { Webhook } from '../types/Webhook';
 import type { WebhookRun } from '../types/WebhookRun';
-import API_BASE_URL from '../utils/api';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import { webhookLogsUrl } from '../utils/scopedApi';
 
 interface UseWebhookRunsResult {
   triggerTestDelivery: (webhook: Webhook) => Promise<void>;
@@ -56,7 +56,7 @@ export function useWebhookRuns(): UseWebhookRunsResult {
   const fetchWebhookRuns = useCallback(async (webhookId: string): Promise<WebhookRun[]> => {
     try {
       const res = await authenticatedFetch(
-        `${API_BASE_URL}/api/webhooks/${webhookId}/logs?limit=50`,
+        webhookLogsUrl(webhookId),
         { headers: { 'Content-Type': 'application/json' } }
       );
 

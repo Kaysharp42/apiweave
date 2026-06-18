@@ -1,15 +1,13 @@
-import { ChevronDown, ChevronRight, FolderKanban, Download, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, FolderKanban, Download, Trash2, Plus, FilePlus } from 'lucide-react';
 import { Badge } from '../../atoms/Badge';
+import { IconButton } from '../../atoms/IconButton';
 import { SidebarAction } from './SidebarAction';
 import { WorkflowItem } from './WorkflowItem';
 import { getSidebarItemLabel } from '../../../utils/sidebarItemLabel';
 import type { ProjectItemProps } from '../../../types';
 import type { Collection } from '../../../types/Collection';
 
-/**
- * Renders a single project item with expand/collapse toggle,
- * nested workflow list, and action buttons (export, delete).
- */
 export function ProjectItem({
   project,
   isExpanded,
@@ -23,10 +21,16 @@ export function ProjectItem({
   onDeleteProject,
   onExportWorkflow,
   onDeleteWorkflow,
+  onAddWorkflowToProject,
+  onAssignWorkflowToProject,
 }: ProjectItemProps) {
+  const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const projectId = project.projectId ?? project.collectionId;
   const projectWorkflows = Array.isArray(workflows)
-    ? workflows.filter((wf) => wf.collectionId === projectId)
+    ? workflows.filter((wf) => (wf.projectId ?? wf.collectionId) === projectId)
+    : [];
+  const unassignedWorkflows = Array.isArray(workflows)
+    ? workflows.filter((wf) => !wf.collectionId || wf.collectionId !== projectId)
     : [];
   const projectLabel = getSidebarItemLabel(project.name, 40, 'Untitled project');
 
@@ -80,28 +84,79 @@ export function ProjectItem({
 
       {isExpanded && (
         <ul className="relative ml-3 mt-0.5 space-y-1 pl-3 before:absolute before:bottom-0 before:left-0 before:top-0 before:w-px before:bg-[var(--aw-border)]">
-          {projectWorkflows.length === 0 ? (
-            <li className="py-3 text-center">
-              <span className="text-xs text-text-muted dark:text-text-muted-dark">
+          {projectWorkflows.length === 0 && (
+            <li className="py-2 text-center">
+              <span className="text-xs text-text-muted dark:text-text-muted-dark block mb-2">
                 No workflows in this project
               </span>
             </li>
-          ) : (
-            projectWorkflows.map((workflow) => (
-              <WorkflowItem
-                key={workflow.workflowId}
-                workflow={workflow}
-                isActive={selectedWorkflowId === workflow.workflowId}
-                collections={projects.map((p) => ({
-                  collectionId: p.projectId ?? p.collectionId,
-                  name: p.name,
-                })) as Collection[]}
-                environments={environments}
-                onWorkflowClick={onWorkflowClick}
-                onExportWorkflow={onExportWorkflow}
-                onDeleteWorkflow={onDeleteWorkflow}
-              />
-            ))
+          )}
+
+          {projectWorkflows.map((workflow) => (
+            <WorkflowItem
+              key={workflow.workflowId}
+              workflow={workflow}
+              isActive={selectedWorkflowId === workflow.workflowId}
+              collections={projects.map((p) => ({
+                collectionId: p.projectId ?? p.collectionId,
+                name: p.name,
+              })) as Collection[]}
+              environments={environments}
+              onWorkflowClick={onWorkflowClick}
+              onExportWorkflow={onExportWorkflow}
+              onDeleteWorkflow={onDeleteWorkflow}
+            />
+          ))}
+
+          <li className="flex items-center gap-1 py-1">
+            <IconButton
+              variant="ghost"
+              size="xs"
+              tooltip="Create a new workflow in this project"
+              onClick={() => onAddWorkflowToProject(projectId)}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </IconButton>
+            <button
+              type="button"
+              className="text-xs text-text-secondary dark:text-text-secondary-dark hover:text-[var(--aw-primary)] transition-colors"
+              onClick={() => onAddWorkflowToProject(projectId)}
+            >
+              Add workflow
+            </button>
+
+            {unassignedWorkflows.length > 0 && (
+              <button
+                type="button"
+                className="ml-auto flex items-center gap-0.5 text-xs text-text-muted dark:text-text-muted-dark hover:text-text-secondary dark:hover:text-text-secondary-dark transition-colors"
+                onClick={() => setShowAssignDropdown(!showAssignDropdown)}
+              >
+                <FilePlus className="w-3 h-3" />
+                Assign
+                <ChevronDown className={`w-2.5 h-2.5 transition-transform ${showAssignDropdown ? 'rotate-180' : ''}`} />
+              </button>
+            )}
+          </li>
+
+          {showAssignDropdown && unassignedWorkflows.length > 0 && (
+            <li className="py-1">
+              <div className="rounded border border-[var(--aw-border)] bg-surface-raised dark:bg-surface-dark-raised shadow-sm max-h-40 overflow-y-auto">
+                {unassignedWorkflows.map((wf) => (
+                  <button
+                    key={wf.workflowId}
+                    type="button"
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                    onClick={() => {
+                      onAssignWorkflowToProject(projectId, wf.workflowId);
+                      setShowAssignDropdown(false);
+                    }}
+                  >
+                    <FilePlus className="w-3 h-3 flex-shrink-0 text-text-muted dark:text-text-muted-dark" />
+                    <span className="truncate text-text-primary dark:text-text-primary-dark">{wf.name}</span>
+                  </button>
+                ))}
+              </div>
+            </li>
           )}
         </ul>
       )}

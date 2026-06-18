@@ -1,84 +1,106 @@
 /**
- * useSecretValues — API hook for setting and deleting encrypted secret values.
+ * useSecretValues — API hook for scoped secret operations.
  *
- * POSTs sealed-box ciphertext (never plaintext) to the backend.
- * DELETEs a secret key from the environment.
+ * POSTs sealed-box ciphertext (never plaintext) to the scoped backend.
+ * DELETEs a secret by ID from the scope.
+ * GETs metadata only — no ciphertext or plaintext is ever returned.
+ *
+ * All routes use `/api/scopes/{scope_type}/{scope_id}/secrets`.
  */
 
 import { useCallback } from 'react';
 import { authenticatedJson } from '../utils/authenticatedApi';
-import API_BASE_URL from '../utils/api';
-import type { EncryptedSecretValue, SecretPublicKey } from '../types';
+import { secretsUrl, publicKeyUrl } from '../utils/scopedApi';
+import type { EncryptedSecretValue, PublicKey, SecretScopeType, SecretMetadata } from '../types';
 
 /**
- * Fetch the environment's sealed-box public key.
+ * Fetch the scope's sealed-box public key.
  * Called lazily when the value editor modal opens.
  */
-export async function fetchSecretPublicKey(
-  environmentId: string,
-): Promise<SecretPublicKey> {
-  return authenticatedJson<SecretPublicKey>(
-    `${API_BASE_URL}/api/environments/${environmentId}/secrets/public-key`,
-  );
+export async function fetchScopedPublicKey(
+  scopeType: SecretScopeType,
+  scopeId: string,
+): Promise<PublicKey> {
+  return authenticatedJson<PublicKey>(publicKeyUrl(scopeType, scopeId));
 }
 
 /**
- * POST an encrypted secret value to the backend.
+ * POST an encrypted secret value to the scoped backend.
  * The body contains only ciphertext + keyId — never plaintext.
  */
-export async function postEncryptedSecret(
+export async function postScopedEncryptedSecret(
   payload: EncryptedSecretValue,
-): Promise<void> {
-  await authenticatedJson(
-    `${API_BASE_URL}/api/environments/${payload.environmentId}/secrets`,
+): Promise<SecretMetadata> {
+  return authenticatedJson<SecretMetadata>(
+    secretsUrl({ scopeType: payload.scopeType, scopeId: payload.scopeId }),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        key: payload.key,
-        encrypted_value: payload.encryptedValue,
-        key_id: payload.keyId,
+        name: payload.name,
+        ciphertext: payload.ciphertext,
+        keyId: payload.keyId,
       }),
     },
   );
 }
 
 /**
- * DELETE a secret key from the environment.
+ * DELETE a secret by ID from the scope.
  */
-export async function deleteSecret(
-  environmentId: string,
-  key: string,
+export async function deleteScopedSecret(
+  scopeType: SecretScopeType,
+  scopeId: string,
+  secretId: string,
 ): Promise<void> {
   await authenticatedJson(
-    `${API_BASE_URL}/api/environments/${environmentId}/secrets/${encodeURIComponent(key)}`,
+    secretsUrl({ scopeType, scopeId }, secretId),
     { method: 'DELETE' },
   );
 }
 
 /**
- * React hook wrapping the secret value API calls.
+ * GET secret metadata list for a scope.
+ * Returns metadata only — no ciphertext or plaintext values.
  */
-export function useSecretValues(environmentId: string | undefined) {
+export async function listScopedSecrets(
+  scopeType: SecretScopeType,
+  scopeId: string,
+): Promise<SecretMetadata[]> {
+  const response = await authenticatedJson<{ secrets: SecretMetadata[]; total: number }>(
+    secretsUrl({ scopeType, scopeId }),
+  );
+  return response.secrets;
+}
+
+/**
+ * React hook wrapping scoped secret API calls.
+ */
+export function useSecretValues(scopeType: SecretScopeType, scopeId: string | undefined) {
   const setSecretValue = useCallback(
     async (payload: EncryptedSecretValue) => {
-      await postEncryptedSecret(payload);
+      await postScopedEncryptedSecret(payload);
     },
     [],
   );
 
   const removeSecretValue = useCallback(
-    async (key: string) => {
-      if (!environmentId) throw new Error('No active environment');
-      await deleteSecret(environmentId, key);
+    async (secretId: string) => {
+      if (!scopeId) throw new Error('No active scope');
+      await deleteScopedSecret(scopeType, scopeId, secretId);
     },
-    [environmentId],
+    [scopeType, scopeId],
   );
 
   const getPublicKey = useCallback(async () => {
-    if (!environmentId) throw new Error('No active environment');
-    return fetchSecretPublicKey(environmentId);
-  }, [environmentId]);
+    if (!scopeId) throw new Error('No active scope');
+    return fetchScopedPublicKey(scopeType, scopeId);
+  }, [scopeType, scopeId]);
 
-  return { setSecretValue, removeSecretValue, getPublicKey };
+  const listSecrets = useCallback(async () => {
+    if (!scopeId) throw new Error('No active scope');
+    return listScopedSecrets(scopeType, scopeId);
+  }, [scopeType, scopeId]);
+
+  return { setSecretValue, removeSecretValue, getPublicKey, listSecrets };
 }

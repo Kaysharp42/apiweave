@@ -20,11 +20,14 @@ import useTabStore from '../../stores/TabStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import useNavigationStore from '../../stores/NavigationStore';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
-import API_BASE_URL from '../../utils/api';
+import { useScopeContext } from '../../hooks/useScopeContext';
 import type { WorkspaceProps } from '../../types/WorkspaceProps';
 import type { WorkspaceTab } from '../../types/WorkspaceTab';
 import type { TabItem } from '../../types/TabItem';
+import type { Workflow } from '../../types/Workflow';
 import { authenticatedFetch } from '../../utils/authenticatedApi';
+import { environmentsUrl, workflowsUrl } from '../../utils/scopedApi';
+import { toast } from 'sonner';
 
 const panelTabs: TabItem[] = [
   { key: 'variables', icon: Package, label: 'Variables' },
@@ -34,11 +37,13 @@ const panelTabs: TabItem[] = [
 
 export function Workspace(_props: WorkspaceProps) {
   const { tabs, activeTabId, openTab, closeTab, activateNextTab, activatePrevTab } = useTabStore();
+  const { workspaceId, orgId, isReady: isScopeReady } = useScopeContext();
 
   type WorkspaceState = {
     showVariablesPanel: boolean;
     activePanelTab: string;
     environmentNames: Record<string, string>;
+    environmentNamesLoaded: boolean;
     showShortcutsHelp: boolean;
     showNewWorkflowPrompt: boolean;
   };
@@ -57,7 +62,7 @@ export function Workspace(_props: WorkspaceProps) {
       case 'set-active-panel-tab':
         return { ...current, activePanelTab: action.value };
       case 'set-environment-names':
-        return { ...current, environmentNames: action.value };
+        return { ...current, environmentNames: action.value, environmentNamesLoaded: true };
       case 'set-show-shortcuts-help':
         return { ...current, showShortcutsHelp: action.value };
       case 'set-show-new-workflow-prompt':
@@ -69,60 +74,60 @@ export function Workspace(_props: WorkspaceProps) {
     showVariablesPanel: false,
     activePanelTab: 'variables',
     environmentNames: {},
+    environmentNamesLoaded: false,
     showShortcutsHelp: false,
     showNewWorkflowPrompt: false,
   });
 
   const activeTab: WorkspaceTab | undefined = tabs.find((t) => t.id === activeTabId);
 
-  useEffect(() => {
-    const fetchEnvironments = async () => {
-      try {
-        const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
-        if (response.ok) {
-          const envs: Array<{ environmentId: string; name: string }> = await response.json();
-          const namesMap: Record<string, string> = {};
-          envs.forEach((env) => {
-            namesMap[env.environmentId] = env.name;
-          });
-          dispatch({ type: 'set-environment-names', value: namesMap });
-        }
-      } catch (error) {
-        console.error('Error fetching environments:', error);
+  const fetchEnvironmentNames = useCallback(async () => {
+    if (!isScopeReady || !workspaceId) {
+      dispatch({ type: 'set-environment-names', value: {} });
+      return;
+    }
+
+    try {
+      const response = await authenticatedFetch(environmentsUrl(workspaceId, 'all-accessible', orgId));
+      if (response.ok) {
+        const envs = await response.json() as Array<{ environmentId: string; name: string }>;
+        const namesMap: Record<string, string> = {};
+        envs.forEach((env) => {
+          namesMap[env.environmentId] = env.name;
+        });
+        dispatch({ type: 'set-environment-names', value: namesMap });
+      } else {
+        dispatch({ type: 'set-environment-names', value: {} });
       }
-    };
-    fetchEnvironments();
-  }, []);
+    } catch (error) {
+      console.error('Error fetching environments:', error);
+      dispatch({ type: 'set-environment-names', value: {} });
+    }
+  }, [isScopeReady, orgId, workspaceId]);
+
+  useEffect(() => {
+    void fetchEnvironmentNames();
+  }, [fetchEnvironmentNames]);
 
   const environmentVersion = useSidebarStore((s) => s.environmentVersion);
   useEffect(() => {
     if (environmentVersion > 0) {
-      const fetchEnvNames = async () => {
-        try {
-          const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
-          if (response.ok) {
-            const envs: Array<{ environmentId: string; name: string }> = await response.json();
-            const namesMap: Record<string, string> = {};
-            envs.forEach((env) => {
-              namesMap[env.environmentId] = env.name;
-            });
-            dispatch({ type: 'set-environment-names', value: namesMap });
-          }
-        } catch (error) {
-          console.error('Error fetching environments:', error);
-        }
-      };
-      fetchEnvNames();
+      void fetchEnvironmentNames();
     }
-  }, [environmentVersion]);
+  }, [environmentVersion, fetchEnvironmentNames]);
 
   const handleNewWorkflow = useCallback(() => {
     dispatch({ type: 'set-show-new-workflow-prompt', value: true });
   }, []);
 
   const handleCreateWorkflow = useCallback(async (name: string) => {
+    if (!isScopeReady || !workspaceId) {
+      toast.error('Workspace context is still loading. Please retry once a workspace is selected.');
+      return;
+    }
+
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows`, {
+      const response = await authenticatedFetch(workflowsUrl(workspaceId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -134,14 +139,14 @@ export function Workspace(_props: WorkspaceProps) {
         }),
       });
       if (response.ok) {
-        const workflow = await response.json();
+        const workflow = await response.json() as Workflow;
         openTab(workflow);
         useSidebarStore.getState().signalWorkflowsRefresh();
       }
     } catch (error) {
       console.error('Error creating workflow:', error);
     }
-  }, [openTab]);
+  }, [isScopeReady, openTab, workspaceId]);
 
   useKeyboardShortcuts({
     onNewWorkflow: handleNewWorkflow,
@@ -170,7 +175,8 @@ export function Workspace(_props: WorkspaceProps) {
                 <span className="text-text-secondary dark:text-text-secondary-dark flex-shrink-0">Environment:</span>
                 <Badge variant="primary" size="sm" className="min-w-0 truncate">
                   <span className="min-w-0 truncate">
-                    {state.environmentNames[activeTab.workflow.environmentId] ?? 'Loading…'}
+                    {state.environmentNames[activeTab.workflow.environmentId]
+                      ?? (state.environmentNamesLoaded ? 'Environment unavailable' : 'Loading…')}
                   </span>
                 </Badge>
               </div>

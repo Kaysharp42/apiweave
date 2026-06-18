@@ -18,6 +18,17 @@ vi.mock('sonner', () => ({
   },
 }));
 
+vi.mock('../hooks/useScopeContext', () => ({
+  useScopeContext: () => ({
+    workspaceId: 'ws-1',
+    workspaceSlug: 'test-workspace',
+    orgId: 'org-1',
+    orgSlug: 'test-org',
+    userId: 'user-1',
+    isReady: true,
+  }),
+}));
+
 const mockWebhook: Webhook = {
   webhookId: 'wh-123',
   resourceType: 'workflow',
@@ -32,6 +43,19 @@ const mockWorkflows = [
   { workflowId: 'wf-456', name: 'Test Workflow', nodes: [], edges: [] },
 ];
 
+/** Match scoped workspace URLs: /api/workspaces/{id}/... */
+function isScopedWorkflowsUrl(url: string): boolean {
+  return /\/api\/workspaces\/[^/]+\/workflows/.test(url);
+}
+
+function isScopedProjectsUrl(url: string): boolean {
+  return /\/api\/workspaces\/[^/]+\/projects/.test(url);
+}
+
+function isScopedEnvironmentsUrl(url: string): boolean {
+  return /\/api\/workspaces\/[^/]+\/environments/.test(url);
+}
+
 describe('WebhookManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -40,13 +64,13 @@ describe('WebhookManager', () => {
       if (url.includes('/execute')) {
         return Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve({ detail: 'no token' }) });
       }
-      if (url.includes('/api/workflows')) {
+      if (isScopedWorkflowsUrl(url)) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockWorkflows) });
       }
-      if (url.includes('/api/collections')) {
+      if (isScopedProjectsUrl(url)) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       }
-      if (url.includes('/api/environments')) {
+      if (isScopedEnvironmentsUrl(url)) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       }
       if (url.includes('/api/webhooks/') && url.includes('/logs')) {
@@ -77,13 +101,13 @@ describe('WebhookManager', () => {
       if (url.includes('/execute') && options?.method === 'POST') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ runId: 'run-789', status: 'accepted' }) });
       }
-      if (url.includes('/api/workflows')) {
+      if (isScopedWorkflowsUrl(url)) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockWorkflows) });
       }
-      if (url.includes('/api/collections')) {
+      if (isScopedProjectsUrl(url)) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       }
-      if (url.includes('/api/environments')) {
+      if (isScopedEnvironmentsUrl(url)) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       }
       if (url.includes('/api/webhooks/') && url.includes('/logs')) {

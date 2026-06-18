@@ -171,7 +171,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
               icon={<Plus className="w-4 h-4" />}
               className="flex-1"
             >
-              <span>{selectedNav === 'projects' ? 'Create' : 'New'}</span>
+              <span>{selectedNav === 'projects' ? 'New Project' : 'New Workflow'}</span>
             </Button>
 
             <div className="relative flex-1" ref={importMenuRef}>

@@ -128,7 +128,8 @@ def _make_invite(
 
 def _default_app() -> FastAPI:
     """Minimal FastAPI app with all auth-relevant routers mounted."""
-    from app.routes import collections, environments, webhooks, workflows
+    from app.routes import webhooks
+    from app.routes._legacy_disabled import collections, environments, workflows
 
     app = FastAPI()
     app.include_router(workflows.router)

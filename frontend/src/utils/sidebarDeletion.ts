@@ -1,18 +1,22 @@
+import { authenticatedFetch } from './authenticatedApi';
+import { projectsUrl, workflowUrl } from './scopedApi';
+
 interface DeletionTarget {
   workflowId?: string;
-  collectionId?: string;
+  projectId?: string;
 }
 
 interface DeletionRequestParams {
   target: DeletionTarget | null | undefined;
   apiBaseUrl: string;
-  fetchImpl?: typeof fetch;
+  workspaceId?: string;
+  fetchImpl?: typeof authenticatedFetch;
 }
 
 interface DeletionResult {
   deleted: boolean;
   workflowId?: string;
-  collectionId?: string;
+  projectId?: string;
   reason?: string;
 }
 
@@ -25,13 +29,16 @@ const parseDeleteError = async (response: Response, fallbackMessage: string): Pr
   }
 };
 
-export const requestWorkflowDeletion = async ({ target, apiBaseUrl, fetchImpl = fetch }: DeletionRequestParams): Promise<DeletionResult> => {
+export const requestWorkflowDeletion = async ({ target, workspaceId, fetchImpl = authenticatedFetch }: DeletionRequestParams): Promise<DeletionResult> => {
   const workflowId = target?.workflowId;
   if (!workflowId) {
     return { deleted: false, reason: 'missing-target' };
   }
+  if (!workspaceId) {
+    return { deleted: false, reason: 'missing-workspace' };
+  }
 
-  const response = await fetchImpl(`${apiBaseUrl}/api/workflows/${workflowId}`, {
+  const response = await fetchImpl(workflowUrl(workspaceId, workflowId), {
     method: 'DELETE',
   });
 
@@ -42,19 +49,22 @@ export const requestWorkflowDeletion = async ({ target, apiBaseUrl, fetchImpl = 
   return { deleted: true, workflowId };
 };
 
-export const requestCollectionDeletion = async ({ target, apiBaseUrl, fetchImpl = fetch }: DeletionRequestParams): Promise<DeletionResult> => {
-  const collectionId = target?.collectionId;
-  if (!collectionId) {
+export const requestProjectDeletion = async ({ target, workspaceId, fetchImpl = authenticatedFetch }: DeletionRequestParams): Promise<DeletionResult> => {
+  const projectId = target?.projectId;
+  if (!projectId) {
     return { deleted: false, reason: 'missing-target' };
   }
+  if (!workspaceId) {
+    return { deleted: false, reason: 'missing-workspace' };
+  }
 
-  const response = await fetchImpl(`${apiBaseUrl}/api/collections/${collectionId}`, {
+  const response = await fetchImpl(projectsUrl(workspaceId, projectId), {
     method: 'DELETE',
   });
 
   if (!response.ok) {
-    throw new Error(await parseDeleteError(response, 'Failed to delete collection'));
+    throw new Error(await parseDeleteError(response, 'Failed to delete project'));
   }
 
-  return { deleted: true, collectionId };
+  return { deleted: true, projectId };
 };

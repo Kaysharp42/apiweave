@@ -15,13 +15,14 @@ import { ConfirmDialog } from '../molecules/ConfirmDialog';
 import { PromptDialog } from '../molecules/PromptDialog';
 import useSidebarStore from '../../stores/SidebarStore';
 import useTabStore from '../../stores/TabStore';
-import { requestCollectionDeletion, requestWorkflowDeletion } from '../../utils/sidebarDeletion';
+import { requestProjectDeletion, requestWorkflowDeletion } from '../../utils/sidebarDeletion';
 import type { Workflow } from '../../types/Workflow';
 import type { Project } from '../../types/Project';
 import { authenticatedFetch } from '../../utils/authenticatedApi';
 import useNavigationStore from '../../stores/NavigationStore';
-import { useWorkspace } from '../../contexts/WorkspaceContext';
 import API_BASE_URL from '../../utils/api';
+import { useScopeContext } from '../../hooks/useScopeContext';
+import { workflowUrl, workflowsUrl, workflowsCreateInProjectUrl, projectWorkflowAssignUrl } from '../../utils/scopedApi';
 
 export function Sidebar() {
   const selectedNav = useNavigationStore((s) => s.selectedNavVal);
@@ -34,8 +35,9 @@ export function Sidebar() {
   const [exportingCollectionId, setExportingCollectionId] = useState<string | null>(null);
   const [exportingCollectionName, setExportingCollectionName] = useState<string | null>(null);
   const [showNewWorkflowPrompt, setShowNewWorkflowPrompt] = useState(false);
+  const [addWorkflowToProjectTarget, setAddWorkflowToProjectTarget] = useState<string | null>(null);
   const [deleteWorkflowTarget, setDeleteWorkflowTarget] = useState<{ workflowId: string; name: string } | null>(null);
-  const [deleteProjectTarget, setDeleteProjectTarget] = useState<{ collectionId: string; name: string } | null>(null);
+  const [deleteProjectTarget, setDeleteProjectTarget] = useState<{ projectId: string; name: string } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleScrollRef = useRef<() => void>(() => {});
 
@@ -50,6 +52,9 @@ export function Sidebar() {
   const closeTab = useTabStore((s) => s.closeTab);
   const fetchWorkflows = useSidebarStore((s) => s.fetchWorkflows);
   const fetchEnvironments = useSidebarStore((s) => s.fetchEnvironments);
+  const fetchProjects = useSidebarStore((s) => s.fetchProjects);
+  const workflowVersion = useSidebarStore((s) => s.workflowVersion);
+  const projectVersion = useSidebarStore((s) => s.projectVersion);
   const refreshAll = useSidebarStore((s) => s.refreshAll);
   const setIsLoadingMore = useSidebarStore((s) => s.setIsLoadingMore);
   const setActiveWorkspaceId = useSidebarStore((s) => s.setActiveWorkspaceId);
@@ -57,16 +62,29 @@ export function Sidebar() {
   const navigate = useNavigate();
 
   // Workspace context — scope sidebar data to the active workspace
-  const { currentWorkspace } = useWorkspace();
+  const { workspaceId, isReady: isScopeReady } = useScopeContext();
 
   // Sync workspace ID to the sidebar store so fetches are workspace-scoped
   useEffect(() => {
-    setActiveWorkspaceId(currentWorkspace?.workspaceId ?? null);
-  }, [currentWorkspace, setActiveWorkspaceId]);
+    setActiveWorkspaceId(isScopeReady ? workspaceId : null);
+  }, [isScopeReady, setActiveWorkspaceId, workspaceId]);
 
   useEffect(() => {
+    if (!isScopeReady || !workspaceId) return;
     void fetchEnvironments();
-  }, [fetchEnvironments]);
+  }, [fetchEnvironments, isScopeReady, workspaceId]);
+
+  useEffect(() => {
+    if (workflowVersion > 0) {
+      void fetchWorkflows(0);
+    }
+  }, [workflowVersion, fetchWorkflows]);
+
+  useEffect(() => {
+    if (projectVersion > 0) {
+      void fetchProjects();
+    }
+  }, [projectVersion, fetchProjects]);
 
   handleScrollRef.current = () => {
     if (scrollContainerRef.current && selectedNav === 'workflows') {
@@ -92,8 +110,13 @@ export function Sidebar() {
   };
 
   const handleCreateWorkflow = async (name: string) => {
+    if (!isScopeReady || !workspaceId) {
+      toast.error('Workspace context is still loading. Please retry once a workspace is selected.');
+      return;
+    }
+
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows`, {
+      const response = await authenticatedFetch(workflowsUrl(workspaceId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -121,11 +144,86 @@ export function Sidebar() {
     }
   };
 
+  const handleCreateWorkflowInProject = async (name: string) => {
+    if (!isScopeReady || !workspaceId || !addWorkflowToProjectTarget) {
+      toast.error('Workspace or project context is not ready.');
+      return;
+    }
+
+    try {
+      const response = await authenticatedFetch(
+        workflowsCreateInProjectUrl(workspaceId, addWorkflowToProjectTarget),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            description: '',
+            nodes: [{
+              nodeId: 'start-1',
+              type: 'start',
+              label: 'Start',
+              position: { x: 100, y: 100 },
+              config: {},
+            }],
+            edges: [],
+            variables: {},
+          }),
+        },
+      );
+
+      if (response.ok) {
+        const workflow = await response.json() as Workflow;
+        void refreshAll('projects');
+        useTabStore.getState().openTab(workflow);
+        toast.success(`Workflow "${name}" created and added to project`);
+      } else {
+        const errBody = await response.json() as { detail?: string };
+        toast.error(errBody.detail ?? 'Failed to create workflow in project');
+      }
+    } catch (error) {
+      console.error('Error creating workflow in project:', error);
+      toast.error('Failed to create workflow in project');
+    } finally {
+      setAddWorkflowToProjectTarget(null);
+    }
+  };
+
+  const handleAssignWorkflowToProject = async (projectId: string, workflowId: string) => {
+    if (!isScopeReady || !workspaceId) {
+      toast.error('Workspace context is still loading. Please retry once a workspace is selected.');
+      return;
+    }
+
+    try {
+      const response = await authenticatedFetch(
+        projectWorkflowAssignUrl(workspaceId, projectId, workflowId),
+        { method: 'POST' },
+      );
+
+      if (response.ok) {
+        toast.success('Workflow assigned to project');
+        void refreshAll('projects');
+      } else {
+        const errBody = await response.json() as { detail?: string };
+        toast.error(errBody.detail ?? 'Failed to assign workflow to project');
+      }
+    } catch (error) {
+      console.error('Error assigning workflow to project:', error);
+      toast.error('Failed to assign workflow to project');
+    }
+  };
+
   const handleWorkflowClick = async (workflow: Workflow) => {
+    if (!isScopeReady || !workspaceId) {
+      toast.error('Select a workspace before opening workflows.');
+      return;
+    }
+
     setSelectedWorkflowId(workflow.workflowId);
 
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/${workflow.workflowId}`);
+      const response = await authenticatedFetch(workflowUrl(workspaceId, workflow.workflowId));
       if (response.ok) {
         const fullWorkflow: Workflow = await response.json();
         if (selectedNav === 'settings') {
@@ -149,8 +247,7 @@ export function Sidebar() {
   };
 
   const handleExportProject = (project: Project) => {
-    // Projects use collectionId for export (backward compat with .awecollection)
-    setExportingCollectionId(project.collectionId);
+    setExportingCollectionId(project.projectId ?? project.collectionId);
     setExportingCollectionName(project.name);
   };
 
@@ -163,10 +260,18 @@ export function Sidebar() {
   };
 
   const handleDeleteWorkflow = async () => {
+    if (!isScopeReady || !workspaceId) {
+      toast.error('Select a workspace before deleting workflows.');
+      setDeleteWorkflowTarget(null);
+      return;
+    }
+
     try {
       const result = await requestWorkflowDeletion({
         target: deleteWorkflowTarget,
         apiBaseUrl: API_BASE_URL,
+        workspaceId,
+        fetchImpl: authenticatedFetch,
       });
 
       if (!result.deleted) return;
@@ -187,21 +292,29 @@ export function Sidebar() {
   };
 
   const handleDeleteProject = async () => {
+    if (!isScopeReady || !workspaceId) {
+      toast.error('Select a workspace before deleting projects.');
+      setDeleteProjectTarget(null);
+      return;
+    }
+
     try {
-      const result = await requestCollectionDeletion({
+      const result = await requestProjectDeletion({
         target: deleteProjectTarget,
         apiBaseUrl: API_BASE_URL,
+        workspaceId,
+        fetchImpl: authenticatedFetch,
       });
 
       if (!result.deleted) return;
 
-      const collectionId = result.collectionId;
-      if (!collectionId) return;
+      const projectId = result.projectId;
+      if (!projectId) return;
 
       toast.success('Project deleted permanently');
       setExpandedProjects((prev) => {
         const next = new Set(prev);
-        next.delete(collectionId);
+        next.delete(projectId);
         return next;
       });
       await refreshAll(selectedNav);
@@ -302,8 +415,12 @@ export function Sidebar() {
                 onExportWorkflow={handleExportWorkflow}
                 onDeleteWorkflow={(workflowId: string, name: string) => setDeleteWorkflowTarget({ workflowId, name })}
                 onExportProject={handleExportProject}
-                onDeleteProject={(projectId: string, name: string) => setDeleteProjectTarget({ collectionId: projectId, name })}
+                onDeleteProject={(projectId: string, name: string) => setDeleteProjectTarget({ projectId, name })}
                 onCreateProject={() => setShowCollectionManager(true)}
+                onAddWorkflowToProject={(projectId: string) => {
+                  setAddWorkflowToProjectTarget(projectId);
+                }}
+                onAssignWorkflowToProject={handleAssignWorkflowToProject}
               />
             </div>
           )}
@@ -336,8 +453,8 @@ export function Sidebar() {
 
       {exportingCollectionId && (
         <CollectionExportImport
-          collectionId={exportingCollectionId}
-          {...(exportingCollectionName && { collectionName: exportingCollectionName })}
+          projectId={exportingCollectionId}
+          {...(exportingCollectionName && { projectName: exportingCollectionName })}
           isOpen={true}
           onClose={() => {
             setExportingCollectionId(null);
@@ -387,6 +504,16 @@ export function Sidebar() {
         message="Enter a name for your workflow."
         placeholder="My Workflow"
         submitLabel="Create"
+      />
+
+      <PromptDialog
+        open={!!addWorkflowToProjectTarget}
+        onClose={() => setAddWorkflowToProjectTarget(null)}
+        onSubmit={handleCreateWorkflowInProject}
+        title="New Workflow in Project"
+        message="Enter a name for the new workflow. It will be automatically assigned to this project."
+        placeholder="My Workflow"
+        submitLabel="Create & Assign"
       />
     </>
   );

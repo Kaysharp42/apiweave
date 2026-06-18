@@ -5,21 +5,25 @@ import { Modal } from './molecules/Modal';
 import { Button } from './atoms/Button';
 import { Input } from './atoms/Input';
 import { encryptSecretValue } from '../utils/encryptSecretValue';
-import { fetchSecretPublicKey, postEncryptedSecret } from '../hooks/useSecretValues';
-import type { SecretPublicKey } from '../types';
+import { fetchScopedPublicKey, postScopedEncryptedSecret } from '../hooks/useSecretValues';
+import type { PublicKey, SecretScopeType } from '../types';
 
 export interface SecretValueEditorProps {
   isOpen: boolean;
-  environmentId: string;
-  secretKey: string;
+  scopeType: SecretScopeType;
+  scopeId: string;
+  secretName: string;
+  /** Optional existing secret ID for update mode. */
+  secretId?: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
 export default function SecretValueEditor({
   isOpen,
-  environmentId,
-  secretKey,
+  scopeType,
+  scopeId,
+  secretName,
   onClose,
   onSuccess,
 }: SecretValueEditorProps) {
@@ -33,21 +37,27 @@ export default function SecretValueEditor({
     setSubmitting(true);
     setFetchingKey(true);
     try {
-      const publicKeyInfo: SecretPublicKey = await fetchSecretPublicKey(environmentId);
+      const publicKeyInfo: PublicKey = await fetchScopedPublicKey(scopeType, scopeId);
       setFetchingKey(false);
 
-      const encryptedValue = await encryptSecretValue(value, publicKeyInfo);
+      const ciphertext = await encryptSecretValue(value, {
+        keyId: publicKeyInfo.keyId,
+        publicKey: publicKeyInfo.publicKey,
+        algorithm: 'libsodium-sealed-box',
+      });
 
+      // Clear plaintext from state immediately
       setValue('');
 
-      await postEncryptedSecret({
-        environmentId,
-        key: secretKey,
-        encryptedValue,
+      await postScopedEncryptedSecret({
+        scopeType,
+        scopeId,
+        name: secretName,
+        ciphertext,
         keyId: publicKeyInfo.keyId,
       });
 
-      toast.success(`Secret "${secretKey}" saved`);
+      toast.success(`Secret "${secretName}" saved`);
       onSuccess();
       onClose();
     } catch (err) {
@@ -57,7 +67,7 @@ export default function SecretValueEditor({
       setSubmitting(false);
       setFetchingKey(false);
     }
-  }, [value, environmentId, secretKey, onClose, onSuccess]);
+  }, [value, scopeType, scopeId, secretName, onClose, onSuccess]);
 
   const handleClose = useCallback(() => {
     setValue('');
@@ -68,7 +78,7 @@ export default function SecretValueEditor({
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title={`Set value: ${secretKey}`}
+      title={`Set value: ${secretName}`}
       size="sm"
       footer={() => (
         <>
@@ -100,8 +110,8 @@ export default function SecretValueEditor({
             type="password"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder={`Enter value for ${secretKey}`}
-            aria-label={`Value for ${secretKey}`}
+            placeholder={`Enter value for ${secretName}`}
+            aria-label={`Value for ${secretName}`}
             disabled={submitting}
           />
         </div>

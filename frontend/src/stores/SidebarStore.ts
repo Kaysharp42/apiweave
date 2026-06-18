@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import API_BASE_URL from '../utils/api';
 import type { Workflow } from '../types/Workflow';
 import type { Collection } from '../types/Collection';
 import type { Project } from '../types/Project';
 import type { Environment } from '../types/Environment';
 import type { PaginationState } from '../types/PaginationState';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import * as scopedApi from '../utils/scopedApi';
+import { projectsUrl, workflowsUrl } from '../utils/scopedApi';
 
 interface PaginatedWorkflowResponse {
   workflows: Workflow[];
@@ -39,7 +40,7 @@ interface SidebarState {
   signalEnvironmentsRefresh: () => void;
   signalProjectsRefresh: () => void;
   setActiveWorkspaceId: (workspaceId: string | null) => void;
-  fetchWorkflows: (skip?: number, append?: boolean, limit?: number, endpoint?: string) => Promise<void>;
+  fetchWorkflows: (skip?: number, append?: boolean, limit?: number) => Promise<void>;
   fetchCollections: () => Promise<void>;
   fetchProjects: () => Promise<void>;
   fetchEnvironments: () => Promise<void>;
@@ -83,26 +84,30 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
   setActiveWorkspaceId: (workspaceId: string | null) => {
     const prev = get().activeWorkspaceId;
-    if (prev !== workspaceId) {
-      set({ activeWorkspaceId: workspaceId });
-      // Re-fetch workspace-scoped data when workspace changes
-      if (workspaceId) {
-        void get().fetchProjects();
-      }
+    if (prev === workspaceId) return;
+    set({
+      activeWorkspaceId: workspaceId,
+      workflows: [],
+      projects: [],
+      environments: [],
+      pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
+    });
+    if (workspaceId) {
+      void get().fetchProjects();
+      void get().fetchWorkflows(0);
+      void get().fetchEnvironments();
     }
   },
 
-  fetchWorkflows: async (skip = 0, append = false, limit = 20, endpoint = 'unattached') => {
+  fetchWorkflows: async (skip = 0, append = false, limit = 20) => {
     const { activeWorkspaceId } = get();
-    try {
-      // Use workspace-scoped endpoint when available
-      const url = activeWorkspaceId
-        ? `${API_BASE_URL}/api/workspaces/${activeWorkspaceId}/workflows?skip=${skip}&limit=${limit}`
-        : endpoint === 'unattached'
-          ? `${API_BASE_URL}/api/workflows/unattached?skip=${skip}&limit=${limit}`
-          : `${API_BASE_URL}/api/workflows?skip=${skip}&limit=${limit}`;
+    if (!activeWorkspaceId) {
+      set({ isLoadingMore: false, isRefreshing: false });
+      return;
+    }
 
-      const response = await authenticatedFetch(url);
+    try {
+      const response = await authenticatedFetch(workflowsUrl(activeWorkspaceId, { skip, limit }));
       if (response.ok) {
         const data: PaginatedWorkflowResponse = await response.json();
         const prev = get().workflows;
@@ -126,11 +131,18 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
   },
 
   fetchCollections: async () => {
+    const { activeWorkspaceId } = get();
+    if (!activeWorkspaceId) {
+      set({ isRefreshing: false });
+      return;
+    }
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(
+        projectsUrl(activeWorkspaceId),
+      );
       if (response.ok) {
-        const data: Collection[] = await response.json();
-        set({ collections: data, isRefreshing: false });
+        const data = await response.json() as { projects: Collection[]; total: number };
+        set({ collections: data.projects, isRefreshing: false });
       }
     } catch (err) {
       console.error('SidebarStore: error fetching collections', err);
@@ -143,7 +155,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
     if (!activeWorkspaceId) return;
     try {
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/workspaces/${activeWorkspaceId}/projects`,
+        projectsUrl(activeWorkspaceId),
       );
       if (response.ok) {
         const data: ProjectListResponse = await response.json();
@@ -156,8 +168,13 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
   },
 
   fetchEnvironments: async () => {
+    const { activeWorkspaceId } = get();
+    if (!activeWorkspaceId) return;
+
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
+      const response = await authenticatedFetch(
+        scopedApi.environmentsUrl(activeWorkspaceId, 'all-accessible'),
+      );
       if (response.ok) {
         const data: Environment[] = await response.json();
         set({ environments: data });
@@ -173,7 +190,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
       await fetchWorkflows(0);
     } else if (selectedNav === 'projects') {
       await fetchProjects();
-      await fetchWorkflows(0, false, 1000, 'all');
+      await fetchWorkflows(0, false, 100);
     }
   },
 

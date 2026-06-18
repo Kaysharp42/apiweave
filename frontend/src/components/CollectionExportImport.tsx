@@ -14,17 +14,16 @@ import {
   Target,
   Terminal,
 } from 'lucide-react';
-import API_BASE_URL from '../utils/api';
 import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { Input } from './atoms/Input';
 import { TextArea } from './atoms/TextArea';
-import type { Collection } from '../types/Collection';
+import { useScopeContext } from '../hooks/useScopeContext';
+import { projectExportUrl, projectImportUrl, projectsUrl, workflowsUrl } from '../utils/scopedApi';
+import type { Project } from '../types/Project';
 import { authenticatedFetch } from '../utils/authenticatedApi';
 
-interface CollectionWithWorkflowCount extends Collection {
-  workflowCount?: number;
-}
+type ProjectWithWorkflowCount = Project;
 
 interface MessageState {
   type: 'success' | 'warning' | 'error';
@@ -54,15 +53,16 @@ interface ValidationResult {
 interface ImportResult {
   workflowCount: number;
   collectionId: string;
+  projectId?: string;
 }
 
 interface CollectionExportImportProps {
-  collectionId?: string;
-  collectionName?: string;
+  projectId?: string;
+  projectName?: string;
   isOpen: boolean;
   onClose: () => void;
   mode?: 'export' | 'import-collection' | 'import-workflows' | 'import-har' | 'import-openapi' | 'import-curl';
-  onImportSuccess?: (collectionId: string) => void;
+  onImportSuccess?: (projectId: string) => void;
 }
 
 type TabId = 'export' | 'import-collection' | 'import-workflows' | 'import-har' | 'import-openapi' | 'import-curl';
@@ -99,13 +99,14 @@ interface CreateWorkflowPayload {
 }
 
 export function CollectionExportImport({
-  collectionId,
-  collectionName,
+  projectId,
+  projectName,
   isOpen,
   onClose,
   mode = 'export',
   onImportSuccess = () => {},
 }: CollectionExportImportProps) {
+  const { workspaceId, isReady } = useScopeContext();
   const [selectedTab, setActiveTab] = useState<TabId | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<MessageState | null>(null);
@@ -115,10 +116,10 @@ export function CollectionExportImport({
   const [includeEnvironments, setIncludeEnvironments] = useState<boolean>(true);
   const [importMode] = useState<ImportModeType>('linear');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [createNewCollection, setCreateNewCollection] = useState<boolean>(true);
-  const [newCollectionName, setNewCollectionName] = useState<string>('');
-  const [collections, setCollections] = useState<CollectionWithWorkflowCount[]>([]);
-  const [selectedTargetCollection, setSelectedTargetCollection] = useState<string | null>(null);
+  const [createNewProject, setCreateNewProject] = useState<boolean>(true);
+  const [newProjectName, setNewProjectName] = useState<string>('');
+  const [projects, setProjects] = useState<ProjectWithWorkflowCount[]>([]);
+  const [selectedTargetProject, setSelectedTargetProject] = useState<string | null>(null);
   const [sanitize, setSanitize] = useState<boolean>(true);
 
   const activeTab = selectedTab ?? mode;
@@ -145,26 +146,31 @@ export function CollectionExportImport({
     return 'An unknown error occurred';
   };
 
-  const fetchCollections = async (): Promise<void> => {
+  const fetchProjects = async (): Promise<void> => {
+    if (!isReady || !workspaceId) return;
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
+      const response = await authenticatedFetch(projectsUrl(workspaceId));
       if (response.ok) {
-        const data: CollectionWithWorkflowCount[] = await response.json();
-        const filtered = data.filter((c: CollectionWithWorkflowCount) => c.collectionId !== collectionId);
-        setCollections(filtered);
+        const data: { projects: ProjectWithWorkflowCount[] } = await response.json();
+        const filtered = data.projects.filter((project) => (project.projectId ?? project.collectionId) !== projectId);
+        setProjects(filtered);
       }
     } catch (error) {
-      console.error('Error fetching collections:', error);
+      console.error('Error fetching projects:', error);
     }
   };
 
   const handleExport = async (): Promise<void> => {
+    if (!workspaceId || !projectId) {
+      setMessage({ type: 'error', title: 'Export Error', text: 'Workspace or project scope is not ready' });
+      return;
+    }
     setIsLoading(true);
     setMessage(null);
 
     try {
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/collections/${collectionId}/export?include_environment=${includeEnvironments}`
+        projectExportUrl(workspaceId, projectId, includeEnvironments)
       );
 
       if (response.ok) {
@@ -175,7 +181,7 @@ export function CollectionExportImport({
         const url = URL.createObjectURL(dataBlob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${(collectionName ?? 'collection').replace(/\s+/g, '_')}.awecollection`;
+        link.download = `${(projectName ?? 'project').replace(/\s+/g, '_')}.awecollection`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -184,14 +190,14 @@ export function CollectionExportImport({
         setMessage({
           type: 'success',
           title: 'Export Successful',
-          text: `Collection "${collectionName}" exported successfully.`,
+          text: `Project "${projectName}" exported successfully.`,
         });
       } else {
         const error: { detail?: unknown } = await response.json();
         setMessage({
           type: 'error',
           title: 'Export Failed',
-          text: formatErrorMessage(error.detail) || 'Failed to export collection',
+          text: formatErrorMessage(error.detail) || 'Failed to export project',
         });
       }
     } catch (error: unknown) {
@@ -207,6 +213,10 @@ export function CollectionExportImport({
   };
 
   const handleValidateCollectionImport = async (): Promise<void> => {
+    if (!workspaceId) {
+      setMessage({ type: 'error', title: 'Validation Error', text: 'Workspace scope is not ready' });
+      return;
+    }
     setIsLoading(true);
     setMessage(null);
 
@@ -220,21 +230,21 @@ export function CollectionExportImport({
         setMessage({
           type: 'error',
           title: 'Validation Error',
-          text: 'Please upload or paste a collection bundle',
+          text: 'Please upload or paste a project bundle',
         });
         setIsLoading(false);
         return;
       }
 
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/collections/import/dry-run`,
+        projectImportUrl(workspaceId, true),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             bundle: bundleData,
-            createNewCollection,
-            targetCollectionId: selectedTargetCollection,
+            createNewProject,
+            targetProjectId: selectedTargetProject,
           }),
         }
       );
@@ -270,6 +280,10 @@ export function CollectionExportImport({
   };
 
   const handleImportCollection = async (): Promise<void> => {
+    if (!workspaceId) {
+      setMessage({ type: 'error', title: 'Import Error', text: 'Workspace scope is not ready' });
+      return;
+    }
     setIsLoading(true);
     setMessage(null);
 
@@ -283,22 +297,22 @@ export function CollectionExportImport({
         setMessage({
           type: 'error',
           title: 'Import Error',
-          text: 'Please upload or paste a collection bundle',
+          text: 'Please upload or paste a project bundle',
         });
         setIsLoading(false);
         return;
       }
 
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/collections/import`,
+        projectImportUrl(workspaceId),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             bundle: bundleData,
-            createNewCollection,
-            newCollectionName: newCollectionName || (bundleData.collection as Record<string, unknown> | undefined)?.name,
-            targetCollectionId: selectedTargetCollection,
+            createNewProject,
+            newProjectName: newProjectName || (bundleData.collection as Record<string, unknown> | undefined)?.name,
+            targetProjectId: selectedTargetProject,
             environmentMapping: {},
           }),
         }
@@ -309,18 +323,18 @@ export function CollectionExportImport({
         setMessage({
           type: 'success',
           title: 'Import Successful',
-          text: `Imported ${result.workflowCount} workflow(s) into collection.`,
+          text: `Imported ${result.workflowCount} workflow(s) into project.`,
         });
 
         setUploadedFile(null);
         setPastedJson('');
         setValidation(null);
-        setNewCollectionName('');
+        setNewProjectName('');
 
-        useSidebarStore.getState().signalCollectionsRefresh();
+        useSidebarStore.getState().signalProjectsRefresh();
 
         setTimeout(() => {
-          onImportSuccess(result.collectionId);
+          onImportSuccess(result.projectId ?? result.collectionId);
           onClose();
         }, 2000);
       } else {
@@ -328,7 +342,7 @@ export function CollectionExportImport({
         setMessage({
           type: 'error',
           title: 'Import Failed',
-          text: formatErrorMessage(error.detail) || 'Failed to import collection',
+          text: formatErrorMessage(error.detail) || 'Failed to import project',
         });
       }
     } catch (error: unknown) {
@@ -344,15 +358,19 @@ export function CollectionExportImport({
   };
 
   const handleImportWorkflowToCollection = async (): Promise<void> => {
+    if (!workspaceId) {
+      setMessage({ type: 'error', title: 'Import Error', text: 'Workspace scope is not ready' });
+      return;
+    }
     setIsLoading(true);
     setMessage(null);
 
     try {
-      if (!selectedTargetCollection) {
+      if (!selectedTargetProject) {
         setMessage({
           type: 'error',
           title: 'Import Error',
-          text: 'Please select a collection first',
+          text: 'Please select a project first',
         });
         setIsLoading(false);
         return;
@@ -391,7 +409,7 @@ export function CollectionExportImport({
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'workflow.json');
         parseResponse = await authenticatedFetch(
-          `${API_BASE_URL}/api/workflows/import`,
+          `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split('?')[0]}/import?project_id=${encodeURIComponent(selectedTargetProject)}`,
           {
             method: 'POST',
             body: formData,
@@ -403,7 +421,7 @@ export function CollectionExportImport({
           const workflowId = importResult.workflowId;
 
           const assignResponse = await authenticatedFetch(
-            `${API_BASE_URL}/api/collections/${selectedTargetCollection}/workflows/${workflowId}/assign`,
+            `${projectsUrl(workspaceId, selectedTargetProject)}/workflows/${encodeURIComponent(workflowId)}/assign`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -414,13 +432,13 @@ export function CollectionExportImport({
             setMessage({
               type: 'success',
               title: 'Import Successful',
-              text: `Workflow imported and assigned to collection.`,
+              text: 'Workflow imported and assigned to project.',
             });
 
             setUploadedFile(null);
             setPastedJson('');
             setValidation(null);
-            setSelectedTargetCollection(null);
+            setSelectedTargetProject(null);
 
             useSidebarStore.getState().signalWorkflowsRefresh();
 
@@ -431,7 +449,7 @@ export function CollectionExportImport({
             setMessage({
               type: 'error',
               title: 'Import Failed',
-              text: 'Workflow imported but failed to assign to collection',
+              text: 'Workflow imported but failed to assign to project',
             });
           }
         } else {
@@ -448,7 +466,7 @@ export function CollectionExportImport({
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'openapi.json');
         parseResponse = await authenticatedFetch(
-          `${API_BASE_URL}/api/workflows/import/openapi?sanitize=${sanitize}&parse_only=true`,
+          `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split('?')[0]}/import/openapi?sanitize=${sanitize}&parse_only=true`,
           {
             method: 'POST',
             body: formData,
@@ -458,7 +476,7 @@ export function CollectionExportImport({
         const blob = new Blob([fileContent], { type: 'application/json' });
         formData.append('file', blob, 'har.json');
         parseResponse = await authenticatedFetch(
-          `${API_BASE_URL}/api/workflows/import/har?import_mode=${importMode}&sanitize=${sanitize}&parse_only=true`,
+          `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split('?')[0]}/import/har?import_mode=${importMode}&sanitize=${sanitize}&parse_only=true`,
           {
             method: 'POST',
             body: formData,
@@ -502,13 +520,13 @@ export function CollectionExportImport({
             target: endNodeId
           }],
           nodeTemplates: nodeTemplates,
-          collectionId: selectedTargetCollection,
+          collectionId: selectedTargetProject,
           variables: {},
           tags: ['imported']
         };
 
         const createResponse = await authenticatedFetch(
-          `${API_BASE_URL}/api/workflows`,
+          `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split('?')[0]}?project_id=${encodeURIComponent(selectedTargetProject)}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -520,13 +538,13 @@ export function CollectionExportImport({
           setMessage({
             type: 'success',
             title: 'Import Successful',
-            text: `Workflow created in collection with ${nodeTemplates.length} imported templates.`,
+            text: `Workflow created in project with ${nodeTemplates.length} imported templates.`,
           });
 
           setUploadedFile(null);
           setPastedJson('');
           setValidation(null);
-          setSelectedTargetCollection(null);
+          setSelectedTargetProject(null);
 
           useSidebarStore.getState().signalWorkflowsRefresh();
 
@@ -562,15 +580,19 @@ export function CollectionExportImport({
   };
 
   const handleImportCurlToCollection = async (): Promise<void> => {
+    if (!workspaceId) {
+      setMessage({ type: 'error', title: 'Import Error', text: 'Workspace scope is not ready' });
+      return;
+    }
     setIsLoading(true);
     setMessage(null);
 
     try {
-      if (!selectedTargetCollection) {
+      if (!selectedTargetProject) {
         setMessage({
           type: 'error',
           title: 'Import Error',
-          text: 'Please select a collection first',
+          text: 'Please select a project first',
         });
         setIsLoading(false);
         return;
@@ -589,9 +611,9 @@ export function CollectionExportImport({
       const params = new URLSearchParams();
       params.append('curl_command', pastedJson);
       params.append('sanitize', String(sanitize));
-      params.append('workflowId', selectedTargetCollection);
+      params.append('project_id', selectedTargetProject);
 
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/workflows/import/curl?${params}`, {
+      const response = await authenticatedFetch(`${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split('?')[0]}/import/curl?${params}`, {
         method: 'POST',
       });
 
@@ -605,14 +627,14 @@ export function CollectionExportImport({
       setMessage({
         type: 'success',
         title: 'Import Successful',
-        text: `cURL command imported and assigned to collection.`,
+        text: 'cURL command imported and assigned to project.',
       });
 
       setPastedJson('');
       setValidation(null);
-      setSelectedTargetCollection(null);
+      setSelectedTargetProject(null);
 
-      useSidebarStore.getState().signalCollectionsRefresh();
+      useSidebarStore.getState().signalProjectsRefresh();
 
       setTimeout(() => {
         onClose();
@@ -680,18 +702,18 @@ export function CollectionExportImport({
   }
 
   return (
-    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="Collection export import">
-      <button type="button" aria-label="Close collection export import" className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80" onClick={onClose} />
+    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="Project export import">
+      <button type="button" aria-label="Close project export import" className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80" onClick={onClose} />
       <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-border dark:border-border-dark">
           <h2 className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
-            {activeTab === 'export' && `Export Collection: ${collectionName}`}
-            {activeTab === 'import-collection' && `Import Collection`}
-            {activeTab === 'import-workflows' && `Import Workflow to Collection`}
-            {activeTab === 'import-har' && `Import HAR File to Collection`}
-            {activeTab === 'import-openapi' && `Import OpenAPI to Collection`}
-            {activeTab === 'import-curl' && `Import cURL to Collection`}
+            {activeTab === 'export' && `Export Project: ${projectName}`}
+            {activeTab === 'import-collection' && 'Import Project'}
+            {activeTab === 'import-workflows' && 'Import Workflow to Project'}
+            {activeTab === 'import-har' && 'Import HAR File to Project'}
+            {activeTab === 'import-openapi' && 'Import OpenAPI to Project'}
+            {activeTab === 'import-curl' && 'Import cURL to Project'}
           </h2>
           <IconButton
             onClick={onClose}
@@ -714,7 +736,7 @@ export function CollectionExportImport({
             className={tabButtonClasses('export')}
           >
             <Download className="w-4 h-4" />
-            Export Collection
+            Export Project
           </button>
           <button
             type="button"
@@ -722,12 +744,12 @@ export function CollectionExportImport({
               setActiveTab('import-collection');
               setMessage(null);
               setValidation(null);
-              fetchCollections();
+              void fetchProjects();
             }}
             className={tabButtonClasses('import-collection')}
           >
             <Upload className="w-4 h-4" />
-            Import Collection
+            Import Project
           </button>
           <button
             type="button"
@@ -807,7 +829,7 @@ export function CollectionExportImport({
             <div className="space-y-4">
               <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
                 <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
-                  Export this collection with all workflows and environments
+                  Export this project with all workflows and environments
                 </p>
               </div>
 
@@ -829,12 +851,11 @@ export function CollectionExportImport({
                 fullWidth
                 icon={<Download size={18} />}
               >
-                {isLoading ? 'Exporting...' : 'Download Collection Bundle'}
+                {isLoading ? 'Exporting...' : 'Download Project Bundle'}
               </Button>
             </div>
           )}
 
-          {/* Import Collection Tab */}
           {activeTab === 'import-collection' && (
             <div className="space-y-4">
               {/* Upload */}
@@ -847,14 +868,14 @@ export function CollectionExportImport({
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Upload size={32} className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark" />
-                <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop collection bundle</p>
+                <p className="font-medium text-text-primary dark:text-text-primary-dark">Drag & drop project bundle</p>
                 <p className="text-sm text-text-muted dark:text-text-muted-dark">or click to browse</p>
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept=".awecollection,.json"
                   onChange={handleFileInputChange}
-                  aria-label="Collection bundle file upload"
+                  aria-label="Project bundle file upload"
                   className="hidden"
                 />
               </button>
@@ -878,7 +899,7 @@ export function CollectionExportImport({
                     setPastedJson(e.target.value);
                     setUploadedFile(null);
                   }}
-                  placeholder="Paste collection JSON here..."
+                  placeholder="Paste project JSON here..."
                   className="w-full h-32 resize-none"
                   rows={6}
                 />
@@ -890,7 +911,7 @@ export function CollectionExportImport({
                   <h4 className="font-medium text-text-primary dark:text-text-primary-dark">Validation Results</h4>
                   {validation.valid ? (
                     <p className="text-status-success dark:text-status-success-dark text-sm flex items-center gap-2">
-                      <CheckCircle size={16} /> Valid collection bundle
+                      <CheckCircle size={16} /> Valid project bundle
                     </p>
                   ) : (
                     <div className="space-y-1">
@@ -934,19 +955,19 @@ export function CollectionExportImport({
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="radio"
-                    checked={createNewCollection}
-                    onChange={() => setCreateNewCollection(true)}
+                    checked={createNewProject}
+                    onChange={() => setCreateNewProject(true)}
                     className="w-4 h-4"
                   />
-                  <span className="text-text-primary dark:text-text-primary-dark">Create New Collection</span>
+                  <span className="text-text-primary dark:text-text-primary-dark">Create New Project</span>
                 </label>
 
-                {createNewCollection && (
+                {createNewProject && (
                   <Input
                     type="text"
-                    value={newCollectionName}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setNewCollectionName(e.target.value)}
-                    placeholder="Collection name..."
+                    value={newProjectName}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setNewProjectName(e.target.value)}
+                    placeholder="Project name..."
                     className="ml-7"
                   />
                 )}
@@ -954,23 +975,23 @@ export function CollectionExportImport({
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="radio"
-                    checked={!createNewCollection}
-                    onChange={() => setCreateNewCollection(false)}
+                    checked={!createNewProject}
+                    onChange={() => setCreateNewProject(false)}
                     className="w-4 h-4"
                   />
-                  <span className="text-text-primary dark:text-text-primary-dark">Import to Existing Collection</span>
+                  <span className="text-text-primary dark:text-text-primary-dark">Import to Existing Project</span>
                 </label>
 
-                {!createNewCollection && (
+                {!createNewProject && (
                   <select
-                    value={selectedTargetCollection || ''}
-                    onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value)}
+                    value={selectedTargetProject || ''}
+                    onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetProject(e.target.value)}
                     className="ml-7 w-full px-3 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                   >
-                    <option value="">Select collection…</option>
-                    {collections.map((c: CollectionWithWorkflowCount) => (
-                      <option key={c.collectionId} value={c.collectionId}>
-                        {c.name}
+                    <option value="">Select project…</option>
+                    {projects.map((project: ProjectWithWorkflowCount) => (
+                      <option key={project.projectId ?? project.collectionId} value={project.projectId ?? project.collectionId}>
+                        {project.name}
                       </option>
                     ))}
                   </select>
@@ -990,13 +1011,13 @@ export function CollectionExportImport({
                 <Button
                   onClick={handleImportCollection}
                   disabled={
-                    isLoading || !validation?.valid || (!createNewCollection && !selectedTargetCollection)
+                    isLoading || !validation?.valid || (!createNewProject && !selectedTargetProject)
                   }
                   variant="primary"
                   icon={<Upload size={18} />}
                   className="flex-1"
                 >
-                  {isLoading ? 'Importing...' : 'Import Collection'}
+                  {isLoading ? 'Importing...' : 'Import Project'}
                 </Button>
               </div>
             </div>
@@ -1007,31 +1028,31 @@ export function CollectionExportImport({
             <div className="space-y-4">
               <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
                 <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
-                  Import individual workflows, HAR files, or OpenAPI specs to this collection
+                  Import individual workflows, HAR files, or OpenAPI specs to this project
                 </p>
               </div>
 
               {/* Collection Selector */}
               <div className="space-y-2">
                 <label htmlFor="collection-import-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
-                  Select Collection
+                  Select Project
                 </label>
                 <select
                   id="collection-import-select"
-                  value={selectedTargetCollection || ''}
-                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
+                  value={selectedTargetProject || ''}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetProject(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-[var(--aw-primary)] focus:border-transparent"
                 >
-                  <option value="">-- Choose a collection --</option>
-                  {collections.map((col: CollectionWithWorkflowCount) => (
-                    <option key={col.collectionId} value={col.collectionId}>
-                      {col.name} ({col.workflowCount} workflows)
+                  <option value="">-- Choose a project --</option>
+                  {projects.map((project: ProjectWithWorkflowCount) => (
+                    <option key={project.projectId ?? project.collectionId} value={project.projectId ?? project.collectionId}>
+                      {project.name} ({project.workflowCount} workflows)
                     </option>
                   ))}
                 </select>
-                {collections.length === 0 && (
+                {projects.length === 0 && (
                   <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                    No collections available. Create a collection first.
+                    No projects available. Create a project first.
                   </p>
                 )}
               </div>
@@ -1055,7 +1076,7 @@ export function CollectionExportImport({
                   type="file"
                   accept=".json,.har"
                   onChange={handleFileInputChange}
-                  aria-label="Collection workflow or HAR file upload"
+                  aria-label="Project workflow or HAR file upload"
                   className="hidden"
                 />
               </button>
@@ -1083,13 +1104,13 @@ export function CollectionExportImport({
               {/* Action button */}
               <Button
                 onClick={handleImportWorkflowToCollection}
-                disabled={isLoading || !uploadedFile || !selectedTargetCollection}
+                disabled={isLoading || !uploadedFile || !selectedTargetProject}
                 fullWidth
                 variant="primary"
                 icon={<Upload size={18} />}
-                title={!selectedTargetCollection ? 'Please select a collection' : ''}
+                title={!selectedTargetProject ? 'Please select a project' : ''}
               >
-                {isLoading ? 'Importing...' : 'Import to Collection'}
+                {isLoading ? 'Importing...' : 'Import to Project'}
               </Button>
             </div>
           )}
@@ -1099,31 +1120,31 @@ export function CollectionExportImport({
             <div className="space-y-4">
               <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
                 <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
-                  Import individual workflows, HAR files, or OpenAPI specs to this collection
+                  Import individual workflows, HAR files, or OpenAPI specs to this project
                 </p>
               </div>
 
               {/* Collection Selector */}
               <div className="space-y-2">
                 <label htmlFor="collection-har-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
-                  Select Collection
+                  Select Project
                 </label>
                 <select
                   id="collection-har-select"
-                  value={selectedTargetCollection || ''}
-                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
+                  value={selectedTargetProject || ''}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetProject(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-[var(--aw-primary)] focus:border-transparent"
                 >
-                  <option value="">-- Choose a collection --</option>
-                  {collections.map((col: CollectionWithWorkflowCount) => (
-                    <option key={col.collectionId} value={col.collectionId}>
-                      {col.name} ({col.workflowCount} workflows)
+                  <option value="">-- Choose a project --</option>
+                  {projects.map((project: ProjectWithWorkflowCount) => (
+                    <option key={project.projectId ?? project.collectionId} value={project.projectId ?? project.collectionId}>
+                      {project.name} ({project.workflowCount} workflows)
                     </option>
                   ))}
                 </select>
-                {collections.length === 0 && (
+                {projects.length === 0 && (
                   <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                    No collections available. Create a collection first.
+                    No projects available. Create a project first.
                   </p>
                 )}
               </div>
@@ -1147,7 +1168,7 @@ export function CollectionExportImport({
                   type="file"
                   accept=".json,.har"
                   onChange={handleFileInputChange}
-                  aria-label="Collection workflow or HAR file upload"
+                  aria-label="Project workflow or HAR file upload"
                   className="hidden"
                 />
               </button>
@@ -1175,13 +1196,13 @@ export function CollectionExportImport({
               {/* Action button */}
               <Button
                 onClick={handleImportWorkflowToCollection}
-                disabled={isLoading || !uploadedFile || !selectedTargetCollection}
+                disabled={isLoading || !uploadedFile || !selectedTargetProject}
                 fullWidth
                 variant="primary"
                 icon={<Upload size={18} />}
-                title={!selectedTargetCollection ? 'Please select a collection' : ''}
+                title={!selectedTargetProject ? 'Please select a project' : ''}
               >
-                {isLoading ? 'Importing...' : 'Import to Collection'}
+                {isLoading ? 'Importing...' : 'Import to Project'}
               </Button>
             </div>
           )}
@@ -1191,31 +1212,31 @@ export function CollectionExportImport({
             <div className="space-y-4">
               <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
                 <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
-                  Import individual workflows, HAR files, or OpenAPI specs to this collection
+                  Import individual workflows, HAR files, or OpenAPI specs to this project
                 </p>
               </div>
 
               {/* Collection Selector */}
               <div className="space-y-2">
                 <label htmlFor="collection-openapi-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
-                  Select Collection
+                  Select Project
                 </label>
                 <select
                   id="collection-openapi-select"
-                  value={selectedTargetCollection || ''}
-                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
+                  value={selectedTargetProject || ''}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetProject(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-[var(--aw-primary)] focus:border-transparent"
                 >
-                  <option value="">-- Choose a collection --</option>
-                  {collections.map((col: CollectionWithWorkflowCount) => (
-                    <option key={col.collectionId} value={col.collectionId}>
-                      {col.name} ({col.workflowCount} workflows)
+                  <option value="">-- Choose a project --</option>
+                  {projects.map((project: ProjectWithWorkflowCount) => (
+                    <option key={project.projectId ?? project.collectionId} value={project.projectId ?? project.collectionId}>
+                      {project.name} ({project.workflowCount} workflows)
                     </option>
                   ))}
                 </select>
-                {collections.length === 0 && (
+                {projects.length === 0 && (
                   <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                    No collections available. Create a collection first.
+                    No projects available. Create a project first.
                   </p>
                 )}
               </div>
@@ -1239,7 +1260,7 @@ export function CollectionExportImport({
                   type="file"
                   accept=".json,.har"
                   onChange={handleFileInputChange}
-                  aria-label="Collection OpenAPI file upload"
+                  aria-label="Project OpenAPI file upload"
                   className="hidden"
                 />
               </button>
@@ -1267,13 +1288,13 @@ export function CollectionExportImport({
               {/* Action button */}
               <Button
                 onClick={handleImportWorkflowToCollection}
-                disabled={isLoading || !uploadedFile || !selectedTargetCollection}
+                disabled={isLoading || !uploadedFile || !selectedTargetProject}
                 fullWidth
                 variant="primary"
                 icon={<Upload size={18} />}
-                title={!selectedTargetCollection ? 'Please select a collection' : ''}
+                title={!selectedTargetProject ? 'Please select a project' : ''}
               >
-                {isLoading ? 'Importing...' : 'Import to Collection'}
+                {isLoading ? 'Importing...' : 'Import to Project'}
               </Button>
             </div>
           )}
@@ -1283,31 +1304,31 @@ export function CollectionExportImport({
             <div className="space-y-4">
               <div className="bg-primary/5 dark:bg-primary/10 p-4 rounded-lg">
                 <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
-                  Import cURL commands to create API test workflows in this collection
+                  Import cURL commands to create API test workflows in this project
                 </p>
               </div>
 
               {/* Collection Selector */}
               <div className="space-y-2">
                 <label htmlFor="collection-curl-select" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">
-                  Select Collection
+                  Select Project
                 </label>
                 <select
                   id="collection-curl-select"
-                  value={selectedTargetCollection || ''}
-                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetCollection(e.target.value || null)}
+                  value={selectedTargetProject || ''}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedTargetProject(e.target.value || null)}
                   className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-[var(--aw-primary)] focus:border-transparent"
                 >
-                  <option value="">-- Choose a collection --</option>
-                  {collections.map((col: CollectionWithWorkflowCount) => (
-                    <option key={col.collectionId} value={col.collectionId}>
-                      {col.name} ({col.workflowCount} workflows)
+                  <option value="">-- Choose a project --</option>
+                  {projects.map((project: ProjectWithWorkflowCount) => (
+                    <option key={project.projectId ?? project.collectionId} value={project.projectId ?? project.collectionId}>
+                      {project.name} ({project.workflowCount} workflows)
                     </option>
                   ))}
                 </select>
-                {collections.length === 0 && (
+                {projects.length === 0 && (
                   <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                    No collections available. Create a collection first.
+                    No projects available. Create a project first.
                   </p>
                 )}
               </div>
@@ -1343,13 +1364,13 @@ export function CollectionExportImport({
               {/* Action button */}
               <Button
                 onClick={handleImportCurlToCollection}
-                disabled={isLoading || !pastedJson.trim() || !selectedTargetCollection}
+                disabled={isLoading || !pastedJson.trim() || !selectedTargetProject}
                 fullWidth
                 variant="primary"
                 icon={<Upload size={18} />}
-                title={!selectedTargetCollection ? 'Please select a collection' : ''}
+                title={!selectedTargetProject ? 'Please select a project' : ''}
               >
-                {isLoading ? 'Importing...' : 'Import to Collection'}
+                {isLoading ? 'Importing...' : 'Import to Project'}
               </Button>
             </div>
           )}

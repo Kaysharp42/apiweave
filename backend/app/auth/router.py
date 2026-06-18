@@ -41,6 +41,7 @@ from app.repositories.auth_repositories import (
     SessionRepository,
     UserRepository,
 )
+from app.services.bootstrap import ensure_personal_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,10 @@ def _user_response(user: User) -> UserResponse:
 
 
 def _redirect_uri(request: Request, provider: str) -> str:
-    return str(request.url_for("oauth_callback", provider=provider))
+    return urljoin(
+        settings.PUBLIC_BASE_URL.rstrip("/") + "/",
+        f"api/auth/callback/{provider}",
+    )
 
 
 def _frontend_url(path: str = "/") -> str:
@@ -235,7 +239,11 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
                     invite_by_token is not None
                     and not invite_by_token.consumed
                     and invite_by_token.expires_at.replace(
-                        tzinfo=UTC if invite_by_token.expires_at.tzinfo is None else invite_by_token.expires_at.tzinfo
+                        tzinfo=(
+                            UTC
+                            if invite_by_token.expires_at.tzinfo is None
+                            else invite_by_token.expires_at.tzinfo
+                        )
                     )
                     > datetime.now(UTC)
                     and invite_by_token.email.lower() == userinfo.email.lower()
@@ -409,6 +417,7 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
         create_login_url,
         generate_nonce,
         generate_pkce_pair,
+        get_enabled_providers,
         get_provider_config,
     )
 
@@ -416,6 +425,18 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
         provider_config = get_provider_config(provider)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    if not settings.OAUTH_LOGIN_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OAuth login is currently disabled",
+        )
+
+    if provider_config.name not in get_enabled_providers():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Provider not configured",
+        )
 
     state = secrets.token_urlsafe(32)
     invite_token = request.query_params.get("invite_token")
@@ -432,7 +453,9 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
         expires_at=datetime.now(UTC) + timedelta(minutes=10),
         invite_token=invite_token,
     )
-    login_url = create_login_url(provider_config, state, nonce, code_challenge, redirect_uri)
+    login_url = create_login_url(
+        provider_config, state, nonce, code_challenge, redirect_uri
+    )
     return RedirectResponse(login_url, status_code=status.HTTP_302_FOUND)
 
 
@@ -524,7 +547,11 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
                 status_code=status.HTTP_302_FOUND,
             )
         raise
-    response = RedirectResponse(_frontend_url("/"), status_code=status.HTTP_302_FOUND)
+    workspace = await ensure_personal_workspace(user)
+    response = RedirectResponse(
+        _frontend_url(f"/{workspace.slug}/workflows"),
+        status_code=status.HTTP_302_FOUND,
+    )
     response.delete_cookie(
         "invite_token",
         httponly=True,

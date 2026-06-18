@@ -7,12 +7,13 @@ import {
   Info,
   Terminal,
 } from 'lucide-react';
-import API_BASE_URL from '../utils/api';
 import { usePalette } from '../contexts/PaletteContext';
 import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { TextArea } from './atoms/TextArea';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import { useScopeContext } from '../hooks/useScopeContext';
+import { workflowTemplatesUrl, workflowImportFormatUrl } from '../utils/scopedApi';
 
 interface MessageState {
   type: 'success' | 'error';
@@ -186,6 +187,7 @@ export function ImportToNodesPanel({
   onClose,
   workflowId,
 }: ImportToNodesPanelProps) {
+  const { workspaceId } = useScopeContext();
   const { addImportedGroup } = usePalette();
   const [activeTab, setActiveTab] = useState<ActiveTab>('openapi');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -256,7 +258,7 @@ export function ImportToNodesPanel({
   ): Promise<void> => {
     try {
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/workflows/${workflowId}/templates`,
+        workflowTemplatesUrl(workspaceId || '', workflowId),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -316,7 +318,7 @@ export function ImportToNodesPanel({
       formData.append('file', blob, 'openapi.json');
 
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/workflows/import/openapi?sanitize=${sanitize}&parse_only=true`,
+        `${workflowImportFormatUrl(workspaceId || '', 'openapi')}?sanitize=${sanitize}&parse_only=true`,
         {
           method: 'POST',
           body: formData,
@@ -399,7 +401,7 @@ export function ImportToNodesPanel({
       formData.append('file', blob, 'har.json');
 
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/workflows/import/har?import_mode=${importMode}&sanitize=${sanitize}&parse_only=true`,
+        `${workflowImportFormatUrl(workspaceId || '', 'har')}?import_mode=${importMode}&sanitize=${sanitize}&parse_only=true`,
         {
           method: 'POST',
           body: formData,
@@ -473,7 +475,7 @@ export function ImportToNodesPanel({
       }
 
       const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/workflows/import/curl?sanitize=${sanitize}&parse_only=true&curl_command=${encodeURIComponent(pastedText)}`,
+        `${workflowImportFormatUrl(workspaceId || '', 'curl')}?sanitize=${sanitize}&parse_only=true&curl_command=${encodeURIComponent(pastedText)}`,
         {
           method: 'POST',
         }

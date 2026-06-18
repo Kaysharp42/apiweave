@@ -34,12 +34,14 @@ class ScopedEnvironmentRepository:
         is_default: bool = False,
         allowed_workspace_ids: list[str] | None = None,
         description: str | None = None,
+        swagger_doc_url: str | None = None,
     ) -> Environment:
         now = datetime.now(UTC)
         env = Environment(
             environmentId=environment_id,
             name=name,
             description=description,
+            swaggerDocUrl=swagger_doc_url,
             scopeType=scope_type,
             scopeId=scope_id,
             ownerType=owner_type,
@@ -72,6 +74,7 @@ class ScopedEnvironmentRepository:
             is_default=is_default,
             allowed_workspace_ids=data.allowedWorkspaceIds,
             description=data.description,
+            swagger_doc_url=data.swaggerDocUrl,
         )
 
     # ------------------------------------------------------------------

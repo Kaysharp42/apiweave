@@ -6,13 +6,12 @@ Verifies:
 - No global Environment.isActive remains in the schema
 - Wipe script drops all collections
 """
-import pytest
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
-from app.models import User, Environment, Workspace
-from app.services.bootstrap import bootstrap_first_owner
+from app.models import Environment, User, Workspace
 from app.repositories.workspace_repository import WorkspaceRepository
+from app.services.bootstrap import bootstrap_first_owner
 
 
 def make_user(user_id: str = "usr-test123", email: str = "owner@example.com") -> User:
@@ -121,7 +120,6 @@ class TestWipeScript:
 
     def test_wipe_script_exists(self):
         """wipe_db.py script should exist."""
-        import importlib.util
         from pathlib import Path
 
         script_path = Path(__file__).parent.parent / "scripts" / "wipe_db.py"

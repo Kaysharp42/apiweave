@@ -22,9 +22,8 @@ import app.auth.router as auth_router
 from app.auth.permissions import PRESET_VIEWER
 from app.auth.provider_registry import ProviderConfig, ProviderUserInfo
 from app.main import app
-from app.models import Invite, OAuthState, Session, User
+from app.models import Invite, OAuthState, Session, User, Workspace
 from app.repositories.auth_repositories import (
-    InviteRepository,
     SessionRepository,
     UserRepository,
 )
@@ -135,6 +134,31 @@ def _user(email: str, roles: list[str] | None = None) -> User:
         created_at=now,
         updated_at=now,
         oauth_accounts=[],
+    )
+
+
+def _workspace(slug: str = "personal") -> Workspace:
+    now = datetime.now(UTC)
+    return Workspace.model_construct(
+        workspaceId="ws-test9",
+        slug=slug,
+        name="My Workspace",
+        ownerType="user",
+        ownerUserId="usr-new",
+        orgId=None,
+        isPersonal=True,
+        createdAt=now,
+        updatedAt=now,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _oauth_callback_workspace_patch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth_router.settings, "FRONTEND_URL", "http://localhost:3000")
+    monkeypatch.setattr(
+        auth_router,
+        "ensure_personal_workspace",
+        AsyncMock(return_value=_workspace()),
     )
 
 

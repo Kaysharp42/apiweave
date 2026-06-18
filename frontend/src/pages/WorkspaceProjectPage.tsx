@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FolderKanban, ArrowLeft, FileText } from 'lucide-react';
+import { FolderKanban, ArrowLeft, FileText, Plus } from 'lucide-react';
 import { Button } from '../components/atoms/Button';
 import { Card } from '../components/molecules/Card';
 import { Badge } from '../components/atoms/Badge';
 import { Spinner } from '../components/atoms/Spinner';
 import { EmptyState } from '../components/molecules/EmptyState';
+import { PromptDialog } from '../components/molecules/PromptDialog';
 import { useWorkspace } from '../contexts/WorkspaceContext';
-import { authenticatedJson } from '../utils/authenticatedApi';
+import { authenticatedJson, authenticatedFetch } from '../utils/authenticatedApi';
+import { workflowsCreateInProjectUrl, projectWorkflowAssignUrl } from '../utils/scopedApi';
 import API_BASE_URL from '../utils/api';
+import { toast } from 'sonner';
 import type { Project } from '../types/Project';
 import type { Workflow } from '../types/Workflow';
 
@@ -33,6 +36,9 @@ export function WorkspaceProjectPage() {
   const [data, setData] = useState<ProjectWithWorkflows | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showCreatePrompt, setShowCreatePrompt] = useState(false);
+  const [allWorkflows, setAllWorkflows] = useState<Workflow[]>([]);
+  const [showAssignDropdown, setShowAssignDropdown] = useState(false);
 
   const orgSlugValue = currentOrg?.slug ?? orgSlug ?? 'personal';
   const wsSlugValue = currentWorkspace?.slug ?? workspaceSlug ?? '';
@@ -42,15 +48,19 @@ export function WorkspaceProjectPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [projectRes, workflowsRes] = await Promise.all([
+      const [projectRes, workflowsRes, allWorkflowsRes] = await Promise.all([
         authenticatedJson<Project>(
           `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/projects/${projectId}`,
         ),
         authenticatedJson<{ workflows: Workflow[]; total: number }>(
           `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/workflows?project_id=${projectId}&limit=100`,
         ),
+        authenticatedJson<{ workflows: Workflow[]; total: number }>(
+          `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/workflows?skip=0&limit=100`,
+        ),
       ]);
       setData({ project: projectRes, workflows: workflowsRes.workflows });
+      setAllWorkflows(allWorkflowsRes.workflows);
     } catch {
       setError('Failed to load project. You may not have access to this workspace.');
     } finally {
@@ -111,6 +121,63 @@ export function WorkspaceProjectPage() {
   }
 
   const { project, workflows } = data;
+  const wsId = currentWorkspace?.workspaceId ?? '';
+  const unassignedWorkflows = allWorkflows.filter(
+    (wf) => !wf.collectionId || wf.collectionId !== projectId,
+  );
+
+  const handleCreateWorkflowInProject = async (name: string): Promise<void> => {
+    if (!wsId || !projectId) return;
+    try {
+      const response = await authenticatedFetch(
+        workflowsCreateInProjectUrl(wsId, projectId),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            description: '',
+            nodes: [{ nodeId: 'start-1', type: 'start', label: 'Start', position: { x: 100, y: 100 }, config: {} }],
+            edges: [],
+            variables: {},
+          }),
+        },
+      );
+      if (response.ok) {
+        const workflow = await response.json() as Workflow;
+        toast.success(`Workflow "${name}" created and added to project`);
+        navigate(`/${orgSlugValue}/${wsSlugValue}/workflows/${workflow.workflowId}`);
+      } else {
+        const errBody = await response.json() as { detail?: string };
+        toast.error(errBody.detail ?? 'Failed to create workflow');
+      }
+    } catch {
+      toast.error('Failed to create workflow in project');
+    } finally {
+      setShowCreatePrompt(false);
+    }
+  };
+
+  const handleAssignWorkflow = async (workflowId: string): Promise<void> => {
+    if (!wsId || !projectId) return;
+    try {
+      const response = await authenticatedFetch(
+        projectWorkflowAssignUrl(wsId, projectId, workflowId),
+        { method: 'POST' },
+      );
+      if (response.ok) {
+        toast.success('Workflow assigned to project');
+        void loadData();
+      } else {
+        const errBody = await response.json() as { detail?: string };
+        toast.error(errBody.detail ?? 'Failed to assign workflow');
+      }
+    } catch {
+      toast.error('Failed to assign workflow to project');
+    } finally {
+      setShowAssignDropdown(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full overflow-auto">
@@ -174,6 +241,45 @@ export function WorkspaceProjectPage() {
               icon={<FileText className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
               title="No workflows in this project"
               description="Create a workflow and assign it to this project to see it here."
+              action={
+                <div className="flex flex-col gap-2 items-center">
+                  <Button
+                    variant="primary"
+                    intent="success"
+                    size="sm"
+                    icon={<Plus className="w-4 h-4" />}
+                    onClick={() => setShowCreatePrompt(true)}
+                  >
+                    Create Workflow in Project
+                  </Button>
+                  {unassignedWorkflows.length > 0 && (
+                    <div className="relative">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setShowAssignDropdown(!showAssignDropdown)}
+                      >
+                        Assign Existing Workflow
+                      </Button>
+                      {showAssignDropdown && (
+                        <div className="absolute top-full left-0 right-0 mt-1 rounded border border-[var(--aw-border)] bg-surface-raised dark:bg-surface-dark-raised shadow-lg max-h-60 overflow-y-auto z-10">
+                          {unassignedWorkflows.map((wf) => (
+                            <button
+                              key={wf.workflowId}
+                              type="button"
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                              onClick={() => void handleAssignWorkflow(wf.workflowId)}
+                            >
+                              <FileText className="w-4 h-4 flex-shrink-0 text-text-muted dark:text-text-muted-dark" />
+                              <span className="truncate text-text-primary dark:text-text-primary-dark">{wf.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              }
             />
           </Card>
         ) : (
@@ -211,6 +317,16 @@ export function WorkspaceProjectPage() {
           </div>
         )}
       </div>
+
+      <PromptDialog
+        open={showCreatePrompt}
+        onClose={() => setShowCreatePrompt(false)}
+        onSubmit={handleCreateWorkflowInProject}
+        title="New Workflow in Project"
+        message="Enter a name for the new workflow. It will be automatically assigned to this project."
+        placeholder="My Workflow"
+        submitLabel="Create & Assign"
+      />
     </div>
   );
 }

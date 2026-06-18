@@ -22,6 +22,8 @@ export function ProjectList({
   onExportProject,
   onDeleteProject,
   onCreateProject,
+  onAddWorkflowToProject,
+  onAssignWorkflowToProject,
 }: ProjectListProps) {
   if (projects.length === 0) {
     return (
@@ -61,6 +63,8 @@ export function ProjectList({
           onDeleteProject={onDeleteProject}
           onExportWorkflow={onExportWorkflow}
           onDeleteWorkflow={onDeleteWorkflow}
+          onAddWorkflowToProject={onAddWorkflowToProject}
+          onAssignWorkflowToProject={onAssignWorkflowToProject}
         />
       ))}
     </ul>

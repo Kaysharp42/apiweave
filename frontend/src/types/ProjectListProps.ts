@@ -17,4 +17,6 @@ export interface ProjectListProps {
   onExportProject: (project: Project) => void;
   onDeleteProject: (projectId: string, name: string) => void;
   onCreateProject: () => void;
+  onAddWorkflowToProject: (projectId: string) => void;
+  onAssignWorkflowToProject: (projectId: string, workflowId: string) => void;
 }

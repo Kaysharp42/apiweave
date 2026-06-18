@@ -5,21 +5,31 @@ import SecretsPanel from '../components/SecretsPanel';
 import type { Environment } from '../types';
 
 vi.mock('../hooks/useSecretValues', () => ({
-  deleteSecret: vi.fn().mockResolvedValue(undefined),
-  fetchSecretPublicKey: vi.fn().mockResolvedValue({
+  deleteScopedSecret: vi.fn().mockResolvedValue(undefined),
+  fetchScopedPublicKey: vi.fn().mockResolvedValue({
     keyId: 'test-key-id',
     publicKey: 'dGVzdC1wdWJsaWMta2V5',
-    algorithm: 'libsodium-sealed-box' as const,
+    algorithm: 'libsodium-sealed-box',
   }),
-  postEncryptedSecret: vi.fn().mockResolvedValue(undefined),
+  postScopedEncryptedSecret: vi.fn().mockResolvedValue({
+    secretId: 'sec-1',
+    name: 'API_KEY',
+    scopeType: 'environment',
+    scopeId: 'env-1',
+    keyId: 'test-key-id',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  }),
+  listScopedSecrets: vi.fn().mockResolvedValue([]),
   useSecretValues: vi.fn(() => ({
     setSecretValue: vi.fn().mockResolvedValue(undefined),
     removeSecretValue: vi.fn().mockResolvedValue(undefined),
     getPublicKey: vi.fn().mockResolvedValue({
       keyId: 'test-key-id',
       publicKey: 'dGVzdC1wdWJsaWMta2V5',
-      algorithm: 'libsodium-sealed-box' as const,
+      algorithm: 'libsodium-sealed-box',
     }),
+    listSecrets: vi.fn().mockResolvedValue([]),
   })),
 }));
 
@@ -132,5 +142,26 @@ describe('SecretsPanel', () => {
     });
 
     expect(document.body.innerHTML).not.toContain(secretPlaintext);
+  });
+
+  it('uses scoped delete route (not legacy environment route)', async () => {
+    const { deleteScopedSecret } = await import('../hooks/useSecretValues');
+    const user = userEvent.setup();
+
+    render(
+      <SecretsPanel
+        isOpen={true}
+        environment={makeEnv({ API_KEY: '' })}
+        onSecretsChange={onSecretsChange}
+        onClose={onClose}
+      />,
+    );
+
+    const removeBtn = screen.getByRole('button', { name: /Remove secret API_KEY/i });
+    await user.click(removeBtn);
+
+    await waitFor(() => {
+      expect(deleteScopedSecret).toHaveBeenCalledWith('environment', 'env-1', 'API_KEY');
+    });
   });
 });

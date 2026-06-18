@@ -5,6 +5,9 @@ import { Button } from './atoms/Button';
 import { Input } from './atoms/Input';
 import { TextArea } from './atoms/TextArea';
 import { Modal } from './molecules/Modal';
+import { useScopeContext } from '../hooks/useScopeContext';
+import { authenticatedFetch } from '../utils/authenticatedApi';
+import { workflowExportUrl, workflowImportUrl, workflowImportDryRunUrl } from '../utils/scopedApi';
 import type { WorkflowExportImportTab } from '../types/WorkflowExportImportTab';
 import type { WorkflowExportImportProps } from '../types/WorkflowExportImportProps';
 import type { DryRunResult } from '../types/DryRunResult';
@@ -18,6 +21,7 @@ export function WorkflowExportImport({
   initialTab,
   mode,
 }: WorkflowExportImportProps) {
+  const { workspaceId } = useScopeContext();
   const [activeTab, setActiveTab] = useState<WorkflowExportImportTab>(() =>
     resolveWorkflowExportImportInitialTab({ initialTab, mode }),
   );
@@ -40,8 +44,8 @@ export function WorkflowExportImport({
     setError(null);
 
     try {
-      const response = await fetch(
-        `/api/workflows/${workflowId}/export?include_environment=${includeEnvironment}`,
+      const response = await authenticatedFetch(
+        workflowExportUrl(workspaceId || '', workflowId, includeEnvironment),
         {
           method: 'GET',
           headers: {
@@ -110,7 +114,7 @@ export function WorkflowExportImport({
     try {
       const bundle = JSON.parse(importJson);
 
-      const response = await fetch('/api/workflows/import/dry-run', {
+      const response = await authenticatedFetch(workflowImportDryRunUrl(workspaceId || ''), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -145,7 +149,7 @@ export function WorkflowExportImport({
     try {
       const bundle = JSON.parse(importJson);
 
-      const response = await fetch('/api/workflows/import', {
+      const response = await authenticatedFetch(workflowImportUrl(workspaceId || ''), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

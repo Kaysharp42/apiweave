@@ -58,6 +58,7 @@ target-version = ['py312']
 line-length = 100
 target-version = "py312"
 select = ["E", "F", "I", "N", "W", "UP"]
+exclude = ["app/routes/_legacy_disabled/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect } from 'react';
 import { Allotment } from 'allotment';
 // @ts-expect-error CSS import without types
 import 'allotment/dist/style.css';
@@ -8,12 +8,10 @@ import { Sidebar } from './Sidebar';
 import { Workspace } from './Workspace';
 import { MainHeader } from './MainHeader';
 import { MainFooter } from './MainFooter';
-import SecretsPrompt from '../SecretsPrompt';
 import useNavigationStore from '../../stores/NavigationStore';
 import useSidebarStore from '../../stores/SidebarStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
 import { HorizontalDivider } from '../atoms/HorizontalDivider';
-import type { Environment } from '../../types/Environment';
 import type { MainLayoutProps } from '../../types/MainLayoutProps';
 
 export function MainLayout({ children }: MainLayoutProps) {
@@ -23,18 +21,9 @@ export function MainLayout({ children }: MainLayoutProps) {
   const mobileSidebarOpen = useNavigationStore((state) => state.mobileSidebarOpen);
   const setMobileSidebarOpen = useNavigationStore((state) => state.setMobileSidebarOpen);
   const location = useLocation();
-  const environments = useSidebarStore((state) => state.environments);
   const fetchEnvironments = useSidebarStore((state) => state.fetchEnvironments);
   const refreshAll = useSidebarStore((state) => state.refreshAll);
   const resetPagination = useSidebarStore((state) => state.resetPagination);
-  const [dismissedEnvironmentId, setDismissedEnvironmentId] = useState<string | null>(null);
-  const environmentWithSecrets = useMemo<Environment | null>(() => (
-    environments.find((env) => {
-      if (!env.secrets || Object.keys(env.secrets).length === 0) return false;
-      return !Object.keys(env.secrets).every((key) => sessionStorage.getItem(`secret_${key}`));
-    }) ?? null
-  ), [environments]);
-  const isSecretsPromptOpen = environmentWithSecrets !== null && environmentWithSecrets.environmentId !== dismissedEnvironmentId;
 
   useEffect(() => {
     void fetchEnvironments();
@@ -151,15 +140,6 @@ export function MainLayout({ children }: MainLayoutProps) {
       <footer>
         <MainFooter />
       </footer>
-
-      {environmentWithSecrets && (
-        <SecretsPrompt
-          isOpen={isSecretsPromptOpen}
-          environment={environmentWithSecrets}
-          onClose={() => setDismissedEnvironmentId(environmentWithSecrets.environmentId)}
-          onSecretsProvided={() => setDismissedEnvironmentId(environmentWithSecrets.environmentId)}
-        />
-      )}
     </>
   );
 }

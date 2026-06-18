@@ -10,6 +10,7 @@ import uuid
 from typing import Any
 
 from app.repositories.project_repository import ProjectRepository
+from app.repositories.workflow_repository import WorkflowRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.services.exceptions import ResourceNotFoundError
 from app.services.workspace_service import _assert_workspace_access, _assert_workspace_admin
@@ -25,6 +26,7 @@ def _project_to_response(project: Any) -> dict[str, Any]:
     """Convert a Project document to a response dict using project terminology."""
     return {
         "projectId": project.projectId or project.collectionId,
+        "collectionId": project.collectionId,
         "name": project.name,
         "description": project.description,
         "color": project.color,
@@ -202,3 +204,108 @@ async def list_projects(
 
     projects = await ProjectRepository.list_by_workspace(workspace_id)
     return [_project_to_response(p) for p in projects]
+
+
+# ============================================================================
+# Project-Workflow association
+# ============================================================================
+
+
+async def assign_workflow_to_project(
+    project_id: str,
+    workflow_id: str,
+    actor_user_id: str,
+) -> dict[str, Any]:
+    """
+    Assign a workflow to a project (sets workflow.collectionId).
+    Enforces workspace isolation on the project side.
+    """
+    project = await ProjectRepository.get_by_id(project_id)
+    if not project:
+        raise ResourceNotFoundError(f"Project {project_id} not found")
+
+    if project.workspaceId:
+        ws = await WorkspaceRepository.get_by_id(project.workspaceId)
+        if not ws:
+            raise ResourceNotFoundError(f"Project {project_id} not found")
+        await _assert_workspace_access(ws, actor_user_id)
+
+    workflow = await WorkflowRepository.update_collection_assignment(workflow_id, project_id)
+    if not workflow:
+        raise ResourceNotFoundError(f"Workflow {workflow_id} not found")
+
+    await ProjectRepository.update_workflow_count(project_id)
+
+    try:
+        from app.services.audit_service import append_event
+        await append_event(
+            actor="user",
+            actor_id=actor_user_id,
+            action="project.workflow_assigned",
+            scope="workspace",
+            scope_id=project.workspaceId or "",
+            resource_type="workflow",
+            resource_id=workflow_id,
+            context={"projectId": project_id},
+        )
+    except Exception:
+        logger.warning("Audit write failed for workflow assignment", exc_info=True)
+
+    return {
+        "success": True,
+        "workflowId": workflow_id,
+        "projectId": project_id,
+    }
+
+
+async def remove_workflow_from_project(
+    project_id: str,
+    workflow_id: str,
+    actor_user_id: str,
+) -> dict[str, Any]:
+    """
+    Remove a workflow from a project (clears workflow.collectionId).
+    Enforces workspace isolation on the project side.
+    """
+    project = await ProjectRepository.get_by_id(project_id)
+    if not project:
+        raise ResourceNotFoundError(f"Project {project_id} not found")
+
+    if project.workspaceId:
+        ws = await WorkspaceRepository.get_by_id(project.workspaceId)
+        if not ws:
+            raise ResourceNotFoundError(f"Project {project_id} not found")
+        await _assert_workspace_access(ws, actor_user_id)
+
+    workflow = await WorkflowRepository.get_by_id(workflow_id)
+    if not workflow:
+        raise ResourceNotFoundError(f"Workflow {workflow_id} not found")
+
+    if workflow.collectionId != project_id:
+        raise ResourceNotFoundError(
+            f"Workflow {workflow_id} is not in project {project_id}"
+        )
+
+    await WorkflowRepository.update_collection_assignment(workflow_id, None)
+    await ProjectRepository.update_workflow_count(project_id)
+
+    try:
+        from app.services.audit_service import append_event
+        await append_event(
+            actor="user",
+            actor_id=actor_user_id,
+            action="project.workflow_removed",
+            scope="workspace",
+            scope_id=project.workspaceId or "",
+            resource_type="workflow",
+            resource_id=workflow_id,
+            context={"projectId": project_id},
+        )
+    except Exception:
+        logger.warning("Audit write failed for workflow removal", exc_info=True)
+
+    return {
+        "success": True,
+        "workflowId": workflow_id,
+        "projectId": project_id,
+    }

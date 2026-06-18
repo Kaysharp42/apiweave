@@ -4,6 +4,9 @@ import { usePalette } from '../contexts/PaletteContext';
 import { Button } from './atoms/Button';
 import { IconButton } from './atoms/IconButton';
 import { Input } from './atoms/Input';
+import { useScopeContext } from '../hooks/useScopeContext';
+import { authenticatedFetch } from '../utils/authenticatedApi';
+import { workflowImportHarUrl } from '../utils/scopedApi';
 
 interface HARPreviewEntry {
   method: string;
@@ -47,6 +50,7 @@ function getMethodBadgeClasses(method: string): string {
 }
 
 export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
+  const { workspaceId } = useScopeContext();
   const [harFile, setHarFile] = useState<File | null>(null);
   const [harJson, setHarJson] = useState<Record<string, unknown> | null>(null);
   const [importMode, setImportMode] = useState<ImportMode>('linear');
@@ -108,7 +112,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
       formData.append('import_mode', importMode);
       formData.append('sanitize', String(sanitize));
 
-      const response = await fetch('/api/workflows/import/har/dry-run', {
+      const response = await authenticatedFetch(workflowImportHarUrl(workspaceId || '', true), {
         method: 'POST',
         body: formData,
       });

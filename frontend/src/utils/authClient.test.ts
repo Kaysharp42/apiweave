@@ -115,7 +115,7 @@ test("authenticatedFetch attaches X-CSRF-Token on POST when cookie is present", 
   // @ts-expect-error — injecting minimal document mock for Node.js test env
   globalThis.document = { cookie: "csrftoken=test-csrf-value-abc" };
   try {
-    await authenticatedFetch("/api/workflows", { method: "POST", body: "{}" });
+    await authenticatedFetch("/api/workspaces/ws-1/workflows", { method: "POST", body: "{}" });
     const headers = calls[0]!.init.headers;
     assert.equal(headers["x-csrf-token"], "test-csrf-value-abc");
   } finally {
@@ -130,7 +130,7 @@ test("authenticatedFetch attaches X-CSRF-Token on PUT", async () => {
   globalThis.document = { cookie: "csrftoken=put-csrf-token" };
   const originalDoc = globalThis.document;
   try {
-    await authenticatedFetch("/api/workflows/wf-1", {
+    await authenticatedFetch("/api/workspaces/ws-1/workflows/wf-1", {
       method: "PUT",
       body: "{}",
     });
@@ -148,7 +148,7 @@ test("authenticatedFetch attaches X-CSRF-Token on DELETE", async () => {
   globalThis.document = { cookie: "csrftoken=delete-csrf-token" };
   const originalDoc = globalThis.document;
   try {
-    await authenticatedFetch("/api/workflows/wf-1", { method: "DELETE" });
+    await authenticatedFetch("/api/workspaces/ws-1/workflows/wf-1", { method: "DELETE" });
     const headers = calls[0]!.init.headers;
     assert.equal(headers["x-csrf-token"], "delete-csrf-token");
   } finally {
@@ -163,7 +163,7 @@ test("authenticatedFetch does NOT attach X-CSRF-Token on GET", async () => {
   globalThis.document = { cookie: "csrftoken=should-not-appear" };
   const originalDoc = globalThis.document;
   try {
-    await authenticatedFetch("/api/workflows");
+    await authenticatedFetch("/api/workspaces/ws-1/workflows");
     const headers = calls[0]!.init.headers;
     assert.equal(
       headers["x-csrf-token"],
@@ -182,7 +182,7 @@ test("authenticatedFetch does NOT attach X-CSRF-Token when cookie is absent", as
   globalThis.document = { cookie: "session=some-session-id" };
   const originalDoc = globalThis.document;
   try {
-    await authenticatedFetch("/api/workflows", { method: "POST", body: "{}" });
+    await authenticatedFetch("/api/workspaces/ws-1/workflows", { method: "POST", body: "{}" });
     const headers = calls[0]!.init.headers;
     assert.equal(
       headers["x-csrf-token"],
@@ -202,7 +202,7 @@ test("authenticatedFetch does NOT attach X-CSRF-Token when cookie is absent", as
 test("authenticatedFetch strips Authorization header if caller passes one", async () => {
   const { calls, restore } = mockFetch();
   try {
-    await authenticatedFetch("/api/workflows", {
+    await authenticatedFetch("/api/workspaces/ws-1/workflows", {
       headers: { Authorization: "Bearer admin-secret-key" },
     });
     const headers = calls[0]!.init.headers;
@@ -219,7 +219,7 @@ test("authenticatedFetch strips Authorization header if caller passes one", asyn
 test("authenticatedFetch never sends Authorization header by default", async () => {
   const { calls, restore } = mockFetch();
   try {
-    await authenticatedFetch("/api/workflows");
+    await authenticatedFetch("/api/workspaces/ws-1/workflows");
     const headers = calls[0]!.init.headers;
     assert.equal(headers["authorization"], undefined);
   } finally {
@@ -235,7 +235,7 @@ test("authenticatedJson returns parsed JSON on 200", async () => {
   const { restore } = mockFetch(200, { id: "wf-1", name: "My Workflow" });
   try {
     const data = await authenticatedJson<{ id: string; name: string }>(
-      "/api/workflows/wf-1",
+      "/api/workspaces/ws-1/workflows/wf-1",
     );
     assert.equal(data.id, "wf-1");
     assert.equal(data.name, "My Workflow");
@@ -248,7 +248,7 @@ test("authenticatedJson throws on non-2xx status", async () => {
   const { restore } = mockFetch(404, { detail: "Not found" });
   try {
     await assert.rejects(
-      () => authenticatedJson("/api/workflows/missing"),
+      () => authenticatedJson("/api/workspaces/ws-1/workflows/missing"),
       (err: Error) => {
         assert.ok(err.message.includes("404"), `Expected 404 in: ${err.message}`);
         return true;

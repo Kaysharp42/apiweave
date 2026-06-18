@@ -113,6 +113,8 @@ def _build_provider_config(name: str) -> ProviderConfig:
 
 def _check_provider_enabled(name: str) -> bool:
     """Return True only if BOTH client_id and client_secret are set and non-empty."""
+    if not settings.OAUTH_LOGIN_ENABLED:
+        return False
     if name == "github":
         return bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET)
     if name == "gitlab":

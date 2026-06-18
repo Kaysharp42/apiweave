@@ -85,3 +85,7 @@ Best practices:
 - Handle authentication tokens by extracting them from login responses"""
 
     logger.info("MCP workflow prompts registered")
+
+
+""" finish  work  """
+  

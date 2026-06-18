@@ -12,6 +12,7 @@ export interface Workflow {
   createdAt: string;
   updatedAt: string;
   collectionId?: string;
+  projectId?: string;
   environmentId?: string;
   swaggerUrl?: string;
   swaggerLastRefreshed?: string;

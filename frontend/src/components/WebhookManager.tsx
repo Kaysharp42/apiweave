@@ -11,6 +11,17 @@ import { Input } from './atoms/Input';
 import { IconButton } from './atoms/IconButton';
 import { Badge } from './atoms/Badge';
 import API_BASE_URL from '../utils/api';
+import {
+  workflowsUrl,
+  projectsUrl,
+  environmentsUrl,
+  webhooksForWorkflowUrl,
+  webhooksForProjectUrl,
+  webhooksCreateUrl,
+  webhookDetailUrl,
+  webhookRegenerateUrl,
+  webhookLogsUrl,
+} from '../utils/scopedApi';
 import type { Workflow } from '../types/Workflow';
 import type { Collection } from '../types/Collection';
 import type { Environment } from '../types/Environment';
@@ -23,6 +34,7 @@ import type { NewWebhookFormData } from '../types/NewWebhookFormData';
 import type { CopySuccessState } from '../types/CopySuccessState';
 import type { WebhookRun } from '../types/WebhookRun';
 import { useWebhookRuns } from '../hooks/useWebhookRuns';
+import { useScopeContext } from '../hooks/useScopeContext';
 
 const buildManagementHeaders = (contentType?: boolean): HeadersInit => {
   const headers: Record<string, string> = {};
@@ -33,6 +45,7 @@ const buildManagementHeaders = (contentType?: boolean): HeadersInit => {
 };
 
 export function WebhookManager() {
+  const scope = useScopeContext();
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -55,6 +68,7 @@ export function WebhookManager() {
   const { triggerTestDelivery, fetchWebhookRuns, isTriggering } = useWebhookRuns();
 
   useEffect(() => {
+    if (!scope.isReady || !scope.workspaceId) return;
     (async () => {
       setLoading(true);
       try {
@@ -67,29 +81,32 @@ export function WebhookManager() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [scope.isReady, scope.workspaceId]);
 
   /* ---------- Data fetching ---------- */
 
   const fetchWorkflows = async () => {
+    if (!scope.workspaceId) return [];
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/workflows`);
+      const res = await authenticatedFetch(workflowsUrl(scope.workspaceId, { skip: 0, limit: 100 }));
       if (res.ok) { const d = await res.json(); const list: Workflow[] = Array.isArray(d) ? d : d.workflows || []; setWorkflows(list); return list; }
     } catch (e) { console.error('Error fetching workflows:', e); }
     return [];
   };
 
   const fetchCollections = async () => {
+    if (!scope.workspaceId) return [];
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/collections`);
-      if (res.ok) { const d = await res.json(); const list: Collection[] = Array.isArray(d) ? d : []; setCollections(list); return list; }
+      const res = await authenticatedFetch(projectsUrl(scope.workspaceId));
+      if (res.ok) { const d = await res.json(); const list: Collection[] = (d.projects || []) as Collection[]; setCollections(list); return list; }
     } catch (e) { console.error('Error fetching collections:', e); }
     return [];
   };
 
   const fetchEnvironments = async () => {
+    if (!scope.workspaceId) return [];
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/environments`);
+      const res = await authenticatedFetch(environmentsUrl(scope.workspaceId, 'all-accessible', scope.orgId));
       if (res.ok) { const d = await res.json(); const list: Environment[] = Array.isArray(d) ? d : []; setEnvironments(list); return list; }
     } catch (e) { console.error('Error fetching environments:', e); }
     return [];
@@ -99,13 +116,13 @@ export function WebhookManager() {
     try {
       const [workflowWebhookGroups, collectionWebhookGroups] = await Promise.all([
         Promise.all(wfList.map(async (w) => {
-          const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/workflows/${w.workflowId}`);
+          const res = await authenticatedFetch(webhooksForWorkflowUrl(w.workflowId));
           if (!res.ok) return [] as Webhook[];
           const d = await res.json();
           return Array.isArray(d) ? d as Webhook[] : [];
         })),
         Promise.all(colList.map(async (c) => {
-          const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/collections/${c.collectionId}`);
+          const res = await authenticatedFetch(webhooksForProjectUrl(c.collectionId));
           if (!res.ok) return [] as Webhook[];
           const d = await res.json();
           return Array.isArray(d) ? d as Webhook[] : [];
@@ -122,7 +139,7 @@ export function WebhookManager() {
   const createWebhook = async () => {
     if (!newWebhookData.resourceId) { toast.error('Please select a workflow or collection'); return; }
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks`, {
+      const res = await authenticatedFetch(webhooksCreateUrl(), {
         method: 'POST', headers: buildManagementHeaders(true), body: JSON.stringify(newWebhookData),
       });
       if (res.ok) {
@@ -143,7 +160,7 @@ export function WebhookManager() {
   const confirmDeleteWebhook = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${deleteTarget}`, { method: 'DELETE', headers: buildManagementHeaders() });
+      const res = await authenticatedFetch(webhookDetailUrl(deleteTarget), { method: 'DELETE', headers: buildManagementHeaders() });
       if (res.ok) { await fetchAllWebhooks(); toast.success('Webhook deleted'); }
       else toast.error('Failed to delete webhook');
     } catch (e) { console.error('Error deleting webhook:', e); toast.error('Error deleting webhook'); }
@@ -152,7 +169,7 @@ export function WebhookManager() {
 
   const toggleWebhook = async (webhook: Webhook) => {
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}`, {
+      const res = await authenticatedFetch(webhookDetailUrl(webhook.webhookId), {
         method: 'PATCH', headers: buildManagementHeaders(true), body: JSON.stringify({ enabled: !webhook.enabled }),
       });
       if (res.ok) await fetchAllWebhooks();
@@ -163,7 +180,7 @@ export function WebhookManager() {
   const confirmRegenerate = async () => {
     if (!webhookToRegenerate) return;
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhookToRegenerate.webhookId}/regenerate-token`, { method: 'POST', headers: buildManagementHeaders() });
+      const res = await authenticatedFetch(webhookRegenerateUrl(webhookToRegenerate.webhookId), { method: 'POST', headers: buildManagementHeaders() });
       if (res.ok) {
         const data = await res.json();
         setWebhookCredentials(data);
@@ -189,7 +206,7 @@ export function WebhookManager() {
     setSelectedWebhook(webhook);
     setShowLogsModal(true);
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}/logs?limit=50`, { headers: buildManagementHeaders() });
+      const res = await authenticatedFetch(webhookLogsUrl(webhook.webhookId), { headers: buildManagementHeaders() });
       if (res.ok) { const d = await res.json(); setWebhookLogs(d.logs || []); }
       const runs = await fetchWebhookRuns(webhook.webhookId);
       setWebhookRuns(runs);
@@ -199,7 +216,7 @@ export function WebhookManager() {
   const handleTestDelivery = async (webhook: Webhook) => {
     await triggerTestDelivery(webhook);
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/webhooks/${webhook.webhookId}/logs?limit=50`, { headers: buildManagementHeaders() });
+      const res = await authenticatedFetch(webhookLogsUrl(webhook.webhookId), { headers: buildManagementHeaders() });
       if (res.ok) { const d = await res.json(); setWebhookLogs(d.logs || []); }
       const runs = await fetchWebhookRuns(webhook.webhookId);
       setWebhookRuns(runs);

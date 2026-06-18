@@ -11,7 +11,7 @@ import app.auth.provider_registry as provider_registry
 import app.auth.router as auth_router
 from app.auth.provider_registry import ProviderConfig, ProviderUserInfo
 from app.main import app
-from app.models import Invite, OAuthState, ProviderIdentity, User
+from app.models import Invite, OAuthState, ProviderIdentity, User, Workspace
 
 pytest_plugins = ("tests.fixtures.oauth_mocks",)
 
@@ -71,6 +71,31 @@ def _user(email: str) -> User:
     )
 
 
+def _workspace(slug: str = "personal") -> Workspace:
+    now = datetime.now(UTC)
+    return Workspace.model_construct(
+        workspaceId="ws-test",
+        slug=slug,
+        name="My Workspace",
+        ownerType="user",
+        ownerUserId="usr-test",
+        orgId=None,
+        isPersonal=True,
+        createdAt=now,
+        updatedAt=now,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _oauth_callback_workspace_patch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth_router.settings, "FRONTEND_URL", "http://localhost:3000")
+    monkeypatch.setattr(
+        auth_router,
+        "ensure_personal_workspace",
+        AsyncMock(return_value=_workspace()),
+    )
+
+
 def _provider_identity(provider: str, user_id: str = "usr-test") -> ProviderIdentity:
     return ProviderIdentity.model_construct(
         identityId="pid-test",
@@ -111,10 +136,16 @@ def _userinfo(provider: str, *, verified: bool = True) -> ProviderUserInfo:
 
 
 def _patch_provider(monkeypatch: pytest.MonkeyPatch, provider: str) -> None:
+    monkeypatch.setattr(auth_router.settings, "OAUTH_LOGIN_ENABLED", True)
     monkeypatch.setattr(
         provider_registry,
         "get_provider_config",
         lambda name: _provider_config(name),
+    )
+    monkeypatch.setattr(
+        provider_registry,
+        "get_enabled_providers",
+        lambda: ["github", "gitlab", "google", "microsoft"],
     )
     monkeypatch.setattr(auth_router.OAuthStateRepository, "create", AsyncMock())
 
@@ -232,7 +263,7 @@ def test_callback_succeeds_with_verified_email(
         follow_redirects=False,
     )
     assert response.status_code == 302
-    assert response.headers["location"] == "http://localhost:3000/"
+    assert response.headers["location"] == "http://localhost:3000/personal/workflows"
     assert "session" in response.cookies or any(
         "session" in k.lower() for k in response.cookies
     )
@@ -301,7 +332,6 @@ def test_callback_rejects_invalid_invite_token(
         state=_oauth_state(provider, invite_token="wrong-token"),
         verified=True,
     )
-    email = f"testuser@{provider}.example.com"
     monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
     monkeypatch.setattr(
         auth_router.InviteRepository,
