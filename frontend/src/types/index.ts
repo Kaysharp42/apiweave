@@ -242,3 +242,4 @@ export type { ScopedSecretParams } from './ScopedSecretParams';
 export type { ScopedProjectParams } from './ScopedProjectParams';
 export type { Project } from './Project';
 export type { WorkspaceProjectListResponse, WorkspaceWorkflowListResponse, WorkspaceScopeParams } from './WorkspaceScope';
+export type { WorkspacePageShellProps } from './WorkspacePageShellProps';

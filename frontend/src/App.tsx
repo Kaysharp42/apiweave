@@ -27,6 +27,7 @@ import { authenticatedJson } from './utils/authenticatedApi';
 import API_BASE_URL from './utils/api';
 import type { Workspace } from './types/Workspace';
 import type { Organization } from './types/Organization';
+import type { WorkspacePageShellProps } from './types/WorkspacePageShellProps';
 
 const STORAGE_PREFIX = 'apiweave:v1:';
 
@@ -154,16 +155,16 @@ function AdminPageShell({ children }: { children: ReactNode }) {
   );
 }
 
-function WorkspacePageShell({ children }: { children: ReactNode }) {
+function WorkspacePageShell({ children, navState = 'settings' }: WorkspacePageShellProps) {
   const setNavState = useNavigationStore((state) => state.setNavState);
   const hasSet = useRef(false);
 
   useEffect(() => {
     if (!hasSet.current) {
-      setNavState('settings');
+      setNavState(navState);
       hasSet.current = true;
     }
-  }, [setNavState]);
+  }, [setNavState, navState]);
 
   return (
     <ProtectedRoute>
@@ -358,7 +359,7 @@ function App() {
               <Route
                 path="/:orgSlug/:workspaceSlug/projects/:projectId"
                 element={
-                  <WorkspacePageShell>
+                  <WorkspacePageShell navState="projects">
                     <WorkspaceProjectPage />
                   </WorkspacePageShell>
                 }
