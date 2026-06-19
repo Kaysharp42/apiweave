@@ -102,35 +102,53 @@ function SsoProviderSection() {
 
 export default function AdminDomainsPage() {
   return (
-    <main className="flex-1 overflow-y-auto p-8">
-      <div className="max-w-3xl mx-auto flex flex-col gap-12">
-        {/* Approved Domains */}
-        <section>
-          <div className="flex items-center gap-2 mb-2 pb-4 border-b border-border dark:border-border-dark">
-            <Globe className="w-6 h-6 text-primary" />
-            <h1 className="text-3xl font-display font-bold tracking-tight text-text-primary dark:text-text-primary-dark">Approved Domains</h1>
-          </div>
-          <p className="text-text-secondary dark:text-text-secondary-dark mb-8">
-            Manage email domains that are automatically approved to sign up and join the workspace.
-            Users signing up with an email from an approved domain will be granted the default
-            &apos;viewer&apos; role.
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <Globe className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
+        <div>
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
+            Domain &amp; SSO Settings
+          </h1>
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            Manage approved email domains and SSO providers
           </p>
-          <ApprovedDomainManager />
-        </section>
-
-        {/* SSO Provider Configuration */}
-        <section>
-          <div className="flex items-center gap-2 mb-2 pb-4 border-b border-border dark:border-border-dark">
-            <ShieldCheck className="w-6 h-6 text-primary" />
-            <h2 className="text-3xl font-display font-bold tracking-tight text-text-primary dark:text-text-primary-dark">SSO Provider Configuration</h2>
-          </div>
-          <p className="text-text-secondary dark:text-text-secondary-dark mb-8">
-            View the configuration status of the supported SSO providers. Providers are enabled by
-            setting the corresponding environment variables on the backend.
-          </p>
-          <SsoProviderSection />
-        </section>
+        </div>
       </div>
-    </main>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-3xl mx-auto flex flex-col gap-8">
+          {/* Approved Domains */}
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Globe className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
+              <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
+                Approved Domains
+              </h2>
+            </div>
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
+              Manage email domains that are automatically approved to sign up and join the workspace.
+              Users signing up with an email from an approved domain will be granted the default
+              &apos;viewer&apos; role.
+            </p>
+            <ApprovedDomainManager />
+          </section>
+
+          {/* SSO Provider Configuration */}
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
+              <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
+                SSO Provider Configuration
+              </h2>
+            </div>
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
+              View the configuration status of the supported SSO providers. Providers are enabled by
+              setting the corresponding environment variables on the backend.
+            </p>
+            <SsoProviderSection />
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }

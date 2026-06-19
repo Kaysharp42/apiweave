@@ -17,6 +17,7 @@ import { IconButton } from '../atoms/IconButton';
 import { Badge } from '../atoms/Badge';
 import useTabStore from '../../stores/TabStore';
 import useSidebarStore from '../../stores/SidebarStore';
+import useEnvironmentStore from '../../stores/EnvironmentStore';
 import useNavigationStore from '../../stores/NavigationStore';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import { useScopeContext } from '../../hooks/useScopeContext';
@@ -108,7 +109,7 @@ export function Workspace(_props: WorkspaceProps) {
     void fetchEnvironmentNames();
   }, [fetchEnvironmentNames]);
 
-  const environmentVersion = useSidebarStore((s) => s.environmentVersion);
+  const environmentVersion = useEnvironmentStore((s) => s.environmentVersion);
   useEffect(() => {
     if (environmentVersion > 0) {
       void fetchEnvironmentNames();

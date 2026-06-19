@@ -35,7 +35,6 @@ import { toast } from 'sonner';
 import { CanvasToolbar } from './organisms/CanvasToolbar';
 import useTabStore from '../stores/TabStore';
 import useCanvasStore from '../stores/CanvasStore';
-import useSidebarStore from '../stores/SidebarStore';
 import useAutoSave from '../hooks/useAutoSave';
 import useCanvasDrop from '../hooks/useCanvasDrop';
 import useWorkflowPolling from '../hooks/useWorkflowPolling';
@@ -44,14 +43,14 @@ import { useHydration, assertionEdgeColor, edgeLabelBackground } from '../hooks/
 import { useNodeBranchCounts } from '../hooks/useNodeBranchCounts';
 import { useSwaggerRefresh } from '../hooks/useSwaggerRefresh';
 import { shouldBlockDestructiveAutosave } from '../utils/workflowSaveSafety';
-import { environmentsUrl, workflowDetailUrl } from '../utils/scopedApi';
+import { workflowDetailUrl } from '../utils/scopedApi';
 import { useScopeContext } from '../hooks/useScopeContext';
 import type { WorkflowCanvasNodeData } from '../types/WorkflowCanvasNodeData';
 import type { WorkflowCanvasEdgeData } from '../types/WorkflowCanvasEdgeData';
 import type { WorkflowCanvasProps } from '../types/WorkflowCanvasProps';
-import type { EnvironmentWithSwagger } from '../types/EnvironmentWithSwagger';
 import type { WorkflowJsonData } from '../types/WorkflowJsonData';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import useEnvironmentStore, { getSelectedEnvironment } from '../stores/EnvironmentStore';
 
 const branchEdgeColor = 'var(--aw-branch-edge)';
 const branchLabelColor = 'var(--aw-branch-label)';
@@ -159,27 +158,12 @@ export function WorkflowCanvas({
   const [showHistory, setShowHistory] = useState(false);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
-  const [environments, setEnvironments] = useState<EnvironmentWithSwagger[]>([]);
-
-  const [selectedEnvironmentByWorkflow, setSelectedEnvironmentByWorkflow] = useState<Record<string, string | null>>({});
-  const selectedEnvironment = useMemo<string | null>(() => {
-    const workflowKey = workflowId ?? '';
-    const workflowSpecific = selectedEnvironmentByWorkflow[workflowKey];
-    if (workflowSpecific !== undefined) {
-      return workflowSpecific;
-    }
-
-    if (workflow?.environmentId) {
-      return workflow.environmentId;
-    }
-
-    const globalDefault = localStorage.getItem('defaultEnvironment');
-    if (globalDefault) {
-      return globalDefault;
-    }
-
-    return null;
-  }, [workflowId, workflow?.environmentId, selectedEnvironmentByWorkflow]);
+  const environments = useEnvironmentStore((s) => s.environments);
+  const selectedEnvMap = useEnvironmentStore((s) => s.selectedEnvironmentByWorkflow);
+  const selectedEnvironment = useMemo<string | null>(
+    () => getSelectedEnvironment(workflowId ?? '', workflow?.environmentId),
+    [workflowId, workflow?.environmentId, selectedEnvMap],
+  );
 
   // ── Hooks ──────────────────────────────────────────────────────────
 
@@ -287,38 +271,6 @@ export function WorkflowCanvas({
     };
     return () => { onVariablesDeletedRef.current = null; };
   }, [setNodes, onVariablesDeletedRef]);
-
-  // ── Environments fetching ───────────────────────────────────────────
-
-  const fetchEnvironments = useCallback(async () => {
-    if (!scope.isReady || !scope.workspaceId) {
-      setEnvironments([]);
-      return;
-    }
-
-    try {
-      const response = await authenticatedFetch(
-        environmentsUrl(scope.workspaceId, 'all-accessible', scope.orgId),
-      );
-      if (response.ok) {
-        const data = await response.json() as EnvironmentWithSwagger[];
-        setEnvironments(data);
-      }
-    } catch (error) {
-      console.error('Error fetching environments:', error);
-    }
-  }, [scope.isReady, scope.orgId, scope.workspaceId]);
-
-  useEffect(() => {
-    void fetchEnvironments();
-  }, [fetchEnvironments]);
-
-  const environmentVersion = useSidebarStore((s) => s.environmentVersion);
-  useEffect(() => {
-    if (environmentVersion > 0) {
-      void fetchEnvironments();
-    }
-  }, [environmentVersion, fetchEnvironments]);
 
   // ── Workflow reload from server ─────────────────────────────────────
 
@@ -834,15 +786,15 @@ export function WorkflowCanvas({
         isResumeLoading={isResumeLoading}
         onEnvironmentChange={(val) => {
           const processed = (val && val.trim()) ? val.trim() : null;
+          const wfId = workflowId ?? '';
+          if (processed) {
+            useEnvironmentStore.getState().setSelectedEnv(wfId, processed);
+            useEnvironmentStore.getState().setDefaultEnv(processed);
+          } else {
+            useEnvironmentStore.getState().clearSelectedEnv(wfId);
+          }
           const selectedEnv = processed ? environments.find(e => e.environmentId === processed) : undefined;
           const envName = selectedEnv ? selectedEnv.name : 'No Environment';
-          setSelectedEnvironmentByWorkflow((prev) => ({ ...prev, [workflowId ?? '']: processed }));
-          if (processed) {
-            localStorage.setItem(`selectedEnvironment_${workflowId}`, processed);
-            localStorage.setItem('defaultEnvironment', processed);
-          } else {
-            localStorage.removeItem(`selectedEnvironment_${workflowId}`);
-          }
           toast.success(`Environment: ${envName}`);
         }}
         workflowId={workflowId ?? ''}

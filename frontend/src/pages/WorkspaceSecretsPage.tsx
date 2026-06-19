@@ -10,12 +10,28 @@ import { UserSecretBindingForm } from '../components/UserSecretBindingForm';
 import { useParams } from 'react-router-dom';
 import { useWorkspace } from '../contexts/WorkspaceContext';
 import { Spinner } from '../components/atoms/Spinner';
+import type { Secret } from '../types';
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
 
 export function WorkspaceSecretsPage() {
   const { orgSlug, workspaceSlug } = useParams<{ orgSlug: string; workspaceSlug: string }>();
   const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
   const [showAddForm, setShowAddForm] = useState(false);
   const [showBindings, setShowBindings] = useState(false);
+  const [selectedSecret, setSelectedSecret] = useState<Secret | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const scopeType = 'workspace' as const;
@@ -23,10 +39,12 @@ export function WorkspaceSecretsPage() {
 
   const handleSecretCreated = useCallback(() => {
     setShowAddForm(false);
+    setSelectedSecret(null);
     setRefreshKey((k) => k + 1);
   }, []);
 
   const handleChanged = useCallback(() => {
+    setSelectedSecret(null);
     setRefreshKey((k) => k + 1);
   }, []);
 
@@ -40,56 +58,47 @@ export function WorkspaceSecretsPage() {
 
   if (!scopeId) {
     return (
-      <div className="p-6 max-w-5xl mx-auto space-y-8">
-        <div className="flex items-center gap-2 pb-6 border-b border-border dark:border-border-dark">
-          <KeyRound className="w-6 h-6 text-primary" aria-hidden="true" />
-          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
-            Secrets
-          </h1>
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+          <KeyRound className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" aria-hidden="true" />
+          <div>
+            <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
+              Secrets
+            </h1>
+            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+              {orgSlug && workspaceSlug
+                ? `${orgSlug} / ${workspaceSlug}`
+                : 'Manage workspace secrets and user bindings'}
+            </p>
+          </div>
         </div>
-        <EmptyState
-          icon={<Layers className="w-12 h-12 text-text-muted" strokeWidth={1.5} />}
-          title="Workspace unavailable"
-          description="This workspace could not be resolved. It may not exist, or you may not have access to it."
-        />
+        <div className="flex-1 overflow-y-auto p-6">
+          <EmptyState
+            icon={<Layers className="w-12 h-12 text-text-muted" strokeWidth={1.5} />}
+            title="Workspace unavailable"
+            description="This workspace could not be resolved. It may not exist, or you may not have access to it."
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-6 border-b border-border dark:border-border-dark">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <KeyRound className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" aria-hidden="true" />
         <div>
-          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark flex items-center gap-2">
-            <KeyRound className="w-6 h-6 text-primary" aria-hidden="true" />
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
             Secrets
           </h1>
-          <p className="text-sm text-text-secondary dark:text-text-secondary-dark mt-1">
-            {orgSlug}/{workspaceSlug} — Manage scoped secrets. Values are encrypted client-side.
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            {orgSlug && workspaceSlug
+              ? `${orgSlug} / ${workspaceSlug}`
+              : 'Manage workspace secrets and user bindings'}
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowBindings(!showBindings)}
-          >
-            {showBindings ? 'Hide bindings' : 'User bindings'}
-          </Button>
-          <Button
-            variant="primary"
-            intent="success"
-            size="sm"
-            onClick={() => setShowAddForm(true)}
-          >
-            <Plus className="w-4 h-4" aria-hidden="true" />
-            Add secret
-          </Button>
         </div>
       </div>
 
-      {/* Add secret modal */}
       <Modal
         isOpen={showAddForm}
         onClose={() => setShowAddForm(false)}
@@ -105,25 +114,113 @@ export function WorkspaceSecretsPage() {
         </div>
       </Modal>
 
-      {/* User-secret bindings */}
-      {showBindings && (
-        <Card title="User-secret bindings" collapsible defaultExpanded>
-          <UserSecretBindingForm
-            targetScopeType="workspace"
-            targetScopeId={scopeId}
-          />
-        </Card>
-      )}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowBindings(!showBindings)}
+              >
+                {showBindings ? 'Hide bindings' : 'User bindings'}
+              </Button>
+              <Button
+                variant="primary"
+                intent="success"
+                size="sm"
+                icon={<Plus className="w-4 h-4" aria-hidden="true" />}
+                onClick={() => setShowAddForm(true)}
+              >
+                Add secret
+              </Button>
+            </div>
 
-      {/* Secret list */}
-      <Card title="Workspace secrets" collapsible defaultExpanded>
-        <ScopedSecretList
-          key={refreshKey}
-          scopeType={scopeType}
-          scopeId={scopeId}
-          onChanged={handleChanged}
-        />
-      </Card>
+            <Card title="Workspace secrets" collapsible defaultExpanded>
+              <ScopedSecretList
+                key={refreshKey}
+                scopeType={scopeType}
+                scopeId={scopeId}
+                onChanged={handleChanged}
+                onSelect={setSelectedSecret}
+                {...(selectedSecret ? { selectedId: selectedSecret.secretId } : {})}
+              />
+            </Card>
+
+            {showBindings && (
+              <Card title="User-secret bindings" collapsible defaultExpanded>
+                <UserSecretBindingForm
+                  targetScopeType="workspace"
+                  targetScopeId={scopeId}
+                />
+              </Card>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {selectedSecret ? (
+              <Card title={selectedSecret.name}>
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      Key name
+                    </span>
+                    <p className="text-sm font-mono text-text-primary dark:text-text-primary-dark">
+                      {selectedSecret.name}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      Scope
+                    </span>
+                    <p className="text-sm capitalize text-text-primary dark:text-text-primary-dark">
+                      {selectedSecret.scopeType}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      Status
+                    </span>
+                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                      Set · encrypted and write-only
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      Created
+                    </span>
+                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                      {formatDate(selectedSecret.createdAt)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      Updated
+                    </span>
+                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                      {formatDate(selectedSecret.updatedAt)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      Key ID
+                    </span>
+                    <p className="break-all text-sm font-mono text-text-primary dark:text-text-primary-dark">
+                      {selectedSecret.keyId}
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              <EmptyState
+                icon={<KeyRound className="w-12 h-12 text-text-muted" strokeWidth={1.5} />}
+                title="Select a secret"
+                description="Choose a secret from the list to view details."
+              />
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

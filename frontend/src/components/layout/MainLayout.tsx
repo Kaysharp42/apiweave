@@ -9,6 +9,7 @@ import { MainHeader } from './MainHeader';
 import { MainFooter } from './MainFooter';
 import useNavigationStore from '../../stores/NavigationStore';
 import useSidebarStore from '../../stores/SidebarStore';
+import useEnvironmentStore from '../../stores/EnvironmentStore';
 import { AppNavBarStyles } from '../../constants/AppNavBar';
 import { HorizontalDivider } from '../atoms/HorizontalDivider';
 import type { MainLayoutProps } from '../../types/MainLayoutProps';
@@ -20,13 +21,15 @@ export function MainLayout({ children }: MainLayoutProps) {
   const mobileSidebarOpen = useNavigationStore((state) => state.mobileSidebarOpen);
   const setMobileSidebarOpen = useNavigationStore((state) => state.setMobileSidebarOpen);
   const location = useLocation();
-  const fetchEnvironments = useSidebarStore((state) => state.fetchEnvironments);
   const refreshAll = useSidebarStore((state) => state.refreshAll);
   const resetPagination = useSidebarStore((state) => state.resetPagination);
 
   useEffect(() => {
-    void fetchEnvironments();
-  }, [fetchEnvironments]);
+    const workspaceId = useSidebarStore.getState().activeWorkspaceId;
+    if (workspaceId) {
+      void useEnvironmentStore.getState().fetchEnvironments(workspaceId);
+    }
+  }, []);
 
   useEffect(() => {
     const isSettingsRoute = location.pathname.includes('/settings/') || location.pathname === '/audit';

@@ -21,7 +21,7 @@ export default function SecretsPanel({
     Object.keys(environment?.secrets ?? {}),
   );
 
-  const environmentId = environment?.environmentId ?? environment?.id ?? '';
+  const environmentId = environment?.environmentId ?? '';
   const scopeType: SecretScopeType = 'environment';
   const scopeId = environmentId;
 

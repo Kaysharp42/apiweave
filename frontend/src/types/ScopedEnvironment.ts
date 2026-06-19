@@ -12,7 +12,8 @@ export interface ScopedEnvironment {
   name: string;
   description?: string;
   swaggerDocUrl?: string;
-  variables: Record<string, unknown>;
+  variables: Record<string, string>;
+  secrets?: Record<string, string>;
   scopeType: EnvironmentScopeType;
   scopeId: string;
   ownerType?: string;

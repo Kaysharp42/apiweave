@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { Shield } from 'lucide-react';
 import { Button } from '../components/atoms/Button';
 import { Panel } from '../components/molecules/Panel';
@@ -24,6 +25,7 @@ function buildListUrl(filters: AuditEventFilter): string {
 }
 
 export default function AuditPage() {
+  const { orgSlug, workspaceSlug } = useParams<{ orgSlug: string; workspaceSlug: string }>();
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -66,53 +68,59 @@ export default function AuditPage() {
   const hasNext = currentSkip + limit < total;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between pb-6 border-b border-border dark:border-border-dark">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <Shield className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" aria-hidden="true" />
         <div>
-          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark flex items-center gap-2">
-            <Shield className="w-6 h-6 text-primary" aria-hidden="true" />
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
             Audit Log
           </h1>
-          <p className="text-sm text-text-secondary dark:text-text-secondary-dark mt-1">
-            Read-only audit trail. No secret values are stored or displayed.
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            {orgSlug && workspaceSlug ? `${orgSlug} / ${workspaceSlug}` : 'View system audit events'}
           </p>
         </div>
-        <AuditJsonExportButton filters={filters} />
+        <div className="ml-auto">
+          <AuditJsonExportButton filters={filters} />
+        </div>
       </div>
 
-      <Panel title="Filters" icon={Shield} collapsible defaultExpanded>
-        <AuditFilters filters={filters} onChange={handleFilterChange} />
-      </Panel>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="space-y-6">
+          <Panel title="Filters" icon={Shield} collapsible defaultExpanded>
+            <AuditFilters filters={filters} onChange={handleFilterChange} />
+          </Panel>
 
-      <Panel title={`Events (${total})`} icon={Shield}>
-        <AuditEventTable events={events} loading={loading} />
+          <Panel title={`Events (${total})`} icon={Shield}>
+            <AuditEventTable events={events} loading={loading} />
 
-        {total > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border dark:border-border-dark">
-            <span className="text-xs text-text-muted dark:text-text-muted-dark">
-              Showing {currentSkip + 1}–{Math.min(currentSkip + limit, total)} of {total}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!hasPrev}
-                onClick={() => handlePageChange('prev')}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!hasNext}
-                onClick={() => handlePageChange('next')}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
-      </Panel>
+            {total > 0 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-border dark:border-border-dark">
+                <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                  Showing {currentSkip + 1}–{Math.min(currentSkip + limit, total)} of {total}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!hasPrev}
+                    onClick={() => handlePageChange('prev')}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!hasNext}
+                    onClick={() => handlePageChange('next')}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Panel>
+        </div>
+      </div>
     </div>
   );
 }

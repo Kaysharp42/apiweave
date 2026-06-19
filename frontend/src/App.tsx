@@ -13,6 +13,7 @@ import AuditPage from './pages/AuditPage';
 import { WorkspaceSecretsPage } from './pages/WorkspaceSecretsPage';
 import { WorkspaceTokensPage } from './pages/WorkspaceTokensPage';
 import WorkspaceEnvironmentsPage from './pages/WorkspaceEnvironmentsPage';
+import OrgSettingsPage from './pages/OrgSettingsPage';
 import { WorkspaceProjectPage } from './pages/WorkspaceProjectPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { PaletteProvider } from './contexts/PaletteContext';
@@ -332,6 +333,14 @@ function App() {
                 element={
                   <WorkspacePageShell>
                     <WorkspaceEnvironmentsPage />
+                  </WorkspacePageShell>
+                }
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug/settings/org"
+                element={
+                  <WorkspacePageShell>
+                    <OrgSettingsPage />
                   </WorkspacePageShell>
                 }
               />

@@ -1,4 +1,4 @@
-import { Pencil, Trash2, ChevronRight } from 'lucide-react';
+import { Pencil, Trash2, Copy, ChevronRight } from 'lucide-react';
 import { IconButton } from '../atoms/IconButton';
 import { EmptyState } from '../molecules/EmptyState';
 import { EnvironmentScopeBadge } from '../atoms/EnvironmentScopeBadge';
@@ -12,6 +12,7 @@ export function ScopedEnvironmentList({
   onCreate,
   onEdit,
   onDelete,
+  onDuplicate,
   selectedId,
   className = '',
 }: ScopedEnvironmentListProps) {
@@ -111,6 +112,19 @@ export function ScopedEnvironmentList({
                 >
                   <Pencil className="w-3.5 h-3.5" />
                 </IconButton>
+                {onDuplicate && (
+                  <IconButton
+                    tooltip="Duplicate"
+                    size="xs"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDuplicate(env.environmentId);
+                    }}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </IconButton>
+                )}
                 <IconButton
                   tooltip="Delete"
                   size="xs"

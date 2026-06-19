@@ -1,8 +1,8 @@
-import type { Environment } from './Environment';
+import type { ScopedEnvironment } from './ScopedEnvironment';
 
 export interface SecretsPanelProps {
   isOpen: boolean;
-  environment: Environment | null;
+  environment: ScopedEnvironment | null;
   onSecretsChange?: (secrets: Record<string, string>) => Promise<void>;
   onClose: () => void;
 }

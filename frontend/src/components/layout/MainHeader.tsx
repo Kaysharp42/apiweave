@@ -1,7 +1,8 @@
-import { useContext, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
+import { Popover, Transition } from '@headlessui/react';
+import { Link, useParams } from 'react-router-dom';
 import { AppContext } from '../../App';
-import EnvironmentManager from '../EnvironmentManager';
-import { Moon, Sun, Folder, Save, Menu } from 'lucide-react';
+import { Moon, Sun, Folder, Save, Menu, ChevronDown, Settings, Globe } from 'lucide-react';
 import Tippy from '@tippyjs/react';
 import { Button } from '../atoms/Button';
 import { IconButton } from '../atoms/IconButton';
@@ -9,11 +10,40 @@ import type { AppContextType } from '../../types/AppContextType';
 import { AccountMenu } from './AccountMenu';
 import { OrgWorkspaceSwitcher } from '../organisms/OrgWorkspaceSwitcher';
 import useNavigationStore from '../../stores/NavigationStore';
+import useEnvironmentStore from '../../stores/EnvironmentStore';
+import { useWorkspace } from '../../contexts/WorkspaceContext';
 
 export function MainHeader() {
   const { darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled } = useContext(AppContext) as AppContextType;
-  const [showEnvManager, setShowEnvManager] = useState(false);
+  const [defaultEnvId, setDefaultEnvId] = useState(() => localStorage.getItem('defaultEnvironment') ?? '');
   const toggleMobileSidebar = useNavigationStore((state) => state.toggleMobileSidebar);
+  const environments = useEnvironmentStore((state) => state.environments);
+  const { currentOrg, currentWorkspace } = useWorkspace();
+  const { orgSlug, workspaceSlug } = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
+
+  useEffect(() => {
+    const syncDefaultEnvironment = () => {
+      setDefaultEnvId(localStorage.getItem('defaultEnvironment') ?? '');
+    };
+
+    window.addEventListener('storage', syncDefaultEnvironment);
+    window.addEventListener('focus', syncDefaultEnvironment);
+    return () => {
+      window.removeEventListener('storage', syncDefaultEnvironment);
+      window.removeEventListener('focus', syncDefaultEnvironment);
+    };
+  }, []);
+
+  const selectedEnvironment = environments.find((env) => env.environmentId === defaultEnvId);
+  const selectedEnvironmentName = selectedEnvironment?.name ?? 'No Environment';
+  const manageOrgSlug = currentOrg?.slug ?? orgSlug ?? 'personal';
+  const manageWorkspaceSlug = currentWorkspace?.slug ?? workspaceSlug ?? 'workflows';
+  const manageEnvironmentsPath = `/${manageOrgSlug}/${manageWorkspaceSlug}/settings/environments`;
+
+  const handleEnvironmentSelect = (envId: string) => {
+    useEnvironmentStore.getState().setDefaultEnv(envId);
+    setDefaultEnvId(envId);
+  };
 
   return (
     <header className="navbar h-header min-h-0 w-full gap-3 border-b border-border bg-surface-raised px-4 text-text-primary transition-colors dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark">
@@ -45,16 +75,92 @@ export function MainHeader() {
       <div className="navbar-center min-w-0 flex-1" />
 
       <div className="navbar-end min-w-0 flex-shrink gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowEnvManager(true)}
-          title="Manage Environments"
-          className="min-w-0 max-w-[11rem] flex-shrink focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light"
-          icon={<Folder className="w-4 h-4 flex-shrink-0" />}
-        >
-          <span className="hidden truncate text-xs font-medium sm:inline">Environments</span>
-        </Button>
+        <Popover className="relative flex-shrink min-w-0">
+          {({ open, close }) => (
+            <>
+              <Popover.Button
+                as={Button}
+                variant="outline"
+                size="sm"
+                title="Select default environment"
+                className="h-9 min-w-0 max-w-[12rem] px-2.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light"
+                icon={<Folder className="w-4 h-4 flex-shrink-0" />}
+                aria-label="Select default environment"
+              >
+                <span className="hidden min-w-0 truncate sm:inline">{selectedEnvironmentName}</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
+                />
+              </Popover.Button>
+
+              <Transition
+                enter="transition duration-150 ease-out"
+                enterFrom="opacity-0 translate-y-1 scale-95"
+                enterTo="opacity-100 translate-y-0 scale-100"
+                leave="transition duration-100 ease-in"
+                leaveFrom="opacity-100 translate-y-0 scale-100"
+                leaveTo="opacity-0 translate-y-1 scale-95"
+              >
+                <Popover.Panel className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-md border border-border bg-surface-raised shadow-lg dark:border-border-dark dark:bg-surface-dark-raised">
+                  <div className="border-b border-border px-3 py-2 dark:border-border-dark">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+                      Default environment
+                    </span>
+                  </div>
+
+                  <div className="max-h-72 overflow-y-auto py-1" role="listbox" aria-label="Default environments">
+                    {environments.length === 0 ? (
+                      <div className="px-3 py-3 text-sm text-text-muted dark:text-text-muted-dark">
+                        No environments available.
+                      </div>
+                    ) : (
+                      environments.map((env) => {
+                        const isSelected = env.environmentId === defaultEnvId;
+
+                        return (
+                          <Button
+                            key={env.environmentId}
+                            variant="ghost"
+                            size="sm"
+                            role="option"
+                            aria-selected={isSelected}
+                            onClick={() => {
+                              handleEnvironmentSelect(env.environmentId);
+                              close();
+                            }}
+                            className={`w-full justify-start rounded-none px-3 py-2 text-left transition-colors duration-150 motion-reduce:transition-none ${
+                              isSelected
+                                ? 'bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light'
+                                : 'text-text-primary hover:bg-primary/10 dark:text-text-primary-dark dark:hover:bg-primary-light/10'
+                            }`}
+                            icon={<Globe className="w-4 h-4 flex-shrink-0" />}
+                          >
+                            <span className="min-w-0 flex-1 truncate">{env.name}</span>
+                            <span className="ml-auto rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-secondary dark:border-border-dark dark:text-text-secondary-dark">
+                              {env.scopeType}
+                            </span>
+                          </Button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="border-t border-border p-1 dark:border-border-dark">
+                    <Link
+                      to={manageEnvironmentsPath}
+                      onClick={() => close()}
+                      className="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium text-text-secondary transition-colors duration-150 hover:bg-surface-overlay hover:text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:bg-surface-dark-overlay dark:hover:text-primary-light dark:focus-visible:outline-primary-light"
+                    >
+                      <Settings className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                      <span>Manage Environments →</span>
+                    </Link>
+                  </div>
+                </Popover.Panel>
+              </Transition>
+            </>
+          )}
+        </Popover>
 
       <Tippy content={autoSaveEnabled ? 'Auto-save enabled' : 'Auto-save disabled'} placement="bottom">
           <button
@@ -84,10 +190,6 @@ export function MainHeader() {
 
         <AccountMenu />
       </div>
-
-      {showEnvManager && (
-        <EnvironmentManager open={true} onClose={() => setShowEnvManager(false)} />
-      )}
     </header>
   );
 }

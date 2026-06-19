@@ -2,8 +2,13 @@ import { LogOut, User as UserIcon, KeyRound, Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 import { useSignOut } from '../hooks/useSignOut';
 import { Button } from '../components/atoms/Button';
+import { Card } from '../components/molecules/Card';
 import { getProviderDisplay } from '../auth/providerConfig';
 import type { ProviderId } from '../types';
+
+function AccountCardIcon({ className }: { className?: string }) {
+  return <UserIcon className={className} />;
+}
 
 /**
  * Derive the primary sign-in provider from a user's oauth_accounts.
@@ -34,93 +39,93 @@ export default function AccountSettingsPage() {
   const ProviderIcon = providerDisplay?.IconComponent;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8 p-6">
-      <header className="pb-6 border-b border-border dark:border-border-dark">
-        <h1 className="text-3xl font-display font-bold tracking-tight text-text-primary dark:text-text-primary-dark">
-          Account Settings
-        </h1>
-        <p className="mt-1 text-sm text-text-secondary dark:text-text-secondary-dark">
-          Manage your sign-in method and account preferences.
-        </p>
-      </header>
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <UserIcon className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
+        <div>
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
+            Account
+          </h1>
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            {user.verified_email || 'Manage your account settings'}
+          </p>
+        </div>
+      </div>
 
-      {/* Sign-in method section */}
-      <section
-        aria-labelledby="signin-method-heading"
-        className="rounded border border-border bg-surface-raised p-6 dark:border-border-dark dark:bg-surface-dark-raised"
-      >
-        <h2
-          id="signin-method-heading"
-          className="text-lg font-semibold text-text-primary dark:text-text-primary-dark"
-        >
-          Sign-in method
-        </h2>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-2xl mx-auto">
+          <Card title="Sign-in method" icon={AccountCardIcon}>
+            <p className="mb-4 text-sm text-text-secondary dark:text-text-secondary-dark">
+              Manage your sign-in method and account preferences.
+            </p>
 
-        {isLocal ? (
-          <div className="mt-4 space-y-4">
-            <div className="flex items-center gap-3 rounded border border-border bg-surface p-4 dark:border-border-dark dark:bg-surface-dark">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 dark:bg-primary-light/10">
-                <UserIcon className="h-5 w-5 text-primary dark:text-primary-light" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
-                  Local account
-                </p>
-                <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                  {user.verified_email}
-                </p>
-              </div>
-            </div>
+            {isLocal ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 rounded border border-border bg-surface p-4 dark:border-border-dark dark:bg-surface-dark">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 dark:bg-primary-light/10">
+                    <UserIcon className="h-5 w-5 text-primary dark:text-primary-light" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                      Local account
+                    </p>
+                    <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                      {user.verified_email}
+                    </p>
+                  </div>
+                </div>
 
-            {/* Change password form placeholder */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
-                Change password
-              </h3>
-              <div className="flex items-center gap-2 text-sm text-text-muted dark:text-text-muted-dark">
-                <KeyRound className="h-4 w-4" />
-                <span>Password management is not yet available for local accounts.</span>
+                {/* Change password form placeholder */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                    Change password
+                  </h3>
+                  <div className="flex items-center gap-2 text-sm text-text-muted dark:text-text-muted-dark">
+                    <KeyRound className="h-4 w-4" />
+                    <span>Password management is not yet available for local accounts.</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-4 space-y-4">
-            <div className="flex items-center gap-3 rounded border border-border bg-surface p-4 dark:border-border-dark dark:bg-surface-dark">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 dark:bg-primary-light/10">
-                {ProviderIcon ? (
-                  <ProviderIcon className="h-5 w-5 text-primary dark:text-primary-light" />
-                ) : (
-                  <UserIcon className="h-5 w-5 text-primary dark:text-primary-light" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
-                  {providerDisplay?.label ?? provider}
-                </p>
-                <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                  {user.verified_email}
-                </p>
-              </div>
-            </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 rounded border border-border bg-surface p-4 dark:border-border-dark dark:bg-surface-dark">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 dark:bg-primary-light/10">
+                    {ProviderIcon ? (
+                      <ProviderIcon className="h-5 w-5 text-primary dark:text-primary-light" />
+                    ) : (
+                      <UserIcon className="h-5 w-5 text-primary dark:text-primary-light" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                      {providerDisplay?.label ?? provider}
+                    </p>
+                    <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                      {user.verified_email}
+                    </p>
+                  </div>
+                </div>
 
-            <Button
-              variant="ghost"
-              intent="error"
-              size="sm"
-              onClick={() => void signOut()}
-              disabled={isSigningOut}
-              className="w-full sm:w-auto"
-            >
-              {isSigningOut ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <LogOut className="h-4 w-4" />
-              )}
-              {isSigningOut ? 'Signing out…' : `Sign out of ${providerDisplay?.label ?? provider}`}
-            </Button>
-          </div>
-        )}
-      </section>
+                <Button
+                  variant="ghost"
+                  intent="error"
+                  size="sm"
+                  onClick={() => void signOut()}
+                  disabled={isSigningOut}
+                  className="w-full sm:w-auto"
+                >
+                  {isSigningOut ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <LogOut className="h-4 w-4" />
+                  )}
+                  {isSigningOut ? 'Signing out…' : `Sign out of ${providerDisplay?.label ?? provider}`}
+                </Button>
+              </div>
+            )}
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

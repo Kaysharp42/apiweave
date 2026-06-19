@@ -24,7 +24,7 @@ import {
 } from '../utils/scopedApi';
 import type { Workflow } from '../types/Workflow';
 import type { Collection } from '../types/Collection';
-import type { Environment } from '../types/Environment';
+import type { ScopedEnvironment } from '../types/ScopedEnvironment';
 import { authenticatedFetch } from '../utils/authenticatedApi';
 import { WebhookCiCdExamples } from './WebhookCiCdExamples';
 import type { Webhook } from '../types/Webhook';
@@ -49,7 +49,7 @@ export function WebhookManager() {
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [environments, setEnvironments] = useState<ScopedEnvironment[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -107,7 +107,7 @@ export function WebhookManager() {
     if (!scope.workspaceId) return [];
     try {
       const res = await authenticatedFetch(environmentsUrl(scope.workspaceId, 'all-accessible', scope.orgId));
-      if (res.ok) { const d = await res.json(); const list: Environment[] = Array.isArray(d) ? d : []; setEnvironments(list); return list; }
+      if (res.ok) { const d = await res.json(); const list: ScopedEnvironment[] = Array.isArray(d) ? d : []; setEnvironments(list); return list; }
     } catch (e) { console.error('Error fetching environments:', e); }
     return [];
   };
