@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import React, { type Dispatch, type SetStateAction } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -17,7 +17,7 @@ type ReactDispatcher = Record<string, unknown> & {
   useState<State>(initialState: State | (() => State)): [State, Dispatch<SetStateAction<State>>];
 };
 
-const documentStub = {
+const documentStub: Record<string, unknown> = {
   head: {
     appendChild: (): void => undefined,
     insertAdjacentElement: (): void => undefined,
@@ -31,6 +31,10 @@ const documentStub = {
     appendChild: (): void => undefined,
     insertAdjacentElement: (): void => undefined,
     setAttribute: (): void => undefined,
+    // React 18's renderToStaticMarkup calls getVendorPrefixedEventName which
+    // does 'WebkitAnimation' in <created-div>.style; the empty object lets
+    // every `in` check return false without throwing.
+    style: {},
     styleSheet: { cssText: '' },
   }),
   createTextNode: (text: string) => ({ text }),
@@ -184,7 +188,7 @@ test('ResponseInspector tree tab renders nested JSON data as a collapsible objec
   assertIncludes(markup, 'Response body tree');
   assertIncludes(markup, 'panel-tab-tree');
   assertIncludes(markup, 'role="tabpanel" class="flex flex-1 min-h-0 flex-col gap-4"');
-  assertIncludes(markup, 'rounded-lg border border-border');
+  assertIncludes(markup, 'rounded-sm border border-border');
 });
 
 test('ResponseInspector preview tab renders HTML in a sandboxed iframe', () => {

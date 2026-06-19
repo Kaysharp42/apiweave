@@ -56,7 +56,12 @@ export default function WorkspaceEnvironmentsPage() {
 
   // Fetch all environments
   const fetchEnvironments = useCallback(async () => {
-    if (!userId || !workspaceId) return;
+    if (!userId || !workspaceId) {
+      // Stop the spinner if workspace context has finished resolving and we still
+      // have no ID — otherwise the page hangs indefinitely.
+      if (!isWorkspaceLoading) setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -91,7 +96,7 @@ export default function WorkspaceEnvironmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [userId, orgId, workspaceId]);
+  }, [userId, orgId, workspaceId, isWorkspaceLoading]);
 
   useEffect(() => {
     void fetchEnvironments();
@@ -298,6 +303,33 @@ export default function WorkspaceEnvironmentsPage() {
     return (
       <div className="flex items-center justify-center h-full">
         <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (!workspaceId) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+          <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
+          <div>
+            <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
+              Environments
+            </h1>
+            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+              {orgSlug && workspaceSlug
+                ? `${orgSlug} / ${workspaceSlug}`
+                : 'Manage scoped environments and protection policies'}
+            </p>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          <EmptyState
+            icon={<Layers className="w-12 h-12 text-text-muted" strokeWidth={1.5} />}
+            title="Workspace unavailable"
+            description="This workspace could not be resolved. It may not exist, or you may not have access to it."
+          />
+        </div>
       </div>
     );
   }

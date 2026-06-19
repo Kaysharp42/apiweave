@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { OrgInvitesSection } from '../OrgInvitesSection';
 import type { OrgInvite } from '../../../types';
@@ -51,7 +51,7 @@ function makeInvite(overrides: Partial<OrgInvite> = {}): OrgInvite {
 
 describe('OrgInvitesSection', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockAuthenticatedJson.mockResolvedValue([]);
     mockAuthenticatedFetch.mockResolvedValue(new Response());
   });
@@ -59,7 +59,7 @@ describe('OrgInvitesSection', () => {
   it('shows loading spinner initially', () => {
     mockAuthenticatedJson.mockReturnValue(new Promise(() => {}));
     render(<OrgInvitesSection orgSlug="acme" orgId="org-1" />);
-    expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(document.querySelector('.loading-spinner')).toBeInTheDocument();
   });
 
   it('shows empty state when no pending invites', async () => {
@@ -120,17 +120,28 @@ describe('OrgInvitesSection', () => {
 
   it('calls API to create invite when form is submitted', async () => {
     const user = userEvent.setup();
-    mockAuthenticatedJson
-      .mockResolvedValueOnce([]) // initial fetch
-      .mockResolvedValueOnce({
-        inviteId: 'inv-new',
-        orgId: 'org-1',
-        email: 'new@example.com',
-        role: 'member',
-        token: 'one-time-token',
-        expires_at: '2026-02-01T00:00:00Z',
-      }) // create
-      .mockResolvedValueOnce([]); // refresh after create
+    // Use a single mockImplementation that dispatches based on the request
+    // method: POST = create response, GET = empty array. The component hits
+    // the same URL for both, so the only way to distinguish them is by method.
+    const created = {
+      inviteId: 'inv-new',
+      orgId: 'org-1',
+      email: 'new@example.com',
+      role: 'member',
+      token: 'one-time-token',
+      expires_at: '2026-02-01T00:00:00Z',
+    };
+    let createCalled = false;
+    mockAuthenticatedJson.mockImplementation(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (method === 'POST' && !createCalled) {
+          createCalled = true;
+          return created;
+        }
+        return [];
+      },
+    );
 
     render(<OrgInvitesSection orgSlug="acme" orgId="org-1" />);
 
@@ -147,7 +158,11 @@ describe('OrgInvitesSection', () => {
     const emailInput = screen.getByPlaceholderText('member@example.com');
     await user.type(emailInput, 'new@example.com');
 
-    await user.click(screen.getByText('Send Invite'));
+    // The empty-state CTA and the modal's submit button both say "Send Invite";
+    // target the one inside the dialog by its position after the email input.
+    const dialog = screen.getByRole('dialog');
+    const submitButton = within(dialog).getByRole('button', { name: 'Send Invite' });
+    await user.click(submitButton);
 
     await waitFor(() => {
       // After creation, the success state should show
@@ -157,17 +172,25 @@ describe('OrgInvitesSection', () => {
 
   it('shows success confirmation with email after invite creation', async () => {
     const user = userEvent.setup();
-    mockAuthenticatedJson
-      .mockResolvedValueOnce([]) // initial fetch
-      .mockResolvedValueOnce({
-        inviteId: 'inv-new',
-        orgId: 'org-1',
-        email: 'test@example.com',
-        role: 'member',
-        token: 'one-time-token',
-        expires_at: '2026-02-01T00:00:00Z',
-      })
-      .mockResolvedValueOnce([]); // refresh
+    const created = {
+      inviteId: 'inv-new',
+      orgId: 'org-1',
+      email: 'test@example.com',
+      role: 'member',
+      token: 'one-time-token',
+      expires_at: '2026-02-01T00:00:00Z',
+    };
+    let createCalled = false;
+    mockAuthenticatedJson.mockImplementation(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (method === 'POST' && !createCalled) {
+          createCalled = true;
+          return created;
+        }
+        return [];
+      },
+    );
 
     render(<OrgInvitesSection orgSlug="acme" orgId="org-1" />);
 
@@ -177,7 +200,10 @@ describe('OrgInvitesSection', () => {
 
     await user.click(screen.getByText('Invite'));
     await user.type(screen.getByPlaceholderText('member@example.com'), 'test@example.com');
-    await user.click(screen.getByText('Send Invite'));
+    // Two "Send Invite" buttons exist (empty-state CTA + modal submit); click the modal one
+    const dialog = screen.getByRole('dialog');
+    const submitButton = within(dialog).getByRole('button', { name: 'Send Invite' });
+    await user.click(submitButton);
 
     await waitFor(() => {
       expect(screen.getByText('test@example.com')).toBeInTheDocument();

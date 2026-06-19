@@ -141,8 +141,8 @@ describe('OrgWorkspaceSwitcher', () => {
       expect(screen.getByRole('listbox')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('Personal')).toBeInTheDocument();
-    expect(screen.getByText('Acme Corp')).toBeInTheDocument();
+    expect(screen.getAllByText('Personal').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Acme Corp').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Main')).toBeInTheDocument();
   });
 

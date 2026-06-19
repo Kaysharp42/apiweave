@@ -7,7 +7,7 @@
  * No OAuth provider secrets required — all responses are synthetic.
  */
 
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
 import {

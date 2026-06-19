@@ -88,7 +88,7 @@ export async function authenticatedJson<T = unknown>(
       }
     } catch {
     }
-    throw new Error(message);
+    throw new Error(`${response.status}: ${message}`);
   }
   return response.json() as Promise<T>;
 }

@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
-import { Shield, Plus } from 'lucide-react';
+import { Shield, Layers, Plus } from 'lucide-react';
 import { Button } from '../components/atoms/Button';
 import { Card } from '../components/molecules/Card';
+import { EmptyState } from '../components/molecules/EmptyState';
 import { Modal } from '../components/molecules/Modal';
 import { ServiceTokenCreateForm } from '../components/ServiceTokenCreateForm';
 import { ServiceTokenList } from '../components/ServiceTokenList';
@@ -39,6 +40,24 @@ export function WorkspaceTokensPage() {
     return (
       <div className="flex items-center justify-center h-full">
         <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (!scopeId) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto space-y-8">
+        <div className="flex items-center gap-2 pb-6 border-b border-border dark:border-border-dark">
+          <Shield className="w-6 h-6 text-primary" aria-hidden="true" />
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
+            Service Tokens
+          </h1>
+        </div>
+        <EmptyState
+          icon={<Layers className="w-12 h-12 text-text-muted" strokeWidth={1.5} />}
+          title="Workspace unavailable"
+          description="This workspace could not be resolved. It may not exist, or you may not have access to it."
+        />
       </div>
     );
   }

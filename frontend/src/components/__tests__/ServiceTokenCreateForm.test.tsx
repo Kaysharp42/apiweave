@@ -10,11 +10,11 @@ import type { ServiceTokenCreateResponse } from '../../types';
 
 const mockAuthenticatedJson = vi.fn();
 
-vi.mock('../utils/authenticatedApi', () => ({
+vi.mock('../../utils/authenticatedApi', () => ({
   authenticatedJson: (...args: unknown[]) => mockAuthenticatedJson(...args),
 }));
 
-vi.mock('../utils/api', () => ({ default: 'http://localhost:8000' }));
+vi.mock('../../utils/api', () => ({ default: 'http://localhost:8000' }));
 
 // ---------------------------------------------------------------------------
 // Helpers

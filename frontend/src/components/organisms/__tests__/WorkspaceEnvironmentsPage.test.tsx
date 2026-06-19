@@ -8,11 +8,11 @@ import WorkspaceEnvironmentsPage from '../../../pages/WorkspaceEnvironmentsPage'
 
 const mockAuthenticatedJson = vi.fn();
 
-vi.mock('../utils/authenticatedApi', () => ({
+vi.mock('../../../utils/authenticatedApi', () => ({
   authenticatedJson: (...args: unknown[]) => mockAuthenticatedJson(...args),
 }));
 
-vi.mock('../utils/api', () => ({ default: 'http://localhost:8000' }));
+vi.mock('../../../utils/api', () => ({ default: 'http://localhost:8000' }));
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('react-router-dom');
@@ -22,7 +22,7 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-vi.mock('../auth/useAuth', () => ({
+vi.mock('../../../auth/useAuth', () => ({
   useAuth: () => ({
     user: {
       userId: 'user-1',
@@ -42,8 +42,16 @@ vi.mock('../auth/useAuth', () => ({
   }),
 }));
 
-vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+vi.mock('../../../contexts/WorkspaceContext', () => ({
+  useWorkspace: () => ({
+    orgs: [],
+    availableWorkspaces: [],
+    currentOrg: { orgId: 'org-1', slug: 'acme', name: 'Acme', description: null, avatarUrl: null, ownerUserId: 'user-1', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+    currentWorkspace: { workspaceId: 'ws-1', slug: 'main', name: 'Main', description: null, ownerType: 'user', ownerUserId: 'user-1', orgId: 'org-1', isPersonal: false, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+    currentRole: 'owner',
+    switchTo: vi.fn(),
+    isLoading: false,
+  }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -67,7 +75,7 @@ describe('WorkspaceEnvironmentsPage', () => {
   it('shows loading spinner initially', () => {
     mockAuthenticatedJson.mockReturnValue(new Promise(() => {}));
     render(<WorkspaceEnvironmentsPage />);
-    expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(document.querySelector('.loading-spinner')).toBeInTheDocument();
   });
 
   it('renders page header with title', async () => {

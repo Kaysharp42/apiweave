@@ -56,7 +56,7 @@ describe('OrgMembersSection', () => {
   it('shows loading spinner initially', () => {
     mockAuthenticatedJson.mockReturnValue(new Promise(() => {})); // never resolves
     render(<OrgMembersSection orgSlug="acme" orgId="org-1" currentUserId="user-1" />);
-    expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(document.querySelector('.loading-spinner')).toBeInTheDocument();
   });
 
   it('renders member list after loading', async () => {

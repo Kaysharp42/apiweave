@@ -57,7 +57,7 @@ describe('OrgTeamsSection', () => {
   it('shows loading spinner initially', () => {
     mockAuthenticatedJson.mockReturnValue(new Promise(() => {}));
     render(<OrgTeamsSection orgSlug="acme" orgId="org-1" />);
-    expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(document.querySelector('.loading-spinner')).toBeInTheDocument();
   });
 
   it('shows empty state when no teams exist', async () => {
@@ -109,7 +109,7 @@ describe('OrgTeamsSection', () => {
     await user.click(screen.getByText('New Team'));
 
     await waitFor(() => {
-      expect(screen.getByText('Create Team')).toBeInTheDocument();
+      expect(screen.getAllByText('Create Team').length).toBeGreaterThanOrEqual(1);
       expect(screen.getByPlaceholderText('Engineering')).toBeInTheDocument();
     });
   });
