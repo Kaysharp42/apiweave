@@ -271,9 +271,7 @@ export function useSwaggerRefresh({
       toast.error(errorMessage);
       return { error: errorMessage };
     } finally {
-      if (requestId === swaggerRefreshRequestIdRef.current) {
-        setIsSwaggerRefreshing(false);
-      }
+      setIsSwaggerRefreshing(false);
     }
   }, [
     workflowId,
