@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import ssl
 from typing import Any
 from urllib.parse import urlparse
 
@@ -164,15 +165,26 @@ async def safe_request(
     *,
     max_hops: int = MAX_REDIRECT_HOPS,
     timeout: float = 30.0,
+    follow_redirects: bool = True,
+    ssl_verify: bool = True,
     **kwargs: Any,
 ) -> tuple[aiohttp.ClientResponse, aiohttp.ClientSession]:
     """Execute an HTTP request with SSRF protection and safe redirect following.
 
     * Validates the initial URL.
     * Sets ``allow_redirects=False`` on the underlying client.
-    * On 3xx responses, validates the ``Location`` header before following.
+    * On 3xx responses, validates the ``Location`` header before following
+      (unless *follow_redirects* is False — then the first response is
+      returned as-is).
     * Stops after *max_hops* redirects (default 5).
     * Returns a ``(response, session)`` tuple.
+
+    *follow_redirects*: when False, the redirect loop is skipped and the
+    first response (including 3xx) is returned to the caller.
+
+    *ssl_verify*: when False, TLS certificate verification is disabled for
+    this request. Defaults to True (verified). Do not disable in production
+    unless you have a specific, documented reason.
 
     **Caller responsibilities.** The caller must close *both* the response
     (``response.close()``) and the session (``await session.close()``) — the
@@ -191,11 +203,14 @@ async def safe_request(
     current_url = url
     client_timeout = aiohttp.ClientTimeout(total=timeout)
 
+    # SSL context: default (verified) or explicit unverified context.
+    ssl_context: ssl.SSLContext | bool = ssl.create_default_context() if ssl_verify else False
+
     # Single session + connector for the whole redirect chain — enables
     # connection reuse across hops and lets the caller read the body of
     # the final response.
     session_cookie_jar = aiohttp.CookieJar(unsafe=False)
-    connector = aiohttp.TCPConnector()
+    connector = aiohttp.TCPConnector(ssl=ssl_context)
     session = aiohttp.ClientSession(
         connector=connector,
         cookie_jar=session_cookie_jar,
@@ -214,6 +229,10 @@ async def safe_request(
             # Not a redirect — return the live response and session so the
             # caller can read the body.
             if response.status < 300 or response.status >= 400:
+                return response, session
+
+            # Caller opted out of redirect following — return the 3xx as-is.
+            if not follow_redirects:
                 return response, session
 
             # --- Redirect handling ---

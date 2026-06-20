@@ -1,3 +1,4 @@
 export interface NodeOutputPanelProps {
-  output: Record<string, unknown> | null;
+  output: unknown | null;
+  executionStatus?: string | undefined;
 }

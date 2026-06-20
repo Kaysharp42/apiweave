@@ -1,350 +1,266 @@
-import { useState, type ChangeEvent } from 'react';
-import { Info, Pencil, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle2, Info, Plus, Trash2, type LucideIcon } from 'lucide-react';
+import ButtonSelect from '../ButtonSelect';
 import { Button } from '../atoms/Button';
 import { Input } from '../atoms/Input';
-import { PanelTabs } from '../molecules/PanelTabs';
-import AssertionEditor from '../AssertionEditor';
-import type { AssertionConfigPanelProps } from '../../types/AssertionConfigPanelProps';
+import { Toggle } from '../atoms/Toggle';
+import { Card } from '../molecules/Card';
+import { FormField } from '../molecules/FormField';
+import type {
+  AssertionConfigPanelProps,
+  AssertionItem,
+  NodeModalAssertionFailureMode,
+  NodeModalAssertionTabKey,
+  SelectOption,
+} from '../../types';
 
-interface AssertionItem {
-  source: string;
-  path: string;
-  operator: string;
-  expectedValue: string;
+const SOURCE_OPTIONS: SelectOption[] = [
+  { label: 'Previous result', value: 'prev' },
+  { label: 'Workflow variables', value: 'variables' },
+  { label: 'Status code', value: 'status' },
+  { label: 'Cookies', value: 'cookies' },
+  { label: 'Headers', value: 'headers' },
+];
+
+const QUICK_ADD_OPTIONS: SelectOption[] = [
+  { label: 'Status is 200', value: 'status-200' },
+  { label: 'Status is 2xx', value: 'status-2xx' },
+  { label: 'Response time < 1000ms', value: 'response-time-1000' },
+  { label: 'Body contains field', value: 'body-contains-field' },
+  { label: 'Body field equals', value: 'body-field-equals' },
+];
+
+const OPERATORS = ['equals', 'notEquals', 'contains', 'notContains', 'gt', 'gte', 'lt', 'lte', 'count', 'exists', 'notExists'];
+const VALUELESS_OPERATORS = ['exists', 'notExists'];
+
+function createCardIcon(Icon: LucideIcon) {
+  return function CardIcon({ className }: { className?: string }) {
+    return <Icon className={className} />;
+  };
 }
 
-interface AssertionFormModalInternalProps {
-  onAdd: (assertion: AssertionItem) => void;
+const CheckCircleCardIcon = createCardIcon(CheckCircle2);
+
+function createEmptyAssertion(): AssertionItem {
+  return { source: 'prev', path: 'response.body.', operator: 'equals', expectedValue: '' };
 }
 
-function AssertionFormModal({ onAdd }: AssertionFormModalInternalProps) {
-  const [source, setSource] = useState('prev');
-  const [path, setPath] = useState('');
-  const [operator, setOperator] = useState('equals');
-  const [expectedValue, setExpectedValue] = useState('');
-  const [errors, setErrors] = useState({ path: '', expectedValue: '' });
+function getAssertionSummary(assertion: AssertionItem): string {
+  const target = assertion.source === 'status'
+    ? 'status'
+    : `${assertion.source}${assertion.path ? `.${assertion.path}` : ''}`;
+  const expected = assertion.expectedValue ? ` ${assertion.expectedValue}` : '';
+  return `${target} ${assertion.operator}${expected}`;
+}
 
-  const handleAdd = () => {
-    if (source === 'status') {
-      onAdd({
-        source: source.trim(),
-        path: '',
-        operator,
-        expectedValue: expectedValue.trim(),
-      });
-    } else if (['exists', 'notExists'].includes(operator)) {
-      if (path.trim()) {
-        onAdd({
-          source: source.trim(),
-          path: path.trim(),
-          operator,
-          expectedValue: '',
-        });
-        setErrors({ path: '', expectedValue: '' });
-      } else {
-        setErrors({ path: 'Path is required', expectedValue: '' });
-        return;
-      }
-    } else if (operator === 'count') {
-      if (path.trim() && expectedValue.trim()) {
-        onAdd({
-          source: source.trim(),
-          path: path.trim(),
-          operator: 'count',
-          expectedValue: expectedValue.trim(),
-        });
-        setErrors({ path: '', expectedValue: '' });
-      } else {
-        setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Expected count is required' });
-        return;
-      }
-    } else {
-      if (path.trim() && expectedValue.trim()) {
-        onAdd({
-          source: source.trim(),
-          path: path.trim(),
-          operator,
-          expectedValue: expectedValue.trim(),
-        });
-        setErrors({ path: '', expectedValue: '' });
-      } else {
-        setErrors({ path: path.trim() ? '' : 'Path is required', expectedValue: expectedValue.trim() ? '' : 'Expected value is required' });
-        return;
-      }
-    }
+function getPathHint(source: string): string {
+  if (source === 'prev') return 'Use response.body.id, response.headers.content-type, or response.statusCode.';
+  if (source === 'variables') return 'Use a variable name without {{variables. }} wrappers.';
+  if (source === 'cookies') return 'Use the cookie name to assert.';
+  if (source === 'headers') return 'Use the response header name to assert.';
+  return 'Status code assertions do not need a path.';
+}
 
-    setPath('');
-    setExpectedValue('');
-    setSource('prev');
-    setOperator('equals');
+export function AssertionConfigPanel({ initialConfig, workingDataRef, activeTab = 'rules' }: AssertionConfigPanelProps) {
+  const [assertions, setAssertions] = useState<AssertionItem[]>(initialConfig.assertions ?? []);
+  const [continueOnFail, setContinueOnFail] = useState(initialConfig.continueOnFail ?? false);
+  const [failureMode, setFailureMode] = useState<NodeModalAssertionFailureMode>(initialConfig.failureMode ?? 'first');
+
+  const writeConfig = (nextAssertions: AssertionItem[], nextContinueOnFail = continueOnFail, nextFailureMode = failureMode) => {
+    workingDataRef.current = {
+      ...workingDataRef.current,
+      config: {
+        assertions: nextAssertions,
+        continueOnFail: nextContinueOnFail,
+        failureMode: nextFailureMode,
+      },
+    };
   };
 
-  return (
-    <div className="space-y-3 rounded-sm border border-border bg-surface-raised p-4 dark:border-border-dark dark:bg-surface-dark-raised">
-      <div>
-        <label htmlFor="assertion-source" className="mb-1.5 block text-sm font-medium text-text-primary dark:text-text-primary-dark">
-          Assert On
-        </label>
-        <select
-          id="assertion-source"
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-          className="w-full cursor-pointer rounded-sm border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
-        >
-          <option value="prev">Previous Node Result (prev.*)</option>
-          <option value="variables">Workflow Variables (variables.*)</option>
-          <option value="status">HTTP Status Code</option>
-          <option value="cookies">Cookies</option>
-          <option value="headers">Response Headers</option>
-        </select>
+  const updateAssertion = (index: number, patch: Partial<AssertionItem>) => {
+    const updated = assertions.map((assertion, currentIndex) => (currentIndex === index ? { ...assertion, ...patch } : assertion));
+    setAssertions(updated);
+    writeConfig(updated);
+  };
+
+  const appendAssertions = (newAssertions: AssertionItem[]) => {
+    const updated = [...assertions, ...newAssertions];
+    setAssertions(updated);
+    writeConfig(updated);
+  };
+
+  const removeAssertion = (index: number) => {
+    const updated = assertions.filter((_, currentIndex) => currentIndex !== index);
+    setAssertions(updated);
+    writeConfig(updated);
+  };
+
+  const handleQuickAdd = (template: string) => {
+    if (template === 'status-200') {
+      appendAssertions([{ source: 'status', path: '', operator: 'equals', expectedValue: '200' }]);
+      return;
+    }
+    if (template === 'status-2xx') {
+      appendAssertions([
+        { source: 'status', path: '', operator: 'gte', expectedValue: '200' },
+        { source: 'status', path: '', operator: 'lt', expectedValue: '300' },
+      ]);
+      return;
+    }
+    if (template === 'response-time-1000') {
+      appendAssertions([{ source: 'prev', path: 'response.responseTimeMs', operator: 'lt', expectedValue: '1000' }]);
+      return;
+    }
+    if (template === 'body-contains-field') {
+      appendAssertions([{ source: 'prev', path: 'response.body.<fieldName>', operator: 'exists', expectedValue: '' }]);
+      return;
+    }
+    appendAssertions([{ source: 'prev', path: 'response.body.<fieldName>', operator: 'equals', expectedValue: '' }]);
+  };
+
+  const renderRules = () => (
+    <div className="space-y-4">
+      <div className="rounded-sm border border-status-info/30 bg-status-info/10 p-3 text-sm text-status-info dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10 dark:text-[var(--aw-status-info)]">
+        <p className="mb-1 flex items-center gap-2 font-medium">
+          <Info className="h-4 w-4" aria-hidden="true" />
+          Assertion rules
+        </p>
+        <p className="text-xs">Configured rules: <span className="font-bold">{assertions.length}</span></p>
       </div>
 
-      {source !== 'status' && (
-        <div>
-          <label htmlFor="assertion-path" className="mb-1.5 block text-sm font-medium text-text-primary dark:text-text-primary-dark">
-            {source === 'prev' ? 'JSONPath (e.g., body.status)' :
-             source === 'variables' ? 'Variable name' :
-             source === 'cookies' ? 'Cookie name' : 'Header name'}
-          </label>
-          <div>
-            <Input
-              id="assertion-path"
-              type="text"
-              placeholder={source === 'prev' ? 'body.status' : source === 'variables' ? 'tokenId' : 'Set-Cookie'}
-              value={path}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => { setPath(e.target.value); setErrors({ ...errors, path: '' }); }}
-              {...(errors.path ? { error: errors.path } : {})}
-            />
-          </div>
-        </div>
-      )}
+      <div className="space-y-3">
+        {assertions.map((assertion, index) => (
+          <Card
+            key={`${assertion.source}-${assertion.path}-${assertion.operator}-${assertion.expectedValue}-${index}`}
+            title={getAssertionSummary(assertion)}
+            icon={CheckCircleCardIcon}
+            collapsible
+            defaultExpanded={index === assertions.length - 1}
+            headerActions={(
+              <Button variant="ghost" intent="error" size="xs" onClick={() => removeAssertion(index)}>
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Remove
+              </Button>
+            )}
+          >
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+              <FormField label="Source" hint="Choose the part of the previous execution context to inspect.">
+                <ButtonSelect
+                  options={SOURCE_OPTIONS}
+                  value={assertion.source}
+                  onChange={(value) => updateAssertion(index, { source: value, path: value === 'status' ? '' : assertion.path })}
+                  buttonClass="flex h-10 w-full items-center justify-between rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+                />
+              </FormField>
 
-      <div>
-        <label htmlFor="assertion-operator" className="mb-1.5 block text-sm font-medium text-text-primary dark:text-text-primary-dark">
-          Operator
-        </label>
-        <select
-          id="assertion-operator"
-          value={operator}
-          onChange={(e) => setOperator(e.target.value)}
-          className="w-full cursor-pointer rounded-sm border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
-        >
-          <option value="equals">Equals (==)</option>
-          <option value="notEquals">Not Equals (!=)</option>
-          <option value="contains">Contains</option>
-          <option value="notContains">Does Not Contain</option>
-          <option value="gt">Greater Than (&gt;)</option>
-          <option value="gte">Greater Than or Equal (&gt;=)</option>
-          <option value="lt">Less Than (&lt;)</option>
-          <option value="lte">Less Than or Equal (&lt;=)</option>
-          <option value="count">Count (array length)</option>
-          <option value="exists">Exists</option>
-          <option value="notExists">Does Not Exist</option>
-        </select>
-      </div>
-
-      {!['exists', 'notExists'].includes(operator) && (
-        <div>
-          <label htmlFor="assertion-expected-value" className="mb-1.5 block text-sm font-medium text-text-primary dark:text-text-primary-dark">
-            {operator === 'count' ? 'Expected Count' : 'Expected Value'}
-          </label>
-          <div>
-            <Input
-              id="assertion-expected-value"
-              type="text"
-              placeholder={operator === 'count' ? '5' : '200'}
-              value={expectedValue}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => { setExpectedValue(e.target.value); setErrors({ ...errors, expectedValue: '' }); }}
-              {...(errors.expectedValue ? { error: errors.expectedValue } : {})}
-              className="font-mono"
-            />
-          </div>
-        </div>
-      )}
-
-      <Button onClick={handleAdd} variant="primary" intent="success" size="sm" fullWidth className="cursor-pointer">
-        Add Assertion
-      </Button>
-    </div>
-  );
-}
-
-export function AssertionConfigPanel({ initialConfig, workingDataRef }: AssertionConfigPanelProps) {
-  const [activeTab, setActiveTab] = useState('parameters');
-  const [assertions, setAssertions] = useState<AssertionItem[]>(initialConfig.assertions || []);
-  const [editingIndex, setEditingIndex] = useState(-1);
-  const [editDraft, setEditDraft] = useState<AssertionItem | null>(null);
-
-  const handleAddAssertion = (assertion: AssertionItem) => {
-    const updated = [...assertions, assertion];
-    setAssertions(updated);
-
-    if (workingDataRef) {
-      workingDataRef.current = {
-        ...workingDataRef.current,
-        config: {
-          ...(workingDataRef.current.config as Record<string, unknown>),
-          assertions: updated,
-        },
-      };
-    }
-  };
-
-  const handleDeleteAssertion = (index: number) => {
-    const updated = assertions.filter((_, i) => i !== index);
-    setAssertions(updated);
-
-    if (workingDataRef) {
-      workingDataRef.current = {
-        ...workingDataRef.current,
-        config: {
-          ...(workingDataRef.current.config as Record<string, unknown>),
-          assertions: updated,
-        },
-      };
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-full">
-      <PanelTabs
-        tabs={[
-          { key: 'parameters', label: 'Assertions' },
-          { key: 'settings', label: 'Settings' },
-        ]}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-      />
-
-      <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === 'parameters' && (
-          <div className="space-y-4">
-            <div className="rounded-sm border border-status-info/30 bg-status-info/10 p-3 text-sm text-status-info dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10 dark:text-[var(--aw-status-info)]">
-              <p className="font-medium mb-1 flex items-center gap-2">
-                <Info className="w-4 h-4" />
-                <span>Assertion Configuration</span>
-              </p>
-              <p className="text-xs">
-                Assertions configured: <span className="font-bold">{assertions.length}</span>
-              </p>
-              <p className="text-xs mt-2">
-                If ANY assertion fails, the workflow will fail at this node.
-              </p>
+              <FormField label="Path" hint={getPathHint(assertion.source)}>
+                <Input
+                  value={assertion.path}
+                  onChange={(event) => updateAssertion(index, { path: event.target.value })}
+                  placeholder={assertion.source === 'status' ? 'Not required' : 'response.body.id'}
+                  disabled={assertion.source === 'status'}
+                  className="font-mono"
+                />
+              </FormField>
             </div>
 
-            <AssertionFormModal onAdd={handleAddAssertion} />
-
-            {assertions.length > 0 ? (
-              <div className="space-y-3">
-                <h4 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark">
-                  Current Assertions ({assertions.length})
-                </h4>
-                {assertions.map((assertion, index) => (
-                  <div
-                    key={`${assertion.source}-${assertion.path}-${assertion.operator}-${assertion.expectedValue}`}
-                    className="space-y-2 rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay"
+            <FormField label="Operator" hint="Use numeric operators for status codes and timings; exists/notExists ignore expected value.">
+              <div className="flex flex-wrap gap-2">
+                {OPERATORS.map((operator) => (
+                  <Button
+                    key={operator}
+                    variant={assertion.operator === operator ? 'primary' : 'secondary'}
+                    size="xs"
+                    onClick={() => updateAssertion(index, { operator, expectedValue: VALUELESS_OPERATORS.includes(operator) ? '' : assertion.expectedValue })}
+                    className="font-mono"
                   >
-                    {editingIndex === index ? (
-                      <AssertionEditor
-                        value={editDraft as AssertionItem}
-                        onChange={(next) => setEditDraft(next as AssertionItem)}
-                        onCancel={() => {
-                          setEditingIndex(-1);
-                          setEditDraft(null);
-                        }}
-                        onSave={() => {
-                          const updatedAssertion = { ...editDraft } as AssertionItem;
-                          const updated = assertions.map((a, i) => (i === index ? updatedAssertion : a));
-                          setAssertions(updated);
-                          if (workingDataRef) {
-                            workingDataRef.current = {
-                              ...workingDataRef.current,
-                              config: {
-                                ...(workingDataRef.current.config as Record<string, unknown>),
-                                assertions: updated,
-                              },
-                            };
-                          }
-                          setEditingIndex(-1);
-                          setEditDraft(null);
-                        }}
-                      />
-                    ) : (
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 text-sm min-w-0">
-                          <div className="text-[var(--aw-status-success)] font-semibold font-mono">
-                            {assertion.source === 'prev' ? '{{prev.' :
-                             assertion.source === 'variables' ? '{{variables.' :
-                             assertion.source === 'status' ? 'status' :
-                             assertion.source === 'cookies' ? 'Cookie: ' :
-                             'Header: '}
-                            {assertion.source !== 'status' && assertion.path}
-                            {(assertion.source === 'prev' || assertion.source === 'variables') && '}}'}
-                          </div>
-                          <div className="text-text-secondary dark:text-text-secondary-dark mt-1 text-xs">
-                            <span className="font-medium">{assertion.operator}</span>
-                            {assertion.expectedValue && (
-                              <>
-                                {' '}<code className="rounded-sm bg-surface px-1.5 py-0.5 font-mono dark:bg-surface-dark-raised">{assertion.expectedValue}</code>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-2 min-w-[92px]">
-                          <Button
-                            onClick={() => {
-                              setEditingIndex(index);
-                              setEditDraft({ ...assertion });
-                            }}
-                            variant="primary"
-                            intent="warning"
-                            size="xs"
-                            className="!justify-start cursor-pointer"
-                            title="Edit assertion"
-                          >
-                            <Pencil className="w-3.5 h-3.5" /> Edit
-                          </Button>
-                          <Button
-                            onClick={() => handleDeleteAssertion(index)}
-                            variant="primary"
-                            intent="error"
-                            size="xs"
-                            className="!justify-start cursor-pointer"
-                            title="Delete assertion"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" /> Delete
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                    {operator}
+                  </Button>
                 ))}
               </div>
-            ) : (
-              <div className="rounded-sm border border-dashed border-border py-6 text-center text-sm italic text-text-muted dark:border-border-dark dark:text-text-muted-dark">
-                No assertions yet. Add one above to get started.
-              </div>
+            </FormField>
+
+            {!VALUELESS_OPERATORS.includes(assertion.operator) && (
+              <FormField label="Expected value" hint="Strings, numbers, booleans, and template variables are accepted.">
+                <Input
+                  value={assertion.expectedValue}
+                  onChange={(event) => updateAssertion(index, { expectedValue: event.target.value })}
+                  placeholder="200"
+                  className="font-mono"
+                />
+              </FormField>
             )}
+          </Card>
+        ))}
+      </div>
 
-            <div className="space-y-1 rounded-sm border border-border bg-surface-overlay p-3 text-xs text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
-              <p><strong>Tips:</strong></p>
-              <ul className="list-disc list-inside space-y-0.5 ml-2">
-                <li>Use <code className="rounded-sm bg-surface px-1 font-mono dark:bg-surface-dark-raised">prev.*</code> to reference the previous node&apos;s response</li>
-                <li>Use <code className="rounded-sm bg-surface px-1 font-mono dark:bg-surface-dark-raised">variables.*</code> to reference workflow variables</li>
-                <li>JSONPath example: <code className="rounded-sm bg-surface px-1 font-mono dark:bg-surface-dark-raised">body.data[0].id</code></li>
-              </ul>
-            </div>
-          </div>
-        )}
+      {assertions.length === 0 && (
+        <div className="rounded-sm border border-dashed border-border bg-surface-overlay py-8 text-center text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
+          No assertion rules yet. Add one or pick a quick template.
+        </div>
+      )}
 
-        {activeTab === 'settings' && (
-          <div className="space-y-3">
-            <p className="text-sm text-text-muted dark:text-text-muted-dark">
-              No additional settings for assertion nodes.
-            </p>
-          </div>
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
+        <Button variant="primary" intent="success" size="sm" onClick={() => appendAssertions([createEmptyAssertion()])}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Add Assertion
+        </Button>
+        <ButtonSelect
+          options={QUICK_ADD_OPTIONS}
+          value=""
+          placeholder="Quick Add"
+          onChange={handleQuickAdd}
+          buttonClass="flex h-9 min-w-48 items-center justify-between rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+        />
       </div>
     </div>
   );
+
+  const renderSettings = () => (
+    <div className="space-y-4">
+      <Card title="Failure behavior" icon={CheckCircleCardIcon}>
+        <div className="space-y-4">
+          <FormField label="Continue on failure" hint="When enabled, failed assertions are recorded but the workflow can proceed to downstream nodes.">
+            <Toggle
+              label={continueOnFail ? 'Continue after failed assertions' : 'Stop workflow on assertion failure'}
+              checked={continueOnFail}
+              onChange={(event) => {
+                const nextValue = event.target.checked;
+                setContinueOnFail(nextValue);
+                writeConfig(assertions, nextValue, failureMode);
+              }}
+            />
+          </FormField>
+
+          <FormField label="Failure mode" hint="Stop on first failure is faster; run all gives a fuller report for test suites.">
+            <div className="flex flex-wrap gap-2">
+              {([
+                ['first', 'Stop on first failure'],
+                ['all', 'Run all, report failures'],
+              ] as Array<[NodeModalAssertionFailureMode, string]>).map(([value, label]) => (
+                <Button
+                  key={value}
+                  variant={failureMode === value ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => {
+                    setFailureMode(value);
+                    writeConfig(assertions, continueOnFail, value);
+                  }}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </FormField>
+        </div>
+      </Card>
+    </div>
+  );
+
+  const tabRenderers: Record<NodeModalAssertionTabKey, () => JSX.Element> = {
+    rules: renderRules,
+    settings: renderSettings,
+  };
+
+  return <div className="space-y-4">{tabRenderers[activeTab]()}</div>;
 }

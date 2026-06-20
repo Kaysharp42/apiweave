@@ -372,7 +372,11 @@ export function WorkflowCanvas({
     // Drag stop handler — no-op, auto-save resumes naturally
   }, []);
 
-  const onNodeDoubleClick = useCallback((_event: React.MouseEvent, node: Node<WorkflowCanvasNodeData>) => {
+  const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node<WorkflowCanvasNodeData>) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) {
+      return;
+    }
     if (node.type !== 'start' && node.type !== 'end') {
       setModalNode(node);
     }

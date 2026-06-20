@@ -142,6 +142,43 @@ function stringifyBody(body: unknown, rawBody?: string): string {
   }
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function matchesFilter(value: unknown, filterQuery: string): boolean {
+  if (!filterQuery) return true;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value).toLowerCase().includes(filterQuery);
+  }
+  if (value === null) return 'null'.includes(filterQuery);
+  return false;
+}
+
+function filterJsonValue(value: unknown, filterQuery: string): unknown {
+  const normalizedFilter = filterQuery.trim().toLowerCase();
+  if (!normalizedFilter) return value;
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => filterJsonValue(entry, normalizedFilter))
+      .filter((entry) => entry !== undefined);
+  }
+
+  if (isPlainRecord(value)) {
+    const entries = Object.entries(value).reduce<Record<string, unknown>>((filtered, [key, entryValue]) => {
+      const filteredValue = filterJsonValue(entryValue, normalizedFilter);
+      if (key.toLowerCase().includes(normalizedFilter) || filteredValue !== undefined || matchesFilter(entryValue, normalizedFilter)) {
+        filtered[key] = filteredValue === undefined ? entryValue : filteredValue;
+      }
+      return filtered;
+    }, {});
+    return Object.keys(entries).length > 0 ? entries : undefined;
+  }
+
+  return matchesFilter(value, normalizedFilter) ? value : undefined;
+}
+
 function formatBytes(bytes: number | undefined): string {
   if (bytes === undefined || !Number.isFinite(bytes)) return 'Not captured';
   if (bytes < 1024) return `${bytes} B`;
@@ -282,6 +319,7 @@ export function ResponseInspector({
   response,
   metadata,
   rawBody,
+  filterQuery = '',
 }: ResponseInspectorProps) {
   const [activeTab, setActiveTab] = useState<ResponseInspectorTab>(() => getDefaultTab(response, metadata));
   const [headerFilter, setHeaderFilter] = useState('');
@@ -365,7 +403,7 @@ export function ResponseInspector({
   }
 
   const bodyFormat = effectiveMetadata?.bodyFormat;
-  const treeData = response.body ?? null;
+  const treeData = filterJsonValue(response.body ?? null, filterQuery) ?? null;
   const metricRows = getMetricRows(response, effectiveMetadata, bodyText);
   const showJsonPreview = isJsonContent(contentType, response.body, bodyFormat);
   const showHtmlPreview = isHtmlContent(contentType, bodyFormat);
