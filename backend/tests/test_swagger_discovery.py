@@ -4,6 +4,8 @@ from app.utils.swagger_discovery import (
     extract_swagger_ui_hints_from_html,
     make_definition_scope,
     parse_swagger_ui_query_hints,
+    replace_url_host,
+    select_primary_definition,
 )
 
 
@@ -51,6 +53,7 @@ def test_build_swagger_config_candidates_includes_prefix_aware_defaults():
 
     assert "https://example.internal/core/v3/api-docs/swagger-config" in candidates
     assert "https://example.internal/v3/api-docs/swagger-config" in candidates
+    assert "https://example.internal/core/swagger/v3/api-docs/swagger-config" in candidates
 
 
 def test_extract_definitions_from_swagger_config_resolves_relative_urls():
@@ -82,3 +85,26 @@ def test_make_definition_scope_creates_stable_slug():
         "Asset Service v2", "https://example.internal/v3/api-docs/asset-service"
     )
     assert scope == "asset-service-v2"
+
+
+def test_select_primary_definition_filters_matching_service_name():
+    definitions = [
+        {"name": "Actor Service", "specUrl": "/swagger/actors/v3/api-docs"},
+        {"name": "Asset Service", "specUrl": "/swagger/assets/v3/api-docs"},
+    ]
+
+    selected = select_primary_definition(definitions, "Actor Service")
+
+    assert selected == [definitions[0]]
+
+
+def test_replace_url_host_preserves_port_path_and_query():
+    result = replace_url_host(
+        "http://localhost:8800/webjars/swagger-ui/index.html?urls.primaryName=Actor+Service",
+        "host.docker.internal",
+    )
+
+    assert result == (
+        "http://host.docker.internal:8800/webjars/swagger-ui/index.html"
+        "?urls.primaryName=Actor+Service"
+    )
