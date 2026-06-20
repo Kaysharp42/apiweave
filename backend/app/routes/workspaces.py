@@ -55,7 +55,7 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_active_user
@@ -64,7 +64,6 @@ from app.models import User, WorkflowCreate, WorkflowUpdate
 from app.services import project_service, scoped_workflow_service, workspace_service
 from app.services.exceptions import ConflictError, ResourceNotFoundError
 from app.services.safe_http import SafeUrlError, validate_url
-from app.utils.openapi_import_limits import DEFAULT_FETCH_TIMEOUT_SECONDS, DEFAULT_FETCH_CONCURRENCY
 
 logger = logging.getLogger(__name__)
 
@@ -913,208 +912,87 @@ async def import_openapi_from_url(
 ) -> dict[str, Any]:
     url = (swagger_url or "").strip()
     if not url:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="swagger_url is required")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="swagger_url is required",
+        )
     if not (url.startswith("http://") or url.startswith("https://")):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="swagger_url must start with http:// or https://")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="swagger_url must start with http:// or https://",
+        )
     try:
         validate_url(url)
     except SafeUrlError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"URL blocked by safety policy: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"URL blocked by safety policy: {exc}",
+        )
 
     try:
-        ws = await _get_verified_workspace(workspace_id, current_user.userId)
+        await _get_verified_workspace(workspace_id, current_user.userId)
     except ResourceNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    from app.utils.swagger_discovery import (
-        parse_swagger_ui_query_hints,
-        extract_swagger_ui_hints_from_html,
-        resolve_url,
-        build_swagger_config_candidates,
-        extract_definitions_from_swagger_config,
-        make_definition_scope,
-    )
-    from app.utils.openapi_import_limits import (
-        validate_definition_limit,
-        validate_endpoint_limit,
-    )
-    from app.services.import_service import parse_openapi_to_workflow
-    import asyncio
-
     try:
         tags = tag_filter.split(",") if tag_filter else None
+        from app.services.import_service import fetch_openapi_from_url
 
-        async with httpx.AsyncClient(timeout=DEFAULT_FETCH_TIMEOUT_SECONDS, follow_redirects=True) as client:
-            initial_response = await client.get(
-                url,
-                headers={"Accept": "application/json, application/vnd.oai.openapi+json, text/html"},
-            )
-            initial_response.raise_for_status()
-
-            direct_spec = _extract_openapi_document(initial_response)
-            discovered_definitions: list[dict[str, str]] = []
-            primary_name: str | None = None
-
-            if direct_spec:
-                discovered_definitions = [{
-                    "name": direct_spec.get("info", {}).get("title") or "Default",
-                    "specUrl": url,
-                    "source": "direct-url",
-                }]
-            else:
-                query_hints = parse_swagger_ui_query_hints(url)
-                html_hints = extract_swagger_ui_hints_from_html(initial_response.text)
-                if query_hints.get("url"):
-                    discovered_definitions.append({
-                        "name": query_hints.get("primaryName") or "Default",
-                        "specUrl": resolve_url(url, query_hints["url"]),
-                        "source": "swagger-ui.query.url",
-                    })
-                for entry in html_hints.get("urls") or []:
-                    discovered_definitions.append({
-                        "name": (entry.get("name") or "").strip() or (entry.get("url") or "").strip(),
-                        "specUrl": resolve_url(url, entry.get("url") or ""),
-                        "source": "swagger-ui.html.urls",
-                    })
-                if html_hints.get("url"):
-                    discovered_definitions.append({
-                        "name": query_hints.get("primaryName") or "Default",
-                        "specUrl": resolve_url(url, html_hints["url"]),
-                        "source": "swagger-ui.html.url",
-                    })
-                primary_name = query_hints.get("primaryName")
-                config_candidates = build_swagger_config_candidates(url, query_hints, html_hints)
-                for candidate in config_candidates:
-                    try:
-                        validate_url(candidate)
-                    except SafeUrlError:
-                        continue
-                    try:
-                        resp = await client.get(candidate, headers={"Accept": "application/json, application/vnd.oai.openapi+json"})
-                        resp.raise_for_status()
-                        config_data = resp.json()
-                        if not isinstance(config_data, dict):
-                            continue
-                        extracted = extract_definitions_from_swagger_config(config_data, str(resp.url))
-                        if extracted.get("primaryName") and not primary_name:
-                            primary_name = extracted["primaryName"]
-                        discovered_definitions.extend(extracted.get("definitions") or [])
-                        if extracted.get("definitions"):
-                            break
-                    except Exception:
-                        continue
-
-                if not discovered_definitions:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Could not discover OpenAPI definitions from Swagger UI URL.",
-                    )
-
-        limit_err = validate_definition_limit(len(discovered_definitions))
-        if limit_err:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=limit_err)
-
-        successful_specs: list[dict[str, Any]] = []
-        failed_definitions: list[dict[str, str]] = []
-
-        async def fetch_def(definition: dict[str, str]) -> dict[str, Any]:
-            spec_url = (definition.get("specUrl") or "").strip()
-            if not spec_url:
-                return {"status": "failed", "name": definition.get("name", "Definition"), "specUrl": spec_url, "error": "Missing spec URL"}
-            try:
-                validate_url(spec_url)
-            except SafeUrlError as exc:
-                return {"status": "failed", "name": definition.get("name", "Definition"), "specUrl": spec_url, "error": f"URL blocked: {exc}"}
-            try:
-                resp = await client.get(spec_url, headers={"Accept": "application/json, application/vnd.oai.openapi+json"})
-                resp.raise_for_status()
-                odata = _extract_openapi_document(resp)
-                if not odata:
-                    raise ValueError("Invalid OpenAPI document")
-                return {"status": "imported", "definition": definition, "openapi_data": odata}
-            except Exception as exc:
-                return {"status": "failed", "name": definition.get("name", "Definition"), "specUrl": spec_url, "error": str(exc)}
-
-        semaphore = asyncio.Semaphore(DEFAULT_FETCH_CONCURRENCY)
-
-        async def fetch_limited(d: dict[str, str]) -> dict[str, Any]:
-            async with semaphore:
-                return await fetch_def(d)
-
-        results = await asyncio.gather(*(fetch_limited(d) for d in discovered_definitions))
-        for r in results:
-            if r.get("status") == "imported":
-                successful_specs.append({"definition": r["definition"], "openapi_data": r["openapi_data"]})
-            else:
-                failed_definitions.append({"name": r["name"], "specUrl": r["specUrl"], "error": r["error"]})
-
-        if not successful_specs:
-            first_err = failed_definitions[0]["error"] if failed_definitions else "Unknown"
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to fetch any OpenAPI definitions: {first_err}")
-
-        is_multi = len(discovered_definitions) > 1
-        all_http_nodes: list[dict[str, Any]] = []
-        definition_summaries: list[dict[str, Any]] = []
-
-        for bundle in successful_specs:
-            defn = bundle["definition"]
-            defn_name = defn.get("name") or "Definition"
-            defn_url = defn.get("specUrl") or ""
-            defn_scope = make_definition_scope(defn_name, defn_url)
-            wd = parse_openapi_to_workflow(
-                bundle["openapi_data"], base_url, tags, sanitize,
-                source_context={"definitionName": defn_name, "definitionSpecUrl": defn_url, "definitionScope": defn_scope, "sourceUiUrl": url},
-            )
-            http_nodes = [n for n in wd["nodes"] if n["type"] == "http-request"]
-            if is_multi:
-                for node in http_nodes:
-                    label = node.get("label") or node.get("config", {}).get("url") or "Request"
-                    node["label"] = f"[{defn_name}] {label}"
-            all_http_nodes.extend(http_nodes)
-            ep_err = validate_endpoint_limit(len(all_http_nodes))
-            if ep_err:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=ep_err)
-            definition_summaries.append({
-                "name": defn_name, "specUrl": defn_url, "status": "imported",
-                "endpointCount": len(http_nodes), "source": defn.get("source") or "discovered",
-            })
-
-        for failed in failed_definitions:
-            definition_summaries.append({
-                "name": failed["name"], "specUrl": failed["specUrl"], "status": "failed",
-                "endpointCount": 0, "error": failed["error"],
-            })
-
-        api_title = "Multiple APIs" if len(successful_specs) > 1 else (
-            successful_specs[0]["openapi_data"].get("info", {}).get("title", "API")
+        result = await fetch_openapi_from_url(
+            url=url,
+            base_url=base_url,
+            tag_filter=tags,
+            sanitize=sanitize,
         )
-
+        definitions = [
+            {
+                "name": item.get("name"),
+                "specUrl": item.get("spec_url"),
+                "status": item.get("status"),
+                "endpointCount": item.get("endpoint_count"),
+                "source": item.get("source"),
+                **({"error": item["error"]} if item.get("error") else {}),
+            }
+            for item in result.get("definitions", [])
+        ]
         return {
-            "nodes": all_http_nodes,
-            "definitions": definition_summaries,
+            "nodes": result.get("nodes", []),
+            "definitions": definitions,
             "stats": {
-                "totalEndpoints": len(all_http_nodes),
-                "apiTitle": api_title,
-                "sourceUrl": url,
-                "definitionCount": len(discovered_definitions),
-                "importedDefinitionCount": len(successful_specs),
-                "failedDefinitionCount": len(failed_definitions),
-                "primaryName": primary_name,
+                "totalEndpoints": result.get("total_endpoints", 0),
+                "apiTitle": result.get("api_title", "API"),
+                "sourceUrl": result.get("source_url", url),
+                "definitionCount": len(definitions),
+                "importedDefinitionCount": sum(
+                    1 for item in definitions if item.get("status") == "imported"
+                ),
+                "failedDefinitionCount": sum(
+                    1 for item in definitions if item.get("status") == "failed"
+                ),
+                "primaryName": None,
             },
-            "warnings": [
-                {"type": "definition-fetch-failed", "name": i["name"], "specUrl": i["specUrl"], "message": i["error"]}
-                for i in failed_definitions
-            ],
+            "warnings": result.get("warnings", []),
         }
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to fetch Swagger URL ({e.response.status_code})")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to fetch Swagger URL ({e.response.status_code})",
+        )
     except httpx.RequestError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to fetch Swagger URL: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to fetch Swagger URL: {str(e)}",
+        )
     except Exception as e:
         logger.exception("OpenAPI URL import error")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to import OpenAPI from URL: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import OpenAPI from URL: {str(e)}",
+        )
 
 
 @router.post(
@@ -1298,31 +1176,3 @@ async def _get_verified_workspace(workspace_id: str, actor_user_id: str):
     await _assert_workspace_access(ws, actor_user_id)
     return ws
 
-
-def _extract_openapi_document(response: httpx.Response) -> dict[str, Any] | None:
-    try:
-        data = response.json()
-    except (ValueError, json.JSONDecodeError):
-        data = None
-    if isinstance(data, dict) and "paths" in data:
-        return data
-    content_type = (response.headers.get("content-type") or "").lower()
-    body_text = response.text or ""
-    should_try_yaml = (
-        "yaml" in content_type
-        or body_text.lstrip().startswith("openapi:")
-        or body_text.lstrip().startswith("swagger:")
-    )
-    if not should_try_yaml:
-        return None
-    try:
-        import yaml
-    except Exception:
-        return None
-    try:
-        yaml_data = yaml.safe_load(body_text)
-    except Exception:
-        return None
-    if isinstance(yaml_data, dict) and "paths" in yaml_data:
-        return yaml_data
-    return None
