@@ -702,10 +702,19 @@ async def fetch_openapi_from_url(
             )
         return deduped
 
+    def _host_resolves(host: str) -> bool:
+        import socket
+
+        try:
+            socket.getaddrinfo(host, None)
+            return True
+        except socket.gaierror:
+            return False
+
     def _fetch_url_candidates(target_url: str) -> list[str]:
         candidates = [target_url]
         parsed = httpx.URL(target_url)
-        if parsed.host == "localhost":
+        if parsed.host == "localhost" and _host_resolves("host.docker.internal"):
             candidate = replace_url_host(target_url, "host.docker.internal")
             if candidate not in candidates:
                 candidates.append(candidate)
@@ -716,16 +725,17 @@ async def fetch_openapi_from_url(
         target_url: str,
         headers: dict[str, str],
     ) -> httpx.Response:
-        last_error: Exception | None = None
+        original_error: Exception | None = None
         for candidate in _fetch_url_candidates(target_url):
             try:
                 validate_url(candidate)
                 return await client.get(candidate, headers=headers)
             except httpx.RequestError as exc:
-                last_error = exc
+                if candidate == target_url:
+                    original_error = exc
                 continue
-        if last_error:
-            raise last_error
+        if original_error:
+            raise original_error
         return await client.get(target_url, headers=headers)
 
     async def _discover_from_swagger_ui(
