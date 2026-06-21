@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from typing import Optional
 
 from app.models import ServiceToken
 
@@ -34,20 +33,24 @@ class ServiceTokenRepository:
         return token
 
     @staticmethod
-    async def get_by_id(token_id: str) -> Optional[ServiceToken]:
+    async def get_by_id(token_id: str) -> ServiceToken | None:
         return await ServiceToken.find_one(ServiceToken.tokenId == token_id)
 
     @staticmethod
-    async def get_by_hash(token_hash: str) -> Optional[ServiceToken]:
+    async def get_by_hash(token_hash: str) -> ServiceToken | None:
         return await ServiceToken.find_one(ServiceToken.tokenHash == token_hash)
 
     @staticmethod
     async def list_by_scope(scope_type: str, scope_id: str) -> list[ServiceToken]:
-        return await ServiceToken.find(
-            ServiceToken.scopeType == scope_type,
-            ServiceToken.scopeId == scope_id,
-            ServiceToken.revokedAt == None,  # noqa: E711
-        ).sort(-ServiceToken.createdAt).to_list()
+        return (
+            await ServiceToken.find(
+                ServiceToken.scopeType == scope_type,
+                ServiceToken.scopeId == scope_id,
+                ServiceToken.revokedAt == None,  # noqa: E711
+            )
+            .sort(-ServiceToken.createdAt)
+            .to_list()
+        )
 
     @staticmethod
     async def revoke(token_id: str) -> bool:

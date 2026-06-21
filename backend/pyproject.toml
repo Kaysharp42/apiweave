@@ -58,7 +58,99 @@ target-version = ['py312']
 line-length = 100
 target-version = "py312"
 select = ["E", "F", "I", "N", "W", "UP"]
-exclude = ["app/routes/_legacy_disabled/**"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/models/*" = [
+    "N815",    # mixedCase variable in class scope (MongoDB schema uses camelCase)
+    "RUF012",  # mutable class attributes should be annotated
+    "UP038",   # use X | Y in isinstance instead of (X, Y)
+    "UP042",   # use X | Y for type union
+    "E501",    # line too long (model field descriptions are verbose)
+]
+"app/routes/invites.py" = ["N815"]
+"app/routes/keys.py" = ["N815"]
+"app/repositories/workflow_repository.py" = ["E711"]
+"app/services/import_service/*" = [
+    "ANN201",  # missing return type annotation for public function
+    "ANN202",  # missing return type annotation for private function
+    "B008",    # do not perform function calls in argument defaults
+    "B904",    # raise from e or from None
+    "C901",    # complex function
+    "PLC0415", # import outside top-level
+    "PLR0912", # too many branches
+    "PLR0913", # too many arguments
+    "PLR0915", # too many statements
+    "PLR2004", # magic value used in comparison
+    "N803",    # invalid argument name
+    "ARG001",  # unused function argument
+    "ARG002",  # unused method argument
+]
+"app/services/project_export_service/*" = [
+    "ANN201",  # missing return type annotation for public function
+    "ANN202",  # missing return type annotation for private function
+    "B008",    # do not perform function calls in argument defaults
+    "B904",    # raise from e or from None
+    "C901",    # complex function
+    "PLC0415", # import outside top-level
+    "PLR0912", # too many branches
+    "PLR0913", # too many arguments
+    "PLR0915", # too many statements
+    "PLR2004", # magic value used in comparison
+    "N803",    # invalid argument name
+    "ARG001",  # unused function argument
+    "ARG002",  # unused method argument
+    "UP038",   # use X | Y in isinstance
+]
+"app/services/webhook_runner.py" = ["N818"]
+"scripts/*" = []
+"tests/*" = ["N815", "E402"]
+"app/runner/executor/*" = [
+    "ANN201", "ANN202", "B008", "B904", "C901",
+    "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+    "N803", "N806", "ARG001", "ARG002",
+    "E501", "E722",
+]
+"app/runner/dynamic_functions.py" = ["N802", "E501"]
+"app/runner/executor/_assertion.py" = ["UP038"]
+"app/services/__init__.py" = ["F401"]
+"app/repositories/auth_repositories/*" = [
+    "ANN201", "ANN202", "B008", "B904", "C901",
+    "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+]
+"app/auth/router/*" = [
+    "ANN201", "ANN202", "B008", "B904", "C901",
+    "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+]
+"app/routes/webhooks/*" = [
+    "ANN201", "ANN202", "B008", "B904", "C901",
+    "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+    "N803", "N815", "ARG001", "ARG002", "E501",
+]
+"app/routes/workspaces/*" = [
+    "ANN201", "ANN202", "B008", "B904", "C901",
+    "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+    "N803", "N815", "ARG001", "ARG002", "E501",
+]
+"app/routes/scoped_environments/*" = [
+    "ANN201", "ANN202", "B008", "B904", "C901",
+    "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+    "N803", "N815", "ARG001", "ARG002", "E501",
+]
+"app/services/run_service/*" = [
+    "ANN201", "ANN202", "B008", "B904", "C901",
+    "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+    "N803", "ARG001", "ARG002",
+]
+"app/services/scoped_workflow_service/*" = [
+    "ANN201", "ANN202", "B008", "B904", "C901",
+    "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+    "N803", "ARG001", "ARG002",
+]
+"app/services/workspace_service/*" = [
+    "ANN201", "ANN202", "B008", "B904", "C901",
+    "PLC0415", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+    "N803", "ARG001", "ARG002",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

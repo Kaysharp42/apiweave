@@ -3,6 +3,7 @@ Environment Protection API routes.
 
 Endpoints for reviewer approval and trusted-token bypass of protected environments.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -80,7 +81,7 @@ async def _resolve_service_token(authorization: str | None) -> tuple[str, str]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Bearer token required for bypass",
         )
-    raw_token = authorization[len("Bearer "):]
+    raw_token = authorization[len("Bearer ") :]
     token_hash = _hash_token(raw_token)
     token = await ServiceTokenRepository.get_by_hash(token_hash)
     if not token:
@@ -221,8 +222,7 @@ async def list_pending_approvals_for_workspace(
 
 
 @router.get(
-    "/api/workspaces/{workspace_id}/environments/{environment_id}"
-    "/approvals/{approval_id}",
+    "/api/workspaces/{workspace_id}/environments/{environment_id}" "/approvals/{approval_id}",
     response_model=PendingApprovalResponse,
 )
 async def get_pending_approval(

@@ -1,4 +1,5 @@
 """Tests for collection-run readiness gate."""
+
 import pytest
 
 from app.mcp.collection_run_readiness import COLLECTION_RUN_READINESS
@@ -26,9 +27,8 @@ def test_blocked_tools_are_execution():
 async def test_no_execution_tool_registered():
     """Verify no collection execution tool is registered in MCP server."""
     from app.mcp.server import mcp_server
+
     tools = await mcp_server.list_tools()
     tool_names = [t.name for t in tools]
     for blocked in COLLECTION_RUN_READINESS["blocked_mcp_tools"]:
-        assert blocked not in tool_names, (
-            f"Blocked tool '{blocked}' should not be registered"
-        )
+        assert blocked not in tool_names, f"Blocked tool '{blocked}' should not be registered"

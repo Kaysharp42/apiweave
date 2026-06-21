@@ -134,7 +134,8 @@ class TestSoftDeleteMixin:
 
     @requires_mongodb
     async def test_save_raises_on_deleted_document(
-        self, sample_doc: SoftDeleteTestModel,
+        self,
+        sample_doc: SoftDeleteTestModel,
     ) -> None:
         """save() raises DocumentSoftDeletedError for soft-deleted documents."""
         await sample_doc.soft_delete(by_user_id="user-abc")
@@ -147,7 +148,8 @@ class TestSoftDeleteMixin:
 
     @requires_mongodb
     async def test_insert_raises_on_deleted_document(
-        self, sample_doc: SoftDeleteTestModel,
+        self,
+        sample_doc: SoftDeleteTestModel,
     ) -> None:
         """insert() raises DocumentSoftDeletedError if document is already soft-deleted."""
         # Insert a fresh doc, soft-delete it, try inserting it again
@@ -167,7 +169,8 @@ class TestSoftDeleteMixin:
 
     @requires_mongodb
     async def test_read_after_restore_succeeds(
-        self, sample_doc: SoftDeleteTestModel,
+        self,
+        sample_doc: SoftDeleteTestModel,
     ) -> None:
         """After restore, the document can be read and written again."""
         await sample_doc.soft_delete(by_user_id="user-abc")
@@ -194,7 +197,8 @@ class TestSoftDeleteMixin:
 
     @requires_mongodb
     async def test_read_after_purge_returns_none(
-        self, sample_doc: SoftDeleteTestModel,
+        self,
+        sample_doc: SoftDeleteTestModel,
     ) -> None:
         """Read-after-purge returns None."""
         await sample_doc.purge()

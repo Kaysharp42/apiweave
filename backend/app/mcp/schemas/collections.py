@@ -1,6 +1,7 @@
 """
 MCP collection tool input and output schemas.
 """
+
 from datetime import datetime
 from typing import Any
 

@@ -11,22 +11,24 @@ Beanie Document subclasses raise CollectionWasNotInitialized if instantiated
 normally without init_beanie(). Use Model.model_construct(**kwargs) to bypass
 Beanie's __init__ for pure-logic unit tests.
 """
-import pytest
-from datetime import datetime, UTC, timedelta
+
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.models import Session, Invite, ApprovedDomain, User
+import pytest
+
+from app.models import ApprovedDomain, Invite, Session, User
 from app.repositories.auth_repositories import (
-    SessionRepository,
-    InviteRepository,
     ApprovedDomainRepository,
+    InviteRepository,
+    SessionRepository,
     UserRepository,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def make_session(
     *,
@@ -98,6 +100,7 @@ def make_user(user_id: str = "user-1") -> User:
 # SessionRepository.is_active tests
 # ---------------------------------------------------------------------------
 
+
 class TestSessionIsActive:
     def test_returns_true_for_valid_session(self):
         """Not expired, not revoked, recent activity → active"""
@@ -150,6 +153,7 @@ class TestSessionIsActive:
 # InviteRepository.consume tests (mocked DB)
 # ---------------------------------------------------------------------------
 
+
 class TestInviteConsume:
     @pytest.mark.asyncio
     async def test_consume_marks_as_consumed(self):
@@ -188,6 +192,7 @@ class TestInviteConsume:
 # ApprovedDomainRepository tests (mocked DB)
 # ---------------------------------------------------------------------------
 
+
 class TestApprovedDomain:
     @pytest.mark.asyncio
     async def test_is_domain_approved_returns_true_for_approved(self):
@@ -220,6 +225,7 @@ class TestApprovedDomain:
 # UserRepository create/get_by_id (mocked DB)
 # ---------------------------------------------------------------------------
 
+
 class TestUserRepository:
     @pytest.mark.asyncio
     async def test_create_and_get_by_id(self):
@@ -227,11 +233,11 @@ class TestUserRepository:
         user = make_user("user-42")
 
         with patch.object(User, "insert", new=AsyncMock(return_value=user)):
-            with patch("app.repositories.auth_repositories.User") as MockUser:
-                MockUser.return_value = user
+            with patch("app.repositories.auth_repositories.user.User") as mock_user:
+                mock_user.return_value = user
                 user_instance = MagicMock()
                 user_instance.insert = AsyncMock(return_value=user)
-                MockUser.return_value = user_instance
+                mock_user.return_value = user_instance
                 # Simulate create returning the constructed user
                 created = user
                 created_user_id = "user-42"
@@ -241,9 +247,9 @@ class TestUserRepository:
     @pytest.mark.asyncio
     async def test_get_by_id_returns_none_for_missing(self):
         """get_by_id returns None when user does not exist"""
-        with patch("app.repositories.auth_repositories.User") as MockUser:
-            MockUser.find_one = AsyncMock(return_value=None)
-            MockUser.userId = MagicMock()
+        with patch("app.repositories.auth_repositories.user.User") as mock_user:
+            mock_user.find_one = AsyncMock(return_value=None)
+            mock_user.userId = MagicMock()
             result = await UserRepository.get_by_id("nonexistent")
 
         assert result is None

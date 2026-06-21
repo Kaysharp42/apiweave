@@ -66,9 +66,7 @@ def _check_pre_resolve(path_str: str) -> None:
     # Reject any ``..`` segment before resolution.
     parts = Path(path_str).parts
     if ".." in parts:
-        raise UploadSandboxError(
-            f"Path traversal detected (.. segment): {path_str!r}"
-        )
+        raise UploadSandboxError(f"Path traversal detected (.. segment): {path_str!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -88,8 +86,7 @@ def validate_within_sandbox(resolved_path: Path) -> None:
     # ``Path.is_relative_to`` is available from Python 3.9+.
     if not resolved_path.is_relative_to(base_dir):
         raise UploadSandboxError(
-            f"Path {resolved_path} is outside the uploads sandbox "
-            f"({base_dir})"
+            f"Path {resolved_path} is outside the uploads sandbox " f"({base_dir})"
         )
 
 
@@ -128,9 +125,7 @@ def resolve_upload_path(
     except FileNotFoundError:
         raise UploadSandboxError(f"File not found: {path_str!r}")
     except OSError as exc:
-        raise UploadSandboxError(
-            f"Invalid path {path_str!r}: {exc}"
-        ) from exc
+        raise UploadSandboxError(f"Invalid path {path_str!r}: {exc}") from exc
 
     # 3. Sandbox containment -------------------------------------------------
     validate_within_sandbox(resolved)

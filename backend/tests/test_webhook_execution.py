@@ -23,10 +23,12 @@ client = TestClient(app)
 def _allow_token_only_webhooks(monkeypatch):
     monkeypatch.setattr("app.routes.webhooks.settings.WEBHOOK_REQUIRE_HMAC", False)
 
+
 @pytest.fixture(autouse=True)
 def _mock_task16_deps(monkeypatch):
     """Auto-mock Task 16 dependencies for existing tests."""
     from unittest.mock import AsyncMock, MagicMock
+
     monkeypatch.setattr(
         "app.routes.webhooks.resolve_webhook_actor",
         AsyncMock(return_value=MagicMock(tokenId="wh-test")),
@@ -43,7 +45,6 @@ def _mock_task16_deps(monkeypatch):
         "app.routes.webhooks._get_protection",
         AsyncMock(return_value=None),
     )
-
 
 
 def _mock_webhook_log(*args, **kwargs):
@@ -203,7 +204,9 @@ def test_webhook_execute_success():
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
         patch("app.routes.webhooks.webhook_runner") as mock_runner,
         patch("app.routes.webhooks.resolve_webhook_actor") as mock_actor,
-        patch("app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)),
+        patch(
+            "app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)
+        ),
         patch("app.routes.webhooks.audit_service") as mock_audit,
     ):
         mock_runner.enqueue = AsyncMock(return_value="run-123")
@@ -239,6 +242,7 @@ def test_webhook_execute_success():
 
 # ── Token-only compatibility ──────────────────────────────────────────────────
 
+
 def test_webhook_execute_token_only_returns_202():
     """Token-only requests (no HMAC headers) must still return 202 — backwards compat."""
     with (
@@ -247,7 +251,9 @@ def test_webhook_execute_token_only_returns_202():
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
         patch("app.routes.webhooks.webhook_runner") as mock_runner,
         patch("app.routes.webhooks.resolve_webhook_actor") as mock_actor,
-        patch("app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)),
+        patch(
+            "app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)
+        ),
         patch("app.routes.webhooks.audit_service") as mock_audit,
     ):
         mock_runner.enqueue = AsyncMock(return_value="run-compat")
@@ -280,6 +286,7 @@ def test_webhook_execute_token_only_returns_202():
 
 
 # ── HMAC / replay protection ──────────────────────────────────────────────────
+
 
 def test_webhook_execute_invalid_signature():
     """Test webhook execution with invalid HMAC signature returns 401"""
@@ -390,6 +397,7 @@ def test_webhook_execute_valid_signature():
 
 
 # ── Idempotency ───────────────────────────────────────────────────────────────
+
 
 def test_webhook_execute_idempotency_same_run_id():
     """Two identical requests with same Idempotency-Key return same runId."""
@@ -568,13 +576,32 @@ async def test_collection_webhook_executes_enabled_workflows_in_order():
     )
 
     with (
-        patch("app.routes.webhooks.CollectionRunRepository.get_by_id", AsyncMock(return_value=SimpleNamespace(collectionId="col-123", environmentId="env-test"))),
+        patch(
+            "app.routes.webhooks.CollectionRunRepository.get_by_id",
+            AsyncMock(
+                return_value=SimpleNamespace(collectionId="col-123", environmentId="env-test")
+            ),
+        ),
         patch("app.routes.webhooks.CollectionRunRepository.update_fields", AsyncMock()),
-        patch("app.routes.webhooks.CollectionRunRepository.add_workflow_result", AsyncMock()) as add_result,
+        patch(
+            "app.routes.webhooks.CollectionRunRepository.add_workflow_result", AsyncMock()
+        ) as add_result,
         patch("app.routes.webhooks.CollectionRunRepository.complete", AsyncMock()) as complete,
-        patch("app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)),
-        patch("app.routes.webhooks.WorkflowRepository.get_by_id", AsyncMock(side_effect=lambda workflow_id: SimpleNamespace(workflowId=workflow_id, name=workflow_id))),
-        patch("app.routes.webhooks.RunRepository.get_by_id", AsyncMock(side_effect=lambda run_id: statuses_by_run_id[run_id])),
+        patch(
+            "app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)
+        ),
+        patch(
+            "app.routes.webhooks.WorkflowRepository.get_by_id",
+            AsyncMock(
+                side_effect=lambda workflow_id: SimpleNamespace(
+                    workflowId=workflow_id, name=workflow_id
+                )
+            ),
+        ),
+        patch(
+            "app.routes.webhooks.RunRepository.get_by_id",
+            AsyncMock(side_effect=lambda run_id: statuses_by_run_id[run_id]),
+        ),
         patch(
             "app.routes.webhooks.Run",
             side_effect=lambda **kwargs: SimpleNamespace(
@@ -586,7 +613,9 @@ async def test_collection_webhook_executes_enabled_workflows_in_order():
         patch("app.routes.webhooks.WebhookRepository.update_usage", AsyncMock()),
         patch("app.routes.webhooks.WebhookLog.find_one", AsyncMock(return_value=None)),
     ):
-        await _run_collection_and_update_webhook("crun-123", "wh-123", "log-123", {}, datetime.now(UTC))
+        await _run_collection_and_update_webhook(
+            "crun-123", "wh-123", "log-123", {}, datetime.now(UTC)
+        )
 
     assert execution_order == ["wf-1", "wf-2"]
     assert [call.args[1]["workflowId"] for call in add_result.call_args_list] == ["wf-1", "wf-2"]
@@ -622,13 +651,32 @@ async def test_collection_webhook_continue_on_fail_false_stops_after_first_failu
     )
 
     with (
-        patch("app.routes.webhooks.CollectionRunRepository.get_by_id", AsyncMock(return_value=SimpleNamespace(collectionId="col-123", environmentId="env-test"))),
+        patch(
+            "app.routes.webhooks.CollectionRunRepository.get_by_id",
+            AsyncMock(
+                return_value=SimpleNamespace(collectionId="col-123", environmentId="env-test")
+            ),
+        ),
         patch("app.routes.webhooks.CollectionRunRepository.update_fields", AsyncMock()),
-        patch("app.routes.webhooks.CollectionRunRepository.add_workflow_result", AsyncMock()) as add_result,
+        patch(
+            "app.routes.webhooks.CollectionRunRepository.add_workflow_result", AsyncMock()
+        ) as add_result,
         patch("app.routes.webhooks.CollectionRunRepository.complete", AsyncMock()) as complete,
-        patch("app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)),
-        patch("app.routes.webhooks.WorkflowRepository.get_by_id", AsyncMock(side_effect=lambda workflow_id: SimpleNamespace(workflowId=workflow_id, name=workflow_id))),
-        patch("app.routes.webhooks.RunRepository.get_by_id", AsyncMock(side_effect=lambda run_id: statuses_by_run_id[run_id])),
+        patch(
+            "app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)
+        ),
+        patch(
+            "app.routes.webhooks.WorkflowRepository.get_by_id",
+            AsyncMock(
+                side_effect=lambda workflow_id: SimpleNamespace(
+                    workflowId=workflow_id, name=workflow_id
+                )
+            ),
+        ),
+        patch(
+            "app.routes.webhooks.RunRepository.get_by_id",
+            AsyncMock(side_effect=lambda run_id: statuses_by_run_id[run_id]),
+        ),
         patch(
             "app.routes.webhooks.Run",
             side_effect=lambda **kwargs: SimpleNamespace(
@@ -640,7 +688,9 @@ async def test_collection_webhook_continue_on_fail_false_stops_after_first_failu
         patch("app.routes.webhooks.WebhookRepository.update_usage", AsyncMock()) as update_usage,
         patch("app.routes.webhooks.WebhookLog.find_one", AsyncMock(return_value=None)),
     ):
-        await _run_collection_and_update_webhook("crun-123", "wh-123", "log-123", {}, datetime.now(UTC))
+        await _run_collection_and_update_webhook(
+            "crun-123", "wh-123", "log-123", {}, datetime.now(UTC)
+        )
 
     assert execution_order == ["wf-1"]
     assert add_result.call_count == 1
@@ -653,16 +703,27 @@ async def test_collection_webhook_empty_collection_completes_immediately():
     collection = SimpleNamespace(collectionId="col-empty", workflowOrder=[], continueOnFail=False)
 
     with (
-        patch("app.routes.webhooks.CollectionRunRepository.get_by_id", AsyncMock(return_value=SimpleNamespace(collectionId="col-empty", environmentId="env-test"))),
+        patch(
+            "app.routes.webhooks.CollectionRunRepository.get_by_id",
+            AsyncMock(
+                return_value=SimpleNamespace(collectionId="col-empty", environmentId="env-test")
+            ),
+        ),
         patch("app.routes.webhooks.CollectionRunRepository.update_fields", AsyncMock()),
-        patch("app.routes.webhooks.CollectionRunRepository.add_workflow_result", AsyncMock()) as add_result,
+        patch(
+            "app.routes.webhooks.CollectionRunRepository.add_workflow_result", AsyncMock()
+        ) as add_result,
         patch("app.routes.webhooks.CollectionRunRepository.complete", AsyncMock()) as complete,
-        patch("app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)),
+        patch(
+            "app.routes.webhooks.CollectionRepository.get_by_id", AsyncMock(return_value=collection)
+        ),
         patch("app.routes.webhooks.WorkflowExecutor") as executor,
         patch("app.routes.webhooks.WebhookRepository.update_usage", AsyncMock()) as update_usage,
         patch("app.routes.webhooks.WebhookLog.find_one", AsyncMock(return_value=None)),
     ):
-        await _run_collection_and_update_webhook("crun-empty", "wh-123", "log-123", {}, datetime.now(UTC))
+        await _run_collection_and_update_webhook(
+            "crun-empty", "wh-123", "log-123", {}, datetime.now(UTC)
+        )
 
     add_result.assert_not_called()
     executor.assert_not_called()
@@ -689,7 +750,9 @@ async def test_run_workflow_wrapper_success():
 
     fake_log = FakeLog()
 
-    with patch("app.routes.webhooks.WebhookRepository.update_usage", new_callable=AsyncMock) as mock_update:
+    with patch(
+        "app.routes.webhooks.WebhookRepository.update_usage", new_callable=AsyncMock
+    ) as mock_update:
         await _run_workflow_and_update_webhook(
             mock_executor, "wh-test", fake_log, datetime.now(UTC)
         )
@@ -719,7 +782,9 @@ async def test_run_workflow_wrapper_failure():
 
     fake_log = FakeLog()
 
-    with patch("app.routes.webhooks.WebhookRepository.update_usage", new_callable=AsyncMock) as mock_update:
+    with patch(
+        "app.routes.webhooks.WebhookRepository.update_usage", new_callable=AsyncMock
+    ) as mock_update:
         await _run_workflow_and_update_webhook(
             mock_executor, "wh-test", fake_log, datetime.now(UTC)
         )
@@ -748,7 +813,9 @@ async def test_run_workflow_wrapper_executor_crash():
 
     fake_log = FakeLog()
 
-    with patch("app.routes.webhooks.WebhookRepository.update_usage", new_callable=AsyncMock) as mock_update:
+    with patch(
+        "app.routes.webhooks.WebhookRepository.update_usage", new_callable=AsyncMock
+    ) as mock_update:
         await _run_workflow_and_update_webhook(
             mock_executor, "wh-test", fake_log, datetime.now(UTC)
         )

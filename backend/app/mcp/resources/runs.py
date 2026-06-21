@@ -1,6 +1,7 @@
 """
 MCP run resources — read-only run snapshots for agent context.
 """
+
 import json
 import logging
 from typing import Any

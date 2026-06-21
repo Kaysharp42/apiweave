@@ -4,6 +4,7 @@ MCP workflow tools — scoped to workspace via service token.
 All workflow operations are scoped to the workspace identified by the
 authenticated service token. Cross-workspace access is denied.
 """
+
 from typing import Annotated, Any, cast
 
 from mcp.server.fastmcp import FastMCP
@@ -126,10 +127,7 @@ async def workflow_list(
         limit=limit,
     )
 
-    workflows = [
-        _workflow_dict_to_summary(wf)
-        for wf in result.get("workflows", [])
-    ]
+    workflows = [_workflow_dict_to_summary(wf) for wf in result.get("workflows", [])]
 
     # Apply client-side tag/name filters
     if tag:
@@ -264,6 +262,7 @@ async def workflow_export(
 
     # Verify workflow belongs to scope
     from app.services.scoped_workflow_service import get_scoped_workflow
+
     try:
         await get_scoped_workflow(
             workspace_id=scope.scope_id,
@@ -275,6 +274,7 @@ async def workflow_export(
 
     # Use existing export service (secrets are already sanitized)
     from app.services.workflow_service import export_workflow
+
     try:
         bundle = await export_workflow(
             workflow_id,
@@ -305,6 +305,7 @@ async def workflow_import(
     await ensure_mcp_database()
     # Import uses shared service (scope enforced at workflow creation level)
     from app.services.workflow_service import import_workflow
+
     try:
         result = await import_workflow(
             bundle,
@@ -328,6 +329,7 @@ async def workflow_import_dry_run(
     """Validate a workflow import bundle without persisting anything."""
     await ensure_mcp_database()
     from app.services.workflow_service import import_workflow_dry_run
+
     result = await import_workflow_dry_run(bundle)
     return WorkflowImportDryRunResponse(
         valid=bool(result.get("valid", False)),
@@ -372,6 +374,7 @@ async def workflow_attach_collection(
     workspace_id = scope.scope_id
 
     from app.services.scoped_workflow_service import get_scoped_workflow
+
     try:
         await get_scoped_workflow(
             workspace_id=workspace_id,
@@ -382,10 +385,12 @@ async def workflow_attach_collection(
         raise ValueError(str(exc)) from exc
 
     from app.models import Workflow
+
     wf = await Workflow.get(workflow_id)
     if wf:
         wf.collectionId = collection_id
         from datetime import UTC, datetime
+
         wf.updatedAt = datetime.now(UTC)
         await wf.save()
 
@@ -409,6 +414,7 @@ async def workflow_set_environment(
     workspace_id = scope.scope_id
 
     from app.services.scoped_workflow_service import get_scoped_workflow
+
     try:
         await get_scoped_workflow(
             workspace_id=workspace_id,
@@ -419,10 +425,12 @@ async def workflow_set_environment(
         raise ValueError(str(exc)) from exc
 
     from app.models import Workflow
+
     wf = await Workflow.get(workflow_id)
     if wf:
         wf.selectedEnvironmentId = environment_id
         from datetime import UTC, datetime
+
         wf.updatedAt = datetime.now(UTC)
         await wf.save()
 

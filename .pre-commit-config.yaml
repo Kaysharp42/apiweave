@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: https://github.com/seddonym/import-linter
+    rev: v2.11
+    hooks:
+      - id: import-linter
+        files: ^backend/
+        args: [--config=backend/.importlinter]
+
+  - repo: local
+    hooks:
+      - id: check-file-length
+        name: check file length
+        entry: python scripts/check_file_length.py 600 backend/app
+        language: python
+        files: \.py$
+        pass_filenames: false

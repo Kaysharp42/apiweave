@@ -6,9 +6,11 @@ Verifies that:
 - The same user CANNOT access workflows in workspace B (returns 404)
 - Outside collaborators can only access their assigned workspace
 """
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 def _make_workspace(workspace_id: str, owner_user_id: str, slug: str = "test-ws") -> MagicMock:
@@ -75,9 +77,13 @@ async def test_user_can_access_own_workspace_workflow():
 @pytest.mark.asyncio
 async def test_user_cannot_access_other_workspace_workflow():
     """User who owns workspace A gets 404 when trying to read workflow in workspace B."""
+    from app.repositories import (
+        organization_repository,
+        outside_collaborator_repository,
+        workspace_repository,
+    )
     from app.services import scoped_workflow_service
     from app.services.exceptions import ResourceNotFoundError
-    from app.repositories import workspace_repository, outside_collaborator_repository, organization_repository
 
     user_id = "user-1"
     ws_b = _make_workspace("ws-b", "user-2", slug="ws-b")
@@ -111,8 +117,12 @@ async def test_user_cannot_access_other_workspace_workflow():
 @pytest.mark.asyncio
 async def test_outside_collaborator_can_access_assigned_workspace():
     """Outside collaborator can access their assigned workspace."""
+    from app.repositories import (
+        organization_repository,
+        outside_collaborator_repository,
+        workspace_repository,
+    )
     from app.services import scoped_workflow_service
-    from app.repositories import workspace_repository, outside_collaborator_repository, organization_repository
 
     collab_user_id = "collab-user"
     ws_a = _make_workspace("ws-a", "owner-user", slug="ws-a")
@@ -157,9 +167,13 @@ async def test_outside_collaborator_can_access_assigned_workspace():
 @pytest.mark.asyncio
 async def test_outside_collaborator_cannot_access_other_workspace():
     """Outside collaborator of workspace A cannot access workspace B."""
+    from app.repositories import (
+        organization_repository,
+        outside_collaborator_repository,
+        workspace_repository,
+    )
     from app.services import scoped_workflow_service
     from app.services.exceptions import ResourceNotFoundError
-    from app.repositories import workspace_repository, outside_collaborator_repository, organization_repository
 
     collab_user_id = "collab-user"
     ws_b = _make_workspace("ws-b", "owner-user-2", slug="ws-b")

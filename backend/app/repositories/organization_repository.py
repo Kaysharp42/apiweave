@@ -76,13 +76,12 @@ class OrganizationRepository:
 
     @staticmethod
     async def list_by_user(user_id: str) -> list[Organization]:
-        member_recs = await OrganizationMember.find(
-            OrganizationMember.userId == user_id
-        ).to_list()
+        member_recs = await OrganizationMember.find(OrganizationMember.userId == user_id).to_list()
         org_ids = [m.orgId for m in member_recs]
         if not org_ids:
             return []
         from beanie.operators import In
+
         return await Organization.find(
             In(Organization.orgId, org_ids),
             Organization.deletedAt == None,  # noqa: E711
@@ -116,9 +115,7 @@ class OrganizationRepository:
 
     @staticmethod
     async def list_members(org_id: str) -> list[OrganizationMember]:
-        return await OrganizationMember.find(
-            OrganizationMember.orgId == org_id
-        ).to_list()
+        return await OrganizationMember.find(OrganizationMember.orgId == org_id).to_list()
 
     @staticmethod
     async def update_member_role(

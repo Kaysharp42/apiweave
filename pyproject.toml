@@ -1,0 +1,164 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+fix = true
+src = ["backend"]
+exclude = [
+    "frontend",
+    "node_modules",
+    ".venv",
+    "venv",
+    "graphify-out",
+    ".opencode",
+    ".omo",
+    ".agents",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # warnings
+    "I",    # imports (isort)
+    "N",    # naming conventions
+    "UP",   # python upgrades
+    "B",    # bugbear (common bugs)
+    "C4",   # comprehensions
+    "C90",  # complexity (McCabe)
+    "DTZ",  # datetime issues
+    "T20",  # print/debug statements
+    "SIM",  # simplification
+    "ARG",  # unused args
+    "PL",   # pylint rules (partial)
+    "RUF",  # Ruff-specific rules
+    "ANN",  # type annotations
+    "S",    # security (bandit)
+]
+ignore = [
+    "E501",   # line length handled by formatter
+    "ANN401", # dynamically typed Any (fix incrementally)
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/app/models/*" = [
+    "N815",   # camelCase field names required by MongoDB convention
+    "RUF012", # mutable indexes=[...] required by Beanie Settings pattern
+    "UP042",  # (str, Enum) pattern intentionally avoids StrEnum runtime semantics
+]
+"backend/app/routes/webhooks/*" = [
+    "ANN201", # missing return type annotations (pre-existing in original monolith)
+    "ANN202", # missing return type annotations for private functions
+    "B008",   # function calls in argument defaults (FastAPI Depends pattern)
+    "B904",   # raise from err (pre-existing exception handling pattern)
+    "C901",   # complexity (pre-existing complex webhook execution logic)
+    "PLC0415", # import inside function (lazy import to avoid circular deps)
+    "PLR0912", # too many branches (pre-existing)
+    "PLR0913", # too many arguments (pre-existing)
+    "PLR0915", # too many statements (pre-existing)
+    "PLR2004", # magic value comparisons (pre-existing)
+]
+"backend/app/routes/workspaces/*" = [
+    "ANN201", # missing return type annotations (pre-existing in original monolith)
+    "ANN202", # missing return type annotations for private functions
+    "ARG001", # unused function arguments (path params required by FastAPI routing)
+    "B008",   # function calls in argument defaults (FastAPI Depends pattern)
+    "B904",   # raise from err (pre-existing exception handling pattern)
+    "N803",   # camelCase argument names (environmentId — API contract)
+    "PLC0415", # import inside function (lazy import to avoid circular deps)
+    "PLR0912", # too many branches (pre-existing)
+    "PLR0913", # too many arguments (pre-existing)
+    "PLR0915", # too many statements (pre-existing)
+    "PLR2004", # magic value comparisons (pre-existing)
+]
+"backend/app/routes/scoped_environments/*" = [
+    "ANN201", # missing return type annotations (pre-existing in original monolith)
+    "ANN202", # missing return type annotations for private functions
+    "ARG001", # unused function arguments (path params required by FastAPI routing)
+    "ARG002", # unused method arguments (pre-existing)
+    "B008",   # function calls in argument defaults (FastAPI Depends pattern)
+    "B904",   # raise from err (pre-existing exception handling pattern)
+    "C901",   # complexity (pre-existing)
+    "N803",   # camelCase argument names (API contract)
+    "PLC0415", # import inside function (lazy import to avoid circular deps)
+    "PLR0912", # too many branches (pre-existing)
+    "PLR0913", # too many arguments (pre-existing)
+    "PLR0915", # too many statements (pre-existing)
+    "PLR2004", # magic value comparisons (pre-existing)
+]
+"backend/app/services/run_service/*" = [
+    "ANN201", # missing return type annotations (pre-existing in original monolith)
+    "ANN202", # missing return type annotations for private functions
+    "B008",   # function calls in argument defaults (pre-existing)
+    "B904",   # raise from err (pre-existing exception handling pattern)
+    "C901",   # complexity (pre-existing complex run execution logic)
+    "PLC0415", # import inside function (lazy import to avoid circular deps)
+    "PLR0912", # too many branches (pre-existing)
+    "PLR0913", # too many arguments (pre-existing)
+    "PLR0915", # too many statements (pre-existing)
+    "PLR2004", # magic value comparisons (pre-existing)
+    "N803",   # camelCase argument names (API contract)
+    "ARG001", # unused function arguments (pre-existing)
+    "ARG002", # unused method arguments (pre-existing)
+    "RUF006", # asyncio.create_task without storing reference (pre-existing fire-and-forget)
+    "SIM118", # key in dict.keys() (pre-existing)
+]
+"backend/app/services/scoped_workflow_service/*" = [
+    "ANN201", # missing return type annotations (pre-existing in original monolith)
+    "ANN202", # missing return type annotations for private functions
+    "B008",   # function calls in argument defaults (pre-existing)
+    "B904",   # raise from err (pre-existing exception handling pattern)
+    "C901",   # complexity (pre-existing)
+    "E402",   # module-level imports not at top of file (__init__ defines logger before submodule imports)
+    "PLC0415", # import inside function (lazy import to avoid circular deps)
+    "PLR0912", # too many branches (pre-existing)
+    "PLR0913", # too many arguments (pre-existing)
+    "PLR0915", # too many statements (pre-existing)
+    "PLR2004", # magic value comparisons (pre-existing)
+    "N803",   # camelCase argument names (API contract)
+    "ARG001", # unused function arguments (pre-existing)
+    "ARG002", # unused method arguments (pre-existing)
+    "SIM108", # ternary instead of if-else (pre-existing)
+]
+"backend/app/services/workspace_service/*" = [
+    "ANN201", # missing return type annotations (pre-existing in original monolith)
+    "ANN202", # missing return type annotations for private functions
+    "B008",   # function calls in argument defaults (pre-existing)
+    "B904",   # raise from err (pre-existing exception handling pattern)
+    "C901",   # complexity (pre-existing)
+    "PLC0415", # import inside function (lazy import to avoid circular deps)
+    "PLR0912", # too many branches (pre-existing)
+    "PLR0913", # too many arguments (pre-existing)
+    "PLR0915", # too many statements (pre-existing)
+    "PLR2004", # magic value comparisons (pre-existing)
+    "N803",   # camelCase argument names (API contract)
+    "ARG001", # unused function arguments (pre-existing)
+    "ARG002", # unused method arguments (pre-existing)
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 5
+max-statements = 50
+max-branches = 12
+max-returns = 6
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "first-party",
+    "local-folder",
+]
+
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = ["classmethod"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

@@ -9,6 +9,7 @@ Covers:
 - GitHub-like limits (max secrets per scope)
 - Audit integration
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,8 +25,7 @@ from app.models import (
     SecretCreateRequest,
 )
 from app.services import secret_binding_service, secret_service
-from app.services.exceptions import ConflictError, ResourceNotFoundError
-
+from app.services.exceptions import ConflictError
 
 # ============================================================================
 # Fixtures
@@ -289,18 +289,23 @@ class TestUserSecretBinding:
         )
 
         async def _bind():
-            with patch(
-                "app.services.secret_binding_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=user_secret),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_existing",
-                new=AsyncMock(return_value=None),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.create",
-                new=AsyncMock(return_value=mock_binding),
-            ), patch(
-                "app.services.secret_binding_service.append_event",
-                new=AsyncMock(),
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=user_secret),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_existing",
+                    new=AsyncMock(return_value=None),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.create",
+                    new=AsyncMock(return_value=mock_binding),
+                ),
+                patch(
+                    "app.services.secret_binding_service.append_event",
+                    new=AsyncMock(),
+                ),
             ):
                 request = SecretBindingCreateRequest(
                     secretId="sec-user-001",
@@ -357,12 +362,15 @@ class TestUserSecretBinding:
         existing_binding = _make_mock_binding()
 
         async def _bind():
-            with patch(
-                "app.services.secret_binding_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=user_secret),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_existing",
-                new=AsyncMock(return_value=existing_binding),
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=user_secret),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_existing",
+                    new=AsyncMock(return_value=existing_binding),
+                ),
             ):
                 request = SecretBindingCreateRequest(
                     secretId="sec-user-001",
@@ -385,15 +393,19 @@ class TestUserSecretBinding:
         )
 
         async def _unbind():
-            with patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_by_id",
-                new=AsyncMock(return_value=mock_binding),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.delete",
-                new=AsyncMock(return_value=True),
-            ), patch(
-                "app.services.secret_binding_service.append_event",
-                new=AsyncMock(),
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_by_id",
+                    new=AsyncMock(return_value=mock_binding),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.delete",
+                    new=AsyncMock(return_value=True),
+                ),
+                patch(
+                    "app.services.secret_binding_service.append_event",
+                    new=AsyncMock(),
+                ),
             ):
                 await secret_binding_service.unbind_user_secret(
                     binding_id="sbi-001",
@@ -479,12 +491,15 @@ class TestSecretLimits:
         existing = _make_mock_secret(name="API_TOKEN")
 
         async def _create():
-            with patch(
-                "app.services.secret_service.SecretRepository.count_by_scope",
-                new=AsyncMock(return_value=5),
-            ), patch(
-                "app.services.secret_service.SecretRepository.get_by_scope_and_name",
-                new=AsyncMock(return_value=existing),
+            with (
+                patch(
+                    "app.services.secret_service.SecretRepository.count_by_scope",
+                    new=AsyncMock(return_value=5),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.get_by_scope_and_name",
+                    new=AsyncMock(return_value=existing),
+                ),
             ):
                 request = SecretCreateRequest(
                     name="API_TOKEN",

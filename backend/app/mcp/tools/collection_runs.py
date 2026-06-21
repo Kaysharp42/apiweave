@@ -3,7 +3,8 @@ MCP collection-run read tools — stable read-only surface based on readiness ga
 
 T7 decision: GO for read-only (list/get/latest), NO-GO for execution.
 """
-from typing import Annotated, Any, cast
+
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field

@@ -1,6 +1,7 @@
 """
 Tests for MCP resources — workflow, environment, and run snapshots.
 """
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from app.mcp.resources.workflows import register_workflow_resources
 
 class MockWorkflow:
     """Mock workflow document for testing."""
+
     def __init__(self):
         self.id = "wf-123"
         self.workflowId = "wf-123"
@@ -31,6 +33,7 @@ class MockWorkflow:
 
 class MockEnvironment:
     """Mock environment document for testing."""
+
     def __init__(self):
         self.id = "env-456"
         self.name = "Production"
@@ -43,6 +46,7 @@ class MockEnvironment:
 
 class MockRun:
     """Mock run document for testing."""
+
     def __init__(self):
         self.id = "run-789"
         self.workflowId = "wf-123"
@@ -87,11 +91,14 @@ async def test_workflow_resource_returns_json():
     """Workflow resource returns valid JSON with redacted secrets."""
     mock_workflow = MockWorkflow()
 
-    with patch("app.mcp.resources.workflows.ensure_mcp_database", new_callable=AsyncMock), \
-         patch("app.mcp.resources.workflows.get_workflow", new_callable=AsyncMock) as mock_get:
+    with (
+        patch("app.mcp.resources.workflows.ensure_mcp_database", new_callable=AsyncMock),
+        patch("app.mcp.resources.workflows.get_workflow", new_callable=AsyncMock) as mock_get,
+    ):
         mock_get.return_value = mock_workflow
 
         from mcp.server.fastmcp import FastMCP
+
         server = FastMCP(name="TestServer")
         register_workflow_resources(server)
 
@@ -111,6 +118,7 @@ async def test_environment_resource_returns_json():
         mock_get.return_value = mock_env
 
         from mcp.server.fastmcp import FastMCP
+
         server = FastMCP(name="TestServer")
         register_environment_resources(server)
 
@@ -123,11 +131,14 @@ async def test_run_resource_returns_json():
     """Run resource returns valid JSON."""
     mock_run = MockRun()
 
-    with patch("app.mcp.resources.runs.ensure_mcp_database", new_callable=AsyncMock), \
-         patch("app.mcp.resources.runs.get_run", new_callable=AsyncMock) as mock_get:
+    with (
+        patch("app.mcp.resources.runs.ensure_mcp_database", new_callable=AsyncMock),
+        patch("app.mcp.resources.runs.get_run", new_callable=AsyncMock) as mock_get,
+    ):
         mock_get.return_value = mock_run
 
         from mcp.server.fastmcp import FastMCP
+
         server = FastMCP(name="TestServer")
         register_run_resources(server)
 
@@ -138,11 +149,14 @@ async def test_run_resource_returns_json():
 @pytest.mark.asyncio
 async def test_workflow_resource_handles_not_found():
     """Workflow resource returns error JSON when workflow not found."""
-    with patch("app.mcp.resources.workflows.ensure_mcp_database", new_callable=AsyncMock), \
-         patch("app.mcp.resources.workflows.get_workflow", new_callable=AsyncMock) as mock_get:
+    with (
+        patch("app.mcp.resources.workflows.ensure_mcp_database", new_callable=AsyncMock),
+        patch("app.mcp.resources.workflows.get_workflow", new_callable=AsyncMock) as mock_get,
+    ):
         mock_get.side_effect = ValueError("Workflow not-found not found")
 
         from mcp.server.fastmcp import FastMCP
+
         server = FastMCP(name="TestServer")
         register_workflow_resources(server)
 

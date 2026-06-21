@@ -73,9 +73,7 @@ def test_denial_returns_403_error() -> None:
 
     @app.post("/protected")
     async def protected(
-        user: SimpleNamespace = Depends(
-            require_permission(USERS_INVITE, get_user=get_viewer)
-        ),
+        user: SimpleNamespace = Depends(require_permission(USERS_INVITE, get_user=get_viewer)),
     ) -> dict[str, bool]:
         return {"ok": bool(user)}
 

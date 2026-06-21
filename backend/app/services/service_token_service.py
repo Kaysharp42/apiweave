@@ -4,6 +4,7 @@ Service Token Service — scoped token lifecycle management.
 Handles create/rotate/revoke with SHA-256 hashing, one-time display,
 and audit events. Token validation checks scope, expiry, and revocation.
 """
+
 import hashlib
 import logging
 import secrets

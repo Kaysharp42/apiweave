@@ -4,10 +4,11 @@ Audit Service — business logic for append-only audit events.
 Provides append_event(), get_events(), and export_json().
 Secret values, ciphertext, and private keys are NEVER stored in audit context.
 """
+
 import json
 import logging
-from typing import Any, Dict, List, Optional
 from datetime import datetime
+from typing import Any
 
 from app.models import (
     AuditActorType,
@@ -23,28 +24,30 @@ from app.services.secret_utils import SecretMasker
 logger = logging.getLogger(__name__)
 
 # Fields that must NEVER appear in audit context — fail-closed if detected
-_FORBIDDEN_CONTEXT_KEYS: frozenset[str] = frozenset({
-    "value",
-    "secretValue",
-    "secret_value",
-    "plaintext",
-    "ciphertext",
-    "privateKey",
-    "private_key",
-    "encryptedValue",
-    "encrypted_value",
-    "kek",
-    "dek",
-    "token",
-    "hmacSecret",
-    "hmac_secret",
-    "password",
-    "apiKey",
-    "api_key",
-})
+_FORBIDDEN_CONTEXT_KEYS: frozenset[str] = frozenset(
+    {
+        "value",
+        "secretValue",
+        "secret_value",
+        "plaintext",
+        "ciphertext",
+        "privateKey",
+        "private_key",
+        "encryptedValue",
+        "encrypted_value",
+        "kek",
+        "dek",
+        "token",
+        "hmacSecret",
+        "hmac_secret",
+        "password",
+        "apiKey",
+        "api_key",
+    }
+)
 
 
-def _sanitize_context(context: Dict[str, Any]) -> Dict[str, Any]:
+def _sanitize_context(context: dict[str, Any]) -> dict[str, Any]:
     """
     Strip any forbidden keys from audit context. Raises if a secret value
     key is detected — this is a programming error that must fail loudly.
@@ -58,9 +61,7 @@ def _sanitize_context(context: Dict[str, Any]) -> Dict[str, Any]:
     return dict(context)
 
 
-def mask_context_values(
-    context: Dict[str, Any], masker: SecretMasker
-) -> Dict[str, Any]:
+def mask_context_values(context: dict[str, Any], masker: SecretMasker) -> dict[str, Any]:
     """Apply value-based masking to all string values in audit context.
 
     Defense-in-depth: even though callers should never pass secret values
@@ -79,8 +80,8 @@ async def append_event(
     scope_id: str,
     resource_type: str,
     resource_id: str,
-    context: Optional[Dict[str, Any]] = None,
-    masker: Optional[SecretMasker] = None,
+    context: dict[str, Any] | None = None,
+    masker: SecretMasker | None = None,
 ) -> AuditEvent:
     """
     Append a new audit event. Sanitizes context and raises
@@ -107,24 +108,22 @@ async def append_event(
         return await AuditRepository.append(event_data)
     except Exception as exc:
         logger.error("Audit write failed: %s", exc)
-        raise AuditWriteUnavailableError(
-            f"Audit write failed: {exc}"
-        ) from exc
+        raise AuditWriteUnavailableError(f"Audit write failed: {exc}") from exc
 
 
 async def get_events(
     *,
-    actor: Optional[str] = None,
-    action: Optional[str] = None,
-    scope: Optional[str] = None,
-    scope_id: Optional[str] = None,
-    resource_type: Optional[str] = None,
-    resource_id: Optional[str] = None,
-    from_date: Optional[datetime] = None,
-    to_date: Optional[datetime] = None,
+    actor: str | None = None,
+    action: str | None = None,
+    scope: str | None = None,
+    scope_id: str | None = None,
+    resource_type: str | None = None,
+    resource_id: str | None = None,
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
     skip: int = 0,
     limit: int = 100,
-) -> tuple[List[AuditEventResponse], int]:
+) -> tuple[list[AuditEventResponse], int]:
     """Query audit events and return sanitized response DTOs."""
     events, total = await AuditRepository.query(
         actor=actor,
@@ -144,14 +143,14 @@ async def get_events(
 
 async def export_json(
     *,
-    actor: Optional[str] = None,
-    action: Optional[str] = None,
-    scope: Optional[str] = None,
-    scope_id: Optional[str] = None,
-    resource_type: Optional[str] = None,
-    resource_id: Optional[str] = None,
-    from_date: Optional[datetime] = None,
-    to_date: Optional[datetime] = None,
+    actor: str | None = None,
+    action: str | None = None,
+    scope: str | None = None,
+    scope_id: str | None = None,
+    resource_type: str | None = None,
+    resource_id: str | None = None,
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
 ) -> str:
     """
     Export audit events as a JSON string. Guaranteed to contain no secret values.

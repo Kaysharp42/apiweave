@@ -1,6 +1,7 @@
 """
 Tests for Phase 7 MCP bug fixes.
 """
+
 import pytest
 
 from app.services.exceptions import ConflictError, ResourceNotFoundError
@@ -77,18 +78,20 @@ class TestImportSanitization:
     def test_har_cookies_sanitized(self):
         har_data = {
             "log": {
-                "entries": [{
-                    "request": {
-                        "method": "GET",
-                        "url": "http://example.com",
-                        "cookies": [
-                            {"name": "token", "value": "secret123"},
-                            {"name": "api_key", "value": "abc123"},
-                        ],
-                        "headers": [],
-                    },
-                    "response": {"status": 200, "headers": []},
-                }]
+                "entries": [
+                    {
+                        "request": {
+                            "method": "GET",
+                            "url": "http://example.com",
+                            "cookies": [
+                                {"name": "token", "value": "secret123"},
+                                {"name": "api_key", "value": "abc123"},
+                            ],
+                            "headers": [],
+                        },
+                        "response": {"status": 200, "headers": []},
+                    }
+                ]
             }
         }
         result = parse_har_to_workflow(har_data, sanitize=True)
@@ -101,16 +104,18 @@ class TestImportSanitization:
     def test_har_body_sanitized(self):
         har_data = {
             "log": {
-                "entries": [{
-                    "request": {
-                        "method": "POST",
-                        "url": "http://example.com",
-                        "cookies": [],
-                        "headers": [],
-                        "postData": {"text": "password=secret123&token=abc"},
-                    },
-                    "response": {"status": 200, "headers": []},
-                }]
+                "entries": [
+                    {
+                        "request": {
+                            "method": "POST",
+                            "url": "http://example.com",
+                            "cookies": [],
+                            "headers": [],
+                            "postData": {"text": "password=secret123&token=abc"},
+                        },
+                        "response": {"status": 200, "headers": []},
+                    }
+                ]
             }
         }
         result = parse_har_to_workflow(har_data, sanitize=True)

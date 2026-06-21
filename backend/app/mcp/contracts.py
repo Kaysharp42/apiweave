@@ -3,6 +3,7 @@ Shared MCP contract utilities — structured errors, pagination, redaction, and 
 
 These helpers ensure consistent response shapes across all MCP tool modules.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -17,7 +18,9 @@ class McpErrorEnvelope(BaseModel):
     for malformed requests and unknown tool calls.
     """
 
-    code: str = Field(description="Machine-readable error code (e.g. 'not_found', 'validation_error').")
+    code: str = Field(
+        description="Machine-readable error code (e.g. 'not_found', 'validation_error')."
+    )
     message: str = Field(description="Human-readable error description.")
     retryable: bool = Field(description="Whether retrying the same request is likely to succeed.")
     suggested_next_tool: str | None = Field(
@@ -81,7 +84,11 @@ class LargeResultMetadata(BaseModel):
 REDACTION_PLACEHOLDER = "<SECRET>"
 
 
-def make_not_found_error(resource_type: str, resource_id: str, suggested_next_tool: str | None = None) -> McpErrorEnvelope:
+def make_not_found_error(
+    resource_type: str,
+    resource_id: str,
+    suggested_next_tool: str | None = None,
+) -> McpErrorEnvelope:
     """Create a structured not-found error."""
     return McpErrorEnvelope(
         code="not_found",

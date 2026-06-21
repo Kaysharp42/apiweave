@@ -120,9 +120,7 @@ def test_settings_users_admin_ok() -> None:
     client = _client()
     client.cookies.set("session", "tok")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        UserRepository, "get_all", new=AsyncMock(return_value=[admin])
-    ):
+    with s, t, u, patch.object(UserRepository, "get_all", new=AsyncMock(return_value=[admin])):
         response = client.get("/api/settings/users")
     assert response.status_code == 200
     assert response.json()[0]["userId"] == "u1"
@@ -135,10 +133,12 @@ def test_settings_update_permissions_admin_ok() -> None:
     client = _client()
     client.cookies.set("session", "tok")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        UserRepository, "get_all", new=AsyncMock(return_value=[admin, target])
-    ), patch.object(
-        UserRepository, "update", new=AsyncMock(return_value=updated)
+    with (
+        s,
+        t,
+        u,
+        patch.object(UserRepository, "get_all", new=AsyncMock(return_value=[admin, target])),
+        patch.object(UserRepository, "update", new=AsyncMock(return_value=updated)),
     ):
         response = client.patch(
             f"/api/settings/users/{target.userId}/permissions",
@@ -166,10 +166,12 @@ def test_settings_update_permissions_user_not_found() -> None:
     client = _client()
     client.cookies.set("session", "tok")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        UserRepository, "get_all", new=AsyncMock(return_value=[admin])
-    ), patch.object(
-        UserRepository, "update", new=AsyncMock(return_value=None)
+    with (
+        s,
+        t,
+        u,
+        patch.object(UserRepository, "get_all", new=AsyncMock(return_value=[admin])),
+        patch.object(UserRepository, "update", new=AsyncMock(return_value=None)),
     ):
         response = client.patch(
             "/api/settings/users/ghost/permissions",
@@ -184,9 +186,7 @@ def test_settings_invites_list_admin_ok() -> None:
     client = _client()
     client.cookies.set("session", "tok")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "get_all", new=AsyncMock(return_value=[invite])
-    ):
+    with s, t, u, patch.object(InviteRepository, "get_all", new=AsyncMock(return_value=[invite])):
         response = client.get("/api/settings/invites")
     assert response.status_code == 200
     assert response.json()[0]["inviteId"] == "inv-1"
@@ -210,16 +210,21 @@ def test_settings_create_invite_admin_ok() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "create", new=AsyncMock(return_value=invite)
-    ), patch.object(
-        InviteRepository,
-        "find_active_by_email",
-        new=AsyncMock(return_value=None),
-    ), patch.object(
-        UserRepository,
-        "get_by_email",
-        new=AsyncMock(return_value=None),
+    with (
+        s,
+        t,
+        u,
+        patch.object(InviteRepository, "create", new=AsyncMock(return_value=invite)),
+        patch.object(
+            InviteRepository,
+            "find_active_by_email",
+            new=AsyncMock(return_value=None),
+        ),
+        patch.object(
+            UserRepository,
+            "get_by_email",
+            new=AsyncMock(return_value=None),
+        ),
     ):
         response = client.post(
             "/api/settings/invites",
@@ -239,16 +244,21 @@ def test_settings_create_invite_returns_absolute_url() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "create", new=AsyncMock(return_value=invite)
-    ), patch.object(
-        InviteRepository,
-        "find_active_by_email",
-        new=AsyncMock(return_value=None),
-    ), patch.object(
-        UserRepository,
-        "get_by_email",
-        new=AsyncMock(return_value=None),
+    with (
+        s,
+        t,
+        u,
+        patch.object(InviteRepository, "create", new=AsyncMock(return_value=invite)),
+        patch.object(
+            InviteRepository,
+            "find_active_by_email",
+            new=AsyncMock(return_value=None),
+        ),
+        patch.object(
+            UserRepository,
+            "get_by_email",
+            new=AsyncMock(return_value=None),
+        ),
     ):
         response = client.post(
             "/api/settings/invites",
@@ -281,8 +291,11 @@ def test_settings_domains_list_admin_ok() -> None:
     client = _client()
     client.cookies.set("session", "tok")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        ApprovedDomainRepository, "list_all", new=AsyncMock(return_value=[domain])
+    with (
+        s,
+        t,
+        u,
+        patch.object(ApprovedDomainRepository, "list_all", new=AsyncMock(return_value=[domain])),
     ):
         response = client.get("/api/settings/domains")
     assert response.status_code == 200
@@ -307,10 +320,12 @@ def test_settings_add_domain_admin_ok() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        ApprovedDomainRepository, "get_by_domain", new=AsyncMock(return_value=None)
-    ), patch.object(
-        ApprovedDomainRepository, "create", new=AsyncMock(return_value=domain)
+    with (
+        s,
+        t,
+        u,
+        patch.object(ApprovedDomainRepository, "get_by_domain", new=AsyncMock(return_value=None)),
+        patch.object(ApprovedDomainRepository, "create", new=AsyncMock(return_value=domain)),
     ):
         response = client.post("/api/settings/domains", json={"domain": "example.com"})
     assert response.status_code == 201
@@ -325,8 +340,11 @@ def test_settings_add_domain_conflict() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        ApprovedDomainRepository, "get_by_domain", new=AsyncMock(return_value=domain)
+    with (
+        s,
+        t,
+        u,
+        patch.object(ApprovedDomainRepository, "get_by_domain", new=AsyncMock(return_value=domain)),
     ):
         response = client.post("/api/settings/domains", json={"domain": "example.com"})
     assert response.status_code == 409
@@ -339,8 +357,11 @@ def test_settings_remove_domain_admin_ok() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        ApprovedDomainRepository, "delete", new=AsyncMock(return_value=True)
+    with (
+        s,
+        t,
+        u,
+        patch.object(ApprovedDomainRepository, "delete", new=AsyncMock(return_value=True)),
     ):
         response = client.delete("/api/settings/domains/dom-1")
     assert response.status_code == 204
@@ -353,8 +374,11 @@ def test_settings_remove_domain_not_found() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        ApprovedDomainRepository, "delete", new=AsyncMock(return_value=False)
+    with (
+        s,
+        t,
+        u,
+        patch.object(ApprovedDomainRepository, "delete", new=AsyncMock(return_value=False)),
     ):
         response = client.delete("/api/settings/domains/ghost")
     assert response.status_code == 404

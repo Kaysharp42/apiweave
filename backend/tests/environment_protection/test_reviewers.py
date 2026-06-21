@@ -8,6 +8,7 @@ Verifies that:
 - A different reviewer can approve even when self-approval is disabled.
 - Already-resolved approvals cannot be approved again.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -90,10 +91,19 @@ class TestRequiredReviewers:
         protection = _make_protection(required_reviewers=["usr-reviewer-b"])
         approval = _make_approval(requester_user_id="usr-a")
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock, return_value=approval,
-        ), patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=protection,
+        with (
+            patch.object(
+                PendingApprovalRepository,
+                "get_by_id",
+                new_callable=AsyncMock,
+                return_value=approval,
+            ),
+            patch.object(
+                ScopedEnvironmentRepository,
+                "get_protection",
+                new_callable=AsyncMock,
+                return_value=protection,
+            ),
         ):
             with pytest.raises(ConflictError, match="not a required reviewer"):
                 await approve_run("appr-test", "usr-random")
@@ -107,14 +117,30 @@ class TestRequiredReviewers:
         approved.resolvedByActorType = "user"
         approved.resolvedAt = datetime.now(UTC)
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock, return_value=approval,
-        ), patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=protection,
-        ), patch.object(
-            PendingApprovalRepository, "approve", new_callable=AsyncMock, return_value=approved,
-        ), patch.object(
-            audit_service, "append_event", new_callable=AsyncMock,
+        with (
+            patch.object(
+                PendingApprovalRepository,
+                "get_by_id",
+                new_callable=AsyncMock,
+                return_value=approval,
+            ),
+            patch.object(
+                ScopedEnvironmentRepository,
+                "get_protection",
+                new_callable=AsyncMock,
+                return_value=protection,
+            ),
+            patch.object(
+                PendingApprovalRepository,
+                "approve",
+                new_callable=AsyncMock,
+                return_value=approved,
+            ),
+            patch.object(
+                audit_service,
+                "append_event",
+                new_callable=AsyncMock,
+            ),
         ):
             result = await approve_run("appr-test", "usr-reviewer-b")
             assert result.status == "approved"
@@ -134,14 +160,30 @@ class TestRequiredReviewers:
             captured.update(kwargs)
             return MagicMock()
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock, return_value=approval,
-        ), patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=protection,
-        ), patch.object(
-            PendingApprovalRepository, "approve", new_callable=AsyncMock, return_value=approved,
-        ), patch.object(
-            audit_service, "append_event", side_effect=mock_audit,
+        with (
+            patch.object(
+                PendingApprovalRepository,
+                "get_by_id",
+                new_callable=AsyncMock,
+                return_value=approval,
+            ),
+            patch.object(
+                ScopedEnvironmentRepository,
+                "get_protection",
+                new_callable=AsyncMock,
+                return_value=protection,
+            ),
+            patch.object(
+                PendingApprovalRepository,
+                "approve",
+                new_callable=AsyncMock,
+                return_value=approved,
+            ),
+            patch.object(
+                audit_service,
+                "append_event",
+                side_effect=mock_audit,
+            ),
         ):
             await approve_run("appr-test", "usr-reviewer-b")
 
@@ -155,7 +197,10 @@ class TestRequiredReviewers:
         approval = _make_approval(status="approved")
 
         with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock, return_value=approval,
+            PendingApprovalRepository,
+            "get_by_id",
+            new_callable=AsyncMock,
+            return_value=approval,
         ):
             with pytest.raises(ApprovalNotPendingError, match="already approved"):
                 await approve_run("appr-done", "usr-reviewer-b")
@@ -163,7 +208,10 @@ class TestRequiredReviewers:
     async def test_nonexistent_approval_raises(self):
         """Approving a non-existent approval raises ApprovalNotFoundError."""
         with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock, return_value=None,
+            PendingApprovalRepository,
+            "get_by_id",
+            new_callable=AsyncMock,
+            return_value=None,
         ):
             with pytest.raises(ApprovalNotFoundError):
                 await approve_run("appr-ghost", "usr-reviewer")
@@ -176,14 +224,30 @@ class TestRequiredReviewers:
         approved.resolvedBy = "usr-b"
         approved.resolvedByActorType = "user"
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock, return_value=approval,
-        ), patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=protection,
-        ), patch.object(
-            PendingApprovalRepository, "approve", new_callable=AsyncMock, return_value=approved,
-        ), patch.object(
-            audit_service, "append_event", new_callable=AsyncMock,
+        with (
+            patch.object(
+                PendingApprovalRepository,
+                "get_by_id",
+                new_callable=AsyncMock,
+                return_value=approval,
+            ),
+            patch.object(
+                ScopedEnvironmentRepository,
+                "get_protection",
+                new_callable=AsyncMock,
+                return_value=protection,
+            ),
+            patch.object(
+                PendingApprovalRepository,
+                "approve",
+                new_callable=AsyncMock,
+                return_value=approved,
+            ),
+            patch.object(
+                audit_service,
+                "append_event",
+                new_callable=AsyncMock,
+            ),
         ):
             result = await approve_run("appr-test", "usr-b")
             assert result.status == "approved"
@@ -210,10 +274,19 @@ class TestSelfApproval:
             actor_id="usr-a",
         )
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock, return_value=approval,
-        ), patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=protection,
+        with (
+            patch.object(
+                PendingApprovalRepository,
+                "get_by_id",
+                new_callable=AsyncMock,
+                return_value=approval,
+            ),
+            patch.object(
+                ScopedEnvironmentRepository,
+                "get_protection",
+                new_callable=AsyncMock,
+                return_value=protection,
+            ),
         ):
             with pytest.raises(SelfApprovalDeniedError, match="Self-approval is disabled"):
                 await approve_run("appr-self", "usr-a")
@@ -236,14 +309,30 @@ class TestSelfApproval:
         approved.resolvedBy = "usr-a"
         approved.resolvedByActorType = "user"
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock, return_value=approval,
-        ), patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=protection,
-        ), patch.object(
-            PendingApprovalRepository, "approve", new_callable=AsyncMock, return_value=approved,
-        ), patch.object(
-            audit_service, "append_event", new_callable=AsyncMock,
+        with (
+            patch.object(
+                PendingApprovalRepository,
+                "get_by_id",
+                new_callable=AsyncMock,
+                return_value=approval,
+            ),
+            patch.object(
+                ScopedEnvironmentRepository,
+                "get_protection",
+                new_callable=AsyncMock,
+                return_value=protection,
+            ),
+            patch.object(
+                PendingApprovalRepository,
+                "approve",
+                new_callable=AsyncMock,
+                return_value=approved,
+            ),
+            patch.object(
+                audit_service,
+                "append_event",
+                new_callable=AsyncMock,
+            ),
         ):
             result = await approve_run("appr-self-ok", "usr-a")
             assert result.status == "approved"
@@ -267,14 +356,30 @@ class TestSelfApproval:
         approved.resolvedBy = "usr-b"
         approved.resolvedByActorType = "user"
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock, return_value=approval,
-        ), patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=protection,
-        ), patch.object(
-            PendingApprovalRepository, "approve", new_callable=AsyncMock, return_value=approved,
-        ), patch.object(
-            audit_service, "append_event", new_callable=AsyncMock,
+        with (
+            patch.object(
+                PendingApprovalRepository,
+                "get_by_id",
+                new_callable=AsyncMock,
+                return_value=approval,
+            ),
+            patch.object(
+                ScopedEnvironmentRepository,
+                "get_protection",
+                new_callable=AsyncMock,
+                return_value=protection,
+            ),
+            patch.object(
+                PendingApprovalRepository,
+                "approve",
+                new_callable=AsyncMock,
+                return_value=approved,
+            ),
+            patch.object(
+                audit_service,
+                "append_event",
+                new_callable=AsyncMock,
+            ),
         ):
             result = await approve_run("appr-other", "usr-b")
             assert result.status == "approved"
@@ -292,7 +397,10 @@ class TestGateCheck:
     async def test_unprotected_env_proceeds(self):
         """Unprotected environment proceeds without gating."""
         with patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=None,
+            ScopedEnvironmentRepository,
+            "get_protection",
+            new_callable=AsyncMock,
+            return_value=None,
         ):
             status, approval = await check_protection_and_maybe_gate(
                 run_id="run-1",
@@ -308,7 +416,10 @@ class TestGateCheck:
         """Protection with no reviewers and bypassPolicy='none' proceeds."""
         protection = _make_protection(required_reviewers=[], bypass_policy="none")
         with patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=protection,
+            ScopedEnvironmentRepository,
+            "get_protection",
+            new_callable=AsyncMock,
+            return_value=protection,
         ):
             status, approval = await check_protection_and_maybe_gate(
                 run_id="run-1",
@@ -325,12 +436,24 @@ class TestGateCheck:
         protection = _make_protection(required_reviewers=["usr-reviewer"])
         expected_approval = _make_approval()
 
-        with patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock, return_value=protection,
-        ), patch.object(
-            PendingApprovalRepository, "create", new_callable=AsyncMock, return_value=expected_approval,
-        ), patch.object(
-            audit_service, "append_event", new_callable=AsyncMock,
+        with (
+            patch.object(
+                ScopedEnvironmentRepository,
+                "get_protection",
+                new_callable=AsyncMock,
+                return_value=protection,
+            ),
+            patch.object(
+                PendingApprovalRepository,
+                "create",
+                new_callable=AsyncMock,
+                return_value=expected_approval,
+            ),
+            patch.object(
+                audit_service,
+                "append_event",
+                new_callable=AsyncMock,
+            ),
         ):
             status, approval = await check_protection_and_maybe_gate(
                 run_id="run-1",

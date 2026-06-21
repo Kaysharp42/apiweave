@@ -4,6 +4,7 @@ MCP project tools — scoped to workspace via service token.
 Projects replace Collections in the scoped API. All operations are
 scoped to the authenticated workspace.
 """
+
 from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP

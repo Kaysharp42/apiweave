@@ -6,6 +6,7 @@ Verifies that:
 - Webhook tokens scoped to workspace A are denied for workspace B workflows
 - The scope check uses the webhook's workspaceId vs the workflow's workspaceId
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -68,7 +69,10 @@ class TestWebhookScopeEnforcement:
             patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=workflow_mock),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
             patch("app.routes.webhooks.resolve_webhook_actor") as mock_actor,
-            patch("app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)),
+            patch(
+                "app.routes.webhooks.check_protection_and_maybe_gate",
+                return_value=("proceed", None),
+            ),
             patch("app.routes.webhooks.audit_service") as mock_audit,
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
         ):
@@ -104,7 +108,10 @@ class TestWebhookScopeEnforcement:
             patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=workflow_mock),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
             patch("app.routes.webhooks.resolve_webhook_actor") as mock_actor,
-            patch("app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)),
+            patch(
+                "app.routes.webhooks.check_protection_and_maybe_gate",
+                return_value=("proceed", None),
+            ),
             patch("app.routes.webhooks.audit_service") as mock_audit,
         ):
             mock_actor.return_value = SimpleNamespace(
@@ -145,7 +152,10 @@ class TestWebhookScopeEnforcement:
             patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=workflow_mock),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
             patch("app.routes.webhooks.resolve_webhook_actor") as mock_actor,
-            patch("app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)),
+            patch(
+                "app.routes.webhooks.check_protection_and_maybe_gate",
+                return_value=("proceed", None),
+            ),
             patch("app.routes.webhooks.audit_service") as mock_audit,
         ):
             mock_actor.return_value = SimpleNamespace(

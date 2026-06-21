@@ -9,6 +9,7 @@ Covers:
 6. send_invite_email calls aiosmtplib.send when SMTP configured
 7. validate_invite_token returns invite without consuming
 """
+
 from __future__ import annotations
 
 import base64
@@ -107,9 +108,7 @@ async def test_consume_invite_marks_consumed() -> None:
     token = "rawtoken"
 
     with (
-        patch.object(
-            InviteRepository, "get_by_token_hash", new=AsyncMock(return_value=invite)
-        ),
+        patch.object(InviteRepository, "get_by_token_hash", new=AsyncMock(return_value=invite)),
         patch.object(InviteRepository, "consume", new=AsyncMock(return_value=True)),
     ):
         result_first = await invite_service.consume_invite(token)
@@ -191,9 +190,7 @@ async def test_validate_invite_token_returns_invite_without_consuming() -> None:
     invite = _make_invite(consumed=False)
 
     with (
-        patch.object(
-            InviteRepository, "get_by_token_hash", new=AsyncMock(return_value=invite)
-        ),
+        patch.object(InviteRepository, "get_by_token_hash", new=AsyncMock(return_value=invite)),
         patch.object(InviteRepository, "consume", new=AsyncMock()) as mock_consume,
     ):
         result = await invite_service.validate_invite_token("rawtoken")

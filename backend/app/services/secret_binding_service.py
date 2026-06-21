@@ -4,6 +4,7 @@ Secret Binding Service — user-secret binding to workspace/environment.
 User personal secrets only participate in resolution through explicit
 binding records. This service manages those bindings.
 """
+
 from __future__ import annotations
 
 import secrets
@@ -56,9 +57,7 @@ async def bind_user_secret(
     """
     # Validate target scope
     if request.targetScopeType not in ("workspace", "environment"):
-        raise ValueError(
-            "Target scope must be 'workspace' or 'environment'"
-        )
+        raise ValueError("Target scope must be 'workspace' or 'environment'")
 
     # Verify secret exists and is user-scoped
     secret = await SecretRepository.get_by_id(request.secretId)
@@ -67,14 +66,11 @@ async def bind_user_secret(
 
     if secret.scopeType != "user":
         raise ValueError(
-            "Only user-scoped secrets can be bound. "
-            f"Secret is scoped to {secret.scopeType}."
+            "Only user-scoped secrets can be bound. " f"Secret is scoped to {secret.scopeType}."
         )
 
     if secret.scopeId != user_id:
-        raise ValueError(
-            "Cannot bind a secret that does not belong to you"
-        )
+        raise ValueError("Cannot bind a secret that does not belong to you")
 
     # Check for existing binding
     existing = await SecretBindingRepository.get_existing(

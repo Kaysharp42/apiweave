@@ -9,16 +9,14 @@ Scenario: User removed mid-run does not leak secrets.
 - Verify no secret values appear in audit context.
 - Verify soft-deleted env while queued fails the run with audit.
 """
-from datetime import UTC, datetime
+
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.services import run_service
-from app.services.exceptions import ResourceNotFoundError
-
 
 # ---------------------------------------------------------------------------
 # Fake Run for testing

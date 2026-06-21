@@ -79,18 +79,14 @@ def _build_provider_config(name: str) -> ProviderConfig:
     if name == "microsoft":
         return ProviderConfig(
             name="microsoft",
-            client_id=_required(
-                settings.MICROSOFT_CLIENT_ID, "microsoft", "MICROSOFT_CLIENT_ID"
-            ),
+            client_id=_required(settings.MICROSOFT_CLIENT_ID, "microsoft", "MICROSOFT_CLIENT_ID"),
             client_secret=_required(
                 settings.MICROSOFT_CLIENT_SECRET, "microsoft", "MICROSOFT_CLIENT_SECRET"
             ),
             authorize_url=(
                 f"https://login.microsoftonline.com/{microsoft_tenant}/oauth2/v2.0/authorize"
             ),
-            token_url=(
-                f"https://login.microsoftonline.com/{microsoft_tenant}/oauth2/v2.0/token"
-            ),
+            token_url=(f"https://login.microsoftonline.com/{microsoft_tenant}/oauth2/v2.0/token"),
             userinfo_url="https://graph.microsoft.com/v1.0/me",
             oidc=True,
             scopes=("openid", "profile", "email", "User.Read"),
@@ -150,9 +146,7 @@ def get_provider_config(name: str) -> ProviderConfig:
     try:
         return _build_provider_config(provider)
     except ValueError as exc:
-        raise ValueError(
-            f"OAuth provider {provider!r} is not available or not configured"
-        ) from exc
+        raise ValueError(f"OAuth provider {provider!r} is not available or not configured") from exc
 
 
 def generate_pkce_pair() -> tuple[str, str]:

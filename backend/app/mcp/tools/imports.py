@@ -1,6 +1,7 @@
 """
 MCP import tools.
 """
+
 from __future__ import annotations
 
 import json
@@ -210,9 +211,7 @@ async def import_openapi_dry_run(
             tags,
             sanitize,
         )
-        node_count = sum(
-            1 for n in workflow_data["nodes"] if n["type"] == "http-request"
-        )
+        node_count = sum(1 for n in workflow_data["nodes"] if n["type"] == "http-request")
         if node_count > MAX_IMPORTED_OPENAPI_ENDPOINTS:
             errors.append(
                 f"Imported endpoint count ({node_count}) exceeded safety limit "

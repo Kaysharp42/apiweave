@@ -5,6 +5,7 @@ rate limiter uses. The in-memory backend is the only currently implemented
 option and must remain the default so single-process deployments work
 out of the box.
 """
+
 from app.config import Settings
 
 

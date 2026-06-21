@@ -6,6 +6,7 @@ Covers:
 - No secrets leaked from /api/auth/providers
 - Regression: GitHub login succeeds even when GitLab env vars are absent
 """
+
 from unittest.mock import AsyncMock
 
 import pytest

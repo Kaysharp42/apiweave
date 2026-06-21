@@ -5,6 +5,7 @@ Verifies that audit events contain no secret values in their context,
 that every secret resolution has an audit entry, and that the JSON
 export is free of secret material.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -14,14 +15,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models import AuditEvent, AuditEventCreate, Secret, SecretCreateRequest
+from app.models import Secret, SecretCreateRequest
 from app.repositories.audit_repository import AuditRepository
-from app.services import audit_service, secret_service
+from app.services import secret_service
 from app.services.audit_resolver_helper import resolve_secret_with_audit
 from app.services.audit_service import (
-    _sanitize_context,
     _FORBIDDEN_CONTEXT_KEYS,
-    append_event,
+    _sanitize_context,
     export_json,
     mask_context_values,
 )
@@ -131,18 +131,23 @@ class TestSecretOperationAuditContent:
 
         async def _create():
             mock_secret = _make_mock_secret()
-            with patch(
-                "app.services.secret_service.SecretRepository.count_by_scope",
-                new=AsyncMock(return_value=0),
-            ), patch(
-                "app.services.secret_service.SecretRepository.get_by_scope_and_name",
-                new=AsyncMock(return_value=None),
-            ), patch(
-                "app.services.secret_service.SecretRepository.create",
-                new=AsyncMock(return_value=mock_secret),
-            ), patch(
-                "app.services.secret_service.append_event",
-                side_effect=mock_append,
+            with (
+                patch(
+                    "app.services.secret_service.SecretRepository.count_by_scope",
+                    new=AsyncMock(return_value=0),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.get_by_scope_and_name",
+                    new=AsyncMock(return_value=None),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.create",
+                    new=AsyncMock(return_value=mock_secret),
+                ),
+                patch(
+                    "app.services.secret_service.append_event",
+                    side_effect=mock_append,
+                ),
             ):
                 request = SecretCreateRequest(
                     name="MY_TOKEN",
@@ -175,15 +180,19 @@ class TestSecretOperationAuditContent:
 
         async def _update():
             mock_secret = _make_mock_secret()
-            with patch(
-                "app.services.secret_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=mock_secret),
-            ), patch(
-                "app.services.secret_service.SecretRepository.update",
-                new=AsyncMock(return_value=mock_secret),
-            ), patch(
-                "app.services.secret_service.append_event",
-                side_effect=mock_append,
+            with (
+                patch(
+                    "app.services.secret_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=mock_secret),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.update",
+                    new=AsyncMock(return_value=mock_secret),
+                ),
+                patch(
+                    "app.services.secret_service.append_event",
+                    side_effect=mock_append,
+                ),
             ):
                 request = SecretCreateRequest(
                     name="API_TOKEN",
@@ -211,15 +220,19 @@ class TestSecretOperationAuditContent:
 
         async def _delete():
             mock_secret = _make_mock_secret()
-            with patch(
-                "app.services.secret_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=mock_secret),
-            ), patch(
-                "app.services.secret_service.SecretRepository.delete",
-                new=AsyncMock(return_value=True),
-            ), patch(
-                "app.services.secret_service.append_event",
-                side_effect=mock_append,
+            with (
+                patch(
+                    "app.services.secret_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=mock_secret),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.delete",
+                    new=AsyncMock(return_value=True),
+                ),
+                patch(
+                    "app.services.secret_service.append_event",
+                    side_effect=mock_append,
+                ),
             ):
                 await secret_service.delete_secret(secret_id="sec-test-001")
 
@@ -334,7 +347,8 @@ class TestExportJsonSafety:
             }
         )
         with patch.object(
-            AuditRepository, "query",
+            AuditRepository,
+            "query",
             new_callable=AsyncMock,
             return_value=([mock_event], 1),
         ):
@@ -345,13 +359,13 @@ class TestExportJsonSafety:
         """Export JSON does not contain forbidden key names as values."""
         mock_event = _make_mock_audit_event()
         with patch.object(
-            AuditRepository, "query",
+            AuditRepository,
+            "query",
             new_callable=AsyncMock,
             return_value=([mock_event], 1),
         ):
             export_str = await export_json()
             data = json.loads(export_str)
-            export_text = json.dumps(data)
             for forbidden in ["ciphertext", "privateKey", "plaintext"]:
                 # These should not appear as context keys
                 event_ctx = data["events"][0]["context"]
@@ -364,7 +378,8 @@ class TestExportJsonSafety:
             _make_mock_audit_event(eventId="evt-2"),
         ]
         with patch.object(
-            AuditRepository, "query",
+            AuditRepository,
+            "query",
             new_callable=AsyncMock,
             return_value=(events, 2),
         ):

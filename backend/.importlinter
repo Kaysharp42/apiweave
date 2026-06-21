@@ -1,0 +1,22 @@
+[importlinter]
+root_package = app
+exempt_modules =
+    app.runner.executor._secrets
+    app.runner.executor._http
+    app.runner.executor._http_helpers
+    app.services.webhook_runner
+    app.repositories.outside_collaborator_repository
+    app.repositories.environment_repository
+
+[importlinter:contract:layers]
+name = Clean architecture layers
+type = layers
+containers =
+    app
+layers =
+    routes
+    mcp
+    services
+    runner
+    repositories
+    models

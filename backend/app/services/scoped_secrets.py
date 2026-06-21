@@ -10,6 +10,7 @@ master KEK derived from ``SECRET_ENCRYPTION_KEY``.
 Key rotation creates a new active keypair while retaining old inactive
 keypairs so that previously encrypted ciphertexts remain decryptable.
 """
+
 from __future__ import annotations
 
 import base64
@@ -114,7 +115,9 @@ async def rotate_keypair(
         await active.save()
         logger.info(
             "Deactivated keypair %s for %s:%s",
-            active.keyId, scope_type, scope_id,
+            active.keyId,
+            scope_type,
+            scope_id,
         )
 
     private_key = PrivateKey.generate()

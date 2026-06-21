@@ -77,6 +77,7 @@ class TestApplyAuthNone:
         exe = _executor()
         config = {"auth": {"type": "kerberos"}}
         import logging
+
         with caplog.at_level(logging.WARNING, logger="app.runner.executor"):
             headers, url = exe._apply_auth_to_request(config, {}, "https://api.test.com/")
         assert "Authorization" not in headers
@@ -176,9 +177,7 @@ class TestApplyAuthApiKey:
                 "apiKey": {"key": "api_key", "value": "abc", "addTo": "query"},
             }
         }
-        _, url = exe._apply_auth_to_request(
-            config, {}, "https://api.test.com/?existing=1"
-        )
+        _, url = exe._apply_auth_to_request(config, {}, "https://api.test.com/?existing=1")
         assert url == "https://api.test.com/?existing=1&api_key=abc"
 
     def test_apikey_defaults_to_header(self) -> None:
@@ -237,11 +236,13 @@ async def test_bearer_auth_integration(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(safe_http_module, "safe_request", fake_safe_request)
 
     exe = _executor()
-    node = _node({
-        "method": "GET",
-        "url": "https://api.example.com/data",
-        "auth": {"type": "bearer", "bearer": {"token": "tok-123"}},
-    })
+    node = _node(
+        {
+            "method": "GET",
+            "url": "https://api.example.com/data",
+            "auth": {"type": "bearer", "bearer": {"token": "tok-123"}},
+        }
+    )
 
     result = await exe._execute_http_request(node)
     assert result["statusCode"] == 200
@@ -261,11 +262,13 @@ async def test_follow_redirects_false_propagated(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(safe_http_module, "safe_request", fake_safe_request)
 
     exe = _executor()
-    node = _node({
-        "method": "GET",
-        "url": "https://api.example.com/",
-        "followRedirects": False,
-    })
+    node = _node(
+        {
+            "method": "GET",
+            "url": "https://api.example.com/",
+            "followRedirects": False,
+        }
+    )
 
     await exe._execute_http_request(node)
     assert captured_kwargs["follow_redirects"] is False
@@ -303,11 +306,13 @@ async def test_ssl_verify_false_propagated(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(safe_http_module, "safe_request", fake_safe_request)
 
     exe = _executor()
-    node = _node({
-        "method": "GET",
-        "url": "https://api.example.com/",
-        "sslVerify": False,
-    })
+    node = _node(
+        {
+            "method": "GET",
+            "url": "https://api.example.com/",
+            "sslVerify": False,
+        }
+    )
 
     await exe._execute_http_request(node)
     assert captured_kwargs["ssl_verify"] is False
@@ -345,14 +350,16 @@ async def test_array_format_headers_integration(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(safe_http_module, "safe_request", fake_safe_request)
 
     exe = _executor()
-    node = _node({
-        "method": "GET",
-        "url": "https://api.example.com/",
-        "headers": [
-            {"key": "X-Custom", "value": "yes", "active": True},
-            {"key": "X-Skipped", "value": "no", "active": False},
-        ],
-    })
+    node = _node(
+        {
+            "method": "GET",
+            "url": "https://api.example.com/",
+            "headers": [
+                {"key": "X-Custom", "value": "yes", "active": True},
+                {"key": "X-Skipped", "value": "no", "active": False},
+            ],
+        }
+    )
 
     await exe._execute_http_request(node)
     assert captured_kwargs["headers"]["X-Custom"] == "yes"
@@ -372,12 +379,14 @@ async def test_explicit_headers_override_auth(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(safe_http_module, "safe_request", fake_safe_request)
 
     exe = _executor()
-    node = _node({
-        "method": "GET",
-        "url": "https://api.example.com/",
-        "headers": [{"key": "Authorization", "value": "Manual"}],
-        "auth": {"type": "bearer", "bearer": {"token": "auto-token"}},
-    })
+    node = _node(
+        {
+            "method": "GET",
+            "url": "https://api.example.com/",
+            "headers": [{"key": "Authorization", "value": "Manual"}],
+            "auth": {"type": "bearer", "bearer": {"token": "auto-token"}},
+        }
+    )
 
     await exe._execute_http_request(node)
     assert captured_kwargs["headers"]["Authorization"] == "Manual"

@@ -6,9 +6,11 @@ QA Scenarios:
 2. Org environment policy: Org env restricted to workspace A succeeds, workspace B fails.
 3. Run selection: Run selects exactly one environment.
 """
-import pytest
+
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.models import (
     Environment,
@@ -17,25 +19,22 @@ from app.models import (
     RunEnvironmentSelection,
     ScopedEnvironmentCreate,
     ScopedEnvironmentUpdate,
-    Workspace,
 )
-from app.services import scoped_environment_service as svc
+from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
+from app.services.exceptions import ConflictError, ResourceNotFoundError
 from app.services.scoped_environment_service import (
     create_default_workspace_environment,
     create_scoped_environment,
     delete_scoped_environment,
-    get_default_workspace_environment,
+    get_environment_protection,
     get_scoped_environment,
+    list_org_envs_available_for_workspace,
     list_scoped_environments,
     resolve_run_environment,
     set_org_env_allowed_workspaces,
-    update_scoped_environment,
-    list_org_envs_available_for_workspace,
-    get_environment_protection,
     update_environment_protection,
+    update_scoped_environment,
 )
-from app.services.exceptions import ConflictError, ResourceNotFoundError
-from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
 
 
 def _make_env(
@@ -73,11 +72,14 @@ class TestDefaultEnvironment:
 
     async def test_create_default_workspace_environment(self):
         """Creating a default workspace environment produces an env with isDefault=True."""
-        with patch.object(
-            ScopedEnvironmentRepository, "get_default_for_workspace", new_callable=AsyncMock
-        ) as mock_get_default, patch.object(
-            ScopedEnvironmentRepository, "create_from_dto", new_callable=AsyncMock
-        ) as mock_create:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "get_default_for_workspace", new_callable=AsyncMock
+            ) as mock_get_default,
+            patch.object(
+                ScopedEnvironmentRepository, "create_from_dto", new_callable=AsyncMock
+            ) as mock_create,
+        ):
             mock_get_default.return_value = None
             mock_create.return_value = _make_env(
                 env_id="env-default",
@@ -104,11 +106,14 @@ class TestDefaultEnvironment:
             scope_id="ws-existing",
             is_default=True,
         )
-        with patch.object(
-            ScopedEnvironmentRepository, "get_default_for_workspace", new_callable=AsyncMock
-        ) as mock_get_default, patch.object(
-            ScopedEnvironmentRepository, "create_from_dto", new_callable=AsyncMock
-        ) as mock_create:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "get_default_for_workspace", new_callable=AsyncMock
+            ) as mock_get_default,
+            patch.object(
+                ScopedEnvironmentRepository, "create_from_dto", new_callable=AsyncMock
+            ) as mock_create,
+        ):
             mock_get_default.return_value = existing
 
             result = await create_default_workspace_environment("ws-existing")
@@ -239,11 +244,16 @@ class TestOrgEnvironmentPolicy:
             scope_id="org-acme",
             allowed_workspace_ids=["ws-a"],
         )
-        with patch.object(
-            ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            ScopedEnvironmentRepository, "is_workspace_allowed_for_org_env", new_callable=AsyncMock
-        ) as mock_allowed:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get,
+            patch.object(
+                ScopedEnvironmentRepository,
+                "is_workspace_allowed_for_org_env",
+                new_callable=AsyncMock,
+            ) as mock_allowed,
+        ):
             mock_get.return_value = org_env
             mock_allowed.return_value = True
 
@@ -265,11 +275,16 @@ class TestOrgEnvironmentPolicy:
             scope_id="org-acme",
             allowed_workspace_ids=["ws-a"],
         )
-        with patch.object(
-            ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            ScopedEnvironmentRepository, "is_workspace_allowed_for_org_env", new_callable=AsyncMock
-        ) as mock_allowed:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get,
+            patch.object(
+                ScopedEnvironmentRepository,
+                "is_workspace_allowed_for_org_env",
+                new_callable=AsyncMock,
+            ) as mock_allowed,
+        ):
             mock_get.return_value = org_env
             mock_allowed.return_value = False
 
@@ -296,11 +311,14 @@ class TestOrgEnvironmentPolicy:
             scope_id="org-acme",
             allowed_workspace_ids=["ws-a", "ws-b"],
         )
-        with patch.object(
-            ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            ScopedEnvironmentRepository, "set_allowed_workspaces", new_callable=AsyncMock
-        ) as mock_set:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get,
+            patch.object(
+                ScopedEnvironmentRepository, "set_allowed_workspaces", new_callable=AsyncMock
+            ) as mock_set,
+        ):
             mock_get.return_value = org_env
             mock_set.return_value = updated_env
 
@@ -341,11 +359,14 @@ class TestOrgEnvironmentPolicy:
             scope_id="org-acme",
             allowed_workspace_ids=["ws-a"],
         )
-        with patch.object(
-            ScopedEnvironmentRepository, "list_by_scope", new_callable=AsyncMock
-        ) as mock_list, patch.object(
-            ScopedEnvironmentRepository, "list_org_envs_for_workspace", new_callable=AsyncMock
-        ) as mock_filtered:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "list_by_scope", new_callable=AsyncMock
+            ) as mock_list,  # noqa: F841
+            patch.object(
+                ScopedEnvironmentRepository, "list_org_envs_for_workspace", new_callable=AsyncMock
+            ) as mock_filtered,
+        ):
             mock_filtered.return_value = [env_all, env_restricted]
 
             result = await list_org_envs_available_for_workspace("org-acme", "ws-a")
@@ -484,13 +505,17 @@ class TestProtectionConfig:
             createdAt=datetime.now(UTC),
             updatedAt=datetime.now(UTC),
         )
-        with patch.object(
-            ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_env, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot, patch.object(
-            ScopedEnvironmentRepository, "upsert_protection", new_callable=AsyncMock
-        ) as mock_upsert:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_env,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+            patch.object(
+                ScopedEnvironmentRepository, "upsert_protection", new_callable=AsyncMock
+            ) as mock_upsert,
+        ):
             mock_get_env.return_value = env
             mock_get_prot.return_value = None
             mock_upsert.return_value = protection
@@ -507,11 +532,14 @@ class TestProtectionConfig:
     async def test_get_protection_returns_none_when_unprotected(self):
         """get_environment_protection returns None when no protection is configured."""
         env = _make_env(env_id="env-test", scope_type="workspace", scope_id="ws-test")
-        with patch.object(
-            ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_env, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_env,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+        ):
             mock_get_env.return_value = env
             mock_get_prot.return_value = None
 
@@ -551,7 +579,9 @@ class TestScopedEnvironmentCRUD:
 
     async def test_create_scoped_environment(self):
         """Create a scoped environment with correct scope."""
-        data = ScopedEnvironmentCreate(name="Staging", variables={"BASE_URL": "https://staging.example.com"})
+        data = ScopedEnvironmentCreate(
+            name="Staging", variables={"BASE_URL": "https://staging.example.com"}
+        )
         with patch.object(
             ScopedEnvironmentRepository, "create_from_dto", new_callable=AsyncMock
         ) as mock_create:
@@ -598,8 +628,9 @@ class TestScopedEnvironmentCRUD:
 
     async def test_update_scoped_environment(self):
         """Update a scoped environment."""
-        env = _make_env(env_id="env-test", name="Old Name", scope_type="workspace", scope_id="ws-test")
-        updated = _make_env(env_id="env-test", name="New Name", scope_type="workspace", scope_id="ws-test")
+        updated = _make_env(
+            env_id="env-test", name="New Name", scope_type="workspace", scope_id="ws-test"
+        )
         with patch.object(
             ScopedEnvironmentRepository, "update", new_callable=AsyncMock
         ) as mock_update:
@@ -618,13 +649,15 @@ class TestScopedEnvironmentCRUD:
             scope_id="ws-test",
             is_default=False,
         )
-        with patch.object(
-            ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            ScopedEnvironmentRepository, "delete_protection", new_callable=AsyncMock
-        ) as mock_del_prot, patch.object(
-            ScopedEnvironmentRepository, "delete", new_callable=AsyncMock
-        ) as mock_delete:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get,
+            patch.object(ScopedEnvironmentRepository, "delete_protection", new_callable=AsyncMock),
+            patch.object(
+                ScopedEnvironmentRepository, "delete", new_callable=AsyncMock
+            ) as mock_delete,
+        ):
             mock_get.return_value = env
             mock_delete.return_value = True
 

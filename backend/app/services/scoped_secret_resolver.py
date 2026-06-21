@@ -6,6 +6,7 @@ keyId that was used to encrypt it, this module decrypts the ciphertext
 in memory using the corresponding private key.  This is the ONLY path
 that should ever hold plaintext secret values at runtime.
 """
+
 from __future__ import annotations
 
 import base64
@@ -47,9 +48,7 @@ async def resolve_secret(
     """
     keypair = await get_keypair_by_key_id(scope_type, scope_id, key_id)
     if keypair is None:
-        raise ValueError(
-            f"Keypair not found for scope {scope_type}:{scope_id} keyId={key_id}"
-        )
+        raise ValueError(f"Keypair not found for scope {scope_type}:{scope_id} keyId={key_id}")
 
     private_key_bytes = decrypt_private_key(keypair)
     private_key = PrivateKey(private_key_bytes)

@@ -83,13 +83,15 @@ async def test_valid_public_url_calls_safe_request(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(safe_http_module, "safe_request", mock_safe_request)
 
     exe = _executor()
-    node = _node({
-        "method": "POST",
-        "url": "https://api.example.com/data",
-        "body": '{"key": "value"}',
-        "bodyType": "json",
-        "timeout": 15,
-    })
+    node = _node(
+        {
+            "method": "POST",
+            "url": "https://api.example.com/data",
+            "body": '{"key": "value"}',
+            "bodyType": "json",
+            "timeout": 15,
+        }
+    )
 
     result = await exe._execute_http_request(node)
 

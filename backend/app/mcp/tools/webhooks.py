@@ -4,6 +4,7 @@ MCP webhook lifecycle tools — scoped to workspace via service token.
 CRUD, credential rotation, and logs. All operations are scoped to the
 authenticated workspace. Cross-workspace access is denied.
 """
+
 from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
@@ -67,7 +68,8 @@ async def webhook_list(
     # Apply resource filter
     if resource_type and resource_id:
         scoped_webhooks = [
-            wh for wh in scoped_webhooks
+            wh
+            for wh in scoped_webhooks
             if wh.resourceType == resource_type and wh.resourceId == resource_id
         ]
     elif resource_type:
@@ -116,6 +118,7 @@ async def webhook_create(
     # Verify resource exists and belongs to workspace
     if resource_type == "workflow":
         from app.repositories import WorkflowRepository
+
         resource = await WorkflowRepository.get_by_id(resource_id)
         if not resource:
             raise ValueError(make_not_found_error("Workflow", resource_id).model_dump_json())
@@ -123,6 +126,7 @@ async def webhook_create(
             raise PermissionError("Resource does not belong to the authenticated workspace")
     elif resource_type == "collection":
         from app.repositories import CollectionRepository
+
         resource = await CollectionRepository.get_by_id(resource_id)
         if not resource:
             raise ValueError(make_not_found_error("Collection", resource_id).model_dump_json())
@@ -136,21 +140,24 @@ async def webhook_create(
     token = f"secret_{secrets.token_urlsafe(32)}"
     hmac_secret = f"hmac_{secrets.token_urlsafe(32)}"
 
-    webhook = await WebhookRepository.create({
-        "webhookId": webhook_id,
-        "resourceType": resource_type,
-        "resourceId": resource_id,
-        "environmentId": environment_id,
-        "token": token,
-        "hmacSecret": hmac_secret,
-        "enabled": True,
-        "description": description,
-        "createdAt": datetime.now(UTC),
-        "updatedAt": datetime.now(UTC),
-        "usageCount": 0,
-    })
+    webhook = await WebhookRepository.create(
+        {
+            "webhookId": webhook_id,
+            "resourceType": resource_type,
+            "resourceId": resource_id,
+            "environmentId": environment_id,
+            "token": token,
+            "hmacSecret": hmac_secret,
+            "enabled": True,
+            "description": description,
+            "createdAt": datetime.now(UTC),
+            "updatedAt": datetime.now(UTC),
+            "usageCount": 0,
+        }
+    )
 
     from app.mcp.schemas.webhooks import WebhookCredentialResponse
+
     credential = WebhookCredentialResponse(
         webhookId=webhook.webhookId,
         url=f"{settings.BASE_URL}/api/webhooks/{resource_type}s/{webhook_id}/execute",
@@ -220,14 +227,18 @@ async def webhook_regenerate_credentials(
     new_token = f"secret_{secrets.token_urlsafe(32)}"
     new_hmac_secret = f"hmac_{secrets.token_urlsafe(32)}"
 
-    updated = await WebhookRepository.update(webhook_id, {
-        "token": new_token,
-        "hmacSecret": new_hmac_secret,
-    })
+    updated = await WebhookRepository.update(
+        webhook_id,
+        {
+            "token": new_token,
+            "hmacSecret": new_hmac_secret,
+        },
+    )
     if not updated:
         raise ValueError(make_not_found_error("Webhook", webhook_id).model_dump_json())
 
     from app.mcp.schemas.webhooks import WebhookCredentialResponse
+
     credential = WebhookCredentialResponse(
         webhookId=updated.webhookId,
         url=f"{settings.BASE_URL}/api/webhooks/{updated.resourceType}s/{webhook_id}/execute",
@@ -256,13 +267,16 @@ async def webhook_get_logs(
     limit = min(limit, 100)
 
     from app.models import WebhookLog
-    logs = await WebhookLog.find(
-        WebhookLog.webhookId == webhook_id
-    ).sort("-timestamp").skip(offset).limit(limit).to_list()
 
-    total = await WebhookLog.find(
-        WebhookLog.webhookId == webhook_id
-    ).count()
+    logs = (
+        await WebhookLog.find(WebhookLog.webhookId == webhook_id)
+        .sort("-timestamp")
+        .skip(offset)
+        .limit(limit)
+        .to_list()
+    )
+
+    total = await WebhookLog.find(WebhookLog.webhookId == webhook_id).count()
 
     entries = [webhook_log_to_entry(log) for log in logs]
 

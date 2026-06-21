@@ -6,6 +6,7 @@ Verifies that:
 - The audit event records the webhook_token actor, bypass reason, and environment
 - Tokens NOT in the bypass allowlist do not trigger bypass
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace

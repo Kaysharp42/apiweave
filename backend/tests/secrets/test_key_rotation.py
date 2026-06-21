@@ -8,6 +8,7 @@ Verifies that:
 - After KEK rotation, old AES-256-GCM blobs remain decryptable.
 - Multiple rotations preserve all old key accessibility.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,11 +18,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from nacl.public import PrivateKey, PublicKey, SealedBox
 
-from app.services import scoped_secrets, secret_kek
+from app.services import scoped_secrets, secret_crypto, secret_kek
 from app.services.scoped_secret_resolver import resolve_secret
-from app.services import secret_crypto
 
-_MASTER_KEY = b"\xAB" * 32
+_MASTER_KEY = b"\xab" * 32
 
 
 @pytest.fixture(autouse=True)
@@ -163,6 +163,7 @@ class TestLibsodiumKeypairRotation:
                 )
 
         from nacl.exceptions import CryptoError
+
         with pytest.raises(CryptoError):
             asyncio.run(_resolve())
 
@@ -182,13 +183,25 @@ class TestKekRotation:
 
         async def _scenario():
             # Encrypt with old KEK
-            with patch.object(secret_kek, "get_active_kek_id", new=AsyncMock(return_value="kek-old")):
-                with patch.object(secret_kek, "unwrap_dek_for_kek", new=AsyncMock(side_effect=lambda kid: dek_old if kid == "kek-old" else dek_new)):
+            with patch.object(
+                secret_kek, "get_active_kek_id", new=AsyncMock(return_value="kek-old")
+            ):
+                with patch.object(
+                    secret_kek,
+                    "unwrap_dek_for_kek",
+                    new=AsyncMock(side_effect=lambda kid: dek_old if kid == "kek-old" else dek_new),
+                ):
                     blob = await secret_crypto.encrypt("NEVER_LEAK_ME_42", kek_id="kek-old")
 
             # After rotation, decrypt with old KEK's DEK
-            with patch.object(secret_kek, "get_active_kek_id", new=AsyncMock(return_value="kek-new")):
-                with patch.object(secret_kek, "unwrap_dek_for_kek", new=AsyncMock(side_effect=lambda kid: dek_old if kid == "kek-old" else dek_new)):
+            with patch.object(
+                secret_kek, "get_active_kek_id", new=AsyncMock(return_value="kek-new")
+            ):
+                with patch.object(
+                    secret_kek,
+                    "unwrap_dek_for_kek",
+                    new=AsyncMock(side_effect=lambda kid: dek_old if kid == "kek-old" else dek_new),
+                ):
                     return await secret_crypto.decrypt(blob)
 
         result = asyncio.run(_scenario())
@@ -199,8 +212,12 @@ class TestKekRotation:
         dek_new = b"\x02" * 32
 
         async def _scenario():
-            with patch.object(secret_kek, "get_active_kek_id", new=AsyncMock(return_value="kek-new")):
-                with patch.object(secret_kek, "unwrap_dek_for_kek", new=AsyncMock(return_value=dek_new)):
+            with patch.object(
+                secret_kek, "get_active_kek_id", new=AsyncMock(return_value="kek-new")
+            ):
+                with patch.object(
+                    secret_kek, "unwrap_dek_for_kek", new=AsyncMock(return_value=dek_new)
+                ):
                     blob = await secret_crypto.encrypt("new-secret")
                     return blob
 
@@ -219,14 +236,20 @@ class TestKekRotation:
             blobs = []
             # Create blobs with each generation
             for kid, dek in deks.items():
-                with patch.object(secret_kek, "unwrap_dek_for_kek", new=AsyncMock(return_value=dek)):
+                with patch.object(
+                    secret_kek, "unwrap_dek_for_kek", new=AsyncMock(return_value=dek)
+                ):
                     blob = await secret_crypto.encrypt(f"secret-{kid}", kek_id=kid)
                     blobs.append((blob, f"secret-{kid}"))
 
             # All should decrypt
             results = []
             for blob, expected in blobs:
-                with patch.object(secret_kek, "unwrap_dek_for_kek", new=AsyncMock(side_effect=lambda kid: deks[kid])):
+                with patch.object(
+                    secret_kek,
+                    "unwrap_dek_for_kek",
+                    new=AsyncMock(side_effect=lambda kid: deks[kid]),
+                ):
                     result = await secret_crypto.decrypt(blob)
                     results.append(result)
             return results

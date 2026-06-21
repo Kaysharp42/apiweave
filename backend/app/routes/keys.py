@@ -4,6 +4,7 @@ Scoped keypair API routes.
 Exposes public-key retrieval for clients encrypting secret values and
 manual key rotation for administrators.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status

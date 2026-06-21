@@ -42,6 +42,7 @@ class TestMCPCORSMiddleware:
 
         async def dummy(request):
             from starlette.responses import PlainTextResponse
+
             return PlainTextResponse("ok")
 
         inner = Starlette(routes=[Route("/", dummy)])
@@ -62,6 +63,7 @@ class TestMCPCORSMiddleware:
 
         async def dummy(request):
             from starlette.responses import PlainTextResponse
+
             return PlainTextResponse("ok")
 
         inner = Starlette(routes=[Route("/", dummy)])

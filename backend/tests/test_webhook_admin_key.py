@@ -122,10 +122,15 @@ def test_webhook_management_user_permission_returns_2xx() -> None:
     user = make_user(permissions=[WEBHOOKS_READ])
     session_patch, touch_patch, user_patch = authenticated_patches(user)
 
-    with session_patch, touch_patch, user_patch, patch.object(
-        WebhookRepository,
-        "get_by_resource",
-        new=AsyncMock(return_value=[]),
+    with (
+        session_patch,
+        touch_patch,
+        user_patch,
+        patch.object(
+            WebhookRepository,
+            "get_by_resource",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         response = client.get("/api/webhooks/workflows/wf-123")
 

@@ -4,6 +4,7 @@ Tests for webhook execution route wiring (T6).
 Verifies that the execute endpoints call webhook_runner.enqueue() and
 return the correct response shape, preserving all security checks.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -43,16 +44,16 @@ def _enabled_webhook(token: str = "test-token", **kw):
 
 
 def _make_hmac(secret: str, timestamp: str, body: bytes) -> str:
-    return hmac_lib.new(
-        secret.encode(), timestamp.encode() + body, hashlib.sha256
-    ).hexdigest()
+    return hmac_lib.new(secret.encode(), timestamp.encode() + body, hashlib.sha256).hexdigest()
 
 
 class TestValidDeliveryCreatesRun:
     def test_valid_delivery_creates_run(self):
         """POST with valid token → 202 + runId, enqueue called with WebhookDelivery."""
         with (
-            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()),
+            patch(
+                "app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()
+            ),
             patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=MagicMock()),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
@@ -78,13 +79,15 @@ class TestValidDeliveryCreatesRun:
 
 
 class TestIdempotencyReplay:
-    def test_idempotency_replay_returns_same_runId(self):
+    def test_idempotency_replay_returns_same_runid(self):
         """Second POST with same Idempotency-Key → 202, same runId, replayed header."""
         cached = SimpleNamespace(
             response_body={"status": "accepted", "runId": "run-replay-001"},
         )
         with (
-            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()),
+            patch(
+                "app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()
+            ),
             patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=MagicMock()),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
@@ -118,7 +121,9 @@ class TestIdempotencyReplay:
 class TestMissingToken:
     def test_missing_token_returns_401(self):
         with (
-            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()),
+            patch(
+                "app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()
+            ),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
         ):
             resp = client.post(
@@ -164,7 +169,10 @@ class TestRateLimit:
             _rate_limiter.check_rate_limit(webhook_id, max_requests=max_req, window_seconds=3600)
 
         with (
-            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook(token="rl-tok")),
+            patch(
+                "app.routes.webhooks.WebhookRepository.get_by_id",
+                return_value=_enabled_webhook(token="rl-tok"),
+            ),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch(
                 "app.middleware.rate_limiter._rate_limiter.check_rate_limit",
@@ -184,7 +192,10 @@ class TestRateLimit:
 class TestCollectionPath:
     def test_collection_path_creates_collection_run(self):
         with (
-            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook(resourceId="col-1")),
+            patch(
+                "app.routes.webhooks.WebhookRepository.get_by_id",
+                return_value=_enabled_webhook(resourceId="col-1"),
+            ),
             patch("app.routes.webhooks.CollectionRepository.get_by_id", return_value=MagicMock()),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
@@ -211,7 +222,9 @@ class TestRunMetadata:
     def test_run_has_webhook_metadata(self):
         """enqueue receives a delivery with correct fields for Run metadata."""
         with (
-            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()),
+            patch(
+                "app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()
+            ),
             patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=MagicMock()),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
@@ -237,12 +250,16 @@ class TestQueueFullMapsTo503:
         from app.services.webhook_runner import QueueFull
 
         with (
-            patch("app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()),
+            patch(
+                "app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()
+            ),
             patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=MagicMock()),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
         ):
-            mock_runner.enqueue = AsyncMock(side_effect=QueueFull("queue is full (1000). Retry later."))
+            mock_runner.enqueue = AsyncMock(
+                side_effect=QueueFull("queue is full (1000). Retry later.")
+            )
 
             resp = client.post(
                 "/api/webhooks/workflows/wh-full/execute",
@@ -272,7 +289,10 @@ class TestHmacMissing:
                 headers={"X-Webhook-Token": "test-token"},
             )
         assert resp.status_code == 401
-        assert "signature" in resp.json()["detail"].lower() or "missing" in resp.json()["detail"].lower()
+        assert (
+            "signature" in resp.json()["detail"].lower()
+            or "missing" in resp.json()["detail"].lower()
+        )
 
 
 class TestHmacMissingTimestamp:
@@ -297,7 +317,10 @@ class TestHmacMissingTimestamp:
                 },
             )
         assert resp.status_code == 401
-        assert "timestamp" in resp.json()["detail"].lower() or "missing" in resp.json()["detail"].lower()
+        assert (
+            "timestamp" in resp.json()["detail"].lower()
+            or "missing" in resp.json()["detail"].lower()
+        )
 
 
 class TestDisabledWebhook:

@@ -1,6 +1,7 @@
 """
 Database initialization helper for MCP tool execution.
 """
+
 from app import database
 from app.database import connect_db
 

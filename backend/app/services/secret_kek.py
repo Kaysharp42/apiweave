@@ -5,6 +5,7 @@ The master KEK is derived from ``settings.SECRET_ENCRYPTION_KEY`` (base64-encode
 32 bytes).  Data Encryption Keys (DEKs) are generated per-environment, wrapped
 by the master KEK, and stored in the ``encryption_keys`` MongoDB collection.
 """
+
 from __future__ import annotations
 
 import base64
@@ -22,7 +23,7 @@ from app.models import EncryptionKey
 logger = logging.getLogger(__name__)
 
 _NONCE_SIZE = 12  # AES-GCM standard nonce size in bytes
-_DEK_SIZE = 32    # 256-bit DEK
+_DEK_SIZE = 32  # 256-bit DEK
 _KEK_ID_DEFAULT = "kek-default"
 
 
@@ -45,13 +46,9 @@ def get_master_key() -> bytes:
         padded = raw + "=" * (-len(raw) % 4)
         key = base64.urlsafe_b64decode(padded)
     except binascii.Error as exc:
-        raise ValueError(
-            f"SECRET_ENCRYPTION_KEY is not valid base64: {exc}"
-        ) from exc
+        raise ValueError(f"SECRET_ENCRYPTION_KEY is not valid base64: {exc}") from exc
     if len(key) != 32:
-        raise ValueError(
-            f"SECRET_ENCRYPTION_KEY must decode to 32 bytes, got {len(key)}"
-        )
+        raise ValueError(f"SECRET_ENCRYPTION_KEY must decode to 32 bytes, got {len(key)}")
     return key
 
 
@@ -102,9 +99,7 @@ async def get_active_kek_id() -> str:
         EncryptionKey.is_active == True  # noqa: E712
     )
     if kek is None:
-        raise ValueError(
-            "No active KEK found. Call get_or_create_default_kek() first."
-        )
+        raise ValueError("No active KEK found. Call get_or_create_default_kek() first.")
     return kek.kek_id
 
 
@@ -113,9 +108,7 @@ async def get_or_create_default_kek(kek_id: str = _KEK_ID_DEFAULT) -> str:
 
     Returns the *kek_id*.
     """
-    existing = await EncryptionKey.find_one(
-        EncryptionKey.kek_id == kek_id
-    )
+    existing = await EncryptionKey.find_one(EncryptionKey.kek_id == kek_id)
     if existing is not None:
         return existing.kek_id
 

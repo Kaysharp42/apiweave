@@ -119,8 +119,7 @@ def _run(run_id: str, status: str, failed_nodes=None, node_statuses=None):
     )
 
 
-def test_latest_failed_endpoint_returns_none_when_latest_run_is_success_even_if_older_failed_exists(
-) -> None:
+def test_latest_failed_returns_none_when_latest_is_success() -> None:
     workflow = _workflow_with_example_nodes()
     latest_success = _run("run-success", "completed")
 

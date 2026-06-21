@@ -7,6 +7,7 @@ Verifies that:
 - Restore endpoints bring deleted resources back
 - Non-owners cannot delete/restore
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -20,7 +21,6 @@ from fastapi.testclient import TestClient
 from app.auth.dependencies import get_current_active_user
 from app.routes.orgs import router as orgs_router
 from app.routes.workspaces import router as workspaces_router
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,19 +101,32 @@ class TestOrgSoftDelete:
         with (
             patch(
                 "app.routes.orgs.org_service.get_org",
-                new=AsyncMock(return_value=SimpleNamespace(
-                    orgId=org.orgId, slug=org.slug, name=org.name,
-                    ownerUserId="user-1", description=None, avatarUrl=None,
-                    createdAt=datetime.now(UTC), updatedAt=datetime.now(UTC),
-                    deletedAt=None,
-                )),
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        orgId=org.orgId,
+                        slug=org.slug,
+                        name=org.name,
+                        ownerUserId="user-1",
+                        description=None,
+                        avatarUrl=None,
+                        createdAt=datetime.now(UTC),
+                        updatedAt=datetime.now(UTC),
+                        deletedAt=None,
+                    )
+                ),
             ),
             patch(
                 "app.routes.orgs.org_service.require_org_owner",
-                new=AsyncMock(return_value=SimpleNamespace(
-                    memberId="m1", orgId=org.orgId, userId="user-1",
-                    role="owner", createdAt=datetime.now(UTC), updatedAt=datetime.now(UTC),
-                )),
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        memberId="m1",
+                        orgId=org.orgId,
+                        userId="user-1",
+                        role="owner",
+                        createdAt=datetime.now(UTC),
+                        updatedAt=datetime.now(UTC),
+                    )
+                ),
             ),
             patch(
                 "app.routes.orgs.org_service.delete_org",
@@ -128,7 +141,9 @@ class TestOrgSoftDelete:
         """A deleted org raises 404 from the service layer."""
         with patch(
             "app.routes.orgs.org_service.get_org",
-            new=AsyncMock(side_effect=HTTPException(status_code=404, detail="Organization not found")),
+            new=AsyncMock(
+                side_effect=HTTPException(status_code=404, detail="Organization not found")
+            ),
         ):
             resp = self.client.get("/api/orgs/acme")
             assert resp.status_code == 404
@@ -136,9 +151,15 @@ class TestOrgSoftDelete:
     def test_restore_org_returns_org(self) -> None:
         now = datetime.now(UTC)
         restored_org = SimpleNamespace(
-            orgId="org-test123", slug="acme", name="Acme Corp",
-            ownerUserId="user-1", description=None, avatarUrl=None,
-            createdAt=now, updatedAt=now, deletedAt=None,
+            orgId="org-test123",
+            slug="acme",
+            name="Acme Corp",
+            ownerUserId="user-1",
+            description=None,
+            avatarUrl=None,
+            createdAt=now,
+            updatedAt=now,
+            deletedAt=None,
         )
         with patch(
             "app.routes.orgs.org_service.restore_org",

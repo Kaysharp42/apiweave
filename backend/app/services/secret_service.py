@@ -9,6 +9,7 @@ Provides CRUD operations for scoped secrets with:
 - Effective resolution: Environment > Workspace > Organization
 - Audit integration for all write operations
 """
+
 from __future__ import annotations
 
 import re
@@ -41,9 +42,7 @@ def validate_secret_name(name: str) -> None:
     if not name:
         raise ValueError("Secret name cannot be empty")
     if len(name) > _SECRET_NAME_MAX_LENGTH:
-        raise ValueError(
-            f"Secret name cannot exceed {_SECRET_NAME_MAX_LENGTH} characters"
-        )
+        raise ValueError(f"Secret name cannot exceed {_SECRET_NAME_MAX_LENGTH} characters")
     if not _SECRET_NAME_PATTERN.match(name):
         raise ValueError(
             "Secret name must start with a letter or underscore and contain "
@@ -90,18 +89,12 @@ async def create_secret(
     # Check scope limit
     count = await SecretRepository.count_by_scope(scope_type, scope_id)
     if count >= _MAX_SECRETS_PER_SCOPE:
-        raise ValueError(
-            f"Cannot exceed {_MAX_SECRETS_PER_SCOPE} secrets per scope"
-        )
+        raise ValueError(f"Cannot exceed {_MAX_SECRETS_PER_SCOPE} secrets per scope")
 
     # Check for duplicate name in scope
-    existing = await SecretRepository.get_by_scope_and_name(
-        scope_type, scope_id, request.name
-    )
+    existing = await SecretRepository.get_by_scope_and_name(scope_type, scope_id, request.name)
     if existing:
-        raise ConflictError(
-            f"Secret '{request.name}' already exists in this scope"
-        )
+        raise ConflictError(f"Secret '{request.name}' already exists in this scope")
 
     secret_id = _generate_secret_id()
     secret = await SecretRepository.create(
@@ -147,9 +140,7 @@ async def update_secret(
         raise ResourceNotFoundError(f"Secret {secret_id} not found")
 
     if request.name != secret.name:
-        raise ValueError(
-            "Secret name cannot be changed. Delete and recreate to rename."
-        )
+        raise ValueError("Secret name cannot be changed. Delete and recreate to rename.")
 
     validate_secret_name(request.name)
 

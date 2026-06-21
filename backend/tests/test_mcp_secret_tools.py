@@ -7,6 +7,7 @@ QA Scenario: MCP secret write requires encrypted scoped API
 - New scoped tools (secret_create, secret_list, etc.) present
 - New tools require ciphertext (not plaintext)
 """
+
 import pytest
 
 from app.mcp.scope_context import McpScopeContext, clear_scope, set_scope

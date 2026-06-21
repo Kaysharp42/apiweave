@@ -6,20 +6,19 @@ Covers:
 - GET /api/audit/events/export — JSON download, requires auth
 - No secret values leak in list or export responses
 """
+
 import json
-from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.routes.audit import router as audit_router
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_mock_user() -> MagicMock:
     """Build a MagicMock User for auth dependency override (avoids Beanie init)."""
@@ -65,6 +64,7 @@ def _build_app() -> FastAPI:
         return _make_mock_user()
 
     from app.auth.dependencies import get_current_active_user
+
     app.dependency_overrides[get_current_active_user] = _override_auth
     return app
 
@@ -75,6 +75,7 @@ client = TestClient(_build_app())
 # ---------------------------------------------------------------------------
 # GET /api/audit/events — listing
 # ---------------------------------------------------------------------------
+
 
 class TestListAuditEvents:
     """Tests for the paginated audit event listing endpoint."""
@@ -90,7 +91,11 @@ class TestListAuditEvents:
 
     def test_returns_empty_list(self):
         """Returns empty list when no events exist."""
-        with patch("app.routes.audit.audit_service.get_events", new_callable=AsyncMock, return_value=([], 0)):
+        with patch(
+            "app.routes.audit.audit_service.get_events",
+            new_callable=AsyncMock,
+            return_value=([], 0),
+        ):
             response = client.get("/api/audit/events")
             assert response.status_code == 200
             data = response.json()
@@ -156,6 +161,7 @@ class TestListAuditEvents:
 # GET /api/audit/events/export — JSON download
 # ---------------------------------------------------------------------------
 
+
 class TestExportAuditEvents:
     """Tests for the JSON export endpoint."""
 
@@ -214,15 +220,28 @@ class TestExportAuditEvents:
 # No secret value leak
 # ---------------------------------------------------------------------------
 
+
 class TestNoSecretLeak:
     """Verify that no secret values, ciphertext, or private keys appear in responses."""
 
     FORBIDDEN_KEYS = {
-        "value", "secretValue", "secret_value", "plaintext",
-        "ciphertext", "privateKey", "private_key",
-        "encryptedValue", "encrypted_value",
-        "kek", "dek", "token", "hmacSecret", "hmac_secret",
-        "password", "apiKey", "api_key",
+        "value",
+        "secretValue",
+        "secret_value",
+        "plaintext",
+        "ciphertext",
+        "privateKey",
+        "private_key",
+        "encryptedValue",
+        "encrypted_value",
+        "kek",
+        "dek",
+        "token",
+        "hmacSecret",
+        "hmac_secret",
+        "password",
+        "apiKey",
+        "api_key",
     }
 
     def test_list_response_has_no_forbidden_context_keys(self):
@@ -282,6 +301,11 @@ class TestNoSecretLeak:
             response = client.get("/api/audit/events")
             response_text = response.text
 
-            secret_values = ["super-secret-value", "password123", "ciphertext-blob", "private-key-data"]
+            secret_values = [
+                "super-secret-value",
+                "password123",
+                "ciphertext-blob",
+                "private-key-data",
+            ]
             for val in secret_values:
                 assert val not in response_text, f"Secret value '{val}' found in response body"

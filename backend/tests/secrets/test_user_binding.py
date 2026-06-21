@@ -9,6 +9,7 @@ Verifies that:
 - Binding operations produce audit events.
 - Only the secret owner can bind their secrets.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -79,18 +80,23 @@ class TestBindToWorkspace:
         )
 
         async def _bind():
-            with patch(
-                "app.services.secret_binding_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=user_secret),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_existing",
-                new=AsyncMock(return_value=None),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.create",
-                new=AsyncMock(return_value=mock_binding),
-            ), patch(
-                "app.services.secret_binding_service.append_event",
-                new=AsyncMock(),
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=user_secret),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_existing",
+                    new=AsyncMock(return_value=None),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.create",
+                    new=AsyncMock(return_value=mock_binding),
+                ),
+                patch(
+                    "app.services.secret_binding_service.append_event",
+                    new=AsyncMock(),
+                ),
             ):
                 request = SecretBindingCreateRequest(
                     secretId="sec-user-001",
@@ -119,18 +125,23 @@ class TestBindToWorkspace:
             return MagicMock()
 
         async def _bind():
-            with patch(
-                "app.services.secret_binding_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=user_secret),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_existing",
-                new=AsyncMock(return_value=None),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.create",
-                new=AsyncMock(return_value=mock_binding),
-            ), patch(
-                "app.services.secret_binding_service.append_event",
-                side_effect=mock_append,
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=user_secret),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_existing",
+                    new=AsyncMock(return_value=None),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.create",
+                    new=AsyncMock(return_value=mock_binding),
+                ),
+                patch(
+                    "app.services.secret_binding_service.append_event",
+                    side_effect=mock_append,
+                ),
             ):
                 request = SecretBindingCreateRequest(
                     secretId="sec-user-001",
@@ -166,18 +177,23 @@ class TestBindToEnvironment:
         )
 
         async def _bind():
-            with patch(
-                "app.services.secret_binding_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=user_secret),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_existing",
-                new=AsyncMock(return_value=None),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.create",
-                new=AsyncMock(return_value=mock_binding),
-            ), patch(
-                "app.services.secret_binding_service.append_event",
-                new=AsyncMock(),
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=user_secret),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_existing",
+                    new=AsyncMock(return_value=None),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.create",
+                    new=AsyncMock(return_value=mock_binding),
+                ),
+                patch(
+                    "app.services.secret_binding_service.append_event",
+                    new=AsyncMock(),
+                ),
             ):
                 request = SecretBindingCreateRequest(
                     secretId="sec-user-001",
@@ -234,12 +250,15 @@ class TestBindingRejections:
         existing = _make_mock_binding()
 
         async def _bind():
-            with patch(
-                "app.services.secret_binding_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=user_secret),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_existing",
-                new=AsyncMock(return_value=existing),
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=user_secret),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_existing",
+                    new=AsyncMock(return_value=existing),
+                ),
             ):
                 request = SecretBindingCreateRequest(
                     secretId="sec-user-001",
@@ -331,15 +350,19 @@ class TestUnbind:
         mock_binding = _make_mock_binding(user_id="user-001")
 
         async def _unbind():
-            with patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_by_id",
-                new=AsyncMock(return_value=mock_binding),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.delete",
-                new=AsyncMock(return_value=True),
-            ), patch(
-                "app.services.secret_binding_service.append_event",
-                new=AsyncMock(),
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_by_id",
+                    new=AsyncMock(return_value=mock_binding),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.delete",
+                    new=AsyncMock(return_value=True),
+                ),
+                patch(
+                    "app.services.secret_binding_service.append_event",
+                    new=AsyncMock(),
+                ),
             ):
                 await secret_binding_service.unbind_user_secret(
                     binding_id="sbi-test-001",
@@ -358,15 +381,19 @@ class TestUnbind:
             return MagicMock()
 
         async def _unbind():
-            with patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_by_id",
-                new=AsyncMock(return_value=mock_binding),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.delete",
-                new=AsyncMock(return_value=True),
-            ), patch(
-                "app.services.secret_binding_service.append_event",
-                side_effect=mock_append,
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_by_id",
+                    new=AsyncMock(return_value=mock_binding),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.delete",
+                    new=AsyncMock(return_value=True),
+                ),
+                patch(
+                    "app.services.secret_binding_service.append_event",
+                    side_effect=mock_append,
+                ),
             ):
                 await secret_binding_service.unbind_user_secret(
                     binding_id="sbi-test-001",
