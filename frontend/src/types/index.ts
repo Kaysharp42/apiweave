@@ -190,6 +190,7 @@ export type { PreviewServer } from './PreviewServer';
 export type { PreviewTag } from './PreviewTag';
 export type { PreviewData } from './PreviewData';
 export type { AuthContextValue } from './AuthContextValue';
+export type { DeploymentMode } from './DeploymentMode';
 export type { ProviderId } from './ProviderId';
 export type { ProviderIconProps } from './ProviderIconProps';
 export type { ProviderDisplay } from './ProviderDisplay';

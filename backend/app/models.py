@@ -1151,7 +1151,12 @@ class Workspace(Document):
         indexes = [
             IndexModel([("workspaceId", ASCENDING)], unique=True),
             IndexModel([("ownerType", ASCENDING), ("ownerUserId", ASCENDING), ("slug", ASCENDING)], unique=True),
-            IndexModel([("orgId", ASCENDING), ("slug", ASCENDING)], unique=True),
+            # Partial: without this filter, all personal workspaces (orgId=null) collide on slug.
+            IndexModel(
+                [("orgId", ASCENDING), ("slug", ASCENDING)],
+                unique=True,
+                partialFilterExpression={"orgId": {"$type": "string"}},
+            ),
         ]
 
 

@@ -16,17 +16,18 @@ Variables are grouped by feature. Within each group, the table lists every varia
 2. Database
 3. CORS and Trusted Hosts
 4. Security
-5. Authentication and OAuth
-6. Sessions and CSRF
-7. Approved Domains
-8. Webhooks
-9. Storage and Artifacts
-10. Network Safety
-11. Rate Limiter
-12. MCP
-13. Secrets and Keyring
-14. Worker
-15. Frontend
+5. Deployment Mode
+6. Authentication and OAuth
+7. Sessions and CSRF
+8. Approved Domains
+9. Webhooks
+10. Storage and Artifacts
+11. Network Safety
+12. Rate Limiter
+13. MCP
+14. Secrets and Keyring
+15. Worker
+16. Frontend
 
 ## App
 
@@ -38,6 +39,7 @@ Core application settings read by FastAPI at startup.
 | `APP_ENV` | Yes | `development` | Deployment environment marker. Valid values: `development`, `production`, `prod`. Drives cookie security, allowed origin checks, and other production guards. |
 | `BASE_URL` | Yes | none | Internal backend base URL used by the app. In development: `http://localhost:8000`. In production: the HTTPS URL behind your reverse proxy. |
 | `FRONTEND_URL` | No | `None` | Browser URL the user returns to after OAuth login. Must match an entry in `ALLOWED_ORIGINS`. |
+| `DEPLOYMENT_MODE` | No | `multi_tenant` | Top-level mode switch. Valid values: `single_user`, `multi_tenant`. See [Deployment Mode](#deployment-mode) below. |
 
 ## Database
 
@@ -66,6 +68,47 @@ Long-lived signing keys for cookies, sessions, and other cryptographic operation
 | --- | --- | --- | --- |
 | `SECRET_KEY` | Yes | none | Primary application secret. Generate with `openssl rand -hex 32` and store in a secret manager. |
 | `SESSION_SECRET_KEY` | Yes (production) | empty | Separate key used to sign browser session cookies. Required when `APP_ENV` is `production` or `prod`. Generate with `openssl rand -hex 32`. |
+
+## Deployment Mode
+
+The single most consequential variable in this file. `DEPLOYMENT_MODE` selects between two completely separate operating models. The contract of every other auth variable depends on which one is active.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `DEPLOYMENT_MODE` | No | `multi_tenant` | Valid values: `single_user`, `multi_tenant`. See the matrix below and the [Authentication guide](../operations/authentication.md#deployment-mode) for the full per-mode contract. |
+
+### `single_user`
+
+A self-hosted install for a single human operator. The backend auto-creates one synthetic owner on first request, and every API call is authenticated as that owner. There are no sessions, no CSRF, no OAuth, no invites, no orgs UI, no admin pages. The frontend shows the canvas immediately with no login screen.
+
+Required configuration: only `MONGODB_URL`, `MONGODB_DB_NAME`, `BASE_URL`, `APP_ENV`, and `SECRET_ENCRYPTION_KEY` (the last so stored secrets survive restarts). All `OAUTH_*`, `SESSION_*`, `CSRF_*`, `APPROVED_DOMAINS_*`, and `SETUP_MODE_ENABLED` variables are ignored.
+
+The personal workspace is auto-created with the same slug (`personal`) and id pattern used by the multi-tenant first-owner bootstrap, so the rest of the system — workflows, environments, secrets, runs — works without modification.
+
+### `multi_tenant`
+
+The historical 2.0 behavior. OAuth SSO, server-side sessions, double-submit CSRF, invites, approved domains, and the full organization/workspace/team model are all active. The first sign-in becomes the per-instance owner.
+
+Required configuration in addition to the App/Database vars: at least one OAuth provider's `*_CLIENT_ID` and `*_CLIENT_SECRET`, `SESSION_SECRET_KEY`, `ALLOWED_ORIGINS`, and `PUBLIC_BASE_URL`. The startup checks in [Deployment](../operations/deployment.md) enforce these in production.
+
+### When to Use Each
+
+| Situation | Recommended mode |
+| --- | --- |
+| Local evaluation, side project, dev laptop | `single_user` |
+| Self-hosted for one operator or a small private team that does not need orgs/invites | `single_user` |
+| Any deployment that needs invites, organizations, or team permission grants | `multi_tenant` |
+| Hosted multi-tenant SaaS | `multi_tenant` |
+| Production with public signups | `multi_tenant` |
+
+### Switching Modes
+
+You can flip `DEPLOYMENT_MODE` in `.env` and restart the backend; the API surface, scopes, and permissions code is identical in both modes and does not need to change. The only thing that changes is *who* the backend treats as the authenticated caller.
+
+Two operational notes:
+
+- The first request after switching to `single_user` triggers the implicit-owner bootstrap. Subsequent restarts reuse the same `User` row (`usr-single-user-owner`).
+- Switching from `multi_tenant` to `single_user` is a one-way simplification: real users, sessions, and OAuth identities stay in the database but are no longer reachable. Use the destructive database reset in [Installation](../getting-started/installation.md#destructive-database-reset) to clear them.
 
 ## Authentication and OAuth
 
@@ -268,6 +311,7 @@ npm run build
 - **If webhooks return 401 with `HMAC signature required`**, `WEBHOOK_REQUIRE_HMAC` is on and the caller did not send the `X-Webhook-Signature` and `X-Webhook-Timestamp` headers. Confirm both headers are set, then check that the signed payload uses `printf '%s%s'` (timestamp then body) rather than `echo` (which adds a trailing newline).
 - **If MCP HTTP requests return 401**, confirm the bearer token is a current scoped service token. The 1.0 `MCP_API_KEY` is no longer accepted.
 - **If sessions log the user out immediately after login in production**, `SESSION_COOKIE_SECURE` is almost certainly `false` and the browser is dropping the cookie because the connection is HTTPS. Set it to `true`.
+- **If the login page never appears and the app loads straight into the canvas**, `DEPLOYMENT_MODE` is set to `single_user`. The login screen is intentionally hidden in that mode. Either switch to `multi_tenant` to restore the OAuth flow, or keep `single_user` and accept the implicit-owner model.
 
 ## Related
 

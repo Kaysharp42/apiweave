@@ -24,6 +24,13 @@ Pick the option that matches your operational experience:
 - **Self-hosted VM**: same Compose file, but fronted by a reverse proxy (Caddy, Nginx, or Traefik) that terminates TLS. Recommended for most self-hosters.
 - **Self-hosted Kubernetes**: split the four services into Deployments, mount a managed or in-cluster MongoDB, and put an Ingress in front. Pick this when you already run K8s or need horizontal scale.
 
+APIWeave also supports two operating models selected by `DEPLOYMENT_MODE` in `backend/.env`:
+
+- **`single_user`** (recommended for self-hosting and local evaluation): the backend auto-creates one synthetic owner on first request, and every API call is authenticated as that owner. No OAuth configuration, no session secrets, no logins. Set `DEPLOYMENT_MODE=single_user` and you are done with auth.
+- **`multi_tenant`** (required for hosted SaaS and any install that needs invites, organizations, or teams): full OAuth SSO, server-side sessions, double-submit CSRF, invites, approved domains. This is the historical 2.0 behavior and the default.
+
+See the [Authentication guide](authentication.md#deployment-mode) for the full per-mode contract, the configuration matrix, and the switching procedure.
+
 ## Docker Compose
 
 The repo ships a `docker-compose.yml` at the project root with four services: `mongodb`, `backend`, `worker`, `frontend`, plus an `mcp-stdio` helper.
@@ -47,13 +54,35 @@ Minimum for a working dev start:
 
 ```env
 MONGODB_URL=mongodb://mongodb:27017
-MONGODB_DB_NAME=apiweave
+MONGODB_DATABASE=apiweave
 APP_ENV=development
 ```
 
 Production must add at minimum `APP_ENV=production`, `BASE_URL`, `PUBLIC_BASE_URL`, `ALLOWED_ORIGINS`, `TRUSTED_HOSTS`, `SESSION_SECRET_KEY`, `SESSION_COOKIE_SECURE=true`, `CSRF_ENABLED=true`, `WEBHOOK_REQUIRE_HMAC=true`, `SECRET_ENCRYPTION_KEY`, and the OAuth client credentials for any provider you enable. Treat the [Security Guide](security.md) checklist as the source of truth.
 
 The 1.0 `MCP_API_KEY` and `MCP_REQUIRE_API_KEY` variables are gone. The bearer token for HTTP MCP is a scoped service token created in the workspace or organization settings. The 1.0 `SETUP_MODE_ENABLED` first-admin bootstrap is gone; the first sign-in becomes the per-instance owner.
+
+### Single-User Self-Host
+
+For local evaluation and self-hosting by a single operator, set `DEPLOYMENT_MODE=single_user` and skip the entire OAuth and session block. The minimum `.env` becomes:
+
+```env
+MONGODB_URL=mongodb://mongodb:27017
+MONGODB_DATABASE=apiweave
+APP_ENV=production
+BASE_URL=https://api.example.com
+PUBLIC_BASE_URL=https://api.example.com
+ALLOWED_ORIGINS=https://app.example.com
+TRUSTED_HOSTS=api.example.com
+SECRET_ENCRYPTION_KEY=<output of: python -c "import secrets; print(secrets.token_urlsafe(32))">
+DEPLOYMENT_MODE=single_user
+```
+
+No `SESSION_SECRET_KEY`, no `OAUTH_LOGIN_ENABLED`, no `*_CLIENT_ID`, no `*_CLIENT_SECRET`, no `APPROVED_DOMAINS`. The backend creates a synthetic owner (`owner@localhost`, `admin` role) on the first request, auto-creates the `personal` workspace, and serves the canvas immediately. The frontend hides the login, setup, and admin screens.
+
+This is the recommended path for anyone who is not running a hosted SaaS or a team install with invites. The full [Authentication guide](authentication.md#deployment-mode) explains the per-mode contract and the switching procedure.
+
+## MongoDB
 
 ## MongoDB
 

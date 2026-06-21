@@ -9,7 +9,7 @@
 
 ## Auth and Access
 
-- [Authentication](authentication.md): the SSO model, the per-instance owner bootstrap, the personal workspace, the organization and workspace context, session policy, approved domains, and the OAuth provider setup.
+- [Authentication](authentication.md): the SSO model, the per-instance owner bootstrap, the personal workspace, the organization and workspace context, session policy, approved domains, the OAuth provider setup, and the [`DEPLOYMENT_MODE` switch](authentication.md#deployment-mode) that selects between single-user self-hosting and the full multi-tenant surface.
 
 ## Security
 

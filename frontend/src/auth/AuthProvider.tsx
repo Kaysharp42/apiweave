@@ -8,6 +8,7 @@ import {
 } from 'react';
 import type { User } from '../types/User';
 import type { AuthStatus } from '../types/AuthState';
+import type { DeploymentMode } from '../types/DeploymentMode';
 import { authenticatedFetch, authenticatedJson } from '../utils/authenticatedApi';
 import API_BASE_URL from '../utils/api';
 import type { AuthContextValue } from '../types';
@@ -30,6 +31,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('multi_tenant');
+  const [modeLoaded, setModeLoaded] = useState(false);
 
   const fetchMe = useCallback(async () => {
     setStatus('loading');
@@ -40,6 +43,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setStatus('authenticated');
     } catch (err) {
       setUser(null);
+      // Default to unauthenticated. The mode-aware gate in
+      // ProtectedRoute/LoginEntry/AdminRoute will not act on this state
+      // until modeLoaded is true, so a stale deploymentMode cannot
+      // trigger a redirect race.
       setStatus('unauthenticated');
       if (err instanceof Error) {
         setError(err.message);
@@ -47,9 +54,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
+  const fetchMode = useCallback(async () => {
+    try {
+      const mode = await authenticatedJson<{ mode: DeploymentMode }>(
+        `${API_BASE_URL}/api/auth/mode`,
+      );
+      setDeploymentMode(mode.mode);
+    } catch {
+      // Safe default: treat unreachable as multi_tenant (preserves auth UI).
+      setDeploymentMode('multi_tenant');
+    } finally {
+      setModeLoaded(true);
+    }
+  }, []);
+
   useEffect(() => {
     void fetchMe();
-  }, [fetchMe]);
+    void fetchMode();
+  }, [fetchMe, fetchMode]);
 
   const login = useCallback((provider: string, inviteToken?: string) => {
     const url = new URL(`${API_BASE_URL}/api/auth/login/${provider}`);
@@ -81,6 +103,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     status,
     error,
     isSetupComplete,
+    deploymentMode,
+    modeLoaded,
     login,
     logout,
     refresh,

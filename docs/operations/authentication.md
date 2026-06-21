@@ -31,6 +31,56 @@ APIWeave has three distinct authentication paths, and they never share credentia
 
 Why this split: humans hold an interactive session with a short idle window; machines hold a long-lived scoped token tied to a specific integration. Mixing them would either lock humans out at automation scale or leak automation tokens into the browser.
 
+## Deployment Mode
+
+`DEPLOYMENT_MODE` in `backend/.env` selects the operating model at startup. The two modes are designed to be drop-in replacements for each other: the API surface, scope model, permission evaluator, and persistence are identical. The only thing that changes is *who* the backend treats as the authenticated caller.
+
+| Mode | Use it for | What's enabled | What's disabled |
+| --- | --- | --- | --- |
+| `single_user` | Local evaluation, single-operator self-host, dev laptops, side projects | Personal workspace auto-created on first request. All canvas features work. | OAuth, sessions, CSRF, invites, approved domains, organizations, admin pages, login screen. |
+| `multi_tenant` | Hosted SaaS, team installs, any deployment that needs invites or orgs | OAuth SSO (4 providers), server-side sessions, double-submit CSRF, invites, approved domains, full org/workspace/team model, admin pages. | (nothing — the full 2.0 surface) |
+
+Default is `multi_tenant` to preserve the historical 2.0 behavior. Set the variable in `backend/.env` and restart the backend; no code changes are required.
+
+### How `single_user` Works
+
+The backend treats the entire install as belonging to one user. On the first request after the backend starts, a single synthetic owner row is created in the `users` collection with a stable id (`usr-single-user-owner`), the `admin` role, and a verified email of `owner@localhost`. The personal workspace at slug `personal` is auto-created for this owner the same way the multi-tenant first-sign-in bootstrap creates one for a real user.
+
+Every subsequent request is authenticated as this owner. There is no login screen, no logout, no session cookie, no CSRF token, no invite flow. The frontend `AuthProvider` calls `GET /api/auth/mode` once on boot; the response is `{ "mode": "single_user" }`, and the login, setup, and admin routes redirect to `/app` automatically.
+
+The reason this works without special-casing downstream code: the synthetic owner is a real `User` document with the `admin` role. Every `get_current_user` dependency call returns it; every `require_permission` and `require_scoped_permission` check works as it does for any admin user. The Phase 1 security hardening (the `ScopedPermissionEvaluator` rewrite) is designed against the same `User` shape, so it will pick up single-user mode automatically.
+
+### How `multi_tenant` Works
+
+The historical 2.0 model. The first sign-in through any enabled OAuth provider becomes the per-instance owner; a personal workspace is auto-created for them. Subsequent sign-ins through OAuth, invites, and approved domains produce normal users. Sessions are stored server-side, the session cookie is HttpOnly + Signed, and CSRF is enforced on every state-changing method. See the rest of this guide for the full contract.
+
+### Choosing a Mode
+
+- **Local evaluation or single-operator self-host**: `single_user`. Zero auth configuration.
+- **Self-hosted for a small private team**: `single_user` if you do not need invites, orgs, or teams. Switch to `multi_tenant` the moment you need them.
+- **Hosted multi-tenant SaaS**: `multi_tenant`.
+- **Production with public signup or invites**: `multi_tenant`.
+
+### Switching Modes
+
+You can flip `DEPLOYMENT_MODE` in `.env` and restart the backend at any time. The mode is read fresh on every request, not at startup, but a restart is the cleanest transition.
+
+- **multi_tenant → single_user**: The synthetic owner is created on the next request. Existing real users, sessions, and OAuth identities stay in the database but are no longer reachable from the UI. The synthetic owner gets a fresh personal workspace; the old user's personal workspace remains in the database alongside it. You have three options for the old data:
+  - **Leave it**: the old workspace remains in the database, unreachable from single-user mode. It is preserved if you later switch back to multi_tenant.
+  - **Adopt it**: run `python scripts/adopt_workspace.py <workspaceId>` from the `backend/` directory to reassign the old workspace to the synthetic owner. The script is idempotent and adds an admin membership for the owner. Run this **before** the first frontend request triggers the lazy bootstrap, otherwise the synthetic owner will already own a freshly created personal workspace and the script will refuse the transfer (the `(ownerUserId, slug)` unique index forbids two personal workspaces for the same user). If you hit that, delete the empty bootstrap workspace and retry.
+  - **Wipe it**: use the destructive database reset in [Installation](../getting-started/installation.md#destructive-database-reset) to clear everything and start fresh.
+- **single_user → multi_tenant**: You must configure at least one OAuth provider (`*_CLIENT_ID` and `*_CLIENT_SECRET`) and `SESSION_SECRET_KEY` before the first sign-in can succeed. The startup checks in [Deployment](deployment.md) enforce these in production. The synthetic owner's workspace is left in place; the first real OAuth user gets their own personal workspace with no collision.
+
+### What the Frontend Sees
+
+The frontend exposes `isSingleUser` from `useAuth()` and gates three places on it:
+
+1. `/login` redirects to `/app` in single-user mode (no login screen).
+2. `/setup` redirects to `/app` in single-user mode (no setup screen).
+3. `AdminRoute` redirects to `/app` in single-user mode (no admin surface — there's no org to administer).
+
+The org/workspace switcher continues to show the personal workspace in both modes. The create-org/workspace affordances called for in Phase 3 of the hosted-multi-tenant roadmap will themselves be gated on `isSingleUser` so they do not render in self-hosted installs.
+
 ## Per-Instance Owner Bootstrap
 
 APIWeave 2.0 has a single per-instance owner. The first user to sign in through any enabled provider becomes the owner, and the backend auto-creates a default personal workspace at the slug `personal` for that user. The owner can then create the first organization, invite teammates, and create organization-owned workspaces.

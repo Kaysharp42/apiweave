@@ -18,6 +18,7 @@ from app.auth.dependencies import (
     csrf_protect,
     get_current_session,
     get_current_user,
+    is_single_user_mode,
     require_permission,
 )
 from app.auth.exceptions import OAuthLinkingBlockedError
@@ -55,6 +56,16 @@ SESSION_MAX_AGE_SECONDS = 604800
 def list_providers() -> list[dict]:
     """Return enabled status for all known OAuth providers. Public — no auth required."""
     return get_configured_providers()
+
+
+@router.get("/mode")
+def deployment_mode() -> dict[str, str]:
+    """Return the current deployment mode. Public — no auth required.
+
+    The frontend reads this on boot to decide whether to render the
+    login/setup pages and the multi-tenant org UI.
+    """
+    return {"mode": settings.DEPLOYMENT_MODE}
 
 
 def _user_response(user: User) -> UserResponse:
@@ -413,6 +424,12 @@ async def _create_session(response: Response, user: User):
 
 @router.get("/login/{provider}")
 async def oauth_login(provider: str, request: Request) -> RedirectResponse:
+    if is_single_user_mode():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OAuth login is disabled in single-user mode",
+        )
+
     from app.auth.provider_registry import (
         create_login_url,
         generate_nonce,
@@ -461,6 +478,12 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
 
 @router.get("/callback/{provider}")
 async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
+    if is_single_user_mode():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OAuth callback is disabled in single-user mode",
+        )
+
     from app.auth.provider_registry import (
         exchange_code_for_token,
         fetch_userinfo,
@@ -567,6 +590,10 @@ async def logout(
     response: Response,
     session: Session = Depends(get_current_session),
 ) -> dict[str, bool]:
+    if is_single_user_mode():
+        # No session to revoke; report success so the frontend can noop.
+        return {"revoked": True}
+
     revoked = await SessionRepository.revoke(session.sessionId)
     response.delete_cookie(
         SESSION_COOKIE_NAME,
@@ -587,6 +614,9 @@ async def signout(
 
     Alias for /logout — used by the AccountSettings sign-out flow.
     """
+    if is_single_user_mode():
+        return {"revoked": True}
+
     revoked = await SessionRepository.revoke(session.sessionId)
     response.delete_cookie(
         SESSION_COOKIE_NAME,

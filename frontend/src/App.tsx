@@ -61,12 +61,36 @@ export const AppContext = createContext<AppContextValue>({
 // ---------------------------------------------------------------------------
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { status } = useAuth();
+  const { status, deploymentMode, modeLoaded, error } = useAuth();
 
-  if (status === 'loading') {
+  if (status === 'loading' || !modeLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
         <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
+      </div>
+    );
+  }
+
+  // In single-user mode, an unauthenticated /me response is a backend bug,
+  // not a sign that the user needs to log in. Surface the error instead
+  // of redirecting to /login (which would just bounce back via LoginEntry).
+  if (status === 'unauthenticated' && deploymentMode === 'single_user') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+            Auth bootstrap failed
+          </h1>
+          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
+            Single-user mode requires <code>/api/auth/me</code> to succeed. The
+            backend did not return a user.
+          </p>
+          {error !== null && (
+            <p className="mt-3 text-xs font-mono text-text-tertiary dark:text-text-tertiary-dark break-words">
+              {error}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -182,6 +206,85 @@ function WorkspacePageShell({ children, navState = 'settings' }: WorkspacePageSh
 // App
 // ---------------------------------------------------------------------------
 
+function LoginEntry() {
+  const { status, isSingleUser, isAuthenticated, modeLoaded, error } = useAuth();
+
+  if (status === 'loading' || !modeLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
+        <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
+      </div>
+    );
+  }
+
+  // In single-user mode there is no login page — but only redirect to /app
+  // once we have a confirmed authenticated user. Redirecting before /me
+  // resolves (or while /me failed) causes a Navigate ping-pong with
+  // ProtectedRoute.
+  if (isSingleUser) {
+    if (isAuthenticated) {
+      return <Navigate to="/app" replace />;
+    }
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+            Auth bootstrap failed
+          </h1>
+          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
+            Single-user mode requires <code>/api/auth/me</code> to succeed. The
+            backend did not return a user.
+          </p>
+          {error !== null && (
+            <p className="mt-3 text-xs font-mono text-text-tertiary dark:text-text-tertiary-dark break-words">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return <LoginPage />;
+}
+
+function SetupEntry() {
+  const { status, isSingleUser, isAuthenticated, modeLoaded, error } = useAuth();
+
+  if (status === 'loading' || !modeLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
+        <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
+      </div>
+    );
+  }
+
+  if (isSingleUser) {
+    if (isAuthenticated) {
+      return <Navigate to="/app" replace />;
+    }
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+            Auth bootstrap failed
+          </h1>
+          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
+            Single-user mode requires <code>/api/auth/me</code> to succeed.
+          </p>
+          {error !== null && (
+            <p className="mt-3 text-xs font-mono text-text-tertiary dark:text-text-tertiary-dark break-words">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return <SetupPage />;
+}
+
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     try {
@@ -249,8 +352,8 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/setup" element={<SetupPage />} />
+              <Route path="/login" element={<LoginEntry />} />
+              <Route path="/setup" element={<SetupEntry />} />
               <Route path="/invite/:token" element={<InvitePage />} />
               <Route
                 path="/personal/workflows/:workflowId"

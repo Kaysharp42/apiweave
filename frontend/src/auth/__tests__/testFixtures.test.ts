@@ -16,6 +16,7 @@ import {
   mockEditor,
   mockViewer,
   mockSetupMode,
+  mockDeploymentMode,
   buildAdminUser,
   buildEditorUser,
   buildViewerUser,
@@ -167,4 +168,47 @@ test('buildViewerUser: returns User with viewer role, read-only permissions', ()
   assert.ok(user.roles.includes('viewer'));
   assert.ok(user.permissions.includes('workflows:read'));
   assert.ok(!user.permissions.includes('workflows:create'));
+});
+
+// ---------------------------------------------------------------------------
+// mockDeploymentMode — locks in the /api/auth/mode bootstrap contract
+// (Required for the single-user mode redirect-ping-pong fix: route gates
+// must check `modeLoaded` before redirecting.)
+// ---------------------------------------------------------------------------
+
+test('mockDeploymentMode: /api/auth/mode returns single_user', async () => {
+  const { restore } = mockDeploymentMode('single_user');
+  try {
+    const body = await authenticatedJson('/api/auth/mode') as { mode: string };
+    assert.equal(body.mode, 'single_user');
+  } finally {
+    restore();
+  }
+});
+
+test('mockDeploymentMode: /api/auth/mode returns multi_tenant', async () => {
+  const { restore } = mockDeploymentMode('multi_tenant');
+  try {
+    const body = await authenticatedJson('/api/auth/mode') as { mode: string };
+    assert.equal(body.mode, 'multi_tenant');
+  } finally {
+    restore();
+  }
+});
+
+test('mockDeploymentMode: does NOT intercept /api/auth/me', async () => {
+  // Without a /me mock, /me should reach the real fetch (which will fail
+  // in a node:test env, but importantly must NOT return mode's mock).
+  const { restore } = mockDeploymentMode('single_user');
+  try {
+    let threw = false;
+    try {
+      await authenticatedJson('/api/auth/me');
+    } catch {
+      threw = true;
+    }
+    assert.ok(threw, 'Should throw because /me is not mocked');
+  } finally {
+    restore();
+  }
 });
