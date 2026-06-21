@@ -7,9 +7,8 @@ Verifies that:
 - Actor type/id are stored on the context
 - Environment scope metadata is captured
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from app.runner.executor import RunContext, WorkflowExecutor
 

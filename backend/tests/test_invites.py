@@ -8,6 +8,7 @@ Covers:
 5. Self-delete guard (admin cannot delete self)
 6. Last-admin guard (admin cannot delete last admin)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -117,8 +118,13 @@ def test_settings_create_invite_duplicate_email_returns_409() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "find_active_by_email", new=AsyncMock(return_value=existing_invite)
+    with (
+        s,
+        t,
+        u,
+        patch.object(
+            InviteRepository, "find_active_by_email", new=AsyncMock(return_value=existing_invite)
+        ),
     ):
         response = client.post(
             "/api/settings/invites",
@@ -137,10 +143,12 @@ def test_settings_create_invite_existing_user_returns_409() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "find_active_by_email", new=AsyncMock(return_value=None)
-    ), patch.object(
-        UserRepository, "get_by_email", new=AsyncMock(return_value=existing_user)
+    with (
+        s,
+        t,
+        u,
+        patch.object(InviteRepository, "find_active_by_email", new=AsyncMock(return_value=None)),
+        patch.object(UserRepository, "get_by_email", new=AsyncMock(return_value=existing_user)),
     ):
         response = client.post(
             "/api/settings/invites",
@@ -242,9 +250,7 @@ async def test_reconcile_orphan_invite_consumes_and_applies_role(
     )
     consume = AsyncMock(return_value=True)
     monkeypatch.setattr(auth_router.InviteRepository, "consume", consume)
-    monkeypatch.setattr(
-        auth_router.UserRepository, "update", AsyncMock(return_value=updated_user)
-    )
+    monkeypatch.setattr(auth_router.UserRepository, "update", AsyncMock(return_value=updated_user))
 
     result = await auth_router._reconcile_orphan_invite(user, invite_token=None)
 
@@ -328,10 +334,12 @@ def test_update_invite_role_admin_ok() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "get_by_id", new=AsyncMock(return_value=invite)
-    ), patch.object(
-        InviteRepository, "update_role", new=AsyncMock(return_value=updated_invite)
+    with (
+        s,
+        t,
+        u,
+        patch.object(InviteRepository, "get_by_id", new=AsyncMock(return_value=invite)),
+        patch.object(InviteRepository, "update_role", new=AsyncMock(return_value=updated_invite)),
     ):
         response = client.patch(
             "/api/invites/inv-1/role",
@@ -350,8 +358,11 @@ def test_update_invite_role_consumed_invite_returns_400() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "get_by_id", new=AsyncMock(return_value=consumed_invite)
+    with (
+        s,
+        t,
+        u,
+        patch.object(InviteRepository, "get_by_id", new=AsyncMock(return_value=consumed_invite)),
     ):
         response = client.patch(
             "/api/invites/inv-1/role",
@@ -369,9 +380,7 @@ def test_update_invite_role_not_found_returns_404() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "get_by_id", new=AsyncMock(return_value=None)
-    ):
+    with s, t, u, patch.object(InviteRepository, "get_by_id", new=AsyncMock(return_value=None)):
         response = client.patch(
             "/api/invites/ghost/role",
             json={"role_preset": PRESET_EDITOR},
@@ -409,10 +418,12 @@ def test_delete_invite_admin_ok() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "get_by_id", new=AsyncMock(return_value=invite)
-    ), patch.object(
-        InviteRepository, "delete_invite", new=AsyncMock(return_value=True)
+    with (
+        s,
+        t,
+        u,
+        patch.object(InviteRepository, "get_by_id", new=AsyncMock(return_value=invite)),
+        patch.object(InviteRepository, "delete_invite", new=AsyncMock(return_value=True)),
     ):
         response = client.delete("/api/settings/invites/inv-1")
     assert response.status_code == 200
@@ -427,9 +438,7 @@ def test_delete_invite_not_found_returns_404() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "get_by_id", new=AsyncMock(return_value=None)
-    ):
+    with s, t, u, patch.object(InviteRepository, "get_by_id", new=AsyncMock(return_value=None)):
         response = client.delete("/api/settings/invites/ghost")
     assert response.status_code == 404
 
@@ -443,8 +452,11 @@ def test_delete_invite_consumed_returns_404() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        InviteRepository, "get_by_id", new=AsyncMock(return_value=consumed_invite)
+    with (
+        s,
+        t,
+        u,
+        patch.object(InviteRepository, "get_by_id", new=AsyncMock(return_value=consumed_invite)),
     ):
         response = client.delete("/api/settings/invites/inv-1")
     assert response.status_code == 404
@@ -491,10 +503,12 @@ def test_delete_user_other_admin_ok() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        UserRepository, "get_all", new=AsyncMock(return_value=[admin, other_admin])
-    ), patch.object(
-        UserRepository, "delete", new=AsyncMock(return_value=True)
+    with (
+        s,
+        t,
+        u,
+        patch.object(UserRepository, "get_all", new=AsyncMock(return_value=[admin, other_admin])),
+        patch.object(UserRepository, "delete", new=AsyncMock(return_value=True)),
     ):
         response = client.delete("/api/users/admin-2")
     assert response.status_code == 204
@@ -508,10 +522,12 @@ def test_delete_non_admin_user_with_single_admin_ok() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        UserRepository, "get_all", new=AsyncMock(return_value=[admin, viewer])
-    ), patch.object(
-        UserRepository, "delete", new=AsyncMock(return_value=True)
+    with (
+        s,
+        t,
+        u,
+        patch.object(UserRepository, "get_all", new=AsyncMock(return_value=[admin, viewer])),
+        patch.object(UserRepository, "delete", new=AsyncMock(return_value=True)),
     ):
         response = client.delete("/api/users/viewer-1")
     assert response.status_code == 204
@@ -526,10 +542,12 @@ def test_delete_user_not_found_returns_404() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        UserRepository, "get_all", new=AsyncMock(return_value=[admin, viewer])
-    ), patch.object(
-        UserRepository, "delete", new=AsyncMock(return_value=False)
+    with (
+        s,
+        t,
+        u,
+        patch.object(UserRepository, "get_all", new=AsyncMock(return_value=[admin, viewer])),
+        patch.object(UserRepository, "delete", new=AsyncMock(return_value=False)),
     ):
         response = client.delete("/api/users/ghost")
     assert response.status_code == 404
@@ -553,9 +571,7 @@ def test_delete_last_admin_returns_400() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(requester)
-    with s, t, u, patch.object(
-        UserRepository, "get_all", new=AsyncMock(return_value=[sole_admin])
-    ):
+    with s, t, u, patch.object(UserRepository, "get_all", new=AsyncMock(return_value=[sole_admin])):
         response = client.delete("/api/users/sole-2")
     assert response.status_code == 400
     assert "admin" in response.json()["detail"].lower()
@@ -572,9 +588,7 @@ def test_delete_last_admin_guard_with_single_admin_in_system() -> None:
     s, t, u = _auth_patches(requester)
     # get_all returns only the sole admin (requester is not in the list, simulating
     # that the guard sees only 1 admin)
-    with s, t, u, patch.object(
-        UserRepository, "get_all", new=AsyncMock(return_value=[sole_admin])
-    ):
+    with s, t, u, patch.object(UserRepository, "get_all", new=AsyncMock(return_value=[sole_admin])):
         response = client.delete("/api/users/sole-admin")
     assert response.status_code == 400
     detail = response.json()["detail"].lower()
@@ -588,9 +602,7 @@ def test_settings_update_permissions_blocks_last_admin_demotion() -> None:
     client.headers.update({"X-CSRF-Token": "x"})
     client.cookies.set("csrftoken", "x")
     s, t, u = _auth_patches(admin)
-    with s, t, u, patch.object(
-        UserRepository, "get_all", new=AsyncMock(return_value=[admin])
-    ):
+    with s, t, u, patch.object(UserRepository, "get_all", new=AsyncMock(return_value=[admin])):
         response = client.patch(
             "/api/settings/users/admin-1/permissions",
             json={"roles": [PRESET_VIEWER], "permissions": []},
@@ -653,14 +665,19 @@ def test_settings_create_invite_clears_deleted_user(monkeypatch: pytest.MonkeyPa
     clear_mock = AsyncMock(return_value=True)
     monkeypatch.setattr(DeletedUserRepository, "delete_by_email", clear_mock)
 
-    with s, t, u, patch.object(
-        InviteRepository, "find_active_by_email", new=AsyncMock(return_value=None)
-    ), patch.object(
-        UserRepository, "get_by_email", new=AsyncMock(return_value=None)
-    ), patch.object(
-        InviteRepository, "create", new=AsyncMock(return_value=_make_invite(
-            invite_id="inv-reinvite", email="reinvite@example.com"
-        ))
+    with (
+        s,
+        t,
+        u,
+        patch.object(InviteRepository, "find_active_by_email", new=AsyncMock(return_value=None)),
+        patch.object(UserRepository, "get_by_email", new=AsyncMock(return_value=None)),
+        patch.object(
+            InviteRepository,
+            "create",
+            new=AsyncMock(
+                return_value=_make_invite(invite_id="inv-reinvite", email="reinvite@example.com")
+            ),
+        ),
     ):
         response = client.post(
             "/api/settings/invites",
@@ -688,9 +705,7 @@ def test_auth_create_invite_clears_deleted_user(monkeypatch: pytest.MonkeyPatch)
         InviteRepository,
         "create",
         AsyncMock(
-            return_value=_make_invite(
-                invite_id="inv-reinvite2", email="reinvite2@example.com"
-            )
+            return_value=_make_invite(invite_id="inv-reinvite2", email="reinvite2@example.com")
         ),
     )
     clear_mock = AsyncMock(return_value=True)

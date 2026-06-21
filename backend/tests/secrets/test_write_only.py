@@ -7,13 +7,12 @@ JSON exports, or log output outside the trusted runtime sink.
 Uses sentinel value ``NEVER_LEAK_ME_42`` and asserts it appears nowhere
 in any serialized output.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from datetime import UTC, datetime
-from io import StringIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,10 +23,10 @@ from app.models import (
     SecretCreateRequest,
     SecretMetadataResponse,
 )
-from app.services import secret_service, secret_binding_service, audit_service
-from app.services.secret_utils import SecretMasker
-from app.services.audit_service import _sanitize_context, append_event
+from app.services import secret_binding_service, secret_service
+from app.services.audit_service import _sanitize_context
 from app.services.exceptions import AuditWriteUnavailableError
+from app.services.secret_utils import SecretMasker
 
 # Sentinel value that must NEVER appear outside the trusted runtime sink.
 SENTINEL = "NEVER_LEAK_ME_42"
@@ -150,18 +149,23 @@ class TestCreateUpdateResponseNoLeak:
         mock_secret = _make_mock_secret(ciphertext=f"enc-{SENTINEL}")
 
         async def _create():
-            with patch(
-                "app.services.secret_service.SecretRepository.count_by_scope",
-                new=AsyncMock(return_value=0),
-            ), patch(
-                "app.services.secret_service.SecretRepository.get_by_scope_and_name",
-                new=AsyncMock(return_value=None),
-            ), patch(
-                "app.services.secret_service.SecretRepository.create",
-                new=AsyncMock(return_value=mock_secret),
-            ), patch(
-                "app.services.secret_service.append_event",
-                new=AsyncMock(),
+            with (
+                patch(
+                    "app.services.secret_service.SecretRepository.count_by_scope",
+                    new=AsyncMock(return_value=0),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.get_by_scope_and_name",
+                    new=AsyncMock(return_value=None),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.create",
+                    new=AsyncMock(return_value=mock_secret),
+                ),
+                patch(
+                    "app.services.secret_service.append_event",
+                    new=AsyncMock(),
+                ),
             ):
                 request = SecretCreateRequest(
                     name="MY_TOKEN",
@@ -183,15 +187,19 @@ class TestCreateUpdateResponseNoLeak:
         mock_secret = _make_mock_secret(ciphertext=f"enc-{SENTINEL}")
 
         async def _update():
-            with patch(
-                "app.services.secret_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=mock_secret),
-            ), patch(
-                "app.services.secret_service.SecretRepository.update",
-                new=AsyncMock(return_value=mock_secret),
-            ), patch(
-                "app.services.secret_service.append_event",
-                new=AsyncMock(),
+            with (
+                patch(
+                    "app.services.secret_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=mock_secret),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.update",
+                    new=AsyncMock(return_value=mock_secret),
+                ),
+                patch(
+                    "app.services.secret_service.append_event",
+                    new=AsyncMock(),
+                ),
             ):
                 request = SecretCreateRequest(
                     name="API_TOKEN",
@@ -233,18 +241,23 @@ class TestAuditNoLeak:
 
         async def _create():
             mock_secret = _make_mock_secret(ciphertext=f"enc-{SENTINEL}")
-            with patch(
-                "app.services.secret_service.SecretRepository.count_by_scope",
-                new=AsyncMock(return_value=0),
-            ), patch(
-                "app.services.secret_service.SecretRepository.get_by_scope_and_name",
-                new=AsyncMock(return_value=None),
-            ), patch(
-                "app.services.secret_service.SecretRepository.create",
-                new=AsyncMock(return_value=mock_secret),
-            ), patch(
-                "app.services.secret_service.append_event",
-                side_effect=mock_append,
+            with (
+                patch(
+                    "app.services.secret_service.SecretRepository.count_by_scope",
+                    new=AsyncMock(return_value=0),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.get_by_scope_and_name",
+                    new=AsyncMock(return_value=None),
+                ),
+                patch(
+                    "app.services.secret_service.SecretRepository.create",
+                    new=AsyncMock(return_value=mock_secret),
+                ),
+                patch(
+                    "app.services.secret_service.append_event",
+                    side_effect=mock_append,
+                ),
             ):
                 request = SecretCreateRequest(
                     name="MY_TOKEN",
@@ -281,20 +294,26 @@ class TestAuditNoLeak:
                 scope_id="user-001",
             )
             mock_binding = _make_mock_binding()
-            with patch(
-                "app.services.secret_binding_service.SecretRepository.get_by_id",
-                new=AsyncMock(return_value=user_secret),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.get_existing",
-                new=AsyncMock(return_value=None),
-            ), patch(
-                "app.services.secret_binding_service.SecretBindingRepository.create",
-                new=AsyncMock(return_value=mock_binding),
-            ), patch(
-                "app.services.secret_binding_service.append_event",
-                side_effect=mock_append,
+            with (
+                patch(
+                    "app.services.secret_binding_service.SecretRepository.get_by_id",
+                    new=AsyncMock(return_value=user_secret),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.get_existing",
+                    new=AsyncMock(return_value=None),
+                ),
+                patch(
+                    "app.services.secret_binding_service.SecretBindingRepository.create",
+                    new=AsyncMock(return_value=mock_binding),
+                ),
+                patch(
+                    "app.services.secret_binding_service.append_event",
+                    side_effect=mock_append,
+                ),
             ):
                 from app.models import SecretBindingCreateRequest
+
                 request = SecretBindingCreateRequest(
                     secretId="sec-user-001",
                     targetScopeType="workspace",
@@ -349,5 +368,6 @@ class TestSecretMaskerNoLeak:
         # Simulate context where value leaked under a non-forbidden key
         raw_context = {"message": f"token={SENTINEL}"}
         from app.services.audit_service import mask_context_values
+
         masked = mask_context_values(raw_context, masker)
         assert SENTINEL not in masked["message"]

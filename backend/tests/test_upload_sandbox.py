@@ -50,18 +50,14 @@ class TestResolveUploadPath:
         resolved = resolve_upload_path(str(allowed))
         assert resolved == allowed.resolve()
 
-    def test_absolute_outside_sandbox_rejected(
-        self, sandbox_dir: Path, tmp_path: Path
-    ) -> None:
+    def test_absolute_outside_sandbox_rejected(self, sandbox_dir: Path, tmp_path: Path) -> None:
         """An absolute path outside the sandbox is rejected.
 
         Uses the real backend/.env path when it exists, otherwise any file
         outside the sandbox directory.
         """
         # Try the real backend/.env first (as specified in the task).
-        backend_env = (
-            Path(__file__).resolve().parent.parent / ".env"
-        )
+        backend_env = Path(__file__).resolve().parent.parent / ".env"
         if backend_env.exists():
             outside_path = backend_env
         else:
@@ -77,9 +73,7 @@ class TestResolveUploadPath:
         with pytest.raises(UploadSandboxError, match="[Tt]raversal"):
             resolve_upload_path("../etc/passwd")
 
-    def test_url_encoded_traversal_rejected(
-        self, sandbox_dir: Path
-    ) -> None:
+    def test_url_encoded_traversal_rejected(self, sandbox_dir: Path) -> None:
         """URL-encoded traversal (``%2e%2e%2f``) is treated as a literal
         filename — it must NOT decode and escape the sandbox.
 
@@ -114,9 +108,7 @@ class TestResolveUploadPath:
         with pytest.raises(UploadSandboxError, match="NUL"):
             resolve_upload_path("file\x00.txt")
 
-    def test_symlink_outside_rejected(
-        self, sandbox_dir: Path, tmp_path: Path
-    ) -> None:
+    def test_symlink_outside_rejected(self, sandbox_dir: Path, tmp_path: Path) -> None:
         """A symlink inside the sandbox that points outside is rejected."""
         outside_file = tmp_path / "outside.txt"
         outside_file.write_text("secret")

@@ -6,6 +6,7 @@ Verifies:
 - No global Environment.isActive remains in the schema
 - Wipe script drops all collections
 """
+
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
@@ -38,18 +39,22 @@ class TestBootstrapFirstOwner:
         """First user gets a default personal workspace."""
         user = make_user()
 
-        with patch.object(
-            WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            WorkspaceRepository, "get_orphan_personal", new_callable=AsyncMock
-        ) as mock_orphan, patch.object(
-            WorkspaceRepository, "create", new_callable=AsyncMock
-        ) as mock_create, patch.object(
-            WorkspaceRepository, "add_member", new_callable=AsyncMock
-        ) as mock_add_member, patch(
-            "app.services.bootstrap.create_default_workspace_environment",
-            new_callable=AsyncMock,
-        ) as mock_create_env:
+        with (
+            patch.object(
+                WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
+            ) as mock_get,
+            patch.object(
+                WorkspaceRepository, "get_orphan_personal", new_callable=AsyncMock
+            ) as mock_orphan,
+            patch.object(WorkspaceRepository, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(
+                WorkspaceRepository, "add_member", new_callable=AsyncMock
+            ) as mock_add_member,
+            patch(
+                "app.services.bootstrap.create_default_workspace_environment",
+                new_callable=AsyncMock,
+            ) as mock_create_env,
+        ):
             mock_get.return_value = None
             mock_orphan.return_value = None
             mock_workspace = Workspace.model_construct(
@@ -88,11 +93,12 @@ class TestBootstrapFirstOwner:
             updatedAt=datetime.now(UTC),
         )
 
-        with patch.object(
-            WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            WorkspaceRepository, "create", new_callable=AsyncMock
-        ) as mock_create:
+        with (
+            patch.object(
+                WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
+            ) as mock_get,
+            patch.object(WorkspaceRepository, "create", new_callable=AsyncMock) as mock_create,
+        ):
             mock_get.return_value = existing_ws
 
             result = await bootstrap_first_owner(user)
@@ -134,22 +140,24 @@ class TestBootstrapFirstOwner:
             updatedAt=datetime.now(UTC),
         )
 
-        with patch.object(
-            WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            WorkspaceRepository, "get_orphan_personal", new_callable=AsyncMock
-        ) as mock_orphan, patch.object(
-            WorkspaceRepository, "claim_orphan_personal", new_callable=AsyncMock
-        ) as mock_claim, patch.object(
-            WorkspaceRepository, "create", new_callable=AsyncMock
-        ) as mock_create, patch.object(
-            WorkspaceRepository, "get_member", new_callable=AsyncMock
-        ) as mock_member, patch.object(
-            WorkspaceRepository, "add_member", new_callable=AsyncMock
-        ) as mock_add, patch(
-            "app.services.bootstrap.create_default_workspace_environment",
-            new_callable=AsyncMock,
-        ) as mock_env:
+        with (
+            patch.object(
+                WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
+            ) as mock_get,
+            patch.object(
+                WorkspaceRepository, "get_orphan_personal", new_callable=AsyncMock
+            ) as mock_orphan,
+            patch.object(
+                WorkspaceRepository, "claim_orphan_personal", new_callable=AsyncMock
+            ) as mock_claim,
+            patch.object(WorkspaceRepository, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(WorkspaceRepository, "get_member", new_callable=AsyncMock) as mock_member,
+            patch.object(WorkspaceRepository, "add_member", new_callable=AsyncMock) as mock_add,
+            patch(
+                "app.services.bootstrap.create_default_workspace_environment",
+                new_callable=AsyncMock,
+            ) as mock_env,
+        ):
             mock_get.side_effect = [None, claimed]
             mock_orphan.return_value = orphan
             mock_claim.return_value = claimed
@@ -167,6 +175,7 @@ class TestBootstrapFirstOwner:
     async def test_handles_duplicate_key_race(self):
         """Re-fetches and returns the winner when the create loses a race."""
         from pymongo.errors import DuplicateKeyError
+
         from app.services.bootstrap import ensure_personal_workspace
 
         user = make_user()
@@ -181,17 +190,19 @@ class TestBootstrapFirstOwner:
             updatedAt=datetime.now(UTC),
         )
 
-        with patch.object(
-            WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            WorkspaceRepository, "get_orphan_personal", new_callable=AsyncMock
-        ) as mock_orphan, patch.object(
-            WorkspaceRepository, "create", new_callable=AsyncMock
-        ) as mock_create, patch.object(
-            WorkspaceRepository, "add_member", new_callable=AsyncMock
-        ), patch(
-            "app.services.bootstrap.create_default_workspace_environment",
-            new_callable=AsyncMock,
+        with (
+            patch.object(
+                WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
+            ) as mock_get,
+            patch.object(
+                WorkspaceRepository, "get_orphan_personal", new_callable=AsyncMock
+            ) as mock_orphan,
+            patch.object(WorkspaceRepository, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(WorkspaceRepository, "add_member", new_callable=AsyncMock),
+            patch(
+                "app.services.bootstrap.create_default_workspace_environment",
+                new_callable=AsyncMock,
+            ),
         ):
             mock_orphan.return_value = None
             # First call: nothing for this user. Second call (after the
@@ -211,9 +222,9 @@ class TestEnvironmentSchema:
     def test_environment_has_no_is_active_field(self):
         """Environment model should not have isActive field."""
         field_names = set(Environment.model_fields.keys())
-        assert "isActive" not in field_names, (
-            "Environment.isActive must be removed — scoped environments replace it"
-        )
+        assert (
+            "isActive" not in field_names
+        ), "Environment.isActive must be removed — scoped environments replace it"
 
     def test_environment_has_scope_fields(self):
         """Environment model should have scopeType and scopeId."""
@@ -245,9 +256,7 @@ class TestWorkspaceIndexes:
         )
         assert target is not None, "Expected an (orgId, slug) IndexModel on Workspace"
         assert target.document.get("unique") is True
-        assert target.document.get("partialFilterExpression") == {
-            "orgId": {"$type": "string"}
-        }, (
+        assert target.document.get("partialFilterExpression") == {"orgId": {"$type": "string"}}, (
             "The (orgId, slug) unique index MUST be partial on orgId being a "
             "string; otherwise personal workspaces collide on (null, slug)."
         )
@@ -296,17 +305,19 @@ class TestModeSwitchBootstrap:
             updatedAt=datetime.now(UTC),
         )
 
-        with patch.object(
-            WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            WorkspaceRepository, "get_orphan_personal", new_callable=AsyncMock
-        ) as mock_orphan, patch.object(
-            WorkspaceRepository, "create", new_callable=AsyncMock
-        ) as mock_create, patch.object(
-            WorkspaceRepository, "add_member", new_callable=AsyncMock
-        ), patch(
-            "app.services.bootstrap.create_default_workspace_environment",
-            new_callable=AsyncMock,
+        with (
+            patch.object(
+                WorkspaceRepository, "get_personal_for_user", new_callable=AsyncMock
+            ) as mock_get,
+            patch.object(
+                WorkspaceRepository, "get_orphan_personal", new_callable=AsyncMock
+            ) as mock_orphan,
+            patch.object(WorkspaceRepository, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(WorkspaceRepository, "add_member", new_callable=AsyncMock),
+            patch(
+                "app.services.bootstrap.create_default_workspace_environment",
+                new_callable=AsyncMock,
+            ),
         ):
             mock_get.return_value = None
             mock_orphan.return_value = None
@@ -349,21 +360,20 @@ class TestAdoptWorkspaceScript:
         )
         synthetic_owner = make_user(user_id="usr-single-user-owner")
 
-        with patch.object(module, "connect_db", new_callable=AsyncMock), patch.object(
-            module, "close_db", new_callable=AsyncMock
-        ), patch.object(
-            module, "_ensure_implicit_owner", new_callable=AsyncMock
-        ) as mock_owner, patch.object(
-            WorkspaceRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            WorkspaceRepository, "get_by_slug_and_user", new_callable=AsyncMock
-        ) as mock_conflict, patch.object(
-            WorkspaceRepository, "force_transfer_to_user", new_callable=AsyncMock
-        ) as mock_transfer, patch.object(
-            WorkspaceRepository, "get_member", new_callable=AsyncMock
-        ) as mock_member, patch.object(
-            WorkspaceRepository, "add_member", new_callable=AsyncMock
-        ) as mock_add:
+        with (
+            patch.object(module, "connect_db", new_callable=AsyncMock),
+            patch.object(module, "close_db", new_callable=AsyncMock),
+            patch.object(module, "_ensure_implicit_owner", new_callable=AsyncMock) as mock_owner,
+            patch.object(WorkspaceRepository, "get_by_id", new_callable=AsyncMock) as mock_get,
+            patch.object(
+                WorkspaceRepository, "get_by_slug_and_user", new_callable=AsyncMock
+            ) as mock_conflict,
+            patch.object(
+                WorkspaceRepository, "force_transfer_to_user", new_callable=AsyncMock
+            ) as mock_transfer,
+            patch.object(WorkspaceRepository, "get_member", new_callable=AsyncMock) as mock_member,
+            patch.object(WorkspaceRepository, "add_member", new_callable=AsyncMock) as mock_add,
+        ):
             mock_owner.return_value = synthetic_owner
             mock_get.return_value = existing_ws
             mock_conflict.return_value = None
@@ -398,19 +408,17 @@ class TestAdoptWorkspaceScript:
         )
         existing_member = object()
 
-        with patch.object(module, "connect_db", new_callable=AsyncMock), patch.object(
-            module, "close_db", new_callable=AsyncMock
-        ), patch.object(
-            module, "_ensure_implicit_owner", new_callable=AsyncMock
-        ) as mock_owner, patch.object(
-            WorkspaceRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            WorkspaceRepository, "force_transfer_to_user", new_callable=AsyncMock
-        ) as mock_transfer, patch.object(
-            WorkspaceRepository, "get_member", new_callable=AsyncMock
-        ) as mock_member, patch.object(
-            WorkspaceRepository, "add_member", new_callable=AsyncMock
-        ) as mock_add:
+        with (
+            patch.object(module, "connect_db", new_callable=AsyncMock),
+            patch.object(module, "close_db", new_callable=AsyncMock),
+            patch.object(module, "_ensure_implicit_owner", new_callable=AsyncMock) as mock_owner,
+            patch.object(WorkspaceRepository, "get_by_id", new_callable=AsyncMock) as mock_get,
+            patch.object(
+                WorkspaceRepository, "force_transfer_to_user", new_callable=AsyncMock
+            ) as mock_transfer,
+            patch.object(WorkspaceRepository, "get_member", new_callable=AsyncMock) as mock_member,
+            patch.object(WorkspaceRepository, "add_member", new_callable=AsyncMock) as mock_add,
+        ):
             mock_owner.return_value = synthetic_owner
             mock_get.return_value = existing_ws
             mock_member.return_value = existing_member
@@ -453,19 +461,19 @@ class TestAdoptWorkspaceScript:
         )
         synthetic_owner = make_user(user_id="usr-single-user-owner")
 
-        with patch.object(module, "connect_db", new_callable=AsyncMock), patch.object(
-            module, "close_db", new_callable=AsyncMock
-        ), patch.object(
-            module, "_ensure_implicit_owner", new_callable=AsyncMock
-        ) as mock_owner, patch.object(
-            WorkspaceRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get, patch.object(
-            WorkspaceRepository, "get_by_slug_and_user", new_callable=AsyncMock
-        ) as mock_conflict, patch.object(
-            WorkspaceRepository, "force_transfer_to_user", new_callable=AsyncMock
-        ) as mock_transfer, patch.object(
-            WorkspaceRepository, "add_member", new_callable=AsyncMock
-        ) as mock_add:
+        with (
+            patch.object(module, "connect_db", new_callable=AsyncMock),
+            patch.object(module, "close_db", new_callable=AsyncMock),
+            patch.object(module, "_ensure_implicit_owner", new_callable=AsyncMock) as mock_owner,
+            patch.object(WorkspaceRepository, "get_by_id", new_callable=AsyncMock) as mock_get,
+            patch.object(
+                WorkspaceRepository, "get_by_slug_and_user", new_callable=AsyncMock
+            ) as mock_conflict,
+            patch.object(
+                WorkspaceRepository, "force_transfer_to_user", new_callable=AsyncMock
+            ) as mock_transfer,
+            patch.object(WorkspaceRepository, "add_member", new_callable=AsyncMock) as mock_add,
+        ):
             mock_owner.return_value = synthetic_owner
             mock_get.return_value = target
             mock_conflict.return_value = bootstrap_existing
@@ -486,11 +494,11 @@ class TestAdoptWorkspaceScript:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-        with patch.object(module, "connect_db", new_callable=AsyncMock), patch.object(
-            module, "close_db", new_callable=AsyncMock
-        ), patch.object(
-            WorkspaceRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get:
+        with (
+            patch.object(module, "connect_db", new_callable=AsyncMock),
+            patch.object(module, "close_db", new_callable=AsyncMock),
+            patch.object(WorkspaceRepository, "get_by_id", new_callable=AsyncMock) as mock_get,
+        ):
             mock_get.return_value = None
             exit_code = await module.adopt_workspace("ws-missing")
             assert exit_code == 2

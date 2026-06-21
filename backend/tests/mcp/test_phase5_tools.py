@@ -399,7 +399,11 @@ async def test_collection_import_calls_service(monkeypatch):
     captured = {}
 
     async def fake_import(
-        bundle, create_new_collection, new_collection_name, target_collection_id, environment_mapping
+        bundle,
+        create_new_collection,
+        new_collection_name,
+        target_collection_id,
+        environment_mapping,
     ):
         captured.update(
             {

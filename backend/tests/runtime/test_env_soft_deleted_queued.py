@@ -7,6 +7,7 @@ Verifies that:
 - Active runs are not affected
 - Runs without an environment proceed normally
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -48,11 +49,17 @@ class TestSoftDeletedEnvWhileQueued:
 
         with (
             patch.object(run_service.RunRepository, "get_by_id", return_value=run),
-            patch.object(run_service.RunRepository, "update_status", new_callable=AsyncMock) as mock_update,
             patch.object(
-                run_service.ScopedEnvironmentRepository, "get_by_id", return_value=None,
+                run_service.RunRepository, "update_status", new_callable=AsyncMock
+            ) as mock_update,
+            patch.object(
+                run_service.ScopedEnvironmentRepository,
+                "get_by_id",
+                return_value=None,
             ),
-            patch.object(run_service.audit_service, "append_event", new_callable=AsyncMock) as mock_audit,
+            patch.object(
+                run_service.audit_service, "append_event", new_callable=AsyncMock
+            ) as mock_audit,
         ):
             mock_audit.return_value = MagicMock(eventId="evt-del-1")
 
@@ -75,9 +82,13 @@ class TestSoftDeletedEnvWhileQueued:
             patch.object(run_service.RunRepository, "get_by_id", return_value=run),
             patch.object(run_service.RunRepository, "update_status", new_callable=AsyncMock),
             patch.object(
-                run_service.ScopedEnvironmentRepository, "get_by_id", return_value=None,
+                run_service.ScopedEnvironmentRepository,
+                "get_by_id",
+                return_value=None,
             ),
-            patch.object(run_service.audit_service, "append_event", new_callable=AsyncMock) as mock_audit,
+            patch.object(
+                run_service.audit_service, "append_event", new_callable=AsyncMock
+            ) as mock_audit,
         ):
             mock_audit.return_value = MagicMock(eventId="evt-del-2")
 
@@ -101,7 +112,9 @@ class TestSoftDeletedEnvWhileQueued:
         with (
             patch.object(run_service.RunRepository, "get_by_id", return_value=run),
             patch.object(
-                run_service.ScopedEnvironmentRepository, "get_by_id", return_value=env_mock,
+                run_service.ScopedEnvironmentRepository,
+                "get_by_id",
+                return_value=env_mock,
             ),
         ):
             result = await run_service.check_and_handle_deleted_env("run-queued-1")
@@ -155,9 +168,13 @@ class TestSoftDeletedEnvWhileQueued:
             patch.object(run_service.RunRepository, "get_by_id", return_value=run),
             patch.object(run_service.RunRepository, "update_status", new_callable=AsyncMock),
             patch.object(
-                run_service.ScopedEnvironmentRepository, "get_by_id", return_value=None,
+                run_service.ScopedEnvironmentRepository,
+                "get_by_id",
+                return_value=None,
             ),
-            patch.object(run_service.audit_service, "append_event", new_callable=AsyncMock) as mock_audit,
+            patch.object(
+                run_service.audit_service, "append_event", new_callable=AsyncMock
+            ) as mock_audit,
         ):
             mock_audit.return_value = MagicMock(eventId="evt-gate-1")
 

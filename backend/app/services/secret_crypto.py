@@ -8,6 +8,7 @@ Key (KEK) — classic envelope encryption.
 The ``kek_id`` on every :class:`EncryptedBlob` routes decryption to the
 correct DEK, enabling key rotation without re-encrypting existing data.
 """
+
 from __future__ import annotations
 
 import secrets

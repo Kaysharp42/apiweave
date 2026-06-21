@@ -1,4 +1,5 @@
 """Tests for {{secrets.*}} substitution restrictions in URL/query/path contexts (F5)."""
+
 import logging
 import sys
 from unittest.mock import MagicMock

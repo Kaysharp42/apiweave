@@ -7,7 +7,10 @@ Verifies that:
 - Cross-workspace access is denied via scope_context functions
 - Token permissions are checked via require_permission()
 """
+
 from __future__ import annotations
+
+from unittest.mock import MagicMock
 
 import pytest
 

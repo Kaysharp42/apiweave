@@ -12,6 +12,7 @@ Route structure:
     /api/scopes/{scope_type}/{scope_id}/secrets/bindings
     /api/scopes/{scope_type}/{scope_id}/secrets/bindings/{binding_id}
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -55,6 +56,7 @@ def _validate_scope(scope_type: str):
 
 class SecretListResponse(BaseModel):
     """Response for listing secrets in a scope."""
+
     secrets: list[SecretMetadataResponse]
     total: int
 
@@ -229,6 +231,7 @@ async def delete_secret(
 
 class BindingListResponse(BaseModel):
     """Response for listing bindings."""
+
     bindings: list[SecretBindingResponse]
     total: int
 

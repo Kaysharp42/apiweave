@@ -1,6 +1,7 @@
 """
 MCP environment resources — read-only environment snapshots for agent context.
 """
+
 import json
 import logging
 from typing import Any
@@ -25,9 +26,7 @@ def _environment_to_dict(env: Any) -> dict:
         "updated_at": str(getattr(env, "updatedAt", "")),
     }
     secret_refs: list[str] = []
-    data["variables"] = sanitize_secrets_in_dict(
-        data["variables"], secret_refs, "variables"
-    )
+    data["variables"] = sanitize_secrets_in_dict(data["variables"], secret_refs, "variables")
     if secret_refs:
         data["redacted_secret_references"] = secret_refs
     return data

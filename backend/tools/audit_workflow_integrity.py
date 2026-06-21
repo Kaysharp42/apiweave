@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.utils.workflow_integrity import summarize_workflows
+from app.utils.workflow_integrity import summarize_workflows  # noqa: E402
 
 
 def _load_json(url: str):
@@ -49,7 +49,8 @@ def main():
 
     for item in suspicious:
         print(
-            f"- {item.workflow_id} | {item.name} | nodes={item.node_count} | edges={item.edge_count}"
+            f"- {item.workflow_id} | {item.name} | "
+            f"nodes={item.node_count} | edges={item.edge_count}"
         )
 
 

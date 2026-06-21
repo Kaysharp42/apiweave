@@ -3,13 +3,13 @@ Pending Approval Repository — data access for PendingRunApproval documents.
 
 Follows the repository pattern: all DB access for pending approvals goes here.
 """
+
 from datetime import UTC, datetime
 
 from app.models import PendingRunApproval
 
 
 class PendingApprovalRepository:
-
     @staticmethod
     async def create(
         approval_id: str,
@@ -37,15 +37,11 @@ class PendingApprovalRepository:
 
     @staticmethod
     async def get_by_id(approval_id: str) -> PendingRunApproval | None:
-        return await PendingRunApproval.find_one(
-            PendingRunApproval.approvalId == approval_id
-        )
+        return await PendingRunApproval.find_one(PendingRunApproval.approvalId == approval_id)
 
     @staticmethod
     async def get_by_run_id(run_id: str) -> PendingRunApproval | None:
-        return await PendingRunApproval.find_one(
-            PendingRunApproval.runId == run_id
-        )
+        return await PendingRunApproval.find_one(PendingRunApproval.runId == run_id)
 
     @staticmethod
     async def get_pending_by_env_and_run(
@@ -61,19 +57,27 @@ class PendingApprovalRepository:
     async def list_pending_by_environment(
         environment_id: str,
     ) -> list[PendingRunApproval]:
-        return await PendingRunApproval.find(
-            PendingRunApproval.environmentId == environment_id,
-            PendingRunApproval.status == "pending",
-        ).sort(-PendingRunApproval.createdAt).to_list()
+        return (
+            await PendingRunApproval.find(
+                PendingRunApproval.environmentId == environment_id,
+                PendingRunApproval.status == "pending",
+            )
+            .sort(-PendingRunApproval.createdAt)
+            .to_list()
+        )
 
     @staticmethod
     async def list_pending_by_workspace(
         workspace_id: str,
     ) -> list[PendingRunApproval]:
-        return await PendingRunApproval.find(
-            PendingRunApproval.workspaceId == workspace_id,
-            PendingRunApproval.status == "pending",
-        ).sort(-PendingRunApproval.createdAt).to_list()
+        return (
+            await PendingRunApproval.find(
+                PendingRunApproval.workspaceId == workspace_id,
+                PendingRunApproval.status == "pending",
+            )
+            .sort(-PendingRunApproval.createdAt)
+            .to_list()
+        )
 
     @staticmethod
     async def approve(

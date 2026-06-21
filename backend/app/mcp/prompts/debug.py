@@ -1,6 +1,7 @@
 """
 MCP debug prompts — pre-built templates for debugging failed runs.
 """
+
 import logging
 
 from mcp.server.fastmcp import FastMCP
@@ -20,11 +21,13 @@ def register_debug_prompts(server: FastMCP) -> None:
 
         Args:
             workflow_id: ID of the workflow to debug.
-            run_id: Optional specific run ID to investigate. If omitted, the latest failed run is used.
+            run_id: Optional specific run ID to investigate.
+                If omitted, the latest failed run is used.
         """
         run_ref = run_id or "the latest failed run"
 
-        return f"""You are an API test debugging assistant. Investigate the failed run for workflow: {workflow_id}
+        return f"""You are an API test debugging assistant.
+Investigate the failed run for workflow: {workflow_id}
 
 **Run to investigate:** {run_ref}
 
@@ -32,7 +35,8 @@ Follow these steps:
 1. Use `run_latest_failed` with workflow_id="{workflow_id}" to get the latest failed run details
 2. If a specific run_id was provided, use `run_get_status` with that run_id to get detailed status
 3. Review the failed node IDs and their statuses
-4. For each failed node, use `run_get_node_result` to get the full result including request/response data
+4. For each failed node, use `run_get_node_result` to get the full result
+   including request/response data
 5. Analyze the failure:
    - Check HTTP status codes (4xx = client error, 5xx = server error)
    - Review error messages in the response body
@@ -58,7 +62,8 @@ Common failure patterns:
         Args:
             workflow_id: ID of the workflow to resume.
         """
-        return f"""You are an API test workflow recovery assistant. Resume the failed workflow: {workflow_id}
+        return f"""You are an API test workflow recovery assistant.
+Resume the failed workflow: {workflow_id}
 
 Follow these steps:
 1. Use `run_latest_failed` with workflow_id="{workflow_id}" to get the failed run details

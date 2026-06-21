@@ -4,6 +4,7 @@ MCP environment tools — scoped to workspace/organization via service token.
 All environment operations use the scoped environment service.
 Each workspace has exactly one default environment.
 """
+
 from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP

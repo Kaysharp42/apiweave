@@ -14,6 +14,7 @@ Route structure:
     /api/scopes/{scope_type}/{scope_id}/tokens/{token_id}/rotate
     /api/scopes/{scope_type}/{scope_id}/tokens/{token_id}/revoke
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -53,12 +54,14 @@ def _validate_scope(scope_type: str):
 
 class ServiceTokenListResponse(BaseModel):
     """Response for listing service tokens in a scope."""
+
     tokens: list[ServiceTokenMetadataResponse]
     total: int
 
 
 class ServiceTokenPermissionsUpdateRequest(BaseModel):
     """Request body for updating token permissions (scope narrowing)."""
+
     permissions: list[str]
 
 

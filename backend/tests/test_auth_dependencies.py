@@ -85,18 +85,22 @@ def test_api_auth_me_returns_profile() -> None:
     client = auth_client()
     client.cookies.set("session", token)
 
-    with patch.object(
-        SessionRepository,
-        "get_by_token_hash",
-        new=AsyncMock(return_value=session),
-    ), patch.object(
-        SessionRepository,
-        "touch",
-        new=AsyncMock(return_value=True),
-    ), patch.object(
-        UserRepository,
-        "get_by_id",
-        new=AsyncMock(return_value=user),
+    with (
+        patch.object(
+            SessionRepository,
+            "get_by_token_hash",
+            new=AsyncMock(return_value=session),
+        ),
+        patch.object(
+            SessionRepository,
+            "touch",
+            new=AsyncMock(return_value=True),
+        ),
+        patch.object(
+            UserRepository,
+            "get_by_id",
+            new=AsyncMock(return_value=user),
+        ),
     ):
         response = client.get("/api/auth/me")
 
@@ -125,15 +129,18 @@ def test_logout_revokes_session() -> None:
     client.cookies.set("session", token)
     client.cookies.set("csrftoken", "csrf-token")
 
-    with patch.object(
-        SessionRepository,
-        "get_by_token_hash",
-        new=AsyncMock(return_value=session),
-    ), patch.object(
-        SessionRepository,
-        "revoke",
-        new=AsyncMock(return_value=True),
-    ) as revoke:
+    with (
+        patch.object(
+            SessionRepository,
+            "get_by_token_hash",
+            new=AsyncMock(return_value=session),
+        ),
+        patch.object(
+            SessionRepository,
+            "revoke",
+            new=AsyncMock(return_value=True),
+        ) as revoke,
+    ):
         response = client.post(
             "/api/auth/logout",
             headers={"X-CSRF-Token": "csrf-token"},
@@ -161,15 +168,18 @@ def test_session_touch_refreshes_last_seen() -> None:
     client.cookies.set("session", token)
     client.cookies.set("csrftoken", "csrf-token")
 
-    with patch.object(
-        SessionRepository,
-        "get_by_token_hash",
-        new=AsyncMock(return_value=session),
-    ), patch.object(
-        SessionRepository,
-        "touch",
-        new=AsyncMock(return_value=True),
-    ) as touch:
+    with (
+        patch.object(
+            SessionRepository,
+            "get_by_token_hash",
+            new=AsyncMock(return_value=session),
+        ),
+        patch.object(
+            SessionRepository,
+            "touch",
+            new=AsyncMock(return_value=True),
+        ) as touch,
+    ):
         response = client.post(
             "/api/auth/session/touch",
             headers={"X-CSRF-Token": "csrf-token"},
@@ -195,18 +205,22 @@ def test_permission_dependency_returns_403_for_missing_permission() -> None:
     client = TestClient(app)
     client.cookies.set("session", token)
 
-    with patch.object(
-        SessionRepository,
-        "get_by_token_hash",
-        new=AsyncMock(return_value=session),
-    ), patch.object(
-        SessionRepository,
-        "touch",
-        new=AsyncMock(return_value=True),
-    ), patch.object(
-        UserRepository,
-        "get_by_id",
-        new=AsyncMock(return_value=user),
+    with (
+        patch.object(
+            SessionRepository,
+            "get_by_token_hash",
+            new=AsyncMock(return_value=session),
+        ),
+        patch.object(
+            SessionRepository,
+            "touch",
+            new=AsyncMock(return_value=True),
+        ),
+        patch.object(
+            UserRepository,
+            "get_by_id",
+            new=AsyncMock(return_value=user),
+        ),
     ):
         response = client.get("/needs-collection-create")
 
@@ -220,15 +234,18 @@ async def test_session_rotation() -> None:
     new_session, _ = make_session("new-token")
     new_session.sessionId = "ses-new"
 
-    with patch.object(
-        SessionRepository,
-        "revoke",
-        new=AsyncMock(return_value=True),
-    ) as revoke, patch.object(
-        SessionRepository,
-        "create",
-        new=AsyncMock(return_value=new_session),
-    ) as create:
+    with (
+        patch.object(
+            SessionRepository,
+            "revoke",
+            new=AsyncMock(return_value=True),
+        ) as revoke,
+        patch.object(
+            SessionRepository,
+            "create",
+            new=AsyncMock(return_value=new_session),
+        ) as create,
+    ):
         rotated_session, new_token = await rotate_session(old_session)
 
     assert rotated_session.sessionId == "ses-new"

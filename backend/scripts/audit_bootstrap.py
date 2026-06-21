@@ -7,6 +7,7 @@ This is a ONE-OFF audit helper. It:
 
 Run from backend/ with venv activated: python -m scripts.audit_bootstrap
 """
+
 import asyncio
 import hashlib
 import secrets
@@ -16,11 +17,10 @@ from datetime import UTC, datetime, timedelta
 # Add backend to path
 sys.path.insert(0, ".")
 
+from app.auth.permissions import PRESET_ADMIN  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.database import close_db, connect_db  # noqa: E402
-from app.models import Session as SessionModel, User  # noqa: E402
 from app.repositories.auth_repositories import SessionRepository, UserRepository  # noqa: E402
-from app.auth.permissions import PRESET_ADMIN  # noqa: E402
 
 TEST_EMAIL = "audit-admin@apiweave.local"
 TEST_DISPLAY = "Audit Admin"
@@ -78,9 +78,14 @@ async def main() -> None:
     print(f'  curl http://127.0.0.1:8000/api/workflows -b "session={session_token}"')
     print()
     print("Get CSRF token (separate request):")
-    print(f'  curl http://127.0.0.1:8000/api/auth/csrf-token -b "session={session_token}" -c cookies.txt')
-    print(f'  curl -X POST http://127.0.0.1:8000/api/workflows -H "Content-Type: application/json" \\')
-    print(f'    -H "X-CSRF-Token: <token from above>" -b cookies.txt -d \'...\'')
+    print(
+        f"  curl http://127.0.0.1:8000/api/auth/csrf-token "
+        f'-b "session={session_token}" -c cookies.txt'
+    )
+    print(
+        '  curl -X POST http://127.0.0.1:8000/api/workflows -H "Content-Type: application/json" \\'
+    )
+    print("    -H \"X-CSRF-Token: <token from above>\" -b cookies.txt -d '...'")
 
     await close_db()
 

@@ -56,9 +56,7 @@ async def test_trigger_workflow_run_does_not_persist_or_return_runtime_secrets(
 
     FakeRun.inserted = {}
     monkeypatch.setattr(run_service, "WorkflowRepository", FakeWorkflowRepository)
-    monkeypatch.setattr(
-        run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository
-    )
+    monkeypatch.setattr(run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository)
     monkeypatch.setattr(run_service, "EnvironmentRepository", FakeEnvironmentRepository)
     monkeypatch.setattr(run_service.models, "Run", FakeRun)
     _patch_background_task(monkeypatch)
@@ -116,9 +114,7 @@ async def test_trigger_workflow_run_resolves_latest_failed_run_for_single_resume
     FakeRun.inserted = {}
     monkeypatch.setattr(run_service, "WorkflowRepository", FakeWorkflowRepository)
     monkeypatch.setattr(run_service, "RunRepository", FakeRunRepository)
-    monkeypatch.setattr(
-        run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository
-    )
+    monkeypatch.setattr(run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository)
     monkeypatch.setattr(run_service.models, "Run", FakeRun)
     _patch_background_task(monkeypatch)
 

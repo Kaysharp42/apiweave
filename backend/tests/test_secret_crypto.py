@@ -10,6 +10,7 @@ Covers:
 - KEK rotation: old blobs still decrypt after rotation
 - EnvironmentRepository.set_secret / get_secret round-trip
 """
+
 from __future__ import annotations
 
 import base64
@@ -20,7 +21,6 @@ from cryptography.exceptions import InvalidTag
 
 from app.models import EncryptedBlob
 from app.services import secret_crypto, secret_kek
-
 
 _DEK = b"\x00" * 32  # deterministic 256-bit DEK for tests
 _KEK_ID = "kek-test-001"
@@ -145,11 +145,19 @@ class TestKekRotation:
 
         async def _rotate_scenario():
             with patch.object(secret_kek, "get_active_kek_id", new=AsyncMock(return_value="kek-1")):
-                with patch.object(secret_kek, "unwrap_dek_for_kek", new=AsyncMock(side_effect=lambda kid: dek1 if kid == "kek-1" else dek2)):
+                with patch.object(
+                    secret_kek,
+                    "unwrap_dek_for_kek",
+                    new=AsyncMock(side_effect=lambda kid: dek1 if kid == "kek-1" else dek2),
+                ):
                     blob = await secret_crypto.encrypt("rotate-me", kek_id="kek-1")
 
             with patch.object(secret_kek, "get_active_kek_id", new=AsyncMock(return_value="kek-2")):
-                with patch.object(secret_kek, "unwrap_dek_for_kek", new=AsyncMock(side_effect=lambda kid: dek1 if kid == "kek-1" else dek2)):
+                with patch.object(
+                    secret_kek,
+                    "unwrap_dek_for_kek",
+                    new=AsyncMock(side_effect=lambda kid: dek1 if kid == "kek-1" else dek2),
+                ):
                     result = await secret_crypto.decrypt(blob)
 
             return result
@@ -160,6 +168,7 @@ class TestKekRotation:
 class TestEnvironmentRepositorySecrets:
     def test_set_and_get_secret_round_trip(self):
         import asyncio
+
         from app.repositories.environment_repository import EnvironmentRepository
 
         mock_env = MagicMock()
@@ -167,7 +176,9 @@ class TestEnvironmentRepositorySecrets:
         mock_env.save = AsyncMock()
 
         async def _round_trip():
-            with patch.object(EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)):
+            with patch.object(
+                EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)
+            ):
                 await EnvironmentRepository.set_secret("env-1", "api_key", "sk_live_abc")
 
             stored = mock_env.secrets["api_key"]
@@ -176,7 +187,9 @@ class TestEnvironmentRepositorySecrets:
             assert stored["kek_id"] == _KEK_ID
             assert stored["algorithm"] == "aes-256-gcm"
 
-            with patch.object(EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)):
+            with patch.object(
+                EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)
+            ):
                 return await EnvironmentRepository.get_secret("env-1", "api_key")
 
         result = asyncio.run(_round_trip())
@@ -184,26 +197,32 @@ class TestEnvironmentRepositorySecrets:
 
     def test_get_secret_legacy_plaintext(self):
         import asyncio
+
         from app.repositories.environment_repository import EnvironmentRepository
 
         mock_env = MagicMock()
         mock_env.secrets = {"old_key": "plain-value"}
 
         async def _legacy():
-            with patch.object(EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)):
+            with patch.object(
+                EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)
+            ):
                 return await EnvironmentRepository.get_secret("env-1", "old_key")
 
         assert asyncio.run(_legacy()) == "plain-value"
 
     def test_get_secret_missing_key_returns_none(self):
         import asyncio
+
         from app.repositories.environment_repository import EnvironmentRepository
 
         mock_env = MagicMock()
         mock_env.secrets = {}
 
         async def _missing():
-            with patch.object(EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)):
+            with patch.object(
+                EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)
+            ):
                 return await EnvironmentRepository.get_secret("env-1", "nope")
 
         assert asyncio.run(_missing()) is None

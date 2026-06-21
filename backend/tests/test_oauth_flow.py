@@ -264,9 +264,7 @@ def test_callback_succeeds_with_verified_email(
     )
     assert response.status_code == 302
     assert response.headers["location"] == "http://localhost:3000/personal/workflows"
-    assert "session" in response.cookies or any(
-        "session" in k.lower() for k in response.cookies
-    )
+    assert "session" in response.cookies or any("session" in k.lower() for k in response.cookies)
     assert "csrftoken" in response.cookies or any(
         "csrftoken" in k.lower() for k in response.cookies
     )
@@ -318,7 +316,10 @@ def test_callback_redirects_uninvited_users_to_frontend_login(
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == "http://localhost:3000/login?error=Access+requires+an+invitation"
+    assert (
+        response.headers["location"]
+        == "http://localhost:3000/login?error=Access+requires+an+invitation"
+    )
 
 
 @pytest.mark.parametrize("provider", PROVIDERS)
@@ -526,9 +527,7 @@ async def test_create_or_link_user_refetches_identity_after_duplicate_key_race(
 class TestMockGithubUserinfoShape:
     """Verify the GitHub mock fixture returns the correct shape."""
 
-    def test_mock_github_userinfo_returns_verified_email(
-        self, mock_github_userinfo: dict
-    ) -> None:
+    def test_mock_github_userinfo_returns_verified_email(self, mock_github_userinfo: dict) -> None:
         """GitHub verified fixture must expose normalised fields with email_verified=True."""
         info = mock_github_userinfo
         assert info["provider"] == "github"
@@ -558,9 +557,7 @@ class TestMockGithubUserinfoShape:
         assert primary is not None
         assert primary["verified"] is False
 
-    def test_mock_github_emails_verified_shape(
-        self, mock_github_emails_verified: list
-    ) -> None:
+    def test_mock_github_emails_verified_shape(self, mock_github_emails_verified: list) -> None:
         """Each email entry must have required GitHub /user/emails fields."""
         for entry in mock_github_emails_verified:
             assert "email" in entry
@@ -604,9 +601,7 @@ class TestMockGoogleOidcShape:
         assert info["email_verified"] is True
         assert "@" in info["email"]
 
-    def test_mock_google_userinfo_unverified(
-        self, mock_google_userinfo_unverified: dict
-    ) -> None:
+    def test_mock_google_userinfo_unverified(self, mock_google_userinfo_unverified: dict) -> None:
         """Normalised Google unverified userinfo must have email_verified=False."""
         assert mock_google_userinfo_unverified["email_verified"] is False
 
@@ -631,9 +626,7 @@ class TestMockGitlabShape:
         assert mock_gitlab_userinfo["provider"] == "gitlab"
         assert mock_gitlab_userinfo["email_verified"] is True
 
-    def test_mock_gitlab_userinfo_unverified(
-        self, mock_gitlab_userinfo_unverified: dict
-    ) -> None:
+    def test_mock_gitlab_userinfo_unverified(self, mock_gitlab_userinfo_unverified: dict) -> None:
         """Normalised GitLab unverified userinfo must have email_verified=False."""
         assert mock_gitlab_userinfo_unverified["email_verified"] is False
 
@@ -650,9 +643,7 @@ class TestMockMicrosoftShape:
         assert "oid" in claims
         assert "name" in claims
 
-    def test_mock_microsoft_me_response_shape(
-        self, mock_microsoft_me_response: dict
-    ) -> None:
+    def test_mock_microsoft_me_response_shape(self, mock_microsoft_me_response: dict) -> None:
         """Microsoft /v1.0/me must have id, displayName, mail, userPrincipalName."""
         me = mock_microsoft_me_response
         assert "id" in me
@@ -660,9 +651,7 @@ class TestMockMicrosoftShape:
         assert "mail" in me
         assert "userPrincipalName" in me
 
-    def test_mock_microsoft_userinfo_normalised(
-        self, mock_microsoft_userinfo: dict
-    ) -> None:
+    def test_mock_microsoft_userinfo_normalised(self, mock_microsoft_userinfo: dict) -> None:
         """Normalised Microsoft userinfo must have email_verified=True when email present."""
         info = mock_microsoft_userinfo
         assert info["provider"] == "microsoft"

@@ -27,7 +27,7 @@ def test_enforce_approved_domain_disabled(monkeypatch: pytest.MonkeyPatch) -> No
         APPROVED_DOMAINS="",
     )
     monkeypatch.setattr("app.auth.router.settings", settings)
-    
+
     assert enforce_approved_domain("user@anything.com") is True
 
 
@@ -39,7 +39,7 @@ def test_enforce_approved_domain_matching(monkeypatch: pytest.MonkeyPatch) -> No
         APPROVED_DOMAINS="example.com,mycompany.com",
     )
     monkeypatch.setattr("app.auth.router.settings", settings)
-    
+
     assert enforce_approved_domain("user@example.com") is True
     assert enforce_approved_domain("user@mycompany.com") is True
 
@@ -54,7 +54,7 @@ def test_enforce_approved_domain_case_insensitive(
         APPROVED_DOMAINS="Example.COM,MyCompany.com",
     )
     monkeypatch.setattr("app.auth.router.settings", settings)
-    
+
     assert enforce_approved_domain("user@example.com") is True
     assert enforce_approved_domain("user@EXAMPLE.COM") is True
     assert enforce_approved_domain("user@mycompany.com") is True
@@ -70,6 +70,6 @@ def test_enforce_approved_domain_non_matching(
         APPROVED_DOMAINS="example.com,mycompany.com",
     )
     monkeypatch.setattr("app.auth.router.settings", settings)
-    
+
     assert enforce_approved_domain("user@other.com") is False
     assert enforce_approved_domain("user@notallowed.org") is False

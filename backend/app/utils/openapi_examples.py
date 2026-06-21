@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Set
+from typing import Any
 
 
-def resolve_openapi_schema_ref(ref_path: str, openapi_data: Dict[str, Any]) -> Dict[str, Any]:
+def resolve_openapi_schema_ref(ref_path: str, openapi_data: dict[str, Any]) -> dict[str, Any]:
     """Resolve an internal OpenAPI $ref path like #/components/schemas/Foo."""
     if not ref_path.startswith("#/"):
         return {}
@@ -21,10 +21,10 @@ def resolve_openapi_schema_ref(ref_path: str, openapi_data: Dict[str, Any]) -> D
 
 
 def generate_example_from_schema(
-    schema: Dict[str, Any],
-    openapi_data: Dict[str, Any],
+    schema: dict[str, Any],
+    openapi_data: dict[str, Any],
     *,
-    _seen_refs: Optional[Set[str]] = None,
+    _seen_refs: set[str] | None = None,
     _depth: int = 0,
     max_depth: int = 12,
     max_properties: int = 40,
@@ -61,7 +61,7 @@ def generate_example_from_schema(
         variants = schema.get(compositional_key)
         if isinstance(variants, list) and variants:
             if compositional_key == "allOf":
-                merged: Dict[str, Any] = {}
+                merged: dict[str, Any] = {}
                 for variant in variants:
                     value = generate_example_from_schema(
                         variant,
@@ -103,7 +103,7 @@ def generate_example_from_schema(
         if not isinstance(properties, dict):
             return {}
 
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         for index, (prop_name, prop_schema) in enumerate(properties.items()):
             if index >= max_properties:
                 break

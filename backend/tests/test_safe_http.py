@@ -320,38 +320,53 @@ class TestCheckRedirectAllowed:
 
     def test_safe_redirect(self):
         with _patch_settings(approved_domains_enabled=False):
-            assert check_redirect_allowed(
-                "https://example.com/a",
-                "https://example.com/b",
-            ) is True
+            assert (
+                check_redirect_allowed(
+                    "https://example.com/a",
+                    "https://example.com/b",
+                )
+                is True
+            )
 
     def test_redirect_to_loopback_blocked(self):
-        assert check_redirect_allowed(
-            "https://example.com/",
-            "http://127.0.0.1/",
-        ) is False
+        assert (
+            check_redirect_allowed(
+                "https://example.com/",
+                "http://127.0.0.1/",
+            )
+            is False
+        )
 
     def test_redirect_to_private_blocked(self):
-        assert check_redirect_allowed(
-            "https://example.com/",
-            "http://169.254.169.254/latest/meta-data/",
-        ) is False
+        assert (
+            check_redirect_allowed(
+                "https://example.com/",
+                "http://169.254.169.254/latest/meta-data/",
+            )
+            is False
+        )
 
     def test_relative_redirect_resolved(self):
         with _patch_settings(approved_domains_enabled=False):
-            assert check_redirect_allowed(
-                "https://example.com/path",
-                "/other-path",
-            ) is True
+            assert (
+                check_redirect_allowed(
+                    "https://example.com/path",
+                    "/other-path",
+                )
+                is True
+            )
 
     def test_relative_redirect_to_empty(self):
         assert check_redirect_allowed("https://example.com/", "") is False
 
     def test_redirect_to_ipv6_loopback_blocked(self):
-        assert check_redirect_allowed(
-            "https://example.com/",
-            "http://[::1]/",
-        ) is False
+        assert (
+            check_redirect_allowed(
+                "https://example.com/",
+                "http://[::1]/",
+            )
+            is False
+        )
 
 
 class TestSafeGet:

@@ -7,6 +7,7 @@ Handles:
 - Trusted-token bypass: validate token allowlist and audit the bypass
 - Pending approval queries
 """
+
 from __future__ import annotations
 
 import logging
@@ -118,13 +119,9 @@ async def approve_run(
         raise ApprovalNotFoundError(f"Approval {approval_id} not found")
 
     if approval.status != "pending":
-        raise ApprovalNotPendingError(
-            f"Approval {approval_id} is already {approval.status}"
-        )
+        raise ApprovalNotPendingError(f"Approval {approval_id} is already {approval.status}")
 
-    protection = await ScopedEnvironmentRepository.get_protection(
-        approval.environmentId
-    )
+    protection = await ScopedEnvironmentRepository.get_protection(approval.environmentId)
     if not protection:
         raise ApprovalNotFoundError(
             f"No protection config for environment {approval.environmentId}"
@@ -202,13 +199,9 @@ async def bypass_protection(
         raise ApprovalNotFoundError(f"Approval {approval_id} not found")
 
     if approval.status != "pending":
-        raise ApprovalNotPendingError(
-            f"Approval {approval_id} is already {approval.status}"
-        )
+        raise ApprovalNotPendingError(f"Approval {approval_id} is already {approval.status}")
 
-    protection = await ScopedEnvironmentRepository.get_protection(
-        approval.environmentId
-    )
+    protection = await ScopedEnvironmentRepository.get_protection(approval.environmentId)
     if not protection:
         raise ApprovalNotFoundError(
             f"No protection config for environment {approval.environmentId}"
@@ -230,9 +223,7 @@ async def bypass_protection(
     if not token:
         raise ResourceNotFoundError(f"Service token {token_id} not found")
     if token.revokedAt is not None:
-        raise BypassNotAllowedError(
-            f"Service token {token_id} has been revoked"
-        )
+        raise BypassNotAllowedError(f"Service token {token_id} has been revoked")
 
     updated = await PendingApprovalRepository.bypass(
         approval_id=approval_id,
@@ -291,9 +282,7 @@ async def list_pending_for_environment(
     environment_id: str,
 ) -> list[PendingApprovalResponse]:
     """List all pending approvals for an environment."""
-    records = await PendingApprovalRepository.list_pending_by_environment(
-        environment_id
-    )
+    records = await PendingApprovalRepository.list_pending_by_environment(environment_id)
     return [PendingApprovalResponse.model_validate(r) for r in records]
 
 
@@ -301,7 +290,5 @@ async def list_pending_for_workspace(
     workspace_id: str,
 ) -> list[PendingApprovalResponse]:
     """List all pending approvals for a workspace."""
-    records = await PendingApprovalRepository.list_pending_by_workspace(
-        workspace_id
-    )
+    records = await PendingApprovalRepository.list_pending_by_workspace(workspace_id)
     return [PendingApprovalResponse.model_validate(r) for r in records]

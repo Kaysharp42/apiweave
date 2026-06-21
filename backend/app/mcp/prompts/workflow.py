@@ -1,6 +1,7 @@
 """
 MCP workflow prompts — pre-built templates for workflow creation tasks.
 """
+
 import logging
 
 from mcp.server.fastmcp import FastMCP
@@ -27,7 +28,8 @@ def register_workflow_prompts(server: FastMCP) -> None:
         name = workflow_name or "OpenAPI Test Workflow"
         focus = focus_endpoints or "all discovered endpoints"
 
-        return f"""You are an API test workflow designer. Create a test workflow for the API at: {openapi_url}
+        return f"""You are an API test workflow designer.
+Create a test workflow for the API at: {openapi_url}
 
 **Workflow name:** {name}
 **Focus endpoints:** {focus}
@@ -62,7 +64,8 @@ Best practices:
         """
         name = workflow_name or "Curl Test Workflow"
 
-        return f"""You are an API test workflow designer. Create a test workflow from these curl commands:
+        return f"""You are an API test workflow designer.
+Create a test workflow from these curl commands:
 
 ```bash
 {curl_commands}
@@ -88,4 +91,3 @@ Best practices:
 
 
 """ finish  work  """
-  

@@ -7,6 +7,7 @@ Verifies that:
 - Creating a team with a duplicate slug returns 409
 - Updating to an existing slug returns 409
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -20,7 +21,6 @@ from fastapi.testclient import TestClient
 from app.auth.dependencies import get_current_active_user
 from app.routes.orgs import router as orgs_router
 from app.routes.workspaces import router as workspaces_router
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -72,17 +72,29 @@ class TestOrgSlugConflicts:
     def test_update_org_to_existing_slug_returns_409(self) -> None:
         now = datetime.now(UTC)
         org_member = SimpleNamespace(
-            memberId="m1", orgId="org-1", userId="user-1",
-            role="owner", createdAt=now, updatedAt=now,
+            memberId="m1",
+            orgId="org-1",
+            userId="user-1",
+            role="owner",
+            createdAt=now,
+            updatedAt=now,
         )
         with (
             patch(
                 "app.routes.orgs.org_service.get_org",
-                new=AsyncMock(return_value=SimpleNamespace(
-                    orgId="org-1", slug="acme", name="Acme",
-                    ownerUserId="user-1", description=None, avatarUrl=None,
-                    createdAt=now, updatedAt=now, deletedAt=None,
-                )),
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        orgId="org-1",
+                        slug="acme",
+                        name="Acme",
+                        ownerUserId="user-1",
+                        description=None,
+                        avatarUrl=None,
+                        createdAt=now,
+                        updatedAt=now,
+                        deletedAt=None,
+                    )
+                ),
             ),
             patch(
                 "app.routes.orgs.org_service.require_org_member",
@@ -109,8 +121,11 @@ class TestOrgSlugConflicts:
         from app.services import org_service
 
         existing = SimpleNamespace(
-            orgId="org-existing", slug="acme", name="Acme",
-            ownerUserId="other-user", deletedAt=None,
+            orgId="org-existing",
+            slug="acme",
+            name="Acme",
+            ownerUserId="other-user",
+            deletedAt=None,
         )
         with patch(
             "app.services.org_service.OrganizationRepository.get_by_slug",
@@ -193,9 +208,15 @@ class TestTeamSlugConflicts:
     def test_create_team_duplicate_slug_returns_409(self) -> None:
         now = datetime.now(UTC)
         org = SimpleNamespace(
-            orgId="org-1", slug="acme", name="Acme",
-            ownerUserId="user-1", description=None, avatarUrl=None,
-            createdAt=now, updatedAt=now, deletedAt=None,
+            orgId="org-1",
+            slug="acme",
+            name="Acme",
+            ownerUserId="user-1",
+            description=None,
+            avatarUrl=None,
+            createdAt=now,
+            updatedAt=now,
+            deletedAt=None,
         )
         with (
             patch(
@@ -221,9 +242,15 @@ class TestTeamSlugConflicts:
     def test_update_team_to_existing_slug_returns_409(self) -> None:
         now = datetime.now(UTC)
         org = SimpleNamespace(
-            orgId="org-1", slug="acme", name="Acme",
-            ownerUserId="user-1", description=None, avatarUrl=None,
-            createdAt=now, updatedAt=now, deletedAt=None,
+            orgId="org-1",
+            slug="acme",
+            name="Acme",
+            ownerUserId="user-1",
+            description=None,
+            avatarUrl=None,
+            createdAt=now,
+            updatedAt=now,
+            deletedAt=None,
         )
         with (
             patch(
@@ -251,9 +278,13 @@ class TestTeamSlugConflicts:
         from app.services import team_service
 
         existing_team = SimpleNamespace(
-            teamId="team-existing", orgId="org-1", slug="backend",
-            name="Backend", description=None,
-            createdAt=datetime.now(UTC), updatedAt=datetime.now(UTC),
+            teamId="team-existing",
+            orgId="org-1",
+            slug="backend",
+            name="Backend",
+            description=None,
+            createdAt=datetime.now(UTC),
+            updatedAt=datetime.now(UTC),
         )
         with (
             patch(

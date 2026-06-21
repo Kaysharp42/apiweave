@@ -5,9 +5,9 @@ Intentionally exposes NO update or delete methods. Audit events are immutable
 once written. This is a security invariant: the audit trail must not be
 tampered with after creation.
 """
-from typing import List, Optional
-from datetime import datetime, UTC
+
 import uuid
+from datetime import UTC, datetime
 
 from beanie.operators import And
 
@@ -42,17 +42,17 @@ class AuditRepository:
     @staticmethod
     async def query(
         *,
-        actor: Optional[str] = None,
-        action: Optional[str] = None,
-        scope: Optional[str] = None,
-        scope_id: Optional[str] = None,
-        resource_type: Optional[str] = None,
-        resource_id: Optional[str] = None,
-        from_date: Optional[datetime] = None,
-        to_date: Optional[datetime] = None,
+        actor: str | None = None,
+        action: str | None = None,
+        scope: str | None = None,
+        scope_id: str | None = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> tuple[List[AuditEvent], int]:
+    ) -> tuple[list[AuditEvent], int]:
         """
         Query audit events with optional filters. Returns (events, total_count).
         """

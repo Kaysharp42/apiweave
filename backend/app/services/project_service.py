@@ -5,6 +5,7 @@ Projects replace Collections in the public API. The underlying DB model
 still uses the Project document (DB collection name 'collections' for
 migration compatibility), but all API-facing DTOs use 'project' terminology.
 """
+
 import logging
 import uuid
 from typing import Any
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # Response DTOs
 # ============================================================================
+
 
 def _project_to_response(project: Any) -> dict[str, Any]:
     """Convert a Project document to a response dict using project terminology."""
@@ -42,6 +44,7 @@ def _project_to_response(project: Any) -> dict[str, Any]:
 # ============================================================================
 # Project CRUD
 # ============================================================================
+
 
 async def create_project(
     *,
@@ -74,6 +77,7 @@ async def create_project(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -140,6 +144,7 @@ async def update_project(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -149,7 +154,8 @@ async def update_project(
             resource_type="project",
             resource_id=project_id,
             context={
-                k: v for k, v in {"name": name, "description": description, "color": color}.items()
+                k: v
+                for k, v in {"name": name, "description": description, "color": color}.items()
                 if v is not None
             },
         )
@@ -178,6 +184,7 @@ async def delete_project(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -238,6 +245,7 @@ async def assign_workflow_to_project(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -282,15 +290,14 @@ async def remove_workflow_from_project(
         raise ResourceNotFoundError(f"Workflow {workflow_id} not found")
 
     if workflow.collectionId != project_id:
-        raise ResourceNotFoundError(
-            f"Workflow {workflow_id} is not in project {project_id}"
-        )
+        raise ResourceNotFoundError(f"Workflow {workflow_id} is not in project {project_id}")
 
     await WorkflowRepository.update_collection_assignment(workflow_id, None)
     await ProjectRepository.update_workflow_count(project_id)
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,

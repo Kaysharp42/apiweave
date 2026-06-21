@@ -12,6 +12,7 @@ Tools:
 - secret_update: Update a secret's ciphertext
 - secret_delete: Delete a secret
 """
+
 import logging
 from typing import Annotated
 

@@ -8,6 +8,7 @@ Usage:
     cd backend
     python scripts/wipe_db.py
 """
+
 import asyncio
 import sys
 from pathlib import Path

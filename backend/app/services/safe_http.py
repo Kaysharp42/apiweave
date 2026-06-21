@@ -259,9 +259,7 @@ async def safe_request(
             await response.read()
             response.close()
 
-        raise SafeUrlError(
-            f"Too many redirects (>{max_hops}) — last URL: {current_url}"
-        )
+        raise SafeUrlError(f"Too many redirects (>{max_hops}) — last URL: {current_url}")
     except BaseException:
         # SafeUrlError, validation errors, or cancellation: release the
         # session before propagating.  We use BaseException so the cleanup
@@ -289,7 +287,9 @@ async def safe_get(url: str, **kwargs: Any) -> tuple[aiohttp.ClientResponse, aio
         raise
 
 
-async def safe_post(url: str, **kwargs: Any) -> tuple[aiohttp.ClientResponse, aiohttp.ClientSession]:
+async def safe_post(
+    url: str, **kwargs: Any
+) -> tuple[aiohttp.ClientResponse, aiohttp.ClientSession]:
     """Safe ``POST`` — validates URL, does NOT follow redirects.
 
     Returns a ``(response, session)`` tuple.  The caller must close both.

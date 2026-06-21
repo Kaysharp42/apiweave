@@ -5,6 +5,7 @@ These routes provide direct project access by project ID, enforcing
 workspace isolation. The primary project CRUD is nested under workspaces
 (see workspaces.py), but these routes allow direct project lookup.
 """
+
 import logging
 from typing import Any
 
@@ -28,8 +29,7 @@ async def list_projects_placeholder() -> dict[str, Any]:
     """
     return {
         "message": (
-            "Use workspace-scoped project listing: "
-            "GET /api/workspaces/{workspace_id}/projects"
+            "Use workspace-scoped project listing: " "GET /api/workspaces/{workspace_id}/projects"
         ),
         "projects": [],
         "total": 0,

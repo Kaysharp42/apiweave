@@ -1,9 +1,9 @@
 """
 MCP workflow resources — read-only workflow snapshots for agent context.
 """
+
 import json
 import logging
-from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 

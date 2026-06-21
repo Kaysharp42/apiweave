@@ -49,11 +49,15 @@ class OrgInviteRepository:
     @staticmethod
     async def list_pending_by_org(org_id: str) -> list[OrgInvite]:
         now = datetime.now(UTC)
-        return await OrgInvite.find(
-            OrgInvite.orgId == org_id,
-            OrgInvite.consumed == False,  # noqa: E712
-            OrgInvite.expires_at > now,
-        ).sort([("created_at", -1)]).to_list()
+        return (
+            await OrgInvite.find(
+                OrgInvite.orgId == org_id,
+                OrgInvite.consumed == False,  # noqa: E712
+                OrgInvite.expires_at > now,
+            )
+            .sort([("created_at", -1)])
+            .to_list()
+        )
 
     @staticmethod
     async def count_recent_by_org(org_id: str, since: datetime) -> int:

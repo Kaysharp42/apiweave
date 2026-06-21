@@ -6,6 +6,7 @@ Verifies that:
 - The executor accepts None and empty dict (backward compat)
 - The error message is clear about the scoped secret model
 """
+
 from __future__ import annotations
 
 import pytest

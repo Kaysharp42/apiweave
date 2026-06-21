@@ -2,6 +2,7 @@
 Secret detection and sanitization utilities.
 Centralized so both FastAPI routes and MCP tools use the same logic.
 """
+
 import re
 from typing import Any
 
@@ -120,6 +121,7 @@ def sanitize_secrets_in_dict(
 # Structural masking (security-remediation wave 1)
 # ---------------------------------------------------------------------------
 
+
 def _replace_longest_first(text: str, secret_values: list[str]) -> str:
     """Replace all occurrences of *secret_values* in *text*, longest first.
 
@@ -182,11 +184,7 @@ def mask_secrets_structural(
     """
     if isinstance(data, dict):
         return {
-            k: (
-                REDACTED
-                if is_secret_key(k)
-                else mask_secrets_structural(v, secret_values)
-            )
+            k: (REDACTED if is_secret_key(k) else mask_secrets_structural(v, secret_values))
             for k, v in data.items()
         }
     if isinstance(data, list):

@@ -11,6 +11,7 @@ Key invariants:
 - Org environments can restrict access to specific workspaces.
 - No global active environment exists.
 """
+
 from __future__ import annotations
 
 import logging
@@ -186,9 +187,7 @@ async def get_default_workspace_environment(workspace_id: str) -> Environment:
     """
     env = await ScopedEnvironmentRepository.get_default_for_workspace(workspace_id)
     if not env:
-        raise ResourceNotFoundError(
-            f"No default environment found for workspace {workspace_id}"
-        )
+        raise ResourceNotFoundError(f"No default environment found for workspace {workspace_id}")
     return env
 
 
@@ -214,14 +213,10 @@ async def resolve_run_environment(
     Raises ConflictError if the explicit environment is not allowed.
     """
     if explicit_environment_id:
-        return await _resolve_explicit_environment(
-            explicit_environment_id, workspace_id, org_id
-        )
+        return await _resolve_explicit_environment(explicit_environment_id, workspace_id, org_id)
 
     # Default to workspace default environment
-    default_env = await ScopedEnvironmentRepository.get_default_for_workspace(
-        workspace_id
-    )
+    default_env = await ScopedEnvironmentRepository.get_default_for_workspace(workspace_id)
     if not default_env:
         raise ResourceNotFoundError(
             f"No default environment for workspace {workspace_id}. "
@@ -260,8 +255,7 @@ async def _resolve_explicit_environment(
         # Enforce org env allowed-workspace policy
         if org_id and env.scopeId != org_id:
             raise ConflictError(
-                f"Environment {environment_id} belongs to org {env.scopeId}, "
-                f"not {org_id}"
+                f"Environment {environment_id} belongs to org {env.scopeId}, " f"not {org_id}"
             )
         is_allowed = await ScopedEnvironmentRepository.is_workspace_allowed_for_org_env(
             environment_id, workspace_id
@@ -325,9 +319,7 @@ async def list_org_envs_available_for_workspace(
 
     Respects the allowed-workspace policy.
     """
-    return await ScopedEnvironmentRepository.list_org_envs_for_workspace(
-        org_id, workspace_id
-    )
+    return await ScopedEnvironmentRepository.list_org_envs_for_workspace(org_id, workspace_id)
 
 
 # ======================================================================

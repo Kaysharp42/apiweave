@@ -6,11 +6,11 @@ to resolve secrets with mandatory audit. Every resolution records an event;
 if the audit write fails, the resolver raises AuditWriteUnavailableError
 (fail-closed) so no secret is used without an audit trail.
 """
-from typing import Any, Dict, Optional
+
+from typing import Any
 
 from app.models import AuditActorType, AuditScopeType
 from app.services.audit_service import append_event
-from app.services.exceptions import AuditWriteUnavailableError
 
 
 async def resolve_secret_with_audit(
@@ -25,7 +25,7 @@ async def resolve_secret_with_audit(
     key_id: str,
     resolved_value: str,
     resource_type: str = "secret",
-    resource_id: Optional[str] = None,
+    resource_id: str | None = None,
 ) -> str:
     """
     Resolve a secret and record an audit event.
@@ -35,7 +35,7 @@ async def resolve_secret_with_audit(
 
     Returns the resolved_value on success.
     """
-    context: Dict[str, Any] = {
+    context: dict[str, Any] = {
         "runId": run_id,
         "nodeId": node_id,
         "secretName": secret_name,

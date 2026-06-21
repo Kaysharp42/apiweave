@@ -5,6 +5,7 @@ Tests:
 1. Webhook token scoped to workspace A is denied when targeting workspace B.
 2. Webhook bypass of protected environment creates audit event.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -75,7 +76,9 @@ async def test_webhook_scope_mismatch_returns_403():
         patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=workflow_mock),
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
         patch("app.routes.webhooks.resolve_webhook_actor") as mock_actor,
-        patch("app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)),
+        patch(
+            "app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)
+        ),
         patch("app.routes.webhooks.audit_service") as mock_audit,
     ):
         mock_actor.return_value = SimpleNamespace(
@@ -112,7 +115,9 @@ async def test_webhook_scope_match_proceeds():
         patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=workflow_mock),
         patch("app.routes.webhooks.WebhookLog", side_effect=_mock_webhook_log),
         patch("app.routes.webhooks.resolve_webhook_actor") as mock_actor,
-        patch("app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)),
+        patch(
+            "app.routes.webhooks.check_protection_and_maybe_gate", return_value=("proceed", None)
+        ),
         patch("app.routes.webhooks.audit_service") as mock_audit,
         patch("app.routes.webhooks.webhook_runner") as mock_runner,
     ):
@@ -205,8 +210,9 @@ async def test_webhook_bypass_creates_audit_event():
 
     mock_bypass.assert_awaited_once()
     bypass_call_kwargs = mock_bypass.call_args
-    assert bypass_call_kwargs.kwargs.get("token_id") == "wh-wh-scope-test" or \
-        (bypass_call_kwargs.args and "wh-wh-scope-test" in bypass_call_kwargs.args)
+    assert bypass_call_kwargs.kwargs.get("token_id") == "wh-wh-scope-test" or (
+        bypass_call_kwargs.args and "wh-wh-scope-test" in bypass_call_kwargs.args
+    )
 
     assert len(audit_events) >= 1
     webhook_audit = [e for e in audit_events if e.get("actor") == "webhook_token"]
