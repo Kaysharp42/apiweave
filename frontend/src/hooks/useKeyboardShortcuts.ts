@@ -8,7 +8,6 @@ interface UseKeyboardShortcutsParams {
   onCloseTab?: () => void;
   onNextTab?: () => void;
   onPrevTab?: () => void;
-  onToggleEnvironmentManager?: () => void;
   onToggleJsonEditor?: () => void;
   onToggleSidebar?: () => void;
   onShowShortcutsHelp?: () => void;
@@ -21,7 +20,6 @@ interface ShortcutCallbacks {
   onCloseTab?: (() => void) | undefined;
   onNextTab?: (() => void) | undefined;
   onPrevTab?: (() => void) | undefined;
-  onToggleEnvironmentManager?: (() => void) | undefined;
   onToggleJsonEditor?: (() => void) | undefined;
   onToggleSidebar?: (() => void) | undefined;
   onShowShortcutsHelp?: (() => void) | undefined;
@@ -34,7 +32,6 @@ export default function useKeyboardShortcuts({
   onCloseTab,
   onNextTab,
   onPrevTab,
-  onToggleEnvironmentManager,
   onToggleJsonEditor,
   onToggleSidebar,
   onShowShortcutsHelp,
@@ -49,7 +46,6 @@ export default function useKeyboardShortcuts({
       onCloseTab,
       onNextTab,
       onPrevTab,
-      onToggleEnvironmentManager,
       onToggleJsonEditor,
       onToggleSidebar,
       onShowShortcutsHelp,
@@ -66,7 +62,6 @@ export default function useKeyboardShortcuts({
     Mousetrap.bind('ctrl+s', call('onSave'));
     Mousetrap.bind(['ctrl+r', 'f5'], call('onRun'));
     Mousetrap.bind('ctrl+w', call('onCloseTab'));
-    Mousetrap.bind('ctrl+e', call('onToggleEnvironmentManager'));
     Mousetrap.bind('ctrl+j', call('onToggleJsonEditor'));
     Mousetrap.bind('ctrl+b', call('onToggleSidebar'));
     Mousetrap.bind('?', (e: Mousetrap.ExtendedKeyboardEvent) => {
@@ -81,7 +76,6 @@ export default function useKeyboardShortcuts({
       Mousetrap.unbind('ctrl+s');
       Mousetrap.unbind(['ctrl+r', 'f5']);
       Mousetrap.unbind('ctrl+w');
-      Mousetrap.unbind('ctrl+e');
       Mousetrap.unbind('ctrl+j');
       Mousetrap.unbind('ctrl+b');
       Mousetrap.unbind('?');

@@ -177,7 +177,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
   return (
     <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="OpenAPI import">
       <button type="button" aria-label="Close OpenAPI import" className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80" onClick={onClose} />
-      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded-lg shadow-modal w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
           <div className="flex items-center gap-2">
@@ -203,7 +203,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+            className={`border border-dashed rounded p-8 text-center transition-colors ${
               isDragging
                 ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
                 : 'border-border dark:border-border-dark'
@@ -222,7 +222,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
             />
             <label
               htmlFor="openapi-file-input"
-              className="inline-block px-4 py-2 bg-[var(--aw-primary)] text-white rounded-lg hover:bg-[var(--aw-primary-hover)] cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+              className="inline-block px-4 py-2 bg-[var(--aw-primary)] text-white rounded hover:bg-[var(--aw-primary-hover)] cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
             >
               Choose File
             </label>
@@ -247,7 +247,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
                     id="openapi-base-url"
                     value={baseUrl}
                     onChange={(e) => handleServerSelect(e.target.value)}
-                    className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                    className="w-full px-3 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark font-mono"
                   >
                     <option value="">-- Select Server --</option>
                     {preview.availableServers.map((server) => (
@@ -284,9 +284,9 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
                       <Button
                         key={tag.name}
                         onClick={() => handleTagToggle(tag.name)}
-                        variant={selectedTags.includes(tag.name) ? 'primary' : 'secondary'}
+                        variant={selectedTags.includes(tag.name) ? 'primary' : 'outline'}
                         size="xs"
-                        className="rounded-full"
+                        className="rounded font-mono"
                         title={tag.description}
                       >
                         {tag.name}
@@ -333,7 +333,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
 
           {/* Error Display */}
           {error && (
-            <div className="flex items-start gap-2 p-3 bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded-lg">
+            <div className="flex items-start gap-2 p-3 bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded">
               <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark flex-shrink-0 mt-0.5" />
               <p className="text-sm text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]">{error}</p>
             </div>
@@ -341,7 +341,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
 
           {/* Preview Display */}
           {preview && (
-            <div className="border border-border dark:border-border-dark rounded-lg p-4 bg-surface dark:bg-surface-dark">
+            <div className="border border-border dark:border-border-dark rounded p-4 bg-surface dark:bg-surface-dark">
               <div className="flex items-center gap-2 mb-3">
                 <CheckCircle className="w-5 h-5 text-status-success dark:text-status-success-dark" />
                 <h3 className="font-semibold text-text-primary dark:text-text-primary-dark">Preview</h3>
@@ -413,7 +413,7 @@ export function OpenAPIImport({ onClose, onImportSuccess }: OpenAPIImportProps) 
           <div className="flex gap-2">
             <Button
               onClick={handlePreview}
-              variant="secondary"
+              variant="outline"
               disabled={!openapiFile || isLoading}
               loading={isLoading}
             >

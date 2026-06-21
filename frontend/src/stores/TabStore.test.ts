@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import useTabStore from './TabStore';
 import type { Workflow } from '../types/Workflow';

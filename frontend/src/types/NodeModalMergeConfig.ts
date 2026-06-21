@@ -1,7 +1,10 @@
 import type { MergeConditionType } from './MergeConditionType';
+import type { NodeModalConditionLogic } from './NodeModalConditionLogic';
+import type { NodeModalMergeStrategy } from './NodeModalMergeStrategy';
 
 export interface NodeModalMergeConfig {
-  mergeStrategy: string;
+  mergeStrategy: NodeModalMergeStrategy;
   conditions: MergeConditionType[];
-  conditionLogic: string;
+  conditionLogic: NodeModalConditionLogic;
+  continueOnFail?: boolean;
 }

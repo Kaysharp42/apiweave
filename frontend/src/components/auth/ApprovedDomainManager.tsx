@@ -120,7 +120,7 @@ export function ApprovedDomainManager() {
   return (
     <div className="flex flex-col gap-6">
       <Panel title="Add Approved Domain" icon={Globe as React.ComponentType<{ className?: string }>}>
-        <div className="p-5">
+        <div className="p-5 border-b border-border dark:border-border-dark">
           <form onSubmit={handleAddDomain} className="flex items-end gap-3">
             <div className="flex-1">
               <FormField label="Domain Name" {...(state.error ? { error: state.error } : {})}>
@@ -141,7 +141,7 @@ export function ApprovedDomainManager() {
 
       <Panel title="Approved Domains">
         <div className="overflow-hidden">
-          <table className="w-full text-sm text-left">
+          <table className="w-full text-sm text-left border-collapse">
             <thead className="text-xs text-text-secondary dark:text-text-secondary-dark uppercase bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark">
               <tr>
                 <th className="px-6 py-3">Domain</th>
@@ -162,7 +162,7 @@ export function ApprovedDomainManager() {
                 state.domains.map((domain) => (
                   <tr
                     key={domain.id}
-                    className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px]"
+                    className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors duration-200 motion-reduce:transition-none focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px]"
                     tabIndex={0}
                   >
                     <td className="px-6 py-3 font-medium text-text-primary dark:text-text-primary-dark">

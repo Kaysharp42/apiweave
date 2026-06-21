@@ -25,13 +25,13 @@ function withField<K extends keyof AuditEventFilter>(
 
 export function AuditFilters({ filters, onChange }: AuditFiltersProps) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 p-4 bg-surface-raised dark:bg-surface-dark-raised">
       <div>
         <label className="label py-1 px-0">
           <span className="label-text text-xs font-medium text-text-primary dark:text-text-primary-dark">Actor</span>
         </label>
         <select
-          className="select select-bordered select-sm w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark"
+          className="select select-bordered select-sm w-full rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
           value={filters.actor ?? ''}
           onChange={(e) => onChange(withField(filters, 'actor', e.target.value))}
         >
@@ -56,7 +56,7 @@ export function AuditFilters({ filters, onChange }: AuditFiltersProps) {
           <span className="label-text text-xs font-medium text-text-primary dark:text-text-primary-dark">Scope</span>
         </label>
         <select
-          className="select select-bordered select-sm w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark"
+          className="select select-bordered select-sm w-full rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
           value={filters.scope ?? ''}
           onChange={(e) => onChange(withField(filters, 'scope', e.target.value))}
         >

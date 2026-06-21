@@ -33,7 +33,7 @@ export function SlidePanel({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-surface-overlay/80 dark:bg-surface-dark-overlay/80" />
+          <div className="fixed inset-0 bg-text-primary/30 dark:bg-surface-dark/80" />
         </TransitionChild>
 
         <div className="fixed inset-0 overflow-hidden">
@@ -52,11 +52,11 @@ export function SlidePanel({
             >
               <Dialog.Panel
                 className={`w-screen ${SIZE_MAP[size] || SIZE_MAP.md} h-full flex flex-col
-                  bg-surface dark:bg-surface-dark border-border dark:border-border-dark
+                  bg-surface-raised dark:bg-surface-dark-raised border-border dark:border-border-dark
                   ${isRight ? 'border-l' : 'border-r'} shadow-modal`}
               >
-                <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
-                  <Dialog.Title className="text-base font-semibold text-text-primary dark:text-text-primary-dark truncate">
+                <div className="flex items-center justify-between border-b border-border bg-surface-overlay px-4 py-3 dark:border-border-dark dark:bg-surface-dark-overlay">
+                  <Dialog.Title className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
                     {title}
                   </Dialog.Title>
                   {showClose && (
@@ -76,7 +76,7 @@ export function SlidePanel({
                 </div>
 
                 {footer && (
-                  <div className="px-4 py-3 border-t border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
+                  <div className="border-t border-border bg-surface-overlay px-4 py-3 dark:border-border-dark dark:bg-surface-dark-overlay">
                     {footer}
                   </div>
                 )}

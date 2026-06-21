@@ -1,13 +1,13 @@
 import type { Workflow } from './Workflow';
 import type { Project } from './Project';
-import type { Environment } from './Environment';
+import type { ScopedEnvironment } from './ScopedEnvironment';
 
 export interface ProjectItemProps {
   project: Project;
   isExpanded: boolean;
   workflows: Workflow[];
   projects: Project[];
-  environments: Environment[];
+  environments: ScopedEnvironment[];
   selectedWorkflowId: string | null;
   onToggle: (projectId: string) => void;
   onWorkflowClick: (workflow: Workflow) => void;

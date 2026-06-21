@@ -24,14 +24,12 @@ function resetStores(): void {
     workflows: [],
     collections: [],
     projects: [],
-    environments: [],
     pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
     isRefreshing: false,
     isLoadingMore: false,
     searchQuery: '',
     workflowVersion: 0,
     collectionVersion: 0,
-    environmentVersion: 0,
     projectVersion: 0,
     activeWorkspaceId: null,
   });
@@ -90,7 +88,7 @@ describe('sidebar workspace boot', () => {
 
     // Wait for async fetches to complete
     await vi.waitFor(() => {
-      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
     const calls = fetchMock.mock.calls.map(([input, init]) => ({
@@ -104,10 +102,6 @@ describe('sidebar workspace boot', () => {
     });
     expect(calls).toContainEqual({
       url: `${API_BASE_URL}/api/workspaces/ws-A/workflows?skip=0&limit=20`,
-      method: 'GET',
-    });
-    expect(calls).toContainEqual({
-      url: `${API_BASE_URL}/api/workspaces/ws-A/environments/all-accessible`,
       method: 'GET',
     });
   });
@@ -125,14 +119,6 @@ describe('sidebar workspace boot', () => {
         createdAt: '2026-06-18T00:00:00Z',
         updatedAt: '2026-06-18T00:00:00Z',
       }],
-      environments: [{
-        id: 'stale-env',
-        environmentId: 'stale-env',
-        name: 'Stale Env',
-        variables: [],
-        createdAt: '2026-06-18T00:00:00Z',
-        updatedAt: '2026-06-18T00:00:00Z',
-      }],
       pagination: { skip: 20, limit: 20, total: 100, hasMore: true },
     });
 
@@ -144,7 +130,6 @@ describe('sidebar workspace boot', () => {
     expect(useSidebarStore.getState().activeWorkspaceId).toBe('ws-B');
     expect(useSidebarStore.getState().workflows).toEqual([]);
     expect(useSidebarStore.getState().projects).toEqual([]);
-    expect(useSidebarStore.getState().environments).toEqual([]);
     expect(useSidebarStore.getState().pagination).toEqual({
       skip: 0,
       limit: 20,
@@ -154,16 +139,13 @@ describe('sidebar workspace boot', () => {
 
     // Wait for async fetches on ws-B
     await vi.waitFor(() => {
-      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
     const urls = fetchMock.mock.calls.map(([input]) => inputUrl(input));
     expect(urls).toContain(`${API_BASE_URL}/api/workspaces/ws-B/projects`);
     expect(urls).toContain(
       `${API_BASE_URL}/api/workspaces/ws-B/workflows?skip=0&limit=20`,
-    );
-    expect(urls).toContain(
-      `${API_BASE_URL}/api/workspaces/ws-B/environments/all-accessible`,
     );
 
     // No requests to the old workspace
@@ -183,14 +165,6 @@ describe('sidebar workspace boot', () => {
         createdAt: '2026-06-18T00:00:00Z',
         updatedAt: '2026-06-18T00:00:00Z',
       }],
-      environments: [{
-        id: 'env-1',
-        environmentId: 'env-1',
-        name: 'Env A',
-        variables: [],
-        createdAt: '2026-06-18T00:00:00Z',
-        updatedAt: '2026-06-18T00:00:00Z',
-      }],
     });
 
     const fetchMock = installFetchMock();
@@ -201,7 +175,6 @@ describe('sidebar workspace boot', () => {
     expect(useSidebarStore.getState().activeWorkspaceId).toBeNull();
     expect(useSidebarStore.getState().workflows).toEqual([]);
     expect(useSidebarStore.getState().projects).toEqual([]);
-    expect(useSidebarStore.getState().environments).toEqual([]);
 
     // No fetches triggered when setting to null
     expect(fetchMock).not.toHaveBeenCalled();

@@ -14,6 +14,7 @@ import CollectionExportImport from '../CollectionExportImport';
 import { ConfirmDialog } from '../molecules/ConfirmDialog';
 import { PromptDialog } from '../molecules/PromptDialog';
 import useSidebarStore from '../../stores/SidebarStore';
+import useEnvironmentStore from '../../stores/EnvironmentStore';
 import useTabStore from '../../stores/TabStore';
 import { requestProjectDeletion, requestWorkflowDeletion } from '../../utils/sidebarDeletion';
 import type { Workflow } from '../../types/Workflow';
@@ -44,14 +45,13 @@ export function Sidebar() {
   const workflows = useSidebarStore((s) => s.workflows);
   const projects = useSidebarStore((s) => s.projects);
   const collections = useSidebarStore((s) => s.collections);
-  const environments = useSidebarStore((s) => s.environments);
+  const environments = useEnvironmentStore((s) => s.environments);
   const pagination = useSidebarStore((s) => s.pagination);
   const isLoadingMore = useSidebarStore((s) => s.isLoadingMore);
   const isRefreshing = useSidebarStore((s) => s.isRefreshing);
   const searchQuery = useSidebarStore((s) => s.searchQuery);
   const closeTab = useTabStore((s) => s.closeTab);
   const fetchWorkflows = useSidebarStore((s) => s.fetchWorkflows);
-  const fetchEnvironments = useSidebarStore((s) => s.fetchEnvironments);
   const fetchProjects = useSidebarStore((s) => s.fetchProjects);
   const workflowVersion = useSidebarStore((s) => s.workflowVersion);
   const projectVersion = useSidebarStore((s) => s.projectVersion);
@@ -71,8 +71,8 @@ export function Sidebar() {
 
   useEffect(() => {
     if (!isScopeReady || !workspaceId) return;
-    void fetchEnvironments();
-  }, [fetchEnvironments, isScopeReady, workspaceId]);
+    void useEnvironmentStore.getState().fetchEnvironments(workspaceId);
+  }, [isScopeReady, workspaceId]);
 
   useEffect(() => {
     if (workflowVersion > 0) {
@@ -359,7 +359,7 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="flex flex-col h-full w-full bg-surface-raised dark:bg-surface-dark-raised" aria-label="Sidebar">
+      <aside className="flex h-full w-full flex-col bg-surface-raised text-text-primary dark:bg-surface-dark-raised dark:text-text-primary-dark" aria-label="Sidebar">
         <SidebarHeader
           selectedNav={selectedNav}
           onCreateNew={handleCreateNew}
@@ -398,7 +398,7 @@ export function Sidebar() {
           {selectedNav === 'projects' && (
             <div
               className={[
-                'h-full overflow-y-auto overflow-x-hidden p-1.5 transition-opacity duration-300',
+                'h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity duration-300 motion-reduce:transition-none',
                 isRefreshing ? 'opacity-50' : 'opacity-100',
               ].join(' ')}
             >
@@ -430,6 +430,7 @@ export function Sidebar() {
             <SettingsContent
               hasPermission={hasPermission}
               onNavigate={(path: string) => navigate(path)}
+              onSwitchNav={(section) => setNavState(section)}
             />
           )}
         </div>

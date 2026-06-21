@@ -45,7 +45,7 @@ export function TokenValueDisplay({
   return (
     <div
       className={[
-        'rounded-lg border-2 border-status-warning/40 bg-status-warning/5 p-4',
+        'rounded border border-status-warning/40 bg-status-warning/5 p-4',
         className,
       ].filter(Boolean).join(' ')}
     >
@@ -70,11 +70,11 @@ export function TokenValueDisplay({
             'bg-surface dark:bg-surface-dark',
             'border border-border dark:border-border-dark',
             'text-text-primary dark:text-text-primary-dark',
-            revealed ? '' : 'blur-sm select-none',
+            revealed ? '' : 'select-none',
           ].join(' ')}
           aria-label={revealed ? 'Token value' : 'Token value (hidden)'}
         >
-          {tokenValue}
+          {revealed ? tokenValue : '••••••••••••••••'}
         </code>
 
         <Button
@@ -104,7 +104,7 @@ export function TokenValueDisplay({
 
       {/* Dismiss button */}
       <div className="mt-3 flex justify-end">
-        <Button variant="secondary" size="sm" onClick={handleDismiss}>
+        <Button variant="outline" size="sm" onClick={handleDismiss}>
           I&apos;ve copied the token
         </Button>
       </div>

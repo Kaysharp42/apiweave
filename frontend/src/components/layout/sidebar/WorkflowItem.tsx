@@ -45,10 +45,10 @@ export function WorkflowItem({
     <li>
       <div
         className={[
-          'group flex w-full items-start gap-2 rounded-xl px-2.5 py-2 text-sm transition-all duration-150 border',
+          'group flex w-full items-start gap-2 rounded border border-l-2 px-2.5 py-2 text-sm transition-colors duration-150 motion-reduce:transition-none',
           isActive
-            ? 'bg-[var(--aw-primary)]/10 border-[var(--aw-primary)]/30 shadow-[var(--aw-shadow-node)]'
-            : 'border-transparent hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:border-[var(--aw-border)]/70',
+            ? 'border-y-border border-r-border border-l-primary bg-primary/10 dark:border-y-border-dark dark:border-r-border-dark dark:border-l-primary-light dark:bg-primary-light/10'
+            : 'border-transparent hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay',
         ].join(' ')}
       >
         <button
@@ -58,15 +58,15 @@ export function WorkflowItem({
           onKeyDown={handleKeyDown}
           className={[
             'flex min-w-0 flex-1 items-start gap-2 text-left',
-            'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+            'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
             'cursor-pointer rounded',
           ].join(' ')}
         >
-          <FileText className="mt-0.5 h-4 w-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+          <FileText className={['mt-0.5 h-4 w-4 flex-shrink-0', isActive ? 'text-primary dark:text-primary-light' : 'text-text-muted dark:text-text-muted-dark'].join(' ')} />
 
           <div className="min-w-0 flex-1 text-left overflow-hidden">
             <div
-              className="font-medium text-text-primary dark:text-text-primary-dark truncate"
+              className={['truncate font-medium', isActive ? 'text-primary dark:text-primary-light' : 'text-text-primary dark:text-text-primary-dark'].join(' ')}
               title={workflowLabel.fullLabel}
             >
               {workflowLabel.label}

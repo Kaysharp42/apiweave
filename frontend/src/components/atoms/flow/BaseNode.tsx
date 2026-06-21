@@ -31,6 +31,7 @@ export function BaseNode({
     {
       border: string;
       bg: string;
+      ring: string;
       dot: string | null;
       badge: string;
       icon: React.ReactNode | null;
@@ -38,40 +39,45 @@ export function BaseNode({
     }
   > = {
     idle: {
-      border: 'border-[var(--aw-border)] dark:border-[var(--aw-border)]',
+      border: 'border-border dark:border-border-dark',
       bg: '',
+      ring: '',
       dot: null,
       badge: '',
       icon: null,
       ariaLabel: 'Idle',
     },
     running: {
-      border: 'border-status-running animate-pulse-border motion-reduce:animate-none motion-reduce:border-status-running/60',
-      bg: 'bg-status-running/[0.06]',
+      border: 'border-border dark:border-border-dark',
+      bg: '',
+      ring: 'animate-pulse motion-reduce:animate-none ring-2 ring-status-running/40 dark:ring-status-running/30',
       dot: 'bg-status-running',
       badge: 'bg-status-running/15 text-status-running dark:text-[var(--aw-status-running)]',
       icon: <Loader2 className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />,
       ariaLabel: 'Running',
     },
     success: {
-      border: 'border-status-success',
-      bg: 'bg-status-success/[0.06]',
+      border: 'border-status-success/60 dark:border-status-success/40',
+      bg: '',
+      ring: 'ring-1 ring-status-success/30 dark:ring-status-success/20',
       dot: 'bg-status-success',
       badge: 'bg-status-success/15 text-status-success dark:text-[var(--aw-status-success)]',
       icon: <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />,
       ariaLabel: 'Success',
     },
     error: {
-      border: 'border-status-error',
-      bg: 'bg-status-error/[0.06]',
+      border: 'border-status-error/60 dark:border-status-error/40',
+      bg: '',
+      ring: 'ring-1 ring-status-error/30 dark:ring-status-error/20',
       dot: 'bg-status-error',
       badge: 'bg-status-error/15 text-status-error dark:text-[var(--aw-status-error)]',
       icon: <XCircle className="w-3.5 h-3.5" aria-hidden="true" />,
       ariaLabel: 'Error',
     },
     warning: {
-      border: 'border-status-warning',
-      bg: 'bg-status-warning/[0.06]',
+      border: 'border-status-warning/60 dark:border-status-warning/40',
+      bg: '',
+      ring: 'ring-1 ring-status-warning/30 dark:ring-status-warning/20',
       dot: 'bg-status-warning',
       badge: 'bg-status-warning/15 text-status-warning dark:text-[var(--aw-status-warning)]',
       icon: <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />,
@@ -82,8 +88,8 @@ export function BaseNode({
   const config = statusConfig[status] ?? statusConfig.idle;
 
   const selectedClasses = selected
-    ? 'ring-2 ring-[var(--aw-primary)]/50 dark:ring-[var(--aw-primary)]/50 bg-surface-overlay dark:bg-surface-dark-overlay shadow-[var(--aw-shadow-overlay)] dark:shadow-[var(--aw-shadow-overlay)]'
-    : 'bg-surface-raised dark:bg-surface-dark-raised shadow-[var(--aw-shadow-node)] dark:shadow-[var(--aw-shadow-node)]';
+    ? 'bg-surface-raised dark:bg-surface-dark-raised shadow-node-selected'
+    : 'bg-surface-raised dark:bg-surface-dark-raised shadow-node hover:shadow-node-hover';
 
   const statusBg = !selected && config.bg ? config.bg : '';
 
@@ -95,15 +101,16 @@ export function BaseNode({
           position={Position.Left}
           id={handleLeft.id ?? ''}
           style={handleLeft.style ?? {}}
-          className="!w-3.5 !h-3.5 !bg-[var(--aw-primary)] !border-2 !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-dark)] !rounded-full"
+          className="!w-3 !h-3 !bg-[var(--aw-primary)] !border !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-raised)] !rounded-full"
         />
       )}
 
       <div
         className={[
-          'flex flex-col rounded-2xl border-2 min-w-[180px] max-w-node overflow-hidden transition-all duration-150',
+          'flex flex-col rounded-sm border min-w-[180px] max-w-node overflow-hidden transition-shadow transition-colors duration-150 motion-reduce:transition-none',
           selectedClasses,
           config.border,
+          config.ring,
           statusBg,
           className,
         ]
@@ -115,8 +122,8 @@ export function BaseNode({
         {title && (
           <div
             className={[
-              'flex items-center gap-2.5 px-3 py-2.5 border-b border-[var(--aw-border)] dark:border-[var(--aw-border)]',
-              headerBg || 'bg-surface-overlay dark:bg-surface-dark-overlay',
+              'flex items-center gap-2 px-3 py-2 border-b border-border dark:border-border-dark',
+              headerBg || 'bg-surface-raised dark:bg-surface-dark-raised',
             ]
               .filter(Boolean)
               .join(' ')}
@@ -127,7 +134,7 @@ export function BaseNode({
               </span>
             )}
             <span
-              className={`flex-1 text-sm font-semibold leading-tight truncate ${headerTextClass || 'text-text-primary dark:text-text-primary-dark'}`}
+              className={`flex-1 text-sm font-semibold leading-tight tracking-[-0.01em] truncate ${headerTextClass || 'text-text-primary dark:text-text-primary-dark'}`}
             >
               {title}
             </span>
@@ -135,7 +142,7 @@ export function BaseNode({
             {titleExtra}
 
             {config.badge && statusBadgeText && (
-              <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium ${config.badge}`}>
+              <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-sm font-mono ${config.badge}`}>
                 {config.icon}
                 {statusBadgeText}
               </span>
@@ -167,7 +174,7 @@ export function BaseNode({
               <button
                 type="button"
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="p-1 rounded-md text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer"
+                className="p-1 rounded-sm text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer transition-colors motion-reduce:transition-none"
                 style={{ background: 'transparent', border: 'none', WebkitTapHighlightColor: 'transparent' }}
                 aria-expanded={isExpanded}
                 title={isExpanded ? 'Collapse' : 'Expand'}
@@ -189,7 +196,7 @@ export function BaseNode({
           position={Position.Right}
           id={handleRight.id ?? ''}
           style={handleRight.style ?? {}}
-          className="!w-3.5 !h-3.5 !bg-[var(--aw-primary)] !border-2 !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-dark)] !rounded-full"
+          className="!w-3 !h-3 !bg-[var(--aw-primary)] !border !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-raised)] !rounded-full"
         />
       )}
 

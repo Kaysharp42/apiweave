@@ -5,4 +5,5 @@ export interface ResponseInspectorProps {
   response: ApiResponse | null;
   metadata?: NodeResultMetadata;
   rawBody?: string;
+  filterQuery?: string;
 }

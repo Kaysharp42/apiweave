@@ -7,14 +7,14 @@ import { useScopeContext } from '../hooks/useScopeContext';
 import { workflowImportOpenapiRemoteUrl } from '../utils/scopedApi';
 import type { Node } from 'reactflow';
 import type { WorkflowCanvasNodeData } from '../types/WorkflowCanvasNodeData';
-import type { EnvironmentWithSwagger } from '../types/EnvironmentWithSwagger';
+import type { ScopedEnvironment } from '../types/ScopedEnvironment';
 import type { ImportedItem } from '../types/ImportedItem';
 import type { SwaggerRefreshResult } from '../types/SwaggerRefreshResult';
 
 interface UseSwaggerRefreshParams {
   workflowId: string | undefined;
   selectedEnvironment: string | null;
-  environments: EnvironmentWithSwagger[];
+  environments: ScopedEnvironment[];
   setNodes: React.Dispatch<React.SetStateAction<Node<WorkflowCanvasNodeData>[]>>;
 }
 
@@ -271,9 +271,7 @@ export function useSwaggerRefresh({
       toast.error(errorMessage);
       return { error: errorMessage };
     } finally {
-      if (requestId === swaggerRefreshRequestIdRef.current) {
-        setIsSwaggerRefreshing(false);
-      }
+      setIsSwaggerRefreshing(false);
     }
   }, [
     workflowId,

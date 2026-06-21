@@ -83,7 +83,7 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
   };
 
   return (
-    <div className="space-y-1.5 p-2 rounded border" style={{ backgroundColor: 'var(--aw-status-success)/5', borderColor: 'var(--aw-status-success)' }}>
+    <div className="space-y-1.5 p-2 rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
       <div>
         <label htmlFor="assertion-source" className="block text-[9px] font-semibold mb-0.5" style={{ color: 'var(--aw-text-secondary)' }}>
           Assert On
@@ -92,7 +92,7 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
           id="assertion-source"
           value={source}
           onChange={(e) => setSource(e.target.value as AssertionSource)}
-          className="nodrag w-full px-1.5 py-0.5 border rounded text-[9px] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer"
+          className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-[9px] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer"
           style={{ borderColor: 'var(--aw-border)', backgroundColor: 'var(--aw-surface-raised)', color: 'var(--aw-text-primary)' }}
         >
           <option value="prev">Previous Node Result (prev.*)</option>
@@ -117,8 +117,8 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
             value={path}
             onChange={(e) => setPath(e.target.value)}
             className={`nodrag w-full px-1.5 py-0.5 border rounded text-[9px] focus-visible:outline-2 focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ` +
-              (errors.path ? 'focus-visible:outline-[var(--aw-status-error)]' : 'focus-visible:outline-[var(--aw-primary)]')}
-            style={errors.path ? { borderColor: 'var(--aw-status-error)', backgroundColor: 'var(--aw-status-error)/5', color: 'var(--aw-status-error)' } : { borderColor: 'var(--aw-border)', backgroundColor: 'var(--aw-surface-raised)', color: 'var(--aw-text-primary)' }}
+              (errors.path ? 'focus-visible:outline-[var(--aw-status-error)] bg-[var(--aw-status-error)]/5' : 'focus-visible:outline-[var(--aw-primary)]')}
+            style={errors.path ? { borderColor: 'var(--aw-status-error)', color: 'var(--aw-status-error)' } : { borderColor: 'var(--aw-border)', backgroundColor: 'var(--aw-surface-raised)', color: 'var(--aw-text-primary)' }}
           />
           {errors.path && (
             <div className="text-[9px] mt-1" style={{ color: 'var(--aw-status-error)' }}>{errors.path}</div>
@@ -134,7 +134,7 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
           id="assertion-operator"
           value={operator}
           onChange={(e) => setOperator(e.target.value as AssertionOperator)}
-          className="nodrag w-full px-1.5 py-0.5 border rounded text-[9px] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer"
+          className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-[9px] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer"
           style={{ borderColor: 'var(--aw-border)', backgroundColor: 'var(--aw-surface-raised)', color: 'var(--aw-text-primary)' }}
         >
           <option value="equals">Equals (==)</option>
@@ -163,8 +163,8 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
             value={expectedValue}
             onChange={(e) => setExpectedValue(e.target.value)}
             className={`nodrag w-full px-1.5 py-0.5 border rounded text-[9px] font-mono focus-visible:outline-2 focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ` +
-              (errors.expectedValue ? 'focus-visible:outline-[var(--aw-status-error)]' : 'focus-visible:outline-[var(--aw-primary)]')}
-            style={errors.expectedValue ? { borderColor: 'var(--aw-status-error)', backgroundColor: 'var(--aw-status-error)/5', color: 'var(--aw-status-error)' } : { borderColor: 'var(--aw-border)', backgroundColor: 'var(--aw-surface-raised)', color: 'var(--aw-text-primary)' }}
+              (errors.expectedValue ? 'focus-visible:outline-[var(--aw-status-error)] bg-[var(--aw-status-error)]/5' : 'focus-visible:outline-[var(--aw-primary)]')}
+            style={errors.expectedValue ? { borderColor: 'var(--aw-status-error)', color: 'var(--aw-status-error)' } : { borderColor: 'var(--aw-border)', backgroundColor: 'var(--aw-surface-raised)', color: 'var(--aw-text-primary)' }}
           />
           {errors.expectedValue && (
             <div className="text-[9px] mt-1" style={{ color: 'var(--aw-status-error)' }}>{errors.expectedValue}</div>
@@ -176,8 +176,7 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
         type="button"
         onClick={handleAdd}
         aria-label="Add assertion"
-        className="w-full px-2 py-1 text-white text-[9px] font-semibold rounded nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
-        style={{ backgroundColor: 'var(--aw-status-success)' }}
+        className="w-full px-2 py-1 text-surface-raised dark:text-surface-dark-raised text-[9px] font-semibold rounded-sm nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none bg-primary dark:bg-primary-light"
       >
         Add Assertion
       </button>
@@ -202,11 +201,11 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
 
     return (
       <span
-        className="text-[10px] font-medium px-1.5 py-0.5 rounded"
-        style={{
-          backgroundColor: data.assertionStats.failedCount > 0 ? 'var(--aw-status-error)/15' : 'var(--aw-status-success)/15',
-          color: data.assertionStats.failedCount > 0 ? 'var(--aw-status-error)' : 'var(--aw-status-success)',
-        }}
+        className={`text-[10px] font-mono px-1.5 py-0.5 rounded-sm border ${
+          data.assertionStats.failedCount > 0
+            ? 'bg-[var(--aw-status-error)]/10 text-status-error dark:text-status-error-dark border-status-error/30'
+            : 'bg-[var(--aw-status-success)]/10 text-status-success dark:text-status-success-dark border-status-success/30'
+        }`}
       >
         {data.assertionStats.failedCount > 0
           ? `${data.assertionStats.failedCount}/${data.assertionStats.totalCount} failed`
@@ -300,11 +299,11 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
 
           {data.executionStatus && data.assertionStats && (
             <div
-              className="mt-1 p-1.5 rounded text-[9px] border"
-              style={{
-                backgroundColor: data.assertionStats.failedCount > 0 ? 'var(--aw-status-error)/5' : 'var(--aw-status-success)/5',
-                borderColor: data.assertionStats.failedCount > 0 ? 'var(--aw-status-error)' : 'var(--aw-status-success)',
-              }}
+              className={`mt-1 p-1.5 rounded-sm text-[9px] border ${
+                data.assertionStats.failedCount > 0
+                  ? 'bg-[var(--aw-status-error)]/5 border-status-error/30'
+                  : 'bg-[var(--aw-status-success)]/5 border-status-success/30'
+              }`}
             >
               <div
                 className="font-semibold mb-1"
@@ -336,7 +335,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                   {data.config.assertions.map((assertion, index) => (
                     <div
                       key={`${assertion.source}-${assertion.path}-${assertion.operator}-${assertion.expectedValue}`}
-                      className="p-1.5 border rounded space-y-0.5"
+                      className="p-1.5 border rounded-sm space-y-0.5"
                       style={{ backgroundColor: 'var(--aw-surface-raised)', borderColor: 'var(--aw-border)' }}
                     >
                       {editingIndex === index ? (
@@ -396,8 +395,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                                 setEditingIndex(index);
                                 setEditDraft({ ...assertion });
                               }}
-                              className="px-1.5 py-0.5 text-white text-[8px] rounded nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
-                              style={{ backgroundColor: 'var(--aw-status-warning)' }}
+                              className="px-1.5 py-0.5 text-status-warning dark:text-status-warning-dark bg-[var(--aw-status-warning)]/10 border border-status-warning/30 text-[8px] rounded-sm nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
                               title="Edit assertion"
                             >
                               <Pencil className="w-3 h-3" />
@@ -405,8 +403,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                             <button
                               type="button"
                               onClick={() => handleDeleteAssertion(index)}
-                              className="px-1.5 py-0.5 text-white text-[8px] rounded nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
-                              style={{ backgroundColor: 'var(--aw-status-error)' }}
+                              className="px-1.5 py-0.5 text-status-error dark:text-status-error-dark bg-[var(--aw-status-error)]/10 border border-status-error/30 text-[8px] rounded-sm nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
                               title="Delete assertion"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -423,7 +420,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                 </div>
               )}
 
-              <div className="text-[9px] space-y-1 p-2 rounded border" style={{ backgroundColor: 'var(--aw-status-info)/5', borderColor: 'var(--aw-status-info)' }}>
+              <div className="text-[9px] space-y-1 p-2 rounded-sm border bg-[var(--aw-status-info)]/5 border-status-info/30">
                 <p className="flex items-center gap-1">
                   <Info className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--aw-status-info)' }} />
                   <span><strong>Pass/Fail:</strong> Connect the green handle for all-pass, red for any-fail.</span>

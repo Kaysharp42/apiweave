@@ -12,6 +12,7 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -22,7 +23,10 @@ from app.repositories.auth_repositories import SessionRepository, UserRepository
 from app.routes._legacy_disabled import workflows
 
 
-def _make_session(token: str = "test-session-token", user_id: str = "user-1") -> tuple[Session, str]:
+def _make_session(
+    token: str = "test-session-token",
+    user_id: str = "user-1",
+) -> tuple[Session, str]:
     now = datetime.now(UTC)
     return (
         Session.model_construct(
@@ -109,6 +113,60 @@ class TestFetchOpenapiFromUrlBlocksPrivateIPs:
 
         with pytest.raises(ValueError, match="URL blocked"):
             await fetch_openapi_from_url("http://[::1]:8000/spec")
+
+
+@pytest.mark.asyncio
+async def test_fetch_openapi_from_webjars_localhost_uses_primary_definition():
+    from app.services.import_service import fetch_openapi_from_url
+
+    swagger_html = "<html><body>Swagger UI</body></html>"
+    config = {
+        "urls.primaryName": "Actor Service",
+        "urls": [
+            {"name": "Actor Service", "url": "/swagger/actors/v3/api-docs"},
+            {"name": "Asset Service", "url": "/swagger/assets/v3/api-docs"},
+        ],
+    }
+    actor_spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "Actor Service API", "version": "1.0"},
+        "paths": {
+            "/actors": {
+                "get": {
+                    "summary": "List actors",
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "localhost":
+            raise httpx.ConnectError("All connection attempts failed", request=request)
+        if request.url.path == "/webjars/swagger-ui/index.html":
+            return httpx.Response(200, text=swagger_html, headers={"content-type": "text/html"})
+        if request.url.path == "/v3/api-docs/swagger-config":
+            return httpx.Response(200, json=config)
+        if request.url.path == "/swagger/actors/v3/api-docs":
+            return httpx.Response(200, json=actor_spec)
+        return httpx.Response(404, json={"detail": "not found"})
+
+    class MockedAsyncClient(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = httpx.MockTransport(handler)
+            super().__init__(*args, **kwargs)
+
+    with patch("httpx.AsyncClient", MockedAsyncClient):
+        result = await fetch_openapi_from_url(
+            "http://localhost:8800/webjars/swagger-ui/index.html"
+            "?urls.primaryName=Actor+Service"
+        )
+
+    assert result["total_endpoints"] == 1
+    assert result["api_title"] == "Actor Service API"
+    assert len(result["definitions"]) == 1
+    assert result["definitions"][0]["name"] == "Actor Service"
+    assert result["nodes"][0]["config"]["url"] == "/actors"
 
 
 class TestImportOpenapiFromUrlRouteBlocksPrivateIPs:

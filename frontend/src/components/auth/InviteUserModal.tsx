@@ -100,7 +100,7 @@ export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
       footer={() => (
         !state.inviteUrl ? (
           <>
-            <Button variant="ghost" onClick={resetAndClose} disabled={state.loading}>
+            <Button variant="outline" onClick={resetAndClose} disabled={state.loading}>
               Cancel
             </Button>
             <Button type="submit" form="invite-form" loading={state.loading}>
@@ -122,7 +122,7 @@ export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
                 </span>
                 <Button
                   size="xs"
-                  variant="secondary"
+                  variant="outline"
                   onClick={() => {
                     if (!state.inviteUrl) return;
                     navigator.clipboard.writeText(state.inviteUrl);

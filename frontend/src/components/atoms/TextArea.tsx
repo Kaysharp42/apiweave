@@ -18,10 +18,10 @@ export function TextArea({
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const sizeClass: Record<string, string> = {
-    xs: 'textarea-xs',
-    sm: 'textarea-sm',
-    md: '',
-    lg: 'textarea-lg',
+    xs: 'px-2 py-1 text-xs',
+    sm: 'px-2.5 py-1.5 text-sm',
+    md: 'px-3 py-2 text-sm',
+    lg: 'px-3.5 py-2.5 text-base',
   };
 
   useEffect(() => {
@@ -34,8 +34,8 @@ export function TextArea({
   return (
     <div className="form-control w-full">
       {label && (
-        <label htmlFor={id} className="label">
-          <span className="label-text text-text-primary dark:text-text-primary-dark">{label}</span>
+        <label htmlFor={id} className="label px-0 py-1">
+          <span className="label-text text-sm font-medium text-text-primary dark:text-text-primary-dark">{label}</span>
         </label>
       )}
       <textarea
@@ -44,15 +44,16 @@ export function TextArea({
         value={value}
         onChange={onChange}
         className={[
-          'textarea textarea-bordered w-full px-3 py-2',
+          'w-full rounded-sm border',
           'bg-surface-raised dark:bg-surface-dark-raised',
           'text-text-primary dark:text-text-primary-dark',
           'border-border dark:border-border-dark',
           'placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
+          'focus:border-primary dark:focus:border-primary-light',
           'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
-          'transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out',
+          'transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out',
           sizeClass[size] ?? '',
-          error && 'textarea-error',
+          error && 'border-status-error dark:border-[var(--aw-status-error)]',
           autoResize && 'resize-none overflow-hidden',
           className,
         ]
@@ -62,13 +63,13 @@ export function TextArea({
         {...rest}
       />
       {error && (
-        <label className="label">
-          <span className="label-text-alt text-error">{error}</span>
+        <label className="label px-0 py-1">
+          <span className="label-text-alt text-xs text-status-error dark:text-[var(--aw-status-error)]">{error}</span>
         </label>
       )}
       {!error && helperText && (
-        <label className="label">
-          <span className="label-text-alt text-text-secondary dark:text-text-secondary-dark">
+        <label className="label px-0 py-1">
+          <span className="label-text-alt text-xs text-text-muted dark:text-text-muted-dark">
             {helperText}
           </span>
         </label>

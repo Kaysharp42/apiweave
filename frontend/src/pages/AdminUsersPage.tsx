@@ -1,11 +1,12 @@
-import { useReducer, useEffect, useCallback } from 'react';
-import { Shield, Trash2 } from 'lucide-react';
+import { useReducer, useEffect, useCallback, useState } from 'react';
+import { Plus, Shield, Trash2 } from 'lucide-react';
 import { Button } from '../components/atoms/Button';
 import { IconButton } from '../components/atoms/IconButton';
 import { Spinner } from '../components/atoms/Spinner';
 import { StatusBadge } from '../components/molecules/StatusBadge';
 import { EmptyState } from '../components/molecules/EmptyState';
 import { Panel } from '../components/molecules/Panel';
+import { Card } from '../components/molecules/Card';
 import { ConfirmDialog } from '../components/molecules/ConfirmDialog';
 import { InviteUserModal } from '../components/auth/InviteUserModal';
 import { authenticatedJson, authenticatedFetch, copyInviteLink } from '../utils/authenticatedApi';
@@ -20,8 +21,18 @@ interface DeleteConfirmState {
   label: string;
 }
 
+type SelectedUser =
+  | { type: 'user'; user: User; pendingInvite?: InviteResponse }
+  | { type: 'invite'; invite: InviteResponse };
+
+const formatDate = (value: string): string => {
+  const date = new Date(value);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
 export default function AdminUsersPage() {
   const { user: currentUser } = useAuth();
+  const [selectedUser, setSelectedUser] = useState<SelectedUser | null>(null);
   type AdminUsersState = {
     users: User[];
     invites: InviteResponse[];
@@ -110,6 +121,9 @@ export default function AdminUsersPage() {
         }
       );
       dispatch({ type: 'set-users', value: state.users.map((u) => (u.userId === userId ? updatedUser : u)) });
+      setSelectedUser((current) => (current?.type === 'user' && current.user.userId === userId
+        ? { ...current, user: updatedUser }
+        : current));
       toast.success('User role updated');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to update role';
@@ -127,7 +141,17 @@ export default function AdminUsersPage() {
           body: JSON.stringify({ role_preset: newRole }),
         }
       );
-      dispatch({ type: 'set-invites', value: state.invites.map((inv) => (inv.inviteId === inviteId ? { ...inv, role_preset: newRole } : inv)) });
+      const updatedInvites = state.invites.map((inv) => (inv.inviteId === inviteId ? { ...inv, role_preset: newRole } : inv));
+      dispatch({ type: 'set-invites', value: updatedInvites });
+      setSelectedUser((current) => {
+        if (current?.type === 'invite' && current.invite.inviteId === inviteId) {
+          return { type: 'invite', invite: { ...current.invite, role_preset: newRole } };
+        }
+        if (current?.type === 'user' && current.pendingInvite?.inviteId === inviteId) {
+          return { ...current, pendingInvite: { ...current.pendingInvite, role_preset: newRole } };
+        }
+        return current;
+      });
       toast.success('Invite role updated');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to update invite role';
@@ -155,12 +179,20 @@ export default function AdminUsersPage() {
           method: 'DELETE',
         });
         dispatch({ type: 'set-users', value: state.users.filter((u) => u.userId !== state.deleteConfirm?.id) });
+        setSelectedUser((current) => (current?.type === 'user' && current.user.userId === state.deleteConfirm?.id ? null : current));
         toast.success('User deleted');
       } else {
         await authenticatedFetch(`${API_BASE_URL}/api/invites/${state.deleteConfirm.id}`, {
           method: 'DELETE',
         });
         dispatch({ type: 'set-invites', value: state.invites.filter((inv) => inv.inviteId !== state.deleteConfirm?.id) });
+        setSelectedUser((current) => {
+          if (current?.type === 'invite' && current.invite.inviteId === state.deleteConfirm?.id) return null;
+          if (current?.type === 'user' && current.pendingInvite?.inviteId === state.deleteConfirm?.id) {
+            return { type: 'user', user: current.user };
+          }
+          return current;
+        });
         toast.success('Invite deleted');
       }
     } catch (err) {
@@ -180,19 +212,40 @@ export default function AdminUsersPage() {
     (inv) => !state.users.some((u) => u.verified_email.toLowerCase() === inv.email.toLowerCase())
   );
 
-  return (
-    <>
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Shield className="w-6 h-6 text-primary" />
-              User Management
-            </h1>
-            <Button onClick={() => dispatch({ type: 'set-invite-modal-open', value: true })}>Invite User</Button>
-          </div>
+  const selectedTitle = selectedUser?.type === 'user'
+    ? selectedUser.user.display_name || selectedUser.user.verified_email
+    : selectedUser?.invite.email;
 
-          <Panel title="Users">
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <Shield className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
+        <div>
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
+              User Management
+          </h1>
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            Manage users, pending setup, and role access.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="flex justify-end">
+              <Button
+                variant="primary"
+                intent="success"
+                size="sm"
+                icon={<Plus className="w-4 h-4" />}
+                onClick={() => dispatch({ type: 'set-invite-modal-open', value: true })}
+              >
+                Invite User
+              </Button>
+            </div>
+
+            <Panel title="Users">
             {state.loading ? (
               <div className="flex justify-center p-12 text-text-muted">
                 <Spinner size="lg" className="text-primary dark:text-primary-light" />
@@ -233,12 +286,20 @@ export default function AdminUsersPage() {
                             : undefined;
 
                           const isSelf = user.userId === currentUser?.userId;
+                          const isSelected = selectedUser?.type === 'user' && selectedUser.user.userId === user.userId;
 
                           return (
                             <tr
                               key={user.userId}
-                              className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px]"
+                              className={`border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px] cursor-pointer ${isSelected ? 'bg-primary/5 dark:bg-primary-light/10' : ''}`}
                               tabIndex={0}
+                              onClick={() => setSelectedUser({ type: 'user', user, ...(pendingInvite ? { pendingInvite } : {}) })}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  setSelectedUser({ type: 'user', user, ...(pendingInvite ? { pendingInvite } : {}) });
+                                }
+                              }}
                             >
                               <td className="px-6 py-4">
                                 <div className="font-medium">{user.display_name || 'No Name'}</div>
@@ -270,6 +331,7 @@ export default function AdminUsersPage() {
                                   <select
                                     className="select select-sm select-bordered bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out cursor-pointer"
                                     value={primaryRole}
+                                    onClick={(event) => event.stopPropagation()}
                                     onChange={(e) => handleRoleChange(user.userId, e.target.value)}
                                   >
                                     <option value="admin">Admin</option>
@@ -279,13 +341,14 @@ export default function AdminUsersPage() {
                                   {pendingInvite?.invite_url && (
                                     <Button
                                       size="xs"
-                                      variant="secondary"
-                                      onClick={() =>
+                                      variant="outline"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
                                         handleCopyInviteLink(
                                           pendingInvite.inviteId,
                                           pendingInvite.invite_url!
-                                        )
-                                      }
+                                        );
+                                      }}
                                     >
                                       {state.copyingInviteId === pendingInvite.inviteId ? 'Copied!' : 'Copy Link'}
                                     </Button>
@@ -294,7 +357,8 @@ export default function AdminUsersPage() {
                                     <IconButton
                                       tooltip="Delete user"
                                       variant="error"
-                                      onClick={() =>
+                                      onClick={(event) => {
+                                        event.stopPropagation();
                                         dispatch({
                                           type: 'set-delete-confirm',
                                           value: {
@@ -302,8 +366,8 @@ export default function AdminUsersPage() {
                                             id: user.userId,
                                             label: user.display_name || user.verified_email,
                                           },
-                                        })
-                                      }
+                                        });
+                                      }}
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </IconButton>
@@ -314,77 +378,184 @@ export default function AdminUsersPage() {
                           );
                         })}
 
-                        {orphanInvites.map((inv) => (
-                          <tr
-                            key={inv.inviteId}
-                            className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px]"
-                            tabIndex={0}
-                          >
-                            <td className="px-6 py-4">
-                              <div className="font-medium">{inv.email}</div>
-                              <div className="text-text-secondary dark:text-text-secondary-dark text-xs mt-0.5">
-                                Invite pending
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <StatusBadge status="warning" label="Invited" />
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex gap-1 flex-wrap">
-                                <span className="px-2 py-0.5 bg-primary/10 text-primary dark:text-primary-light rounded-full text-xs font-medium">
-                                  {inv.role_preset}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <select
-                                  className="select select-sm select-bordered bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out cursor-pointer"
-                                  value={inv.role_preset}
-                                  onChange={(e) => handleInviteRoleChange(inv.inviteId, e.target.value)}
-                                >
-                                  <option value="admin">Admin</option>
-                                  <option value="editor">Editor</option>
-                                  <option value="viewer">Viewer</option>
-                                </select>
-                                {inv.invite_url && (
-                                  <Button
-                                    size="xs"
-                                    variant="secondary"
-                                    onClick={() => handleCopyInviteLink(inv.inviteId, inv.invite_url!)}
-                                  >
-                                    {state.copyingInviteId === inv.inviteId ? 'Copied!' : 'Copy Link'}
-                                  </Button>
-                                )}
-                                <IconButton
-                                  tooltip="Delete invite"
-                                  variant="error"
-                                  onClick={() =>
-                                    dispatch({
-                                      type: 'set-delete-confirm',
-                                      value: {
-                                        type: 'invite',
-                                        id: inv.inviteId,
-                                        label: inv.email,
-                                      },
-                                    })
+                        {orphanInvites.map((inv) => {
+                            const isSelected = selectedUser?.type === 'invite' && selectedUser.invite.inviteId === inv.inviteId;
+                            return (
+                              <tr
+                                key={inv.inviteId}
+                                className={`border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px] cursor-pointer ${isSelected ? 'bg-primary/5 dark:bg-primary-light/10' : ''}`}
+                                tabIndex={0}
+                                onClick={() => setSelectedUser({ type: 'invite', invite: inv })}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    setSelectedUser({ type: 'invite', invite: inv });
                                   }
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </IconButton>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                                }}
+                              >
+                                <td className="px-6 py-4">
+                                  <div className="font-medium">{inv.email}</div>
+                                  <div className="text-text-secondary dark:text-text-secondary-dark text-xs mt-0.5">
+                                    Invite pending
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <StatusBadge status="warning" label="Invited" />
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex gap-1 flex-wrap">
+                                    <span className="px-2 py-0.5 bg-primary/10 text-primary dark:text-primary-light rounded-full text-xs font-medium">
+                                      {inv.role_preset}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <select
+                                      className="select select-sm select-bordered bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out cursor-pointer"
+                                      value={inv.role_preset}
+                                      onClick={(event) => event.stopPropagation()}
+                                      onChange={(e) => handleInviteRoleChange(inv.inviteId, e.target.value)}
+                                    >
+                                      <option value="admin">Admin</option>
+                                      <option value="editor">Editor</option>
+                                      <option value="viewer">Viewer</option>
+                                    </select>
+                                    {inv.invite_url && (
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          handleCopyInviteLink(inv.inviteId, inv.invite_url!);
+                                        }}
+                                      >
+                                        {state.copyingInviteId === inv.inviteId ? 'Copied!' : 'Copy Link'}
+                                      </Button>
+                                    )}
+                                    <IconButton
+                                      tooltip="Delete invite"
+                                      variant="error"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        dispatch({
+                                          type: 'set-delete-confirm',
+                                          value: {
+                                            type: 'invite',
+                                            id: inv.inviteId,
+                                            label: inv.email,
+                                          },
+                                        });
+                                      }}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </IconButton>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                        })}
                       </>
                     )}
                   </tbody>
                 </table>
               </div>
             )}
-          </Panel>
+            </Panel>
+          </div>
+
+          <div className="space-y-4">
+            {selectedUser ? (
+              <Card title={selectedTitle ?? 'Selected user'}>
+                <div className="space-y-3">
+                  {selectedUser.type === 'user' ? (
+                    <>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Name</span>
+                        <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                          {selectedUser.user.display_name || 'No name set'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Email</span>
+                        <p className="text-sm text-text-primary dark:text-text-primary-dark break-all">
+                          {selectedUser.user.verified_email}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Status</span>
+                        <div className="mt-1">
+                          {selectedUser.user.is_setup_complete ? (
+                            <StatusBadge status="success" label="Active" />
+                          ) : (
+                            <StatusBadge status="warning" label="Pending" />
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Roles</span>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {selectedUser.user.roles.map((roleName) => (
+                            <span
+                              key={roleName}
+                              className="px-2 py-0.5 bg-primary/10 text-primary dark:text-primary-light rounded-full text-xs font-medium"
+                            >
+                              {roleName}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Created</span>
+                        <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                          {formatDate(selectedUser.user.created_at)}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Email</span>
+                        <p className="text-sm text-text-primary dark:text-text-primary-dark break-all">
+                          {selectedUser.invite.email}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Status</span>
+                        <div className="mt-1"><StatusBadge status="warning" label="Invited" /></div>
+                      </div>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Role</span>
+                        <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                          {selectedUser.invite.role_preset}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Created</span>
+                        <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                          {formatDate(selectedUser.invite.created_at)}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">Expires</span>
+                        <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                          {formatDate(selectedUser.invite.expires_at)}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </Card>
+            ) : (
+              <EmptyState
+                icon={<Shield className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+                title="Select a user"
+                description="Choose a user from the list to view details and manage roles."
+              />
+            )}
+          </div>
         </div>
-      </main>
+      </div>
 
       <InviteUserModal
         isOpen={state.inviteModalOpen}
@@ -411,7 +582,7 @@ export default function AdminUsersPage() {
         confirmLabel="Delete"
         cancelLabel="Cancel"
         intent="error"
-      />
-    </>
+        />
+    </div>
   );
 }

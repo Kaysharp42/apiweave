@@ -123,7 +123,7 @@ export function NodeActionMenu({
         }}
         onKeyDown={handleTriggerKeyDown}
         className={[
-          'p-1 rounded-md text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+          'p-1 rounded-sm text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
           triggerClassName,
         ]
           .filter(Boolean)
@@ -138,7 +138,7 @@ export function NodeActionMenu({
 
       {menuOpen && (
         <div
-          className="absolute right-0 mt-1 min-w-[144px] overflow-hidden rounded-xl border border-[var(--aw-border)] dark:border-[var(--aw-border)] bg-surface-raised/95 dark:bg-surface-dark-raised/95 backdrop-blur-sm shadow-[var(--aw-shadow-popover)] dark:shadow-[var(--aw-shadow-popover)] z-50 nodrag py-1"
+          className="absolute right-0 mt-1 min-w-[144px] overflow-hidden rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node z-50 nodrag py-1"
           role="menu"
         >
           {menuItems.map((item, index) => {
@@ -154,8 +154,8 @@ export function NodeActionMenu({
                 onClick={(event) => handleMenuAction(item.key, event)}
                 onKeyDown={(event) => handleMenuItemKeyDown(event, index)}
                 className={[
-                  'w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] flex items-center gap-2 cursor-pointer',
-                  index > 0 ? 'border-t border-[var(--aw-border)] dark:border-[var(--aw-border)]' : '',
+                  'w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] flex items-center gap-2 cursor-pointer transition-colors motion-reduce:transition-none',
+                  index > 0 ? 'border-t border-border dark:border-border-dark' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}

@@ -2,10 +2,8 @@ import { create } from 'zustand';
 import type { Workflow } from '../types/Workflow';
 import type { Collection } from '../types/Collection';
 import type { Project } from '../types/Project';
-import type { Environment } from '../types/Environment';
 import type { PaginationState } from '../types/PaginationState';
 import { authenticatedFetch } from '../utils/authenticatedApi';
-import * as scopedApi from '../utils/scopedApi';
 import { projectsUrl, workflowsUrl } from '../utils/scopedApi';
 
 interface PaginatedWorkflowResponse {
@@ -23,27 +21,23 @@ interface SidebarState {
   collections: Collection[];
   /** Workspace-scoped projects (fetched from /api/workspaces/{id}/projects). */
   projects: Project[];
-  environments: Environment[];
   pagination: PaginationState;
   isRefreshing: boolean;
   isLoadingMore: boolean;
   searchQuery: string;
   workflowVersion: number;
   collectionVersion: number;
-  environmentVersion: number;
   projectVersion: number;
   /** Currently active workspace ID for scoped fetching. */
   activeWorkspaceId: string | null;
   setSearchQuery: (q: string) => void;
   signalWorkflowsRefresh: () => void;
   signalCollectionsRefresh: () => void;
-  signalEnvironmentsRefresh: () => void;
   signalProjectsRefresh: () => void;
   setActiveWorkspaceId: (workspaceId: string | null) => void;
   fetchWorkflows: (skip?: number, append?: boolean, limit?: number) => Promise<void>;
   fetchCollections: () => Promise<void>;
   fetchProjects: () => Promise<void>;
-  fetchEnvironments: () => Promise<void>;
   refreshAll: (selectedNav: string) => Promise<void>;
   setIsRefreshing: (v: boolean) => void;
   setIsLoadingMore: (v: boolean) => void;
@@ -54,7 +48,6 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
   workflows: [],
   collections: [],
   projects: [],
-  environments: [],
 
   pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
 
@@ -64,7 +57,6 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
   workflowVersion: 0,
   collectionVersion: 0,
-  environmentVersion: 0,
   projectVersion: 0,
   activeWorkspaceId: null,
 
@@ -76,9 +68,6 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
   signalCollectionsRefresh: () =>
     set((s) => ({ collectionVersion: s.collectionVersion + 1 })),
 
-  signalEnvironmentsRefresh: () =>
-    set((s) => ({ environmentVersion: s.environmentVersion + 1 })),
-
   signalProjectsRefresh: () =>
     set((s) => ({ projectVersion: s.projectVersion + 1 })),
 
@@ -89,13 +78,11 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
       activeWorkspaceId: workspaceId,
       workflows: [],
       projects: [],
-      environments: [],
       pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
     });
     if (workspaceId) {
       void get().fetchProjects();
       void get().fetchWorkflows(0);
-      void get().fetchEnvironments();
     }
   },
 
@@ -167,25 +154,9 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
     }
   },
 
-  fetchEnvironments: async () => {
-    const { activeWorkspaceId } = get();
-    if (!activeWorkspaceId) return;
-
-    try {
-      const response = await authenticatedFetch(
-        scopedApi.environmentsUrl(activeWorkspaceId, 'all-accessible'),
-      );
-      if (response.ok) {
-        const data: Environment[] = await response.json();
-        set({ environments: data });
-      }
-    } catch { /* silent */ }
-  },
-
   refreshAll: async (selectedNav: string) => {
     set({ isRefreshing: true });
-    const { fetchWorkflows, fetchProjects, fetchEnvironments } = get();
-    await fetchEnvironments();
+    const { fetchWorkflows, fetchProjects } = get();
     if (selectedNav === 'workflows') {
       await fetchWorkflows(0);
     } else if (selectedNav === 'projects') {

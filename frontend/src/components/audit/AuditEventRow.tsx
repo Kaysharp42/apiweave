@@ -14,12 +14,12 @@ function formatTimestamp(iso: string): string {
 
 export function AuditEventRow({ event }: AuditEventRowProps) {
   return (
-    <tr className="border-b border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors">
+    <tr className="border-b border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors duration-200 motion-reduce:transition-none">
       <td className="px-3 py-2 text-xs font-mono text-text-muted dark:text-text-muted-dark">
         {formatTimestamp(event.createdAt)}
       </td>
       <td className="px-3 py-2">
-        <span className="badge badge-sm badge-ghost font-medium">
+        <span className="inline-flex items-center rounded-full border border-border dark:border-border-dark px-2 py-0.5 text-xs font-mono text-text-secondary dark:text-text-secondary-dark">
           {event.actor}
         </span>
       </td>
@@ -27,7 +27,7 @@ export function AuditEventRow({ event }: AuditEventRowProps) {
         {event.action}
       </td>
       <td className="px-3 py-2">
-        <span className="badge badge-sm badge-outline">
+        <span className="inline-flex items-center rounded-full border border-border dark:border-border-dark px-2 py-0.5 text-xs font-mono text-text-secondary dark:text-text-secondary-dark">
           {event.scope}
         </span>
       </td>

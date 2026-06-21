@@ -19,7 +19,7 @@ import type {
   HttpMethod,
   RunStatus,
   Variable,
-  Environment,
+  ScopedEnvironment,
   Collection,
   Run,
   RunResult,
@@ -119,11 +119,14 @@ const _mockVariable: Variable = {
 // Environment type tests
 // ============================================================
 
-const _mockEnvironment: Environment = {
-  id: 'env-1',
+const _mockEnvironment: ScopedEnvironment = {
   environmentId: 'env-1',
   name: 'Production',
-  variables: [_mockVariable],
+  variables: { baseUrl: 'https://api.example.com' },
+  scopeType: 'workspace',
+  scopeId: 'ws-1',
+  isDefault: true,
+  allowedWorkspaceIds: ['ws-1'],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
 };

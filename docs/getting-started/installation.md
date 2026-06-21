@@ -29,6 +29,31 @@ If you are upgrading from a 1.0 instance, drop the database before installing. T
 
 This is intentional. The application is unreleased, so there is no production data to preserve, and the destructive reset lets the new model land without a compatibility shim.
 
+## Single-User Mode (Recommended for Self-Hosting)
+
+If you are installing APIWeave for yourself — a local evaluation, a side project, a private tool for one operator — set `DEPLOYMENT_MODE=single_user` in `backend/.env` and skip the entire OAuth and session block. The backend creates a synthetic owner on the first request, auto-creates your personal workspace, and serves the canvas with no login screen.
+
+```env
+# backend/.env
+DEPLOYMENT_MODE=single_user
+MONGODB_URL=mongodb://localhost:27017
+MONGODB_DATABASE=apiweave
+APP_ENV=development
+BASE_URL=http://localhost:8000
+PUBLIC_BASE_URL=http://localhost:8000
+ALLOWED_ORIGINS=http://localhost:3000
+```
+
+You do **not** need to configure:
+
+- Any `OAUTH_*` client id or secret
+- `SESSION_SECRET_KEY`
+- `CSRF_ENABLED`
+- `APPROVED_DOMAINS`
+- `SETUP_MODE_ENABLED`
+
+The full per-mode contract, switching procedure, and operational rules are in the [Authentication guide — Deployment Mode](../operations/authentication.md#deployment-mode). If you are installing APIWeave for a team, or to host as a multi-tenant SaaS, leave `DEPLOYMENT_MODE` at its default (`multi_tenant`) and configure OAuth instead.
+
 ## Quick Start
 
 The one-shot scripts create the Python virtualenv, install Python and npm dependencies, and copy `.env.example` to `.env` for both services. Run them once, then start the dev stack.

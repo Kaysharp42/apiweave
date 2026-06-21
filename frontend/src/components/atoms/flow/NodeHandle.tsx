@@ -17,7 +17,7 @@ export function NodeHandle({
     right: Position.Right,
   };
 
-  const defaultColor = type === 'source' ? '!bg-[var(--aw-primary)]' : '!bg-[var(--aw-primary-light)]';
+  const defaultColor = '!bg-[var(--aw-primary)]';
 
   return (
     <Handle
@@ -26,7 +26,7 @@ export function NodeHandle({
       {...(id && { id })}
       {...(style && { style })}
       className={[
-        '!w-3.5 !h-3.5 !rounded-sm !border-2 !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-dark)]',
+        '!w-3 !h-3 !rounded-full !border !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-raised)]',
         color ?? defaultColor,
         className,
       ]

@@ -1,12 +1,12 @@
 import type { Workflow } from './Workflow';
 import type { Collection } from './Collection';
-import type { Environment } from './Environment';
+import type { ScopedEnvironment } from './ScopedEnvironment';
 import type { PaginationState } from './PaginationState';
 
 export interface WorkflowListProps {
   workflows: Workflow[];
   collections: Collection[];
-  environments: Environment[];
+  environments: ScopedEnvironment[];
   selectedWorkflowId: string | null;
   isRefreshing: boolean;
   isLoadingMore: boolean;

@@ -2,11 +2,11 @@ import React from 'react';
 import type { SkeletonProps } from '../../types';
 
 export function Skeleton({ variant = 'text', width, height, className = '', count = 1, ...rest }: SkeletonProps) {
-  const base = 'skeleton rounded motion-reduce:animate-none';
+  const base = 'animate-pulse rounded-sm bg-surface-overlay dark:bg-surface-dark-overlay motion-reduce:animate-none';
   const variantClass: Record<string, string> = {
     text: 'h-4 w-full',
     circle: 'h-10 w-10 rounded-full',
-    rect: 'h-20 w-full',
+    rect: 'h-20 w-full rounded-sm',
   };
 
   const style: React.CSSProperties = {};

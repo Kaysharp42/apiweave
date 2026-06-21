@@ -28,6 +28,10 @@ macOS / Linux:
 
 Open `http://localhost:3000` in a browser. The frontend is on port 3000, the backend API on port 8000, the OpenAPI docs on `/docs`, and MongoDB on 27017. Sign in through your configured SSO provider; the first sign-in becomes the per-instance owner and lands you in your personal workspace. Run `stop-dev.bat` or `./stop-dev.sh` to shut everything down.
 
+### Self-hosting without SSO
+
+For local evaluation and single-operator self-hosting, set `DEPLOYMENT_MODE=single_user` in `backend/.env`. The backend creates a synthetic owner on the first request and serves the canvas with no login screen, no OAuth configuration, and no session secrets. See the [Authentication guide](docs/operations/authentication.md#deployment-mode) for the full contract.
+
 ## Features
 
 The feature guides are the deep reference for everything you can do in APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.

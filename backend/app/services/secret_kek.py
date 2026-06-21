@@ -42,7 +42,8 @@ def get_master_key() -> bytes:
             "Set it in .env or let the validator auto-generate one in dev."
         )
     try:
-        key = base64.urlsafe_b64decode(raw)
+        padded = raw + "=" * (-len(raw) % 4)
+        key = base64.urlsafe_b64decode(padded)
     except binascii.Error as exc:
         raise ValueError(
             f"SECRET_ENCRYPTION_KEY is not valid base64: {exc}"

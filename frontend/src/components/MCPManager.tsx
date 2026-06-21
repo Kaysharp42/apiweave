@@ -67,19 +67,19 @@ function MCPContent({
               Summary
             </h4>
             <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
+              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
                 <div className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
                   {config.toolCount}
                 </div>
                 <div className="text-xs text-text-muted dark:text-text-muted-dark">Tools</div>
               </div>
-              <div className="rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
+              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
                 <div className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
                   {config.resourceCount}
                 </div>
                 <div className="text-xs text-text-muted dark:text-text-muted-dark">Resources</div>
               </div>
-              <div className="rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
+              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
                 <div className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
                   {config.promptCount}
                 </div>
@@ -137,10 +137,10 @@ function MCPContent({
               {config.tools.map((tool: MCPTool) => (
                 <div
                   key={tool.name}
-                  className="rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay p-3"
+                  className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <code className="text-sm font-mono text-primary dark:text-cyan-400">
+                    <code className="text-sm font-mono text-primary dark:text-primary-light">
                       {tool.name}
                     </code>
                   </div>
@@ -184,7 +184,7 @@ function MCPContent({
               For local agents (Claude Desktop, Cursor, opencode)
             </p>
             <div className="relative">
-              <pre className="rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
+              <pre className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
                 {`{
   "mcp": {
     "apiweave": {
@@ -209,7 +209,7 @@ function MCPContent({
               For remote agents (requires MCP_HTTP_ENABLED=true)
             </p>
             <div className="relative">
-              <pre className="rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
+              <pre className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
                 {`{
   "mcp": {
     "apiweave": {
@@ -232,7 +232,7 @@ function MCPContent({
               Quick Setup Commands
             </h4>
             <div className="space-y-2">
-              <div className="rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay p-3">
+              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3">
                 <code className="text-xs font-mono text-text-primary dark:text-text-primary-dark">
                   codex mcp add apiweave -- python mcp_stdio.py
                 </code>
@@ -240,7 +240,7 @@ function MCPContent({
                   OpenAI Codex CLI
                 </p>
               </div>
-              <div className="rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay p-3">
+              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3">
                 <code className="text-xs font-mono text-text-primary dark:text-text-primary-dark">
                   /mcp add apiweave  (in Copilot CLI)
                 </code>

@@ -632,7 +632,9 @@ async def fetch_openapi_from_url(
         extract_swagger_ui_hints_from_html,
         make_definition_scope,
         parse_swagger_ui_query_hints,
+        replace_url_host,
         resolve_url,
+        select_primary_definition,
     )
 
     url = url.strip()
@@ -700,6 +702,42 @@ async def fetch_openapi_from_url(
             )
         return deduped
 
+    def _host_resolves(host: str) -> bool:
+        import socket
+
+        try:
+            socket.getaddrinfo(host, None)
+            return True
+        except socket.gaierror:
+            return False
+
+    def _fetch_url_candidates(target_url: str) -> list[str]:
+        candidates = [target_url]
+        parsed = httpx.URL(target_url)
+        if parsed.host == "localhost" and _host_resolves("host.docker.internal"):
+            candidate = replace_url_host(target_url, "host.docker.internal")
+            if candidate not in candidates:
+                candidates.append(candidate)
+        return candidates
+
+    async def _get_with_localhost_fallback(
+        client: httpx.AsyncClient,
+        target_url: str,
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        original_error: Exception | None = None
+        for candidate in _fetch_url_candidates(target_url):
+            try:
+                validate_url(candidate)
+                return await client.get(candidate, headers=headers)
+            except httpx.RequestError as exc:
+                if candidate == target_url:
+                    original_error = exc
+                continue
+        if original_error:
+            raise original_error
+        return await client.get(target_url, headers=headers)
+
     async def _discover_from_swagger_ui(
         client: httpx.AsyncClient,
         swagger_ui_url: str,
@@ -748,10 +786,15 @@ async def fetch_openapi_from_url(
             try:
                 validate_url(candidate)
             except SafeUrlError as exc:
-                logger.warning("Blocked unsafe swagger config candidate URL: %s (%s)", candidate, exc)
+                logger.warning(
+                    "Blocked unsafe swagger config candidate URL: %s (%s)",
+                    candidate,
+                    exc,
+                )
                 continue
             try:
-                response = await client.get(
+                response = await _get_with_localhost_fallback(
+                    client,
                     candidate,
                     headers={
                         "Accept": "application/json, application/vnd.oai.openapi+json",
@@ -772,13 +815,14 @@ async def fetch_openapi_from_url(
             except Exception:
                 continue
 
-        deduped = _dedupe_definitions(definitions)
+        deduped = select_primary_definition(_dedupe_definitions(definitions), primary_name)
         return {"definitions": deduped, "primaryName": primary_name}
 
     async with httpx.AsyncClient(
         timeout=DEFAULT_FETCH_TIMEOUT_SECONDS, follow_redirects=True
     ) as client:
-        initial_response = await client.get(
+        initial_response = await _get_with_localhost_fallback(
+            client,
             url,
             headers={
                 "Accept": "application/json, application/vnd.oai.openapi+json, text/html",
@@ -851,7 +895,8 @@ async def fetch_openapi_from_url(
                 }
 
             try:
-                spec_response = await client.get(
+                spec_response = await _get_with_localhost_fallback(
+                    client,
                     spec_url,
                     headers={
                         "Accept": "application/json, application/vnd.oai.openapi+json",

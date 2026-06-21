@@ -82,7 +82,7 @@ export function OutsideCollaboratorList({ workspaceId }: OutsideCollaboratorList
             {collaborators.map((collab) => (
               <div
                 key={collab.collaboratorId}
-                className="flex items-center justify-between px-4 py-2.5"
+                className="flex items-center justify-between px-4 py-2.5 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <UserCircle className="w-5 h-5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />

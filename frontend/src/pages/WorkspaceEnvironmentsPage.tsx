@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Settings,
   Plus,
   Layers,
-  ArrowLeft,
 } from 'lucide-react';
 import { Button } from '../components/atoms/Button';
 import { Spinner } from '../components/atoms/Spinner';
@@ -15,8 +15,11 @@ import { EnvironmentForm } from '../components/organisms/EnvironmentForm';
 import { EnvironmentProtectionPanel } from '../components/organisms/EnvironmentProtectionPanel';
 import { PendingApprovalsList } from '../components/organisms/PendingApprovalsList';
 import { ProtectionSummary } from '../components/organisms/ProtectionSummary';
-import { authenticatedJson } from '../utils/authenticatedApi';
+import { authenticatedJson, authenticatedFetch } from '../utils/authenticatedApi';
+import * as scopedApi from '../utils/scopedApi';
 import { useAuth } from '../auth/useAuth';
+import { useWorkspace } from '../contexts/WorkspaceContext';
+import useEnvironmentStore from '../stores/EnvironmentStore';
 import type {
   ScopedEnvironment,
   EnvironmentProtectionPolicy,
@@ -33,69 +36,39 @@ type ViewMode = 'list' | 'create' | 'edit' | 'protection' | 'approvals';
 export default function WorkspaceEnvironmentsPage() {
   const { orgSlug, workspaceSlug } = useParams<{ orgSlug: string; workspaceSlug: string }>();
   const { user } = useAuth();
+  const { currentOrg, currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
 
-  // Data state
-  const [userEnvs, setUserEnvs] = useState<ScopedEnvironment[]>([]);
-  const [orgEnvs, setOrgEnvs] = useState<ScopedEnvironment[]>([]);
-  const [workspaceEnvs, setWorkspaceEnvs] = useState<ScopedEnvironment[]>([]);
+  const environments = useEnvironmentStore((s) => s.environments);
+  const storeIsLoading = useEnvironmentStore((s) => s.isLoading);
+
+  const userEnvs = environments.filter((e) => e.scopeType === 'user');
+  const orgEnvs = environments.filter((e) => e.scopeType === 'organization');
+  const workspaceEnvs = environments.filter((e) => e.scopeType === 'workspace');
+
   const [orgWorkspaces, setOrgWorkspaces] = useState<WorkspaceOption[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [protection, setProtection] = useState<EnvironmentProtectionPolicy | null>(null);
   const [reviewerOptions, setReviewerOptions] = useState<ReviewerOption[]>([]);
 
-  // UI state
   const [selectedEnv, setSelectedEnv] = useState<ScopedEnvironment | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // IDs resolved from slugs (in a real app these would come from a lookup)
   const userId = user?.userId ?? '';
-  const [orgId, setOrgId] = useState('');
-  const [workspaceId, setWorkspaceId] = useState('');
+  const orgId = currentOrg?.orgId ?? '';
+  const workspaceId = currentWorkspace?.workspaceId ?? '';
 
-  // Resolve slugs to IDs
-  useEffect(() => {
-    async function resolveIds() {
-      try {
-        if (orgSlug) {
-          const org = await authenticatedJson<{ orgId: string }>(`/api/orgs/by-slug/${orgSlug}`);
-          setOrgId(org.orgId);
-        }
-        if (workspaceSlug) {
-          const ws = await authenticatedJson<{ workspaceId: string }>(
-            `/api/workspaces/by-slug/${workspaceSlug}`,
-          );
-          setWorkspaceId(ws.workspaceId);
-        }
-      } catch {
-        // Slug resolution may not be available yet — use placeholder IDs
-        setOrgId(orgSlug ?? 'org-placeholder');
-        setWorkspaceId(workspaceSlug ?? 'ws-placeholder');
-      }
+  const refreshEnvironments = useCallback(async () => {
+    if (!workspaceId) {
+      if (!isWorkspaceLoading) setLoading(false);
+      return;
     }
-    void resolveIds();
-  }, [orgSlug, workspaceSlug]);
-
-  // Fetch all environments
-  const fetchEnvironments = useCallback(async () => {
-    if (!userId || !workspaceId) return;
     setLoading(true);
     setError(null);
     try {
-      const [userResult, orgResult, wsResult] = await Promise.all([
-        authenticatedJson<ScopedEnvironment[]>(`/api/users/${userId}/environments`).catch(() => []),
-        orgId
-          ? authenticatedJson<ScopedEnvironment[]>(`/api/orgs/${orgId}/environments`).catch(() => [])
-          : Promise.resolve([]),
-        authenticatedJson<ScopedEnvironment[]>(`/api/workspaces/${workspaceId}/environments`).catch(
-          () => [],
-        ),
-      ]);
-      setUserEnvs(userResult);
-      setOrgEnvs(orgResult);
-      setWorkspaceEnvs(wsResult);
+      await useEnvironmentStore.getState().fetchEnvironments(workspaceId);
 
       // Fetch pending approvals for workspace
       const approvals = await authenticatedJson<PendingApproval[]>(
@@ -115,11 +88,11 @@ export default function WorkspaceEnvironmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [userId, orgId, workspaceId]);
+  }, [workspaceId, orgId, isWorkspaceLoading]);
 
   useEffect(() => {
-    void fetchEnvironments();
-  }, [fetchEnvironments]);
+    void refreshEnvironments();
+  }, [refreshEnvironments]);
 
   // Fetch protection for selected env
   useEffect(() => {
@@ -174,7 +147,7 @@ export default function WorkspaceEnvironmentsPage() {
         }),
       });
       setViewMode('list');
-      await fetchEnvironments();
+      await refreshEnvironments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create environment');
     } finally {
@@ -205,7 +178,7 @@ export default function WorkspaceEnvironmentsPage() {
       });
       setViewMode('list');
       setSelectedEnv(null);
-      await fetchEnvironments();
+      await refreshEnvironments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update environment');
     } finally {
@@ -232,9 +205,27 @@ export default function WorkspaceEnvironmentsPage() {
         setSelectedEnv(null);
         setViewMode('list');
       }
-      await fetchEnvironments();
+      await refreshEnvironments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete environment');
+    }
+  }
+
+  async function handleDuplicateEnv(envId: string) {
+    if (!workspaceId) return;
+    try {
+      const response = await authenticatedFetch(
+        `${scopedApi.environmentsUrl(workspaceId)}/${encodeURIComponent(envId)}/duplicate`,
+        { method: 'POST' },
+      );
+      if (response.ok) {
+        toast.success('Environment duplicated');
+        await refreshEnvironments();
+      } else {
+        toast.error('Failed to duplicate environment');
+      }
+    } catch {
+      toast.error('Failed to duplicate environment');
     }
   }
 
@@ -291,7 +282,7 @@ export default function WorkspaceEnvironmentsPage() {
         `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}/approvals/${approvalId}/approve`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
       );
-      await fetchEnvironments();
+      await refreshEnvironments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to approve');
     }
@@ -305,7 +296,7 @@ export default function WorkspaceEnvironmentsPage() {
         `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}/approvals/${approvalId}`,
         { method: 'DELETE' },
       );
-      await fetchEnvironments();
+      await refreshEnvironments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to deny');
     }
@@ -318,7 +309,7 @@ export default function WorkspaceEnvironmentsPage() {
 
   // ---- Render ----
 
-  if (loading) {
+  if (isWorkspaceLoading || loading || storeIsLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Spinner size="lg" />
@@ -326,23 +317,40 @@ export default function WorkspaceEnvironmentsPage() {
     );
   }
 
+  if (!workspaceId) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+          <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
+          <div>
+            <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
+              Environments
+            </h1>
+            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+              {orgSlug && workspaceSlug
+                ? `${orgSlug} / ${workspaceSlug}`
+                : 'Manage scoped environments and protection policies'}
+            </p>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          <EmptyState
+            icon={<Layers className="w-12 h-12 text-text-muted" strokeWidth={1.5} />}
+            title="Workspace unavailable"
+            description="This workspace could not be resolved. It may not exist, or you may not have access to it."
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-border dark:border-border-dark">
-        <button
-          type="button"
-          onClick={() => {
-            setViewMode('list');
-            setSelectedEnv(null);
-          }}
-          className="p-1.5 rounded-lg text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
+      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
         <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
         <div>
-          <h1 className="text-lg font-bold font-display text-text-primary dark:text-text-primary-dark">
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
             Environments
           </h1>
           <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
@@ -355,7 +363,7 @@ export default function WorkspaceEnvironmentsPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="mx-6 mt-4 p-3 rounded-lg bg-status-error/10 dark:bg-status-error/20 border border-status-error/30 text-sm text-status-error">
+        <div className="mx-6 mt-4 p-3 rounded bg-status-error/10 dark:bg-status-error/20 border border-status-error/30 text-sm text-status-error">
           {error}
           <button
             type="button"
@@ -434,6 +442,7 @@ export default function WorkspaceEnvironmentsPage() {
                   setViewMode('edit');
                 }}
                 onDelete={handleDeleteEnv}
+                onDuplicate={handleDuplicateEnv}
                 selectedId={selectedEnv?.environmentId}
               />
 
@@ -449,6 +458,7 @@ export default function WorkspaceEnvironmentsPage() {
                     setViewMode('edit');
                   }}
                   onDelete={handleDeleteEnv}
+                  onDuplicate={handleDuplicateEnv}
                   selectedId={selectedEnv?.environmentId}
                 />
               )}
@@ -464,6 +474,7 @@ export default function WorkspaceEnvironmentsPage() {
                   setViewMode('edit');
                 }}
                 onDelete={handleDeleteEnv}
+                onDuplicate={handleDuplicateEnv}
                 selectedId={selectedEnv?.environmentId}
               />
             </div>

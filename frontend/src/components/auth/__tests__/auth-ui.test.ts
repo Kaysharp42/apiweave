@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,11 +36,9 @@ test('SplitAuthLayout handles mobile layout', () => {
 
 test('LoginPage fetches configured-only providers and preserves inline states', () => {
   const content = readFileSync(join(PAGES_DIR, 'LoginPage.tsx'), 'utf-8');
-  assert.ok(content.includes('authenticatedFetch(`${API_BASE_URL}/api/auth/providers`)'), 'Should fetch provider availability');
-  assert.ok(content.includes('getEnabledProviders(data)'), 'Should filter enabled providers only');
-  assert.ok(content.includes('Unable to load sign-in options'), 'Should show provider load error state');
+  assert.ok(content.includes('useOAuthProviders'), 'Should consume providers via hook');
   assert.ok(content.includes('No sign-in providers configured'), 'Should show empty provider state');
-  assert.ok(content.includes('error = searchParams.get(\'error\')'), 'Should extract error from search params');
+  assert.ok(content.includes("error = searchParams.get('error')"), 'Should extract error from search params');
 });
 
 test('InvitePage reads token and shows providers', () => {

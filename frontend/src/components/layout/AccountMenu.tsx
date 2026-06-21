@@ -95,7 +95,7 @@ export function AccountMenu() {
         size="sm"
         onClick={() => setOpen((prev) => !prev)}
         onKeyDown={handleTriggerKeyDown}
-        className="h-9 w-9 rounded-full border border-border/70 bg-surface-raised p-0 overflow-hidden shadow-sm hover:bg-surface-overlay dark:border-border-dark/70 dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
+        className="h-9 w-9 overflow-hidden rounded-full border border-border bg-surface-raised p-0 hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
         aria-label={`Account menu for ${displayName}`}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -120,11 +120,11 @@ export function AccountMenu() {
 
       {open && (
         <div
-          className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-border/80 bg-surface-raised/95 shadow-xl backdrop-blur-sm z-50 dark:border-border-dark/80 dark:bg-surface-dark-raised/95"
+          className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
           role="menu"
           aria-label="Account actions"
         >
-          <div className="border-b border-border/80 px-4 py-3 dark:border-border-dark/80">
+          <div className="border-b border-border px-4 py-3 dark:border-border-dark">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 dark:bg-primary-light/10">
                 {avatarVisible ? (
@@ -161,7 +161,7 @@ export function AccountMenu() {
           </div>
 
           {isAdmin && (
-            <div className="border-b border-border/80 py-1 dark:border-border-dark/80">
+            <div className="border-b border-border py-1 dark:border-border-dark">
               <Link
                 to="/settings/users"
                 role="menuitem"
@@ -169,7 +169,7 @@ export function AccountMenu() {
                 ref={(element) => {
                   menuItemRefs.current[0] = element;
                 }}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-overlay focus:bg-surface-overlay focus:outline-none dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay dark:focus:bg-surface-dark-overlay"
+                className="flex items-center gap-2 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-overlay focus:bg-surface-overlay focus:outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px] dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay dark:focus:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
               >
                 <Shield className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
                 User Management
@@ -181,7 +181,7 @@ export function AccountMenu() {
                 ref={(element) => {
                   menuItemRefs.current[1] = element;
                 }}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-overlay focus:bg-surface-overlay focus:outline-none dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay dark:focus:bg-surface-dark-overlay"
+                className="flex items-center gap-2 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-overlay focus:bg-surface-overlay focus:outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px] dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay dark:focus:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
               >
                 <Settings className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
                 Domain & SSO Settings

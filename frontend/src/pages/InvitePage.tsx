@@ -68,7 +68,7 @@ export default function InvitePage() {
   }
 
   if (status === 'authenticated') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/app" replace />;
   }
 
   const handleProviderClick = (providerId: string) => {
@@ -78,12 +78,9 @@ export default function InvitePage() {
 
   return (
     <SplitAuthLayout hero={() => <AuthInteractiveHero />}>
-      <Card className="w-full shadow-modal rounded-xl overflow-hidden relative">
-        {/* Inner subtle glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-1 bg-gradient-to-r from-transparent via-[var(--aw-primary)]/30 to-transparent blur-sm" />
-
-        <div className="p-10 text-center relative z-10">
-          <h1 className="text-3xl font-display font-extrabold text-text-primary dark:text-text-primary-dark mb-3 drop-shadow-sm">
+      <Card className="w-full overflow-hidden relative border-border dark:border-border-dark rounded">
+        <div className="p-10 text-center relative z-10 border-b border-border dark:border-border-dark">
+          <h1 className="text-3xl font-display font-bold tracking-tight text-text-primary dark:text-text-primary-dark mb-3">
             Accept Invitation
           </h1>
           <p className="text-sm text-text-secondary dark:text-text-secondary-dark font-medium">
@@ -93,7 +90,7 @@ export default function InvitePage() {
 
         <div className="px-10 pb-10 flex flex-col gap-4 relative z-10">
           {error && (
-            <div className="p-4 mb-2 rounded-lg bg-status-error/10 text-status-error dark:text-[var(--aw-status-error)] text-sm border border-status-error/20 shadow-inner">
+            <div className="p-4 mb-2 rounded bg-status-error/10 text-status-error dark:text-[var(--aw-status-error)] text-sm border border-status-error/20">
               {error}
             </div>
           )}
@@ -135,14 +132,14 @@ export default function InvitePage() {
             return (
               <Button
                 key={provider.id}
-                variant="secondary"
+                variant="outline"
                 fullWidth
                 size="lg"
                 data-provider={provider.id}
                 onClick={() => handleProviderClick(provider.id)}
                 loading={isLoading}
                 disabled={isDisabled}
-                className="group relative overflow-hidden transition-all duration-300 rounded-xl font-medium !justify-start pl-6"
+                className="group relative overflow-hidden transition-colors duration-200 motion-reduce:transition-none rounded font-medium !justify-start pl-6"
               >
                 <div className="flex items-center gap-4 relative z-10 w-full">
                   <IconComponent className={iconClass} />

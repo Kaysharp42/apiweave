@@ -1,11 +1,11 @@
 import type { Workflow } from './Workflow';
 import type { Project } from './Project';
-import type { Environment } from './Environment';
+import type { ScopedEnvironment } from './ScopedEnvironment';
 
 export interface ProjectListProps {
   projects: Project[];
   workflows: Workflow[];
-  environments: Environment[];
+  environments: ScopedEnvironment[];
   selectedWorkflowId: string | null;
   isRefreshing?: boolean;
   searchQuery: string;

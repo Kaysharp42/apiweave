@@ -33,7 +33,7 @@ function CustomEdge({
         targetX,
         targetY,
         targetPosition,
-        borderRadius: 12,
+        borderRadius: 4,
       }),
     [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition],
   );
@@ -51,10 +51,10 @@ function CustomEdge({
         path={edgePath}
         markerEnd={markerEnd ?? ''}
         style={{
-          strokeWidth: 2,
-          stroke: isRunning ? 'var(--aw-primary)' : undefined,
-          ...(isRunning ? { strokeDasharray: '5,5' } : {}),
           ...style,
+          strokeWidth: isRunning ? 1.5 : 1,
+          stroke: isRunning ? 'var(--aw-primary)' : style.stroke ?? 'var(--aw-border)',
+          ...(isRunning ? { strokeDasharray: '4 4' } : {}),
         }}
       />
       <EdgeLabelRenderer>
@@ -68,10 +68,10 @@ function CustomEdge({
         >
           <button
             type="button"
-            className="w-5 h-5 bg-surface dark:bg-surface-dark-raised border border-border dark:border-border-dark
-              text-text-muted dark:text-text-muted-dark hover:text-red-500 dark:hover:text-red-400
-              hover:border-red-300 dark:hover:border-red-600 rounded-full flex items-center justify-center
-              transition-all opacity-0 hover:opacity-100 shadow-sm"
+            className="w-5 h-5 bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark
+              text-text-muted dark:text-text-muted-dark hover:text-status-error dark:hover:text-status-error-dark
+              hover:border-status-error dark:hover:border-status-error-dark rounded-sm flex items-center justify-center
+              transition-colors motion-reduce:transition-none opacity-0 hover:opacity-100 shadow-node"
             onClick={onEdgeClick}
             title="Delete edge"
           >

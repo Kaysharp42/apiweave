@@ -14,31 +14,32 @@ export function Input({
   const id = externalId ?? autoId;
 
   const sizeClass: Record<string, string> = {
-    xs: 'input-xs',
-    sm: 'input-sm',
-    md: '',
-    lg: 'input-lg',
+    xs: 'h-7 px-2 text-xs',
+    sm: 'h-8 px-2.5 text-sm',
+    md: 'h-10 px-3 text-sm',
+    lg: 'h-11 px-3.5 text-base',
   };
 
   return (
     <div className="form-control w-full">
       {label && (
-        <label htmlFor={id} className="label">
-          <span className="label-text text-text-primary dark:text-text-primary-dark">{label}</span>
+        <label htmlFor={id} className="label px-0 py-1">
+          <span className="label-text text-sm font-medium text-text-primary dark:text-text-primary-dark">{label}</span>
         </label>
       )}
       <input
         id={id}
         className={[
-          'input input-bordered w-full px-3',
+          'w-full rounded-sm border',
           'bg-surface-raised dark:bg-surface-dark-raised',
           'text-text-primary dark:text-text-primary-dark',
           'border-border dark:border-border-dark',
           'placeholder:text-text-muted dark:placeholder:text-text-muted-dark',
+          'focus:border-primary dark:focus:border-primary-light',
           'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
-          'transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out',
+          'transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out',
           sizeClass[size] ?? '',
-          error && 'input-error',
+          error && 'border-status-error dark:border-[var(--aw-status-error)]',
           className,
         ]
           .filter(Boolean)
@@ -48,13 +49,13 @@ export function Input({
         {...rest}
       />
       {error && (
-        <label className="label" id={`${id}-error`}>
-          <span className="label-text-alt text-error">{error}</span>
+        <label className="label px-0 py-1" id={`${id}-error`}>
+          <span className="label-text-alt text-xs text-status-error dark:text-[var(--aw-status-error)]">{error}</span>
         </label>
       )}
       {!error && helperText && (
-        <label className="label" id={`${id}-helper`}>
-          <span className="label-text-alt text-text-secondary dark:text-text-secondary-dark">
+        <label className="label px-0 py-1" id={`${id}-helper`}>
+          <span className="label-text-alt text-xs text-text-muted dark:text-text-muted-dark">
             {helperText}
           </span>
         </label>

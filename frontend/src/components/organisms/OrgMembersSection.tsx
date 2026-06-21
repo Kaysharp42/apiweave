@@ -114,7 +114,7 @@ export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionP
           />
         ) : (
           <div className="overflow-hidden">
-            <table className="w-full text-sm text-left">
+            <table className="w-full text-sm text-left border-collapse">
               <thead className="text-xs text-text-secondary dark:text-text-secondary-dark uppercase bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark">
                 <tr>
                   <th className="px-6 py-3">User</th>
@@ -131,7 +131,7 @@ export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionP
                   return (
                     <tr
                       key={member.memberId}
-                      className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                      className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors duration-200 motion-reduce:transition-none"
                     >
                       <td className="px-6 py-3">
                         <div className="flex items-center gap-2">
@@ -148,7 +148,7 @@ export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionP
                       <td className="px-6 py-3">
                         <div className="flex items-center gap-2">
                           <select
-                            className="select select-sm select-bordered bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-xs focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                            className="select select-sm select-bordered rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-xs focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                             value={member.role}
                             onChange={(e) =>
                               handleRoleChange(member.userId, e.target.value)

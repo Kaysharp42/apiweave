@@ -148,7 +148,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
 
   return (
     <>
-      <div className="flex flex-col border-b border-[var(--aw-border)] bg-surface-raised dark:bg-surface-dark-raised">
+      <div className="flex flex-col border-b border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
         <div className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-1 text-sm min-w-0">
             <User className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
@@ -164,7 +164,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
         {showActions && (
           <div className="flex items-center gap-1 px-3 pb-2">
             <Button
-              variant="ghost"
+              variant="primary"
               intent="default"
               size="sm"
               onClick={onCreateNew}
@@ -176,7 +176,7 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
 
             <div className="relative flex-1" ref={importMenuRef}>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={() => dispatch({ type: 'toggle-import-menu' })}
                 icon={<Upload className="w-4 h-4" />}
@@ -186,18 +186,18 @@ export function SidebarHeader({ selectedNav, onCreateNew, isRefreshing }: Sideba
               </Button>
 
               {state.showImportMenu && (
-                <ul className="bg-surface-raised dark:bg-surface-dark-raised border border-[var(--aw-border)] rounded-lg shadow-[var(--aw-shadow-popover)] absolute top-full left-0 mt-1 z-20 min-w-[140px] p-1">
+                <ul className="absolute left-0 top-full z-20 mt-1 min-w-[140px] rounded border border-border bg-surface-raised p-1 dark:border-border-dark dark:bg-surface-dark-raised">
                   {importItems.map(({ label, icon: Icon, action }) => (
                     <li key={label}>
                       <button
                         type="button"
                         onClick={action}
                         className={[
-                          'flex items-center gap-2 text-sm w-full px-3 py-1.5 rounded-md text-left',
+                          'flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-sm',
                           'text-text-primary dark:text-text-primary-dark',
                           'hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-                          'focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
-                          'cursor-pointer transition-colors',
+                          'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
+                          'cursor-pointer transition-colors motion-reduce:transition-none',
                         ].join(' ')}
                       >
                         <Icon className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />

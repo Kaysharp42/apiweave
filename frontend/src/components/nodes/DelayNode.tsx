@@ -26,11 +26,7 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
 
   const titleExtra = useMemo(() => (
     <span
-      className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-      style={{
-        backgroundColor: 'var(--aw-status-warning)/15',
-        color: 'var(--aw-status-warning)',
-      }}
+      className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-[var(--aw-status-warning)]/10 text-status-warning dark:text-status-warning-dark border border-status-warning/30"
     >
       {humanLabel}
     </span>
@@ -58,8 +54,7 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
 
           {!isExpanded && duration > 0 && (
             <div
-              className="text-[9px] px-1.5 py-0.5 rounded inline-block"
-              style={{ backgroundColor: 'var(--aw-surface-overlay)', color: 'var(--aw-text-secondary)' }}
+              className="text-[9px] px-1.5 py-0.5 rounded-sm inline-block bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark font-mono"
             >
               {humanLabel}
             </div>
@@ -70,7 +65,7 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
               <input
                 type="number"
                 aria-label="Delay duration in milliseconds"
-                className="nodrag flex-1 px-1.5 py-0.5 border rounded text-xs focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                className="nodrag flex-1 px-1.5 py-0.5 border rounded-sm text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                 style={{ borderColor: 'var(--aw-border)', backgroundColor: 'var(--aw-surface-raised)', color: 'var(--aw-text-primary)' }}
                 value={duration}
                 onChange={(e) => updateNodeData(parseInt(e.target.value) || 0)}

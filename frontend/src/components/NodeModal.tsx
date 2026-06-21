@@ -1,18 +1,79 @@
-import { useRef } from 'react';
-import { Modal } from './molecules/Modal';
-import { HTTPRequestConfigPanel, HttpRequestOutputPanel, NodeOutputPanel, AssertionConfigPanel, DelayConfigPanel, MergeConfigPanel } from './node-modal';
-import { NodeModalHeader } from './node-modal/NodeModalHeader';
-import { NodeModalFooter } from './node-modal/NodeModalFooter';
+import { useEffect, useRef, useState } from 'react';
+import { CheckCircle2, Cookie, FileText, Filter, GitMerge, KeyRound, Link2, ListChecks, Settings, SlidersHorizontal, Timer } from 'lucide-react';
+import { Badge } from './atoms/Badge';
+import { Button } from './atoms/Button';
+import { Input } from './atoms/Input';
+import { Tooltip } from './atoms/Tooltip';
+import { HTTPRequestConfigPanel, HttpRequestOutputPanel, NodeOutputPanel, AssertionConfigPanel, DelayConfigPanel, MergeConfigPanel, NodeModalShell } from './node-modal';
+import { normalizeHttpRequestConfig } from './node-modal/httpRequestConfigCompat';
+import type { HttpMethod } from '../types/HttpMethod';
 import type { NodeModalProps } from '../types/NodeModalProps';
 import type { NodeModalNodeType } from '../types/NodeModalNodeType';
 import type { NodeModalHTTPRequestConfig } from '../types/NodeModalHTTPRequestConfig';
 import type { NodeModalMergeConfig } from '../types/NodeModalMergeConfig';
+import type { NodeModalAssertionConfig, NodeModalAssertionTabKey, NodeModalDelayConfig, NodeModalDelayTabKey, NodeModalHttpTabKey, NodeModalMergeTabKey, NodeModalShellTab } from '../types';
 
 const NO_CONFIG_TYPES: NodeModalNodeType[] = ['start', 'end'];
+const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+
+const HTTP_TABS: NodeModalShellTab[] = [
+  { key: 'params', label: 'Params', icon: Link2 },
+  { key: 'auth', label: 'Auth', icon: KeyRound },
+  { key: 'headers', label: 'Headers', icon: FileText },
+  { key: 'body', label: 'Body', icon: SlidersHorizontal },
+  { key: 'cookies', label: 'Cookies', icon: Cookie },
+  { key: 'settings', label: 'Settings', icon: Settings },
+];
+
+const ASSERTION_TABS: NodeModalShellTab[] = [
+  { key: 'rules', label: 'Rules', icon: ListChecks },
+  { key: 'settings', label: 'Settings', icon: Settings },
+];
+
+const DELAY_TABS: NodeModalShellTab[] = [
+  { key: 'duration', label: 'Duration', icon: Timer },
+  { key: 'settings', label: 'Settings', icon: Settings },
+];
+
+const MERGE_TABS: NodeModalShellTab[] = [
+  { key: 'strategy', label: 'Strategy', icon: GitMerge },
+  { key: 'conditions', label: 'Conditions', icon: Filter },
+  { key: 'settings', label: 'Settings', icon: Settings },
+];
+
+function isHttpMethod(value: string): value is HttpMethod {
+  return HTTP_METHODS.includes(value as HttpMethod);
+}
+
+function getTypeLabel(nodeType: NodeModalNodeType): string {
+  if (nodeType === 'http-request') return 'HTTP Request';
+  return nodeType.charAt(0).toUpperCase() + nodeType.slice(1);
+}
+
+function formatDelayBadge(duration: number | undefined): string {
+  const safeDuration = duration ?? 1000;
+  if (safeDuration < 1000) return `~${safeDuration}ms`;
+  const seconds = safeDuration / 1000;
+  return `~${Number.isInteger(seconds) ? seconds.toFixed(0) : seconds.toFixed(1)}s`;
+}
 
 export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
   const workingDataRef = useRef<Record<string, unknown>>({ ...node.data });
-  const nameLabelRef = useRef<HTMLInputElement | null>(null);
+  const [activeTab, setActiveTab] = useState<NodeModalHttpTabKey>('params');
+  const [assertionActiveTab, setAssertionActiveTab] = useState<NodeModalAssertionTabKey>('rules');
+  const [delayActiveTab, setDelayActiveTab] = useState<NodeModalDelayTabKey>('duration');
+  const [mergeActiveTab, setMergeActiveTab] = useState<NodeModalMergeTabKey>('strategy');
+  const [httpConfig, setHttpConfig] = useState<NodeModalHTTPRequestConfig>(() => normalizeHttpRequestConfig((node.data.config || {}) as NodeModalHTTPRequestConfig));
+
+  useEffect(() => {
+    if (!open) return;
+    workingDataRef.current = { ...node.data };
+    setActiveTab('params');
+    setAssertionActiveTab('rules');
+    setDelayActiveTab('duration');
+    setMergeActiveTab('strategy');
+    setHttpConfig(normalizeHttpRequestConfig((node.data.config || {}) as NodeModalHTTPRequestConfig));
+  }, [node, open]);
 
   const handleClose = () => {
     onClose();
@@ -27,84 +88,174 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
     workingDataRef.current = { ...workingDataRef.current, label: newLabel };
   };
 
-  return (
-    <Modal
-      isOpen={open}
-      onClose={handleClose}
-      title=""
-      size="fullscreen"
-      scrollable={false}
-      showClose={false}
-      initialFocus={nameLabelRef}
-      className="!max-w-[1800px] !rounded-2xl !shadow-[var(--aw-shadow-modal)]"
-    >
-      <div className="flex h-full w-full flex-col xl:flex-row backdrop-blur-md">
-        <div className="flex h-full min-h-0 flex-col xl:basis-[56%] xl:min-w-0 border-r border-border/40 dark:border-border-dark/40 bg-surface-raised/60 dark:bg-surface-dark-raised/60">
-          <div className="flex h-full min-h-0 flex-col p-4 sm:p-5">
-            <NodeModalHeader
-              nodeType={node.type}
-              nodeLabel={node.data.label || ''}
-              onLabelChange={handleLabelChange}
-              onClose={handleClose}
-            />
+  const updateHttpConfig = (newConfig: NodeModalHTTPRequestConfig) => {
+    const normalizedConfig = normalizeHttpRequestConfig(newConfig);
+    setHttpConfig(normalizedConfig);
+    workingDataRef.current = { ...workingDataRef.current, config: { ...normalizedConfig } };
+  };
 
-            <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border/50 dark:border-border-dark/50 bg-surface dark:bg-surface-dark shadow-inner">
-              <div className="h-full overflow-y-auto p-4">
-                {node.type === 'http-request' && (
-                  <HTTPRequestConfigPanel
-                    initialConfig={(node.data.config || {}) as NodeModalHTTPRequestConfig}
-                    workingDataRef={workingDataRef}
-                  />
-                )}
-                {node.type === 'assertion' && (
-                  <AssertionConfigPanel
-                    initialConfig={(node.data.config || {}) as { assertions?: Array<{ source: string; path: string; operator: string; expectedValue: string }> }}
-                    workingDataRef={workingDataRef}
-                  />
-                )}
-                {node.type === 'delay' && (
-                  <DelayConfigPanel
-                    initialConfig={(node.data.config || {}) as { duration?: number }}
-                    workingDataRef={workingDataRef}
-                  />
-                )}
-                {node.type === 'merge' && (
-                  <MergeConfigPanel
-                    initialConfig={(node.data.config || {}) as unknown as NodeModalMergeConfig}
-                    workingDataRef={workingDataRef}
-                  />
-                )}
-                {NO_CONFIG_TYPES.includes(node.type) && (
-                  <div className="p-4">
-                    <p className="text-sm text-text-muted dark:text-text-muted-dark">
-                      No configuration needed for {node.type} nodes.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
+  const patchHttpConfig = (patch: Partial<NodeModalHTTPRequestConfig>) => {
+    updateHttpConfig({ ...httpConfig, ...patch });
+  };
 
-            <NodeModalFooter onCancel={handleClose} onSave={handleSave} />
-          </div>
-        </div>
+  const renderHttpRequestBar = () => (
+    <div className="flex w-full min-w-0 items-center gap-2">
+      <div className="flex flex-shrink-0 rounded-sm border border-border bg-surface-overlay p-1 dark:border-border-dark dark:bg-surface-dark-overlay">
+        {HTTP_METHODS.map((method) => (
+          <Button
+            key={method}
+            type="button"
+            size="xs"
+            variant={httpConfig.method === method ? 'primary' : 'ghost'}
+            onClick={() => patchHttpConfig({ method })}
+            className="font-mono"
+          >
+            {method}
+          </Button>
+        ))}
+      </div>
+      <Input
+        value={httpConfig.url || ''}
+        onChange={(event) => patchHttpConfig({ url: event.target.value })}
+        placeholder="https://api.example.com/{{variables.resourceId}}"
+        aria-label="Request URL"
+        className="font-mono"
+      />
+    </div>
+  );
 
-        <div className="flex h-full min-h-0 flex-col xl:basis-[44%] xl:min-w-0 bg-surface/50 dark:bg-surface-dark/50">
-          <div className="flex h-full min-h-0 flex-col">
-            {node.type === 'http-request' ? (
-              <HttpRequestOutputPanel
-                node={node}
-                initialConfig={(node.data.config || {}) as NodeModalHTTPRequestConfig}
-                output={(node.data?.executionResult as Record<string, unknown> | null) || null}
-              />
-            ) : (
-              <NodeOutputPanel
-                output={(node.data?.executionResult as Record<string, unknown> | null) || null}
-              />
-            )}
-          </div>
+  const renderTypeBar = () => {
+    const config = node.data.config || {};
+    const assertionConfig = config as Partial<NodeModalAssertionConfig>;
+    const delayConfig = config as Partial<NodeModalDelayConfig>;
+    const mergeConfig = config as Partial<NodeModalMergeConfig>;
+
+    return (
+      <div className="flex w-full min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Badge variant="secondary" size="sm">Type: {getTypeLabel(node.type)}</Badge>
+          {node.type === 'assertion' && (
+            <Tooltip content="Number of assertion rules configured for this node.">
+              <Badge variant="info" size="sm"><CheckCircle2 className="h-3 w-3" />{assertionConfig.assertions?.length ?? 0} rules</Badge>
+            </Tooltip>
+          )}
+          {node.type === 'delay' && (
+            <Tooltip content="Configured pause duration before the workflow continues.">
+              <Badge
+                variant="outline"
+                size="sm"
+                className="border-status-running/30 bg-status-running/10 text-status-running dark:border-[var(--aw-status-running)]/30 dark:bg-[var(--aw-status-running)]/10 dark:text-[var(--aw-status-running)]"
+              >
+                <Timer className="h-3 w-3" />
+                {formatDelayBadge(delayConfig.duration)}
+              </Badge>
+            </Tooltip>
+          )}
+          {node.type === 'merge' && (
+            <Tooltip content="Merge strategy used to synchronize incoming branches.">
+              <Badge variant="success" size="sm"><GitMerge className="h-3 w-3" />Strategy: {mergeConfig.mergeStrategy ?? 'all'}</Badge>
+            </Tooltip>
+          )}
+          <span className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">{node.data.label}</span>
         </div>
       </div>
-    </Modal>
+    );
+  };
+
+  const renderConfigPanel = () => {
+    if (node.type === 'http-request') {
+      return (
+        <HTTPRequestConfigPanel
+          initialConfig={(node.data.config || {}) as NodeModalHTTPRequestConfig}
+          workingDataRef={workingDataRef}
+          activeTab={activeTab}
+          config={httpConfig}
+          onConfigChange={updateHttpConfig}
+        />
+      );
+    }
+
+    if (node.type === 'assertion') {
+      return (
+        <AssertionConfigPanel
+          initialConfig={(node.data.config || {}) as Partial<NodeModalAssertionConfig>}
+          workingDataRef={workingDataRef}
+          activeTab={assertionActiveTab}
+        />
+      );
+    }
+
+    if (node.type === 'delay') {
+      return <DelayConfigPanel initialConfig={(node.data.config || {}) as Partial<NodeModalDelayConfig>} workingDataRef={workingDataRef} activeTab={delayActiveTab} />;
+    }
+
+    if (node.type === 'merge') {
+      return <MergeConfigPanel initialConfig={(node.data.config || {}) as Partial<NodeModalMergeConfig>} workingDataRef={workingDataRef} activeTab={mergeActiveTab} />;
+    }
+
+    if (NO_CONFIG_TYPES.includes(node.type)) {
+      return (
+        <div className="rounded-sm border border-dashed border-border bg-surface-overlay p-6 text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
+          No configuration needed for {node.type} nodes.
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const responsePane = node.type === 'http-request' ? (
+    <HttpRequestOutputPanel
+      node={node}
+      initialConfig={httpConfig}
+      output={(node.data?.executionResult as Record<string, unknown> | null) || null}
+    />
+  ) : (
+    <NodeOutputPanel output={node.data?.executionResult ?? null} executionStatus={node.data.executionStatus} />
+  );
+
+  const shellTabs = node.type === 'http-request'
+    ? HTTP_TABS
+    : node.type === 'assertion'
+      ? ASSERTION_TABS
+      : node.type === 'delay'
+        ? DELAY_TABS
+        : node.type === 'merge'
+          ? MERGE_TABS
+          : [];
+  const shellActiveTab = node.type === 'http-request'
+    ? activeTab
+    : node.type === 'assertion'
+      ? assertionActiveTab
+      : node.type === 'delay'
+        ? delayActiveTab
+        : node.type === 'merge'
+          ? mergeActiveTab
+          : '';
+
+  return (
+    <NodeModalShell
+      open={open}
+      nodeType={node.type}
+      nodeLabel={node.data.label || ''}
+      tabs={shellTabs}
+      activeTab={shellActiveTab}
+      onTabChange={(tabKey) => {
+        if (isHttpMethod(tabKey)) return;
+        if (node.type === 'http-request') setActiveTab(tabKey as NodeModalHttpTabKey);
+        if (node.type === 'assertion') setAssertionActiveTab(tabKey as NodeModalAssertionTabKey);
+        if (node.type === 'delay') setDelayActiveTab(tabKey as NodeModalDelayTabKey);
+        if (node.type === 'merge') setMergeActiveTab(tabKey as NodeModalMergeTabKey);
+      }}
+      onLabelChange={handleLabelChange}
+      onClose={handleClose}
+      onCancel={handleClose}
+      onSave={handleSave}
+      requestBar={node.type === 'http-request' ? renderHttpRequestBar() : renderTypeBar()}
+      responsePane={responsePane}
+    >
+      {renderConfigPanel()}
+    </NodeModalShell>
   );
 }
 

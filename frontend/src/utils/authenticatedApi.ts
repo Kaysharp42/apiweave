@@ -72,7 +72,23 @@ export async function authenticatedJson<T = unknown>(
   const response = await authenticatedFetch(url, options);
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText);
-    throw new Error(`API error ${response.status}: ${text}`);
+    let message = text || response.statusText;
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed.detail === "string") {
+        message = parsed.detail;
+      } else if (Array.isArray(parsed.detail) && parsed.detail.length > 0) {
+        const first = parsed.detail[0];
+        if (first?.msg) {
+          const loc = Array.isArray(first.loc) ? first.loc.join(".") : "";
+          message = loc ? `${loc}: ${first.msg}` : first.msg;
+        }
+      } else if (typeof parsed.message === "string") {
+        message = parsed.message;
+      }
+    } catch {
+    }
+throw new Error(`API error ${response.status}: ${message}`);
   }
   return response.json() as Promise<T>;
 }

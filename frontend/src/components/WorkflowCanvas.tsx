@@ -15,7 +15,6 @@ import ReactFlow, {
   type EdgeTypes,
   type ReactFlowInstance,
 } from 'reactflow';
-// @ts-expect-error reactflow CSS import has no type declarations
 import 'reactflow/dist/style.css';
 
 import HTTPRequestNode from './nodes/HTTPRequestNode';
@@ -36,7 +35,6 @@ import { toast } from 'sonner';
 import { CanvasToolbar } from './organisms/CanvasToolbar';
 import useTabStore from '../stores/TabStore';
 import useCanvasStore from '../stores/CanvasStore';
-import useSidebarStore from '../stores/SidebarStore';
 import useAutoSave from '../hooks/useAutoSave';
 import useCanvasDrop from '../hooks/useCanvasDrop';
 import useWorkflowPolling from '../hooks/useWorkflowPolling';
@@ -45,17 +43,20 @@ import { useHydration, assertionEdgeColor, edgeLabelBackground } from '../hooks/
 import { useNodeBranchCounts } from '../hooks/useNodeBranchCounts';
 import { useSwaggerRefresh } from '../hooks/useSwaggerRefresh';
 import { shouldBlockDestructiveAutosave } from '../utils/workflowSaveSafety';
-import { environmentsUrl, workflowDetailUrl } from '../utils/scopedApi';
+import { workflowDetailUrl } from '../utils/scopedApi';
 import { useScopeContext } from '../hooks/useScopeContext';
 import type { WorkflowCanvasNodeData } from '../types/WorkflowCanvasNodeData';
 import type { WorkflowCanvasEdgeData } from '../types/WorkflowCanvasEdgeData';
 import type { WorkflowCanvasProps } from '../types/WorkflowCanvasProps';
-import type { EnvironmentWithSwagger } from '../types/EnvironmentWithSwagger';
 import type { WorkflowJsonData } from '../types/WorkflowJsonData';
 import { authenticatedFetch } from '../utils/authenticatedApi';
+import useEnvironmentStore, { getSelectedEnvironment } from '../stores/EnvironmentStore';
 
 const branchEdgeColor = 'var(--aw-branch-edge)';
 const branchLabelColor = 'var(--aw-branch-label)';
+
+const NOISE_DATA_URI =
+  "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 
 const nodeTypes: NodeTypes = {
   'http-request': HTTPRequestNode as NodeTypes[string],
@@ -73,7 +74,7 @@ const edgeTypes: EdgeTypes = {
 // Module-scope on purpose: inline definitions create new refs every render and re-trigger ReactFlow layout work during pan/drag.
 const reactFlowStyle = { width: '100%', height: '100%' };
 
-const defaultEdgeOptions = { type: 'custom' as const, animated: true };
+const defaultEdgeOptions = { type: 'custom' as const, animated: false };
 
 const fitViewOptions = {
   padding: 0.25,
@@ -83,8 +84,8 @@ const fitViewOptions = {
 
 const miniMapStyle = {
   backgroundColor: 'var(--aw-surface-raised)',
-  border: '2px solid var(--aw-border)',
-  borderRadius: 'var(--aw-radius-lg)',
+  border: '1px solid var(--aw-border)',
+  borderRadius: 'var(--aw-radius-sm)',
   width: 220,
   height: 150,
 };
@@ -157,27 +158,12 @@ export function WorkflowCanvas({
   const [showHistory, setShowHistory] = useState(false);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
-  const [environments, setEnvironments] = useState<EnvironmentWithSwagger[]>([]);
-
-  const [selectedEnvironmentByWorkflow, setSelectedEnvironmentByWorkflow] = useState<Record<string, string | null>>({});
-  const selectedEnvironment = useMemo<string | null>(() => {
-    const workflowKey = workflowId ?? '';
-    const workflowSpecific = selectedEnvironmentByWorkflow[workflowKey];
-    if (workflowSpecific !== undefined) {
-      return workflowSpecific;
-    }
-
-    if (workflow?.environmentId) {
-      return workflow.environmentId;
-    }
-
-    const globalDefault = localStorage.getItem('defaultEnvironment');
-    if (globalDefault) {
-      return globalDefault;
-    }
-
-    return null;
-  }, [workflowId, workflow?.environmentId, selectedEnvironmentByWorkflow]);
+  const environments = useEnvironmentStore((s) => s.environments);
+  const selectedEnvMap = useEnvironmentStore((s) => s.selectedEnvironmentByWorkflow);
+  const selectedEnvironment = useMemo<string | null>(
+    () => getSelectedEnvironment(workflowId ?? '', workflow?.environmentId),
+    [workflowId, workflow?.environmentId, selectedEnvMap],
+  );
 
   // ── Hooks ──────────────────────────────────────────────────────────
 
@@ -286,38 +272,6 @@ export function WorkflowCanvas({
     return () => { onVariablesDeletedRef.current = null; };
   }, [setNodes, onVariablesDeletedRef]);
 
-  // ── Environments fetching ───────────────────────────────────────────
-
-  const fetchEnvironments = useCallback(async () => {
-    if (!scope.isReady || !scope.workspaceId) {
-      setEnvironments([]);
-      return;
-    }
-
-    try {
-      const response = await authenticatedFetch(
-        environmentsUrl(scope.workspaceId, 'all-accessible', scope.orgId),
-      );
-      if (response.ok) {
-        const data = await response.json() as EnvironmentWithSwagger[];
-        setEnvironments(data);
-      }
-    } catch (error) {
-      console.error('Error fetching environments:', error);
-    }
-  }, [scope.isReady, scope.orgId, scope.workspaceId]);
-
-  useEffect(() => {
-    void fetchEnvironments();
-  }, [fetchEnvironments]);
-
-  const environmentVersion = useSidebarStore((s) => s.environmentVersion);
-  useEffect(() => {
-    if (environmentVersion > 0) {
-      void fetchEnvironments();
-    }
-  }, [environmentVersion, fetchEnvironments]);
-
   // ── Workflow reload from server ─────────────────────────────────────
 
   const reloadWorkflowFromServer = useCallback(async () => {
@@ -353,7 +307,7 @@ export function WorkflowCanvas({
               stroke: edge.sourceHandle === 'pass'
                 ? assertionEdgeColor('pass')
                 : assertionEdgeColor('fail'),
-              strokeWidth: 2,
+      strokeWidth: 1,
             },
             labelStyle: {
               fill: edge.sourceHandle === 'pass'
@@ -418,7 +372,11 @@ export function WorkflowCanvas({
     // Drag stop handler — no-op, auto-save resumes naturally
   }, []);
 
-  const onNodeDoubleClick = useCallback((_event: React.MouseEvent, node: Node<WorkflowCanvasNodeData>) => {
+  const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node<WorkflowCanvasNodeData>) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) {
+      return;
+    }
     if (node.type !== 'start' && node.type !== 'end') {
       setModalNode(node);
     }
@@ -483,7 +441,7 @@ export function WorkflowCanvas({
                 animated: true,
                 style: {
                   stroke: branchEdgeColor,
-                  strokeWidth: 2
+      strokeWidth: 1
                 },
                 label: `Branch ${branchIndex}`,
                 labelStyle: {
@@ -506,7 +464,7 @@ export function WorkflowCanvas({
             animated: true,
             style: {
               stroke: branchEdgeColor,
-              strokeWidth: 2
+              strokeWidth: 1
             },
             label: `Branch ${parallelEdges.length}`,
             labelStyle: {
@@ -745,8 +703,15 @@ export function WorkflowCanvas({
   );
 
   return (
-    <main className="w-full h-full min-h-0 relative bg-[var(--aw-surface)] transition-colors duration-300" aria-label="Workflow canvas">
+    <main className="w-full h-full min-h-0 relative overflow-hidden bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark transition-colors duration-300" aria-label="Workflow canvas">
+      <div className="absolute inset-0 opacity-[0.05] dark:opacity-[0.07] bg-[linear-gradient(currentColor_1px,transparent_1px),linear-gradient(90deg,currentColor_1px,transparent_1px)] bg-[size:32px_32px] text-text-primary dark:text-text-primary-dark pointer-events-none" aria-hidden="true" />
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 opacity-[0.04] dark:opacity-[0.07] pointer-events-none mix-blend-multiply dark:mix-blend-screen"
+        style={{ backgroundImage: NOISE_DATA_URI, backgroundSize: '240px 240px' }}
+      />
       <ReactFlow
+        className="relative z-10 bg-transparent"
         style={reactFlowStyle}
         nodes={nodes}
         edges={edges}
@@ -788,8 +753,8 @@ export function WorkflowCanvas({
           <MiniMap
             nodeColor={getNodeColor}
             nodeStrokeColor={getNodeStrokeColor}
-            nodeStrokeWidth={2}
-            maskColor={darkMode ? 'rgba(15, 23, 42, 0.6)' : 'rgba(15, 23, 42, 0.05)'}
+            nodeStrokeWidth={1}
+            maskColor={darkMode ? 'color-mix(in srgb, var(--aw-surface) 64%, transparent)' : 'color-mix(in srgb, var(--aw-text-primary) 5%, transparent)'}
             style={miniMapStyle}
             zoomable
             pannable
@@ -825,15 +790,15 @@ export function WorkflowCanvas({
         isResumeLoading={isResumeLoading}
         onEnvironmentChange={(val) => {
           const processed = (val && val.trim()) ? val.trim() : null;
+          const wfId = workflowId ?? '';
+          if (processed) {
+            useEnvironmentStore.getState().setSelectedEnv(wfId, processed);
+            useEnvironmentStore.getState().setDefaultEnv(processed);
+          } else {
+            useEnvironmentStore.getState().clearSelectedEnv(wfId);
+          }
           const selectedEnv = processed ? environments.find(e => e.environmentId === processed) : undefined;
           const envName = selectedEnv ? selectedEnv.name : 'No Environment';
-          setSelectedEnvironmentByWorkflow((prev) => ({ ...prev, [workflowId ?? '']: processed }));
-          if (processed) {
-            localStorage.setItem(`selectedEnvironment_${workflowId}`, processed);
-            localStorage.setItem('defaultEnvironment', processed);
-          } else {
-            localStorage.removeItem(`selectedEnvironment_${workflowId}`);
-          }
           toast.success(`Environment: ${envName}`);
         }}
         workflowId={workflowId ?? ''}

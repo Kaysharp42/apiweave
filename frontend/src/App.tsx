@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, type ReactNode, useRef, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SetupPage from './pages/SetupPage';
 import InvitePage from './pages/InvitePage';
@@ -12,6 +13,7 @@ import AuditPage from './pages/AuditPage';
 import { WorkspaceSecretsPage } from './pages/WorkspaceSecretsPage';
 import { WorkspaceTokensPage } from './pages/WorkspaceTokensPage';
 import WorkspaceEnvironmentsPage from './pages/WorkspaceEnvironmentsPage';
+import OrgSettingsPage from './pages/OrgSettingsPage';
 import { WorkspaceProjectPage } from './pages/WorkspaceProjectPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { PaletteProvider } from './contexts/PaletteContext';
@@ -26,6 +28,7 @@ import { authenticatedJson } from './utils/authenticatedApi';
 import API_BASE_URL from './utils/api';
 import type { Workspace } from './types/Workspace';
 import type { Organization } from './types/Organization';
+import type { WorkspacePageShellProps } from './types/WorkspacePageShellProps';
 
 const STORAGE_PREFIX = 'apiweave:v1:';
 
@@ -39,7 +42,7 @@ const setStoredValue = (key: string, value: string): void => {
   localStorage.setItem(key, value);
 };
 
-interface AppContextValue {
+export interface AppContextValue {
   darkMode: boolean;
   setDarkMode: React.Dispatch<React.SetStateAction<boolean>>;
   autoSaveEnabled: boolean;
@@ -58,12 +61,36 @@ export const AppContext = createContext<AppContextValue>({
 // ---------------------------------------------------------------------------
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { status } = useAuth();
+  const { status, deploymentMode, modeLoaded, error } = useAuth();
 
-  if (status === 'loading') {
+  if (status === 'loading' || !modeLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
         <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
+      </div>
+    );
+  }
+
+  // In single-user mode, an unauthenticated /me response is a backend bug,
+  // not a sign that the user needs to log in. Surface the error instead
+  // of redirecting to /login (which would just bounce back via LoginEntry).
+  if (status === 'unauthenticated' && deploymentMode === 'single_user') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+            Auth bootstrap failed
+          </h1>
+          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
+            Single-user mode requires <code>/api/auth/me</code> to succeed. The
+            backend did not return a user.
+          </p>
+          {error !== null && (
+            <p className="mt-3 text-xs font-mono text-text-tertiary dark:text-text-tertiary-dark break-words">
+              {error}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -153,9 +180,110 @@ function AdminPageShell({ children }: { children: ReactNode }) {
   );
 }
 
+function WorkspacePageShell({ children, navState = 'settings' }: WorkspacePageShellProps) {
+  const setNavState = useNavigationStore((state) => state.setNavState);
+  const hasSet = useRef(false);
+
+  useEffect(() => {
+    if (!hasSet.current) {
+      setNavState(navState);
+      hasSet.current = true;
+    }
+  }, [setNavState, navState]);
+
+  return (
+    <ProtectedRoute>
+      <WorkspaceProvider>
+        <div className="relative flex flex-col h-screen font-sans text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised">
+          <MainLayout>{children}</MainLayout>
+        </div>
+      </WorkspaceProvider>
+    </ProtectedRoute>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
+
+function LoginEntry() {
+  const { status, isSingleUser, isAuthenticated, modeLoaded, error } = useAuth();
+
+  if (status === 'loading' || !modeLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
+        <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
+      </div>
+    );
+  }
+
+  // In single-user mode there is no login page — but only redirect to /app
+  // once we have a confirmed authenticated user. Redirecting before /me
+  // resolves (or while /me failed) causes a Navigate ping-pong with
+  // ProtectedRoute.
+  if (isSingleUser) {
+    if (isAuthenticated) {
+      return <Navigate to="/app" replace />;
+    }
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+            Auth bootstrap failed
+          </h1>
+          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
+            Single-user mode requires <code>/api/auth/me</code> to succeed. The
+            backend did not return a user.
+          </p>
+          {error !== null && (
+            <p className="mt-3 text-xs font-mono text-text-tertiary dark:text-text-tertiary-dark break-words">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return <LoginPage />;
+}
+
+function SetupEntry() {
+  const { status, isSingleUser, isAuthenticated, modeLoaded, error } = useAuth();
+
+  if (status === 'loading' || !modeLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
+        <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
+      </div>
+    );
+  }
+
+  if (isSingleUser) {
+    if (isAuthenticated) {
+      return <Navigate to="/app" replace />;
+    }
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+            Auth bootstrap failed
+          </h1>
+          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
+            Single-user mode requires <code>/api/auth/me</code> to succeed.
+          </p>
+          {error !== null && (
+            <p className="mt-3 text-xs font-mono text-text-tertiary dark:text-text-tertiary-dark break-words">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return <SetupPage />;
+}
 
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -214,14 +342,18 @@ function App() {
             <Routes>
               <Route
                 path="/"
+                element={<LandingPage />}
+              />
+              <Route
+                path="/app"
                 element={
                   <ProtectedRoute>
                     <DefaultWorkspaceRedirect />
                   </ProtectedRoute>
                 }
               />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/setup" element={<SetupPage />} />
+              <Route path="/login" element={<LoginEntry />} />
+              <Route path="/setup" element={<SetupEntry />} />
               <Route path="/invite/:token" element={<InvitePage />} />
               <Route
                 path="/personal/workflows/:workflowId"
@@ -262,9 +394,9 @@ function App() {
               <Route
                 path="/settings/account"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <AccountSettingsPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
                 }
               />
               <Route
@@ -278,33 +410,41 @@ function App() {
               <Route
                 path="/audit"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <AuditPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
                 }
               />
               <Route
                 path="/:orgSlug/:workspaceSlug/settings/secrets"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <WorkspaceSecretsPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
                 }
               />
               <Route
                 path="/:orgSlug/:workspaceSlug/settings/tokens"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <WorkspaceTokensPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
                 }
               />
               <Route
                 path="/:orgSlug/:workspaceSlug/settings/environments"
                 element={
-                  <ProtectedRoute>
+                  <WorkspacePageShell>
                     <WorkspaceEnvironmentsPage />
-                  </ProtectedRoute>
+                  </WorkspacePageShell>
+                }
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug/settings/org"
+                element={
+                  <WorkspacePageShell>
+                    <OrgSettingsPage />
+                  </WorkspacePageShell>
                 }
               />
               {/* Slug-based workspace routes */}
@@ -331,11 +471,9 @@ function App() {
               <Route
                 path="/:orgSlug/:workspaceSlug/projects/:projectId"
                 element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <WorkspaceProjectPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
+                  <WorkspacePageShell navState="projects">
+                    <WorkspaceProjectPage />
+                  </WorkspacePageShell>
                 }
               />
               <Route

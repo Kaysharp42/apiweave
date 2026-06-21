@@ -15,6 +15,8 @@ export interface ScopedEnvironmentListProps {
   onEdit: (env: ScopedEnvironment) => void;
   /** Called when the user wants to delete an environment. */
   onDelete: (env: ScopedEnvironment) => void;
+  /** Called when the user wants to duplicate an environment. */
+  onDuplicate?: (envId: string) => void;
   /** The currently selected environment ID. */
   selectedId?: string | undefined;
   className?: string;

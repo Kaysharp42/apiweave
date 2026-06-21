@@ -537,6 +537,63 @@ class TestSafeRequest:
                 await safe_request("GET", "https://example.com/", max_hops=3)
             mock_session.close.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_follow_redirects_false_returns_3xx_as_is(self):
+        redirect_response = MagicMock()
+        redirect_response.status = 302
+        redirect_response.headers = {"Location": "https://example.com/final"}
+
+        mock_session = AsyncMock()
+        mock_session.request.return_value = redirect_response
+
+        with (
+            _patch_settings(approved_domains_enabled=False),
+            patch("app.services.safe_http.aiohttp.ClientSession", return_value=mock_session),
+            patch("app.services.safe_http.aiohttp.TCPConnector"),
+        ):
+            response, session = await safe_request(
+                "GET", "https://example.com/start", follow_redirects=False
+            )
+            assert response is redirect_response
+            assert response.status == 302
+            mock_session.request.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ssl_verify_false_passes_false_to_connector(self):
+        mock_response = MagicMock()
+        mock_response.status = 200
+
+        mock_session = AsyncMock()
+        mock_session.request.return_value = mock_response
+
+        with (
+            _patch_settings(approved_domains_enabled=False),
+            patch("app.services.safe_http.aiohttp.ClientSession", return_value=mock_session),
+            patch("app.services.safe_http.aiohttp.TCPConnector") as mock_connector_cls,
+        ):
+            await safe_request("GET", "https://example.com/", ssl_verify=False)
+            mock_connector_cls.assert_called_once_with(ssl=False)
+
+    @pytest.mark.asyncio
+    async def test_ssl_verify_true_passes_default_context(self):
+        import ssl as ssl_module
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+
+        mock_session = AsyncMock()
+        mock_session.request.return_value = mock_response
+
+        with (
+            _patch_settings(approved_domains_enabled=False),
+            patch("app.services.safe_http.aiohttp.ClientSession", return_value=mock_session),
+            patch("app.services.safe_http.aiohttp.TCPConnector") as mock_connector_cls,
+        ):
+            await safe_request("GET", "https://example.com/", ssl_verify=True)
+            call_kwargs = mock_connector_cls.call_args.kwargs
+            ssl_arg = call_kwargs.get("ssl")
+            assert isinstance(ssl_arg, ssl_module.SSLContext)
+
 
 class TestBlockedNetworksConfig:
     """Verify the blocked-networks list is correctly configured."""

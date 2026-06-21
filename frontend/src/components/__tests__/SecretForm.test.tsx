@@ -9,13 +9,13 @@ import { SecretForm } from '../SecretForm';
 
 const mockAuthenticatedJson = vi.fn();
 
-vi.mock('../utils/authenticatedApi', () => ({
+vi.mock('../../utils/authenticatedApi', () => ({
   authenticatedJson: (...args: unknown[]) => mockAuthenticatedJson(...args),
 }));
 
-vi.mock('../utils/api', () => ({ default: 'http://localhost:8000' }));
+vi.mock('../../utils/api', () => ({ default: 'http://localhost:8000' }));
 
-vi.mock('../utils/encryptSecretValue', () => ({
+vi.mock('../../utils/encryptSecretValue', () => ({
   encryptSecretValue: vi.fn().mockResolvedValue('ZW5jcnlwdGVkLXZhbHVl'),
 }));
 
@@ -88,7 +88,7 @@ describe('SecretForm', () => {
     await user.click(screen.getByText('Add secret'));
 
     await waitFor(() => {
-      expect(screen.getByText('Use uppercase letters, digits, and underscores only')).toBeInTheDocument();
+      expect(screen.getByText(/cannot contain/i)).toBeInTheDocument();
     });
   });
 
@@ -169,7 +169,7 @@ describe('SecretForm', () => {
     await user.click(screen.getByText('Add secret'));
 
     await waitFor(() => {
-      expect(screen.getByText('Network error')).toBeInTheDocument();
+      expect(screen.getByText(/Network error/)).toBeInTheDocument();
     });
   });
 

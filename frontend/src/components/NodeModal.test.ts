@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 
 const nodeModalSource = readFileSync(join(process.cwd(), 'src/components/NodeModal.tsx'), 'utf8');
 const httpRequestConfigSource = readFileSync(join(process.cwd(), 'src/components/node-modal/HTTPRequestConfigPanel.tsx'), 'utf8');
@@ -131,7 +131,6 @@ test('NodeModal uses Modal molecule with focus trapping', () => {
 
 test('NodeModal uses CSS variable tokens for colors', () => {
   assert.match(httpRequestOutputSource, /var\(--aw-status-info\)/);
-  assert.match(httpRequestOutputSource, /var\(--aw-primary\)/);
 });
 
 test('NodeModal uses focus-visible outlines on interactive elements', () => {

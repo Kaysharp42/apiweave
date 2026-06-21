@@ -37,7 +37,7 @@ export function ProjectList({
         }
         action={
           !searchQuery && (
-            <Button variant="primary" intent="success" size="sm" onClick={onCreateProject} icon={<FolderKanban className="w-4 h-4" />}>
+            <Button variant="primary" intent="default" size="sm" onClick={onCreateProject} icon={<FolderKanban className="w-4 h-4" />}>
               Create Project
             </Button>
           )
@@ -47,7 +47,7 @@ export function ProjectList({
   }
 
   return (
-    <ul className="w-full list-none space-y-1 px-0.5">
+    <ul className="w-full list-none space-y-1 px-0.5 font-sans">
       {projects.map((project) => (
         <ProjectItem
           key={project.projectId ?? project.collectionId}

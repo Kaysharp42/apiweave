@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Mail, Copy, Trash2, UserPlus } from 'lucide-react';
+import { Mail, Copy, Trash2, Plus } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 import { useInvites } from '../hooks/useInvites';
 import { copyInviteLink } from '../utils/authenticatedApi';
@@ -8,9 +8,11 @@ import { Spinner } from '../components/atoms/Spinner';
 import { Input } from '../components/atoms/Input';
 import { EmptyState } from '../components/molecules/EmptyState';
 import { Panel } from '../components/molecules/Panel';
+import { Card } from '../components/molecules/Card';
 import { StatusBadge } from '../components/molecules/StatusBadge';
 import { ConfirmDialog } from '../components/molecules/ConfirmDialog';
 import { toast } from 'sonner';
+import type { Invite } from '../types';
 
 export default function InviteAdminPage() {
   const { hasPermission } = useAuth();
@@ -22,19 +24,32 @@ export default function InviteAdminPage() {
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingLink, setPendingLink] = useState<string | null>(null);
+  const [selectedInvite, setSelectedInvite] = useState<Invite | null>(null);
 
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
 
   if (!hasPermission('invites:create')) {
     return (
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-5xl mx-auto">
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+          <Mail className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
+          <div>
+            <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
+              Invite Management
+            </h1>
+            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+              Create and monitor administrative invitations.
+            </p>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
           <EmptyState
+            icon={<Mail className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
             title="Access denied"
             description="You need admin privileges to manage invitations."
           />
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -51,6 +66,7 @@ export default function InviteAdminPage() {
       }
       if (result) {
         setEmail('');
+        setSelectedInvite(result.invite);
       }
     } finally {
       setSubmitting(false);
@@ -82,6 +98,7 @@ export default function InviteAdminPage() {
     if (!revokeTarget) return;
     try {
       await revokeInvite(revokeTarget.id);
+      setSelectedInvite((current) => (current?.id === revokeTarget.id ? null : current));
     } finally {
       setRevokeTarget(null);
     }
@@ -93,64 +110,81 @@ export default function InviteAdminPage() {
   };
 
   return (
-    <>
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Mail className="w-6 h-6 text-primary" />
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <Mail className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
+        <div>
+          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
               Invite Management
-            </h1>
-          </div>
+          </h1>
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            Create and monitor administrative invitations.
+          </p>
+        </div>
+      </div>
 
-          {/* Create invite form */}
-          <Panel title="Create Invitation">
-            <form onSubmit={handleCreate} className="flex flex-col gap-4 sm:flex-row sm:items-end">
-              <div className="flex-1">
-                <label
-                  htmlFor="invite-email"
-                  className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-1"
-                >
-                  Email Address
-                </label>
-                <Input
-                  id="invite-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="user@example.com"
-                  disabled={submitting}
-                  required
-                />
-              </div>
-              <div className="sm:w-40">
-                <label
-                  htmlFor="invite-role"
-                  className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-1"
-                >
-                  Role
-                </label>
-                <select
-                  id="invite-role"
-                  className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out cursor-pointer"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  disabled={submitting}
-                >
-                  <option value="admin">Admin</option>
-                  <option value="editor">Editor</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              </div>
-              <Button type="submit" loading={submitting} disabled={!email.trim()}>
-                <UserPlus className="w-4 h-4 mr-1.5" />
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                form="create-invite-form"
+                loading={submitting}
+                disabled={!email.trim()}
+                variant="primary"
+                intent="success"
+                size="sm"
+                icon={<Plus className="w-4 h-4" />}
+              >
                 Send Invite
               </Button>
-            </form>
+            </div>
+
+            {/* Create invite form */}
+            <Panel title="Create Invitation">
+              <form id="create-invite-form" onSubmit={handleCreate} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end">
+                <div className="flex-1">
+                  <label
+                    htmlFor="invite-email"
+                    className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-1"
+                  >
+                    Email Address
+                  </label>
+                  <Input
+                    id="invite-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="user@example.com"
+                    disabled={submitting}
+                    required
+                  />
+                </div>
+                <div className="sm:w-40">
+                  <label
+                    htmlFor="invite-role"
+                    className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-1"
+                  >
+                    Role
+                  </label>
+                  <select
+                    id="invite-role"
+                    className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow,outline] duration-[var(--aw-transition-fast)] ease-in-out cursor-pointer"
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    disabled={submitting}
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                </div>
+              </form>
 
             {/* Copy link banner when SMTP not configured */}
             {pendingLink && (
-              <div className="mt-4 p-4 rounded-lg bg-status-warning/10 border border-status-warning/20">
+              <div className="mt-4 p-4 rounded bg-status-warning/10 border border-status-warning/20">
                 <p className="text-sm text-text-primary dark:text-text-primary-dark mb-2">
                   Email not sent — SMTP is not configured. Share this link manually:
                 </p>
@@ -158,17 +192,17 @@ export default function InviteAdminPage() {
                   <code className="flex-1 text-xs font-mono truncate bg-surface dark:bg-surface-dark px-3 py-2 rounded border border-border dark:border-border-dark">
                     {pendingLink}
                   </code>
-                  <Button size="xs" variant="secondary" onClick={handleCopyPendingLink}>
+                  <Button size="xs" variant="outline" onClick={handleCopyPendingLink}>
                     <Copy className="w-3.5 h-3.5 mr-1" />
                     Copy Link
                   </Button>
                 </div>
               </div>
             )}
-          </Panel>
+            </Panel>
 
-          {/* Pending invites list */}
-          <Panel title="Pending Invitations" className="mt-6">
+            {/* Pending invites list */}
+            <Panel title="Pending Invitations">
             {loading ? (
               <div className="flex justify-center p-12 text-text-muted">
                 <Spinner size="lg" className="text-primary dark:text-primary-light" />
@@ -194,8 +228,15 @@ export default function InviteAdminPage() {
                     {invites.map((inv) => (
                       <tr
                         key={inv.id}
-                        className="border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px]"
+                        className={`border-b border-border dark:border-border-dark last:border-0 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[-2px] cursor-pointer ${selectedInvite?.id === inv.id ? 'bg-primary/5 dark:bg-primary-light/10' : ''}`}
                         tabIndex={0}
+                        onClick={() => setSelectedInvite(inv)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSelectedInvite(inv);
+                          }
+                        }}
                       >
                         <td className="px-6 py-4 font-medium">{inv.email}</td>
                         <td className="px-6 py-4">
@@ -214,8 +255,11 @@ export default function InviteAdminPage() {
                             {inv.token && (
                               <Button
                                 size="xs"
-                                variant="secondary"
-                                onClick={() => handleCopyLink(inv.id, inv.token!)}
+                                variant="outline"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleCopyLink(inv.id, inv.token!);
+                                }}
                               >
                                 <Copy className="w-3.5 h-3.5 mr-1" />
                                 {copiedId === inv.id ? 'Copied!' : 'Copy Link'}
@@ -223,9 +267,12 @@ export default function InviteAdminPage() {
                             )}
                             <Button
                               size="xs"
-                              variant="secondary"
+                              variant="outline"
                               intent="error"
-                              onClick={() => setRevokeTarget({ id: inv.id, email: inv.email })}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setRevokeTarget({ id: inv.id, email: inv.email });
+                              }}
                             >
                               <Trash2 className="w-3.5 h-3.5 mr-1" />
                               Revoke
@@ -238,9 +285,69 @@ export default function InviteAdminPage() {
                 </table>
               </div>
             )}
-          </Panel>
+            </Panel>
+          </div>
+
+          <div className="space-y-4">
+            {selectedInvite ? (
+              <Card title={selectedInvite.email}>
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">Email</span>
+                    <p className="text-sm text-text-primary dark:text-text-primary-dark break-all">
+                      {selectedInvite.email}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">Role</span>
+                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                      {selectedInvite.role}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">Expires</span>
+                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
+                      {formatExpiry(selectedInvite.expiresAt)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">Status</span>
+                    <div className="mt-1"><StatusBadge status="warning" label="Pending" /></div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">Link</span>
+                    {selectedInvite.token ? (
+                      <div className="mt-1 flex items-center gap-2">
+                        <code className="min-w-0 flex-1 truncate rounded border border-border bg-surface px-2 py-1.5 text-xs font-mono text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
+                          {selectedInvite.token}
+                        </code>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => handleCopyLink(selectedInvite.id, selectedInvite.token!)}
+                        >
+                          <Copy className="w-3.5 h-3.5 mr-1" />
+                          {copiedId === selectedInvite.id ? 'Copied!' : 'Copy'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+                        Link unavailable after creation.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              <EmptyState
+                icon={<Mail className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+                title="Select an invitation"
+                description="Choose a pending invitation to view details or revoke."
+              />
+            )}
+          </div>
         </div>
-      </main>
+      </div>
 
       <ConfirmDialog
         open={!!revokeTarget}
@@ -260,6 +367,6 @@ export default function InviteAdminPage() {
         cancelLabel="Cancel"
         intent="error"
       />
-    </>
+    </div>
   );
 }

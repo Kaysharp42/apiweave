@@ -60,7 +60,7 @@ export function CanvasToolbar({
 
   return (
     <div
-      className="absolute top-3 left-1/2 -translate-x-1/2 z-50 pointer-events-auto flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-surface-raised/95 dark:bg-surface-dark-raised/95 backdrop-blur-sm border border-border-default dark:border-border-default-dark shadow-lg"
+      className="absolute top-3 left-1/2 -translate-x-1/2 z-50 pointer-events-auto flex items-center gap-1.5 px-2 py-1.5 rounded-sm bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark shadow-node"
       role="toolbar"
       aria-label="Workflow actions"
     >
@@ -71,7 +71,7 @@ export function CanvasToolbar({
         <ToolbarButton icon={Upload} label="Import" onClick={onImport} tooltip="Import nodes" />
       </div>
 
-      <div className="w-px h-6 bg-border-default dark:bg-border-default-dark mx-0.5" aria-hidden="true" />
+      <div className="w-px h-6 bg-border dark:bg-border-dark mx-0.5" aria-hidden="true" />
 
       <ButtonSelect
         key={`env-select-${workflowId ?? ''}`}
@@ -79,7 +79,7 @@ export function CanvasToolbar({
         value={selectedEnvironment || ''}
         onChange={onEnvironmentChange}
         placeholder="No Environment"
-        buttonClass="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-lg bg-surface-overlay dark:bg-surface-dark-overlay text-text-primary dark:text-text-primary-dark border border-border-default dark:border-border-default-dark hover:bg-border-default dark:hover:bg-border-default-dark transition-colors h-8 whitespace-nowrap"
+        buttonClass="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none h-8 whitespace-nowrap"
       />
 
       <Button
@@ -94,10 +94,11 @@ export function CanvasToolbar({
         <span className="hidden lg:inline">{isSwaggerRefreshing ? 'Refreshing' : 'Refresh'}</span>
       </Button>
 
-      <div className="w-px h-6 bg-border-default dark:bg-border-default-dark mx-0.5" aria-hidden="true" />
+      <div className="w-px h-6 bg-border dark:bg-border-dark mx-0.5" aria-hidden="true" />
 
       <div className="relative flex" ref={runMenuRef}>
         <Button
+          variant="primary"
           intent={isRunning ? 'warning' : 'default'}
           size="sm"
           onClick={onRun}
@@ -115,7 +116,7 @@ export function CanvasToolbar({
           variant={isRunning ? 'warning' : 'primary'}
           size="sm"
           className={[
-            'h-8 rounded-l-none rounded-r-lg transition-colors border-l border-surface-raised/30 dark:border-surface-dark-raised/30',
+            'h-8 rounded-l-none rounded-r-sm transition-colors border-l border-surface-raised/30 dark:border-surface-dark-raised/30',
             isRunning
               ? 'cursor-wait'
               : 'hover:brightness-110',
@@ -125,7 +126,7 @@ export function CanvasToolbar({
         </IconButton>
 
         {isRunMenuOpen && (
-          <div className="absolute top-9 right-0 min-w-[280px] max-w-[360px] rounded-lg border border-border-default dark:border-border-default-dark bg-surface-raised dark:bg-surface-dark-raised shadow-lg overflow-hidden z-50">
+          <div className="absolute top-9 right-0 min-w-[280px] max-w-[360px] rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node overflow-hidden z-50">
             <Button
               onClick={() => {
                 onRunFromLastFailed?.();
@@ -150,7 +151,7 @@ export function CanvasToolbar({
               Run all failed nodes and continue
             </Button>
 
-            <div className="w-full h-px bg-border-default dark:bg-border-default-dark" />
+            <div className="w-full h-px bg-border dark:bg-border-dark" />
 
             {isResumeLoading && (
               <div className="px-3 py-2 text-xs text-text-muted dark:text-text-muted-dark">

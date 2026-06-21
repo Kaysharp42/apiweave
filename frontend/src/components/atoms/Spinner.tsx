@@ -29,7 +29,7 @@ export function Spinner({
         'loading',
         typeClass[type] ?? 'loading-spinner',
         sizeClass[size] ?? 'loading-md',
-        'motion-reduce:animate-none',
+        'rounded-full text-primary dark:text-primary-light motion-reduce:animate-none',
         color,
         className,
       ].filter(Boolean).join(' ')}

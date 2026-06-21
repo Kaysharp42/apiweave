@@ -38,10 +38,10 @@ export function KeyValueEditor({
   return (
     <div className={['w-full', className].filter(Boolean).join(' ')}>
       <div className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
-        <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark px-2 py-1 truncate">
+        <span className="truncate px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
           {keyPlaceholder}
         </span>
-        <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark px-2 py-1 truncate">
+        <span className="truncate px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
           {valuePlaceholder}
         </span>
         <span className="w-8" />
@@ -56,7 +56,7 @@ export function KeyValueEditor({
             placeholder={keyPlaceholder}
             readOnly={readOnly}
             aria-label={`${keyPlaceholder} ${index + 1}`}
-            className="input input-bordered input-sm w-full bg-surface dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus:border-primary dark:focus:border-primary focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light focus-visible:ring-offset-2 truncate"
+            className="h-8 w-full truncate rounded-sm border border-border bg-surface-raised px-2.5 font-mono text-xs text-text-primary placeholder:text-text-muted transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-primary-light"
           />
           <input
             type="text"
@@ -65,7 +65,7 @@ export function KeyValueEditor({
             placeholder={valuePlaceholder}
             readOnly={readOnly}
             aria-label={`${valuePlaceholder} ${index + 1}`}
-            className="input input-bordered input-sm w-full bg-surface dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus:border-primary dark:focus:border-primary focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light focus-visible:ring-offset-2 truncate"
+            className="h-8 w-full truncate rounded-sm border border-border bg-surface-raised px-2.5 font-mono text-xs text-text-primary placeholder:text-text-muted transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-primary-light"
           />
           {!readOnly && (
             <IconButton
@@ -73,7 +73,7 @@ export function KeyValueEditor({
               size="xs"
               variant="ghost"
               onClick={() => removePair(index)}
-              className="text-text-muted hover:text-status-error"
+              className="text-text-muted hover:text-status-error dark:text-text-muted-dark dark:hover:text-[var(--aw-status-error)]"
               aria-label={`Remove row ${index + 1}`}
             >
               <Trash2 className="w-4 h-4" />

@@ -103,7 +103,7 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
         title="Invites"
         icon={Mail}
         headerActions={
-          <Button size="xs" onClick={() => { setLastCreated(null); setInviteOpen(true); }}>
+            <Button size="xs" variant="primary" onClick={() => { setLastCreated(null); setInviteOpen(true); }}>
             <Plus className="w-3.5 h-3.5" />
             Invite
           </Button>
@@ -118,7 +118,7 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
             title="No pending invites"
             description="Invite people to join your organization."
             action={
-              <Button size="sm" onClick={() => { setLastCreated(null); setInviteOpen(true); }}>
+              <Button size="sm" variant="primary" onClick={() => { setLastCreated(null); setInviteOpen(true); }}>
                 <Plus className="w-3.5 h-3.5" />
                 Send Invite
               </Button>
@@ -160,7 +160,7 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
         size="sm"
         footer={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setInviteOpen(false)}>
+            <Button variant="outline" size="sm" onClick={() => setInviteOpen(false)}>
               {lastCreated ? 'Close' : 'Cancel'}
             </Button>
             {!lastCreated && (
@@ -180,7 +180,7 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
         <div className="p-5 space-y-4">
           {lastCreated ? (
             <div className="text-center space-y-3">
-              <div className="w-12 h-12 mx-auto rounded-full bg-status-success/10 flex items-center justify-center">
+              <div className="w-12 h-12 mx-auto rounded-full bg-status-success/10 flex items-center justify-center border border-status-success/20">
                 <Mail className="w-6 h-6 text-status-success" />
               </div>
               <p className="text-sm text-text-primary dark:text-text-primary-dark">
@@ -203,7 +203,7 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
               </FormField>
               <FormField label="Role">
                 <select
-                  className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-sm"
+                  className="select select-bordered w-full rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-sm focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)]"
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value as OrgRole)}
                 >

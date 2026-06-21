@@ -14,6 +14,8 @@ export interface ScopedSecretListProps {
   scopeId: string;
   /** Called after a secret is deleted, to refresh parent state. */
   onChanged: () => void;
+  onSelect?: (secret: Secret) => void;
+  selectedId?: string;
   className?: string;
 }
 
@@ -45,6 +47,8 @@ export function ScopedSecretList({
   scopeType,
   scopeId,
   onChanged,
+  onSelect,
+  selectedId,
   className = '',
 }: ScopedSecretListProps) {
   const [secrets, setSecrets] = useState<Secret[]>([]);
@@ -139,11 +143,31 @@ export function ScopedSecretList({
           </tr>
         </thead>
         <tbody>
-          {secrets.map((secret) => (
-            <tr
-              key={secret.secretId}
-              className="border-b border-border/50 dark:border-border-dark/50 hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50 transition-colors"
-            >
+          {secrets.map((secret) => {
+            const isSelected = secret.secretId === selectedId;
+
+            return (
+              <tr
+                key={secret.secretId}
+                className={[
+                  'border-b border-border/50 dark:border-border-dark/50 transition-colors',
+                  onSelect ? 'cursor-pointer' : '',
+                  isSelected
+                    ? 'bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10'
+                    : 'hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50',
+                ].join(' ')}
+                onClick={() => onSelect?.(secret)}
+                role={onSelect ? 'button' : undefined}
+                tabIndex={onSelect ? 0 : undefined}
+                onKeyDown={(e) => {
+                  if (!onSelect) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelect(secret);
+                  }
+                }}
+                aria-selected={onSelect ? isSelected : undefined}
+              >
               <td className="py-2.5 px-3">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-text-primary dark:text-text-primary-dark">
@@ -165,13 +189,17 @@ export function ScopedSecretList({
                   tooltip="Delete secret"
                   size="xs"
                   variant="error"
-                  onClick={() => setDeleteTarget(secret)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteTarget(secret);
+                  }}
                 >
                   <Trash2 className="w-4 h-4" aria-hidden="true" />
                 </IconButton>
               </td>
-            </tr>
-          ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 

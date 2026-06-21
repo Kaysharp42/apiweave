@@ -30,9 +30,9 @@ export function Panel({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   return (
-    <div className={`flex flex-col h-full border border-border dark:border-border-dark rounded-lg bg-surface-raised dark:bg-surface-dark-raised shadow-raised ${className}`}>
+    <div className={`flex h-full flex-col rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised ${className}`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
+      <div className="flex items-center justify-between border-b border-border bg-surface-overlay px-4 py-2.5 dark:border-border-dark dark:bg-surface-dark-overlay">
         <div className="flex items-center gap-2 min-w-0">
           {Icon && <Icon className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />}
           <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark truncate">
@@ -47,7 +47,7 @@ export function Panel({
             <button
               type="button"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1 rounded text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:focus-visible:outline-primary-light focus-visible:outline-offset-2"
+              className="cursor-pointer rounded-sm p-1 text-text-secondary transition-colors hover:bg-surface-raised hover:text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-text-secondary-dark dark:hover:bg-surface-dark-raised dark:hover:text-text-primary-dark"
               aria-expanded={isExpanded}
               aria-label={isExpanded ? 'Collapse panel' : 'Expand panel'}
             >
@@ -66,7 +66,7 @@ export function Panel({
 
       {/* Footer */}
       {footer && isExpanded && (
-        <div className="px-4 py-2.5 border-t border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
+        <div className="border-t border-border bg-surface-overlay px-4 py-2.5 dark:border-border-dark dark:bg-surface-dark-overlay">
           {footer}
         </div>
       )}

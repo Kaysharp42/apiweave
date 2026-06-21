@@ -73,6 +73,73 @@ class WorkspaceRepository:
         )
 
     @staticmethod
+    async def get_orphan_personal(slug: str = "personal") -> Workspace | None:
+        """Find an unowned personal workspace left behind by a prior run.
+
+        The ``(orgId, slug)`` unique index permits only one
+        ``(None, "personal")`` workspace in the database, so a second
+        bootstrap attempt cannot create one. The first user — in single-user
+        mode, or the first admin in multi-tenant setup — adopts it.
+
+        Returns ``None`` if no such workspace exists.
+        """
+        return await Workspace.find_one(
+            Workspace.slug == slug,
+            Workspace.orgId == None,  # noqa: E711
+            Workspace.ownerUserId == None,  # noqa: E711
+            Workspace.isPersonal == True,  # noqa: E712
+            Workspace.deletedAt == None,  # noqa: E711
+        )
+
+    @staticmethod
+    async def claim_orphan_personal(
+        workspace_id: str,
+        user_id: str,
+        name: str = "My Workspace",
+    ) -> Workspace | None:
+        """Take ownership of an unowned personal workspace.
+
+        Idempotent: if the workspace is already owned by ``user_id``, this
+        is a no-op and the workspace is returned. If it is owned by a
+        different user, the function refuses (returns ``None``); the caller
+        must decide whether to fail or fall back to a fresh create.
+        """
+        ws = await WorkspaceRepository.get_by_id(workspace_id)
+        if ws is None:
+            return None
+        if ws.ownerUserId is not None and ws.ownerUserId != user_id:
+            return None
+        ws.ownerType = "user"
+        ws.ownerUserId = user_id
+        ws.isPersonal = True
+        ws.name = name
+        ws.updatedAt = datetime.now(UTC)
+        await ws.save()
+        return ws
+
+    @staticmethod
+    async def force_transfer_to_user(
+        workspace_id: str,
+        user_id: str,
+    ) -> Workspace | None:
+        """Reassign a workspace to ``user_id`` regardless of current owner.
+
+        Unlike ``claim_orphan_personal``, this transfers ownership even when
+        a different user already owns the workspace. Operator-only path used
+        by ``scripts/adopt_workspace.py`` when migrating data across a
+        DEPLOYMENT_MODE switch from multi_tenant to single_user.
+        """
+        ws = await WorkspaceRepository.get_by_id(workspace_id)
+        if ws is None:
+            return None
+        ws.ownerType = "user"
+        ws.ownerUserId = user_id
+        ws.isPersonal = True
+        ws.updatedAt = datetime.now(UTC)
+        await ws.save()
+        return ws
+
+    @staticmethod
     async def update(
         workspace_id: str,
         *,

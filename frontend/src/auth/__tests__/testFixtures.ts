@@ -25,6 +25,7 @@
  */
 
 import type { User } from '../../types/User.ts';
+import type { DeploymentMode } from '../../types/DeploymentMode.ts';
 
 // ---------------------------------------------------------------------------
 // Stable test user IDs — use in assertions to avoid magic strings
@@ -33,6 +34,7 @@ import type { User } from '../../types/User.ts';
 export const FIXTURE_ADMIN_USER_ID = 'fixture-admin-1';
 export const FIXTURE_EDITOR_USER_ID = 'fixture-editor-1';
 export const FIXTURE_VIEWER_USER_ID = 'fixture-viewer-1';
+export const FIXTURE_SINGLE_USER_OWNER_ID = 'usr-single-user-owner';
 
 // ---------------------------------------------------------------------------
 // Canonical permission sets (mirrors backend ROLE_PRESETS)
@@ -104,6 +106,30 @@ function _mockAuthMe(
       });
     }
     // Pass through all other requests to the original fetch
+    return originalFetch(input, init);
+  };
+
+  return { restore: () => { globalThis.fetch = originalFetch; } };
+}
+
+/**
+ * Replaces globalThis.fetch with a function that returns a fixed response
+ * for `/api/auth/mode` and passes all other requests through to the original.
+ */
+function _mockAuthMode(mode: DeploymentMode): MockFetchHandle {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (
+    input: RequestInfo | URL,
+    init: RequestInit = {},
+  ): Promise<Response> => {
+    const url = String(input);
+    if (url.includes('/api/auth/mode')) {
+      return new Response(JSON.stringify({ mode }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     return originalFetch(input, init);
   };
 
@@ -204,4 +230,16 @@ export function buildEditorUser(userId: string = FIXTURE_EDITOR_USER_ID): User {
 
 export function buildViewerUser(userId: string = FIXTURE_VIEWER_USER_ID): User {
   return _makeUser(userId, ['viewer'], VIEWER_PERMISSIONS);
+}
+
+/**
+ * Mocks `/api/auth/mode` to return a specific deployment mode.
+ *
+ * Use together with `mockAdmin` / `mockUnauthenticated` / etc. to simulate
+ * the full bootstrap call. The frontend reads this to decide whether to
+ * render the login screen (multi_tenant) or auto-authenticate as the
+ * implicit owner (single_user).
+ */
+export function mockDeploymentMode(mode: DeploymentMode): MockFetchHandle {
+  return _mockAuthMode(mode);
 }

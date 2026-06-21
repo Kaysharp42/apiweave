@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     APPROVED_DOMAINS: str = ""
     SETUP_MODE_ENABLED: bool = True
 
+    # Deployment mode:
+    #   - "single_user":  self-hosted, no OAuth. A synthetic owner User is
+    #     auto-created on first request and used for every API call. No
+    #     sessions, no CSRF, no invites, no orgs UI. Designed so a single
+    #     user can run the app without configuring any provider.
+    #   - "multi_tenant": hosted SaaS / team install. OAuth SSO + sessions +
+    #     CSRF + invites + orgs are all active. This is the historical
+    #     behavior and the default.
+    DEPLOYMENT_MODE: Literal["single_user", "multi_tenant"] = "multi_tenant"
+
     # Security
     BLOCK_PRIVATE_NETWORKS: bool = True
     MAX_WEBHOOK_BODY_SIZE: int = 65536

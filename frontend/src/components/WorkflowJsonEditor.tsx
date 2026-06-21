@@ -613,14 +613,14 @@ export function WorkflowJsonEditor({
           enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
           leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm" />
+          <div className="fixed inset-0 bg-[var(--aw-surface)]/70 dark:bg-[var(--aw-surface-dark)]/80" />
         </TransitionChild>
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <TransitionChild
             enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
             leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-[90vw] max-w-5xl h-[85vh] bg-surface dark:bg-surface-dark rounded-xl shadow-2xl flex flex-col overflow-hidden border border-border dark:border-border-dark">
+            <Dialog.Panel className="w-[90vw] max-w-5xl h-[85vh] bg-surface dark:bg-surface-dark rounded border border-border dark:border-border-dark flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
           <div className="flex items-center gap-3">
@@ -642,7 +642,7 @@ export function WorkflowJsonEditor({
                 size="xs"
                 className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
                   viewMode === 'json'
-                    ? 'bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark shadow-sm'
+                    ? 'bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark'
                     : 'text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
                 }`}
               >
@@ -655,7 +655,7 @@ export function WorkflowJsonEditor({
                 size="xs"
                 className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
                   viewMode === 'ai-prompt'
-                    ? 'bg-surface dark:bg-surface-dark text-primary shadow-sm'
+                    ? 'bg-surface dark:bg-surface-dark text-primary border border-border dark:border-border-dark'
                     : 'text-text-muted dark:text-text-muted-dark hover:text-primary'
                 }`}
               >

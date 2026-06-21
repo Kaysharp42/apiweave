@@ -190,3 +190,4 @@ frontend/react-doctor.config.json
 frontend/package-lock.json
 .opencode/
 .agents/
+frontend/.visualqa/

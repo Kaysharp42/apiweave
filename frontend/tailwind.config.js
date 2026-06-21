@@ -22,62 +22,62 @@ export default {
         'node': '320px',
         'sidebar': '600px',
       },
-      // Design tokens — semantic color system
+      // Design tokens — semantic color system (zinc neutrals + ink-teal accent)
       colors: {
         primary: {
-          DEFAULT: '#0d5c6e',   // refined cyan-900
-          light: '#0e7a8a',     // refined cyan-700
-          dark: '#083a45',      // refined cyan-950
-          hover: '#0e6b7d',     // refined cyan-800
+          DEFAULT: '#0d5c6e',   // ink-teal accent (light)
+          light: '#0f766e',     // teal-700
+          dark: '#0b3d49',      // deep ink-teal (pressed)
+          hover: '#0b4a59',     // accent hover (light)
         },
         surface: {
-          DEFAULT: '#f6f5f3',   // warm off-white (light bg)
-          raised: '#ffffff',    // white (light cards)
-          overlay: '#eeede9',   // warm light gray (light overlays)
-          dark: '#1c1b19',      // warm very dark (dark bg)
-          'dark-raised': '#2a2926', // warm dark gray (dark cards)
-          'dark-overlay': '#363431', // warm medium-dark gray (dark overlays)
+          DEFAULT: '#fafafa',   // zinc-50 page bg (light)
+          raised: '#ffffff',    // cards (light)
+          overlay: '#f4f4f5',   // zinc-100 overlay/hover (light)
+          dark: '#09090b',      // zinc-950 page bg (dark)
+          'dark-raised': '#18181b', // zinc-900 cards (dark)
+          'dark-overlay': '#27272a', // zinc-800 overlay/hover (dark)
         },
         border: {
-          DEFAULT: '#d6d2cc',   // warm mid-tone (light borders)
-          dark: '#4a4743',      // warm dark (dark borders)
-          default: '#d6d2cc',   // alias for DEFAULT (used as border-border-default)
-          'default-dark': '#4a4743', // alias for dark borders (used as border-border-default-dark)
-          focus: '#0d5c6e',     // focus ring border (light)
-          'focus-dark': '#22d3ee', // focus ring border (dark)
+          DEFAULT: '#e4e4e7',   // zinc-200 hairline (light)
+          dark: '#27272a',      // zinc-800 hairline (dark)
+          default: '#e4e4e7',
+          'default-dark': '#27272a',
+          focus: '#0d5c6e',     // focus ring (light) = accent
+          'focus-dark': '#2dd4bf', // focus ring (dark) = accent
         },
         'text-primary': {
-          DEFAULT: '#1c1917',   // very dark warm gray (light text)
-          dark: '#f5f4f2',      // warm off-white (dark text)
+          DEFAULT: '#09090b',   // zinc-950 ink (light)
+          dark: '#fafafa',      // zinc-50 (dark)
         },
         'text-secondary': {
-          DEFAULT: '#5e5a55',   // warm medium gray (light secondary)
-          dark: '#b8b4ae',      // warm light gray (dark secondary)
+          DEFAULT: '#52525b',   // zinc-600 (light)
+          dark: '#a1a1aa',      // zinc-400 (dark)
         },
         'text-muted': {
-          DEFAULT: '#9e9a94',   // warm light gray (light muted)
-          dark: '#6b6863',      // warm mid gray (dark muted)
+          DEFAULT: '#a1a1aa',   // zinc-400 (light)
+          dark: '#71717a',      // zinc-500 (dark)
         },
         status: {
-          success: '#16a34a',   // green-600
-          error: '#dc2626',     // red-600
-          warning: '#f59e0b',   // amber-500
-          running: '#eab308',   // yellow-500
-          info: '#2563eb',      // blue-600
+          success: '#15803d',   // green-700
+          error: '#b91c1c',     // red-700
+          warning: '#b45309',   // amber-700
+          running: '#a16207',   // yellow-700
+          info: '#1d4ed8',      // blue-700
         },
         method: {
-          get: '#16a34a',       // green-600
-          post: '#2563eb',      // blue-600
-          put: '#ea580c',       // orange-600
-          patch: '#7c3aed',     // violet-600
-          delete: '#dc2626',    // red-600
-          head: '#0e7490',      // cyan-700
-          options: '#7c3aed',   // violet-600
+          get: '#15803d',
+          post: '#1d4ed8',
+          put: '#b45309',
+          patch: '#6d28d9',
+          delete: '#b91c1c',
+          head: '#0f766e',
+          options: '#6d28d9',
         },
       },
       fontFamily: {
-        sans: ['Plus Jakarta Sans', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-        display: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        display: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
       },
       // Consistent spacing / sizing tokens
@@ -89,13 +89,14 @@ export default {
         'xxs': ['0.625rem', { lineHeight: '0.875rem' }],  // 10px
       },
       boxShadow: {
-        'node': '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)',
-        'node-hover': '0 4px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04)',
-        'node-selected': '0 0 0 2px rgba(13, 92, 110, 0.5)',
-        'raised': '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)',
-        'overlay': '0 4px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04)',
-        'modal': '0 10px 25px rgba(0, 0, 0, 0.1), 0 8px 10px rgba(0, 0, 0, 0.04)',
-        'popover': '0 20px 50px rgba(0, 0, 0, 0.12), 0 12px 24px rgba(0, 0, 0, 0.06)',
+        // Swiss minimalism: separation via hairline borders, not heavy shadows.
+        'node': '0 1px 2px rgba(0, 0, 0, 0.04)',
+        'node-hover': '0 2px 4px rgba(0, 0, 0, 0.06)',
+        'node-selected': '0 0 0 2px var(--aw-primary)',
+        'raised': 'none',
+        'overlay': '0 2px 8px rgba(0, 0, 0, 0.04)',
+        'modal': '0 8px 24px rgba(0, 0, 0, 0.08)',
+        'popover': '0 12px 32px rgba(0, 0, 0, 0.10)',
       },
       animation: {
         'pulse-border': 'pulse-border 2s ease-in-out infinite',
@@ -117,40 +118,40 @@ export default {
         apiweave: {
           'primary': '#0d5c6e',
           'primary-content': '#ffffff',
-          'secondary': '#0e7a8a',
+          'secondary': '#0f766e',
           'secondary-content': '#ffffff',
-          'accent': '#7c3aed',
+          'accent': '#0d5c6e',
           'accent-content': '#ffffff',
-          'neutral': '#2a2926',
-          'neutral-content': '#f5f4f2',
-          'base-100': '#f6f5f3',
-          'base-200': '#eeede9',
-          'base-300': '#d6d2cc',
-          'base-content': '#1c1917',
-          'info': '#2563eb',
+          'neutral': '#18181b',
+          'neutral-content': '#fafafa',
+          'base-100': '#fafafa',
+          'base-200': '#f4f4f5',
+          'base-300': '#e4e4e7',
+          'base-content': '#09090b',
+          'info': '#1d4ed8',
           'info-content': '#ffffff',
-          'success': '#16a34a',
+          'success': '#15803d',
           'success-content': '#ffffff',
-          'warning': '#f59e0b',
-          'warning-content': '#1c1917',
-          'error': '#dc2626',
+          'warning': '#b45309',
+          'warning-content': '#ffffff',
+          'error': '#b91c1c',
           'error-content': '#ffffff',
         },
       },
       {
         'apiweave-dark': {
-          'primary': '#22d3ee',
-          'primary-content': '#083a45',
-          'secondary': '#06b6d4',
-          'secondary-content': '#083a45',
-          'accent': '#a78bfa',
-          'accent-content': '#1e1b4b',
-          'neutral': '#4a4743',
-          'neutral-content': '#f5f4f2',
-          'base-100': '#1c1b19',
-          'base-200': '#2a2926',
-          'base-300': '#4a4743',
-          'base-content': '#f5f4f2',
+          'primary': '#2dd4bf',
+          'primary-content': '#042f2e',
+          'secondary': '#0d5c6e',
+          'secondary-content': '#fafafa',
+          'accent': '#2dd4bf',
+          'accent-content': '#042f2e',
+          'neutral': '#27272a',
+          'neutral-content': '#fafafa',
+          'base-100': '#09090b',
+          'base-200': '#18181b',
+          'base-300': '#27272a',
+          'base-content': '#fafafa',
           'info': '#3b82f6',
           'info-content': '#ffffff',
           'success': '#4ade80',

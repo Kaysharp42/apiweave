@@ -800,14 +800,9 @@ class WorkflowExecutor:
             else:
                 execution_status = "success"  # Default for other statuses
 
-            # Special handling: if merge was already completed by another branch, skip downstream
+            # Later branches arriving at an already-completed merge must NOT overwrite its status —
+            # the first branch wrote the authoritative success/failure that drives the UI highlight.
             if isinstance(result, dict) and result.get('mergedByOther'):
-                # Store a shallow record and do NOT continue downstream
-                result['type'] = node_type
-                # Mark as skipped status
-                execution_status = 'skipped'
-                await self._update_node_status(db, node_id, execution_status, result)
-                self.results[node_id] = result
                 return { 'shouldContinue': False }
 
             # Update node status with full result (MUST happen BEFORE raising exception)
@@ -1212,6 +1207,133 @@ class WorkflowExecutor:
 
         return result
 
+    def _normalize_key_value_field(
+        self,
+        value: Any,
+        *,
+        allow_secrets: bool = True,
+    ) -> dict[str, str]:
+        """Normalize a headers/queryParams/pathVariables/cookies field.
+
+        Accepts either:
+        - Legacy multi-line ``key=value`` string (delegates to
+          :meth:`_parse_key_value_pairs`).
+        - New array format: ``list[dict]`` where each dict has ``key``,
+          ``value``, and optional ``active`` (defaults to True). Inactive
+          rows are skipped.
+
+        Variable substitution is applied to values in both formats.
+        """
+        if value is None or value == "":
+            return {}
+
+        if isinstance(value, str):
+            return self._parse_key_value_pairs(value, allow_secrets=allow_secrets)
+
+        if isinstance(value, list):
+            result: dict[str, str] = {}
+            for entry in value:
+                if not isinstance(entry, dict):
+                    continue
+                if not entry.get("active", True):
+                    continue
+                key = entry.get("key")
+                if key is None:
+                    continue
+                raw_value = entry.get("value", "")
+                if not isinstance(raw_value, str):
+                    raw_value = str(raw_value)
+                result[str(key)] = self._substitute_variables(
+                    raw_value, allow_secrets=allow_secrets
+                )
+            return result
+
+        # Unknown type — fall back to empty dict rather than crashing.
+        self.logger.warning(
+            "Unsupported key-value field type: %s — treating as empty",
+            type(value).__name__,
+        )
+        return {}
+
+    def _apply_auth_to_request(
+        self,
+        config: dict[str, Any],
+        headers: dict[str, str],
+        url: str,
+    ) -> tuple[dict[str, str], str]:
+        """Apply auth configuration to headers and URL.
+
+        Returns ``(updated_headers, updated_url)``. Auth-applied headers do
+        NOT override headers explicitly set in the config — config headers
+        win on key collision.
+
+        Supported ``auth.type`` values:
+        - ``none`` / missing → no changes.
+        - ``bearer`` → ``Authorization: Bearer <token>``.
+        - ``basic`` → ``Authorization: Basic <base64(user:pass)>``.
+        - ``apiKey`` → header or query placement based on ``addTo``.
+
+        Unknown ``auth.type`` values are logged as a warning and treated as
+        ``none`` (no exception raised).
+        """
+        auth = config.get("auth")
+        if not auth or not isinstance(auth, dict):
+            return headers, url
+
+        auth_type = str(auth.get("type", "none") or "none").strip().lower()
+
+        if auth_type == "none" or auth_type == "":
+            return headers, url
+
+        # Build a lowercase lookup of existing headers so config headers win.
+        existing_lower = {k.lower(): k for k in headers.keys()}
+
+        def set_header_if_absent(name: str, value: str) -> None:
+            if name.lower() not in existing_lower:
+                headers[name] = value
+
+        if auth_type == "bearer":
+            bearer_cfg = auth.get("bearer") or {}
+            token = str(bearer_cfg.get("token", ""))
+            token = self._substitute_variables(token)
+            if token:
+                set_header_if_absent("Authorization", f"Bearer {token}")
+            return headers, url
+
+        if auth_type == "basic":
+            basic_cfg = auth.get("basic") or {}
+            username = self._substitute_variables(str(basic_cfg.get("username", "")))
+            password = self._substitute_variables(str(basic_cfg.get("password", "")))
+            credentials = f"{username}:{password}"
+            encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+            set_header_if_absent("Authorization", f"Basic {encoded}")
+            return headers, url
+
+        if auth_type == "apikey":
+            api_key_cfg = auth.get("apiKey") or {}
+            key_name = str(api_key_cfg.get("key", "")).strip()
+            key_value = self._substitute_variables(str(api_key_cfg.get("value", "")))
+            add_to = str(api_key_cfg.get("addTo", "header") or "header").strip().lower()
+
+            if not key_name:
+                return headers, url
+
+            if add_to == "query":
+                if key_value:
+                    separator = "&" if "?" in url else "?"
+                    url = f"{url}{separator}{urlencode({key_name: key_value})}"
+            else:
+                # Default to header placement for any unrecognized addTo value.
+                if key_value:
+                    set_header_if_absent(key_name, key_value)
+            return headers, url
+
+        # Unknown auth type — warn and treat as none.
+        self.logger.warning(
+            "Unknown auth.type '%s' — treating as 'none'", auth_type
+        )
+        return headers, url
+
     def _extract_variables(self, extractors: dict[str, str], response: dict):
         """Extract variables from HTTP response using JSONPath-like syntax"""
         for var_name, var_path in extractors.items():
@@ -1373,13 +1495,15 @@ class WorkflowExecutor:
         config = node.get('config', {})
         method = config.get('method', 'GET')
         url = config.get('url', '')
-        headers_text = config.get('headers', '')
+        headers_field = config.get('headers', '')
         body = config.get('body', '')
         body_type = config.get('bodyType', None)
         timeout = config.get('timeout', 30)
-        query_params_text = config.get('queryParams', '')
-        path_variables_text = config.get('pathVariables', '')
-        cookies_text = config.get('cookies', '')
+        query_params_field = config.get('queryParams', '')
+        path_variables_field = config.get('pathVariables', '')
+        cookies_field = config.get('cookies', '')
+        follow_redirects = config.get('followRedirects', True)
+        ssl_verify = config.get('sslVerify', True)
 
         if not url:
             raise Exception("URL is required for HTTP request")
@@ -1388,12 +1512,12 @@ class WorkflowExecutor:
         url = self._substitute_variables(url, allow_secrets=False)
 
         # Handle path variables (e.g., /users/:userId -> /users/123)
-        path_variables = self._parse_key_value_pairs(path_variables_text, allow_secrets=False)
+        path_variables = self._normalize_key_value_field(path_variables_field, allow_secrets=False)
         for var_name, var_value in path_variables.items():
             url = url.replace(f':{var_name}', var_value)
 
         # Handle query parameters
-        query_params = self._parse_key_value_pairs(query_params_text, allow_secrets=False)
+        query_params = self._normalize_key_value_field(query_params_field, allow_secrets=False)
         if query_params:
             separator = '&' if '?' in url else '?'
             url = f"{url}{separator}{urlencode(query_params)}"
@@ -1411,14 +1535,17 @@ class WorkflowExecutor:
                 "duration": 0,
             }
 
-        # Parse headers
-        headers = self._parse_key_value_pairs(headers_text)
+        # Parse headers (accepts legacy string OR new array format)
+        headers = self._normalize_key_value_field(headers_field)
 
-        # Parse cookies and add to headers
-        cookies = self._parse_key_value_pairs(cookies_text)
+        # Parse cookies (accepts legacy string OR new array format) and add to headers
+        cookies = self._normalize_key_value_field(cookies_field)
         if cookies:
             cookie_header = '; '.join([f"{k}={v}" for k, v in cookies.items()])
             headers['Cookie'] = cookie_header
+
+        # Apply auth config (bearer/basic/apiKey). Config headers win on collision.
+        headers, url = self._apply_auth_to_request(config, headers, url)
 
         # Substitute variables in body
         if body:
@@ -1604,6 +1731,8 @@ class WorkflowExecutor:
                 headers=headers,
                 data=data if method != 'GET' else None,
                 json=json_payload if method != 'GET' else None,
+                follow_redirects=bool(follow_redirects),
+                ssl_verify=bool(ssl_verify),
             )
             try:
                     response_text = await response.text()

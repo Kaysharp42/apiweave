@@ -6,7 +6,6 @@ Verifies:
 - Scoped import dry-run preserves response shape (nodes + stats)
 - All expected scoped routes are registered
 """
-import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -243,10 +242,104 @@ async def test_scoped_openapi_dry_run_preserves_response_shape(monkeypatch: pyte
 
 
 @pytest.mark.asyncio
+async def test_workspace_openapi_url_route_uses_shared_fetch_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.routes import workspaces
+
+    expected_result = {
+        "nodes": [
+            {
+                "nodeId": "http_1",
+                "type": "http-request",
+                "label": "List pets",
+                "config": {"method": "GET", "url": "/pets"},
+            }
+        ],
+        "definitions": [
+            {
+                "name": "Pets API",
+                "specUrl": "https://api.example.com/openapi.json",
+                "status": "imported",
+                "endpointCount": 1,
+                "source": "swagger-ui.html.url",
+            }
+        ],
+        "stats": {
+            "totalEndpoints": 1,
+            "apiTitle": "Pets API",
+            "sourceUrl": "https://api.example.com/docs",
+            "definitionCount": 1,
+            "importedDefinitionCount": 1,
+            "failedDefinitionCount": 0,
+            "primaryName": None,
+        },
+        "warnings": [],
+    }
+    service_result = {
+        "nodes": expected_result["nodes"],
+        "definitions": [
+            {
+                "name": "Pets API",
+                "spec_url": "https://api.example.com/openapi.json",
+                "status": "imported",
+                "endpoint_count": 1,
+                "source": "swagger-ui.html.url",
+            }
+        ],
+        "total_endpoints": 1,
+        "api_title": "Pets API",
+        "source_url": "https://api.example.com/docs",
+        "warnings": [],
+    }
+
+    async def fake_get_verified_workspace(
+        workspace_id: str,
+        actor_user_id: str,
+    ) -> FakeWorkspace:
+        assert workspace_id == "ws-1"
+        assert actor_user_id == "user-1"
+        return FakeWorkspace(workspace_id)
+
+    async def fake_fetch_openapi_from_url(
+        url: str,
+        base_url: str = "",
+        tag_filter: list[str] | None = None,
+        sanitize: bool = True,
+    ) -> dict[str, Any]:
+        assert url == "https://api.example.com/docs"
+        assert base_url == "https://api.example.com"
+        assert tag_filter == ["pets", "stores"]
+        assert sanitize is True
+        return service_result
+
+    monkeypatch.setattr(
+        workspaces,
+        "_get_verified_workspace",
+        fake_get_verified_workspace,
+    )
+    monkeypatch.setattr(
+        "app.services.import_service.fetch_openapi_from_url",
+        fake_fetch_openapi_from_url,
+    )
+
+    result = await workspaces.import_openapi_from_url(
+        workspace_id="ws-1",
+        swagger_url="https://api.example.com/docs",
+        base_url="https://api.example.com",
+        tag_filter="pets,stores",
+        sanitize=True,
+        current_user=FakeUser(),
+    )
+
+    assert result == expected_result
+
+
+@pytest.mark.asyncio
 async def test_scoped_templates_crud(monkeypatch: pytest.MonkeyPatch) -> None:
     """Template CRUD operations work through scoped service."""
     _patch_workspace_access(monkeypatch)
-    fake_wf = _patch_workflow_in_workspace(monkeypatch)
+    _patch_workflow_in_workspace(monkeypatch)
 
     result = await scoped_workflow_service.get_scoped_templates("ws-1", "wf-1", "user-1")
     assert result["workflowId"] == "wf-1"

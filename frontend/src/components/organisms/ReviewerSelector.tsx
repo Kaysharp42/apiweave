@@ -58,7 +58,7 @@ export function ReviewerSelector({
       {/* Selected chips */}
       <div
         className={[
-          'flex flex-wrap gap-1.5 p-2 min-h-[38px] rounded-lg border',
+          'flex flex-wrap gap-1.5 p-2 min-h-[38px] rounded border',
           'border-border dark:border-border-dark',
           'bg-surface-raised dark:bg-surface-dark-raised',
           'cursor-text transition-colors',
@@ -111,7 +111,7 @@ export function ReviewerSelector({
 
       {/* Dropdown */}
       {isOpen && !disabled && (
-        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-lg">
+        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
           {filteredOptions.length === 0 ? (
             <div className="px-3 py-2 text-sm text-text-muted dark:text-text-muted-dark">
               {query ? 'No matching reviewers' : 'All reviewers added'}

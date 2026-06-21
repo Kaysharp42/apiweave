@@ -54,7 +54,7 @@ export function PendingApprovalsList({
         return (
           <div
             key={approval.approvalId}
-            className="flex items-start gap-3 p-3 rounded-lg border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised"
+            className="flex items-start gap-3 p-3 rounded border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised"
           >
             <div className="flex-shrink-0 mt-0.5">
               <div className="w-8 h-8 rounded-full bg-status-warning/10 dark:bg-status-warning/20 flex items-center justify-center">

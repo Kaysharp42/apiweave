@@ -16,6 +16,8 @@ export interface ServiceTokenListProps {
   scopeId: string;
   /** Called after a token action to refresh parent state. */
   onChanged: () => void;
+  onSelect?: ((token: ServiceToken) => void) | undefined;
+  selectedId?: string | undefined;
   className?: string;
 }
 
@@ -64,6 +66,8 @@ export function ServiceTokenList({
   scopeType,
   scopeId,
   onChanged,
+  onSelect,
+  selectedId,
   className = '',
 }: ServiceTokenListProps) {
   const [tokens, setTokens] = useState<ServiceToken[]>([]);
@@ -224,16 +228,30 @@ export function ServiceTokenList({
             const revoked = isRevoked(token.revokedAt);
             const expired = isExpired(token.expiresAt);
             const inactive = revoked || expired;
+            const selected = selectedId === token.tokenId;
 
             return (
               <tr
                 key={token.tokenId}
+                onClick={() => onSelect?.(token)}
+                onKeyDown={(event) => {
+                  if (!onSelect) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onSelect(token);
+                  }
+                }}
+                tabIndex={onSelect ? 0 : undefined}
+                role={onSelect ? 'button' : undefined}
+                aria-pressed={onSelect ? selected : undefined}
                 className={[
-                  'border-b border-border/50 dark:border-border-dark/50 transition-colors',
+                  'border-b border-border/50 dark:border-border-dark/50 transition-colors focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+                  onSelect && 'cursor-pointer',
+                  selected && 'bg-primary/5 dark:bg-primary-light/10',
                   inactive
                     ? 'opacity-50'
                     : 'hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50',
-                ].join(' ')}
+                ].filter(Boolean).join(' ')}
               >
                 <td className="py-2.5 px-3">
                   <div>
@@ -278,7 +296,10 @@ export function ServiceTokenList({
                 </td>
                 <td className="py-2.5 px-3 text-right">
                   {!inactive && (
-                    <div className="flex items-center justify-end gap-1">
+                    <div
+                      className="flex items-center justify-end gap-1"
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       <IconButton
                         tooltip="Narrow permissions"
                         size="xs"

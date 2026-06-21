@@ -8,7 +8,7 @@
  * Pattern: node:test + node:assert (matches the rest of the frontend test suite).
  */
 
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

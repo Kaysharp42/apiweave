@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SecretsPanel from '../components/SecretsPanel';
-import type { Environment } from '../types';
+import type { ScopedEnvironment } from '../types';
 
 vi.mock('../hooks/useSecretValues', () => ({
   deleteScopedSecret: vi.fn().mockResolvedValue(undefined),
@@ -14,7 +14,7 @@ vi.mock('../hooks/useSecretValues', () => ({
   postScopedEncryptedSecret: vi.fn().mockResolvedValue({
     secretId: 'sec-1',
     name: 'API_KEY',
-    scopeType: 'environment',
+  scopeType: 'workspace',
     scopeId: 'env-1',
     keyId: 'test-key-id',
     createdAt: '2026-01-01T00:00:00Z',
@@ -37,11 +37,14 @@ vi.mock('../utils/encryptSecretValue', () => ({
   encryptSecretValue: vi.fn().mockResolvedValue('ZW5jcnlwdGVkLXZhbHVl'),
 }));
 
-const makeEnv = (secrets?: Record<string, string>): Environment => ({
-  id: 'env-1',
+const makeEnv = (secrets?: Record<string, string>): ScopedEnvironment => ({
   environmentId: 'env-1',
   name: 'Test Environment',
-  variables: [],
+  variables: {},
+  scopeType: 'workspace',
+  scopeId: 'env-1',
+  isDefault: false,
+  allowedWorkspaceIds: [],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
   secrets: secrets ?? {},

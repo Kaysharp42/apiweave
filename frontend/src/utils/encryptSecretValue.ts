@@ -8,38 +8,37 @@
 
 import type { SecretPublicKey } from '../types';
 
-let sodiumPromise: Promise<typeof import('libsodium-wrappers')> | null = null;
+type Sodium = typeof import('libsodium-wrappers') & {
+  default: typeof import('libsodium-wrappers');
+};
 
-function loadSodium(): Promise<typeof import('libsodium-wrappers')> {
+let sodiumPromise: Promise<Sodium> | null = null;
+
+function loadSodium(): Promise<Sodium> {
   if (!sodiumPromise) {
     sodiumPromise = import('libsodium-wrappers').then(async (mod) => {
       await mod.ready;
-      return mod;
+      const sodium = mod.default ?? mod;
+      return sodium as Sodium;
     });
   }
   return sodiumPromise;
 }
 
-/**
- * Encrypt a plaintext value with the backend's public key using a
- * libsodium sealed box. Returns the base64-encoded ciphertext.
- *
- * @param plaintext - The secret value to encrypt (ephemeral — not stored).
- * @param publicKeyInfo - The backend's public key + keyId from the API.
- * @returns Base64-encoded sealed-box ciphertext.
- */
 export async function encryptSecretValue(
   plaintext: string,
   publicKeyInfo: SecretPublicKey,
 ): Promise<string> {
   const sodium = await loadSodium();
 
-  const publicKeyBytes = sodium.from_base64(publicKeyInfo.publicKey);
+  const publicKeyBytes = sodium.from_base64(
+    publicKeyInfo.publicKey,
+    sodium.base64_variants.ORIGINAL,
+  );
   const plaintextBytes = sodium.from_string(plaintext);
 
   const encrypted = sodium.crypto_box_seal(plaintextBytes, publicKeyBytes);
 
-  // Zero out plaintext bytes from memory ASAP
   plaintextBytes.fill(0);
 
   return sodium.to_base64(encrypted);

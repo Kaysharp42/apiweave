@@ -22,7 +22,20 @@ def hash_session_token(session_token: str) -> str:
     return hashlib.sha256(session_token.encode()).hexdigest()
 
 
+def is_single_user_mode() -> bool:
+    return settings.DEPLOYMENT_MODE == "single_user"
+
+
 async def get_current_session(request: Request) -> Session:
+    if is_single_user_mode():
+        # No sessions in single-user mode; placeholder for type compat.
+        # Callers that need a real Session (e.g. logout) should branch on
+        # is_single_user_mode() before depending on this.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sessions are disabled in single-user mode",
+        )
+
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_token:
         raise HTTPException(
@@ -48,10 +61,29 @@ async def get_current_session(request: Request) -> Session:
     return session
 
 
-async def get_current_user(
-    request: Request,
-    session: Session = Depends(get_current_session),
-) -> User:
+async def get_current_user(request: Request) -> User:
+    """Resolve the current authenticated user.
+
+    In ``single_user`` mode, returns the synthetic implicit owner (lazily
+    bootstrapped on first call). In ``multi_tenant`` mode, validates the
+    session cookie and loads the corresponding ``User`` document.
+
+    Note: the session lookup is invoked imperatively inside the multi-tenant
+    branch — NOT as a ``Depends()`` default argument — because FastAPI evaluates
+    default-argument dependencies *before* the function body runs. Putting
+    ``get_current_session`` in the signature would raise 404 in single-user
+    mode, where sessions are disabled, before the early-return can fire.
+    """
+    if is_single_user_mode():
+        from app.auth.single_user import get_or_create_implicit_owner
+
+        user = await get_or_create_implicit_owner()
+        request.state.user = user
+        return user
+
+    # multi_tenant: resolve session imperatively so single_user can short-circuit
+    # above without paying the cost (or the 404) of the session lookup.
+    session = await get_current_session(request)
     await SessionRepository.touch(session.sessionId, datetime.now(UTC))
 
     user = await UserRepository.get_by_id(session.userId)
@@ -118,6 +150,11 @@ def require_scoped_permission(resource: str, action: str):
 
 
 async def csrf_protect(request: Request) -> None:
+    if is_single_user_mode():
+        # No sessions = no CSRF surface. State-changing requests are
+        # implicitly authorized by get_current_user returning the owner.
+        return
+
     if request.method.upper() not in STATE_CHANGING_METHODS:
         return
 
