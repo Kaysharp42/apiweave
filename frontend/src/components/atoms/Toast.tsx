@@ -1,4 +1,4 @@
-import { Toaster } from 'sonner';
+import { Toaster } from "sonner";
 
 export function Toast() {
   return (
@@ -6,9 +6,10 @@ export function Toast() {
       position="top-right"
       toastOptions={{
         duration: 4000,
-        className: 'font-sans text-sm rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark shadow-popover',
+        className:
+          "font-sans text-sm rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark shadow-popover",
         style: {
-          fontFamily: 'inherit',
+          fontFamily: "inherit",
         },
       }}
       theme="system"

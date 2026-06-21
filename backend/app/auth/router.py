@@ -470,9 +470,7 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
         expires_at=datetime.now(UTC) + timedelta(minutes=10),
         invite_token=invite_token,
     )
-    login_url = create_login_url(
-        provider_config, state, nonce, code_challenge, redirect_uri
-    )
+    login_url = create_login_url(provider_config, state, nonce, code_challenge, redirect_uri)
     return RedirectResponse(login_url, status_code=status.HTTP_302_FOUND)
 
 
@@ -670,7 +668,6 @@ async def csrf_token(response: Response) -> dict[str, str]:
     return {"csrfToken": token}
 
 
-
 class CreateInviteRequest(BaseModel):
     email: str
     roles: list[str]
@@ -752,7 +749,6 @@ async def list_invites() -> list[InviteResponse]:
         )
         for inv in invites
     ]
-
 
 
 class ApprovedDomainResponse(BaseModel):

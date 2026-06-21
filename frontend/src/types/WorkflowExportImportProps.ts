@@ -1,4 +1,4 @@
-import type { WorkflowExportImportTab } from './WorkflowExportImportTab';
+import type { WorkflowExportImportTab } from "./WorkflowExportImportTab";
 
 export interface WorkflowExportImportProps {
   workflowId?: string | null;

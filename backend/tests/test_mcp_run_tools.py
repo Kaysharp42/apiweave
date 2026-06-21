@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from app.mcp.tools import runs as run_tools
 
 
@@ -19,12 +18,11 @@ async def test_workflow_run_returns_polling_hint_without_secret_echo(
     async def fake_trigger_workflow_run(
         workflow_id: str,
         environment_id: str | None = None,
-        runtime_secrets: dict[str, str] | None = None,
         resume: dict[str, Any] | None = None,
+        workspace_id: str | None = None,
     ) -> dict[str, Any]:
         assert workflow_id == "wf-1"
         assert environment_id == "env-1"
-        assert runtime_secrets == {"API_KEY": "super-secret-value"}
         assert resume is None
         return {
             "message": "Workflow run triggered",
@@ -35,7 +33,6 @@ async def test_workflow_run_returns_polling_hint_without_secret_echo(
             "resumeFromRunId": None,
             "startNodeIds": None,
             "status": "pending",
-            "runtimeSecretCount": 1,
             "polling": {
                 "tool": "run_get_status",
                 "recommendedIntervalSeconds": 1,
@@ -46,18 +43,37 @@ async def test_workflow_run_returns_polling_hint_without_secret_echo(
 
     monkeypatch.setattr(run_tools, "ensure_mcp_database", _noop_database)
     monkeypatch.setattr(run_tools, "svc_trigger_workflow_run", fake_trigger_workflow_run)
+    from app.mcp.scope_context import McpScopeContext, clear_scope, set_scope
 
-    response = await run_tools.workflow_run(
-        "wf-1",
-        environment_id="env-1",
-        runtime_secrets={"API_KEY": "super-secret-value"},
+    test_scope = McpScopeContext(
+        actor_type="service_token",
+        actor_id="token-test",
+        scope_type="workspace",
+        scope_id="ws-test",
+        permissions=["workflows.run"],
+    )
+    set_scope(test_scope)
+
+    async def fake_get_scoped_workflow(workspace_id, workflow_id, actor_user_id):
+        return {"workflowId": workflow_id, "name": "Test"}
+
+    monkeypatch.setattr(
+        "app.services.scoped_workflow_service.get_scoped_workflow",
+        fake_get_scoped_workflow,
     )
 
-    response_json = response.model_dump_json()
-    assert response.run_id == "run-1"
-    assert response.runtime_secret_count == 1
-    assert response.polling_hint.tool == "run_get_status"
-    assert "super-secret-value" not in response_json
+    try:
+        response = await run_tools.workflow_run(
+            "wf-1",
+            environment_id="env-1",
+        )
+
+        response_json = response.model_dump_json()
+        assert response.run_id == "run-1"
+        assert response.polling_hint.tool == "run_get_status"
+        assert "super-secret-value" not in response_json
+    finally:
+        clear_scope()
 
 
 @pytest.mark.asyncio

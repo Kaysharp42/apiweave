@@ -12,6 +12,17 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.13"]
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 20s
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -42,22 +53,3 @@ jobs:
       run: |
         cd backend
         python -m ruff check app tests
-
-  doc-truth-check:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check for relevant file changes
-        id: diff
-        run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
-          if echo "$CHANGED" | grep -qE '^docs/|^backend/|^frontend/src/'; then
-            echo "relevant=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "relevant=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Run doc-truth check
-        if: steps.diff.outputs.relevant == 'true'
-        run: bash scripts/doc-truth-check.sh

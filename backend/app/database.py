@@ -1,6 +1,7 @@
 """
 MongoDB database connection and utilities with Beanie ODM
 """
+
 import logging
 
 from beanie import init_beanie
@@ -94,7 +95,7 @@ async def connect_db():
             OrgInvite,
             TeamPermissionGrant,
             PendingRunApproval,
-        ]
+        ],
     )
 
     logger.info("Connected to MongoDB: %s", settings.MONGODB_DB_NAME)

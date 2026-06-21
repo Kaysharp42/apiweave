@@ -24,55 +24,95 @@
  *   });
  */
 
-import type { User } from '../../types/User.ts';
-import type { DeploymentMode } from '../../types/DeploymentMode.ts';
+import type { User } from "../../types/User.ts";
+import type { DeploymentMode } from "../../types/DeploymentMode.ts";
 
 // ---------------------------------------------------------------------------
 // Stable test user IDs — use in assertions to avoid magic strings
 // ---------------------------------------------------------------------------
 
-export const FIXTURE_ADMIN_USER_ID = 'fixture-admin-1';
-export const FIXTURE_EDITOR_USER_ID = 'fixture-editor-1';
-export const FIXTURE_VIEWER_USER_ID = 'fixture-viewer-1';
-export const FIXTURE_SINGLE_USER_OWNER_ID = 'usr-single-user-owner';
+export const FIXTURE_ADMIN_USER_ID = "fixture-admin-1";
+export const FIXTURE_EDITOR_USER_ID = "fixture-editor-1";
+export const FIXTURE_VIEWER_USER_ID = "fixture-viewer-1";
+export const FIXTURE_SINGLE_USER_OWNER_ID = "usr-single-user-owner";
 
 // ---------------------------------------------------------------------------
 // Canonical permission sets (mirrors backend ROLE_PRESETS)
 // ---------------------------------------------------------------------------
 
 const ADMIN_PERMISSIONS: string[] = [
-  'workflows:create', 'workflows:read', 'workflows:update', 'workflows:delete',
-  'workflows:run', 'workflows:export', 'workflows:import',
-  'collections:create', 'collections:read', 'collections:update', 'collections:delete',
-  'collections:run', 'collections:export', 'collections:import',
-  'environments:create', 'environments:read', 'environments:update', 'environments:delete',
-  'environments:set_secret',
-  'webhooks:create', 'webhooks:read', 'webhooks:update', 'webhooks:delete',
-  'webhooks:rotate', 'webhooks:execute',
-  'users:read', 'users:invite', 'users:update_role', 'users:delete',
-  'settings:read', 'settings:update',
-  'runs:read', 'runs:cancel',
+  "workflows:create",
+  "workflows:read",
+  "workflows:update",
+  "workflows:delete",
+  "workflows:run",
+  "workflows:export",
+  "workflows:import",
+  "collections:create",
+  "collections:read",
+  "collections:update",
+  "collections:delete",
+  "collections:run",
+  "collections:export",
+  "collections:import",
+  "environments:create",
+  "environments:read",
+  "environments:update",
+  "environments:delete",
+  "environments:set_secret",
+  "webhooks:create",
+  "webhooks:read",
+  "webhooks:update",
+  "webhooks:delete",
+  "webhooks:rotate",
+  "webhooks:execute",
+  "users:read",
+  "users:invite",
+  "users:update_role",
+  "users:delete",
+  "settings:read",
+  "settings:update",
+  "runs:read",
+  "runs:cancel",
 ];
 
 const EDITOR_PERMISSIONS: string[] = [
-  'workflows:create', 'workflows:read', 'workflows:update', 'workflows:delete',
-  'workflows:run', 'workflows:export', 'workflows:import',
-  'collections:create', 'collections:read', 'collections:update', 'collections:delete',
-  'collections:run', 'collections:export', 'collections:import',
-  'environments:create', 'environments:read', 'environments:update', 'environments:delete',
-  'environments:set_secret',
-  'webhooks:create', 'webhooks:read', 'webhooks:update', 'webhooks:delete',
-  'webhooks:rotate', 'webhooks:execute',
-  'runs:read', 'runs:cancel',
+  "workflows:create",
+  "workflows:read",
+  "workflows:update",
+  "workflows:delete",
+  "workflows:run",
+  "workflows:export",
+  "workflows:import",
+  "collections:create",
+  "collections:read",
+  "collections:update",
+  "collections:delete",
+  "collections:run",
+  "collections:export",
+  "collections:import",
+  "environments:create",
+  "environments:read",
+  "environments:update",
+  "environments:delete",
+  "environments:set_secret",
+  "webhooks:create",
+  "webhooks:read",
+  "webhooks:update",
+  "webhooks:delete",
+  "webhooks:rotate",
+  "webhooks:execute",
+  "runs:read",
+  "runs:cancel",
   // NOTE: no users:invite, users:update_role, users:delete, settings:update
 ];
 
 const VIEWER_PERMISSIONS: string[] = [
-  'workflows:read',
-  'collections:read',
-  'environments:read',
-  'webhooks:read',
-  'runs:read',
+  "workflows:read",
+  "collections:read",
+  "environments:read",
+  "webhooks:read",
+  "runs:read",
 ];
 
 // ---------------------------------------------------------------------------
@@ -88,10 +128,7 @@ interface MockFetchHandle {
  * Replaces globalThis.fetch with a function that returns a fixed response
  * for `/api/auth/me` and passes all other requests through to the original.
  */
-function _mockAuthMe(
-  status: number,
-  body: unknown,
-): MockFetchHandle {
+function _mockAuthMe(status: number, body: unknown): MockFetchHandle {
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = async (
@@ -99,17 +136,21 @@ function _mockAuthMe(
     init: RequestInit = {},
   ): Promise<Response> => {
     const url = String(input);
-    if (url.includes('/api/auth/me')) {
+    if (url.includes("/api/auth/me")) {
       return new Response(JSON.stringify(body), {
         status,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
       });
     }
     // Pass through all other requests to the original fetch
     return originalFetch(input, init);
   };
 
-  return { restore: () => { globalThis.fetch = originalFetch; } };
+  return {
+    restore: () => {
+      globalThis.fetch = originalFetch;
+    },
+  };
 }
 
 /**
@@ -124,16 +165,20 @@ function _mockAuthMode(mode: DeploymentMode): MockFetchHandle {
     init: RequestInit = {},
   ): Promise<Response> => {
     const url = String(input);
-    if (url.includes('/api/auth/mode')) {
+    if (url.includes("/api/auth/mode")) {
       return new Response(JSON.stringify({ mode }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
       });
     }
     return originalFetch(input, init);
   };
 
-  return { restore: () => { globalThis.fetch = originalFetch; } };
+  return {
+    restore: () => {
+      globalThis.fetch = originalFetch;
+    },
+  };
 }
 
 function _makeUser(
@@ -151,7 +196,7 @@ function _makeUser(
     permissions,
     oauth_accounts: [],
     is_setup_complete: isSetupComplete,
-    created_at: '2026-01-01T00:00:00Z',
+    created_at: "2026-01-01T00:00:00Z",
   };
 }
 
@@ -165,7 +210,7 @@ function _makeUser(
  * Use to test logged-out state: redirect to login, protected routes blocked, etc.
  */
 export function mockUnauthenticated(): MockFetchHandle {
-  return _mockAuthMe(401, { detail: 'Not authenticated' });
+  return _mockAuthMe(401, { detail: "Not authenticated" });
 }
 
 /**
@@ -176,7 +221,7 @@ export function mockUnauthenticated(): MockFetchHandle {
 export function mockAdmin(
   userId: string = FIXTURE_ADMIN_USER_ID,
 ): MockFetchHandle {
-  const user = _makeUser(userId, ['admin'], ADMIN_PERMISSIONS);
+  const user = _makeUser(userId, ["admin"], ADMIN_PERMISSIONS);
   return _mockAuthMe(200, user);
 }
 
@@ -189,7 +234,7 @@ export function mockAdmin(
 export function mockEditor(
   userId: string = FIXTURE_EDITOR_USER_ID,
 ): MockFetchHandle {
-  const user = _makeUser(userId, ['editor'], EDITOR_PERMISSIONS);
+  const user = _makeUser(userId, ["editor"], EDITOR_PERMISSIONS);
   return _mockAuthMe(200, user);
 }
 
@@ -201,7 +246,7 @@ export function mockEditor(
 export function mockViewer(
   userId: string = FIXTURE_VIEWER_USER_ID,
 ): MockFetchHandle {
-  const user = _makeUser(userId, ['viewer'], VIEWER_PERMISSIONS);
+  const user = _makeUser(userId, ["viewer"], VIEWER_PERMISSIONS);
   return _mockAuthMe(200, user);
 }
 
@@ -211,7 +256,7 @@ export function mockViewer(
  * Use to test the setup flow: SetupPage shown, no access to main app.
  */
 export function mockSetupMode(): MockFetchHandle {
-  const user = _makeUser('fixture-setup-1', [], [], false);
+  const user = _makeUser("fixture-setup-1", [], [], false);
   return _mockAuthMe(200, user);
 }
 
@@ -221,15 +266,15 @@ export function mockSetupMode(): MockFetchHandle {
 // ---------------------------------------------------------------------------
 
 export function buildAdminUser(userId: string = FIXTURE_ADMIN_USER_ID): User {
-  return _makeUser(userId, ['admin'], ADMIN_PERMISSIONS);
+  return _makeUser(userId, ["admin"], ADMIN_PERMISSIONS);
 }
 
 export function buildEditorUser(userId: string = FIXTURE_EDITOR_USER_ID): User {
-  return _makeUser(userId, ['editor'], EDITOR_PERMISSIONS);
+  return _makeUser(userId, ["editor"], EDITOR_PERMISSIONS);
 }
 
 export function buildViewerUser(userId: string = FIXTURE_VIEWER_USER_ID): User {
-  return _makeUser(userId, ['viewer'], VIEWER_PERMISSIONS);
+  return _makeUser(userId, ["viewer"], VIEWER_PERMISSIONS);
 }
 
 /**

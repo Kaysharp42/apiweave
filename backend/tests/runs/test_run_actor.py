@@ -8,13 +8,12 @@ Scenario: Workspace owns run while actor is service token.
 - Verify audit event recorded with correct actor.
 - Verify run metadata response includes workspace and actor fields.
 """
-from datetime import UTC, datetime
+
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
 from app.models import RunActorContext
 from app.services import run_service
 
@@ -100,9 +99,7 @@ async def test_workspace_owns_run_while_actor_is_service_token(
     FakeRun.inserted = {}
     FakeRun.saved_updates = []
     monkeypatch.setattr(run_service, "WorkflowRepository", FakeWorkflowRepository)
-    monkeypatch.setattr(
-        run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository
-    )
+    monkeypatch.setattr(run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository)
     monkeypatch.setattr(run_service, "EnvironmentRepository", FakeEnvironmentRepository)
     monkeypatch.setattr(run_service, "WorkspaceRepository", FakeWorkspaceRepository)
     monkeypatch.setattr(run_service, "audit_service", FakeAuditService)
@@ -179,9 +176,7 @@ async def test_run_without_actor_still_works(
     FakeRun.inserted = {}
     FakeRun.saved_updates = []
     monkeypatch.setattr(run_service, "WorkflowRepository", FakeWorkflowRepository)
-    monkeypatch.setattr(
-        run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository
-    )
+    monkeypatch.setattr(run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository)
     monkeypatch.setattr(run_service, "EnvironmentRepository", FakeEnvironmentRepository)
     monkeypatch.setattr(run_service.models, "Run", FakeRun)
     _patch_background_task(monkeypatch)
@@ -250,9 +245,7 @@ async def test_run_with_user_actor(
     FakeRun.inserted = {}
     FakeRun.saved_updates = []
     monkeypatch.setattr(run_service, "WorkflowRepository", FakeWorkflowRepository)
-    monkeypatch.setattr(
-        run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository
-    )
+    monkeypatch.setattr(run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository)
     monkeypatch.setattr(run_service, "EnvironmentRepository", FakeEnvironmentRepository)
     monkeypatch.setattr(run_service, "WorkspaceRepository", FakeWorkspaceRepository)
     monkeypatch.setattr(run_service, "audit_service", FakeAuditService)

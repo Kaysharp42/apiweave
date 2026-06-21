@@ -1,2 +1,1 @@
-export interface WorkspaceProps {
-}
+export interface WorkspaceProps {}

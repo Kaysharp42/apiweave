@@ -1,4 +1,4 @@
-import type { ScopedEnvironment } from './ScopedEnvironment';
+import type { ScopedEnvironment } from "./ScopedEnvironment";
 
 export interface SecretsPanelProps {
   isOpen: boolean;

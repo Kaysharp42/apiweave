@@ -5,14 +5,13 @@ Defines DTOs for webhook create/list/get/update/delete, credential rotation, and
 Enforces one-time credential return only for create/rotation responses.
 All normal read responses redact token and HMAC secret values.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
-
-from app.mcp.contracts import REDACTION_PLACEHOLDER
 
 
 class WebhookSummary(BaseModel):
@@ -57,7 +56,9 @@ class WebhookCredentialResponse(BaseModel):
     webhook_id: str = Field(alias="webhookId")
     url: str
     token: str = Field(description="⚠️ One-time display — save immediately!")
-    hmac_secret: str = Field(alias="hmacSecret", description="⚠️ One-time display — save immediately!")
+    hmac_secret: str = Field(
+        alias="hmacSecret", description="⚠️ One-time display — save immediately!"
+    )
     one_time_display: bool = Field(
         default=True,
         description="WARNING: These credentials are shown ONLY ONCE. Save them now.",
@@ -137,7 +138,9 @@ def webhook_to_summary(webhook: Any) -> WebhookSummary:
 
 def webhook_to_detail(webhook: Any, base_url: str) -> WebhookDetail:
     """Convert a webhook document to a redacted detail DTO."""
-    resource_type_path = "workflows" if getattr(webhook, "resourceType") == "workflow" else "collections"
+    resource_type_path = (
+        "workflows" if getattr(webhook, "resourceType") == "workflow" else "collections"
+    )
     return WebhookDetail(
         webhookId=getattr(webhook, "webhookId"),
         url=f"{base_url}/api/webhooks/{resource_type_path}/{webhook.webhookId}/execute",

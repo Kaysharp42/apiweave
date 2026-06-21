@@ -3,15 +3,14 @@ import time
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from app.auth.permissions import WEBHOOKS_READ
 from app.middleware.webhook_auth import generate_hmac_signature
 from app.models import Session, User, Webhook
 from app.repositories import WebhookRepository
 from app.repositories.auth_repositories import SessionRepository, UserRepository
 from app.routes import webhooks
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def route_client() -> TestClient:
@@ -122,10 +121,15 @@ def test_webhook_management_user_permission_returns_2xx() -> None:
     user = make_user(permissions=[WEBHOOKS_READ])
     session_patch, touch_patch, user_patch = authenticated_patches(user)
 
-    with session_patch, touch_patch, user_patch, patch.object(
-        WebhookRepository,
-        "get_by_resource",
-        new=AsyncMock(return_value=[]),
+    with (
+        session_patch,
+        touch_patch,
+        user_patch,
+        patch.object(
+            WebhookRepository,
+            "get_by_resource",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         response = client.get("/api/webhooks/workflows/wf-123")
 

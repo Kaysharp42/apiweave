@@ -1,6 +1,6 @@
-import type { User } from './User';
-import type { AuthStatus } from './AuthStatus';
-import type { DeploymentMode } from './DeploymentMode';
+import type { User } from "./User";
+import type { AuthStatus } from "./AuthStatus";
+import type { DeploymentMode } from "./DeploymentMode";
 
 export interface UseAuthReturn {
   user: User | null;

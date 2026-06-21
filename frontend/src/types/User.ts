@@ -1,4 +1,4 @@
-import type { OAuthAccount } from './OAuthAccount';
+import type { OAuthAccount } from "./OAuthAccount";
 
 export interface User {
   userId: string;

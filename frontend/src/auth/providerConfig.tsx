@@ -1,10 +1,15 @@
-import type { SVGProps } from 'react';
-import { Fingerprint, Github, Gitlab } from 'lucide-react';
-import type { ProviderInfo } from '../types';
-import type { ProviderId, ProviderDisplay } from '../types';
+import type { SVGProps } from "react";
+import { Fingerprint, Github, Gitlab } from "lucide-react";
+import type { ProviderInfo } from "../types";
+import type { ProviderId, ProviderDisplay } from "../types";
 
 export type { ProviderId, ProviderDisplay };
-export const PROVIDER_IDS = ['github', 'gitlab', 'google', 'microsoft'] as const;
+export const PROVIDER_IDS = [
+  "github",
+  "gitlab",
+  "google",
+  "microsoft",
+] as const;
 
 type ProviderIconProps = SVGProps<SVGSVGElement>;
 
@@ -21,23 +26,23 @@ function GoogleIcon(props: ProviderIconProps) {
 
 export const PROVIDER_DISPLAY_MAP: Record<ProviderId, ProviderDisplay> = {
   github: {
-    id: 'github',
-    label: 'Continue with GitHub',
+    id: "github",
+    label: "Continue with GitHub",
     IconComponent: Github,
   },
   gitlab: {
-    id: 'gitlab',
-    label: 'Continue with GitLab',
+    id: "gitlab",
+    label: "Continue with GitLab",
     IconComponent: Gitlab,
   },
   google: {
-    id: 'google',
-    label: 'Continue with Google',
+    id: "google",
+    label: "Continue with Google",
     IconComponent: GoogleIcon,
   },
   microsoft: {
-    id: 'microsoft',
-    label: 'Continue with Microsoft',
+    id: "microsoft",
+    label: "Continue with Microsoft",
     IconComponent: Fingerprint,
   },
 };
@@ -46,7 +51,9 @@ export function getProviderDisplay(id: string): ProviderDisplay | undefined {
   return PROVIDER_DISPLAY_MAP[id as ProviderId];
 }
 
-export function getEnabledProviders(availability: ProviderInfo[]): ProviderDisplay[] {
+export function getEnabledProviders(
+  availability: ProviderInfo[],
+): ProviderDisplay[] {
   return availability.reduce<ProviderDisplay[]>((providers, provider) => {
     if (!provider.enabled) return providers;
     const display = getProviderDisplay(provider.id);

@@ -1,4 +1,4 @@
-import type { FileUpload } from './FileUpload';
+import type { FileUpload } from "./FileUpload";
 
 export interface FileUploadSectionProps {
   fileUploads?: FileUpload[];

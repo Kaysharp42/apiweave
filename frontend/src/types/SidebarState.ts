@@ -1,6 +1,6 @@
-import type { Workflow } from './Workflow';
-import type { Collection } from './Collection';
-import type { PaginationState } from './PaginationState';
+import type { Workflow } from "./Workflow";
+import type { Collection } from "./Collection";
+import type { PaginationState } from "./PaginationState";
 
 export interface SidebarState {
   workflows: Workflow[];
@@ -14,7 +14,12 @@ export interface SidebarState {
   setSearchQuery: (q: string) => void;
   signalWorkflowsRefresh: () => void;
   signalCollectionsRefresh: () => void;
-  fetchWorkflows: (skip?: number, append?: boolean, limit?: number, endpoint?: string) => Promise<void>;
+  fetchWorkflows: (
+    skip?: number,
+    append?: boolean,
+    limit?: number,
+    endpoint?: string,
+  ) => Promise<void>;
   fetchCollections: () => Promise<void>;
   refreshAll: (selectedNav: string) => Promise<void>;
   setIsRefreshing: (v: boolean) => void;

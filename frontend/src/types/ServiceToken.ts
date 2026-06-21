@@ -7,7 +7,7 @@ export interface ServiceToken {
   tokenId: string;
   name: string;
   description?: string;
-  scopeType: 'workspace' | 'organization';
+  scopeType: "workspace" | "organization";
   scopeId: string;
   permissions: string[];
   createdBy: string;

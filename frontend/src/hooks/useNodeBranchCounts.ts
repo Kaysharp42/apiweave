@@ -1,12 +1,14 @@
-import { useEffect } from 'react';
-import type { Node, Edge } from 'reactflow';
-import type { WorkflowCanvasNodeData } from '../types/WorkflowCanvasNodeData';
-import type { WorkflowCanvasEdgeData } from '../types/WorkflowCanvasEdgeData';
+import { useEffect } from "react";
+import type { Node, Edge } from "reactflow";
+import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
+import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 
 interface UseNodeBranchCountsParams {
   edges: Edge<WorkflowCanvasEdgeData>[];
   nodes: Node<WorkflowCanvasNodeData>[];
-  setNodes: React.Dispatch<React.SetStateAction<Node<WorkflowCanvasNodeData>[]>>;
+  setNodes: React.Dispatch<
+    React.SetStateAction<Node<WorkflowCanvasNodeData>[]>
+  >;
 }
 
 export function useNodeBranchCounts({
@@ -16,13 +18,13 @@ export function useNodeBranchCounts({
 }: UseNodeBranchCountsParams) {
   useEffect(() => {
     const branchCounts: Record<string, number> = {};
-    edges.forEach(edge => {
+    edges.forEach((edge) => {
       branchCounts[edge.source] = (branchCounts[edge.source] || 0) + 1;
     });
 
     const incomingCounts: Record<string, number> = {};
     const incomingEdgesMap: Record<string, Edge<WorkflowCanvasEdgeData>[]> = {};
-    edges.forEach(edge => {
+    edges.forEach((edge) => {
       incomingCounts[edge.target] = (incomingCounts[edge.target] || 0) + 1;
       if (!incomingEdgesMap[edge.target]) {
         incomingEdgesMap[edge.target] = [];
@@ -31,8 +33,22 @@ export function useNodeBranchCounts({
     });
 
     const branchesEqual = (
-      left: Array<{ index: number; nodeId: string; label: string; edgeLabel: string }> | undefined,
-      right: Array<{ index: number; nodeId: string; label: string; edgeLabel: string }> | undefined,
+      left:
+        | Array<{
+            index: number;
+            nodeId: string;
+            label: string;
+            edgeLabel: string;
+          }>
+        | undefined,
+      right:
+        | Array<{
+            index: number;
+            nodeId: string;
+            label: string;
+            edgeLabel: string;
+          }>
+        | undefined,
     ): boolean => {
       if (left === right) return true;
       if (!left || !right) return false;
@@ -52,9 +68,9 @@ export function useNodeBranchCounts({
       return true;
     };
 
-    setNodes(nds => {
+    setNodes((nds) => {
       let didChange = false;
-      const nextNodes = nds.map(node => {
+      const nextNodes = nds.map((node) => {
         const nextBranchCount = branchCounts[node.id] || 0;
         const nextIncomingBranchCount = incomingCounts[node.id] || 0;
         const prevData = node.data || {};
@@ -62,17 +78,20 @@ export function useNodeBranchCounts({
         let nextIncomingBranches = prevData.incomingBranches;
         let incomingBranchesChanged = false;
 
-        if (node.type === 'merge' && incomingEdgesMap[node.id]) {
+        if (node.type === "merge" && incomingEdgesMap[node.id]) {
           nextIncomingBranches = incomingEdgesMap[node.id]!.map((edge, idx) => {
-            const sourceNode = nds.find(n => n.id === edge.source);
+            const sourceNode = nds.find((n) => n.id === edge.source);
             return {
               index: idx,
               nodeId: edge.source,
               label: sourceNode?.data?.label || edge.source,
-              edgeLabel: (edge.label as string) || `Branch ${idx}`
+              edgeLabel: (edge.label as string) || `Branch ${idx}`,
             };
           });
-          incomingBranchesChanged = !branchesEqual(prevData.incomingBranches, nextIncomingBranches);
+          incomingBranchesChanged = !branchesEqual(
+            prevData.incomingBranches,
+            nextIncomingBranches,
+          );
         }
 
         const baseChanged =
@@ -90,8 +109,10 @@ export function useNodeBranchCounts({
             ...prevData,
             branchCount: nextBranchCount,
             incomingBranchCount: nextIncomingBranchCount,
-            ...(incomingBranchesChanged ? { incomingBranches: nextIncomingBranches } : {})
-          }
+            ...(incomingBranchesChanged
+              ? { incomingBranches: nextIncomingBranches }
+              : {}),
+          },
         };
       });
 

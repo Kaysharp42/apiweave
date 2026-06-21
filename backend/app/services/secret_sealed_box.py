@@ -10,6 +10,7 @@ The private key is derived deterministically from ``settings.SECRET_ENCRYPTION_K
 so it survives restarts without separate storage. In production you would
 store the keypair in a vault; here we derive it from the existing master key.
 """
+
 from __future__ import annotations
 
 import base64

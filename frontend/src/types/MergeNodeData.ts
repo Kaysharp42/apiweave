@@ -1,6 +1,6 @@
-import type { NodeStatus } from './NodeStatus';
-import type { BranchInfo } from './BranchInfo';
-import type { MergeResult } from './MergeResult';
+import type { NodeStatus } from "./NodeStatus";
+import type { BranchInfo } from "./BranchInfo";
+import type { MergeResult } from "./MergeResult";
 
 export interface MergeNodeData {
   label?: string;

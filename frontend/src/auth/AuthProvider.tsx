@@ -5,13 +5,16 @@ import {
   useEffect,
   useCallback,
   type ReactNode,
-} from 'react';
-import type { User } from '../types/User';
-import type { AuthStatus } from '../types/AuthState';
-import type { DeploymentMode } from '../types/DeploymentMode';
-import { authenticatedFetch, authenticatedJson } from '../utils/authenticatedApi';
-import API_BASE_URL from '../utils/api';
-import type { AuthContextValue } from '../types';
+} from "react";
+import type { User } from "../types/User";
+import type { AuthStatus } from "../types/AuthState";
+import type { DeploymentMode } from "../types/DeploymentMode";
+import {
+  authenticatedFetch,
+  authenticatedJson,
+} from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/api";
+import type { AuthContextValue } from "../types";
 
 // ---------------------------------------------------------------------------
 // Context shape
@@ -29,25 +32,26 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
-  const [status, setStatus] = useState<AuthStatus>('loading');
+  const [status, setStatus] = useState<AuthStatus>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('multi_tenant');
+  const [deploymentMode, setDeploymentMode] =
+    useState<DeploymentMode>("multi_tenant");
   const [modeLoaded, setModeLoaded] = useState(false);
 
   const fetchMe = useCallback(async () => {
-    setStatus('loading');
+    setStatus("loading");
     setError(null);
     try {
       const me = await authenticatedJson<User>(`${API_BASE_URL}/api/auth/me`);
       setUser(me);
-      setStatus('authenticated');
+      setStatus("authenticated");
     } catch (err) {
       setUser(null);
       // Default to unauthenticated. The mode-aware gate in
       // ProtectedRoute/LoginEntry/AdminRoute will not act on this state
       // until modeLoaded is true, so a stale deploymentMode cannot
       // trigger a redirect race.
-      setStatus('unauthenticated');
+      setStatus("unauthenticated");
       if (err instanceof Error) {
         setError(err.message);
       }
@@ -62,7 +66,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setDeploymentMode(mode.mode);
     } catch {
       // Safe default: treat unreachable as multi_tenant (preserves auth UI).
-      setDeploymentMode('multi_tenant');
+      setDeploymentMode("multi_tenant");
     } finally {
       setModeLoaded(true);
     }
@@ -76,19 +80,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const login = useCallback((provider: string, inviteToken?: string) => {
     const url = new URL(`${API_BASE_URL}/api/auth/login/${provider}`);
     if (inviteToken) {
-      url.searchParams.set('invite_token', inviteToken);
+      url.searchParams.set("invite_token", inviteToken);
     }
     window.location.href = url.toString();
   }, []);
 
   const logout = useCallback(async () => {
     try {
-      await authenticatedFetch(`${API_BASE_URL}/api/auth/logout`, { method: 'POST' });
+      await authenticatedFetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: "POST",
+      });
     } catch {
       // ignore logout errors — clear state regardless
     }
     setUser(null);
-    setStatus('unauthenticated');
+    setStatus("unauthenticated");
     setError(null);
   }, []);
 
@@ -120,7 +126,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 export function useAuthContext(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) {
-    throw new Error('useAuthContext must be used within an AuthProvider');
+    throw new Error("useAuthContext must be used within an AuthProvider");
   }
   return ctx;
 }

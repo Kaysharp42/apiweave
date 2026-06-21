@@ -1,4 +1,7 @@
-import type { ScopedEnvironment, EnvironmentScopeType } from './ScopedEnvironment';
+import type {
+  ScopedEnvironment,
+  EnvironmentScopeType,
+} from "./ScopedEnvironment";
 
 export interface ScopedEnvironmentListProps {
   /** Environments to display, already filtered by scope. */

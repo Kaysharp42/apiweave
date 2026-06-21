@@ -5,6 +5,7 @@ GitHub-style nested route structure for user/org/workspace environments.
 Each run selects exactly one environment (defaulting to workspace default).
 Org environments support allowed-workspace policy.
 """
+
 from __future__ import annotations
 
 import logging
@@ -541,10 +542,6 @@ async def duplicate_workspace_environment(
         raise
 
 
-
-
-
-
 @router.get(
     "/api/workspaces/{workspace_id}/environments/{environment_id}/protection",
     response_model=EnvironmentProtection | dict[str, str],
@@ -622,6 +619,3 @@ async def delete_environment_protection(
     except Exception as exc:
         _handle_service_error(exc)
         raise
-
-
-

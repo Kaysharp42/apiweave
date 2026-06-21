@@ -1,10 +1,10 @@
-import { LogOut, User as UserIcon, KeyRound, Loader2 } from 'lucide-react';
-import { useAuth } from '../auth/useAuth';
-import { useSignOut } from '../hooks/useSignOut';
-import { Button } from '../components/atoms/Button';
-import { Card } from '../components/molecules/Card';
-import { getProviderDisplay } from '../auth/providerConfig';
-import type { ProviderId } from '../types';
+import { LogOut, User as UserIcon, KeyRound, Loader2 } from "lucide-react";
+import { useAuth } from "../auth/useAuth";
+import { useSignOut } from "../hooks/useSignOut";
+import { Button } from "../components/atoms/Button";
+import { Card } from "../components/molecules/Card";
+import { getProviderDisplay } from "../auth/providerConfig";
+import type { ProviderId } from "../types";
 
 function AccountCardIcon({ className }: { className?: string }) {
   return <UserIcon className={className} />;
@@ -14,17 +14,25 @@ function AccountCardIcon({ className }: { className?: string }) {
  * Derive the primary sign-in provider from a user's oauth_accounts.
  * Returns 'local' when the user has a local account or no OAuth accounts.
  */
-function resolveProvider(oauthAccounts: Array<{ provider: string }> | undefined): 'local' | ProviderId {
-  if (!oauthAccounts || oauthAccounts.length === 0) return 'local';
-  const localAccount = oauthAccounts.find((a) => a.provider === 'local');
-  if (localAccount) return 'local';
+function resolveProvider(
+  oauthAccounts: Array<{ provider: string }> | undefined,
+): "local" | ProviderId {
+  if (!oauthAccounts || oauthAccounts.length === 0) return "local";
+  const localAccount = oauthAccounts.find((a) => a.provider === "local");
+  if (localAccount) return "local";
   const firstOAuth = oauthAccounts[0];
-  if (firstOAuth && isProviderId(firstOAuth.provider)) return firstOAuth.provider;
-  return 'local';
+  if (firstOAuth && isProviderId(firstOAuth.provider))
+    return firstOAuth.provider;
+  return "local";
 }
 
 function isProviderId(value: string): value is ProviderId {
-  return value === 'github' || value === 'gitlab' || value === 'google' || value === 'microsoft';
+  return (
+    value === "github" ||
+    value === "gitlab" ||
+    value === "google" ||
+    value === "microsoft"
+  );
 }
 
 export default function AccountSettingsPage() {
@@ -34,7 +42,7 @@ export default function AccountSettingsPage() {
   if (!user) return null;
 
   const provider = resolveProvider(user.oauth_accounts);
-  const isLocal = provider === 'local';
+  const isLocal = provider === "local";
   const providerDisplay = !isLocal ? getProviderDisplay(provider) : null;
   const ProviderIcon = providerDisplay?.IconComponent;
 
@@ -47,7 +55,7 @@ export default function AccountSettingsPage() {
             Account
           </h1>
           <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-            {user.verified_email || 'Manage your account settings'}
+            {user.verified_email || "Manage your account settings"}
           </p>
         </div>
       </div>
@@ -82,7 +90,10 @@ export default function AccountSettingsPage() {
                   </h3>
                   <div className="flex items-center gap-2 text-sm text-text-muted dark:text-text-muted-dark">
                     <KeyRound className="h-4 w-4" />
-                    <span>Password management is not yet available for local accounts.</span>
+                    <span>
+                      Password management is not yet available for local
+                      accounts.
+                    </span>
                   </div>
                 </div>
               </div>
@@ -119,7 +130,9 @@ export default function AccountSettingsPage() {
                   ) : (
                     <LogOut className="h-4 w-4" />
                   )}
-                  {isSigningOut ? 'Signing out…' : `Sign out of ${providerDisplay?.label ?? provider}`}
+                  {isSigningOut
+                    ? "Signing out…"
+                    : `Sign out of ${providerDisplay?.label ?? provider}`}
                 </Button>
               </div>
             )}

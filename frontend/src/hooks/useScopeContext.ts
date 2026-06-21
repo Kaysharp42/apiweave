@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
-import { useWorkspace } from '../contexts/WorkspaceContext';
-import { useAuth } from '../auth/useAuth';
-import type { ScopeContext } from '../types';
+import { useMemo } from "react";
+import { useWorkspace } from "../contexts/WorkspaceContext";
+import { useAuth } from "../auth/useAuth";
+import type { ScopeContext } from "../types";
 
 /**
  * useScopeContext — derive current scope identifiers from the existing
@@ -11,7 +11,11 @@ import type { ScopeContext } from '../types';
  * so callers can gate scoped API requests behind `isReady`.
  */
 export function useScopeContext(): ScopeContext {
-  const { currentWorkspace, currentOrg, isLoading: workspaceLoading } = useWorkspace();
+  const {
+    currentWorkspace,
+    currentOrg,
+    isLoading: workspaceLoading,
+  } = useWorkspace();
   const { user } = useAuth();
 
   return useMemo<ScopeContext>(() => {

@@ -6,10 +6,10 @@ Verifies:
 - Old flat route prefixes (workflows, environments, collections, runs, webhooks) return 404.
 - Healthz endpoints on new skeletons respond correctly.
 """
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from app.routes import orgs, projects, workspaces
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def _build_app() -> FastAPI:
@@ -29,7 +29,9 @@ class TestNewSkeletonRoutes:
 
     def test_orgs_list_requires_auth(self) -> None:
         response = client.get("/api/orgs")
-        assert response.status_code == 401, f"Expected 401 (auth required), got {response.status_code}"
+        assert (
+            response.status_code == 401
+        ), f"Expected 401 (auth required), got {response.status_code}"
 
     def test_orgs_healthz(self) -> None:
         response = client.get("/api/orgs/healthz")
@@ -38,7 +40,9 @@ class TestNewSkeletonRoutes:
 
     def test_workspaces_list_requires_auth(self) -> None:
         response = client.get("/api/workspaces")
-        assert response.status_code == 401, f"Expected 401 (auth required), got {response.status_code}"
+        assert (
+            response.status_code == 401
+        ), f"Expected 401 (auth required), got {response.status_code}"
 
     def test_workspaces_healthz(self) -> None:
         response = client.get("/api/workspaces/healthz")

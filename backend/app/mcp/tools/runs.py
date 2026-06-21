@@ -4,6 +4,7 @@ MCP run execution and monitoring tools — scoped to workspace.
 Runtime/ad-hoc secrets have been removed. All secrets must be stored
 before runs through the scoped secret API with client-encrypted writes.
 """
+
 from typing import Annotated, Any, Literal, cast
 
 from mcp.server.fastmcp import FastMCP
@@ -216,6 +217,7 @@ async def workflow_run(
 
     # Verify workflow belongs to scope
     from app.services.scoped_workflow_service import get_scoped_workflow
+
     try:
         await get_scoped_workflow(
             workspace_id=scope.scope_id,
@@ -379,8 +381,7 @@ async def run_list(
         str | None,
         Field(
             description=(
-                "Optional status filter (pending, running, completed, "
-                "failed, cancelled)."
+                "Optional status filter (pending, running, completed, " "failed, cancelled)."
             ),
         ),
     ] = None,

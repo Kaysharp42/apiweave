@@ -1,10 +1,10 @@
-import { FileText } from 'lucide-react';
-import { Button } from '../../atoms/Button';
-import { Spinner } from '../../atoms/Spinner';
-import { Skeleton } from '../../atoms/Skeleton';
-import { EmptyState } from '../../molecules/EmptyState';
-import { WorkflowItem } from './WorkflowItem';
-import type { WorkflowListProps } from '../../../types';
+import { FileText } from "lucide-react";
+import { Button } from "../../atoms/Button";
+import { Spinner } from "../../atoms/Spinner";
+import { Skeleton } from "../../atoms/Skeleton";
+import { EmptyState } from "../../molecules/EmptyState";
+import { WorkflowItem } from "./WorkflowItem";
+import type { WorkflowListProps } from "../../../types";
 
 /**
  * Renders the workflow list section of the sidebar.
@@ -41,16 +41,27 @@ export function WorkflowList({
   if (workflows.length === 0 && !isLoadingMore) {
     return (
       <EmptyState
-        icon={<FileText className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
-        title={searchQuery ? 'No matching workflows' : 'No workflows yet'}
+        icon={
+          <FileText
+            className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+            strokeWidth={1.5}
+          />
+        }
+        title={searchQuery ? "No matching workflows" : "No workflows yet"}
         description={
           searchQuery
             ? `No workflows match "${searchQuery}"`
-            : 'Create your first workflow to get started'
+            : "Create your first workflow to get started"
         }
         action={
           !searchQuery && (
-            <Button variant="primary" intent="default" size="sm" onClick={onCreateWorkflow} icon={<FileText className="w-4 h-4" />}>
+            <Button
+              variant="primary"
+              intent="default"
+              size="sm"
+              onClick={onCreateWorkflow}
+              icon={<FileText className="w-4 h-4" />}
+            >
               Create Workflow
             </Button>
           )
@@ -83,7 +94,8 @@ export function WorkflowList({
       )}
       {!pagination.hasMore && workflows.length > 0 && (
         <div className="mx-3 mt-1 border-t border-border py-3 text-center font-mono text-xs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
-          Showing all {pagination.total} workflow{pagination.total !== 1 ? 's' : ''}
+          Showing all {pagination.total} workflow
+          {pagination.total !== 1 ? "s" : ""}
         </div>
       )}
     </>

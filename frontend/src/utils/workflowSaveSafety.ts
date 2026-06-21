@@ -9,17 +9,24 @@ interface WorkflowNode {
   id?: string;
 }
 
-export function isDefaultStartOnlyGraph(nodes: unknown[] | null | undefined, edges: unknown[] | null | undefined): boolean {
+export function isDefaultStartOnlyGraph(
+  nodes: unknown[] | null | undefined,
+  edges: unknown[] | null | undefined,
+): boolean {
   if (!Array.isArray(nodes) || !Array.isArray(edges)) return false;
   if (nodes.length !== 1 || edges.length !== 0) return false;
 
   const node = (nodes[0] ?? {}) as WorkflowNode;
   const nodeId = node.nodeId ?? node.id;
 
-  return node.type === 'start' && nodeId === 'start-1';
+  return node.type === "start" && nodeId === "start-1";
 }
 
-export function shouldBlockDestructiveAutosave(nodes: unknown[] | null | undefined, edges: unknown[] | null | undefined, baseline: BaselineGraph | null): boolean {
+export function shouldBlockDestructiveAutosave(
+  nodes: unknown[] | null | undefined,
+  edges: unknown[] | null | undefined,
+  baseline: BaselineGraph | null,
+): boolean {
   if (!baseline) return false;
 
   const baselineNodeCount = Number(baseline.nodeCount ?? 0);

@@ -8,6 +8,7 @@ Usage:
     python poc_ssrf_multi.py --expected=blocked     # default: assert all blocked
     python poc_ssrf_multi.py --expected=vulnerable  # assert exploits still work
 """
+
 import argparse
 import json
 import os
@@ -41,14 +42,38 @@ def run_workflow(base, url: str) -> dict:
     wf = {
         "name": f"SSRF PoC - {url[:60]}",
         "nodes": [
-            {"nodeId": "s", "type": "start", "label": "Start", "position": {"x":0,"y":0}, "config":{}},
-            {"nodeId": "h", "type": "http-request", "label": "Probe", "position": {"x":100,"y":0},
-             "config": {"method": "GET", "url": url, "headers": "", "body": "", "bodyType": None, "timeout": 8}},
-            {"nodeId": "e", "type": "end", "label": "End", "position": {"x":200,"y":0}, "config":{}},
+            {
+                "nodeId": "s",
+                "type": "start",
+                "label": "Start",
+                "position": {"x": 0, "y": 0},
+                "config": {},
+            },
+            {
+                "nodeId": "h",
+                "type": "http-request",
+                "label": "Probe",
+                "position": {"x": 100, "y": 0},
+                "config": {
+                    "method": "GET",
+                    "url": url,
+                    "headers": "",
+                    "body": "",
+                    "bodyType": None,
+                    "timeout": 8,
+                },
+            },
+            {
+                "nodeId": "e",
+                "type": "end",
+                "label": "End",
+                "position": {"x": 200, "y": 0},
+                "config": {},
+            },
         ],
         "edges": [
-            {"edgeId":"e1","source":"s","target":"h"},
-            {"edgeId":"e2","source":"h","target":"e"},
+            {"edgeId": "e1", "source": "s", "target": "h"},
+            {"edgeId": "e2", "source": "h", "target": "e"},
         ],
         "variables": {},
     }
@@ -81,11 +106,23 @@ def _is_blocked(r: dict) -> bool:
     # Blocked if: error status, or no successful HTTP response, or error message
     if status == "error":
         return True
-    if error and any(kw in str(error) for kw in [
-        "blocked", "forbidden", "not allowed", "invalid", "denied",
-        "Cannot connect", "Connection refused", "Invalid URL",
-        "No host", "Unsupported", "SSRF", "disallowed",
-    ]):
+    if error and any(
+        kw in str(error)
+        for kw in [
+            "blocked",
+            "forbidden",
+            "not allowed",
+            "invalid",
+            "denied",
+            "Cannot connect",
+            "Connection refused",
+            "Invalid URL",
+            "No host",
+            "Unsupported",
+            "SSRF",
+            "disallowed",
+        ]
+    ):
         return True
     if sc and sc < 400 and body:
         return False  # successful response = NOT blocked
@@ -169,7 +206,9 @@ def main():
     # Save evidence
     evidence_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        ".omo", "evidence", "task-6-poc-ssrf-multi.txt",
+        ".omo",
+        "evidence",
+        "task-6-poc-ssrf-multi.txt",
     )
     try:
         os.makedirs(os.path.dirname(evidence_path), exist_ok=True)

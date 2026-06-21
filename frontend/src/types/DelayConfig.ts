@@ -1,4 +1,4 @@
 export interface DelayConfig {
   duration: number;
-  unit: 'ms' | 's' | 'm';
+  unit: "ms" | "s" | "m";
 }

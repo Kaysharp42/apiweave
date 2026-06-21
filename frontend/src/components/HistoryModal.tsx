@@ -1,8 +1,27 @@
-import { useState, useEffect, useReducer, useRef, useCallback, useSyncExternalStore } from 'react';
-import { CheckCircle, XCircle, RefreshCw, Clock, Circle, History, X, ClipboardList, ChevronRight, Timer, Zap } from 'lucide-react';
-import { authenticatedFetch } from '../utils/authenticatedApi';
-import { workflowRunsListUrl } from '../utils/scopedApi';
-import type { RunRecord, HistoryModalProps } from '../types';
+import {
+  useState,
+  useEffect,
+  useReducer,
+  useRef,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
+import {
+  CheckCircle,
+  XCircle,
+  RefreshCw,
+  Clock,
+  Circle,
+  History,
+  X,
+  ClipboardList,
+  ChevronRight,
+  Timer,
+  Zap,
+} from "lucide-react";
+import { authenticatedFetch } from "../utils/authenticatedApi";
+import { workflowRunsListUrl } from "../utils/scopedApi";
+import type { RunRecord, HistoryModalProps } from "../types";
 
 interface PaginationInfo {
   page: number;
@@ -18,15 +37,13 @@ interface RunHistoryResponse {
   pagination: PaginationInfo;
 }
 
-type RequestStatus = 'loading' | 'idle';
+type RequestStatus = "loading" | "idle";
 
 interface RequestState {
   status: RequestStatus;
 }
 
-type RequestAction =
-  | { type: 'start-loading' }
-  | { type: 'finish-loading' };
+type RequestAction = { type: "start-loading" } | { type: "finish-loading" };
 
 interface HistoryModalStoreState {
   runs: RunRecord[];
@@ -60,7 +77,9 @@ function subscribeToHistoryModalStore(listener: () => void): () => void {
   return () => historyModalListeners.delete(listener);
 }
 
-function setHistoryModalStoreState(nextState: Partial<HistoryModalStoreState>): void {
+function setHistoryModalStoreState(
+  nextState: Partial<HistoryModalStoreState>,
+): void {
   if (nextState.runs !== undefined) {
     historyModalStore.runs = nextState.runs;
   }
@@ -73,44 +92,66 @@ function setHistoryModalStoreState(nextState: Partial<HistoryModalStoreState>): 
   emitHistoryModalStoreUpdate();
 }
 
-function requestReducer(_state: RequestState, action: RequestAction): RequestState {
+function requestReducer(
+  _state: RequestState,
+  action: RequestAction,
+): RequestState {
   switch (action.type) {
-    case 'start-loading':
-      return { status: 'loading' };
-    case 'finish-loading':
-      return { status: 'idle' };
+    case "start-loading":
+      return { status: "loading" };
+    case "finish-loading":
+      return { status: "idle" };
   }
 }
 
-export default function HistoryModal({ workflowId, workspaceId, onClose, onSelectRun }: HistoryModalProps) {
-  const [requestState, dispatchRequest] = useReducer(requestReducer, { status: 'loading' });
+export default function HistoryModal({
+  workflowId,
+  workspaceId,
+  onClose,
+  onSelectRun,
+}: HistoryModalProps) {
+  const [requestState, dispatchRequest] = useReducer(requestReducer, {
+    status: "loading",
+  });
   const [isAnimating, setIsAnimating] = useState(true);
   const modalRef = useRef<HTMLDivElement>(null);
   const loadingPageRef = useRef<number>(1);
-  const isLoading = requestState.status === 'loading';
-  const snapshot = useSyncExternalStore(subscribeToHistoryModalStore, () => historyModalStore, () => historyModalStore);
+  const isLoading = requestState.status === "loading";
+  const snapshot = useSyncExternalStore(
+    subscribeToHistoryModalStore,
+    () => historyModalStore,
+    () => historyModalStore,
+  );
   const { runs, pagination } = snapshot;
   const handleClose = useCallback(() => {
     setIsAnimating(false);
     setTimeout(onClose, 200);
   }, [onClose]);
 
-  const fetchRunHistory = useCallback(async (page = 1) => {
-    dispatchRequest({ type: 'start-loading' });
-    setHistoryModalStoreState({ isLoading: true });
-    try {
-      const response = await authenticatedFetch(workflowRunsListUrl(workspaceId, workflowId, page, 10));
-      if (response.ok) {
-        const data: RunHistoryResponse = await response.json();
-        setHistoryModalStoreState({ runs: data.runs, pagination: data.pagination });
+  const fetchRunHistory = useCallback(
+    async (page = 1) => {
+      dispatchRequest({ type: "start-loading" });
+      setHistoryModalStoreState({ isLoading: true });
+      try {
+        const response = await authenticatedFetch(
+          workflowRunsListUrl(workspaceId, workflowId, page, 10),
+        );
+        if (response.ok) {
+          const data: RunHistoryResponse = await response.json();
+          setHistoryModalStoreState({
+            runs: data.runs,
+            pagination: data.pagination,
+          });
+        }
+      } catch {
+        // Silently fail - will retry on next fetch
+      } finally {
+        dispatchRequest({ type: "finish-loading" });
+        setHistoryModalStoreState({ isLoading: false });
       }
-    } catch {
-      // Silently fail - will retry on next fetch
-    } finally {
-      dispatchRequest({ type: 'finish-loading' });
-      setHistoryModalStoreState({ isLoading: false });
-    }
-  }, [workspaceId, workflowId]);
+    },
+    [workspaceId, workflowId],
+  );
 
   useEffect(() => {
     fetchRunHistory(1);
@@ -118,14 +159,17 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(event.target as Node)
+      ) {
         handleClose();
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [handleClose]);
 
@@ -140,29 +184,29 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
 
   const getStatusColor = (status: string): string => {
     switch (status) {
-      case 'completed':
-        return 'bg-status-success/10 text-status-success dark:bg-status-success/20 dark:text-status-success';
-      case 'failed':
-        return 'bg-status-error/10 text-status-error dark:bg-status-error/20 dark:text-status-error';
-      case 'running':
-        return 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary-dark';
-      case 'pending':
-        return 'bg-status-warning/10 text-status-warning dark:bg-status-warning/20 dark:text-status-warning';
+      case "completed":
+        return "bg-status-success/10 text-status-success dark:bg-status-success/20 dark:text-status-success";
+      case "failed":
+        return "bg-status-error/10 text-status-error dark:bg-status-error/20 dark:text-status-error";
+      case "running":
+        return "bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary-dark";
+      case "pending":
+        return "bg-status-warning/10 text-status-warning dark:bg-status-warning/20 dark:text-status-warning";
       default:
-        return 'bg-surface dark:bg-surface-dark-raised text-text-secondary dark:text-text-primary-dark';
+        return "bg-surface dark:bg-surface-dark-raised text-text-secondary dark:text-text-primary-dark";
     }
   };
 
   const getStatusIcon = (status: string) => {
-    const iconProps = { className: 'w-3 h-3' };
+    const iconProps = { className: "w-3 h-3" };
     switch (status) {
-      case 'completed':
+      case "completed":
         return <CheckCircle {...iconProps} />;
-      case 'failed':
+      case "failed":
         return <XCircle {...iconProps} />;
-      case 'running':
+      case "running":
         return <RefreshCw {...iconProps} className="w-3 h-3 animate-spin" />;
-      case 'pending':
+      case "pending":
         return <Clock {...iconProps} />;
       default:
         return <Circle {...iconProps} />;
@@ -177,16 +221,18 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60)
+      return `${diffMins} minute${diffMins > 1 ? "s" : ""} ago`;
+    if (diffHours < 24)
+      return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
 
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    return date.toLocaleDateString() + " " + date.toLocaleTimeString();
   };
 
   const formatDuration = (duration?: number): string => {
-    if (!duration) return '--';
+    if (!duration) return "--";
     if (duration < 1000) return `${duration}ms`;
     return `${(duration / 1000).toFixed(2)}s`;
   };
@@ -194,18 +240,23 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
   return (
     <div
       className={`fixed inset-0 z-50 flex items-start justify-end pt-40 pr-4 transition-opacity duration-300 bg-[var(--aw-surface)]/30 ${
-        isAnimating ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        isAnimating ? "opacity-100" : "opacity-0 pointer-events-none"
       }`}
     >
-      <button type="button" aria-label="Close run history" className="absolute inset-0 cursor-pointer" onClick={handleClose} />
+      <button
+        type="button"
+        aria-label="Close run history"
+        className="absolute inset-0 cursor-pointer"
+        onClick={handleClose}
+      />
 
       <div
         ref={modalRef}
         className="relative z-10 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark overflow-hidden transition-transform duration-300 flex flex-col"
         style={{
-          width: '500px',
-          maxHeight: '600px',
-          transform: isAnimating ? 'translateY(0)' : 'translateY(-20px)',
+          width: "500px",
+          maxHeight: "600px",
+          transform: isAnimating ? "translateY(0)" : "translateY(-20px)",
         }}
       >
         <div className="flex-shrink-0 px-5 py-4 border-b border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
@@ -219,10 +270,16 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
                   Run History
                 </h2>
                 <p className="text-xs text-text-muted dark:text-text-muted-dark">
-                  {pagination.total} run{pagination.total !== 1 ? 's' : ''} total
+                  {pagination.total} run{pagination.total !== 1 ? "s" : ""}{" "}
+                  total
                   {pagination.totalPages > 1 && (
                     <>
-                      {' • '}Showing {((pagination.page - 1) * pagination.limit) + 1}-{Math.min(pagination.page * pagination.limit, pagination.total)}
+                      {" • "}Showing{" "}
+                      {(pagination.page - 1) * pagination.limit + 1}-
+                      {Math.min(
+                        pagination.page * pagination.limit,
+                        pagination.total,
+                      )}
                     </>
                   )}
                 </p>
@@ -244,21 +301,27 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
             <div className="flex items-center justify-center py-12">
               <div className="flex flex-col items-center gap-3">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-                 <p className="text-sm text-text-muted dark:text-text-muted-dark">
-                     {loadingPageRef.current && loadingPageRef.current > 1 ? 'Loading page…' : 'Loading history…'}
-                  </p>
+                <p className="text-sm text-text-muted dark:text-text-muted-dark">
+                  {loadingPageRef.current && loadingPageRef.current > 1
+                    ? "Loading page…"
+                    : "Loading history…"}
+                </p>
               </div>
             </div>
           ) : runs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-6">
               <ClipboardList className="w-16 h-16 text-text-muted dark:text-text-muted-dark/50 mb-4" />
-              <p className="text-sm font-medium text-text-secondary dark:text-text-primary-dark mb-1">No runs yet</p>
+              <p className="text-sm font-medium text-text-secondary dark:text-text-primary-dark mb-1">
+                No runs yet
+              </p>
               <p className="text-xs text-text-muted dark:text-text-muted-dark text-center">
                 Click the Run button to execute this workflow
               </p>
             </div>
           ) : (
-            <div className={`divide-y divide-border dark:divide-border-dark transition-opacity ${isLoading ? 'opacity-50' : 'opacity-100'}`}>
+            <div
+              className={`divide-y divide-border dark:divide-border-dark transition-opacity ${isLoading ? "opacity-50" : "opacity-100"}`}
+            >
               {runs.map((run) => (
                 <button
                   type="button"
@@ -269,7 +332,9 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded ${getStatusColor(run.status)}`}>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded ${getStatusColor(run.status)}`}
+                        >
                           <span>{getStatusIcon(run.status)}</span>
                           <span className="uppercase">{run.status}</span>
                         </span>
@@ -291,20 +356,21 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
                         )}
                       </div>
 
-                      {run.status === 'failed' && run.error && (
+                      {run.status === "failed" && run.error && (
                         <div className="mt-2 text-xs">
-                          {run.error.includes('Assertion failed') ? (
+                          {run.error.includes("Assertion failed") ? (
                             <div className="text-status-error dark:text-status-error">
                               <div className="font-semibold mb-1">
-                                {run.error.includes('/') && run.error.match(/(\d+)\/(\d+)/)?.[0] ? (
-                                  `Assertion: ${run.error.match(/(\d+)\/(\d+)/)?.[0]} failed`
-                                ) : (
-                                  'Assertion failed'
-                                )}
+                                {run.error.includes("/") &&
+                                run.error.match(/(\d+)\/(\d+)/)?.[0]
+                                  ? `Assertion: ${run.error.match(/(\d+)\/(\d+)/)?.[0]} failed`
+                                  : "Assertion failed"}
                               </div>
-                              <div className="truncate">{run.error.split('\n')[0]}</div>
+                              <div className="truncate">
+                                {run.error.split("\n")[0]}
+                              </div>
                             </div>
-                          ) : run.error.includes('branches failed') ? (
+                          ) : run.error.includes("branches failed") ? (
                             <div className="text-status-error dark:text-status-error">
                               <div className="font-semibold">{run.error}</div>
                             </div>
@@ -315,11 +381,14 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
                           )}
                         </div>
                       )}
-                      {run.status === 'failed' && run.failedNodes && run.failedNodes.length > 0 && (
-                        <div className="mt-1 text-xs text-status-warning dark:text-status-warning">
-                          {run.failedNodes.length} node{run.failedNodes.length > 1 ? 's' : ''} failed
-                        </div>
-                      )}
+                      {run.status === "failed" &&
+                        run.failedNodes &&
+                        run.failedNodes.length > 0 && (
+                          <div className="mt-1 text-xs text-status-warning dark:text-status-warning">
+                            {run.failedNodes.length} node
+                            {run.failedNodes.length > 1 ? "s" : ""} failed
+                          </div>
+                        )}
                     </div>
 
                     <div className="flex-shrink-0 text-text-muted dark:text-text-muted-dark">
@@ -333,7 +402,7 @@ export default function HistoryModal({ workflowId, workspaceId, onClose, onSelec
         </div>
 
         <div className="flex-shrink-0 px-5 py-3 border-t border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-            {!isLoading && runs.length > 0 && pagination.totalPages > 1 && (
+          {!isLoading && runs.length > 0 && pagination.totalPages > 1 && (
             <div className="flex items-center justify-between">
               <button
                 type="button"

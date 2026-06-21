@@ -1,7 +1,9 @@
 """
 MCP configuration endpoint for frontend UI.
 """
+
 import logging
+
 from fastapi import APIRouter
 
 from app.config import settings
@@ -19,10 +21,7 @@ async def get_mcp_config():
     tools = []
     try:
         tool_list = mcp_server._tool_manager.list_tools()
-        tools = [
-            {"name": t.name, "description": t.description or ""}
-            for t in tool_list
-        ]
+        tools = [{"name": t.name, "description": t.description or ""} for t in tool_list]
     except Exception:
         logger.debug("Could not list MCP tools", exc_info=True)
 

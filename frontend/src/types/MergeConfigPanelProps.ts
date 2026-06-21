@@ -1,5 +1,5 @@
-import type { NodeModalMergeConfig } from './NodeModalMergeConfig';
-import type { NodeModalMergeTabKey } from './NodeModalMergeTabKey';
+import type { NodeModalMergeConfig } from "./NodeModalMergeConfig";
+import type { NodeModalMergeTabKey } from "./NodeModalMergeTabKey";
 
 export interface MergeConfigPanelProps {
   initialConfig: Partial<NodeModalMergeConfig>;

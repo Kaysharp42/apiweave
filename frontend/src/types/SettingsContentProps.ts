@@ -1,4 +1,4 @@
-import type { NavSection } from './NavSection';
+import type { NavSection } from "./NavSection";
 
 export interface SettingsContentProps {
   hasPermission: (permission: string) => boolean;

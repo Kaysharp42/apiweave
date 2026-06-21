@@ -8,6 +8,7 @@ Covers:
 - Secret masking is applied to the payload before storage
 - Start/stop lifecycle of the consumer task
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from app.services.webhook_runner import (
     QueueFull,
     WebhookDelivery,
@@ -23,10 +23,10 @@ from app.services.webhook_runner import (
     webhook_runner,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_delivery(**overrides: object) -> WebhookDelivery:
     """Create a WebhookDelivery with sensible defaults, overridable."""
@@ -53,6 +53,7 @@ def _fresh_runner(maxsize: int = 1000) -> WebhookRunner:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestEnqueueCreatesRun:
     """Verify that enqueue persists a Run document via the repository."""

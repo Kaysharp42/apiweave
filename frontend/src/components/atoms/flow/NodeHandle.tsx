@@ -1,12 +1,12 @@
-import { Handle, Position } from 'reactflow';
-import type { NodeHandleProps } from '../../../types/NodeHandleProps';
+import { Handle, Position } from "reactflow";
+import type { NodeHandleProps } from "../../../types/NodeHandleProps";
 
 export function NodeHandle({
-  type = 'source',
-  position = 'right',
+  type = "source",
+  position = "right",
   id,
   color,
-  className = '',
+  className = "",
   style,
   ...rest
 }: NodeHandleProps) {
@@ -17,7 +17,7 @@ export function NodeHandle({
     right: Position.Right,
   };
 
-  const defaultColor = '!bg-[var(--aw-primary)]';
+  const defaultColor = "!bg-[var(--aw-primary)]";
 
   return (
     <Handle
@@ -26,12 +26,12 @@ export function NodeHandle({
       {...(id && { id })}
       {...(style && { style })}
       className={[
-        '!w-3 !h-3 !rounded-full !border !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-raised)]',
+        "!w-3 !h-3 !rounded-full !border !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-raised)]",
         color ?? defaultColor,
         className,
       ]
         .filter(Boolean)
-        .join(' ')}
+        .join(" ")}
       aria-label={`${type} handle`}
       {...rest}
     />

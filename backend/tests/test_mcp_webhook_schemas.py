@@ -1,4 +1,5 @@
 """Tests for webhook MCP schemas — verify credential redaction and DTO shapes."""
+
 from datetime import UTC, datetime
 
 from app.mcp.schemas.webhooks import (

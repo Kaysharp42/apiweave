@@ -1,10 +1,10 @@
-import { create } from 'zustand';
-import type { Workflow } from '../types/Workflow';
-import type { Collection } from '../types/Collection';
-import type { Project } from '../types/Project';
-import type { PaginationState } from '../types/PaginationState';
-import { authenticatedFetch } from '../utils/authenticatedApi';
-import { projectsUrl, workflowsUrl } from '../utils/scopedApi';
+import { create } from "zustand";
+import type { Workflow } from "../types/Workflow";
+import type { Collection } from "../types/Collection";
+import type { Project } from "../types/Project";
+import type { PaginationState } from "../types/PaginationState";
+import { authenticatedFetch } from "../utils/authenticatedApi";
+import { projectsUrl, workflowsUrl } from "../utils/scopedApi";
 
 interface PaginatedWorkflowResponse {
   workflows: Workflow[];
@@ -35,7 +35,11 @@ interface SidebarState {
   signalCollectionsRefresh: () => void;
   signalProjectsRefresh: () => void;
   setActiveWorkspaceId: (workspaceId: string | null) => void;
-  fetchWorkflows: (skip?: number, append?: boolean, limit?: number) => Promise<void>;
+  fetchWorkflows: (
+    skip?: number,
+    append?: boolean,
+    limit?: number,
+  ) => Promise<void>;
   fetchCollections: () => Promise<void>;
   fetchProjects: () => Promise<void>;
   refreshAll: (selectedNav: string) => Promise<void>;
@@ -53,7 +57,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
   isRefreshing: false,
   isLoadingMore: false,
-  searchQuery: '',
+  searchQuery: "",
 
   workflowVersion: 0,
   collectionVersion: 0,
@@ -94,25 +98,30 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
     }
 
     try {
-      const response = await authenticatedFetch(workflowsUrl(activeWorkspaceId, { skip, limit }));
+      const response = await authenticatedFetch(
+        workflowsUrl(activeWorkspaceId, { skip, limit }),
+      );
       if (response.ok) {
         const data: PaginatedWorkflowResponse = await response.json();
         const prev = get().workflows;
-        const newWorkflows = append ? [...prev, ...data.workflows] : data.workflows;
+        const newWorkflows = append
+          ? [...prev, ...data.workflows]
+          : data.workflows;
         set({
           workflows: newWorkflows,
           pagination: {
             skip,
             limit,
             total: data.total,
-            hasMore: data.workflows.length === limit && (skip + limit) < data.total,
+            hasMore:
+              data.workflows.length === limit && skip + limit < data.total,
           },
           isLoadingMore: false,
           isRefreshing: false,
         });
       }
     } catch (err) {
-      console.error('SidebarStore: error fetching workflows', err);
+      console.error("SidebarStore: error fetching workflows", err);
       set({ isLoadingMore: false, isRefreshing: false });
     }
   },
@@ -124,15 +133,16 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
       return;
     }
     try {
-      const response = await authenticatedFetch(
-        projectsUrl(activeWorkspaceId),
-      );
+      const response = await authenticatedFetch(projectsUrl(activeWorkspaceId));
       if (response.ok) {
-        const data = await response.json() as { projects: Collection[]; total: number };
+        const data = (await response.json()) as {
+          projects: Collection[];
+          total: number;
+        };
         set({ collections: data.projects, isRefreshing: false });
       }
     } catch (err) {
-      console.error('SidebarStore: error fetching collections', err);
+      console.error("SidebarStore: error fetching collections", err);
       set({ isRefreshing: false });
     }
   },
@@ -141,15 +151,13 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
     const { activeWorkspaceId } = get();
     if (!activeWorkspaceId) return;
     try {
-      const response = await authenticatedFetch(
-        projectsUrl(activeWorkspaceId),
-      );
+      const response = await authenticatedFetch(projectsUrl(activeWorkspaceId));
       if (response.ok) {
         const data: ProjectListResponse = await response.json();
         set({ projects: data.projects, isRefreshing: false });
       }
     } catch (err) {
-      console.error('SidebarStore: error fetching projects', err);
+      console.error("SidebarStore: error fetching projects", err);
       set({ isRefreshing: false });
     }
   },
@@ -157,9 +165,9 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
   refreshAll: async (selectedNav: string) => {
     set({ isRefreshing: true });
     const { fetchWorkflows, fetchProjects } = get();
-    if (selectedNav === 'workflows') {
+    if (selectedNav === "workflows") {
       await fetchWorkflows(0);
-    } else if (selectedNav === 'projects') {
+    } else if (selectedNav === "projects") {
       await fetchProjects();
       await fetchWorkflows(0, false, 100);
     }
@@ -167,7 +175,8 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
   setIsRefreshing: (v: boolean) => set({ isRefreshing: v }),
   setIsLoadingMore: (v: boolean) => set({ isLoadingMore: v }),
-  resetPagination: () => set({ pagination: { skip: 0, limit: 20, total: 0, hasMore: false } }),
+  resetPagination: () =>
+    set({ pagination: { skip: 0, limit: 20, total: 0, hasMore: false } }),
 }));
 
 export default useSidebarStore;

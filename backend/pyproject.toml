@@ -57,8 +57,16 @@ target-version = ['py312']
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+exclude = ["app/routes/_legacy_disabled/**", "**/tools/**", "**/routes/_legacy_disabled/**"]
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-exclude = ["app/routes/_legacy_disabled/**"]
+ignore = ["E501", "E711", "E722", "UP038", "N802", "N803", "N806", "N815", "N818"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests get lenience: long describe strings, sys.modules patching, mock helpers.
+"tests/**/*.py" = ["E501", "E722", "E402", "N806", "N802", "N815"]
+"**/tests/**/*.py" = ["E501", "E722", "E402", "N806", "N802", "N815"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -6,6 +6,7 @@ HTTP responses from workflow/collection execution.  Route handlers call
 ``enqueue()`` which returns immediately with a run ID; a long-lived
 background task drains the queue and dispatches to the executor.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Optional
+from typing import Any
 
 from app.idempotency import get_idempotency_entry, store_idempotency_entry
 from app.models import WebhookLog
@@ -41,12 +42,12 @@ class WebhookDelivery:
     resource_id: str
     environment_id: str
     payload: dict[str, Any]
-    idempotency_key: Optional[str] = None
+    idempotency_key: str | None = None
     webhook_log_id: str = ""
     actor_type: str = "webhook_token"
     actor_id: str = ""
-    workspace_id: Optional[str] = None
-    bypass_reason: Optional[str] = None
+    workspace_id: str | None = None
+    bypass_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,7 @@ class WebhookRunner:
 
     def __init__(self) -> None:
         self._queue: asyncio.Queue[_QueueItem] = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
-        self._task: Optional[asyncio.Task[None]] = None
+        self._task: asyncio.Task[None] | None = None
         self.logger = logging.getLogger(f"{__name__}.WebhookRunner")
 
     async def enqueue(self, delivery: WebhookDelivery) -> str:
@@ -92,9 +93,7 @@ class WebhookRunner:
         """
         # ── Idempotency dedup ────────────────────────────────────────────────
         if delivery.idempotency_key:
-            existing = await get_idempotency_entry(
-                delivery.webhook_id, delivery.idempotency_key
-            )
+            existing = await get_idempotency_entry(delivery.webhook_id, delivery.idempotency_key)
             if existing is not None:
                 self.logger.info(
                     "Idempotency hit for webhook=%s key=%s -> run=%s",
@@ -123,9 +122,7 @@ class WebhookRunner:
             collection = await CollectionRepository.get_by_id(delivery.resource_id)
             collection_name = collection.name if collection else delivery.resource_id
             enabled_count = (
-                sum(1 for i in collection.workflowOrder if i.enabled)
-                if collection
-                else 0
+                sum(1 for i in collection.workflowOrder if i.enabled) if collection else 0
             )
             await CollectionRunRepository.create(
                 {
@@ -181,9 +178,7 @@ class WebhookRunner:
                 _QUEUE_MAXSIZE,
                 delivery.webhook_id,
             )
-            raise QueueFull(
-                f"Webhook queue is full ({_QUEUE_MAXSIZE}). Retry later."
-            )
+            raise QueueFull(f"Webhook queue is full ({_QUEUE_MAXSIZE}). Retry later.")
 
         self.logger.info(
             "Enqueued %s delivery webhook=%s run=%s (queue_depth=%d)",
@@ -238,12 +233,14 @@ class WebhookRunner:
         elif delivery.resource_type == "collection":
             await self._dispatch_collection(item)
         else:
-            self.logger.error("Unknown resource_type=%s for run=%s", delivery.resource_type, item.run_id)
+            self.logger.error(
+                "Unknown resource_type=%s for run=%s", delivery.resource_type, item.run_id
+            )
 
     async def _dispatch_workflow(self, item: _QueueItem) -> None:
         """Execute a single workflow run."""
-        from app.runner.executor import WorkflowExecutor
         from app.routes.webhooks import _run_workflow_and_update_webhook
+        from app.runner.executor import WorkflowExecutor
 
         executor = WorkflowExecutor(
             run_id=item.run_id,
@@ -251,9 +248,7 @@ class WebhookRunner:
         )
 
         # Fetch the pre-created WebhookLog so the helper can update it
-        log_doc = await WebhookLog.find_one(
-            WebhookLog.logId == item.delivery.webhook_log_id
-        )
+        log_doc = await WebhookLog.find_one(WebhookLog.logId == item.delivery.webhook_log_id)
         if log_doc is None:
             self.logger.warning(
                 "WebhookLog %s not found for run=%s; creating minimal stub",

@@ -7,6 +7,7 @@ separately from workspace ownership. Edge cases:
 - Soft-deleted env while queued: run fails with audit.
 - User removed mid-run: run continues (secrets resolved at start), audit records removal.
 """
+
 import asyncio
 import json
 import logging
@@ -37,7 +38,9 @@ _active_cancel_events: dict[str, asyncio.Event] = {}
 
 
 def _register_executor(
-    run_id: str, executor: WorkflowExecutor, cancel_event: asyncio.Event,
+    run_id: str,
+    executor: WorkflowExecutor,
+    cancel_event: asyncio.Event,
 ) -> None:
     _active_executors[run_id] = executor
     _active_cancel_events[run_id] = cancel_event
@@ -426,7 +429,8 @@ async def get_run_with_node_results(run_id: str, workflow_id: str) -> dict[str, 
                                 "status": full_result.get("status"),
                                 "result": (
                                     masker.mask_struct(actual_result)
-                                    if masker.has_secrets else actual_result
+                                    if masker.has_secrets
+                                    else actual_result
                                 ),
                                 "timestamp": full_result.get("timestamp"),
                                 "metadata": {
@@ -437,9 +441,7 @@ async def get_run_with_node_results(run_id: str, workflow_id: str) -> dict[str, 
                         except Exception as e:
                             run["nodeStatuses"][node_id] = {
                                 "status": full_result.get("status"),
-                                "result": {
-                                    "error": f"Failed to retrieve large result: {str(e)}"
-                                },
+                                "result": {"error": f"Failed to retrieve large result: {str(e)}"},
                                 "timestamp": full_result.get("timestamp"),
                             }
                 else:
@@ -452,9 +454,7 @@ async def get_run_with_node_results(run_id: str, workflow_id: str) -> dict[str, 
     return run
 
 
-async def get_node_result(
-    run_id: str, workflow_id: str, node_id: str
-) -> dict[str, Any]:
+async def get_node_result(run_id: str, workflow_id: str, node_id: str) -> dict[str, Any]:
     """Get the full result for a specific node, including GridFS-backed results."""
     run = await RunRepository.get_by_id(run_id)
     if not run or run.workflowId != workflow_id:
@@ -477,9 +477,7 @@ async def get_node_result(
 
         try:
             gridfs_bucket = AsyncIOMotorGridFSBucket(db)
-            grid_out = await gridfs_bucket.open_download_stream(
-                ObjectId(gridfs_file_id)
-            )
+            grid_out = await gridfs_bucket.open_download_stream(ObjectId(gridfs_file_id))
             file_data = await grid_out.read()
             full_result = json.loads(file_data.decode("utf-8"))
 
@@ -550,17 +548,16 @@ async def get_run_results(run_id: str) -> dict[str, Any]:
                 "status": node_status.upper(),
                 "duration": f"{result.get('duration', 0)}ms",
                 "durationSeconds": round(result.get("duration", 0) / 1000, 2),
-                "error": (
-                    masker.mask_text(err)
-                    if masker.has_secrets and err else err
-                ),
+                "error": (masker.mask_text(err) if masker.has_secrets and err else err),
                 "request": (
                     masker.mask_struct(raw_request)
-                    if masker.has_secrets and raw_request else raw_request
+                    if masker.has_secrets and raw_request
+                    else raw_request
                 ),
                 "response": (
                     masker.mask_struct(raw_response)
-                    if masker.has_secrets and raw_response else raw_response
+                    if masker.has_secrets and raw_response
+                    else raw_response
                 ),
                 "assertions": result.get("assertions", []),
             }
@@ -586,9 +583,7 @@ async def get_run_results(run_id: str) -> dict[str, Any]:
             "duration": f"{run.duration}ms" if run.duration else None,
             "durationSeconds": round(run.duration / 1000, 2) if run.duration else None,
         },
-        "environment": {"environmentId": run.environmentId}
-        if run.environmentId
-        else None,
+        "environment": {"environmentId": run.environmentId} if run.environmentId else None,
         "variables": run.variables or {},
         "error": run.error,
         "failedNodes": run.failedNodes or [],
@@ -619,9 +614,7 @@ def _node_type(node: Any) -> str | None:
 def _derive_failed_node_ids(run: Any) -> list[str]:
     """Resolve failed node IDs from failedNodes, or fallback to nodeStatuses error states."""
     explicit_failed = list(getattr(run, "failedNodes", None) or [])
-    explicit_failed = [
-        nid for nid in explicit_failed if isinstance(nid, str) and nid
-    ]
+    explicit_failed = [nid for nid in explicit_failed if isinstance(nid, str) and nid]
     if explicit_failed:
         return explicit_failed
 
@@ -738,9 +731,7 @@ async def check_and_handle_deleted_env(run_id: str) -> dict[str, Any]:
                 "Audit write failed for run.failed.env_deleted %s", run_id, exc_info=True
             )
 
-    logger.info(
-        "Run %s failed: environment %s deleted while queued", run_id, env_id
-    )
+    logger.info("Run %s failed: environment %s deleted while queued", run_id, env_id)
     return {
         "action": "failed",
         "reason": "environment_deleted_while_queued",

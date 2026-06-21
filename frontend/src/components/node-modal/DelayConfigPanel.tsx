@@ -1,11 +1,16 @@
-import { useState } from 'react';
-import { Info, Shuffle, Timer, type LucideIcon } from 'lucide-react';
-import { Button } from '../atoms/Button';
-import { Input } from '../atoms/Input';
-import { Toggle } from '../atoms/Toggle';
-import { Card } from '../molecules/Card';
-import { FormField } from '../molecules/FormField';
-import type { DelayConfigPanelProps, DelayJitterConfig, NodeModalDelayConfig, NodeModalDelayTabKey } from '../../types';
+import { useState } from "react";
+import { Info, Shuffle, Timer, type LucideIcon } from "lucide-react";
+import { Button } from "../atoms/Button";
+import { Input } from "../atoms/Input";
+import { Toggle } from "../atoms/Toggle";
+import { Card } from "../molecules/Card";
+import { FormField } from "../molecules/FormField";
+import type {
+  DelayConfigPanelProps,
+  DelayJitterConfig,
+  NodeModalDelayConfig,
+  NodeModalDelayTabKey,
+} from "../../types";
 
 const DURATION_PRESETS = [100, 500, 1000, 5000, 10000, 30000];
 
@@ -25,7 +30,7 @@ function formatPresetLabel(milliseconds: number): string {
 }
 
 function formatDuration(milliseconds: number): string {
-  if (milliseconds === 1000) return '≈ 1 second';
+  if (milliseconds === 1000) return "≈ 1 second";
   if (milliseconds < 1000) return `≈ ${milliseconds} milliseconds`;
   const seconds = milliseconds / 1000;
   return `≈ ${Number.isInteger(seconds) ? seconds.toFixed(0) : seconds.toFixed(1)} seconds`;
@@ -36,11 +41,21 @@ function normalizeNumber(value: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-export function DelayConfigPanel({ initialConfig, workingDataRef, activeTab = 'duration' }: DelayConfigPanelProps) {
+export function DelayConfigPanel({
+  initialConfig,
+  workingDataRef,
+  activeTab = "duration",
+}: DelayConfigPanelProps) {
   const [duration, setDuration] = useState(initialConfig.duration ?? 1000);
-  const [jitterEnabled, setJitterEnabled] = useState(Boolean(initialConfig.jitter));
-  const [jitter, setJitter] = useState<DelayJitterConfig>(initialConfig.jitter ?? { minMs: 100, maxMs: 500 });
-  const [continueOnFail, setContinueOnFail] = useState(initialConfig.continueOnFail ?? false);
+  const [jitterEnabled, setJitterEnabled] = useState(
+    Boolean(initialConfig.jitter),
+  );
+  const [jitter, setJitter] = useState<DelayJitterConfig>(
+    initialConfig.jitter ?? { minMs: 100, maxMs: 500 },
+  );
+  const [continueOnFail, setContinueOnFail] = useState(
+    initialConfig.continueOnFail ?? false,
+  );
 
   const writeConfig = (
     nextDuration = duration,
@@ -53,7 +68,10 @@ export function DelayConfigPanel({ initialConfig, workingDataRef, activeTab = 'd
       continueOnFail: nextContinueOnFail,
       ...(nextJitterEnabled ? { jitter: nextJitter } : {}),
     };
-    workingDataRef.current = { ...workingDataRef.current, config: { ...nextConfig } };
+    workingDataRef.current = {
+      ...workingDataRef.current,
+      config: { ...nextConfig },
+    };
   };
 
   const updateDuration = (nextDuration: number) => {
@@ -71,12 +89,17 @@ export function DelayConfigPanel({ initialConfig, workingDataRef, activeTab = 'd
     <div className="space-y-4">
       <Card title="Delay duration" icon={TimerCardIcon}>
         <div className="space-y-4">
-          <FormField label="Delay (ms)" hint="The workflow pauses at this node before continuing.">
+          <FormField
+            label="Delay (ms)"
+            hint="The workflow pauses at this node before continuing."
+          >
             <div className="flex flex-wrap items-center gap-3">
               <Input
                 type="number"
                 value={duration}
-                onChange={(event) => updateDuration(normalizeNumber(event.target.value, duration))}
+                onChange={(event) =>
+                  updateDuration(normalizeNumber(event.target.value, duration))
+                }
                 min="0"
                 step="100"
                 size="lg"
@@ -90,7 +113,12 @@ export function DelayConfigPanel({ initialConfig, workingDataRef, activeTab = 'd
 
           <div className="flex flex-wrap gap-2">
             {DURATION_PRESETS.map((preset) => (
-              <Button key={preset} size="xs" variant={duration === preset ? 'primary' : 'secondary'} onClick={() => updateDuration(preset)}>
+              <Button
+                key={preset}
+                size="xs"
+                variant={duration === preset ? "primary" : "secondary"}
+                onClick={() => updateDuration(preset)}
+              >
                 {formatPresetLabel(preset)}
               </Button>
             ))}
@@ -102,9 +130,16 @@ export function DelayConfigPanel({ initialConfig, workingDataRef, activeTab = 'd
 
       <Card title="Random Jitter (optional)" icon={ShuffleCardIcon}>
         <div className="space-y-4">
-          <FormField label="Enable jitter" hint="When enabled, executor can randomize the delay between min and max each run.">
+          <FormField
+            label="Enable jitter"
+            hint="When enabled, executor can randomize the delay between min and max each run."
+          >
             <Toggle
-              label={jitterEnabled ? 'Randomized delay enabled' : 'Use fixed delay only'}
+              label={
+                jitterEnabled
+                  ? "Randomized delay enabled"
+                  : "Use fixed delay only"
+              }
               checked={jitterEnabled}
               onChange={(event) => {
                 const nextEnabled = event.target.checked;
@@ -115,23 +150,47 @@ export function DelayConfigPanel({ initialConfig, workingDataRef, activeTab = 'd
           </FormField>
 
           {jitterEnabled && (
-            <Card title="Jitter bounds" icon={ShuffleCardIcon} className="bg-surface-overlay dark:bg-surface-dark-overlay">
+            <Card
+              title="Jitter bounds"
+              icon={ShuffleCardIcon}
+              className="bg-surface-overlay dark:bg-surface-dark-overlay"
+            >
               <div className="grid gap-4 md:grid-cols-2">
-                <FormField label="Min (ms)" hint="Smallest possible randomized delay.">
+                <FormField
+                  label="Min (ms)"
+                  hint="Smallest possible randomized delay."
+                >
                   <Input
                     type="number"
                     value={jitter.minMs}
-                    onChange={(event) => updateJitter({ minMs: normalizeNumber(event.target.value, jitter.minMs) })}
+                    onChange={(event) =>
+                      updateJitter({
+                        minMs: normalizeNumber(
+                          event.target.value,
+                          jitter.minMs,
+                        ),
+                      })
+                    }
                     min="0"
                     step="100"
                     className="font-mono"
                   />
                 </FormField>
-                <FormField label="Max (ms)" hint="Largest possible randomized delay.">
+                <FormField
+                  label="Max (ms)"
+                  hint="Largest possible randomized delay."
+                >
                   <Input
                     type="number"
                     value={jitter.maxMs}
-                    onChange={(event) => updateJitter({ maxMs: normalizeNumber(event.target.value, jitter.maxMs) })}
+                    onChange={(event) =>
+                      updateJitter({
+                        maxMs: normalizeNumber(
+                          event.target.value,
+                          jitter.maxMs,
+                        ),
+                      })
+                    }
                     min="0"
                     step="100"
                     className="font-mono"
@@ -149,9 +208,16 @@ export function DelayConfigPanel({ initialConfig, workingDataRef, activeTab = 'd
     <div className="space-y-4">
       <Card title="Execution behavior" icon={InfoCardIcon}>
         <div className="space-y-4">
-          <FormField label="Continue on failure" hint="Delay failures are usually timeout or cancellation conditions; enable this only when downstream steps can recover.">
+          <FormField
+            label="Continue on failure"
+            hint="Delay failures are usually timeout or cancellation conditions; enable this only when downstream steps can recover."
+          >
             <Toggle
-              label={continueOnFail ? 'Continue if the delay fails' : 'Stop if the delay fails'}
+              label={
+                continueOnFail
+                  ? "Continue if the delay fails"
+                  : "Stop if the delay fails"
+              }
               checked={continueOnFail}
               onChange={(event) => {
                 const nextValue = event.target.checked;
@@ -161,7 +227,9 @@ export function DelayConfigPanel({ initialConfig, workingDataRef, activeTab = 'd
             />
           </FormField>
           <div className="rounded-sm border border-status-info/30 bg-status-info/10 p-3 text-xs text-status-info dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10 dark:text-[var(--aw-status-info)]">
-            Delays intentionally pause execution. Timeouts are external limits that can interrupt a run; this setting controls what happens if the delay node itself reports a failure.
+            Delays intentionally pause execution. Timeouts are external limits
+            that can interrupt a run; this setting controls what happens if the
+            delay node itself reports a failure.
           </div>
         </div>
       </Card>

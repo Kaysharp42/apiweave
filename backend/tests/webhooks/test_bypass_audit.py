@@ -6,15 +6,15 @@ Verifies that:
 - The audit event records the webhook_token actor, bypass reason, and environment
 - Tokens NOT in the bypass allowlist do not trigger bypass
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.main import app
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 

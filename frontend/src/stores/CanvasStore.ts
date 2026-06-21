@@ -1,9 +1,13 @@
-import { create } from 'zustand';
-import type { CanvasActionType } from '../types/CanvasActionType';
-import type { ClipboardNodeData } from '../types/ClipboardNodeData';
+import { create } from "zustand";
+import type { CanvasActionType } from "../types/CanvasActionType";
+import type { ClipboardNodeData } from "../types/ClipboardNodeData";
 
 interface CanvasState {
-  pendingAction: { type: CanvasActionType; nodeId?: string; timestamp: number } | null;
+  pendingAction: {
+    type: CanvasActionType;
+    nodeId?: string;
+    timestamp: number;
+  } | null;
   clipboardNode: ClipboardNodeData | null;
   reloadWorkflowId: string | null;
   reloadVersion: number;
@@ -14,14 +18,33 @@ interface CanvasState {
   setClipboardNode: (nodeData: ClipboardNodeData | null) => void;
   hydrateClipboard: () => void;
   signalWorkflowReload: (workflowId: string) => void;
-  registerWorkflowReloadHandler: (workflowId: string, handler: () => void) => () => void;
-  registerPendingActionHandler: (handler: (action: { type: CanvasActionType; nodeId?: string; timestamp: number }) => void) => () => void;
+  registerWorkflowReloadHandler: (
+    workflowId: string,
+    handler: () => void,
+  ) => () => void;
+  registerPendingActionHandler: (
+    handler: (action: {
+      type: CanvasActionType;
+      nodeId?: string;
+      timestamp: number;
+    }) => void,
+  ) => () => void;
 }
 
 const workflowReloadHandlers = new Map<string, Set<() => void>>();
-const pendingActionHandlers = new Set<(action: { type: CanvasActionType; nodeId?: string; timestamp: number }) => void>();
+const pendingActionHandlers = new Set<
+  (action: {
+    type: CanvasActionType;
+    nodeId?: string;
+    timestamp: number;
+  }) => void
+>();
 
-function notifyPendingActionHandlers(action: { type: CanvasActionType; nodeId?: string; timestamp: number }): void {
+function notifyPendingActionHandlers(action: {
+  type: CanvasActionType;
+  nodeId?: string;
+  timestamp: number;
+}): void {
   pendingActionHandlers.forEach((handler) => handler(action));
 }
 
@@ -31,50 +54,61 @@ const useCanvasStore = create<CanvasState>()((set) => ({
   reloadWorkflowId: null,
   reloadVersion: 0,
 
-  duplicateNode: (nodeId: string) =>
-    {
-      const action = { type: 'duplicate' as CanvasActionType, nodeId, timestamp: Date.now() };
-      set({ pendingAction: action });
-      notifyPendingActionHandlers(action);
-    },
+  duplicateNode: (nodeId: string) => {
+    const action = {
+      type: "duplicate" as CanvasActionType,
+      nodeId,
+      timestamp: Date.now(),
+    };
+    set({ pendingAction: action });
+    notifyPendingActionHandlers(action);
+  },
 
-  copyNode: (nodeId: string) =>
-    {
-      const action = { type: 'copy' as CanvasActionType, nodeId, timestamp: Date.now() };
-      set({ pendingAction: action });
-      notifyPendingActionHandlers(action);
-    },
+  copyNode: (nodeId: string) => {
+    const action = {
+      type: "copy" as CanvasActionType,
+      nodeId,
+      timestamp: Date.now(),
+    };
+    set({ pendingAction: action });
+    notifyPendingActionHandlers(action);
+  },
 
-  pasteNode: () =>
-    {
-      const action = { type: 'paste' as CanvasActionType, timestamp: Date.now() };
-      set({ pendingAction: action });
-      notifyPendingActionHandlers(action);
-    },
+  pasteNode: () => {
+    const action = { type: "paste" as CanvasActionType, timestamp: Date.now() };
+    set({ pendingAction: action });
+    notifyPendingActionHandlers(action);
+  },
 
   clearPendingAction: () => set({ pendingAction: null }),
 
   setClipboardNode: (nodeData: ClipboardNodeData | null) => {
     if (nodeData) {
-      sessionStorage.setItem('copiedNode:v1', JSON.stringify(nodeData));
+      sessionStorage.setItem("copiedNode:v1", JSON.stringify(nodeData));
     }
     set({ clipboardNode: nodeData });
   },
 
   hydrateClipboard: () => {
     try {
-      const raw = sessionStorage.getItem('copiedNode:v1');
+      const raw = sessionStorage.getItem("copiedNode:v1");
       if (raw) set({ clipboardNode: JSON.parse(raw) as ClipboardNodeData });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   },
 
   signalWorkflowReload: (workflowId: string) => {
-    set((s) => ({ reloadWorkflowId: workflowId, reloadVersion: s.reloadVersion + 1 }));
+    set((s) => ({
+      reloadWorkflowId: workflowId,
+      reloadVersion: s.reloadVersion + 1,
+    }));
     workflowReloadHandlers.get(workflowId)?.forEach((handler) => handler());
   },
 
   registerWorkflowReloadHandler: (workflowId: string, handler: () => void) => {
-    const handlers = workflowReloadHandlers.get(workflowId) ?? new Set<() => void>();
+    const handlers =
+      workflowReloadHandlers.get(workflowId) ?? new Set<() => void>();
     handlers.add(handler);
     workflowReloadHandlers.set(workflowId, handlers);
 

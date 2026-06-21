@@ -1,16 +1,25 @@
-import { useState, useEffect } from 'react';
-import { Trash2, RefreshCw, Plus, Check, Copy, AlertTriangle, Play, ExternalLink } from 'lucide-react';
-import { toast } from 'sonner';
-import { Modal } from './molecules/Modal';
-import { ConfirmDialog } from './molecules/ConfirmDialog';
-import { FormField } from './molecules/FormField';
-import { EmptyState } from './molecules/EmptyState';
-import { Spinner } from './atoms/Spinner';
-import { Button } from './atoms/Button';
-import { Input } from './atoms/Input';
-import { IconButton } from './atoms/IconButton';
-import { Badge } from './atoms/Badge';
-import API_BASE_URL from '../utils/api';
+import { useState, useEffect } from "react";
+import {
+  Trash2,
+  RefreshCw,
+  Plus,
+  Check,
+  Copy,
+  AlertTriangle,
+  Play,
+  ExternalLink,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Modal } from "./molecules/Modal";
+import { ConfirmDialog } from "./molecules/ConfirmDialog";
+import { FormField } from "./molecules/FormField";
+import { EmptyState } from "./molecules/EmptyState";
+import { Spinner } from "./atoms/Spinner";
+import { Button } from "./atoms/Button";
+import { Input } from "./atoms/Input";
+import { IconButton } from "./atoms/IconButton";
+import { Badge } from "./atoms/Badge";
+import API_BASE_URL from "../utils/api";
 import {
   workflowsUrl,
   projectsUrl,
@@ -21,25 +30,25 @@ import {
   webhookDetailUrl,
   webhookRegenerateUrl,
   webhookLogsUrl,
-} from '../utils/scopedApi';
-import type { Workflow } from '../types/Workflow';
-import type { Collection } from '../types/Collection';
-import type { ScopedEnvironment } from '../types/ScopedEnvironment';
-import { authenticatedFetch } from '../utils/authenticatedApi';
-import { WebhookCiCdExamples } from './WebhookCiCdExamples';
-import type { Webhook } from '../types/Webhook';
-import type { WebhookCredentials } from '../types/WebhookCredentials';
-import type { WebhookLog } from '../types/WebhookLog';
-import type { NewWebhookFormData } from '../types/NewWebhookFormData';
-import type { CopySuccessState } from '../types/CopySuccessState';
-import type { WebhookRun } from '../types/WebhookRun';
-import { useWebhookRuns } from '../hooks/useWebhookRuns';
-import { useScopeContext } from '../hooks/useScopeContext';
+} from "../utils/scopedApi";
+import type { Workflow } from "../types/Workflow";
+import type { Collection } from "../types/Collection";
+import type { ScopedEnvironment } from "../types/ScopedEnvironment";
+import { authenticatedFetch } from "../utils/authenticatedApi";
+import { WebhookCiCdExamples } from "./WebhookCiCdExamples";
+import type { Webhook } from "../types/Webhook";
+import type { WebhookCredentials } from "../types/WebhookCredentials";
+import type { WebhookLog } from "../types/WebhookLog";
+import type { NewWebhookFormData } from "../types/NewWebhookFormData";
+import type { CopySuccessState } from "../types/CopySuccessState";
+import type { WebhookRun } from "../types/WebhookRun";
+import { useWebhookRuns } from "../hooks/useWebhookRuns";
+import { useScopeContext } from "../hooks/useScopeContext";
 
 const buildManagementHeaders = (contentType?: boolean): HeadersInit => {
   const headers: Record<string, string> = {};
   if (contentType) {
-    headers['Content-Type'] = 'application/json';
+    headers["Content-Type"] = "application/json";
   }
   return headers;
 };
@@ -54,29 +63,38 @@ export function WebhookManager() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [newWebhookData, setNewWebhookData] = useState<NewWebhookFormData>({
-    resourceType: 'workflow', resourceId: '', environmentId: '', description: '',
+    resourceType: "workflow",
+    resourceId: "",
+    environmentId: "",
+    description: "",
   });
-  const [webhookCredentials, setWebhookCredentials] = useState<WebhookCredentials | null>(null);
+  const [webhookCredentials, setWebhookCredentials] =
+    useState<WebhookCredentials | null>(null);
   const [selectedWebhook, setSelectedWebhook] = useState<Webhook | null>(null);
   const [showLogsModal, setShowLogsModal] = useState(false);
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
-  const [webhookToRegenerate, setWebhookToRegenerate] = useState<Webhook | null>(null);
+  const [webhookToRegenerate, setWebhookToRegenerate] =
+    useState<Webhook | null>(null);
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
   const [copySuccess, setCopySuccess] = useState<CopySuccessState>({});
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [webhookRuns, setWebhookRuns] = useState<WebhookRun[]>([]);
-  const { triggerTestDelivery, fetchWebhookRuns, isTriggering } = useWebhookRuns();
+  const { triggerTestDelivery, fetchWebhookRuns, isTriggering } =
+    useWebhookRuns();
 
   useEffect(() => {
     if (!scope.isReady || !scope.workspaceId) return;
     (async () => {
       setLoading(true);
       try {
-        const [wf, col] = await Promise.all([fetchWorkflows(), fetchCollections()]);
+        const [wf, col] = await Promise.all([
+          fetchWorkflows(),
+          fetchCollections(),
+        ]);
         fetchEnvironments().catch(() => undefined);
         await fetchAllWebhooksWithData(wf || [], col || []);
       } catch (error) {
-        console.error('Error loading webhook data:', error);
+        console.error("Error loading webhook data:", error);
       } finally {
         setLoading(false);
       }
@@ -88,9 +106,18 @@ export function WebhookManager() {
   const fetchWorkflows = async () => {
     if (!scope.workspaceId) return [];
     try {
-      const res = await authenticatedFetch(workflowsUrl(scope.workspaceId, { skip: 0, limit: 100 }));
-      if (res.ok) { const d = await res.json(); const list: Workflow[] = Array.isArray(d) ? d : d.workflows || []; setWorkflows(list); return list; }
-    } catch (e) { console.error('Error fetching workflows:', e); }
+      const res = await authenticatedFetch(
+        workflowsUrl(scope.workspaceId, { skip: 0, limit: 100 }),
+      );
+      if (res.ok) {
+        const d = await res.json();
+        const list: Workflow[] = Array.isArray(d) ? d : d.workflows || [];
+        setWorkflows(list);
+        return list;
+      }
+    } catch (e) {
+      console.error("Error fetching workflows:", e);
+    }
     return [];
   };
 
@@ -98,89 +125,158 @@ export function WebhookManager() {
     if (!scope.workspaceId) return [];
     try {
       const res = await authenticatedFetch(projectsUrl(scope.workspaceId));
-      if (res.ok) { const d = await res.json(); const list: Collection[] = (d.projects || []) as Collection[]; setCollections(list); return list; }
-    } catch (e) { console.error('Error fetching collections:', e); }
+      if (res.ok) {
+        const d = await res.json();
+        const list: Collection[] = (d.projects || []) as Collection[];
+        setCollections(list);
+        return list;
+      }
+    } catch (e) {
+      console.error("Error fetching collections:", e);
+    }
     return [];
   };
 
   const fetchEnvironments = async () => {
     if (!scope.workspaceId) return [];
     try {
-      const res = await authenticatedFetch(environmentsUrl(scope.workspaceId, 'all-accessible', scope.orgId));
-      if (res.ok) { const d = await res.json(); const list: ScopedEnvironment[] = Array.isArray(d) ? d : []; setEnvironments(list); return list; }
-    } catch (e) { console.error('Error fetching environments:', e); }
+      const res = await authenticatedFetch(
+        environmentsUrl(scope.workspaceId, "all-accessible", scope.orgId),
+      );
+      if (res.ok) {
+        const d = await res.json();
+        const list: ScopedEnvironment[] = Array.isArray(d) ? d : [];
+        setEnvironments(list);
+        return list;
+      }
+    } catch (e) {
+      console.error("Error fetching environments:", e);
+    }
     return [];
   };
 
-  const fetchAllWebhooksWithData = async (wfList: Workflow[], colList: Collection[]) => {
+  const fetchAllWebhooksWithData = async (
+    wfList: Workflow[],
+    colList: Collection[],
+  ) => {
     try {
-      const [workflowWebhookGroups, collectionWebhookGroups] = await Promise.all([
-        Promise.all(wfList.map(async (w) => {
-          const res = await authenticatedFetch(webhooksForWorkflowUrl(w.workflowId));
-          if (!res.ok) return [] as Webhook[];
-          const d = await res.json();
-          return Array.isArray(d) ? d as Webhook[] : [];
-        })),
-        Promise.all(colList.map(async (c) => {
-          const res = await authenticatedFetch(webhooksForProjectUrl(c.collectionId));
-          if (!res.ok) return [] as Webhook[];
-          const d = await res.json();
-          return Array.isArray(d) ? d as Webhook[] : [];
-        })),
+      const [workflowWebhookGroups, collectionWebhookGroups] =
+        await Promise.all([
+          Promise.all(
+            wfList.map(async (w) => {
+              const res = await authenticatedFetch(
+                webhooksForWorkflowUrl(w.workflowId),
+              );
+              if (!res.ok) return [] as Webhook[];
+              const d = await res.json();
+              return Array.isArray(d) ? (d as Webhook[]) : [];
+            }),
+          ),
+          Promise.all(
+            colList.map(async (c) => {
+              const res = await authenticatedFetch(
+                webhooksForProjectUrl(c.collectionId),
+              );
+              if (!res.ok) return [] as Webhook[];
+              const d = await res.json();
+              return Array.isArray(d) ? (d as Webhook[]) : [];
+            }),
+          ),
+        ]);
+      setWebhooks([
+        ...workflowWebhookGroups.flat(),
+        ...collectionWebhookGroups.flat(),
       ]);
-      setWebhooks([...workflowWebhookGroups.flat(), ...collectionWebhookGroups.flat()]);
-    } catch (e) { console.error('Error fetching webhooks:', e); }
+    } catch (e) {
+      console.error("Error fetching webhooks:", e);
+    }
   };
 
-  const fetchAllWebhooks = () => fetchAllWebhooksWithData(workflows || [], collections || []);
+  const fetchAllWebhooks = () =>
+    fetchAllWebhooksWithData(workflows || [], collections || []);
 
   /* ---------- Actions ---------- */
 
   const createWebhook = async () => {
-    if (!newWebhookData.resourceId) { toast.error('Please select a workflow or collection'); return; }
+    if (!newWebhookData.resourceId) {
+      toast.error("Please select a workflow or collection");
+      return;
+    }
     try {
       const res = await authenticatedFetch(webhooksCreateUrl(), {
-        method: 'POST', headers: buildManagementHeaders(true), body: JSON.stringify(newWebhookData),
+        method: "POST",
+        headers: buildManagementHeaders(true),
+        body: JSON.stringify(newWebhookData),
       });
       if (res.ok) {
         const data = await res.json();
         setWebhookCredentials(data);
         setShowCredentialsModal(true);
         setShowCreateModal(false);
-        setNewWebhookData({ resourceType: 'workflow', resourceId: '', environmentId: '', description: '' });
+        setNewWebhookData({
+          resourceType: "workflow",
+          resourceId: "",
+          environmentId: "",
+          description: "",
+        });
         await fetchAllWebhooks();
-        toast.success('Webhook created');
+        toast.success("Webhook created");
       } else {
         const err = await res.json();
-        toast.error(`Failed to create webhook: ${err.detail || 'Unknown error'}`);
+        toast.error(
+          `Failed to create webhook: ${err.detail || "Unknown error"}`,
+        );
       }
-    } catch (e) { console.error('Error creating webhook:', e); toast.error('Error creating webhook'); }
+    } catch (e) {
+      console.error("Error creating webhook:", e);
+      toast.error("Error creating webhook");
+    }
   };
 
   const confirmDeleteWebhook = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await authenticatedFetch(webhookDetailUrl(deleteTarget), { method: 'DELETE', headers: buildManagementHeaders() });
-      if (res.ok) { await fetchAllWebhooks(); toast.success('Webhook deleted'); }
-      else toast.error('Failed to delete webhook');
-    } catch (e) { console.error('Error deleting webhook:', e); toast.error('Error deleting webhook'); }
-    finally { setDeleteTarget(null); }
+      const res = await authenticatedFetch(webhookDetailUrl(deleteTarget), {
+        method: "DELETE",
+        headers: buildManagementHeaders(),
+      });
+      if (res.ok) {
+        await fetchAllWebhooks();
+        toast.success("Webhook deleted");
+      } else toast.error("Failed to delete webhook");
+    } catch (e) {
+      console.error("Error deleting webhook:", e);
+      toast.error("Error deleting webhook");
+    } finally {
+      setDeleteTarget(null);
+    }
   };
 
   const toggleWebhook = async (webhook: Webhook) => {
     try {
-      const res = await authenticatedFetch(webhookDetailUrl(webhook.webhookId), {
-        method: 'PATCH', headers: buildManagementHeaders(true), body: JSON.stringify({ enabled: !webhook.enabled }),
-      });
+      const res = await authenticatedFetch(
+        webhookDetailUrl(webhook.webhookId),
+        {
+          method: "PATCH",
+          headers: buildManagementHeaders(true),
+          body: JSON.stringify({ enabled: !webhook.enabled }),
+        },
+      );
       if (res.ok) await fetchAllWebhooks();
-      else toast.error('Failed to update webhook');
-    } catch (e) { console.error('Error updating webhook:', e); toast.error('Error updating webhook'); }
+      else toast.error("Failed to update webhook");
+    } catch (e) {
+      console.error("Error updating webhook:", e);
+      toast.error("Error updating webhook");
+    }
   };
 
   const confirmRegenerate = async () => {
     if (!webhookToRegenerate) return;
     try {
-      const res = await authenticatedFetch(webhookRegenerateUrl(webhookToRegenerate.webhookId), { method: 'POST', headers: buildManagementHeaders() });
+      const res = await authenticatedFetch(
+        webhookRegenerateUrl(webhookToRegenerate.webhookId),
+        { method: "POST", headers: buildManagementHeaders() },
+      );
       if (res.ok) {
         const data = await res.json();
         setWebhookCredentials(data);
@@ -189,13 +285,15 @@ export function WebhookManager() {
         setWebhookToRegenerate(null);
         await fetchAllWebhooks();
       } else {
-        const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-        toast.error(`Failed to regenerate credentials: ${err.detail || 'Unknown error'}`);
+        const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+        toast.error(
+          `Failed to regenerate credentials: ${err.detail || "Unknown error"}`,
+        );
         setShowRegenerateModal(false);
         setWebhookToRegenerate(null);
       }
     } catch (e) {
-      console.error('Error regenerating credentials:', e);
+      console.error("Error regenerating credentials:", e);
       toast.error(`Error regenerating credentials: ${(e as Error).message}`);
       setShowRegenerateModal(false);
       setWebhookToRegenerate(null);
@@ -206,49 +304,78 @@ export function WebhookManager() {
     setSelectedWebhook(webhook);
     setShowLogsModal(true);
     try {
-      const res = await authenticatedFetch(webhookLogsUrl(webhook.webhookId), { headers: buildManagementHeaders() });
-      if (res.ok) { const d = await res.json(); setWebhookLogs(d.logs || []); }
+      const res = await authenticatedFetch(webhookLogsUrl(webhook.webhookId), {
+        headers: buildManagementHeaders(),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setWebhookLogs(d.logs || []);
+      }
       const runs = await fetchWebhookRuns(webhook.webhookId);
       setWebhookRuns(runs);
-    } catch (e) { console.error('Error fetching webhook logs:', e); }
+    } catch (e) {
+      console.error("Error fetching webhook logs:", e);
+    }
   };
 
   const handleTestDelivery = async (webhook: Webhook) => {
     await triggerTestDelivery(webhook);
     try {
-      const res = await authenticatedFetch(webhookLogsUrl(webhook.webhookId), { headers: buildManagementHeaders() });
-      if (res.ok) { const d = await res.json(); setWebhookLogs(d.logs || []); }
+      const res = await authenticatedFetch(webhookLogsUrl(webhook.webhookId), {
+        headers: buildManagementHeaders(),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setWebhookLogs(d.logs || []);
+      }
       const runs = await fetchWebhookRuns(webhook.webhookId);
       setWebhookRuns(runs);
-    } catch (e) { console.error('Error refreshing logs after test delivery:', e); }
+    } catch (e) {
+      console.error("Error refreshing logs after test delivery:", e);
+    }
   };
 
   const copyToClipboard = async (text: string, key: string) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopySuccess((prev) => ({ ...prev, [key]: true }));
-      setTimeout(() => setCopySuccess((prev) => ({ ...prev, [key]: false })), 2000);
-    } catch (e) { console.error('Failed to copy:', e); }
+      setTimeout(
+        () => setCopySuccess((prev) => ({ ...prev, [key]: false })),
+        2000,
+      );
+    } catch (e) {
+      console.error("Failed to copy:", e);
+    }
   };
 
   /* ---------- Helpers ---------- */
 
   const getResourceName = (wh: Webhook) => {
-    if (wh.resourceType === 'workflow') return (workflows || []).find(w => w.workflowId === wh.resourceId)?.name || wh.resourceId;
-    return (collections || []).find(c => c.collectionId === wh.resourceId)?.name || wh.resourceId;
+    if (wh.resourceType === "workflow")
+      return (
+        (workflows || []).find((w) => w.workflowId === wh.resourceId)?.name ||
+        wh.resourceId
+      );
+    return (
+      (collections || []).find((c) => c.collectionId === wh.resourceId)?.name ||
+      wh.resourceId
+    );
   };
 
   const getEnvironmentName = (envId: string | undefined) => {
-    if (!envId) return 'None';
-    return (environments || []).find(e => e.environmentId === envId)?.name || envId;
+    if (!envId) return "None";
+    return (
+      (environments || []).find((e) => e.environmentId === envId)?.name || envId
+    );
   };
 
-  const formatDate = (d: string | undefined) => d ? new Date(d).toLocaleString() : 'Never';
+  const formatDate = (d: string | undefined) =>
+    d ? new Date(d).toLocaleString() : "Never";
 
-  const statusBadgeVariant = (s: string): 'success' | 'error' | 'warning' => {
-    if (s === 'success') return 'success';
-    if (s === 'failed') return 'error';
-    return 'warning';
+  const statusBadgeVariant = (s: string): "success" | "error" | "warning" => {
+    if (s === "success") return "success";
+    if (s === "failed") return "error";
+    return "warning";
   };
 
   /* ---------- Render ---------- */
@@ -266,146 +393,357 @@ export function WebhookManager() {
       {/* Header */}
       <div className="p-4 border-b border-border dark:border-border-dark">
         <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">Webhooks</h2>
-          <Button onClick={() => setShowCreateModal(true)} variant="primary" size="sm">
+          <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
+            Webhooks
+          </h2>
+          <Button
+            onClick={() => setShowCreateModal(true)}
+            variant="primary"
+            size="sm"
+          >
             <Plus className="w-4 h-4" /> Create
           </Button>
         </div>
-        <p className="text-xs text-text-muted dark:text-text-muted-dark">Manage CI/CD webhooks for workflows and collections</p>
+        <p className="text-xs text-text-muted dark:text-text-muted-dark">
+          Manage CI/CD webhooks for workflows and collections
+        </p>
       </div>
 
       {/* Webhooks List */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {webhooks.length === 0 ? (
           <EmptyState
-            icon={<Plus className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+            icon={
+              <Plus
+                className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+                strokeWidth={1.5}
+              />
+            }
             title="No webhooks yet"
             description="Create a webhook to integrate with CI/CD pipelines."
             action={
-              <Button onClick={() => setShowCreateModal(true)} variant="primary" size="sm">
+              <Button
+                onClick={() => setShowCreateModal(true)}
+                variant="primary"
+                size="sm"
+              >
                 <Plus className="w-4 h-4" /> Create Webhook
               </Button>
             }
           />
-        ) : webhooks.map((wh) => (
-          <div key={wh.webhookId} className="border border-border dark:border-border-dark rounded p-3 bg-surface-raised dark:bg-surface-dark-raised">
-            {/* Header row */}
-            <div className="flex items-start justify-between mb-2">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="font-medium text-sm text-text-primary dark:text-text-primary-dark min-w-0 truncate">{getResourceName(wh)}</span>
-                  <Badge variant={wh.resourceType === 'workflow' ? 'info' : 'secondary'} size="sm">{wh.resourceType}</Badge>
-                  <Button
-                    onClick={() => toggleWebhook(wh)}
-                    variant="ghost"
-                    size="xs"
-                    className={wh.enabled ? 'text-status-success' : 'text-text-muted'}
-                  >
-                    {wh.enabled ? 'Enabled' : 'Disabled'}
-                  </Button>
+        ) : (
+          webhooks.map((wh) => (
+            <div
+              key={wh.webhookId}
+              className="border border-border dark:border-border-dark rounded p-3 bg-surface-raised dark:bg-surface-dark-raised"
+            >
+              {/* Header row */}
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="font-medium text-sm text-text-primary dark:text-text-primary-dark min-w-0 truncate">
+                      {getResourceName(wh)}
+                    </span>
+                    <Badge
+                      variant={
+                        wh.resourceType === "workflow" ? "info" : "secondary"
+                      }
+                      size="sm"
+                    >
+                      {wh.resourceType}
+                    </Badge>
+                    <Button
+                      onClick={() => toggleWebhook(wh)}
+                      variant="ghost"
+                      size="xs"
+                      className={
+                        wh.enabled ? "text-status-success" : "text-text-muted"
+                      }
+                    >
+                      {wh.enabled ? "Enabled" : "Disabled"}
+                    </Button>
+                  </div>
+                  {wh.description && (
+                    <p className="text-xs text-text-muted dark:text-text-muted-dark truncate">
+                      {wh.description}
+                    </p>
+                  )}
                 </div>
-                {wh.description && <p className="text-xs text-text-muted dark:text-text-muted-dark truncate">{wh.description}</p>}
+              </div>
+
+              {/* Info */}
+              <div className="space-y-1 text-xs text-text-secondary dark:text-text-secondary-dark mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium flex-shrink-0">
+                    Environment:
+                  </span>
+                  <span className="truncate">
+                    {getEnvironmentName(wh.environmentId)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium flex-shrink-0">Last Used:</span>
+                  <span className="truncate">{formatDate(wh.lastUsed)}</span>
+                </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium flex-shrink-0">Usage:</span>
+                  <span>{wh.usageCount}</span>
+                  {wh.lastStatus && (
+                    <Badge
+                      variant={statusBadgeVariant(wh.lastStatus)}
+                      size="xs"
+                    >
+                      {wh.lastStatus}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* URL */}
+              <div className="mb-2">
+                <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">
+                  Webhook URL:
+                </span>
+                <div className="flex items-center gap-2 mt-1">
+                  <Input
+                    type="text"
+                    readOnly
+                    value={wh.url}
+                    aria-label="Webhook URL"
+                    className="flex-1 font-mono text-xs"
+                  />
+                  <IconButton
+                    onClick={() =>
+                      copyToClipboard(wh.url, `url-${wh.webhookId}`)
+                    }
+                    variant="ghost"
+                    size="sm"
+                    tooltip="Copy URL"
+                  >
+                    {copySuccess[`url-${wh.webhookId}`] ? (
+                      <Check className="w-4 h-4 text-status-success" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </IconButton>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-border-dark flex-wrap">
+                <Button
+                  onClick={() => handleTestDelivery(wh)}
+                  variant="primary"
+                  size="sm"
+                  disabled={isTriggering || !wh.enabled}
+                >
+                  <Play className="w-3.5 h-3.5" />{" "}
+                  {isTriggering ? "Triggering…" : "Test Delivery"}
+                </Button>
+                <Button onClick={() => viewLogs(wh)} variant="ghost" size="sm">
+                  View Logs
+                </Button>
+                <Button
+                  onClick={() => {
+                    setWebhookToRegenerate(wh);
+                    setShowRegenerateModal(true);
+                  }}
+                  variant="ghost"
+                  size="sm"
+                  intent="warning"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Regenerate
+                </Button>
+                <Button
+                  onClick={() => setDeleteTarget(wh.webhookId)}
+                  variant="ghost"
+                  size="sm"
+                  intent="error"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </Button>
               </div>
             </div>
-
-            {/* Info */}
-            <div className="space-y-1 text-xs text-text-secondary dark:text-text-secondary-dark mb-2">
-              <div className="flex items-center gap-2 min-w-0"><span className="font-medium flex-shrink-0">Environment:</span><span className="truncate">{getEnvironmentName(wh.environmentId)}</span></div>
-              <div className="flex items-center gap-2 min-w-0"><span className="font-medium flex-shrink-0">Last Used:</span><span className="truncate">{formatDate(wh.lastUsed)}</span></div>
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="font-medium flex-shrink-0">Usage:</span><span>{wh.usageCount}</span>
-                {wh.lastStatus && <Badge variant={statusBadgeVariant(wh.lastStatus)} size="xs">{wh.lastStatus}</Badge>}
-              </div>
-            </div>
-
-            {/* URL */}
-            <div className="mb-2">
-              <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">Webhook URL:</span>
-              <div className="flex items-center gap-2 mt-1">
-                <Input type="text" readOnly value={wh.url} aria-label="Webhook URL" className="flex-1 font-mono text-xs" />
-                <IconButton onClick={() => copyToClipboard(wh.url, `url-${wh.webhookId}`)} variant="ghost" size="sm" tooltip="Copy URL">
-                  {copySuccess[`url-${wh.webhookId}`] ? <Check className="w-4 h-4 text-status-success" /> : <Copy className="w-4 h-4" />}
-                </IconButton>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-border-dark flex-wrap">
-              <Button onClick={() => handleTestDelivery(wh)} variant="primary" size="sm" disabled={isTriggering || !wh.enabled}>
-                <Play className="w-3.5 h-3.5" /> {isTriggering ? 'Triggering…' : 'Test Delivery'}
-              </Button>
-              <Button onClick={() => viewLogs(wh)} variant="ghost" size="sm">View Logs</Button>
-              <Button onClick={() => { setWebhookToRegenerate(wh); setShowRegenerateModal(true); }} variant="ghost" size="sm" intent="warning">
-                <RefreshCw className="w-3.5 h-3.5" /> Regenerate
-              </Button>
-              <Button onClick={() => setDeleteTarget(wh.webhookId)} variant="ghost" size="sm" intent="error">
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </Button>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* ---- Sub-Modals ---- */}
 
       {/* Create Webhook */}
-      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Webhook" size="sm"
-        footer={() => <div className="flex gap-3 w-full"><Button onClick={() => setShowCreateModal(false)} variant="ghost" fullWidth>Cancel</Button><Button onClick={createWebhook} variant="primary" fullWidth>Create</Button></div>}>
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Create Webhook"
+        size="sm"
+        footer={() => (
+          <div className="flex gap-3 w-full">
+            <Button
+              onClick={() => setShowCreateModal(false)}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+            <Button onClick={createWebhook} variant="primary" fullWidth>
+              Create
+            </Button>
+          </div>
+        )}
+      >
         <div className="space-y-4 p-5">
           <FormField label="Resource Type">
-            <select value={newWebhookData.resourceType} onChange={(e) => setNewWebhookData({ ...newWebhookData, resourceType: e.target.value as 'workflow' | 'collection', resourceId: '' })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
+            <select
+              value={newWebhookData.resourceType}
+              onChange={(e) =>
+                setNewWebhookData({
+                  ...newWebhookData,
+                  resourceType: e.target.value as "workflow" | "collection",
+                  resourceId: "",
+                })
+              }
+              className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark"
+            >
               <option value="workflow">Workflow</option>
               <option value="collection">Collection</option>
             </select>
           </FormField>
-          <FormField label={newWebhookData.resourceType === 'workflow' ? 'Workflow' : 'Collection'}>
-            <select value={newWebhookData.resourceId} onChange={(e) => setNewWebhookData({ ...newWebhookData, resourceId: e.target.value })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
+          <FormField
+            label={
+              newWebhookData.resourceType === "workflow"
+                ? "Workflow"
+                : "Collection"
+            }
+          >
+            <select
+              value={newWebhookData.resourceId}
+              onChange={(e) =>
+                setNewWebhookData({
+                  ...newWebhookData,
+                  resourceId: e.target.value,
+                })
+              }
+              className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark"
+            >
               <option value="">Select {newWebhookData.resourceType}…</option>
-              {newWebhookData.resourceType === 'workflow'
-                ? (workflows || []).map(w => <option key={w.workflowId} value={w.workflowId}>{w.name}</option>)
-                : (collections || []).map(c => <option key={c.collectionId} value={c.collectionId}>{c.name}</option>)}
+              {newWebhookData.resourceType === "workflow"
+                ? (workflows || []).map((w) => (
+                    <option key={w.workflowId} value={w.workflowId}>
+                      {w.name}
+                    </option>
+                  ))
+                : (collections || []).map((c) => (
+                    <option key={c.collectionId} value={c.collectionId}>
+                      {c.name}
+                    </option>
+                  ))}
             </select>
           </FormField>
           <FormField label="Environment (Optional)">
-            <select value={newWebhookData.environmentId} onChange={(e) => setNewWebhookData({ ...newWebhookData, environmentId: e.target.value })} className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark">
+            <select
+              value={newWebhookData.environmentId}
+              onChange={(e) =>
+                setNewWebhookData({
+                  ...newWebhookData,
+                  environmentId: e.target.value,
+                })
+              }
+              className="select select-bordered w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark"
+            >
               <option value="">None</option>
-              {(environments || []).map(env => <option key={env.environmentId} value={env.environmentId}>{env.name}</option>)}
+              {(environments || []).map((env) => (
+                <option key={env.environmentId} value={env.environmentId}>
+                  {env.name}
+                </option>
+              ))}
             </select>
           </FormField>
           <FormField label="Description (Optional)">
-            <Input type="text" value={newWebhookData.description} onChange={(e) => setNewWebhookData({ ...newWebhookData, description: e.target.value })} placeholder="e.g., Production deployment webhook" className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark" />
+            <Input
+              type="text"
+              value={newWebhookData.description}
+              onChange={(e) =>
+                setNewWebhookData({
+                  ...newWebhookData,
+                  description: e.target.value,
+                })
+              }
+              placeholder="e.g., Production deployment webhook"
+              className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark placeholder:text-text-muted dark:placeholder:text-text-muted-dark"
+            />
           </FormField>
         </div>
       </Modal>
 
       {/* Credentials Modal */}
-      <Modal isOpen={showCredentialsModal && !!webhookCredentials} onClose={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} title="Webhook Credentials" size="md"
-        footer={() => <Button onClick={() => { setShowCredentialsModal(false); setWebhookCredentials(null); }} variant="primary" fullWidth>I've Saved the Credentials</Button>}>
+      <Modal
+        isOpen={showCredentialsModal && !!webhookCredentials}
+        onClose={() => {
+          setShowCredentialsModal(false);
+          setWebhookCredentials(null);
+        }}
+        title="Webhook Credentials"
+        size="md"
+        footer={() => (
+          <Button
+            onClick={() => {
+              setShowCredentialsModal(false);
+              setWebhookCredentials(null);
+            }}
+            variant="primary"
+            fullWidth
+          >
+            I've Saved the Credentials
+          </Button>
+        )}
+      >
         <div className="space-y-4 p-5">
           <div className="p-3 bg-[var(--aw-status-warning)]/10 border border-[var(--aw-status-warning)]/30 rounded">
             <p className="text-sm text-text-primary dark:text-text-primary-dark flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-[var(--aw-status-warning)] flex-shrink-0" />
-              <strong>Important:</strong> Copy these credentials now. They will not be shown again!
+              <strong>Important:</strong> Copy these credentials now. They will
+              not be shown again!
             </p>
           </div>
-          {webhookCredentials && (['url', 'token', 'hmacSecret'] as const).map((field) => {
-            const labels: Record<string, string> = { url: 'Webhook URL', token: 'Webhook Token (X-Webhook-Token header)', hmacSecret: 'HMAC Secret (for signature validation)' };
-            const key = `cred-${field}`;
-            return (
-              <FormField key={field} label={labels[field] ?? ''}>
-                <div className="flex items-center gap-2">
-                    <input type="text" readOnly value={webhookCredentials[field]} aria-label={labels[field] ?? 'Webhook credential'} className="input input-bordered flex-1 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark" />
-                  <IconButton onClick={() => copyToClipboard(webhookCredentials[field], key)} variant="primary" size="sm">
-                    {copySuccess[key] ? <Check className="w-4 h-4" /> : 'Copy'}
-                  </IconButton>
-                </div>
-              </FormField>
-            );
-          })}
+          {webhookCredentials &&
+            (["url", "token", "hmacSecret"] as const).map((field) => {
+              const labels: Record<string, string> = {
+                url: "Webhook URL",
+                token: "Webhook Token (X-Webhook-Token header)",
+                hmacSecret: "HMAC Secret (for signature validation)",
+              };
+              const key = `cred-${field}`;
+              return (
+                <FormField key={field} label={labels[field] ?? ""}>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={webhookCredentials[field]}
+                      aria-label={labels[field] ?? "Webhook credential"}
+                      className="input input-bordered flex-1 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark"
+                    />
+                    <IconButton
+                      onClick={() =>
+                        copyToClipboard(webhookCredentials[field], key)
+                      }
+                      variant="primary"
+                      size="sm"
+                    >
+                      {copySuccess[key] ? (
+                        <Check className="w-4 h-4" />
+                      ) : (
+                        "Copy"
+                      )}
+                    </IconButton>
+                  </div>
+                </FormField>
+              );
+            })}
           {webhookCredentials && (
             <FormField label="cURL Example">
               <pre className="text-xs bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded p-3 overflow-x-auto font-mono">
-{`curl -X POST "${webhookCredentials.url}" \\
+                {`curl -X POST "${webhookCredentials.url}" \\
   -H "X-Webhook-Token: ${webhookCredentials.token}" \\
   -H "Content-Type: application/json" \\
   -d '{}'`}
@@ -413,33 +751,61 @@ export function WebhookManager() {
             </FormField>
           )}
           <FormField label="CI/CD Examples">
-<WebhookCiCdExamples />
+            <WebhookCiCdExamples />
           </FormField>
         </div>
       </Modal>
 
       {/* Logs Modal */}
-      <Modal isOpen={showLogsModal && !!selectedWebhook} onClose={() => { setShowLogsModal(false); setSelectedWebhook(null); setWebhookLogs([]); setWebhookRuns([]); }} title="Webhook Execution Logs" size="lg">
+      <Modal
+        isOpen={showLogsModal && !!selectedWebhook}
+        onClose={() => {
+          setShowLogsModal(false);
+          setSelectedWebhook(null);
+          setWebhookLogs([]);
+          setWebhookRuns([]);
+        }}
+        title="Webhook Execution Logs"
+        size="lg"
+      >
         {webhookLogs.length === 0 && webhookRuns.length === 0 ? (
-          <div className="text-center py-8 text-text-muted dark:text-text-muted-dark">No execution logs yet</div>
+          <div className="text-center py-8 text-text-muted dark:text-text-muted-dark">
+            No execution logs yet
+          </div>
         ) : (
           <div className="space-y-3">
             {/* Real runs section */}
             {webhookRuns.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">Runs</h3>
+                <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">
+                  Runs
+                </h3>
                 <div className="space-y-2">
                   {webhookRuns.map((run) => (
-                    <div key={run.id} className="border border-border dark:border-border-dark rounded p-3 bg-surface-raised dark:bg-surface-dark-raised">
+                    <div
+                      key={run.id}
+                      className="border border-border dark:border-border-dark rounded p-3 bg-surface-raised dark:bg-surface-dark-raised"
+                    >
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
-                          <Badge variant={statusBadgeVariant(run.status)} size="sm">{run.status}</Badge>
-                          <span className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark">Run: {run.runId}</span>
+                          <Badge
+                            variant={statusBadgeVariant(run.status)}
+                            size="sm"
+                          >
+                            {run.status}
+                          </Badge>
+                          <span className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark">
+                            Run: {run.runId}
+                          </span>
                         </div>
-                        <span className="text-xs text-text-muted dark:text-text-muted-dark">{formatDate(run.triggeredAt)}</span>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                          {formatDate(run.triggeredAt)}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-text-secondary dark:text-text-secondary-dark">Duration: {(run.duration / 1000).toFixed(2)}s</span>
+                        <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                          Duration: {(run.duration / 1000).toFixed(2)}s
+                        </span>
                         <a
                           href={`${API_BASE_URL}/api/runs/${run.runId}/results`}
                           target="_blank"
@@ -458,16 +824,36 @@ export function WebhookManager() {
             {/* Auth / idempotency / rate-limit logs */}
             {webhookLogs.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">Delivery Logs</h3>
+                <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">
+                  Delivery Logs
+                </h3>
                 <div className="space-y-2">
                   {webhookLogs.map((log) => (
-                    <div key={log.logId} className="border border-border dark:border-border-dark rounded p-3 bg-surface-raised dark:bg-surface-dark-raised">
+                    <div
+                      key={log.logId}
+                      className="border border-border dark:border-border-dark rounded p-3 bg-surface-raised dark:bg-surface-dark-raised"
+                    >
                       <div className="flex items-center justify-between mb-2">
-                        <Badge variant={statusBadgeVariant(log.status)} size="sm">{log.status}</Badge>
-                        <span className="text-xs text-text-muted dark:text-text-muted-dark">{formatDate(log.timestamp)}</span>
+                        <Badge
+                          variant={statusBadgeVariant(log.status)}
+                          size="sm"
+                        >
+                          {log.status}
+                        </Badge>
+                        <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                          {formatDate(log.timestamp)}
+                        </span>
                       </div>
-                      {log.duration && <div className="text-xs text-text-secondary dark:text-text-secondary-dark">Duration: {(log.duration / 1000).toFixed(2)}s</div>}
-                      {log.errorMessage && <div className="text-xs text-status-error mt-1">Error: {log.errorMessage}</div>}
+                      {log.duration && (
+                        <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                          Duration: {(log.duration / 1000).toFixed(2)}s
+                        </div>
+                      )}
+                      {log.errorMessage && (
+                        <div className="text-xs text-status-error mt-1">
+                          Error: {log.errorMessage}
+                        </div>
+                      )}
                       {log.runId && (
                         <div className="flex items-center gap-1 text-xs text-primary mt-1">
                           <span>Run ID: {log.runId}</span>
@@ -498,7 +884,10 @@ export function WebhookManager() {
         confirmLabel="Regenerate"
         intent="warning"
         onConfirm={confirmRegenerate}
-        onClose={() => { setShowRegenerateModal(false); setWebhookToRegenerate(null); }}
+        onClose={() => {
+          setShowRegenerateModal(false);
+          setWebhookToRegenerate(null);
+        }}
       />
 
       {/* Delete Confirmation */}

@@ -1,5 +1,5 @@
-import type { RunStatus } from './RunStatus';
-import type { RunResult } from './RunResult';
+import type { RunStatus } from "./RunStatus";
+import type { RunResult } from "./RunResult";
 
 export interface Run {
   runId: string;

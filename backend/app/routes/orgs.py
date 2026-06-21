@@ -4,6 +4,7 @@ Organization API routes — full implementation.
 GitHub-style nested routes for organizations, members, teams, invites,
 permission grants, and outside collaborators.
 """
+
 from __future__ import annotations
 
 import logging

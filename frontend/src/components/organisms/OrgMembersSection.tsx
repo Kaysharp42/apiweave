@@ -1,15 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { UserPlus, Trash2, ShieldAlert } from 'lucide-react';
-import { IconButton } from '../atoms/IconButton';
-import { Spinner } from '../atoms/Spinner';
-import { RoleBadge } from '../atoms/RoleBadge';
-import { EmptyState } from '../molecules/EmptyState';
-import { Panel } from '../molecules/Panel';
-import { ConfirmDialog } from '../molecules/ConfirmDialog';
-import { authenticatedJson, authenticatedFetch } from '../../utils/authenticatedApi';
-import API_BASE_URL from '../../utils/api';
-import type { OrgMember, OrgRole } from '../../types';
-import { toast } from 'sonner';
+import { useState, useEffect, useCallback } from "react";
+import { UserPlus, Trash2, ShieldAlert } from "lucide-react";
+import { IconButton } from "../atoms/IconButton";
+import { Spinner } from "../atoms/Spinner";
+import { RoleBadge } from "../atoms/RoleBadge";
+import { EmptyState } from "../molecules/EmptyState";
+import { Panel } from "../molecules/Panel";
+import { ConfirmDialog } from "../molecules/ConfirmDialog";
+import {
+  authenticatedJson,
+  authenticatedFetch,
+} from "../../utils/authenticatedApi";
+import API_BASE_URL from "../../utils/api";
+import type { OrgMember, OrgRole } from "../../types";
+import { toast } from "sonner";
 
 export interface OrgMembersSectionProps {
   orgSlug: string;
@@ -17,9 +20,12 @@ export interface OrgMembersSectionProps {
   currentUserId: string;
 }
 
-const ORG_ROLES: OrgRole[] = ['owner', 'member', 'billing', 'security'];
+const ORG_ROLES: OrgRole[] = ["owner", "member", "billing", "security"];
 
-export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionProps) {
+export function OrgMembersSection({
+  orgSlug,
+  currentUserId,
+}: OrgMembersSectionProps) {
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [removeConfirm, setRemoveConfirm] = useState<OrgMember | null>(null);
@@ -33,7 +39,7 @@ export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionP
       );
       setMembers(data);
     } catch {
-      toast.error('Failed to load members');
+      toast.error("Failed to load members");
     } finally {
       setLoading(false);
     }
@@ -48,19 +54,22 @@ export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionP
       const updated = await authenticatedJson<OrgMember>(
         `${API_BASE_URL}/api/orgs/${orgSlug}/members/${userId}`,
         {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ role: newRole }),
         },
       );
       setMembers((prev) =>
         prev.map((m) => (m.userId === userId ? updated : m)),
       );
-      toast.success('Role updated');
+      toast.success("Role updated");
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update role';
-      if (message.includes('last_owner') || message.includes('409')) {
-        toast.error('Cannot demote or remove the last owner of the organization');
+      const message =
+        err instanceof Error ? err.message : "Failed to update role";
+      if (message.includes("last_owner") || message.includes("409")) {
+        toast.error(
+          "Cannot demote or remove the last owner of the organization",
+        );
       } else {
         toast.error(message);
       }
@@ -73,14 +82,17 @@ export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionP
     try {
       await authenticatedFetch(
         `${API_BASE_URL}/api/orgs/${orgSlug}/members/${removeConfirm.userId}`,
-        { method: 'DELETE' },
+        { method: "DELETE" },
       );
-      setMembers((prev) => prev.filter((m) => m.userId !== removeConfirm.userId));
-      toast.success('Member removed');
+      setMembers((prev) =>
+        prev.filter((m) => m.userId !== removeConfirm.userId),
+      );
+      toast.success("Member removed");
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to remove member';
-      if (message.includes('last_owner') || message.includes('409')) {
-        toast.error('Cannot remove the last owner of the organization');
+      const message =
+        err instanceof Error ? err.message : "Failed to remove member";
+      if (message.includes("last_owner") || message.includes("409")) {
+        toast.error("Cannot remove the last owner of the organization");
       } else {
         toast.error(message);
       }
@@ -90,7 +102,7 @@ export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionP
     }
   };
 
-  const ownerCount = members.filter((m) => m.role === 'owner').length;
+  const ownerCount = members.filter((m) => m.role === "owner").length;
 
   return (
     <>
@@ -99,13 +111,16 @@ export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionP
         icon={UserPlus}
         headerActions={
           <span className="text-xs text-text-muted dark:text-text-muted-dark">
-            {members.length} member{members.length !== 1 ? 's' : ''}
+            {members.length} member{members.length !== 1 ? "s" : ""}
           </span>
         }
       >
         {loading ? (
           <div className="flex justify-center p-12">
-            <Spinner size="lg" className="text-primary dark:text-primary-light" />
+            <Spinner
+              size="lg"
+              className="text-primary dark:text-primary-light"
+            />
           </div>
         ) : members.length === 0 ? (
           <EmptyState
@@ -126,7 +141,7 @@ export function OrgMembersSection({ orgSlug, currentUserId }: OrgMembersSectionP
                 {members.map((member) => {
                   const isSelf = member.userId === currentUserId;
                   const isLastOwner =
-                    member.role === 'owner' && ownerCount <= 1;
+                    member.role === "owner" && ownerCount <= 1;
 
                   return (
                     <tr

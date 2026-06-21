@@ -8,6 +8,7 @@ of the GitHub-style scoped secrets refactor.
 Service tokens are validated against the database and their scope/permissions
 are propagated to MCP tool functions via scope_context contextvars.
 """
+
 import logging
 from collections.abc import Awaitable, Callable
 
@@ -183,10 +184,7 @@ def check_token_scope(
     """
     if not token:
         return False
-    return (
-        token.scopeType == expected_scope_type
-        and token.scopeId == expected_scope_id
-    )
+    return token.scopeType == expected_scope_type and token.scopeId == expected_scope_id
 
 
 def check_token_permission(token, required_permission: str) -> bool:

@@ -4,13 +4,13 @@
 
 /** Response shape for workspace-scoped project listing. */
 export interface WorkspaceProjectListResponse {
-  projects: import('./Project').Project[];
+  projects: import("./Project").Project[];
   total: number;
 }
 
 /** Response shape for workspace-scoped workflow listing. */
 export interface WorkspaceWorkflowListResponse {
-  workflows: import('./Workflow').Workflow[];
+  workflows: import("./Workflow").Workflow[];
   total: number;
 }
 

@@ -1,19 +1,19 @@
-import { useState, useEffect } from 'react';
-import { ShieldOff, Save } from 'lucide-react';
-import { Button } from '../atoms/Button';
-import { Toggle } from '../atoms/Toggle';
-import { Card } from '../molecules/Card';
-import { FormField } from '../molecules/FormField';
-import { ReviewerSelector } from './ReviewerSelector';
+import { useState, useEffect } from "react";
+import { ShieldOff, Save } from "lucide-react";
+import { Button } from "../atoms/Button";
+import { Toggle } from "../atoms/Toggle";
+import { Card } from "../molecules/Card";
+import { FormField } from "../molecules/FormField";
+import { ReviewerSelector } from "./ReviewerSelector";
 import type {
   EnvironmentProtectionPanelProps,
   ProtectionFormState,
-} from '../../types';
+} from "../../types";
 
 const DEFAULT_STATE: ProtectionFormState = {
   requiredReviewers: [],
   allowSelfApproval: false,
-  bypassPolicy: 'none',
+  bypassPolicy: "none",
   bypassAllowlist: [],
 };
 
@@ -23,7 +23,7 @@ export function EnvironmentProtectionPanel({
   onSave,
   onRemove,
   saving = false,
-  className = '',
+  className = "",
 }: EnvironmentProtectionPanelProps) {
   const [form, setForm] = useState<ProtectionFormState>(DEFAULT_STATE);
 
@@ -40,7 +40,10 @@ export function EnvironmentProtectionPanel({
     }
   }, [protection]);
 
-  function update<K extends keyof ProtectionFormState>(key: K, value: ProtectionFormState[K]) {
+  function update<K extends keyof ProtectionFormState>(
+    key: K,
+    value: ProtectionFormState[K],
+  ) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -51,10 +54,12 @@ export function EnvironmentProtectionPanel({
   const isProtected = protection !== null;
   const hasChanges =
     isProtected &&
-    (JSON.stringify(form.requiredReviewers) !== JSON.stringify(protection?.requiredReviewers) ||
+    (JSON.stringify(form.requiredReviewers) !==
+      JSON.stringify(protection?.requiredReviewers) ||
       form.allowSelfApproval !== protection?.allowSelfApproval ||
       form.bypassPolicy !== protection?.bypassPolicy ||
-      JSON.stringify(form.bypassAllowlist) !== JSON.stringify(protection?.bypassAllowlist));
+      JSON.stringify(form.bypassAllowlist) !==
+        JSON.stringify(protection?.bypassAllowlist));
 
   return (
     <div className={`space-y-4 ${className}`}>
@@ -79,7 +84,7 @@ export function EnvironmentProtectionPanel({
           {/* Required Reviewers */}
           <ReviewerSelector
             value={form.requiredReviewers}
-            onChange={(ids) => update('requiredReviewers', ids)}
+            onChange={(ids) => update("requiredReviewers", ids)}
             options={reviewerOptions}
             label="Required Reviewers"
           />
@@ -96,7 +101,7 @@ export function EnvironmentProtectionPanel({
             </div>
             <Toggle
               checked={form.allowSelfApproval}
-              onChange={(e) => update('allowSelfApproval', e.target.checked)}
+              onChange={(e) => update("allowSelfApproval", e.target.checked)}
               variant="primary"
             />
           </div>
@@ -109,17 +114,22 @@ export function EnvironmentProtectionPanel({
             <select
               value={form.bypassPolicy}
               onChange={(e) =>
-                update('bypassPolicy', e.target.value as ProtectionFormState['bypassPolicy'])
+                update(
+                  "bypassPolicy",
+                  e.target.value as ProtectionFormState["bypassPolicy"],
+                )
               }
               className="select select-bordered w-full rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-sm focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
             >
               <option value="none">None — approval always required</option>
-              <option value="trusted_token_only">Trusted Token Only — service tokens can bypass</option>
+              <option value="trusted_token_only">
+                Trusted Token Only — service tokens can bypass
+              </option>
             </select>
           </FormField>
 
           {/* Bypass Allowlist */}
-          {form.bypassPolicy === 'trusted_token_only' && (
+          {form.bypassPolicy === "trusted_token_only" && (
             <FormField
               label="Bypass Allowlist"
               hint="Service token IDs allowed to bypass protection"
@@ -141,7 +151,7 @@ export function EnvironmentProtectionPanel({
                       size="xs"
                       onClick={() =>
                         update(
-                          'bypassAllowlist',
+                          "bypassAllowlist",
                           form.bypassAllowlist.filter((_, i) => i !== idx),
                         )
                       }
@@ -152,7 +162,10 @@ export function EnvironmentProtectionPanel({
                 ))}
                 <BypassTokenInput
                   onAdd={(tokenId) =>
-                    update('bypassAllowlist', [...form.bypassAllowlist, tokenId])
+                    update("bypassAllowlist", [
+                      ...form.bypassAllowlist,
+                      tokenId,
+                    ])
                   }
                 />
               </div>
@@ -171,7 +184,7 @@ export function EnvironmentProtectionPanel({
           onClick={handleSave}
           disabled={!hasChanges && isProtected}
         >
-          {isProtected ? 'Update Protection' : 'Enable Protection'}
+          {isProtected ? "Update Protection" : "Enable Protection"}
         </Button>
       </div>
     </div>
@@ -180,13 +193,13 @@ export function EnvironmentProtectionPanel({
 
 /** Small inline input to add a token ID to the bypass allowlist. */
 function BypassTokenInput({ onAdd }: { onAdd: (tokenId: string) => void }) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
 
   function handleAdd() {
     const trimmed = value.trim();
     if (trimmed) {
       onAdd(trimmed);
-      setValue('');
+      setValue("");
     }
   }
 
@@ -197,7 +210,7 @@ function BypassTokenInput({ onAdd }: { onAdd: (tokenId: string) => void }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === "Enter") {
             e.preventDefault();
             handleAdd();
           }
@@ -205,7 +218,12 @@ function BypassTokenInput({ onAdd }: { onAdd: (tokenId: string) => void }) {
         placeholder="Enter service token ID"
         className="flex-1 input input-bordered input-sm rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)]"
       />
-      <Button variant="outline" size="xs" onClick={handleAdd} disabled={!value.trim()}>
+      <Button
+        variant="outline"
+        size="xs"
+        onClick={handleAdd}
+        disabled={!value.trim()}
+      >
         Add
       </Button>
     </div>

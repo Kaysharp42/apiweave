@@ -1,4 +1,4 @@
-import type { SecretScopeType } from './Secret';
+import type { SecretScopeType } from "./Secret";
 
 /**
  * ScopedSecretParams — parameters for fetching secrets at a given scope.

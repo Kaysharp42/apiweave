@@ -7,6 +7,7 @@ Verifies:
 - Export redaction: resolved secret values never appear in exported data.
 - Audit context masking: value-based defense-in-depth on audit context.
 """
+
 import json
 
 from app.services.secret_utils import REDACTED, SecretMasker

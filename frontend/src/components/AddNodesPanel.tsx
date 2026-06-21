@@ -1,24 +1,37 @@
-import { useState, useMemo, type DragEvent } from 'react';
-import { Popover, Transition } from '@headlessui/react';
-import { X, Plus, PanelRightOpen, Search, Globe, GitBranch, CheckCircle, Package, type LucideIcon } from 'lucide-react';
-import { usePalette } from '../contexts/PaletteContext';
-import { getNextNodeFilterValue, shouldClearNodeFilter } from '../utils/nodeFilterBehavior';
-import type { AddNodesPanelProps } from '../types';
+import { useState, useMemo, type DragEvent } from "react";
+import { Popover, Transition } from "@headlessui/react";
+import {
+  X,
+  Plus,
+  PanelRightOpen,
+  Search,
+  Globe,
+  GitBranch,
+  CheckCircle,
+  Package,
+  type LucideIcon,
+} from "lucide-react";
+import { usePalette } from "../contexts/PaletteContext";
+import {
+  getNextNodeFilterValue,
+  shouldClearNodeFilter,
+} from "../utils/nodeFilterBehavior";
+import type { AddNodesPanelProps } from "../types";
 
 const methodBadge: Record<string, string> = {
-  GET: 'text-method-get bg-method-get/10 border-method-get/30',
-  POST: 'text-method-post bg-method-post/10 border-method-post/30',
-  PUT: 'text-method-put bg-method-put/10 border-method-put/30',
-  DELETE: 'text-method-delete bg-method-delete/10 border-method-delete/30',
-  PATCH: 'text-method-patch bg-method-patch/10 border-method-patch/30',
-  HEAD: 'text-method-head bg-method-head/10 border-method-head/30',
-  OPTIONS: 'text-method-options bg-method-options/10 border-method-options/30',
+  GET: "text-method-get bg-method-get/10 border-method-get/30",
+  POST: "text-method-post bg-method-post/10 border-method-post/30",
+  PUT: "text-method-put bg-method-put/10 border-method-put/30",
+  DELETE: "text-method-delete bg-method-delete/10 border-method-delete/30",
+  PATCH: "text-method-patch bg-method-patch/10 border-method-patch/30",
+  HEAD: "text-method-head bg-method-head/10 border-method-head/30",
+  OPTIONS: "text-method-options bg-method-options/10 border-method-options/30",
 };
 
 const sectionIcons: Record<string, LucideIcon> = {
-  'HTTP Requests': Globe,
-  'Control Flow': GitBranch,
-  'Validation': CheckCircle,
+  "HTTP Requests": Globe,
+  "Control Flow": GitBranch,
+  Validation: CheckCircle,
 };
 
 interface PaletteItem {
@@ -59,27 +72,60 @@ interface NodeSection {
 
 const nodeTemplates: { category: string; nodes: NodeTemplate[] }[] = [
   {
-    category: 'HTTP Requests',
+    category: "HTTP Requests",
     nodes: [
-      { type: 'http-request', label: 'GET Request', description: 'Make a GET request', method: 'GET' },
-      { type: 'http-request', label: 'POST Request', description: 'Make a POST request', method: 'POST' },
-      { type: 'http-request', label: 'PUT Request', description: 'Make a PUT request', method: 'PUT' },
-      { type: 'http-request', label: 'DELETE Request', description: 'Make a DELETE request', method: 'DELETE' },
-      { type: 'http-request', label: 'PATCH Request', description: 'Make a PATCH request', method: 'PATCH' },
+      {
+        type: "http-request",
+        label: "GET Request",
+        description: "Make a GET request",
+        method: "GET",
+      },
+      {
+        type: "http-request",
+        label: "POST Request",
+        description: "Make a POST request",
+        method: "POST",
+      },
+      {
+        type: "http-request",
+        label: "PUT Request",
+        description: "Make a PUT request",
+        method: "PUT",
+      },
+      {
+        type: "http-request",
+        label: "DELETE Request",
+        description: "Make a DELETE request",
+        method: "DELETE",
+      },
+      {
+        type: "http-request",
+        label: "PATCH Request",
+        description: "Make a PATCH request",
+        method: "PATCH",
+      },
     ],
   },
   {
-    category: 'Control Flow',
+    category: "Control Flow",
     nodes: [
-      { type: 'delay', label: 'Delay', description: 'Add a delay before next step' },
-      { type: 'merge', label: 'Merge', description: 'Merge parallel branches' },
-      { type: 'end', label: 'End', description: 'Mark the end of workflow' },
+      {
+        type: "delay",
+        label: "Delay",
+        description: "Add a delay before next step",
+      },
+      { type: "merge", label: "Merge", description: "Merge parallel branches" },
+      { type: "end", label: "End", description: "Mark the end of workflow" },
     ],
   },
   {
-    category: 'Validation',
+    category: "Validation",
     nodes: [
-      { type: 'assertion', label: 'Assertion', description: 'Assert on conditional expressions' },
+      {
+        type: "assertion",
+        label: "Assertion",
+        description: "Assert on conditional expressions",
+      },
     ],
   },
 ];
@@ -89,7 +135,7 @@ export default function AddNodesPanel({
   showVariablesPanel = false,
   onShowVariablesPanel = () => {},
 }: AddNodesPanelProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const { importedGroups } = usePalette();
 
   const allSections = useMemo<NodeSection[]>(() => {
@@ -103,41 +149,44 @@ export default function AddNodesPanel({
     importedGroups.forEach((group: ImportedGroup) => {
       const items = (group.items ?? []) as PaletteItem[];
       const importedNodes: NodeTemplate[] = items.map((item) =>
-          item.method === 'WORKFLOW'
-            ? {
-                type: 'workflow',
-                label: item.label ?? 'Workflow',
-                description: 'Sub-workflow',
-                method: 'WORKFLOW',
-                workflowId: item.workflowId,
-                template: {
-                  type: 'workflow',
-                  label: item.label ?? 'Workflow',
-                  config: { workflowId: item.workflowId, workflowName: item.label },
-                },
-              }
-            : {
-                type: 'http-request',
-                label: item.label ?? item.url ?? 'Request',
-                description: item.url ?? '',
-                method: item.method ?? 'GET',
-                template: {
-                  type: 'http-request',
-                  label: item.label ?? item.url ?? 'Request',
-                  config: {
-                    method: item.method ?? 'GET',
-                    url: item.url ?? '',
-                    queryParams: item.queryParams ?? '',
-                    pathVariables: item.pathVariables ?? '',
-                    headers: item.headers ?? '',
-                    cookies: item.cookies ?? '',
-                    body: item.body ?? '',
-                    timeout: item.timeout ?? 30,
-                    openapiMeta: item.openapiMeta ?? null,
-                  },
+        item.method === "WORKFLOW"
+          ? {
+              type: "workflow",
+              label: item.label ?? "Workflow",
+              description: "Sub-workflow",
+              method: "WORKFLOW",
+              workflowId: item.workflowId,
+              template: {
+                type: "workflow",
+                label: item.label ?? "Workflow",
+                config: {
+                  workflowId: item.workflowId,
+                  workflowName: item.label,
                 },
               },
-        ) as NodeTemplate[];
+            }
+          : {
+              type: "http-request",
+              label: item.label ?? item.url ?? "Request",
+              description: item.url ?? "",
+              method: item.method ?? "GET",
+              template: {
+                type: "http-request",
+                label: item.label ?? item.url ?? "Request",
+                config: {
+                  method: item.method ?? "GET",
+                  url: item.url ?? "",
+                  queryParams: item.queryParams ?? "",
+                  pathVariables: item.pathVariables ?? "",
+                  headers: item.headers ?? "",
+                  cookies: item.cookies ?? "",
+                  body: item.body ?? "",
+                  timeout: item.timeout ?? 30,
+                  openapiMeta: item.openapiMeta ?? null,
+                },
+              },
+            },
+      ) as NodeTemplate[];
       sections.push({
         key: `imported-${group.id}`,
         title: group.title,
@@ -165,24 +214,27 @@ export default function AddNodesPanel({
   }, [allSections, searchQuery]);
 
   const onDragStart = (event: DragEvent, node: NodeTemplate) => {
-    event.dataTransfer.setData('application/reactflow', node.type);
-    if (node.method && node.method !== 'WORKFLOW') {
-      event.dataTransfer.setData('application/reactflow-method', node.method);
+    event.dataTransfer.setData("application/reactflow", node.type);
+    if (node.method && node.method !== "WORKFLOW") {
+      event.dataTransfer.setData("application/reactflow-method", node.method);
     }
     if (node.template) {
       try {
-        event.dataTransfer.setData('application/reactflow-node-template', JSON.stringify(node.template));
+        event.dataTransfer.setData(
+          "application/reactflow-node-template",
+          JSON.stringify(node.template),
+        );
       } catch {
         // Ignore serialization errors
       }
     }
-    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.effectAllowed = "move";
   };
 
   return (
     <div
       className={`fixed bottom-20 right-5 sm:right-6 z-[9999] flex flex-col gap-2.5 ${
-        isModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        isModalOpen ? "opacity-0 pointer-events-none" : "opacity-100"
       } transition-opacity duration-200 motion-reduce:transition-none`}
     >
       {!showVariablesPanel && (
@@ -203,7 +255,7 @@ export default function AddNodesPanel({
             <Popover.Button
               disabled={isModalOpen}
               className="flex items-center justify-center w-11 h-11 rounded-sm border border-primary bg-primary dark:bg-primary-light text-surface-raised dark:text-surface-dark-raised shadow-node hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors motion-reduce:transition-none"
-              aria-label={open ? 'Close node palette' : 'Add nodes'}
+              aria-label={open ? "Close node palette" : "Add nodes"}
             >
               {open ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
             </Popover.Button>
@@ -217,7 +269,10 @@ export default function AddNodesPanel({
               leaveTo="opacity-0 translate-y-2 scale-95"
               afterLeave={() => {
                 setSearchQuery((currentValue) =>
-                  getNextNodeFilterValue({ currentValue, isPaletteClosing: true }),
+                  getNextNodeFilterValue({
+                    currentValue,
+                    isPaletteClosing: true,
+                  }),
                 );
               }}
             >
@@ -225,7 +280,9 @@ export default function AddNodesPanel({
                 <div className="p-3 border-b border-border dark:border-border-dark">
                   <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2 tracking-[-0.01em]">
                     Add Nodes
-                    <span className="ml-1 text-text-muted dark:text-text-muted-dark font-normal text-xs">— drag to canvas</span>
+                    <span className="ml-1 text-text-muted dark:text-text-muted-dark font-normal text-xs">
+                      — drag to canvas
+                    </span>
                   </h3>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark" />
@@ -237,7 +294,10 @@ export default function AddNodesPanel({
                       onKeyDown={(e) => {
                         if (shouldClearNodeFilter({ key: e.key })) {
                           setSearchQuery((currentValue) =>
-                            getNextNodeFilterValue({ currentValue, key: e.key }),
+                            getNextNodeFilterValue({
+                              currentValue,
+                              key: e.key,
+                            }),
                           );
                         }
                       }}
@@ -250,7 +310,10 @@ export default function AddNodesPanel({
                         type="button"
                         onClick={() => {
                           setSearchQuery((currentValue) =>
-                            getNextNodeFilterValue({ currentValue, clearRequested: true }),
+                            getNextNodeFilterValue({
+                              currentValue,
+                              clearRequested: true,
+                            }),
                           );
                         }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
@@ -301,14 +364,26 @@ interface NodeSectionProps {
   defaultOpen: boolean;
 }
 
-function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }: NodeSectionProps) {
+function NodeSection({
+  title,
+  icon: Icon,
+  nodes,
+  onDragStart,
+  defaultOpen,
+}: NodeSectionProps) {
   return (
     <div className="collapse collapse-arrow rounded-none border-b border-border dark:border-border-dark last:border-b-0">
-      <input type="checkbox" defaultChecked={defaultOpen} aria-label={`Toggle ${title}`} />
+      <input
+        type="checkbox"
+        defaultChecked={defaultOpen}
+        aria-label={`Toggle ${title}`}
+      />
       <div className="collapse-title text-sm font-medium py-2 min-h-0 flex items-center gap-2 text-text-primary dark:text-text-primary-dark">
         <Icon className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />
         <span>{title}</span>
-        <span className="ml-auto rounded-full border border-border dark:border-border-dark px-1.5 py-0.5 text-[9px] font-mono text-text-muted dark:text-text-muted-dark">{nodes.length}</span>
+        <span className="ml-auto rounded-full border border-border dark:border-border-dark px-1.5 py-0.5 text-[9px] font-mono text-text-muted dark:text-text-muted-dark">
+          {nodes.length}
+        </span>
       </div>
       <div className="collapse-content px-2 pb-1">
         <div className="space-y-0.5">
@@ -321,12 +396,14 @@ function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }: Nod
               title={`Drag ${node.label} to canvas`}
             >
               <div className="flex items-center gap-1.5 text-sm text-text-primary dark:text-text-primary-dark">
-                {node.method && node.method !== 'WORKFLOW' && (
-                  <span className={`inline-block px-1.5 py-0.5 text-[10px] font-mono border rounded-sm ${methodBadge[node.method] ?? 'text-primary bg-primary/10 border-primary/30'}`}>
+                {node.method && node.method !== "WORKFLOW" && (
+                  <span
+                    className={`inline-block px-1.5 py-0.5 text-[10px] font-mono border rounded-sm ${methodBadge[node.method] ?? "text-primary bg-primary/10 border-primary/30"}`}
+                  >
                     {node.method}
                   </span>
                 )}
-                {node.method === 'WORKFLOW' && (
+                {node.method === "WORKFLOW" && (
                   <span className="inline-block px-1.5 py-0.5 text-[10px] font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded-sm">
                     WF
                   </span>
@@ -334,7 +411,9 @@ function NodeSection({ title, icon: Icon, nodes, onDragStart, defaultOpen }: Nod
                 <span className="font-medium truncate">{node.label}</span>
               </div>
               {node.description && (
-                <span className="text-xs text-text-muted dark:text-text-muted-dark truncate">{node.description}</span>
+                <span className="text-xs text-text-muted dark:text-text-muted-dark truncate">
+                  {node.description}
+                </span>
               )}
             </div>
           ))}

@@ -7,12 +7,12 @@ are no longer mounted in main.py.  They must return 404 for every HTTP method.
 Note: /api/runs and /api/webhooks ARE still mounted (scoped versions coexist),
 so only workflows, environments, and collections are tested as removed.
 """
+
 from __future__ import annotations
 
+from app.routes import orgs, projects, workspaces
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from app.routes import orgs, projects, workspaces
 
 
 def _build_skeleton_app() -> FastAPI:

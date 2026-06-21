@@ -13,7 +13,6 @@ Provider notes:
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # GitHub fixtures
 # ---------------------------------------------------------------------------
@@ -273,9 +272,7 @@ def mock_microsoft_me_response():
 
 
 @pytest.fixture
-def mock_microsoft_userinfo(
-    mock_microsoft_id_token_claims_verified, mock_microsoft_me_response
-):
+def mock_microsoft_userinfo(mock_microsoft_id_token_claims_verified, mock_microsoft_me_response):
     """Normalised Microsoft userinfo (verified — email present in token)."""
     claims = mock_microsoft_id_token_claims_verified
     me = mock_microsoft_me_response

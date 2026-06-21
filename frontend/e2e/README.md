@@ -27,12 +27,12 @@ All screenshots and traces follow this naming pattern:
 .omo/evidence/task-{N}-{slug}-{viewport}-{theme}.png
 ```
 
-| Segment   | Description                                      | Examples                    |
-|-----------|--------------------------------------------------|-----------------------------|
-| `{N}`     | Task number from the redesign plan               | `2`                         |
-| `{slug}`  | Descriptive slug for the route or feature tested | `login`, `setup`, `canvas`  |
-| `{viewport}` | Viewport width in pixels                     | `375`, `768`, `1024`, `1440`|
-| `{theme}` | Theme at time of capture                         | `light`, `dark`             |
+| Segment      | Description                                      | Examples                     |
+| ------------ | ------------------------------------------------ | ---------------------------- |
+| `{N}`        | Task number from the redesign plan               | `2`                          |
+| `{slug}`     | Descriptive slug for the route or feature tested | `login`, `setup`, `canvas`   |
+| `{viewport}` | Viewport width in pixels                         | `375`, `768`, `1024`, `1440` |
+| `{theme}`    | Theme at time of capture                         | `light`, `dark`              |
 
 ### Examples
 
@@ -56,9 +56,9 @@ All screenshots and traces follow this naming pattern:
 
 ## Viewport Breakpoints
 
-| Name   | Width | Height | Target Device       |
-|--------|-------|--------|---------------------|
-| 375    | 375px | 812px  | iPhone SE / mobile  |
-| 768    | 768px | 1024px | iPad / tablet       |
-| 1024   | 1024px| 768px  | Small laptop        |
-| 1440   | 1440px| 900px  | Desktop             |
+| Name | Width  | Height | Target Device      |
+| ---- | ------ | ------ | ------------------ |
+| 375  | 375px  | 812px  | iPhone SE / mobile |
+| 768  | 768px  | 1024px | iPad / tablet      |
+| 1024 | 1024px | 768px  | Small laptop       |
+| 1440 | 1440px | 900px  | Desktop            |

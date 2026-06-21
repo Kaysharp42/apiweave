@@ -1,4 +1,4 @@
-import type { NodeModalNode } from './NodeModalNode';
+import type { NodeModalNode } from "./NodeModalNode";
 
 export interface NodeModalProps {
   open: boolean;

@@ -1,4 +1,4 @@
-import type { WorkflowCanvasWorkflow } from './WorkflowCanvasWorkflow';
+import type { WorkflowCanvasWorkflow } from "./WorkflowCanvasWorkflow";
 
 export interface WorkflowCanvasProps {
   workflowId: string | undefined;

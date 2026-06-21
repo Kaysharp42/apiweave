@@ -38,17 +38,16 @@ Usage in tests:
 """
 
 import hashlib
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Generator
 from unittest.mock import AsyncMock, patch
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
-from app.auth.permissions import PRESET_ADMIN, PRESET_EDITOR, PRESET_VIEWER, ROLE_PRESETS
+from app.auth.permissions import PRESET_ADMIN, PRESET_EDITOR, PRESET_VIEWER
 from app.models import Invite, Session, User
 from app.repositories.auth_repositories import SessionRepository, UserRepository
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 # ---------------------------------------------------------------------------
 # Stable test IDs — use these in assertions to avoid magic strings

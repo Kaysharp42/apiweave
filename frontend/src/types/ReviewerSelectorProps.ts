@@ -15,6 +15,6 @@ export interface ReviewerSelectorProps {
 export interface ReviewerOption {
   id: string;
   name: string;
-  type: 'user' | 'team';
+  type: "user" | "team";
   avatarUrl?: string;
 }

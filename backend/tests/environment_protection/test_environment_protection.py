@@ -6,33 +6,33 @@ QA Scenarios:
 2. Self-approval denied: Self-approval disabled, requester cannot approve own run.
 3. Bypass audit: Trusted token bypass creates audit event with reason.
 """
-import pytest
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch, MagicMock
 
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
+
+import pytest
 from app.models import (
     EnvironmentProtection,
     PendingRunApproval,
     ServiceToken,
 )
-from app.services import environment_protection_service as svc
+from app.repositories.pending_approval_repository import PendingApprovalRepository
+from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
+from app.repositories.service_token_repository import ServiceTokenRepository
+from app.services import audit_service
 from app.services.environment_protection_service import (
+    ApprovalNotFoundError,
+    ApprovalNotPendingError,
+    BypassNotAllowedError,
+    SelfApprovalDeniedError,
     approve_run,
     bypass_protection,
     check_protection_and_maybe_gate,
     get_pending_approval,
     list_pending_for_environment,
     list_pending_for_workspace,
-    ApprovalNotFoundError,
-    ApprovalNotPendingError,
-    BypassNotAllowedError,
-    SelfApprovalDeniedError,
 )
-from app.services.exceptions import ConflictError, ResourceNotFoundError
-from app.repositories.pending_approval_repository import PendingApprovalRepository
-from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
-from app.repositories.service_token_repository import ServiceTokenRepository
-from app.services import audit_service
+from app.services.exceptions import ConflictError
 
 
 def _make_protection(
@@ -143,13 +143,15 @@ class TestReviewerApproval:
             env_id="env-protected",
             requester_user_id="usr-a",
         )
-        with patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot, patch.object(
-            PendingApprovalRepository, "create", new_callable=AsyncMock
-        ) as mock_create, patch.object(
-            audit_service, "append_event", new_callable=AsyncMock
-        ) as mock_audit:
+        with (
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+            patch.object(
+                PendingApprovalRepository, "create", new_callable=AsyncMock
+            ) as mock_create,
+            patch.object(audit_service, "append_event", new_callable=AsyncMock) as mock_audit,
+        ):
             mock_get_prot.return_value = protection
             mock_create.return_value = expected_approval
 
@@ -168,7 +170,10 @@ class TestReviewerApproval:
             mock_create.assert_called_once()
             mock_audit.assert_called_once()
             audit_call = mock_audit.call_args
-            assert audit_call.kwargs["action"] == "run_approval_requested" or audit_call[1].get("action") == "run_approval_requested"
+            assert (
+                audit_call.kwargs["action"] == "run_approval_requested"
+                or audit_call[1].get("action") == "run_approval_requested"
+            )
 
     async def test_non_reviewer_cannot_approve(self):
         """A user not in requiredReviewers cannot approve a run."""
@@ -181,11 +186,14 @@ class TestReviewerApproval:
             run_id="run-1",
             requester_user_id="usr-a",
         )
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_approval, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot:
+        with (
+            patch.object(
+                PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_approval,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+        ):
             mock_get_approval.return_value = approval
             mock_get_prot.return_value = protection
 
@@ -213,15 +221,18 @@ class TestReviewerApproval:
         approved_approval.resolvedByActorType = "user"
         approved_approval.resolvedAt = datetime.now(UTC)
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_approval, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot, patch.object(
-            PendingApprovalRepository, "approve", new_callable=AsyncMock
-        ) as mock_approve, patch.object(
-            audit_service, "append_event", new_callable=AsyncMock
-        ) as mock_audit:
+        with (
+            patch.object(
+                PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_approval,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+            patch.object(
+                PendingApprovalRepository, "approve", new_callable=AsyncMock
+            ) as mock_approve,
+            patch.object(audit_service, "append_event", new_callable=AsyncMock) as mock_audit,
+        ):
             mock_get_approval.return_value = approval
             mock_get_prot.return_value = protection
             mock_approve.return_value = approved_approval
@@ -273,11 +284,14 @@ class TestSelfApprovalDenied:
             requester_user_id="usr-a",
             actor_id="usr-a",
         )
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_approval, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot:
+        with (
+            patch.object(
+                PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_approval,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+        ):
             mock_get_approval.return_value = approval
             mock_get_prot.return_value = protection
 
@@ -305,15 +319,18 @@ class TestSelfApprovalDenied:
         approved.resolvedBy = "usr-a"
         approved.resolvedByActorType = "user"
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_approval, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot, patch.object(
-            PendingApprovalRepository, "approve", new_callable=AsyncMock
-        ) as mock_approve, patch.object(
-            audit_service, "append_event", new_callable=AsyncMock
-        ) as mock_audit:
+        with (
+            patch.object(
+                PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_approval,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+            patch.object(
+                PendingApprovalRepository, "approve", new_callable=AsyncMock
+            ) as mock_approve,
+            patch.object(audit_service, "append_event", new_callable=AsyncMock),
+        ):
             mock_get_approval.return_value = approval
             mock_get_prot.return_value = protection
             mock_approve.return_value = approved
@@ -344,15 +361,18 @@ class TestSelfApprovalDenied:
         approved.resolvedBy = "usr-b"
         approved.resolvedByActorType = "user"
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_approval, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot, patch.object(
-            PendingApprovalRepository, "approve", new_callable=AsyncMock
-        ) as mock_approve, patch.object(
-            audit_service, "append_event", new_callable=AsyncMock
-        ) as mock_audit:
+        with (
+            patch.object(
+                PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_approval,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+            patch.object(
+                PendingApprovalRepository, "approve", new_callable=AsyncMock
+            ) as mock_approve,
+            patch.object(audit_service, "append_event", new_callable=AsyncMock),
+        ):
             mock_get_approval.return_value = approval
             mock_get_prot.return_value = protection
             mock_approve.return_value = approved
@@ -396,17 +416,21 @@ class TestBypassAudit:
 
         token = _make_service_token(token_id="tok-bypass")
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_approval, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot, patch.object(
-            ServiceTokenRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_token, patch.object(
-            PendingApprovalRepository, "bypass", new_callable=AsyncMock
-        ) as mock_bypass, patch.object(
-            audit_service, "append_event", new_callable=AsyncMock
-        ) as mock_audit:
+        with (
+            patch.object(
+                PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_approval,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+            patch.object(
+                ServiceTokenRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_token,
+            patch.object(
+                PendingApprovalRepository, "bypass", new_callable=AsyncMock
+            ) as mock_bypass,
+            patch.object(audit_service, "append_event", new_callable=AsyncMock) as mock_audit,
+        ):
             mock_get_approval.return_value = approval
             mock_get_prot.return_value = protection
             mock_get_token.return_value = token
@@ -438,11 +462,14 @@ class TestBypassAudit:
             run_id="run-1",
             requester_user_id="usr-a",
         )
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_approval, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot:
+        with (
+            patch.object(
+                PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_approval,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+        ):
             mock_get_approval.return_value = approval
             mock_get_prot.return_value = protection
 
@@ -461,11 +488,14 @@ class TestBypassAudit:
             run_id="run-1",
             requester_user_id="usr-a",
         )
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_approval, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot:
+        with (
+            patch.object(
+                PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_approval,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+        ):
             mock_get_approval.return_value = approval
             mock_get_prot.return_value = protection
 
@@ -492,13 +522,17 @@ class TestBypassAudit:
         revoked_token = _make_service_token(token_id="tok-revoked")
         revoked_token.revokedAt = datetime.now(UTC)
 
-        with patch.object(
-            PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_approval, patch.object(
-            ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
-        ) as mock_get_prot, patch.object(
-            ServiceTokenRepository, "get_by_id", new_callable=AsyncMock
-        ) as mock_get_token:
+        with (
+            patch.object(
+                PendingApprovalRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_approval,
+            patch.object(
+                ScopedEnvironmentRepository, "get_protection", new_callable=AsyncMock
+            ) as mock_get_prot,
+            patch.object(
+                ServiceTokenRepository, "get_by_id", new_callable=AsyncMock
+            ) as mock_get_token,
+        ):
             mock_get_approval.return_value = approval
             mock_get_prot.return_value = protection
             mock_get_token.return_value = revoked_token

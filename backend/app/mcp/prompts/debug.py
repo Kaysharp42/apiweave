@@ -1,6 +1,7 @@
 """
 MCP debug prompts — pre-built templates for debugging failed runs.
 """
+
 import logging
 
 from mcp.server.fastmcp import FastMCP

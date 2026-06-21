@@ -1,6 +1,12 @@
-import { memo, useMemo, type CSSProperties } from 'react';
-import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useReactFlow, type EdgeProps } from 'reactflow';
-import { X } from 'lucide-react';
+import { memo, useMemo, type CSSProperties } from "react";
+import {
+  BaseEdge,
+  EdgeLabelRenderer,
+  getSmoothStepPath,
+  useReactFlow,
+  type EdgeProps,
+} from "reactflow";
+import { X } from "lucide-react";
 
 interface CustomEdgeData {
   animated?: boolean;
@@ -49,20 +55,22 @@ function CustomEdge({
     <>
       <BaseEdge
         path={edgePath}
-        markerEnd={markerEnd ?? ''}
+        markerEnd={markerEnd ?? ""}
         style={{
           ...style,
           strokeWidth: isRunning ? 1.5 : 1,
-          stroke: isRunning ? 'var(--aw-primary)' : style.stroke ?? 'var(--aw-border)',
-          ...(isRunning ? { strokeDasharray: '4 4' } : {}),
+          stroke: isRunning
+            ? "var(--aw-primary)"
+            : (style.stroke ?? "var(--aw-border)"),
+          ...(isRunning ? { strokeDasharray: "4 4" } : {}),
         }}
       />
       <EdgeLabelRenderer>
         <div
           style={{
-            position: 'absolute',
+            position: "absolute",
             transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-            pointerEvents: 'all',
+            pointerEvents: "all",
           }}
           className="nodrag nopan"
         >

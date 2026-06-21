@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
-import type { ProviderDisplay } from '../types';
-import type { ProviderInfo } from '../types';
-import { getEnabledProviders } from '../auth/providerConfig';
-import API_BASE_URL from '../utils/api';
-import { authenticatedFetch } from '../utils/authenticatedApi';
+import { useEffect, useState } from "react";
+import type { ProviderDisplay } from "../types";
+import type { ProviderInfo } from "../types";
+import { getEnabledProviders } from "../auth/providerConfig";
+import API_BASE_URL from "../utils/api";
+import { authenticatedFetch } from "../utils/authenticatedApi";
 
 interface UseOAuthProvidersReturn {
   providers: ProviderDisplay[];
@@ -21,16 +21,19 @@ export function useOAuthProviders(): UseOAuthProvidersReturn {
 
     async function fetchProviders() {
       try {
-        const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
-        if (!res.ok) throw new Error(`Failed to load providers (${res.status})`);
-        const data: ProviderInfo[] = await res.json() as ProviderInfo[];
+        const res = await authenticatedFetch(
+          `${API_BASE_URL}/api/auth/providers`,
+        );
+        if (!res.ok)
+          throw new Error(`Failed to load providers (${res.status})`);
+        const data: ProviderInfo[] = (await res.json()) as ProviderInfo[];
         if (!cancelled) {
           setProviders(getEnabledProviders(data));
           setError(null);
         }
       } catch {
         if (!cancelled) {
-          setError('Unable to load sign-in options');
+          setError("Unable to load sign-in options");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -38,7 +41,9 @@ export function useOAuthProviders(): UseOAuthProvidersReturn {
     }
 
     void fetchProviders();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return { providers, loading, error };

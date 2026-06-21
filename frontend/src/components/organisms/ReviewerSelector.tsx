@@ -1,17 +1,17 @@
-import { useState, useRef, useEffect } from 'react';
-import { X, User, Users } from 'lucide-react';
-import { Badge } from '../atoms/Badge';
-import type { ReviewerSelectorProps, ReviewerOption } from '../../types';
+import { useState, useRef, useEffect } from "react";
+import { X, User, Users } from "lucide-react";
+import { Badge } from "../atoms/Badge";
+import type { ReviewerSelectorProps, ReviewerOption } from "../../types";
 
 export function ReviewerSelector({
   value,
   onChange,
   options,
-  label = 'Required reviewers',
+  label = "Required reviewers",
   disabled = false,
-  className = '',
+  className = "",
 }: ReviewerSelectorProps) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -24,12 +24,15 @@ export function ReviewerSelector({
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   function toggleOption(opt: ReviewerOption) {
@@ -38,7 +41,7 @@ export function ReviewerSelector({
     } else {
       onChange([...value, opt.id]);
     }
-    setQuery('');
+    setQuery("");
   }
 
   function removeOption(id: string) {
@@ -58,12 +61,14 @@ export function ReviewerSelector({
       {/* Selected chips */}
       <div
         className={[
-          'flex flex-wrap gap-1.5 p-2 min-h-[38px] rounded border',
-          'border-border dark:border-border-dark',
-          'bg-surface-raised dark:bg-surface-dark-raised',
-          'cursor-text transition-colors',
-          disabled ? 'opacity-50 cursor-not-allowed' : 'focus-within:ring-2 focus-within:ring-[var(--aw-primary)] focus-within:ring-offset-2',
-        ].join(' ')}
+          "flex flex-wrap gap-1.5 p-2 min-h-[38px] rounded border",
+          "border-border dark:border-border-dark",
+          "bg-surface-raised dark:bg-surface-dark-raised",
+          "cursor-text transition-colors",
+          disabled
+            ? "opacity-50 cursor-not-allowed"
+            : "focus-within:ring-2 focus-within:ring-[var(--aw-primary)] focus-within:ring-offset-2",
+        ].join(" ")}
         onClick={() => !disabled && setIsOpen(true)}
         role="combobox"
         aria-expanded={isOpen}
@@ -75,8 +80,12 @@ export function ReviewerSelector({
           </span>
         )}
         {selectedOptions.map((opt) => (
-          <Badge key={opt.id} variant={opt.type === 'team' ? 'primary' : 'default'} size="sm">
-            {opt.type === 'team' ? (
+          <Badge
+            key={opt.id}
+            variant={opt.type === "team" ? "primary" : "default"}
+            size="sm"
+          >
+            {opt.type === "team" ? (
               <Users className="w-3 h-3" aria-hidden="true" />
             ) : (
               <User className="w-3 h-3" aria-hidden="true" />
@@ -103,7 +112,9 @@ export function ReviewerSelector({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="flex-1 min-w-[80px] bg-transparent text-sm text-text-primary dark:text-text-primary-dark outline-none placeholder:text-text-muted"
-            placeholder={selectedOptions.length === 0 ? 'Search reviewers...' : ''}
+            placeholder={
+              selectedOptions.length === 0 ? "Search reviewers..." : ""
+            }
             autoFocus
           />
         )}
@@ -114,7 +125,7 @@ export function ReviewerSelector({
         <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
           {filteredOptions.length === 0 ? (
             <div className="px-3 py-2 text-sm text-text-muted dark:text-text-muted-dark">
-              {query ? 'No matching reviewers' : 'All reviewers added'}
+              {query ? "No matching reviewers" : "All reviewers added"}
             </div>
           ) : (
             filteredOptions.map((opt) => (
@@ -124,7 +135,7 @@ export function ReviewerSelector({
                 onClick={() => toggleOption(opt)}
                 className="flex items-center gap-2 w-full px-3 py-2 text-sm text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer text-left"
               >
-                {opt.type === 'team' ? (
+                {opt.type === "team" ? (
                   <Users className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />
                 ) : (
                   <User className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />

@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
-import type { NodeModalNodeType } from './NodeModalNodeType';
-import type { NodeModalShellTab } from './NodeModalShellTab';
+import type { MutableRefObject, ReactNode } from "react";
+import type { NodeModalNodeType } from "./NodeModalNodeType";
+import type { NodeModalShellTab } from "./NodeModalShellTab";
 
 export interface NodeModalShellProps {
   open: boolean;
@@ -13,6 +13,7 @@ export interface NodeModalShellProps {
   onClose: () => void;
   onCancel: () => void;
   onSave: () => void;
+  initialFocus?: MutableRefObject<HTMLElement | null>;
   requestBar: ReactNode;
   children: ReactNode;
   responsePane: ReactNode;

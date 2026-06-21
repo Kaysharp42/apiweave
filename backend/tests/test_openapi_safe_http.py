@@ -14,13 +14,12 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from app.auth.permissions import WORKFLOWS_IMPORT
 from app.models import Session, User
 from app.repositories.auth_repositories import SessionRepository, UserRepository
 from app.routes._legacy_disabled import workflows
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def _make_session(
@@ -158,8 +157,7 @@ async def test_fetch_openapi_from_webjars_localhost_uses_primary_definition():
 
     with patch("httpx.AsyncClient", MockedAsyncClient):
         result = await fetch_openapi_from_url(
-            "http://localhost:8800/webjars/swagger-ui/index.html"
-            "?urls.primaryName=Actor+Service"
+            "http://localhost:8800/webjars/swagger-ui/index.html" "?urls.primaryName=Actor+Service"
         )
 
     assert result["total_endpoints"] == 1

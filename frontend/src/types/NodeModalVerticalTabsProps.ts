@@ -1,4 +1,4 @@
-import type { NodeModalShellTab } from './NodeModalShellTab';
+import type { NodeModalShellTab } from "./NodeModalShellTab";
 
 export interface NodeModalVerticalTabsProps {
   tabs: NodeModalShellTab[];

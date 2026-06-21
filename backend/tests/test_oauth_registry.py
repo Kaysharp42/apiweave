@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 import pytest
-
 from app.auth.provider_registry import get_enabled_providers
 from app.config import Settings
 
@@ -36,9 +35,9 @@ def test_get_enabled_providers_all_four_set(monkeypatch: pytest.MonkeyPatch) -> 
         MICROSOFT_CLIENT_SECRET="microsoft-secret",
     )
     monkeypatch.setattr("app.auth.provider_registry.settings", settings)
-    
+
     result = get_enabled_providers()
-    
+
     assert sorted(result) == ["github", "gitlab", "google", "microsoft"]
 
 
@@ -57,9 +56,9 @@ def test_get_enabled_providers_none_set(monkeypatch: pytest.MonkeyPatch) -> None
         MICROSOFT_CLIENT_SECRET=None,
     )
     monkeypatch.setattr("app.auth.provider_registry.settings", settings)
-    
+
     result = get_enabled_providers()
-    
+
     assert result == []
 
 
@@ -72,9 +71,9 @@ def test_get_enabled_providers_only_github_set(monkeypatch: pytest.MonkeyPatch) 
         GITHUB_CLIENT_SECRET="github-secret",
     )
     monkeypatch.setattr("app.auth.provider_registry.settings", settings)
-    
+
     result = get_enabled_providers()
-    
+
     assert result == ["github"]
 
 
@@ -91,9 +90,9 @@ def test_get_enabled_providers_github_and_google_set(
         GOOGLE_CLIENT_SECRET="google-secret",
     )
     monkeypatch.setattr("app.auth.provider_registry.settings", settings)
-    
+
     result = get_enabled_providers()
-    
+
     assert sorted(result) == ["github", "google"]
 
 
@@ -114,9 +113,9 @@ def test_get_enabled_providers_oauth_disabled_with_all_set(
         MICROSOFT_CLIENT_SECRET="microsoft-secret",
     )
     monkeypatch.setattr("app.auth.provider_registry.settings", settings)
-    
+
     result = get_enabled_providers()
-    
+
     assert result == []
 
 
@@ -131,8 +130,10 @@ def test_startup_warning_mismatched_oauth_credentials(
             GITHUB_CLIENT_ID="github-id",
             GITHUB_CLIENT_SECRET="",
         )
-    
-    warning_messages = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+
+    warning_messages = [
+        record.message for record in caplog.records if record.levelno == logging.WARNING
+    ]
     assert any("github" in msg.lower() and "mismatched" in msg.lower() for msg in warning_messages)
 
 
@@ -147,6 +148,8 @@ def test_startup_warning_no_mismatch_when_both_set(
             GITHUB_CLIENT_ID="github-id",
             GITHUB_CLIENT_SECRET="github-secret",
         )
-    
-    warning_messages = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+
+    warning_messages = [
+        record.message for record in caplog.records if record.levelno == logging.WARNING
+    ]
     assert not any("mismatched" in msg.lower() for msg in warning_messages)

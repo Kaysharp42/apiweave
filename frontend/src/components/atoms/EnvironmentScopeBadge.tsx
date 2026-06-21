@@ -1,21 +1,24 @@
-import { User, Building2, Layers, Star } from 'lucide-react';
-import { Badge } from '../atoms/Badge';
-import type { EnvironmentScopeBadgeProps, EnvironmentScopeType } from '../../types';
+import { User, Building2, Layers, Star } from "lucide-react";
+import { Badge } from "../atoms/Badge";
+import type {
+  EnvironmentScopeBadgeProps,
+  EnvironmentScopeType,
+} from "../../types";
 
 const SCOPE_CONFIG: Record<
   EnvironmentScopeType,
-  { label: string; icon: typeof User; variant: 'primary' | 'info' | 'success' }
+  { label: string; icon: typeof User; variant: "primary" | "info" | "success" }
 > = {
-  user: { label: 'User', icon: User, variant: 'info' },
-  organization: { label: 'Org', icon: Building2, variant: 'primary' },
-  workspace: { label: 'Workspace', icon: Layers, variant: 'success' },
+  user: { label: "User", icon: User, variant: "info" },
+  organization: { label: "Org", icon: Building2, variant: "primary" },
+  workspace: { label: "Workspace", icon: Layers, variant: "success" },
 };
 
 export function EnvironmentScopeBadge({
   scopeType,
   isDefault = false,
-  size = 'sm',
-  className = '',
+  size = "sm",
+  className = "",
   showIcon = true,
 }: EnvironmentScopeBadgeProps) {
   const config = SCOPE_CONFIG[scopeType];

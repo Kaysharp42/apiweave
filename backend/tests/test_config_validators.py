@@ -1,8 +1,8 @@
 import base64
-import pytest
-from pydantic import ValidationError
 
+import pytest
 from app.config import Settings
+from pydantic import ValidationError
 
 
 def _base_settings_kwargs(**overrides: str) -> dict[str, str]:

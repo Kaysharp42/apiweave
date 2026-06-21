@@ -1,6 +1,6 @@
-import type { KeyValuePair } from './KeyValuePair';
+import type { KeyValuePair } from "./KeyValuePair";
 
-export type { KeyValuePair } from './KeyValuePair';
+export type { KeyValuePair } from "./KeyValuePair";
 
 export interface KeyValueEditorProps {
   pairs?: KeyValuePair[];

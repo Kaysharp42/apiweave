@@ -44,9 +44,7 @@
   "unlisted_dependencies": [],
   "duplicate_exports": [],
   "type_only_dependencies": [],
-  "test_only_dependencies": [
-    "package.json:daisyui"
-  ],
+  "test_only_dependencies": ["package.json:daisyui"],
   "boundary_violations": [],
   "boundary_coverage_violations": [],
   "boundary_call_violations": [],

@@ -195,10 +195,14 @@ class WorkspaceRepository:
     @staticmethod
     async def list_by_org(org_id: str) -> list[Workspace]:
         """List all non-deleted workspaces for an organization."""
-        return await Workspace.find(
-            Workspace.orgId == org_id,
-            Workspace.deletedAt == None,  # noqa: E711
-        ).sort(-Workspace.createdAt).to_list()
+        return (
+            await Workspace.find(
+                Workspace.orgId == org_id,
+                Workspace.deletedAt == None,  # noqa: E711
+            )
+            .sort(-Workspace.createdAt)
+            .to_list()
+        )
 
     @staticmethod
     async def list_by_user(user_id: str) -> list[Workspace]:
@@ -207,14 +211,13 @@ class WorkspaceRepository:
             Workspace.ownerUserId == user_id,
             Workspace.deletedAt == None,  # noqa: E711
         ).to_list()
-        member_recs = await WorkspaceMember.find(
-            WorkspaceMember.userId == user_id
-        ).to_list()
+        member_recs = await WorkspaceMember.find(WorkspaceMember.userId == user_id).to_list()
         member_ws_ids = {m.workspaceId for m in member_recs}
         for ws in direct:
             member_ws_ids.discard(ws.workspaceId)
         if member_ws_ids:
             from beanie.operators import In
+
             by_membership = await Workspace.find(
                 In(Workspace.workspaceId, list(member_ws_ids)),
                 Workspace.deletedAt == None,  # noqa: E711
@@ -275,9 +278,7 @@ class WorkspaceRepository:
     @staticmethod
     async def list_members(workspace_id: str) -> list[WorkspaceMember]:
         """List all members of a workspace."""
-        return await WorkspaceMember.find(
-            WorkspaceMember.workspaceId == workspace_id
-        ).to_list()
+        return await WorkspaceMember.find(WorkspaceMember.workspaceId == workspace_id).to_list()
 
     @staticmethod
     async def check_slug_available(

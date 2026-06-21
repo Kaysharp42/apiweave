@@ -4,9 +4,11 @@ instead of "collection" in all DTOs and responses.
 
 Also verifies that old collection API routes are not mounted in the new scoped routes.
 """
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 def _make_workspace(workspace_id: str, owner_user_id: str) -> MagicMock:
@@ -138,7 +140,9 @@ def test_scoped_routes_use_project_not_collection():
     collection_routes = [p for p in route_paths if "collection" in p.lower()]
 
     assert len(project_routes) > 0, "Expected project routes in workspace router"
-    assert len(collection_routes) == 0, "Found old 'collection' routes in workspace router — should be 'project'"
+    assert (
+        len(collection_routes) == 0
+    ), "Found old 'collection' routes in workspace router — should be 'project'"
 
 
 def test_projects_router_exists():

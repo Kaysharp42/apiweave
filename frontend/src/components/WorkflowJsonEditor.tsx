@@ -1,15 +1,27 @@
-import { useEffect, useReducer, useCallback, useRef, useMemo, Fragment } from 'react';
-import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from 'lucide-react';
-import { Dialog, Transition, TransitionChild } from '@headlessui/react';
-import { Button } from './atoms/Button';
-import { BeautifyButton } from './molecules/BeautifyButton';
-import type { WorkflowJsonEditorProps } from '../types';
+import {
+  useEffect,
+  useReducer,
+  useCallback,
+  useRef,
+  useMemo,
+  Fragment,
+} from "react";
+import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from "lucide-react";
+import { Dialog, Transition, TransitionChild } from "@headlessui/react";
+import { Button } from "./atoms/Button";
+import { BeautifyButton } from "./molecules/BeautifyButton";
+import type { WorkflowJsonEditorProps } from "../types";
 
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows
  */
-function buildAIPrompt(currentWorkflowJson: unknown, includeWorkflow: boolean): string {
-  const hasWorkflow = includeWorkflow && (currentWorkflowJson as Record<string, unknown>[])?.length > 0;
+function buildAIPrompt(
+  currentWorkflowJson: unknown,
+  includeWorkflow: boolean,
+): string {
+  const hasWorkflow =
+    includeWorkflow &&
+    (currentWorkflowJson as Record<string, unknown>[])?.length > 0;
 
   const existingSection = hasWorkflow
     ? `
@@ -452,7 +464,7 @@ Create multiple edges from one node to fan out. Use a Merge node to rejoin.
 `;
 }
 
-type ViewMode = 'json' | 'ai-prompt';
+type ViewMode = "json" | "ai-prompt";
 
 interface WorkflowJsonEditorState {
   value: string;
@@ -464,21 +476,26 @@ interface WorkflowJsonEditorState {
 }
 
 type WorkflowJsonEditorAction =
-  | { type: 'set-value'; value: string }
-  | { type: 'set-error'; value: string | null }
-  | { type: 'set-copied'; value: boolean }
-  | { type: 'set-dirty'; value: boolean }
-  | { type: 'set-view-mode'; value: ViewMode }
-  | { type: 'set-include-workflow'; value: boolean };
+  | { type: "set-value"; value: string }
+  | { type: "set-error"; value: string | null }
+  | { type: "set-copied"; value: boolean }
+  | { type: "set-dirty"; value: boolean }
+  | { type: "set-view-mode"; value: ViewMode }
+  | { type: "set-include-workflow"; value: boolean };
 
-function createWorkflowJsonEditorState(initialValue: string, workflowJson: Record<string, unknown> | null): WorkflowJsonEditorState {
+function createWorkflowJsonEditorState(
+  initialValue: string,
+  workflowJson: Record<string, unknown> | null,
+): WorkflowJsonEditorState {
   return {
     value: initialValue,
     error: null,
     copied: false,
     isDirty: false,
-    viewMode: 'json',
-    includeWorkflow: Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length),
+    viewMode: "json",
+    includeWorkflow: Boolean(
+      (workflowJson as Record<string, unknown[]>)?.nodes?.length,
+    ),
   };
 }
 
@@ -487,17 +504,17 @@ function workflowJsonEditorReducer(
   action: WorkflowJsonEditorAction,
 ): WorkflowJsonEditorState {
   switch (action.type) {
-    case 'set-value':
+    case "set-value":
       return { ...state, value: action.value, isDirty: true, error: null };
-    case 'set-error':
+    case "set-error":
       return { ...state, error: action.value };
-    case 'set-copied':
+    case "set-copied":
       return { ...state, copied: action.value };
-    case 'set-dirty':
+    case "set-dirty":
       return { ...state, isDirty: action.value };
-    case 'set-view-mode':
+    case "set-view-mode":
       return { ...state, viewMode: action.value };
-    case 'set-include-workflow':
+    case "set-include-workflow":
       return { ...state, includeWorkflow: action.value };
   }
 }
@@ -514,11 +531,11 @@ export function WorkflowJsonEditor({
   onClose,
 }: WorkflowJsonEditorProps) {
   const initialValue = useMemo(() => {
-    if (!workflowJson) return '';
+    if (!workflowJson) return "";
     try {
       return JSON.stringify(workflowJson, null, 2);
     } catch {
-      return '{}';
+      return "{}";
     }
   }, [workflowJson]);
 
@@ -528,46 +545,43 @@ export function WorkflowJsonEditor({
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const promptRef = useRef<HTMLDivElement>(null);
-  const {
-    value,
-    error,
-    copied,
-    isDirty,
-    viewMode,
-    includeWorkflow,
-  } = state;
+  const { value, error, copied, isDirty, viewMode, includeWorkflow } = state;
 
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
 
-  const handleWorkflowJsonChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    dispatch({ type: 'set-value', value: e.target.value });
-  }, []);
+  const handleWorkflowJsonChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      dispatch({ type: "set-value", value: e.target.value });
+    },
+    [],
+  );
 
   const handleCopy = useCallback(async () => {
-    const textToCopy = viewMode === 'json'
-      ? value
-      : buildAIPrompt(workflowJson, includeWorkflow);
+    const textToCopy =
+      viewMode === "json"
+        ? value
+        : buildAIPrompt(workflowJson, includeWorkflow);
 
     try {
       await navigator.clipboard.writeText(textToCopy);
-      dispatch({ type: 'set-copied', value: true });
-      setTimeout(() => dispatch({ type: 'set-copied', value: false }), 1500);
+      dispatch({ type: "set-copied", value: true });
+      setTimeout(() => dispatch({ type: "set-copied", value: false }), 1500);
     } catch {
-      if (viewMode === 'json') {
+      if (viewMode === "json") {
         textareaRef.current?.select();
-        document.execCommand('copy');
+        document.execCommand("copy");
       } else {
-        const textarea = document.createElement('textarea');
+        const textarea = document.createElement("textarea");
         textarea.value = textToCopy;
         document.body.appendChild(textarea);
         textarea.select();
-        document.execCommand('copy');
+        document.execCommand("copy");
         document.body.removeChild(textarea);
       }
-      dispatch({ type: 'set-copied', value: true });
-      setTimeout(() => dispatch({ type: 'set-copied', value: false }), 1500);
+      dispatch({ type: "set-copied", value: true });
+      setTimeout(() => dispatch({ type: "set-copied", value: false }), 1500);
     }
   }, [value, viewMode, workflowJson, includeWorkflow]);
 
@@ -576,206 +590,255 @@ export function WorkflowJsonEditor({
       const parsed = JSON.parse(value) as Record<string, unknown>;
 
       if (!parsed.nodes || !Array.isArray(parsed.nodes)) {
-        dispatch({ type: 'set-error', value: '"nodes" must be an array.' });
+        dispatch({ type: "set-error", value: '"nodes" must be an array.' });
         return;
       }
       if (!parsed.edges || !Array.isArray(parsed.edges)) {
-        dispatch({ type: 'set-error', value: '"edges" must be an array.' });
+        dispatch({ type: "set-error", value: '"edges" must be an array.' });
         return;
       }
 
       onApply(parsed);
     } catch (e) {
-      dispatch({ type: 'set-error', value: `Invalid JSON: ${(e as Error).message}` });
+      dispatch({
+        type: "set-error",
+        value: `Invalid JSON: ${(e as Error).message}`,
+      });
     }
   }, [value, onApply]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         onClose();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         handleApply();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose, handleApply]);
 
-  const lineCount = value.split('\n').length;
+  const lineCount = value.split("\n").length;
 
   return (
     <Transition key={initialValue} show={open} as={Fragment}>
       <Dialog onClose={onClose} className="relative z-50">
         <TransitionChild
-          enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
-          leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
+          enter="ease-out duration-200"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-150"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
         >
           <div className="fixed inset-0 bg-[var(--aw-surface)]/70 dark:bg-[var(--aw-surface-dark)]/80" />
         </TransitionChild>
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <TransitionChild
-            enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
-            leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
+            enter="ease-out duration-200"
+            enterFrom="opacity-0 scale-95"
+            enterTo="opacity-100 scale-100"
+            leave="ease-in duration-150"
+            leaveFrom="opacity-100 scale-100"
+            leaveTo="opacity-0 scale-95"
           >
             <Dialog.Panel className="w-[90vw] max-w-5xl h-[85vh] bg-surface dark:bg-surface-dark rounded border border-border dark:border-border-dark flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
-          <div className="flex items-center gap-3">
-            <h2 className="text-base font-bold text-text-primary dark:text-text-primary-dark">
-              Workflow Editor
-            </h2>
-            {isDirty && viewMode === 'json' && (
-              <span className="text-xs font-medium text-warning bg-warning/10 px-2 py-0.5 rounded">
-                Unsaved changes
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {/* View mode tabs */}
-            <div className="flex items-center gap-1 mr-2 bg-surface-raised dark:bg-surface-dark-raised rounded-md p-0.5">
-              <Button
-                onClick={() => dispatch({ type: 'set-view-mode', value: 'json' })}
-                variant="ghost"
-                size="xs"
-                className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  viewMode === 'json'
-                    ? 'bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark'
-                    : 'text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark'
-                }`}
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                Edit JSON
-              </Button>
-              <Button
-                onClick={() => dispatch({ type: 'set-view-mode', value: 'ai-prompt' })}
-                variant="ghost"
-                size="xs"
-                className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  viewMode === 'ai-prompt'
-                    ? 'bg-surface dark:bg-surface-dark text-primary border border-border dark:border-border-dark'
-                    : 'text-text-muted dark:text-text-muted-dark hover:text-primary'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                AI Prompt
-              </Button>
-            </div>
-
-            <Button
-              onClick={handleCopy}
-              variant="ghost"
-              size="sm"
-              title={viewMode === 'json' ? 'Copy JSON to clipboard' : 'Copy AI prompt to clipboard'}
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-status-success dark:text-status-success-dark" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? 'Copied!' : 'Copy'}
-            </Button>
-            {viewMode === 'json' && (
-              <Button
-                onClick={handleApply}
-                disabled={!isDirty}
-                variant="primary"
-                size="sm"
-                title="Apply changes (Ctrl+S)"
-              >
-                Apply
-              </Button>
-            )}
-            <Button
-              onClick={onClose}
-              variant="ghost"
-              size="sm"
-              className="!p-2 !min-w-0"
-              title="Close (Esc)"
-            >
-              <X className="w-5 h-5" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Error bar */}
-        {error && viewMode === 'json' && (
-          <div className="flex items-center gap-2 px-5 py-2 bg-status-error/10 border-b border-status-error/30 text-status-error text-xs font-medium">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-            {error}
-          </div>
-        )}
-
-        {/* Include workflow toggle (only in AI prompt mode) */}
-        {viewMode === 'ai-prompt' && Boolean((workflowJson as Record<string, unknown[]>)?.nodes?.length) && (
-          <div className="flex items-center gap-3 px-5 py-2 border-b border-border dark:border-border-dark bg-primary/5 dark:bg-primary/10">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={includeWorkflow}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'set-include-workflow', value: e.target.checked })}
-                className="checkbox checkbox-sm checkbox-primary"
-              />
-              <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">
-                Include current workflow JSON (for updating)
-              </span>
-            </label>
-            <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
-              {includeWorkflow ? 'AI will see and modify existing nodes' : 'AI will create from scratch'}
-            </span>
-          </div>
-        )}
-
-        {/* Content */}
-        {viewMode === 'json' ? (
-          <div className="flex-1 relative overflow-hidden">
-            <div className="absolute inset-0 flex overflow-auto">
-              {/* Line numbers */}
-              <div className="flex-shrink-0 py-3 px-2 bg-surface-raised dark:bg-surface-dark-raised text-right select-none border-r border-border dark:border-border-dark overflow-hidden"
-                   style={{ minWidth: 48 }}>
-                {Array.from({ length: lineCount }, (_, i) => (
-                    <div key={i} className="text-[11px] leading-[1.6] text-text-muted dark:text-text-muted-dark font-mono pr-1">
-                    {i + 1}
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-base font-bold text-text-primary dark:text-text-primary-dark">
+                    Workflow Editor
+                  </h2>
+                  {isDirty && viewMode === "json" && (
+                    <span className="text-xs font-medium text-warning bg-warning/10 px-2 py-0.5 rounded">
+                      Unsaved changes
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {/* View mode tabs */}
+                  <div className="flex items-center gap-1 mr-2 bg-surface-raised dark:bg-surface-dark-raised rounded-md p-0.5">
+                    <Button
+                      onClick={() =>
+                        dispatch({ type: "set-view-mode", value: "json" })
+                      }
+                      variant="ghost"
+                      size="xs"
+                      className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
+                        viewMode === "json"
+                          ? "bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark"
+                          : "text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark"
+                      }`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Edit JSON
+                    </Button>
+                    <Button
+                      onClick={() =>
+                        dispatch({ type: "set-view-mode", value: "ai-prompt" })
+                      }
+                      variant="ghost"
+                      size="xs"
+                      className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
+                        viewMode === "ai-prompt"
+                          ? "bg-surface dark:bg-surface-dark text-primary border border-border dark:border-border-dark"
+                          : "text-text-muted dark:text-text-muted-dark hover:text-primary"
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      AI Prompt
+                    </Button>
                   </div>
-                ))}
-              </div>
-              {/* Textarea */}
-              <textarea
-                ref={textareaRef}
-                value={value}
-                onChange={handleWorkflowJsonChange}
-                spellCheck={false}
-                aria-label="Workflow JSON editor"
-                className="flex-1 p-3 bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark font-mono text-[12px] leading-[1.6] resize-none outline-none border-none"
-                style={{ tabSize: 2 }}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 overflow-auto" ref={promptRef}>
-            <pre className="p-5 text-[12px] leading-relaxed font-mono text-text-primary dark:text-text-primary-dark whitespace-pre-wrap break-words">
-              {buildAIPrompt(workflowJson, includeWorkflow)}
-            </pre>
-          </div>
-        )}
 
-        {/* Footer / hint */}
-        <div className="flex items-center justify-between px-5 py-2 border-t border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-[10px] text-text-muted dark:text-text-muted-dark">
-          {viewMode === 'json' ? (
-            <div className="flex items-center gap-3 w-full">
-              <span>{lineCount} lines</span>
-              <div className="flex-1" />
-              <BeautifyButton
-                value={value}
-                onChange={(v: string) => dispatch({ type: 'set-value', value: v })}
-              />
-              <span>Ctrl+S to apply &middot; Esc to close</span>
-            </div>
-          ) : (
-            <>
-              <span>{buildAIPrompt(workflowJson, includeWorkflow).length.toLocaleString()} characters</span>
-              <span>Copy this prompt → paste into AI agent → paste output into JSON editor</span>
-            </>
-          )}
-        </div>
+                  <Button
+                    onClick={handleCopy}
+                    variant="ghost"
+                    size="sm"
+                    title={
+                      viewMode === "json"
+                        ? "Copy JSON to clipboard"
+                        : "Copy AI prompt to clipboard"
+                    }
+                  >
+                    {copied ? (
+                      <Check className="w-3.5 h-3.5 text-status-success dark:text-status-success-dark" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    {copied ? "Copied!" : "Copy"}
+                  </Button>
+                  {viewMode === "json" && (
+                    <Button
+                      onClick={handleApply}
+                      disabled={!isDirty}
+                      variant="primary"
+                      size="sm"
+                      title="Apply changes (Ctrl+S)"
+                    >
+                      Apply
+                    </Button>
+                  )}
+                  <Button
+                    onClick={onClose}
+                    variant="ghost"
+                    size="sm"
+                    className="!p-2 !min-w-0"
+                    title="Close (Esc)"
+                  >
+                    <X className="w-5 h-5" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Error bar */}
+              {error && viewMode === "json" && (
+                <div className="flex items-center gap-2 px-5 py-2 bg-status-error/10 border-b border-status-error/30 text-status-error text-xs font-medium">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+
+              {/* Include workflow toggle (only in AI prompt mode) */}
+              {viewMode === "ai-prompt" &&
+                Boolean(
+                  (workflowJson as Record<string, unknown[]>)?.nodes?.length,
+                ) && (
+                  <div className="flex items-center gap-3 px-5 py-2 border-b border-border dark:border-border-dark bg-primary/5 dark:bg-primary/10">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={includeWorkflow}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          dispatch({
+                            type: "set-include-workflow",
+                            value: e.target.checked,
+                          })
+                        }
+                        className="checkbox checkbox-sm checkbox-primary"
+                      />
+                      <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">
+                        Include current workflow JSON (for updating)
+                      </span>
+                    </label>
+                    <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
+                      {includeWorkflow
+                        ? "AI will see and modify existing nodes"
+                        : "AI will create from scratch"}
+                    </span>
+                  </div>
+                )}
+
+              {/* Content */}
+              {viewMode === "json" ? (
+                <div className="flex-1 relative overflow-hidden">
+                  <div className="absolute inset-0 flex overflow-auto">
+                    {/* Line numbers */}
+                    <div
+                      className="flex-shrink-0 py-3 px-2 bg-surface-raised dark:bg-surface-dark-raised text-right select-none border-r border-border dark:border-border-dark overflow-hidden"
+                      style={{ minWidth: 48 }}
+                    >
+                      {Array.from({ length: lineCount }, (_, i) => (
+                        <div
+                          key={i}
+                          className="text-[11px] leading-[1.6] text-text-muted dark:text-text-muted-dark font-mono pr-1"
+                        >
+                          {i + 1}
+                        </div>
+                      ))}
+                    </div>
+                    {/* Textarea */}
+                    <textarea
+                      ref={textareaRef}
+                      value={value}
+                      onChange={handleWorkflowJsonChange}
+                      spellCheck={false}
+                      aria-label="Workflow JSON editor"
+                      className="flex-1 p-3 bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark font-mono text-[12px] leading-[1.6] resize-none outline-none border-none"
+                      style={{ tabSize: 2 }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-auto" ref={promptRef}>
+                  <pre className="p-5 text-[12px] leading-relaxed font-mono text-text-primary dark:text-text-primary-dark whitespace-pre-wrap break-words">
+                    {buildAIPrompt(workflowJson, includeWorkflow)}
+                  </pre>
+                </div>
+              )}
+
+              {/* Footer / hint */}
+              <div className="flex items-center justify-between px-5 py-2 border-t border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-[10px] text-text-muted dark:text-text-muted-dark">
+                {viewMode === "json" ? (
+                  <div className="flex items-center gap-3 w-full">
+                    <span>{lineCount} lines</span>
+                    <div className="flex-1" />
+                    <BeautifyButton
+                      value={value}
+                      onChange={(v: string) =>
+                        dispatch({ type: "set-value", value: v })
+                      }
+                    />
+                    <span>Ctrl+S to apply &middot; Esc to close</span>
+                  </div>
+                ) : (
+                  <>
+                    <span>
+                      {buildAIPrompt(
+                        workflowJson,
+                        includeWorkflow,
+                      ).length.toLocaleString()}{" "}
+                      characters
+                    </span>
+                    <span>
+                      Copy this prompt → paste into AI agent → paste output into
+                      JSON editor
+                    </span>
+                  </>
+                )}
+              </div>
             </Dialog.Panel>
           </TransitionChild>
         </div>

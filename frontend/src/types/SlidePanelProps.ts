@@ -4,8 +4,8 @@ export interface SlidePanelProps {
   title: React.ReactNode;
   children?: React.ReactNode;
   footer?: React.ReactNode;
-  side?: 'left' | 'right';
-  size?: 'sm' | 'md' | 'lg';
+  side?: "left" | "right";
+  size?: "sm" | "md" | "lg";
   showClose?: boolean;
   className?: string;
 }

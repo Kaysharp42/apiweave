@@ -9,16 +9,16 @@
  *    (except index.ts which must have zero declarations — barrel exports only)
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve, relative, dirname, extname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, resolve, relative, dirname, extname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(__dirname, '..');
-const SRC = join(ROOT, 'src');
-const TYPES_DIR = join(SRC, 'types');
+const ROOT = resolve(__dirname, "..");
+const SRC = join(ROOT, "src");
+const TYPES_DIR = join(SRC, "types");
 
-const TS_EXTENSIONS = new Set(['.ts', '.tsx']);
+const TS_EXTENSIONS = new Set([".ts", ".tsx"]);
 
 let violations = 0;
 
@@ -30,12 +30,19 @@ function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '__tests__') continue;
+      if (
+        entry.name === "node_modules" ||
+        entry.name === "dist" ||
+        entry.name === "__tests__"
+      )
+        continue;
       yield* walk(full);
     } else if (entry.isFile() && TS_EXTENSIONS.has(extname(entry.name))) {
       // Skip test files and test fixtures
-      if (entry.name.endsWith('.test.ts') || entry.name.endsWith('.test.tsx')) continue;
-      if (entry.name === 'testFixtures.ts' || entry.name === 'testFixtures.tsx') continue;
+      if (entry.name.endsWith(".test.ts") || entry.name.endsWith(".test.tsx"))
+        continue;
+      if (entry.name === "testFixtures.ts" || entry.name === "testFixtures.tsx")
+        continue;
       yield full;
     }
   }
@@ -59,21 +66,21 @@ function countTypeDeclarations(content) {
 
 // ── Rule 1: No type/interface declarations outside src/types/ ──
 for (const file of walk(SRC)) {
-  const rel = relative(SRC, file).replace(/\\/g, '/');
-  if (rel.startsWith('types/')) continue; // skip types dir — checked in Rule 2
+  const rel = relative(SRC, file).replace(/\\/g, "/");
+  if (rel.startsWith("types/")) continue; // skip types dir — checked in Rule 2
 
-  const content = readFileSync(file, 'utf-8');
+  const content = readFileSync(file, "utf-8");
   const count = countTypeDeclarations(content);
 
   if (count > 0) {
     // Only count EXPORTED type/interface declarations.
     // Non-exported (local) types are implementation details, not shared types.
-    const lines = content.split('\n');
+    const lines = content.split("\n");
     let realCount = 0;
     for (const line of lines) {
       const trimmed = line.trim();
       // Skip import type lines
-      if (trimmed.startsWith('import ')) continue;
+      if (trimmed.startsWith("import ")) continue;
       // Match only EXPORTED type/interface/union declarations
       if (/^export\s+(?:type|interface)\s+\w+/.test(trimmed)) {
         realCount++;
@@ -81,7 +88,9 @@ for (const file of walk(SRC)) {
     }
 
     if (realCount > 0) {
-      console.error(`[VIOLATION] Rule 1: ${rel} contains ${realCount} type/interface declaration(s) outside src/types/`);
+      console.error(
+        `[VIOLATION] Rule 1: ${rel} contains ${realCount} type/interface declaration(s) outside src/types/`,
+      );
       violations += realCount;
     }
   }
@@ -93,17 +102,21 @@ for (const entry of readdirSync(TYPES_DIR, { withFileTypes: true })) {
   if (!entry.isFile() || !TS_EXTENSIONS.has(extname(entry.name))) continue;
 
   const filePath = join(TYPES_DIR, entry.name);
-  const content = readFileSync(filePath, 'utf-8');
+  const content = readFileSync(filePath, "utf-8");
   const count = countTypeDeclarations(content);
 
-  if (entry.name === 'index.ts') {
+  if (entry.name === "index.ts") {
     if (count > 0) {
-      console.error(`[VIOLATION] Rule 2: index.ts has ${count} type/interface declaration(s) — must be barrel exports only`);
+      console.error(
+        `[VIOLATION] Rule 2: index.ts has ${count} type/interface declaration(s) — must be barrel exports only`,
+      );
       violations += count;
     }
   } else {
     if (count > 1) {
-      console.error(`[VIOLATION] Rule 2: types/${entry.name} has ${count} type/interface declarations — max 1 allowed`);
+      console.error(
+        `[VIOLATION] Rule 2: types/${entry.name} has ${count} type/interface declarations — max 1 allowed`,
+      );
       violations += count - 1;
     }
   }
@@ -111,9 +124,13 @@ for (const entry of readdirSync(TYPES_DIR, { withFileTypes: true })) {
 
 // ── Result ──
 if (violations > 0) {
-  console.error(`\n${violations} violation(s) found. Fix them before committing.`);
+  console.error(
+    `\n${violations} violation(s) found. Fix them before committing.`,
+  );
   process.exit(1);
 }
 
-console.log('Type audit passed: all type/interface declarations are in src/types/, one per file.');
+console.log(
+  "Type audit passed: all type/interface declarations are in src/types/, one per file.",
+);
 process.exit(0);

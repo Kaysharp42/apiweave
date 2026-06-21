@@ -1,9 +1,9 @@
-import type { FileUpload } from './FileUpload';
-import type { AuthConfig } from './AuthConfig';
-import type { FormDataEntry } from './FormDataEntry';
-import type { HTTPRequestBodyType } from './HTTPRequestBodyType';
-import type { KeyValuePair } from './KeyValuePair';
-import type { UrlEncodedEntry } from './UrlEncodedEntry';
+import type { FileUpload } from "./FileUpload";
+import type { AuthConfig } from "./AuthConfig";
+import type { FormDataEntry } from "./FormDataEntry";
+import type { HTTPRequestBodyType } from "./HTTPRequestBodyType";
+import type { KeyValuePair } from "./KeyValuePair";
+import type { UrlEncodedEntry } from "./UrlEncodedEntry";
 
 export interface NodeModalHTTPRequestConfig {
   url?: string;

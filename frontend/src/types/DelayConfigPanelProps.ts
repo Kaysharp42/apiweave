@@ -1,5 +1,5 @@
-import type { NodeModalDelayConfig } from './NodeModalDelayConfig';
-import type { NodeModalDelayTabKey } from './NodeModalDelayTabKey';
+import type { NodeModalDelayConfig } from "./NodeModalDelayConfig";
+import type { NodeModalDelayTabKey } from "./NodeModalDelayTabKey";
 
 export interface DelayConfigPanelProps {
   initialConfig: Partial<NodeModalDelayConfig>;

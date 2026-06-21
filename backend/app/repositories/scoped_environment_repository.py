@@ -5,6 +5,7 @@ Handles user, organization, and workspace scoped environments with
 support for default environments, allowed-workspace policies, and
 protection configuration.
 """
+
 from datetime import UTC, datetime
 
 from app.models import (
@@ -83,16 +84,18 @@ class ScopedEnvironmentRepository:
 
     @staticmethod
     async def get_by_id(environment_id: str) -> Environment | None:
-        return await Environment.find_one(
-            Environment.environmentId == environment_id
-        )
+        return await Environment.find_one(Environment.environmentId == environment_id)
 
     @staticmethod
     async def list_by_scope(scope_type: str, scope_id: str) -> list[Environment]:
-        return await Environment.find(
-            Environment.scopeType == scope_type,
-            Environment.scopeId == scope_id,
-        ).sort("-createdAt").to_list()  # type: ignore[misc]
+        return (
+            await Environment.find(
+                Environment.scopeType == scope_type,
+                Environment.scopeId == scope_id,
+            )
+            .sort("-createdAt")
+            .to_list()
+        )  # type: ignore[misc]
 
     @staticmethod
     async def get_default_for_workspace(workspace_id: str) -> Environment | None:
@@ -203,9 +206,7 @@ class ScopedEnvironmentRepository:
         workspace_id: str,
     ) -> list[Environment]:
         """List org environments available to a specific workspace."""
-        all_org_envs = await ScopedEnvironmentRepository.list_by_scope(
-            "organization", org_id
-        )
+        all_org_envs = await ScopedEnvironmentRepository.list_by_scope("organization", org_id)
         available = []
         for env in all_org_envs:
             if not env.allowedWorkspaceIds or workspace_id in env.allowedWorkspaceIds:

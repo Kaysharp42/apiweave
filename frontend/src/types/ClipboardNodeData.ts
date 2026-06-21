@@ -1,4 +1,4 @@
-import type { WorkflowNode } from './WorkflowNode';
+import type { WorkflowNode } from "./WorkflowNode";
 
 export interface ClipboardNodeData {
   node: WorkflowNode;

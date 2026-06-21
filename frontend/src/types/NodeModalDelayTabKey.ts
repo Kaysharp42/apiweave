@@ -1,1 +1,1 @@
-export type NodeModalDelayTabKey = 'duration' | 'settings';
+export type NodeModalDelayTabKey = "duration" | "settings";

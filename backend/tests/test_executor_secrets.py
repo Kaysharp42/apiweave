@@ -11,6 +11,7 @@ Verifies that:
 - E7: export sanitization scrubs secret-keyed values from bundles
 - F4/F5: no regression in URL/query/path blocking patterns
 """
+
 import json
 import logging
 import sys
@@ -23,7 +24,6 @@ sys.modules.setdefault("app.services.run_service", MagicMock())
 from app.runner.executor import WorkflowExecutor
 from app.services.secret_utils import (
     REDACTED,
-    mask_log_value,
     mask_secrets_structural,
     sanitize_secrets_in_dict,
 )
@@ -83,7 +83,7 @@ class TestUrlBlocked:
 
 class TestLogMasked:
     def test_mask_secrets_masks_decrypted_value(self, executor):
-        text = f"Request sent with token sk_live_decrypted_abc123"
+        text = "Request sent with token sk_live_decrypted_abc123"
         masked = executor._mask_secrets(text)
         assert "sk_live_decrypted_abc123" not in masked
         assert REDACTED in masked
@@ -135,11 +135,12 @@ class TestGetDecryptedSecrets:
             },
         }
 
-        with patch.object(
-            EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)
-        ), patch(
-            "app.services.secret_crypto.decrypt",
-            new=AsyncMock(return_value="decrypted-value"),
+        with (
+            patch.object(EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=mock_env)),
+            patch(
+                "app.services.secret_crypto.decrypt",
+                new=AsyncMock(return_value="decrypted-value"),
+            ),
         ):
             result = await EnvironmentRepository.get_decrypted_secrets("env-123")
 
@@ -149,9 +150,7 @@ class TestGetDecryptedSecrets:
     async def test_returns_empty_for_missing_env(self):
         from app.repositories.environment_repository import EnvironmentRepository
 
-        with patch.object(
-            EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=None)
-        ):
+        with patch.object(EnvironmentRepository, "get_by_id", new=AsyncMock(return_value=None)):
             result = await EnvironmentRepository.get_decrypted_secrets("nonexistent")
 
         assert result == {}
@@ -214,7 +213,7 @@ class TestE2SecretInAuthHeader:
             "config": {
                 "method": "GET",
                 "url": "https://api.example.com/data",
-                "headers": f"Authorization=Bearer {{{{secrets.apiKey}}}}",
+                "headers": "Authorization=Bearer {{secrets.apiKey}}",
                 "body": "",
                 "timeout": 5,
                 "queryParams": "",
@@ -233,10 +232,13 @@ class TestE2SecretInAuthHeader:
             captured_headers.update(kwargs.get("headers", {}))
             return mock_resp, mock_sess
 
-        with patch(
-            "app.services.safe_http.safe_request",
-            side_effect=fake_safe_request,
-        ), patch("app.services.safe_http.validate_url"):
+        with (
+            patch(
+                "app.services.safe_http.safe_request",
+                side_effect=fake_safe_request,
+            ),
+            patch("app.services.safe_http.validate_url"),
+        ):
             await ex._execute_http_request(node)
 
         assert captured_headers.get("Authorization") == f"Bearer {_SECRET_HEADER_VALUE}"
@@ -255,10 +257,7 @@ class TestE2SecretInAuthHeader:
             "config": {
                 "method": "POST",
                 "url": "https://api.example.com/submit",
-                "headers": (
-                    f"X-Api-Key={{{{secrets.apiKey}}}}\n"
-                    f"X-Db-Pass={{{{secrets.dbPass}}}}"
-                ),
+                "headers": ("X-Api-Key={{secrets.apiKey}}\n" "X-Db-Pass={{secrets.dbPass}}"),
                 "body": "{}",
                 "bodyType": "json",
                 "timeout": 5,
@@ -277,10 +276,13 @@ class TestE2SecretInAuthHeader:
             captured.update(kwargs.get("headers", {}))
             return mock_resp, mock_sess
 
-        with patch(
-            "app.services.safe_http.safe_request",
-            side_effect=fake_safe_request,
-        ), patch("app.services.safe_http.validate_url"):
+        with (
+            patch(
+                "app.services.safe_http.safe_request",
+                side_effect=fake_safe_request,
+            ),
+            patch("app.services.safe_http.validate_url"),
+        ):
             await ex._execute_http_request(node)
 
         assert captured["X-Api-Key"] == _SECRET_HEADER_VALUE
@@ -331,10 +333,13 @@ class TestE2SecretInJsonBody:
                 captured_json.update(kwargs["json"])
             return mock_resp, mock_sess
 
-        with patch(
-            "app.services.safe_http.safe_request",
-            side_effect=fake_safe_request,
-        ), patch("app.services.safe_http.validate_url"):
+        with (
+            patch(
+                "app.services.safe_http.safe_request",
+                side_effect=fake_safe_request,
+            ),
+            patch("app.services.safe_http.validate_url"),
+        ):
             await ex._execute_http_request(node)
 
         assert captured_json.get("key") == _SECRET_BODY_VALUE
@@ -439,9 +444,7 @@ class TestE6LogMasking:
 
         for record in caplog.records:
             msg = record.getMessage()
-            assert _SECRET_HEADER_VALUE not in msg, (
-                f"Secret leaked in log record: {msg}"
-            )
+            assert _SECRET_HEADER_VALUE not in msg, f"Secret leaked in log record: {msg}"
 
     def test_mask_secrets_structural_in_result(self):
         """Result objects passed through mask_secrets_structural do not

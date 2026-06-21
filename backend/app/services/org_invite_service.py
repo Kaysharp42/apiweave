@@ -5,6 +5,7 @@ Organization invite service — GitHub-like org-scoped invites.
 token shown once at creation. Accepting an invite adds the user as
 an org member with the invited role.
 """
+
 from __future__ import annotations
 
 import hashlib

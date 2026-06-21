@@ -1,1 +1,1 @@
-export type DeploymentMode = 'single_user' | 'multi_tenant';
+export type DeploymentMode = "single_user" | "multi_tenant";

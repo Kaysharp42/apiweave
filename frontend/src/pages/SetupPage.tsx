@@ -1,41 +1,49 @@
-import { useEffect, useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Shield } from 'lucide-react';
-import { useAuth } from '../auth/useAuth';
-import { Button } from '../components/atoms/Button';
-import { Spinner } from '../components/atoms/Spinner';
-import { Card } from '../components/molecules/Card';
-import { EmptyState } from '../components/molecules/EmptyState';
-import { SplitAuthLayout } from '../components/auth/SplitAuthLayout';
-import { AuthInteractiveHero } from '../components/auth/AuthInteractiveHero';
-import type { ProviderInfo } from '../types/ProviderInfo';
-import { PROVIDER_DISPLAY_MAP, getEnabledProviders, type ProviderDisplay } from '../auth/providerConfig';
-import API_BASE_URL from '../utils/api';
-import { authenticatedFetch } from '../utils/authenticatedApi';
+import { useEffect, useState } from "react";
+import { Navigate, useSearchParams } from "react-router-dom";
+import { AlertTriangle, Shield } from "lucide-react";
+import { useAuth } from "../auth/useAuth";
+import { Button } from "../components/atoms/Button";
+import { Spinner } from "../components/atoms/Spinner";
+import { Card } from "../components/molecules/Card";
+import { EmptyState } from "../components/molecules/EmptyState";
+import { SplitAuthLayout } from "../components/auth/SplitAuthLayout";
+import { AuthInteractiveHero } from "../components/auth/AuthInteractiveHero";
+import type { ProviderInfo } from "../types/ProviderInfo";
+import {
+  PROVIDER_DISPLAY_MAP,
+  getEnabledProviders,
+  type ProviderDisplay,
+} from "../auth/providerConfig";
+import API_BASE_URL from "../utils/api";
+import { authenticatedFetch } from "../utils/authenticatedApi";
 
 export default function SetupPage() {
   const { login, status } = useAuth();
   const [searchParams] = useSearchParams();
-  const error = searchParams.get('error');
+  const error = searchParams.get("error");
   const [providers, setProviders] = useState<ProviderDisplay[]>([]);
   const [providerError, setProviderError] = useState<string | null>(null);
   const [providersLoading, setProvidersLoading] = useState(true);
-  const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
+  const [loadingProviderId, setLoadingProviderId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/providers`);
-        if (!res.ok) throw new Error('Failed to load providers');
+        const res = await authenticatedFetch(
+          `${API_BASE_URL}/api/auth/providers`,
+        );
+        if (!res.ok) throw new Error("Failed to load providers");
         const data: ProviderInfo[] = await res.json();
         if (!cancelled) {
           setProviders(getEnabledProviders(data));
         }
       } catch {
         if (!cancelled) {
-          setProviderError('Unable to load sign-in options');
+          setProviderError("Unable to load sign-in options");
         }
       } finally {
         if (!cancelled) setProvidersLoading(false);
@@ -47,7 +55,7 @@ export default function SetupPage() {
     };
   }, []);
 
-  if (status === 'loading') {
+  if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface dark:bg-surface-dark">
         <Spinner size="lg" className="text-primary dark:text-primary-light" />
@@ -55,7 +63,7 @@ export default function SetupPage() {
     );
   }
 
-  if (status === 'authenticated') {
+  if (status === "authenticated") {
     return <Navigate to="/personal/workflows" replace />;
   }
 
@@ -85,30 +93,48 @@ export default function SetupPage() {
 
           {providersLoading ? (
             <div className="flex flex-col items-center gap-3 py-8">
-              <Spinner size="lg" className="text-primary dark:text-primary-light" />
-              <p className="text-sm text-text-muted dark:text-text-muted-dark">Loading sign-in options...</p>
+              <Spinner
+                size="lg"
+                className="text-primary dark:text-primary-light"
+              />
+              <p className="text-sm text-text-muted dark:text-text-muted-dark">
+                Loading sign-in options...
+              </p>
             </div>
           ) : providerError ? (
             <EmptyState
-              icon={<AlertTriangle className="w-12 h-12 text-status-error" strokeWidth={1.5} />}
+              icon={
+                <AlertTriangle
+                  className="w-12 h-12 text-status-error"
+                  strokeWidth={1.5}
+                />
+              }
               title="Sign-in options unavailable"
               description={providerError}
             />
           ) : providers.length === 0 ? (
             <EmptyState
-              icon={<Shield className="w-12 h-12 text-status-warning" strokeWidth={1.5} />}
+              icon={
+                <Shield
+                  className="w-12 h-12 text-status-warning"
+                  strokeWidth={1.5}
+                />
+              }
               title="No sign-in providers configured"
               description="Contact your administrator to enable authentication providers."
             />
           ) : (
             providers.map((provider) => {
-              const display = PROVIDER_DISPLAY_MAP[provider.id as keyof typeof PROVIDER_DISPLAY_MAP];
+              const display =
+                PROVIDER_DISPLAY_MAP[
+                  provider.id as keyof typeof PROVIDER_DISPLAY_MAP
+                ];
               if (!display) return null;
               const { IconComponent, label } = display;
-              const isGoogle = provider.id === 'google';
+              const isGoogle = provider.id === "google";
               const iconClass = isGoogle
-                ? 'w-5 h-5 opacity-80 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0'
-                : 'w-5 h-5 text-text-secondary dark:text-text-secondary-dark group-hover:text-text-primary dark:group-hover:text-text-primary-dark transition-colors';
+                ? "w-5 h-5 opacity-80 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0"
+                : "w-5 h-5 text-text-secondary dark:text-text-secondary-dark group-hover:text-text-primary dark:group-hover:text-text-primary-dark transition-colors";
               const isLoading = loadingProviderId === provider.id;
               const isDisabled = loadingProviderId !== null && !isLoading;
 

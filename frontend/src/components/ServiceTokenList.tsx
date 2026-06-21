@@ -1,18 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Ban, RefreshCw, Shield } from 'lucide-react';
-import { Button } from './atoms/Button';
-import { IconButton } from './atoms/IconButton';
-import { Badge } from './atoms/Badge';
-import { EmptyState } from './molecules/EmptyState';
-import { ConfirmDialog } from './molecules/ConfirmDialog';
-import { Modal } from './molecules/Modal';
-import { TokenValueDisplay } from './TokenValueDisplay';
-import { authenticatedJson } from '../utils/authenticatedApi';
-import API_BASE_URL from '../utils/api';
-import type { ServiceToken } from '../types';
+import { useState, useEffect, useCallback } from "react";
+import { Ban, RefreshCw, Shield } from "lucide-react";
+import { Button } from "./atoms/Button";
+import { IconButton } from "./atoms/IconButton";
+import { Badge } from "./atoms/Badge";
+import { EmptyState } from "./molecules/EmptyState";
+import { ConfirmDialog } from "./molecules/ConfirmDialog";
+import { Modal } from "./molecules/Modal";
+import { TokenValueDisplay } from "./TokenValueDisplay";
+import { authenticatedJson } from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/api";
+import type { ServiceToken } from "../types";
 
 export interface ServiceTokenListProps {
-  scopeType: 'workspace' | 'organization';
+  scopeType: "workspace" | "organization";
   scopeId: string;
   /** Called after a token action to refresh parent state. */
   onChanged: () => void;
@@ -34,14 +34,14 @@ interface RotateResponse {
 }
 
 function formatDate(iso: string | undefined): string {
-  if (!iso) return '—';
+  if (!iso) return "—";
   try {
     return new Date(iso).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   } catch {
     return iso;
@@ -68,7 +68,7 @@ export function ServiceTokenList({
   onChanged,
   onSelect,
   selectedId,
-  className = '',
+  className = "",
 }: ServiceTokenListProps) {
   const [tokens, setTokens] = useState<ServiceToken[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,7 +90,8 @@ export function ServiceTokenList({
       );
       setTokens(data.tokens);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load tokens';
+      const message =
+        err instanceof Error ? err.message : "Failed to load tokens";
       setError(message);
     } finally {
       setLoading(false);
@@ -107,13 +108,14 @@ export function ServiceTokenList({
     try {
       await authenticatedJson(
         `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/tokens/${encodeURIComponent(revokeTarget.tokenId)}/revoke`,
-        { method: 'POST' },
+        { method: "POST" },
       );
       setRevokeTarget(null);
       onChanged();
       await fetchTokens();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to revoke token';
+      const message =
+        err instanceof Error ? err.message : "Failed to revoke token";
       setError(message);
     } finally {
       setRevoking(false);
@@ -126,14 +128,15 @@ export function ServiceTokenList({
     try {
       const response = await authenticatedJson<RotateResponse>(
         `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/tokens/${encodeURIComponent(rotateTarget.tokenId)}/rotate`,
-        { method: 'POST' },
+        { method: "POST" },
       );
       setRotateTarget(null);
       setNewTokenValue(response.token);
       onChanged();
       await fetchTokens();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to rotate token';
+      const message =
+        err instanceof Error ? err.message : "Failed to rotate token";
       setError(message);
     } finally {
       setRotating(false);
@@ -146,8 +149,8 @@ export function ServiceTokenList({
       await authenticatedJson(
         `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/tokens/${encodeURIComponent(narrowTarget.tokenId)}/permissions`,
         {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ permissions: narrowPermissions }),
         },
       );
@@ -156,14 +159,25 @@ export function ServiceTokenList({
       onChanged();
       await fetchTokens();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update permissions';
+      const message =
+        err instanceof Error ? err.message : "Failed to update permissions";
       setError(message);
     }
-  }, [narrowTarget, narrowPermissions, scopeType, scopeId, onChanged, fetchTokens]);
+  }, [
+    narrowTarget,
+    narrowPermissions,
+    scopeType,
+    scopeId,
+    onChanged,
+    fetchTokens,
+  ]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8" aria-label="Loading tokens">
+      <div
+        className="flex items-center justify-center py-8"
+        aria-label="Loading tokens"
+      >
         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
       </div>
     );
@@ -180,7 +194,12 @@ export function ServiceTokenList({
   if (tokens.length === 0) {
     return (
       <EmptyState
-        icon={<Shield className="w-10 h-10 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+        icon={
+          <Shield
+            className="w-10 h-10 text-text-muted dark:text-text-muted-dark"
+            strokeWidth={1.5}
+          />
+        }
         title="No service tokens"
         description="Create a service token for CI/CD, MCP, or webhook integrations."
         className={className}
@@ -236,22 +255,24 @@ export function ServiceTokenList({
                 onClick={() => onSelect?.(token)}
                 onKeyDown={(event) => {
                   if (!onSelect) return;
-                  if (event.key === 'Enter' || event.key === ' ') {
+                  if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     onSelect(token);
                   }
                 }}
                 tabIndex={onSelect ? 0 : undefined}
-                role={onSelect ? 'button' : undefined}
+                role={onSelect ? "button" : undefined}
                 aria-pressed={onSelect ? selected : undefined}
                 className={[
-                  'border-b border-border/50 dark:border-border-dark/50 transition-colors focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
-                  onSelect && 'cursor-pointer',
-                  selected && 'bg-primary/5 dark:bg-primary-light/10',
+                  "border-b border-border/50 dark:border-border-dark/50 transition-colors focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+                  onSelect && "cursor-pointer",
+                  selected && "bg-primary/5 dark:bg-primary-light/10",
                   inactive
-                    ? 'opacity-50'
-                    : 'hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50',
-                ].filter(Boolean).join(' ')}
+                    ? "opacity-50"
+                    : "hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               >
                 <td className="py-2.5 px-3">
                   <div>
@@ -281,11 +302,17 @@ export function ServiceTokenList({
                 </td>
                 <td className="py-2.5 px-3">
                   {revoked ? (
-                    <Badge variant="error" size="xs">Revoked</Badge>
+                    <Badge variant="error" size="xs">
+                      Revoked
+                    </Badge>
                   ) : expired ? (
-                    <Badge variant="warning" size="xs">Expired</Badge>
+                    <Badge variant="warning" size="xs">
+                      Expired
+                    </Badge>
                   ) : (
-                    <Badge variant="success" size="xs">Active</Badge>
+                    <Badge variant="success" size="xs">
+                      Active
+                    </Badge>
                   )}
                 </td>
                 <td className="py-2.5 px-3 text-text-secondary dark:text-text-secondary-dark text-xs">
@@ -341,8 +368,12 @@ export function ServiceTokenList({
         onClose={() => setRevokeTarget(null)}
         onConfirm={handleRevoke}
         title="Revoke token"
-        message={revokeTarget ? `Revoke "${revokeTarget.name}"? This immediately invalidates the token for all subsequent calls.` : ''}
-        confirmLabel={revoking ? 'Revoking...' : 'Revoke'}
+        message={
+          revokeTarget
+            ? `Revoke "${revokeTarget.name}"? This immediately invalidates the token for all subsequent calls.`
+            : ""
+        }
+        confirmLabel={revoking ? "Revoking..." : "Revoke"}
         intent="error"
       />
 
@@ -352,21 +383,29 @@ export function ServiceTokenList({
         onClose={() => setRotateTarget(null)}
         onConfirm={handleRotate}
         title="Rotate token"
-        message={rotateTarget ? `Rotate "${rotateTarget.name}"? The old token is immediately invalidated. A new token value will be shown once.` : ''}
-        confirmLabel={rotating ? 'Rotating...' : 'Rotate'}
+        message={
+          rotateTarget
+            ? `Rotate "${rotateTarget.name}"? The old token is immediately invalidated. A new token value will be shown once.`
+            : ""
+        }
+        confirmLabel={rotating ? "Rotating..." : "Rotate"}
         intent="warning"
       />
 
       {/* Narrow permissions modal */}
       <Modal
         isOpen={!!narrowTarget}
-        onClose={() => { setNarrowTarget(null); setNarrowPermissions([]); }}
-        title={`Narrow permissions: ${narrowTarget?.name ?? ''}`}
+        onClose={() => {
+          setNarrowTarget(null);
+          setNarrowPermissions([]);
+        }}
+        title={`Narrow permissions: ${narrowTarget?.name ?? ""}`}
         size="sm"
       >
         <div className="p-5 space-y-4">
           <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-            Remove permissions from this token. You can only reduce access, not add new permissions.
+            Remove permissions from this token. You can only reduce access, not
+            add new permissions.
           </p>
           <div className="flex flex-wrap gap-1.5">
             {narrowTarget?.permissions.map((perm) => {
@@ -375,15 +414,19 @@ export function ServiceTokenList({
                 <button
                   key={perm}
                   type="button"
-                  onClick={() => setNarrowPermissions((prev) =>
-                    prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm],
-                  )}
+                  onClick={() =>
+                    setNarrowPermissions((prev) =>
+                      prev.includes(perm)
+                        ? prev.filter((p) => p !== perm)
+                        : [...prev, perm],
+                    )
+                  }
                   className={[
-                    'px-2 py-1 text-xs rounded border transition-colors cursor-pointer',
+                    "px-2 py-1 text-xs rounded border transition-colors cursor-pointer",
                     selected
-                      ? 'bg-primary/10 dark:bg-primary-light/20 text-primary dark:text-primary-light border-primary/30'
-                      : 'bg-surface-overlay/50 dark:bg-surface-dark-overlay/50 text-text-muted line-through border-border dark:border-border-dark',
-                  ].join(' ')}
+                      ? "bg-primary/10 dark:bg-primary-light/20 text-primary dark:text-primary-light border-primary/30"
+                      : "bg-surface-overlay/50 dark:bg-surface-dark-overlay/50 text-text-muted line-through border-border dark:border-border-dark",
+                  ].join(" ")}
                 >
                   {perm}
                 </button>
@@ -394,7 +437,10 @@ export function ServiceTokenList({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setNarrowTarget(null); setNarrowPermissions([]); }}
+              onClick={() => {
+                setNarrowTarget(null);
+                setNarrowPermissions([]);
+              }}
             >
               Cancel
             </Button>
@@ -403,7 +449,9 @@ export function ServiceTokenList({
               intent="warning"
               size="sm"
               onClick={handleNarrow}
-              disabled={narrowPermissions.length === narrowTarget?.permissions.length}
+              disabled={
+                narrowPermissions.length === narrowTarget?.permissions.length
+              }
             >
               Apply narrower permissions
             </Button>

@@ -1,6 +1,6 @@
 export interface Webhook {
   webhookId: string;
-  resourceType: 'workflow' | 'collection';
+  resourceType: "workflow" | "collection";
   resourceId: string;
   environmentId?: string;
   description?: string;
@@ -8,5 +8,5 @@ export interface Webhook {
   url: string;
   usageCount: number;
   lastUsed?: string;
-  lastStatus?: 'success' | 'failed' | 'pending';
+  lastStatus?: "success" | "failed" | "pending";
 }

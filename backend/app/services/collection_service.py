@@ -2,6 +2,7 @@
 Collection service — shared business logic for collection CRUD and workflow membership.
 Called by both FastAPI routes and MCP tools.
 """
+
 from datetime import UTC, datetime
 from typing import Any
 
@@ -35,9 +36,7 @@ async def create_collection(data: CollectionCreate) -> Collection:
     return await CollectionRepository.create(data)
 
 
-async def update_collection(
-    collection_id: str, data: CollectionUpdate
-) -> Collection:
+async def update_collection(collection_id: str, data: CollectionUpdate) -> Collection:
     """Update a collection. Raises ValueError if not found."""
     updated = await CollectionRepository.update(collection_id, data)
     if not updated:
@@ -54,30 +53,22 @@ async def delete_collection(collection_id: str) -> None:
         raise ValueError(f"Collection {collection_id} not found")
     count = await WorkflowRepository.count_by_collection(collection_id)
     if count > 0:
-        raise ConflictError(
-            f"Cannot delete collection. {count} workflow(s) are still in it."
-        )
+        raise ConflictError(f"Cannot delete collection. {count} workflow(s) are still in it.")
     await CollectionRepository.delete(collection_id)
 
 
-async def add_workflow_to_collection(
-    collection_id: str, workflow_id: str
-) -> Any:
+async def add_workflow_to_collection(collection_id: str, workflow_id: str) -> Any:
     """Add a workflow to a collection. Raises ValueError if either not found."""
     col = await CollectionRepository.get_by_id(collection_id)
     if not col:
         raise ValueError(f"Collection {collection_id} not found")
-    updated = await WorkflowRepository.update_collection_assignment(
-        workflow_id, collection_id
-    )
+    updated = await WorkflowRepository.update_collection_assignment(workflow_id, collection_id)
     if not updated:
         raise ValueError(f"Workflow {workflow_id} not found")
     return updated
 
 
-async def remove_workflow_from_collection(
-    collection_id: str, workflow_id: str
-) -> Any:
+async def remove_workflow_from_collection(collection_id: str, workflow_id: str) -> Any:
     """Remove a workflow from a collection. Raises ValueError if not in collection."""
     workflow = await WorkflowRepository.get_by_id(workflow_id)
     if not workflow:
@@ -100,9 +91,7 @@ async def list_collection_workflows(collection_id: str) -> list[Any]:
     return workflows
 
 
-async def export_collection(
-    collection_id: str, include_environment: bool = True
-) -> dict[str, Any]:
+async def export_collection(collection_id: str, include_environment: bool = True) -> dict[str, Any]:
     """Export a collection with all workflows and environments (secrets sanitized)."""
     col = await CollectionRepository.get_by_id(collection_id)
     if not col:
@@ -112,9 +101,7 @@ async def export_collection(
         collection_id, skip=0, limit=1000
     )
 
-    environment_ids = {
-        wf.environmentId for wf in workflows_list if wf.environmentId
-    }
+    environment_ids = {wf.environmentId for wf in workflows_list if wf.environmentId}
 
     environments_list: list[dict[str, Any]] = []
     if include_environment and environment_ids:
@@ -227,6 +214,7 @@ async def import_collection(
         description = collection_data.get("description", "")
         color = collection_data.get("color")
         from app.models import CollectionCreate
+
         created = await create_collection(
             CollectionCreate(name=name, description=description, color=color)
         )
@@ -249,6 +237,7 @@ async def import_collection(
             continue
         from app.models import EnvironmentCreate
         from app.repositories import EnvironmentRepository
+
         env_create = EnvironmentCreate(
             name=env_data.get("name", "Imported Environment"),
             description=env_data.get("description"),
@@ -307,6 +296,7 @@ async def import_collection(
         if resolved_env_id:
             created_wf.environmentId = resolved_env_id
             from datetime import UTC, datetime
+
             created_wf.updatedAt = datetime.now(UTC)
             await created_wf.save()
 
@@ -371,8 +361,7 @@ async def import_collection_dry_run(
             for eidx, edge in enumerate(wf["edges"]):
                 if "source" not in edge or "target" not in edge:
                     errors.append(
-                        f"Workflow {idx}, edge at index {eidx} "
-                        f"missing 'source' or 'target'"
+                        f"Workflow {idx}, edge at index {eidx} " f"missing 'source' or 'target'"
                     )
                 else:
                     if edge["source"] not in node_id_set:

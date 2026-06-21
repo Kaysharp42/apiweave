@@ -1,7 +1,7 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties } from "react";
 
 export interface NodeHandleConfig {
-  type?: 'source' | 'target';
+  type?: "source" | "target";
   id?: string;
   style?: CSSProperties;
 }

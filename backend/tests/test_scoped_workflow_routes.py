@@ -6,11 +6,11 @@ Verifies:
 - Scoped import dry-run preserves response shape (nodes + stats)
 - All expected scoped routes are registered
 """
+
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from app.services import scoped_workflow_service
 
 
@@ -58,16 +58,16 @@ def _patch_workspace_access(monkeypatch: pytest.MonkeyPatch, workspace_id: str =
     async def fake_access(ws, user_id):
         pass
 
-    monkeypatch.setattr(
-        scoped_workflow_service.WorkspaceRepository, "get_by_id", fake_get_by_id
-    )
+    monkeypatch.setattr(scoped_workflow_service.WorkspaceRepository, "get_by_id", fake_get_by_id)
     monkeypatch.setattr(
         "app.services.scoped_workflow_service._assert_workspace_access", fake_access
     )
     return fake_ws
 
 
-def _patch_workflow_in_workspace(monkeypatch: pytest.MonkeyPatch, workflow_id: str = "wf-1", workspace_id: str = "ws-1"):
+def _patch_workflow_in_workspace(
+    monkeypatch: pytest.MonkeyPatch, workflow_id: str = "wf-1", workspace_id: str = "ws-1"
+):
     fake_wf = FakeWorkflow(workflow_id, workspace_id)
 
     async def fake_get_in_workspace(wid, ws_id):
@@ -116,7 +116,9 @@ async def test_scoped_run_returns_run_id(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
-async def test_scoped_run_rejects_workflow_not_in_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_scoped_run_rejects_workflow_not_in_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Scoped run must verify workflow belongs to workspace."""
     _patch_workspace_access(monkeypatch)
 
@@ -138,7 +140,9 @@ async def test_scoped_run_rejects_workflow_not_in_workspace(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
-async def test_scoped_import_dry_run_preserves_response_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_scoped_import_dry_run_preserves_response_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """POST /api/workspaces/{ws}/workflows/import/dry-run returns valid + stats."""
     bundle = {
         "workflow": {
@@ -188,7 +192,9 @@ async def test_scoped_import_dry_run_preserves_response_shape(monkeypatch: pytes
 
 
 @pytest.mark.asyncio
-async def test_scoped_openapi_dry_run_preserves_response_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_scoped_openapi_dry_run_preserves_response_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Scoped OpenAPI dry-run returns nodes + stats.totalEndpoints."""
     _patch_workspace_access(monkeypatch)
 
@@ -379,6 +385,4 @@ def test_scoped_routes_registered() -> None:
 
     for pattern in expected_patterns:
         full_pattern = f"/{{workspace_id}}{pattern}"
-        assert any(full_pattern in p for p in route_paths), (
-            f"Missing scoped route: {full_pattern}"
-        )
+        assert any(full_pattern in p for p in route_paths), f"Missing scoped route: {full_pattern}"

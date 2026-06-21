@@ -5,6 +5,7 @@ outside collaborators, and per-workspace isolation enforcement.
 All workspace operations are scoped: a user can only access workspaces
 they own, are members of, or are outside collaborators on.
 """
+
 import logging
 import re
 import uuid
@@ -41,6 +42,7 @@ def _validate_slug(slug: str) -> str:
 # Response DTOs
 # ============================================================================
 
+
 def _workspace_to_response(ws: Workspace) -> dict[str, Any]:
     """Convert a Workspace document to a response dict."""
     return {
@@ -72,6 +74,7 @@ def _member_to_response(member: WorkspaceMember) -> dict[str, Any]:
 # ============================================================================
 # Workspace CRUD
 # ============================================================================
+
 
 async def create_workspace(
     *,
@@ -126,6 +129,7 @@ async def create_workspace(
     # Audit
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -217,6 +221,7 @@ async def update_workspace(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -226,7 +231,8 @@ async def update_workspace(
             resource_type="workspace",
             resource_id=workspace_id,
             context={
-                k: v for k, v in {"name": name, "slug": slug, "description": description}.items()
+                k: v
+                for k, v in {"name": name, "slug": slug, "description": description}.items()
                 if v is not None
             },
         )
@@ -254,6 +260,7 @@ async def delete_workspace(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -314,6 +321,7 @@ async def list_workspaces_for_org(
 # Workspace Membership
 # ============================================================================
 
+
 async def add_member(
     workspace_id: str,
     user_id: str,
@@ -341,6 +349,7 @@ async def add_member(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -413,6 +422,7 @@ async def list_members(
 # Outside Collaborators
 # ============================================================================
 
+
 async def add_outside_collaborator(
     workspace_id: str,
     user_id: str,
@@ -426,9 +436,7 @@ async def add_outside_collaborator(
 
     await _assert_workspace_admin(ws, actor_user_id)
 
-    existing = await OutsideCollaboratorRepository.get_by_workspace_and_user(
-        workspace_id, user_id
-    )
+    existing = await OutsideCollaboratorRepository.get_by_workspace_and_user(workspace_id, user_id)
     if existing:
         raise ConflictError("User is already an outside collaborator")
 
@@ -448,6 +456,7 @@ async def add_outside_collaborator(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -517,6 +526,7 @@ async def list_outside_collaborators(
 # Isolation Enforcement
 # ============================================================================
 
+
 async def _assert_workspace_access(ws: Workspace, user_id: str) -> None:
     """
     Assert that a user has access to a workspace.
@@ -542,9 +552,7 @@ async def _assert_workspace_access(ws: Workspace, user_id: str) -> None:
         return
 
     # Outside collaborator check
-    collab = await OutsideCollaboratorRepository.get_by_workspace_and_user(
-        ws.workspaceId, user_id
-    )
+    collab = await OutsideCollaboratorRepository.get_by_workspace_and_user(ws.workspaceId, user_id)
     if collab:
         return
 
@@ -599,9 +607,7 @@ async def get_workspace_role(
         return member.role
 
     # Outside collaborator
-    collab = await OutsideCollaboratorRepository.get_by_workspace_and_user(
-        workspace_id, user_id
-    )
+    collab = await OutsideCollaboratorRepository.get_by_workspace_and_user(workspace_id, user_id)
     if collab:
         return collab.role
 

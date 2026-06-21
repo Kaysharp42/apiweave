@@ -15,6 +15,7 @@ Usage in tool functions:
     scope = get_scope()
     workspace_id = require_workspace_scope()  # Raises if not workspace-scoped
 """
+
 from __future__ import annotations
 
 from contextvars import ContextVar
@@ -22,9 +23,7 @@ from dataclasses import dataclass
 
 # Context variable holding the current MCP actor scope.
 # Set by auth middleware (HTTP) or stdio transport startup.
-_mcp_scope: ContextVar[McpScopeContext | None] = ContextVar(
-    "mcp_scope", default=None
-)
+_mcp_scope: ContextVar[McpScopeContext | None] = ContextVar("mcp_scope", default=None)
 
 
 @dataclass(frozen=True)
@@ -65,8 +64,7 @@ def require_scope() -> McpScopeContext:
     ctx = _mcp_scope.get()
     if ctx is None:
         raise PermissionError(
-            "MCP request not authenticated. "
-            "A scoped service token is required."
+            "MCP request not authenticated. " "A scoped service token is required."
         )
     return ctx
 

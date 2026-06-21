@@ -4,15 +4,22 @@ interface SidebarItemLabelResult {
   truncated: boolean;
 }
 
-const DEFAULT_FALLBACK = 'Untitled';
+const DEFAULT_FALLBACK = "Untitled";
 
-const normalizeLabel = (value: unknown, fallback = DEFAULT_FALLBACK): string => {
-  if (typeof value !== 'string') return fallback;
+const normalizeLabel = (
+  value: unknown,
+  fallback = DEFAULT_FALLBACK,
+): string => {
+  if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : fallback;
 };
 
-export const getSidebarItemLabel = (value: unknown, maxLength = 42, fallback = DEFAULT_FALLBACK): SidebarItemLabelResult => {
+export const getSidebarItemLabel = (
+  value: unknown,
+  maxLength = 42,
+  fallback = DEFAULT_FALLBACK,
+): SidebarItemLabelResult => {
   const fullLabel = normalizeLabel(value, fallback);
   const safeMax = Math.max(2, Number(maxLength) || 42);
 

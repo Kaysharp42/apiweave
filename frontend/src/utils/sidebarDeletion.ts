@@ -1,5 +1,5 @@
-import { authenticatedFetch } from './authenticatedApi';
-import { projectsUrl, workflowUrl } from './scopedApi';
+import { authenticatedFetch } from "./authenticatedApi";
+import { projectsUrl, workflowUrl } from "./scopedApi";
 
 interface DeletionTarget {
   workflowId?: string;
@@ -20,50 +20,65 @@ interface DeletionResult {
   reason?: string;
 }
 
-const parseDeleteError = async (response: Response, fallbackMessage: string): Promise<string> => {
+const parseDeleteError = async (
+  response: Response,
+  fallbackMessage: string,
+): Promise<string> => {
   try {
-    const errorData = await response.json() as { detail?: string };
+    const errorData = (await response.json()) as { detail?: string };
     return errorData?.detail ?? fallbackMessage;
   } catch {
     return fallbackMessage;
   }
 };
 
-export const requestWorkflowDeletion = async ({ target, workspaceId, fetchImpl = authenticatedFetch }: DeletionRequestParams): Promise<DeletionResult> => {
+export const requestWorkflowDeletion = async ({
+  target,
+  workspaceId,
+  fetchImpl = authenticatedFetch,
+}: DeletionRequestParams): Promise<DeletionResult> => {
   const workflowId = target?.workflowId;
   if (!workflowId) {
-    return { deleted: false, reason: 'missing-target' };
+    return { deleted: false, reason: "missing-target" };
   }
   if (!workspaceId) {
-    return { deleted: false, reason: 'missing-workspace' };
+    return { deleted: false, reason: "missing-workspace" };
   }
 
   const response = await fetchImpl(workflowUrl(workspaceId, workflowId), {
-    method: 'DELETE',
+    method: "DELETE",
   });
 
   if (!response.ok) {
-    throw new Error(await parseDeleteError(response, 'Failed to delete workflow'));
+    throw new Error(
+      await parseDeleteError(response, "Failed to delete workflow"),
+    );
   }
 
   return { deleted: true, workflowId };
 };
 
-export const requestProjectDeletion = async ({ target, workspaceId, fetchImpl = authenticatedFetch }: DeletionRequestParams): Promise<DeletionResult> => {
+export const requestProjectDeletion = async ({
+  target,
+  workspaceId,
+  fetchImpl = authenticatedFetch,
+}: DeletionRequestParams): Promise<DeletionResult> => {
   const projectId = target?.projectId;
   if (!projectId) {
-    return { deleted: false, reason: 'missing-target' };
+    return { deleted: false, reason: "missing-target" };
   }
   if (!workspaceId) {
-    return { deleted: false, reason: 'missing-workspace' };
+    return { deleted: false, reason: "missing-workspace" };
   }
 
   const response = await fetchImpl(projectsUrl(workspaceId, projectId), {
-    method: 'DELETE',
+    method: "DELETE",
   });
 
   if (!response.ok) {
-    throw new Error(await parseDeleteError(response, 'Failed to delete project'));
+    throw new Error(
+      await parseDeleteError(response, "Failed to delete project"),
+    );
   }
 
   return { deleted: true, projectId };

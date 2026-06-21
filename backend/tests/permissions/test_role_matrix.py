@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import FastAPI, status
-from fastapi.testclient import TestClient
-
 from app.auth.dependencies import require_scoped_permission
 from app.auth.permissions import (
     COLLECTIONS_READ,
@@ -39,6 +36,8 @@ from app.auth.permissions import (
     check_last_owner,
 )
 from app.auth.scope_resolver import ResolvedScope, ResourceScopeResolver
+from fastapi import FastAPI, status
+from fastapi.testclient import TestClient
 
 # ---------------------------------------------------------------------------
 # Workspace role matrix: 5 roles x actions

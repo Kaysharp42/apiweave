@@ -1,7 +1,7 @@
-import type { AssertionOperator } from './AssertionOperator';
+import type { AssertionOperator } from "./AssertionOperator";
 
 export interface AssertionConfig {
-  target: 'status' | 'body' | 'header' | 'responseTime';
+  target: "status" | "body" | "header" | "responseTime";
   operator: AssertionOperator;
   value: string;
   path?: string;

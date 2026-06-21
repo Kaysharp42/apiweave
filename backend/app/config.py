@@ -1,8 +1,7 @@
-from typing import Literal
-
 import base64
 import logging
 import os
+from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -101,10 +100,7 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.MCP_ALLOWED_ORIGINS.split(",") if origin.strip()]
 
     def is_smtp_configured(self) -> bool:
-        return bool(
-            self.SMTP_HOST
-            and self.SMTP_FROM_ADDRESS
-        )
+        return bool(self.SMTP_HOST and self.SMTP_FROM_ADDRESS)
 
     def get_approved_domains_list(self) -> list[str]:
         return [domain.strip() for domain in self.APPROVED_DOMAINS.split(",") if domain.strip()]
@@ -125,7 +121,7 @@ class Settings(BaseSettings):
             if is_prod:
                 raise ValueError(
                     "SECRET_ENCRYPTION_KEY is required in production "
-                    "(32 bytes base64: python -c \"import secrets; print(secrets.token_urlsafe(32))\")"
+                    '(32 bytes base64: python -c "import secrets; print(secrets.token_urlsafe(32))")'
                 )
             self.SECRET_ENCRYPTION_KEY = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
             logger.warning(
@@ -221,9 +217,7 @@ class Settings(BaseSettings):
             "microsoft": self.MICROSOFT_CLIENT_SECRET,
         }
 
-        missing = [
-            name for name, client_id in provider_client_ids.items() if not client_id
-        ]
+        missing = [name for name, client_id in provider_client_ids.items() if not client_id]
         if missing:
             logger.warning(
                 "OAUTH_LOGIN_ENABLED=true but the following OAuth providers are missing "
@@ -238,7 +232,7 @@ class Settings(BaseSettings):
             client_secret = provider_client_secrets[name]
             if bool(client_id) != bool(client_secret):
                 mismatched.append(name)
-        
+
         if mismatched:
             logger.warning(
                 "OAUTH_LOGIN_ENABLED=true but the following OAuth providers have "

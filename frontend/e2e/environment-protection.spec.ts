@@ -1,11 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 import {
   mockApiRoutes,
   navigateAndWait,
   captureEvidence,
   MOCK_ORG_WORKSPACE,
   MOCK_ENVIRONMENT,
-} from './fixtures/auth';
+} from "./fixtures/auth";
 
 /**
  * environment-protection.spec.ts — Configure required reviewers, see protection summary.
@@ -16,8 +16,8 @@ import {
  * 3. Protection panel can be opened
  */
 
-test.describe('Environment Protection', () => {
-  test('environments page loads with scoped lists', async ({ page }) => {
+test.describe("Environment Protection", () => {
+  test("environments page loads with scoped lists", async ({ page }) => {
     await mockApiRoutes(page);
     await navigateAndWait(
       page,
@@ -25,16 +25,16 @@ test.describe('Environment Protection', () => {
     );
 
     // Should show the page header
-    await expect(page.locator('body')).toContainText('Environments');
+    await expect(page.locator("body")).toContainText("Environments");
 
     // Should show scope sections
-    await expect(page.locator('body')).toContainText('Workspace Environments');
-    await expect(page.locator('body')).toContainText('User Environments');
+    await expect(page.locator("body")).toContainText("Workspace Environments");
+    await expect(page.locator("body")).toContainText("User Environments");
 
-    await captureEvidence(page, 'task-30-environment-protection-list.png');
+    await captureEvidence(page, "task-30-environment-protection-list.png");
   });
 
-  test('selecting workspace env shows protection summary', async ({ page }) => {
+  test("selecting workspace env shows protection summary", async ({ page }) => {
     await mockApiRoutes(page);
     await navigateAndWait(
       page,
@@ -46,15 +46,15 @@ test.describe('Environment Protection', () => {
     await envItem.click();
 
     // Should show env details
-    await expect(page.locator('body')).toContainText(MOCK_ENVIRONMENT.name);
+    await expect(page.locator("body")).toContainText(MOCK_ENVIRONMENT.name);
 
     // Should show protection summary (even if unprotected)
-    await expect(page.locator('body')).toContainText(/protection|unprotected/i);
+    await expect(page.locator("body")).toContainText(/protection|unprotected/i);
 
-    await captureEvidence(page, 'task-30-environment-protection-summary.png');
+    await captureEvidence(page, "task-30-environment-protection-summary.png");
   });
 
-  test('protection panel can be opened for workspace env', async ({ page }) => {
+  test("protection panel can be opened for workspace env", async ({ page }) => {
     await mockApiRoutes(page);
     await navigateAndWait(
       page,
@@ -66,17 +66,21 @@ test.describe('Environment Protection', () => {
     await envItem.click();
 
     // Look for "Configure" or "Edit" protection button
-    const configureBtn = page.getByRole('button', { name: /configure|edit|set up/i });
+    const configureBtn = page.getByRole("button", {
+      name: /configure|edit|set up/i,
+    });
     if (await configureBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await configureBtn.click();
 
       // Protection panel should be visible
-      await expect(page.locator('body')).toContainText(/reviewer|protection|approval/i);
+      await expect(page.locator("body")).toContainText(
+        /reviewer|protection|approval/i,
+      );
 
-      await captureEvidence(page, 'task-30-environment-protection-panel.png');
+      await captureEvidence(page, "task-30-environment-protection-panel.png");
     } else {
       // If no configure button, just capture the current state
-      await captureEvidence(page, 'task-30-environment-protection-nopanel.png');
+      await captureEvidence(page, "task-30-environment-protection-nopanel.png");
     }
   });
 });

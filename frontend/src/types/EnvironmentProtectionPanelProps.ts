@@ -1,5 +1,5 @@
-import type { EnvironmentProtectionPolicy } from './EnvironmentProtectionPolicy';
-import type { ReviewerOption } from './ReviewerSelectorProps';
+import type { EnvironmentProtectionPolicy } from "./EnvironmentProtectionPolicy";
+import type { ReviewerOption } from "./ReviewerSelectorProps";
 
 export interface EnvironmentProtectionPanelProps {
   /** The environment ID this protection applies to. */
@@ -20,6 +20,6 @@ export interface EnvironmentProtectionPanelProps {
 export interface ProtectionFormState {
   requiredReviewers: string[];
   allowSelfApproval: boolean;
-  bypassPolicy: 'none' | 'trusted_token_only';
+  bypassPolicy: "none" | "trusted_token_only";
   bypassAllowlist: string[];
 }

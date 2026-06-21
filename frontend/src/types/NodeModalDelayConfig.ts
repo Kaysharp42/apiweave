@@ -1,4 +1,4 @@
-import type { DelayJitterConfig } from './DelayJitterConfig';
+import type { DelayJitterConfig } from "./DelayJitterConfig";
 
 export interface NodeModalDelayConfig {
   duration: number;

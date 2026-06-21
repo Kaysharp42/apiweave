@@ -15,11 +15,11 @@ export const shouldClearNodeFilter = ({
     return true;
   }
 
-  return key === 'Escape';
+  return key === "Escape";
 };
 
 export const getNextNodeFilterValue = ({
-  currentValue = '',
+  currentValue = "",
   key,
   isModalOpen = false,
   isPaletteClosing = false,
@@ -33,7 +33,7 @@ export const getNextNodeFilterValue = ({
       clearRequested,
     })
   ) {
-    return '';
+    return "";
   }
 
   return currentValue;

@@ -1,16 +1,22 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronsDownUp, Copy, Files, MoreHorizontal, type LucideIcon } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronsDownUp,
+  Copy,
+  Files,
+  MoreHorizontal,
+  type LucideIcon,
+} from "lucide-react";
 import {
   buildNodeActionMenuItems,
   getNextNodeActionMenuFocusIndex,
   getNextNodeExpandedState,
-} from '../../../utils/nodeActionMenu';
-import type { NodeActionMenuProps } from '../../../types/NodeActionMenuProps';
+} from "../../../utils/nodeActionMenu";
+import type { NodeActionMenuProps } from "../../../types/NodeActionMenuProps";
 
 const ACTION_ICONS: Record<string, LucideIcon> = {
   duplicate: Files,
   copy: Copy,
-  'toggle-expand': ChevronsDownUp,
+  "toggle-expand": ChevronsDownUp,
 };
 
 export function NodeActionMenu({
@@ -20,7 +26,7 @@ export function NodeActionMenu({
   onDuplicate,
   onCopy,
   onToggleExpand,
-  triggerClassName = '',
+  triggerClassName = "",
 }: NodeActionMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -36,26 +42,36 @@ export function NodeActionMenu({
     if (!menuOpen) return undefined;
 
     const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
         setMenuOpen(false);
       }
     };
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setMenuOpen(false);
         triggerRef.current?.focus();
       }
     };
 
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick as EventListener, { passive: true });
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener(
+      "touchstart",
+      handleOutsideClick as EventListener,
+      { passive: true },
+    );
+    document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('touchstart', handleOutsideClick as EventListener);
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener(
+        "touchstart",
+        handleOutsideClick as EventListener,
+      );
+      document.removeEventListener("keydown", handleEscape);
     };
   }, [menuOpen]);
 
@@ -71,14 +87,17 @@ export function NodeActionMenu({
     requestAnimationFrame(() => focusMenuItem(0));
   };
 
-  const handleMenuAction = (actionKey: string, event: React.MouseEvent<HTMLButtonElement>) => {
+  const handleMenuAction = (
+    actionKey: string,
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => {
     event.stopPropagation();
 
-    if (actionKey === 'duplicate') {
+    if (actionKey === "duplicate") {
       onDuplicate?.(nodeId);
-    } else if (actionKey === 'copy') {
+    } else if (actionKey === "copy") {
       onCopy?.(nodeId);
-    } else if (actionKey === 'toggle-expand') {
+    } else if (actionKey === "toggle-expand") {
       onToggleExpand?.(getNextNodeExpandedState(isExpanded));
     }
 
@@ -86,15 +105,24 @@ export function NodeActionMenu({
     triggerRef.current?.focus();
   };
 
-  const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+  const handleTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (
+      event.key === "ArrowDown" ||
+      event.key === "Enter" ||
+      event.key === " "
+    ) {
       event.preventDefault();
       openMenuAndFocusFirst();
     }
   };
 
-  const handleMenuItemKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
-    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+  const handleMenuItemKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
       event.preventDefault();
       const nextIndex = getNextNodeActionMenuFocusIndex({
         currentIndex: index,
@@ -105,7 +133,7 @@ export function NodeActionMenu({
       return;
     }
 
-    if (event.key === 'Escape') {
+    if (event.key === "Escape") {
       event.preventDefault();
       setMenuOpen(false);
       triggerRef.current?.focus();
@@ -123,11 +151,11 @@ export function NodeActionMenu({
         }}
         onKeyDown={handleTriggerKeyDown}
         className={[
-          'p-1 rounded-sm text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]',
+          "p-1 rounded-sm text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
           triggerClassName,
         ]
           .filter(Boolean)
-          .join(' ')}
+          .join(" ")}
         title="Node actions"
         aria-label="Node actions"
         aria-haspopup="menu"
@@ -154,11 +182,13 @@ export function NodeActionMenu({
                 onClick={(event) => handleMenuAction(item.key, event)}
                 onKeyDown={(event) => handleMenuItemKeyDown(event, index)}
                 className={[
-                  'w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] flex items-center gap-2 cursor-pointer transition-colors motion-reduce:transition-none',
-                  index > 0 ? 'border-t border-border dark:border-border-dark' : '',
+                  "w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] flex items-center gap-2 cursor-pointer transition-colors motion-reduce:transition-none",
+                  index > 0
+                    ? "border-t border-border dark:border-border-dark"
+                    : "",
                 ]
                   .filter(Boolean)
-                  .join(' ')}
+                  .join(" ")}
                 role="menuitem"
               >
                 <Icon className="w-3.5 h-3.5" />

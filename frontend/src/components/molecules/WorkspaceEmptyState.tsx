@@ -1,13 +1,20 @@
-import { LayoutGrid, Plus, Upload, FolderOpen, ArrowRight } from 'lucide-react';
-import { Button } from '../atoms/Button';
-import type { WorkspaceEmptyStateProps } from '../../types';
+import { LayoutGrid, Plus, Upload, FolderOpen, ArrowRight } from "lucide-react";
+import { Button } from "../atoms/Button";
+import type { WorkspaceEmptyStateProps } from "../../types";
 
-export function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCollection }: WorkspaceEmptyStateProps) {
+export function WorkspaceEmptyState({
+  onNewWorkflow,
+  onImport,
+  onOpenCollection,
+}: WorkspaceEmptyStateProps) {
   return (
     <div className="flex h-full select-none flex-col items-center justify-center gap-8 px-6 py-12 motion-reduce:animate-none">
       {/* Icon */}
       <div className="flex h-16 w-16 items-center justify-center rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
-        <LayoutGrid className="h-8 w-8 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />
+        <LayoutGrid
+          className="h-8 w-8 text-text-muted dark:text-text-muted-dark"
+          strokeWidth={1.5}
+        />
       </div>
 
       {/* Text */}
@@ -16,14 +23,21 @@ export function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCollection 
           Welcome to APIWeave
         </h2>
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark leading-relaxed">
-          Build visual API test flows, chain requests with variables, and run them on demand or via CI/CD webhooks.
+          Build visual API test flows, chain requests with variables, and run
+          them on demand or via CI/CD webhooks.
         </p>
       </div>
 
       {/* Primary action */}
       <div className="flex flex-col items-center gap-3 w-full max-w-xs">
         {onNewWorkflow && (
-          <Button variant="primary" size="sm" fullWidth onClick={onNewWorkflow} className="group">
+          <Button
+            variant="primary"
+            size="sm"
+            fullWidth
+            onClick={onNewWorkflow}
+            className="group"
+          >
             <Plus className="w-4 h-4" />
             New Workflow
             <ArrowRight className="w-3.5 h-3.5 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 motion-reduce:transition-none" />
@@ -32,13 +46,23 @@ export function WorkspaceEmptyState({ onNewWorkflow, onImport, onOpenCollection 
 
         <div className="flex items-center justify-center gap-2 w-full">
           {onImport && (
-            <Button variant="outline" size="xs" onClick={onImport} className="flex-1">
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={onImport}
+              className="flex-1"
+            >
               <Upload className="w-3.5 h-3.5" />
               Import Workflow
             </Button>
           )}
           {onOpenCollection && (
-            <Button variant="outline" size="xs" onClick={onOpenCollection} className="flex-1">
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={onOpenCollection}
+              className="flex-1"
+            >
               <FolderOpen className="w-3.5 h-3.5" />
               Open Collection
             </Button>

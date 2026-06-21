@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import type { Node, XYPosition } from 'reactflow';
+import { useCallback } from "react";
+import type { Node, XYPosition } from "reactflow";
 
 interface NodeConfig {
   method?: string;
@@ -18,30 +18,32 @@ interface NodeConfig {
 
 function getDefaultConfig(type: string): NodeConfig {
   switch (type) {
-    case 'http-request':
+    case "http-request":
       return {
-        method: 'GET',
-        url: '',
-        queryParams: '',
-        pathVariables: '',
-        headers: '',
-        cookies: '',
-        body: '',
+        method: "GET",
+        url: "",
+        queryParams: "",
+        pathVariables: "",
+        headers: "",
+        cookies: "",
+        body: "",
         timeout: 30,
       };
-    case 'assertion':
+    case "assertion":
       return { assertions: [] };
-    case 'delay':
+    case "delay":
       return { duration: 1000 };
-    case 'merge':
-      return { mergeStrategy: 'all', conditions: [] };
+    case "merge":
+      return { mergeStrategy: "all", conditions: [] };
     default:
       return {};
   }
 }
 
 interface UseCanvasDropParams {
-  reactFlowInstanceRef: React.MutableRefObject<{ screenToFlowPosition: (coords: { x: number; y: number }) => XYPosition } | null> | null;
+  reactFlowInstanceRef: React.MutableRefObject<{
+    screenToFlowPosition: (coords: { x: number; y: number }) => XYPosition;
+  } | null> | null;
   setNodes: (updater: (nds: Node[]) => Node[]) => void;
 }
 
@@ -50,19 +52,24 @@ interface UseCanvasDropResult {
   onDragOver: (event: React.DragEvent) => void;
 }
 
-export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }: UseCanvasDropParams): UseCanvasDropResult {
+export default function useCanvasDrop({
+  reactFlowInstanceRef,
+  setNodes,
+}: UseCanvasDropParams): UseCanvasDropResult {
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
+    event.dataTransfer.dropEffect = "move";
   }, []);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
 
-      const type = event.dataTransfer.getData('application/reactflow');
-      const method = event.dataTransfer.getData('application/reactflow-method');
-      const templateJson = event.dataTransfer.getData('application/reactflow-node-template');
+      const type = event.dataTransfer.getData("application/reactflow");
+      const method = event.dataTransfer.getData("application/reactflow-method");
+      const templateJson = event.dataTransfer.getData(
+        "application/reactflow-node-template",
+      );
 
       if (!type) {
         return;
@@ -81,7 +88,11 @@ export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }: UseCan
       let labelFromTemplate: string | null = null;
       if (templateJson) {
         try {
-          const parsed = JSON.parse(templateJson) as { type?: string; config?: NodeConfig; label?: string };
+          const parsed = JSON.parse(templateJson) as {
+            type?: string;
+            config?: NodeConfig;
+            label?: string;
+          };
           if (parsed && parsed.type === type && parsed.config) {
             config = { ...config, ...parsed.config };
             if (parsed.label) labelFromTemplate = parsed.label;
@@ -91,7 +102,7 @@ export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }: UseCan
         }
       }
 
-      if (method && type === 'http-request') {
+      if (method && type === "http-request") {
         config.method = method;
       }
 
@@ -102,9 +113,7 @@ export default function useCanvasDrop({ reactFlowInstanceRef, setNodes }: UseCan
         data: {
           label:
             labelFromTemplate ??
-            type
-              .replace('-', ' ')
-              .replace(/\b\w/g, (l) => l.toUpperCase()),
+            type.replace("-", " ").replace(/\b\w/g, (l) => l.toUpperCase()),
           config,
         },
       };

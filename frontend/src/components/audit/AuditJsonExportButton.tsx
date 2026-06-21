@@ -1,8 +1,8 @@
-import { Download } from 'lucide-react';
-import { Button } from '../atoms/Button';
-import { authenticatedFetch } from '../../utils/authenticatedApi';
-import API_BASE_URL from '../../utils/api';
-import type { AuditEventFilter } from '../../types';
+import { Download } from "lucide-react";
+import { Button } from "../atoms/Button";
+import { authenticatedFetch } from "../../utils/authenticatedApi";
+import API_BASE_URL from "../../utils/api";
+import type { AuditEventFilter } from "../../types";
 
 interface AuditJsonExportButtonProps {
   filters: AuditEventFilter;
@@ -10,14 +10,14 @@ interface AuditJsonExportButtonProps {
 
 function buildExportUrl(filters: AuditEventFilter): string {
   const params = new URLSearchParams();
-  if (filters.actor) params.set('actor', filters.actor);
-  if (filters.action) params.set('action', filters.action);
-  if (filters.scope) params.set('scope', filters.scope);
-  if (filters.resourceType) params.set('resourceType', filters.resourceType);
-  if (filters.from) params.set('from', filters.from);
-  if (filters.to) params.set('to', filters.to);
+  if (filters.actor) params.set("actor", filters.actor);
+  if (filters.action) params.set("action", filters.action);
+  if (filters.scope) params.set("scope", filters.scope);
+  if (filters.resourceType) params.set("resourceType", filters.resourceType);
+  if (filters.from) params.set("from", filters.from);
+  if (filters.to) params.set("to", filters.to);
   const qs = params.toString();
-  return `${API_BASE_URL}/api/audit/events/export${qs ? `?${qs}` : ''}`;
+  return `${API_BASE_URL}/api/audit/events/export${qs ? `?${qs}` : ""}`;
 }
 
 export function AuditJsonExportButton({ filters }: AuditJsonExportButtonProps) {
@@ -30,9 +30,9 @@ export function AuditJsonExportButton({ filters }: AuditJsonExportButtonProps) {
       }
       const blob = await response.blob();
       const downloadUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
+      const anchor = document.createElement("a");
       anchor.href = downloadUrl;
-      anchor.download = 'audit-events.json';
+      anchor.download = "audit-events.json";
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);

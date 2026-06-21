@@ -15,7 +15,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from app.auth.exceptions import OAuthLinkingBlockedError
 from app.models import OAuthAccount, User
 from app.repositories.auth_repositories import UserRepository
@@ -87,9 +86,7 @@ class TestNewUserGetsAccount:
     @pytest.mark.asyncio
     async def test_multiple_accounts_accumulate(self) -> None:
         """Adding a second account produces two entries (defense: no accidental overwrite)."""
-        user = make_user(
-            oauth_accounts=[make_oauth_account(provider="local", subject="local-1")]
-        )
+        user = make_user(oauth_accounts=[make_oauth_account(provider="local", subject="local-1")])
         account = make_oauth_account(provider="github", subject="gh-456")
 
         with patch.object(User, "save", new=AsyncMock()):
@@ -134,9 +131,7 @@ class TestBlockLocalLink:
         user = make_user(user_id="usr-one", email="a@example.com")
         other_user = make_user(user_id="usr-other", email="other@example.com")
 
-        with patch.object(
-            UserRepository, "get_by_email", new=AsyncMock(return_value=other_user)
-        ):
+        with patch.object(UserRepository, "get_by_email", new=AsyncMock(return_value=other_user)):
             with pytest.raises(OAuthLinkingBlockedError) as exc:
                 await UserRepository.link_oauth_account(
                     user=user,
@@ -184,9 +179,7 @@ class TestDuplicateKey:
         """find_by_provider locates the user from an OAuthAccount match."""
         target_user = make_user(
             user_id="usr-match",
-            oauth_accounts=[
-                make_oauth_account(provider="github", subject="same-subject")
-            ],
+            oauth_accounts=[make_oauth_account(provider="github", subject="same-subject")],
         )
 
         with patch.object(User, "find_one", new=AsyncMock(return_value=target_user)):
@@ -208,9 +201,7 @@ class TestDuplicateKey:
         """Same subject, different provider → no cross-contamination."""
         target_user = make_user(
             user_id="usr-gh",
-            oauth_accounts=[
-                make_oauth_account(provider="github", subject="shared-sub")
-            ],
+            oauth_accounts=[make_oauth_account(provider="github", subject="shared-sub")],
         )
 
         with patch.object(User, "find_one", new=AsyncMock(return_value=target_user)):
@@ -313,9 +304,7 @@ class TestMultiProviderAccounts:
     @pytest.mark.asyncio
     async def test_second_provider_link_is_blocked(self) -> None:
         """User already has github → linking gitlab raises OAuthLinkingBlockedError."""
-        user = make_user(
-            oauth_accounts=[make_oauth_account(provider="github", subject="gh-sub")]
-        )
+        user = make_user(oauth_accounts=[make_oauth_account(provider="github", subject="gh-sub")])
 
         with pytest.raises(OAuthLinkingBlockedError) as exc:
             await UserRepository.link_oauth_account(

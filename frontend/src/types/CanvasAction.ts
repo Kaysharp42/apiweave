@@ -1,4 +1,4 @@
-import type { CanvasActionType } from './CanvasActionType';
+import type { CanvasActionType } from "./CanvasActionType";
 
 export interface CanvasAction {
   type: CanvasActionType;

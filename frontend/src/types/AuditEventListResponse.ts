@@ -1,4 +1,4 @@
-import type { AuditEvent } from './AuditEvent';
+import type { AuditEvent } from "./AuditEvent";
 
 export interface AuditEventListResponse {
   events: AuditEvent[];

@@ -1,7 +1,7 @@
 export type NodeType =
-  | 'start'
-  | 'end'
-  | 'httpRequest'
-  | 'assertion'
-  | 'delay'
-  | 'merge';
+  | "start"
+  | "end"
+  | "httpRequest"
+  | "assertion"
+  | "delay"
+  | "merge";

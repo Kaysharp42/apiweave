@@ -2,9 +2,6 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from app.auth.permissions import (
     COLLECTIONS_CREATE,
     ENVIRONMENTS_READ,
@@ -17,6 +14,8 @@ from app.repositories import WebhookRepository
 from app.repositories.auth_repositories import SessionRepository, UserRepository
 from app.routes import webhooks
 from app.routes._legacy_disabled import collections, environments, workflows
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def make_session(token: str = "test-session-token", user_id: str = "user-1") -> tuple[Session, str]:
@@ -143,10 +142,15 @@ def test_write_user_can_create_collection() -> None:
     client.cookies.set("session", "test-session-token")
 
     session_patch, touch_patch, user_patch = authenticated_patches(user)
-    with session_patch, touch_patch, user_patch, patch.object(
-        collections,
-        "svc_create_collection",
-        new=AsyncMock(return_value=make_collection()),
+    with (
+        session_patch,
+        touch_patch,
+        user_patch,
+        patch.object(
+            collections,
+            "svc_create_collection",
+            new=AsyncMock(return_value=make_collection()),
+        ),
     ):
         response = client.post("/api/collections", json={"name": "Writable"})
 
@@ -172,10 +176,15 @@ def test_non_owner_cannot_update_webhook() -> None:
     client.cookies.set("session", "test-session-token")
 
     session_patch, touch_patch, user_patch = authenticated_patches(user)
-    with session_patch, touch_patch, user_patch, patch.object(
-        WebhookRepository,
-        "get_by_id",
-        new=AsyncMock(return_value=make_webhook(created_by="user-a")),
+    with (
+        session_patch,
+        touch_patch,
+        user_patch,
+        patch.object(
+            WebhookRepository,
+            "get_by_id",
+            new=AsyncMock(return_value=make_webhook(created_by="user-a")),
+        ),
     ):
         response = client.patch("/api/webhooks/wh-1", json={"enabled": False})
 
@@ -191,14 +200,20 @@ def test_admin_can_manage_any_webhook() -> None:
     client.cookies.set("session", "test-session-token")
 
     session_patch, touch_patch, user_patch = authenticated_patches(user)
-    with session_patch, touch_patch, user_patch, patch.object(
-        WebhookRepository,
-        "get_by_id",
-        new=AsyncMock(return_value=webhook),
-    ), patch.object(
-        WebhookRepository,
-        "update",
-        new=AsyncMock(return_value=updated),
+    with (
+        session_patch,
+        touch_patch,
+        user_patch,
+        patch.object(
+            WebhookRepository,
+            "get_by_id",
+            new=AsyncMock(return_value=webhook),
+        ),
+        patch.object(
+            WebhookRepository,
+            "update",
+            new=AsyncMock(return_value=updated),
+        ),
     ):
         response = client.patch("/api/webhooks/wh-1", json={"enabled": False})
 
@@ -224,11 +239,22 @@ def test_read_routes_are_accessible_to_viewer() -> None:
     client.cookies.set("session", "test-session-token")
 
     session_patch, touch_patch, user_patch = authenticated_patches(user)
-    with session_patch, touch_patch, user_patch, patch.object(
-        workflows,
-        "svc_list_workflows",
-        new=AsyncMock(
-            return_value={"workflows": [], "total": 0, "skip": 0, "limit": 20, "hasMore": False},
+    with (
+        session_patch,
+        touch_patch,
+        user_patch,
+        patch.object(
+            workflows,
+            "svc_list_workflows",
+            new=AsyncMock(
+                return_value={
+                    "workflows": [],
+                    "total": 0,
+                    "skip": 0,
+                    "limit": 20,
+                    "hasMore": False,
+                },
+            ),
         ),
     ):
         response = client.get("/api/workflows")

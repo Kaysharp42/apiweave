@@ -1,4 +1,4 @@
-import type { AuthenticatedRequestInit } from '../types';
+import type { AuthenticatedRequestInit } from "../types";
 /**
  * authenticatedApi — thin fetch wrapper for APIWeave auth-aware API calls.
  *
@@ -86,9 +86,8 @@ export async function authenticatedJson<T = unknown>(
       } else if (typeof parsed.message === "string") {
         message = parsed.message;
       }
-    } catch {
-    }
-throw new Error(`API error ${response.status}: ${message}`);
+    } catch {}
+    throw new Error(`API error ${response.status}: ${message}`);
   }
   return response.json() as Promise<T>;
 }

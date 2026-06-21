@@ -2,6 +2,7 @@
 Workflow service — shared business logic for workflow CRUD, export, import, and dry-run.
 Called by both FastAPI routes and MCP tools.
 """
+
 from datetime import UTC, datetime
 from typing import Any
 
@@ -88,6 +89,7 @@ async def attach_to_collection(workflow_id: str, collection_id: str | None) -> W
         raise ValueError(f"Workflow {workflow_id} not found")
     if collection_id:
         from app.repositories import CollectionRepository
+
         collection = await CollectionRepository.get_by_id(collection_id)
         if not collection:
             raise ValueError(f"Collection {collection_id} not found")
@@ -116,6 +118,7 @@ async def set_environment(workflow_id: str, environment_id: str | None) -> Workf
             raise ValueError(f"Environment {environment_id} not found")
     workflow.environmentId = environment_id
     from datetime import UTC, datetime
+
     workflow.updatedAt = datetime.now(UTC)
     await workflow.save()
     return workflow
@@ -217,9 +220,7 @@ async def import_workflow(
             if not existing_env:
                 raise ValueError(f"Mapped environment {new_env_id} not found")
         elif create_missing_environments and environments:
-            env_data = next(
-                (e for e in environments if e.get("environmentId") == old_env_id), None
-            )
+            env_data = next((e for e in environments if e.get("environmentId") == old_env_id), None)
             if env_data:
                 env_create = EnvironmentCreate(
                     name=env_data.get("name", "Imported Environment"),
@@ -234,9 +235,7 @@ async def import_workflow(
     if sanitize:
         if workflow_data.get("variables"):
             refs: list[str] = []
-            workflow_data["variables"] = sanitize_secrets_in_dict(
-                workflow_data["variables"], refs
-            )
+            workflow_data["variables"] = sanitize_secrets_in_dict(workflow_data["variables"], refs)
         for node in workflow_data.get("nodes", []):
             if node.get("config"):
                 refs = []
@@ -312,15 +311,12 @@ async def import_workflow_dry_run(
         env_exists = await EnvironmentRepository.get_by_id(old_env_id)
         if not env_exists:
             env_in_bundle = any(
-                e.get("environmentId") == old_env_id
-                for e in bundle.get("environments", [])
+                e.get("environmentId") == old_env_id for e in bundle.get("environments", [])
             )
             if env_in_bundle:
                 warnings.append(f"Environment {old_env_id} will be created from bundle")
             else:
-                warnings.append(
-                    f"Environment {old_env_id} not found - workflow will be unattached"
-                )
+                warnings.append(f"Environment {old_env_id} not found - workflow will be unattached")
 
     secret_refs = bundle.get("secretReferences", [])
     if secret_refs:

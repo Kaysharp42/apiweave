@@ -79,4 +79,4 @@ export {
   ToggleLeft,
   ToggleRight,
   SquareCheckBig,
-} from 'lucide-react';
+} from "lucide-react";

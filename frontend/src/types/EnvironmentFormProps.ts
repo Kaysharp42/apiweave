@@ -1,5 +1,5 @@
-import type { ScopedEnvironment } from './ScopedEnvironment';
-import type { EnvironmentFormData } from './EnvironmentFormData';
+import type { ScopedEnvironment } from "./ScopedEnvironment";
+import type { EnvironmentFormData } from "./EnvironmentFormData";
 
 export interface EnvironmentFormProps {
   /** Existing environment to edit. Undefined for create mode. */

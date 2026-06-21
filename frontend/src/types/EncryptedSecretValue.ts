@@ -1,4 +1,4 @@
-import type { SecretScopeType } from './Secret';
+import type { SecretScopeType } from "./Secret";
 
 /**
  * Payload for writing a client-encrypted secret value.

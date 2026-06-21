@@ -2,6 +2,7 @@
 Tests for secret_utils structural masking and log masking helpers.
 Security-remediation wave 1 — task 5.
 """
+
 from app.services.secret_utils import (
     REDACTED,
     is_secret_key,

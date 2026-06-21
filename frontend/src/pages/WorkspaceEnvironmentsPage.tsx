@@ -1,25 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
-import { toast } from 'sonner';
+import { useState, useEffect, useCallback } from "react";
+import { useParams } from "react-router-dom";
+import { toast } from "sonner";
+import { Settings, Plus, Layers } from "lucide-react";
+import { Button } from "../components/atoms/Button";
+import { Spinner } from "../components/atoms/Spinner";
+import { Card } from "../components/molecules/Card";
+import { EmptyState } from "../components/molecules/EmptyState";
+import { ScopedEnvironmentList } from "../components/organisms/ScopedEnvironmentList";
+import { EnvironmentForm } from "../components/organisms/EnvironmentForm";
+import { EnvironmentProtectionPanel } from "../components/organisms/EnvironmentProtectionPanel";
+import { PendingApprovalsList } from "../components/organisms/PendingApprovalsList";
+import { ProtectionSummary } from "../components/organisms/ProtectionSummary";
 import {
-  Settings,
-  Plus,
-  Layers,
-} from 'lucide-react';
-import { Button } from '../components/atoms/Button';
-import { Spinner } from '../components/atoms/Spinner';
-import { Card } from '../components/molecules/Card';
-import { EmptyState } from '../components/molecules/EmptyState';
-import { ScopedEnvironmentList } from '../components/organisms/ScopedEnvironmentList';
-import { EnvironmentForm } from '../components/organisms/EnvironmentForm';
-import { EnvironmentProtectionPanel } from '../components/organisms/EnvironmentProtectionPanel';
-import { PendingApprovalsList } from '../components/organisms/PendingApprovalsList';
-import { ProtectionSummary } from '../components/organisms/ProtectionSummary';
-import { authenticatedJson, authenticatedFetch } from '../utils/authenticatedApi';
-import * as scopedApi from '../utils/scopedApi';
-import { useAuth } from '../auth/useAuth';
-import { useWorkspace } from '../contexts/WorkspaceContext';
-import useEnvironmentStore from '../stores/EnvironmentStore';
+  authenticatedJson,
+  authenticatedFetch,
+} from "../utils/authenticatedApi";
+import * as scopedApi from "../utils/scopedApi";
+import { useAuth } from "../auth/useAuth";
+import { useWorkspace } from "../contexts/WorkspaceContext";
+import useEnvironmentStore from "../stores/EnvironmentStore";
 import type {
   ScopedEnvironment,
   EnvironmentProtectionPolicy,
@@ -29,36 +28,48 @@ import type {
   ProtectionFormState,
   ReviewerOption,
   WorkspaceOption,
-} from '../types';
+} from "../types";
 
-type ViewMode = 'list' | 'create' | 'edit' | 'protection' | 'approvals';
+type ViewMode = "list" | "create" | "edit" | "protection" | "approvals";
 
 export default function WorkspaceEnvironmentsPage() {
-  const { orgSlug, workspaceSlug } = useParams<{ orgSlug: string; workspaceSlug: string }>();
+  const { orgSlug, workspaceSlug } = useParams<{
+    orgSlug: string;
+    workspaceSlug: string;
+  }>();
   const { user } = useAuth();
-  const { currentOrg, currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
+  const {
+    currentOrg,
+    currentWorkspace,
+    isLoading: isWorkspaceLoading,
+  } = useWorkspace();
 
   const environments = useEnvironmentStore((s) => s.environments);
   const storeIsLoading = useEnvironmentStore((s) => s.isLoading);
 
-  const userEnvs = environments.filter((e) => e.scopeType === 'user');
-  const orgEnvs = environments.filter((e) => e.scopeType === 'organization');
-  const workspaceEnvs = environments.filter((e) => e.scopeType === 'workspace');
+  const userEnvs = environments.filter((e) => e.scopeType === "user");
+  const orgEnvs = environments.filter((e) => e.scopeType === "organization");
+  const workspaceEnvs = environments.filter((e) => e.scopeType === "workspace");
 
   const [orgWorkspaces, setOrgWorkspaces] = useState<WorkspaceOption[]>([]);
-  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
-  const [protection, setProtection] = useState<EnvironmentProtectionPolicy | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
+    [],
+  );
+  const [protection, setProtection] =
+    useState<EnvironmentProtectionPolicy | null>(null);
   const [reviewerOptions, setReviewerOptions] = useState<ReviewerOption[]>([]);
 
-  const [selectedEnv, setSelectedEnv] = useState<ScopedEnvironment | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [selectedEnv, setSelectedEnv] = useState<ScopedEnvironment | null>(
+    null,
+  );
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const userId = user?.userId ?? '';
-  const orgId = currentOrg?.orgId ?? '';
-  const workspaceId = currentWorkspace?.workspaceId ?? '';
+  const userId = user?.userId ?? "";
+  const orgId = currentOrg?.orgId ?? "";
+  const workspaceId = currentWorkspace?.workspaceId ?? "";
 
   const refreshEnvironments = useCallback(async () => {
     if (!workspaceId) {
@@ -78,13 +89,21 @@ export default function WorkspaceEnvironmentsPage() {
 
       // Fetch org workspaces for allowed-workspace selector
       if (orgId) {
-        const wsList = await authenticatedJson<Array<{ workspaceId: string; name: string; slug: string }>>(
-          `/api/orgs/${orgId}/workspaces`,
-        ).catch(() => []);
-        setOrgWorkspaces(wsList.map((w) => ({ workspaceId: w.workspaceId, name: w.name, slug: w.slug })));
+        const wsList = await authenticatedJson<
+          Array<{ workspaceId: string; name: string; slug: string }>
+        >(`/api/orgs/${orgId}/workspaces`).catch(() => []);
+        setOrgWorkspaces(
+          wsList.map((w) => ({
+            workspaceId: w.workspaceId,
+            name: w.name,
+            slug: w.slug,
+          })),
+        );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load environments');
+      setError(
+        err instanceof Error ? err.message : "Failed to load environments",
+      );
     } finally {
       setLoading(false);
     }
@@ -97,15 +116,21 @@ export default function WorkspaceEnvironmentsPage() {
   // Fetch protection for selected env
   useEffect(() => {
     async function fetchProtection() {
-      if (!selectedEnv || selectedEnv.scopeType !== 'workspace' || !workspaceId) {
+      if (
+        !selectedEnv ||
+        selectedEnv.scopeType !== "workspace" ||
+        !workspaceId
+      ) {
         setProtection(null);
         return;
       }
       try {
-        const result = await authenticatedJson<EnvironmentProtectionPolicy | { status: string }>(
+        const result = await authenticatedJson<
+          EnvironmentProtectionPolicy | { status: string }
+        >(
           `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}/protection`,
         );
-        if ('status' in result && result.status === 'unprotected') {
+        if ("status" in result && result.status === "unprotected") {
           setProtection(null);
         } else {
           setProtection(result as EnvironmentProtectionPolicy);
@@ -124,7 +149,7 @@ export default function WorkspaceEnvironmentsPage() {
       options.push({
         id: user.userId,
         name: user.verified_email ?? user.userId,
-        type: 'user',
+        type: "user",
       });
     }
     setReviewerOptions(options);
@@ -136,20 +161,25 @@ export default function WorkspaceEnvironmentsPage() {
     if (!workspaceId) return;
     setSaving(true);
     try {
-      await authenticatedJson<ScopedEnvironment>(`/api/workspaces/${workspaceId}/environments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: data.name,
-          description: data.description || undefined,
-          swaggerDocUrl: data.swaggerDocUrl || undefined,
-          allowedWorkspaceIds: data.allowedWorkspaceIds,
-        }),
-      });
-      setViewMode('list');
+      await authenticatedJson<ScopedEnvironment>(
+        `/api/workspaces/${workspaceId}/environments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: data.name,
+            description: data.description || undefined,
+            swaggerDocUrl: data.swaggerDocUrl || undefined,
+            allowedWorkspaceIds: data.allowedWorkspaceIds,
+          }),
+        },
+      );
+      setViewMode("list");
       await refreshEnvironments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create environment');
+      setError(
+        err instanceof Error ? err.message : "Failed to create environment",
+      );
     } finally {
       setSaving(false);
     }
@@ -160,15 +190,15 @@ export default function WorkspaceEnvironmentsPage() {
     setSaving(true);
     try {
       const endpoint =
-        selectedEnv.scopeType === 'workspace'
+        selectedEnv.scopeType === "workspace"
           ? `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}`
-          : selectedEnv.scopeType === 'organization'
+          : selectedEnv.scopeType === "organization"
             ? `/api/orgs/${selectedEnv.scopeId}/environments/${selectedEnv.environmentId}`
             : `/api/users/${selectedEnv.scopeId}/environments/${selectedEnv.environmentId}`;
 
       await authenticatedJson<ScopedEnvironment>(endpoint, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: data.name,
           description: data.description || undefined,
@@ -176,11 +206,13 @@ export default function WorkspaceEnvironmentsPage() {
           allowedWorkspaceIds: data.allowedWorkspaceIds,
         }),
       });
-      setViewMode('list');
+      setViewMode("list");
       setSelectedEnv(null);
       await refreshEnvironments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update environment');
+      setError(
+        err instanceof Error ? err.message : "Failed to update environment",
+      );
     } finally {
       setSaving(false);
     }
@@ -189,25 +221,27 @@ export default function WorkspaceEnvironmentsPage() {
   async function handleDeleteEnv(env: ScopedEnvironment) {
     if (!workspaceId) return;
     if (env.isDefault) {
-      setError('Cannot delete the default workspace environment');
+      setError("Cannot delete the default workspace environment");
       return;
     }
     try {
       const endpoint =
-        env.scopeType === 'workspace'
+        env.scopeType === "workspace"
           ? `/api/workspaces/${workspaceId}/environments/${env.environmentId}`
-          : env.scopeType === 'organization'
+          : env.scopeType === "organization"
             ? `/api/orgs/${env.scopeId}/environments/${env.environmentId}`
             : `/api/users/${env.scopeId}/environments/${env.environmentId}`;
 
-      await authenticatedJson(endpoint, { method: 'DELETE' });
+      await authenticatedJson(endpoint, { method: "DELETE" });
       if (selectedEnv?.environmentId === env.environmentId) {
         setSelectedEnv(null);
-        setViewMode('list');
+        setViewMode("list");
       }
       await refreshEnvironments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete environment');
+      setError(
+        err instanceof Error ? err.message : "Failed to delete environment",
+      );
     }
   }
 
@@ -216,16 +250,16 @@ export default function WorkspaceEnvironmentsPage() {
     try {
       const response = await authenticatedFetch(
         `${scopedApi.environmentsUrl(workspaceId)}/${encodeURIComponent(envId)}/duplicate`,
-        { method: 'POST' },
+        { method: "POST" },
       );
       if (response.ok) {
-        toast.success('Environment duplicated');
+        toast.success("Environment duplicated");
         await refreshEnvironments();
       } else {
-        toast.error('Failed to duplicate environment');
+        toast.error("Failed to duplicate environment");
       }
     } catch {
-      toast.error('Failed to duplicate environment');
+      toast.error("Failed to duplicate environment");
     }
   }
 
@@ -242,8 +276,8 @@ export default function WorkspaceEnvironmentsPage() {
       await authenticatedJson<EnvironmentProtectionPolicy>(
         `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}/protection`,
         {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         },
       );
@@ -253,7 +287,9 @@ export default function WorkspaceEnvironmentsPage() {
       );
       setProtection(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save protection');
+      setError(
+        err instanceof Error ? err.message : "Failed to save protection",
+      );
     } finally {
       setSaving(false);
     }
@@ -265,11 +301,13 @@ export default function WorkspaceEnvironmentsPage() {
     try {
       await authenticatedJson(
         `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}/protection`,
-        { method: 'DELETE' },
+        { method: "DELETE" },
       );
       setProtection(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to remove protection');
+      setError(
+        err instanceof Error ? err.message : "Failed to remove protection",
+      );
     } finally {
       setSaving(false);
     }
@@ -280,11 +318,15 @@ export default function WorkspaceEnvironmentsPage() {
     try {
       await authenticatedJson(
         `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}/approvals/${approvalId}/approve`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        },
       );
       await refreshEnvironments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to approve');
+      setError(err instanceof Error ? err.message : "Failed to approve");
     }
   }
 
@@ -294,17 +336,17 @@ export default function WorkspaceEnvironmentsPage() {
     try {
       await authenticatedJson(
         `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}/approvals/${approvalId}`,
-        { method: 'DELETE' },
+        { method: "DELETE" },
       );
       await refreshEnvironments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to deny');
+      setError(err instanceof Error ? err.message : "Failed to deny");
     }
   }
 
   function handleSelectEnv(env: ScopedEnvironment) {
     setSelectedEnv(env);
-    setViewMode('list');
+    setViewMode("list");
   }
 
   // ---- Render ----
@@ -329,13 +371,15 @@ export default function WorkspaceEnvironmentsPage() {
             <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
               {orgSlug && workspaceSlug
                 ? `${orgSlug} / ${workspaceSlug}`
-                : 'Manage scoped environments and protection policies'}
+                : "Manage scoped environments and protection policies"}
             </p>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-6">
           <EmptyState
-            icon={<Layers className="w-12 h-12 text-text-muted" strokeWidth={1.5} />}
+            icon={
+              <Layers className="w-12 h-12 text-text-muted" strokeWidth={1.5} />
+            }
             title="Workspace unavailable"
             description="This workspace could not be resolved. It may not exist, or you may not have access to it."
           />
@@ -356,7 +400,7 @@ export default function WorkspaceEnvironmentsPage() {
           <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
             {orgSlug && workspaceSlug
               ? `${orgSlug} / ${workspaceSlug}`
-              : 'Manage scoped environments and protection policies'}
+              : "Manage scoped environments and protection policies"}
           </p>
         </div>
       </div>
@@ -378,10 +422,10 @@ export default function WorkspaceEnvironmentsPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         {/* Create mode */}
-        {viewMode === 'create' && (
+        {viewMode === "create" && (
           <EnvironmentForm
             onSubmit={handleCreateEnv}
-            onCancel={() => setViewMode('list')}
+            onCancel={() => setViewMode("list")}
             submitting={saving}
             availableWorkspaces={orgWorkspaces}
             showAllowedWorkspaces={false}
@@ -389,19 +433,19 @@ export default function WorkspaceEnvironmentsPage() {
         )}
 
         {/* Edit mode */}
-        {viewMode === 'edit' && selectedEnv && (
+        {viewMode === "edit" && selectedEnv && (
           <EnvironmentForm
             environment={selectedEnv}
             onSubmit={handleUpdateEnv}
-            onCancel={() => setViewMode('list')}
+            onCancel={() => setViewMode("list")}
             submitting={saving}
             availableWorkspaces={orgWorkspaces}
-            showAllowedWorkspaces={selectedEnv.scopeType === 'organization'}
+            showAllowedWorkspaces={selectedEnv.scopeType === "organization"}
           />
         )}
 
         {/* Protection mode */}
-        {viewMode === 'protection' && selectedEnv && (
+        {viewMode === "protection" && selectedEnv && (
           <EnvironmentProtectionPanel
             environmentId={selectedEnv.environmentId}
             protection={protection}
@@ -413,7 +457,7 @@ export default function WorkspaceEnvironmentsPage() {
         )}
 
         {/* List mode */}
-        {viewMode === 'list' && (
+        {viewMode === "list" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left: Environment lists by scope */}
             <div className="lg:col-span-2 space-y-6">
@@ -424,7 +468,7 @@ export default function WorkspaceEnvironmentsPage() {
                   intent="success"
                   size="sm"
                   icon={<Plus className="w-4 h-4" />}
-                  onClick={() => setViewMode('create')}
+                  onClick={() => setViewMode("create")}
                 >
                   New Environment
                 </Button>
@@ -436,10 +480,10 @@ export default function WorkspaceEnvironmentsPage() {
                 scopeType="workspace"
                 title="Workspace Environments"
                 onSelect={handleSelectEnv}
-                onCreate={() => setViewMode('create')}
+                onCreate={() => setViewMode("create")}
                 onEdit={(env) => {
                   setSelectedEnv(env);
-                  setViewMode('edit');
+                  setViewMode("edit");
                 }}
                 onDelete={handleDeleteEnv}
                 onDuplicate={handleDuplicateEnv}
@@ -455,7 +499,7 @@ export default function WorkspaceEnvironmentsPage() {
                   onSelect={handleSelectEnv}
                   onEdit={(env) => {
                     setSelectedEnv(env);
-                    setViewMode('edit');
+                    setViewMode("edit");
                   }}
                   onDelete={handleDeleteEnv}
                   onDuplicate={handleDuplicateEnv}
@@ -471,7 +515,7 @@ export default function WorkspaceEnvironmentsPage() {
                 onSelect={handleSelectEnv}
                 onEdit={(env) => {
                   setSelectedEnv(env);
-                  setViewMode('edit');
+                  setViewMode("edit");
                 }}
                 onDelete={handleDeleteEnv}
                 onDuplicate={handleDuplicateEnv}
@@ -491,7 +535,7 @@ export default function WorkspaceEnvironmentsPage() {
                           Description
                         </span>
                         <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                          {selectedEnv.description || 'No description'}
+                          {selectedEnv.description || "No description"}
                         </p>
                       </div>
                       <div>
@@ -500,7 +544,9 @@ export default function WorkspaceEnvironmentsPage() {
                         </span>
                         <p className="text-sm text-text-primary dark:text-text-primary-dark">
                           {Object.keys(selectedEnv.variables).length} variable
-                          {Object.keys(selectedEnv.variables).length !== 1 ? 's' : ''}
+                          {Object.keys(selectedEnv.variables).length !== 1
+                            ? "s"
+                            : ""}
                         </p>
                       </div>
                       {selectedEnv.allowedWorkspaceIds.length > 0 && (
@@ -510,7 +556,9 @@ export default function WorkspaceEnvironmentsPage() {
                           </span>
                           <p className="text-sm text-text-primary dark:text-text-primary-dark">
                             {selectedEnv.allowedWorkspaceIds.length} workspace
-                            {selectedEnv.allowedWorkspaceIds.length !== 1 ? 's' : ''}
+                            {selectedEnv.allowedWorkspaceIds.length !== 1
+                              ? "s"
+                              : ""}
                           </p>
                         </div>
                       )}
@@ -518,11 +566,11 @@ export default function WorkspaceEnvironmentsPage() {
                   </Card>
 
                   {/* Protection summary (workspace envs only) */}
-                  {selectedEnv.scopeType === 'workspace' && (
+                  {selectedEnv.scopeType === "workspace" && (
                     <>
                       <ProtectionSummary
                         protection={protection}
-                        onEdit={() => setViewMode('protection')}
+                        onEdit={() => setViewMode("protection")}
                       />
 
                       {/* Pending approvals */}
@@ -540,7 +588,12 @@ export default function WorkspaceEnvironmentsPage() {
                 </>
               ) : (
                 <EmptyState
-                  icon={<Layers className="w-12 h-12 text-text-muted" strokeWidth={1.5} />}
+                  icon={
+                    <Layers
+                      className="w-12 h-12 text-text-muted"
+                      strokeWidth={1.5}
+                    />
+                  }
                   title="Select an environment"
                   description="Choose an environment from the list to view details, configure protection, or manage approvals."
                 />

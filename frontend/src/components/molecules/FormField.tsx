@@ -1,6 +1,6 @@
-import { useId } from 'react';
-import { AlertTriangle } from 'lucide-react';
-import type { FormFieldProps } from '../../types';
+import { useId } from "react";
+import { AlertTriangle } from "lucide-react";
+import type { FormFieldProps } from "../../types";
 
 /**
  * FormField — Reusable form field wrapper with label, hint, and error.
@@ -21,7 +21,7 @@ export function FormField({
   error,
   required = false,
   children,
-  className = '',
+  className = "",
 }: FormFieldProps) {
   const id = useId();
   const hintId = `${id}-hint`;
@@ -32,7 +32,11 @@ export function FormField({
         <label htmlFor={id} className="label py-1 px-0">
           <span className="label-text text-sm font-medium text-text-primary dark:text-text-primary-dark">
             {label}
-            {required && <span className="text-status-error ml-0.5" aria-hidden="true">*</span>}
+            {required && (
+              <span className="text-status-error ml-0.5" aria-hidden="true">
+                *
+              </span>
+            )}
           </span>
         </label>
       )}
@@ -45,11 +49,16 @@ export function FormField({
         <label className="label py-1 px-0" id={hintId}>
           {error ? (
             <span className="label-text-alt flex items-center gap-1 text-xs text-status-error dark:text-[var(--aw-status-error)]">
-              <AlertTriangle className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+              <AlertTriangle
+                className="w-3 h-3 flex-shrink-0"
+                aria-hidden="true"
+              />
               {error}
             </span>
           ) : (
-            <span className="label-text-alt text-xs text-text-muted dark:text-text-muted-dark">{hint}</span>
+            <span className="label-text-alt text-xs text-text-muted dark:text-text-muted-dark">
+              {hint}
+            </span>
           )}
         </label>
       )}

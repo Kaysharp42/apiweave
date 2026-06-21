@@ -7,6 +7,7 @@ Covers:
 - Dry-run validation catches structural errors.
 - Forbidden fields in bundles are rejected.
 """
+
 from __future__ import annotations
 
 import json
@@ -14,7 +15,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.services.project_export_service import (
     SCHEMA_VERSION,
     _check_no_secret_values,
@@ -77,41 +77,57 @@ def _make_workflow(
     }
 
     # model_dump returns a dict representation
-    wf.model_dump = MagicMock(return_value={
-        "workflowId": workflow_id,
-        "name": "Test Workflow",
-        "description": "A test workflow",
-        "nodes": [
-            {"nodeId": "start_1", "type": "start", "label": "Start", "position": {"x": 100, "y": 100}, "config": {}},
-            {
-                "nodeId": "httpRequest_1", "type": "http-request", "label": "API Call",
-                "position": {"x": 300, "y": 100},
-                "config": {
-                    "method": "GET",
-                    "url": "https://api.example.com/data",
-                    "headers": "Authorization=Bearer {{secrets.API_TOKEN}}",
-                    "body": None,
-                    "timeout": 30,
-                    "followRedirects": True,
-                    "extractors": {},
+    wf.model_dump = MagicMock(
+        return_value={
+            "workflowId": workflow_id,
+            "name": "Test Workflow",
+            "description": "A test workflow",
+            "nodes": [
+                {
+                    "nodeId": "start_1",
+                    "type": "start",
+                    "label": "Start",
+                    "position": {"x": 100, "y": 100},
+                    "config": {},
                 },
+                {
+                    "nodeId": "httpRequest_1",
+                    "type": "http-request",
+                    "label": "API Call",
+                    "position": {"x": 300, "y": 100},
+                    "config": {
+                        "method": "GET",
+                        "url": "https://api.example.com/data",
+                        "headers": "Authorization=Bearer {{secrets.API_TOKEN}}",
+                        "body": None,
+                        "timeout": 30,
+                        "followRedirects": True,
+                        "extractors": {},
+                    },
+                },
+                {
+                    "nodeId": "end_1",
+                    "type": "end",
+                    "label": "End",
+                    "position": {"x": 500, "y": 100},
+                    "config": {},
+                },
+            ],
+            "edges": [
+                {"edgeId": "e1", "source": "start_1", "target": "httpRequest_1"},
+                {"edgeId": "e2", "source": "httpRequest_1", "target": "end_1"},
+            ],
+            "variables": {
+                "base_url": "https://api.example.com",
+                "api_key": "should-be-sanitized",
             },
-            {"nodeId": "end_1", "type": "end", "label": "End", "position": {"x": 500, "y": 100}, "config": {}},
-        ],
-        "edges": [
-            {"edgeId": "e1", "source": "start_1", "target": "httpRequest_1"},
-            {"edgeId": "e2", "source": "httpRequest_1", "target": "end_1"},
-        ],
-        "variables": {
-            "base_url": "https://api.example.com",
-            "api_key": "should-be-sanitized",
-        },
-        "tags": ["test"],
-        "selectedEnvironmentId": env_id,
-        "environmentId": None,
-        "collectionId": project_id,
-        "workspaceId": workspace_id,
-    })
+            "tags": ["test"],
+            "selectedEnvironmentId": env_id,
+            "environmentId": None,
+            "collectionId": project_id,
+            "workspaceId": workspace_id,
+        }
+    )
 
     # For save() during import
     wf.save = AsyncMock()
@@ -150,9 +166,7 @@ class TestSecretRefExtraction:
         assert refs == ["API_TOKEN"]
 
     def test_multiple_refs(self) -> None:
-        refs = _extract_secret_refs_from_string(
-            "{{secrets.API_TOKEN}} and {{secrets.DB_PASSWORD}}"
-        )
+        refs = _extract_secret_refs_from_string("{{secrets.API_TOKEN}} and {{secrets.DB_PASSWORD}}")
         assert sorted(refs) == ["API_TOKEN", "DB_PASSWORD"]
 
     def test_no_refs(self) -> None:
@@ -189,9 +203,7 @@ class TestForbiddenFieldCheck:
 
     def test_nested_forbidden_rejected(self) -> None:
         with pytest.raises(ValueError, match="forbidden secret field"):
-            _check_no_secret_values({
-                "workflows": [{"secrets": {"ciphertext": "abc"}}]
-            })
+            _check_no_secret_values({"workflows": [{"secrets": {"ciphertext": "abc"}}]})
 
     def test_sanitize_export_value_strips_forbidden(self) -> None:
         """_sanitize_export_value raises on forbidden keys."""
@@ -203,11 +215,13 @@ class TestBundleValidation:
     """Tests for bundle structure validation."""
 
     def test_valid_bundle(self) -> None:
-        _validate_bundle_structure({
-            "schemaVersion": "2.0",
-            "workflows": [],
-            "project": {"name": "Test"},
-        })
+        _validate_bundle_structure(
+            {
+                "schemaVersion": "2.0",
+                "workflows": [],
+                "project": {"name": "Test"},
+            }
+        )
 
     def test_missing_workflows(self) -> None:
         with pytest.raises(ValueError, match="missing 'workflows'"):
@@ -219,11 +233,13 @@ class TestBundleValidation:
 
     def test_bundle_with_ciphertext_rejected(self) -> None:
         with pytest.raises(ValueError, match="forbidden secret field"):
-            _validate_bundle_structure({
-                "workflows": [],
-                "project": {"name": "Test"},
-                "secretData": {"ciphertext": "leaked"},
-            })
+            _validate_bundle_structure(
+                {
+                    "workflows": [],
+                    "project": {"name": "Test"},
+                    "secretData": {"ciphertext": "leaked"},
+                }
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +263,9 @@ class TestExportProjectV2:
             patch("app.services.project_export_service.ProjectRepository") as prj_repo,
             patch("app.services.project_export_service.WorkflowRepository") as wf_repo,
             patch("app.services.project_export_service.ScopedEnvironmentRepository") as env_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=workspace)
             prj_repo.get_by_id = AsyncMock(return_value=project)
@@ -295,7 +313,9 @@ class TestExportProjectV2:
             patch("app.services.project_export_service.ProjectRepository") as prj_repo,
             patch("app.services.project_export_service.WorkflowRepository") as wf_repo,
             patch("app.services.project_export_service.ScopedEnvironmentRepository") as env_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=workspace)
             prj_repo.get_by_id = AsyncMock(return_value=project)
@@ -327,7 +347,9 @@ class TestExportProjectV2:
             patch("app.services.project_export_service.ProjectRepository") as prj_repo,
             patch("app.services.project_export_service.WorkflowRepository") as wf_repo,
             patch("app.services.project_export_service.ScopedEnvironmentRepository") as env_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=workspace)
             prj_repo.get_by_id = AsyncMock(return_value=project)
@@ -353,7 +375,9 @@ class TestExportProjectV2:
         with (
             patch("app.services.project_export_service.WorkspaceRepository") as ws_repo,
             patch("app.services.project_export_service.ProjectRepository") as prj_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=workspace)
             prj_repo.get_by_id = AsyncMock(return_value=None)
@@ -389,8 +413,20 @@ class TestImportProjectV2:
                     "name": "Test Workflow",
                     "description": "",
                     "nodes": [
-                        {"nodeId": "start_1", "type": "start", "label": "Start", "position": {"x": 0, "y": 0}, "config": {}},
-                        {"nodeId": "end_1", "type": "end", "label": "End", "position": {"x": 200, "y": 0}, "config": {}},
+                        {
+                            "nodeId": "start_1",
+                            "type": "start",
+                            "label": "Start",
+                            "position": {"x": 0, "y": 0},
+                            "config": {},
+                        },
+                        {
+                            "nodeId": "end_1",
+                            "type": "end",
+                            "label": "End",
+                            "position": {"x": 200, "y": 0},
+                            "config": {},
+                        },
                     ],
                     "edges": [
                         {"edgeId": "e1", "source": "start_1", "target": "end_1"},
@@ -424,7 +460,9 @@ class TestImportProjectV2:
             patch("app.services.project_export_service.WorkflowRepository") as wf_repo,
             patch("app.services.project_export_service.ScopedEnvironmentRepository") as env_repo,
             patch("app.services.project_export_service.SecretRepository") as secret_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
             patch("app.services.audit_service.append_event", new_callable=AsyncMock),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=workspace)
@@ -464,7 +502,14 @@ class TestImportProjectV2:
             "workflows": [
                 {
                     "name": "WF",
-                    "nodes": [{"nodeId": "s1", "type": "start", "position": {"x": 0, "y": 0}, "config": {}}],
+                    "nodes": [
+                        {
+                            "nodeId": "s1",
+                            "type": "start",
+                            "position": {"x": 0, "y": 0},
+                            "config": {},
+                        }
+                    ],
                     "edges": [],
                     "variables": {},
                     "tags": [],
@@ -513,7 +558,9 @@ class TestImportProjectV2:
         """Import raises ValueError for invalid bundle."""
         with (
             patch("app.services.project_export_service.WorkspaceRepository") as ws_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=_make_workspace())
 
@@ -532,7 +579,9 @@ class TestImportProjectV2:
 
         with (
             patch("app.services.project_export_service.WorkspaceRepository") as ws_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=_make_workspace())
 
@@ -557,7 +606,14 @@ class TestDryRunImportV2:
             "workflows": [
                 {
                     "name": "WF",
-                    "nodes": [{"nodeId": "s1", "type": "start", "position": {"x": 0, "y": 0}, "config": {}}],
+                    "nodes": [
+                        {
+                            "nodeId": "s1",
+                            "type": "start",
+                            "position": {"x": 0, "y": 0},
+                            "config": {},
+                        }
+                    ],
                     "edges": [],
                     "variables": {},
                 },
@@ -568,7 +624,9 @@ class TestDryRunImportV2:
 
         with (
             patch("app.services.project_export_service.WorkspaceRepository") as ws_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=workspace)
 
@@ -594,7 +652,9 @@ class TestDryRunImportV2:
         with (
             patch("app.services.project_export_service.WorkspaceRepository") as ws_repo,
             patch("app.services.project_export_service.SecretRepository") as secret_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=workspace)
             secret_repo.get_by_scope_and_name = AsyncMock(return_value=None)
@@ -610,7 +670,9 @@ class TestDryRunImportV2:
         """Dry run returns valid=False for invalid bundle."""
         with (
             patch("app.services.project_export_service.WorkspaceRepository") as ws_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=_make_workspace())
 
@@ -629,8 +691,18 @@ class TestDryRunImportV2:
                 {
                     "name": "WF",
                     "nodes": [
-                        {"nodeId": "dup_1", "type": "start", "position": {"x": 0, "y": 0}, "config": {}},
-                        {"nodeId": "dup_1", "type": "end", "position": {"x": 200, "y": 0}, "config": {}},
+                        {
+                            "nodeId": "dup_1",
+                            "type": "start",
+                            "position": {"x": 0, "y": 0},
+                            "config": {},
+                        },
+                        {
+                            "nodeId": "dup_1",
+                            "type": "end",
+                            "position": {"x": 200, "y": 0},
+                            "config": {},
+                        },
                     ],
                     "edges": [],
                 },
@@ -641,7 +713,9 @@ class TestDryRunImportV2:
 
         with (
             patch("app.services.project_export_service.WorkspaceRepository") as ws_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=workspace)
 
@@ -663,7 +737,9 @@ class TestDryRunImportV2:
 
         with (
             patch("app.services.project_export_service.WorkspaceRepository") as ws_repo,
-            patch("app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock),
+            patch(
+                "app.services.workspace_service._assert_workspace_access", new_callable=AsyncMock
+            ),
         ):
             ws_repo.get_by_id = AsyncMock(return_value=workspace)
 

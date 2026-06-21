@@ -1,12 +1,19 @@
-import { useState, type ChangeEvent, type DragEvent } from 'react';
-import { Upload, FileText, AlertCircle, X, List, GitBranch } from 'lucide-react';
-import { usePalette } from '../contexts/PaletteContext';
-import { Button } from './atoms/Button';
-import { IconButton } from './atoms/IconButton';
-import { Input } from './atoms/Input';
-import { useScopeContext } from '../hooks/useScopeContext';
-import { authenticatedFetch } from '../utils/authenticatedApi';
-import { workflowImportHarUrl } from '../utils/scopedApi';
+import { useState, type ChangeEvent, type DragEvent } from "react";
+import {
+  Upload,
+  FileText,
+  AlertCircle,
+  X,
+  List,
+  GitBranch,
+} from "lucide-react";
+import { usePalette } from "../contexts/PaletteContext";
+import { Button } from "./atoms/Button";
+import { IconButton } from "./atoms/IconButton";
+import { Input } from "./atoms/Input";
+import { useScopeContext } from "../hooks/useScopeContext";
+import { authenticatedFetch } from "../utils/authenticatedApi";
+import { workflowImportHarUrl } from "../utils/scopedApi";
 
 interface HARPreviewEntry {
   method: string;
@@ -32,20 +39,20 @@ interface HARImportProps {
   onImportSuccess?: (result: HARImportDryRunResult) => void;
 }
 
-type ImportMode = 'linear' | 'grouped';
+type ImportMode = "linear" | "grouped";
 
 function getMethodBadgeClasses(method: string): string {
   switch (method) {
-    case 'GET':
-      return 'bg-[var(--aw-status-info)]/10 dark:bg-[var(--aw-status-info)]/20 text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)]';
-    case 'POST':
-      return 'bg-[var(--aw-status-success)]/10 dark:bg-[var(--aw-status-success)]/20 text-[var(--aw-status-success)] dark:text-[var(--aw-status-success)]';
-    case 'PUT':
-      return 'bg-[var(--aw-status-warning)]/10 dark:bg-[var(--aw-status-warning)]/20 text-[var(--aw-status-warning)] dark:text-[var(--aw-status-warning)]';
-    case 'DELETE':
-      return 'bg-[var(--aw-status-error)]/10 dark:bg-[var(--aw-status-error)]/20 text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]';
+    case "GET":
+      return "bg-[var(--aw-status-info)]/10 dark:bg-[var(--aw-status-info)]/20 text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)]";
+    case "POST":
+      return "bg-[var(--aw-status-success)]/10 dark:bg-[var(--aw-status-success)]/20 text-[var(--aw-status-success)] dark:text-[var(--aw-status-success)]";
+    case "PUT":
+      return "bg-[var(--aw-status-warning)]/10 dark:bg-[var(--aw-status-warning)]/20 text-[var(--aw-status-warning)] dark:text-[var(--aw-status-warning)]";
+    case "DELETE":
+      return "bg-[var(--aw-status-error)]/10 dark:bg-[var(--aw-status-error)]/20 text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]";
     default:
-      return 'bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark';
+      return "bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark";
   }
 }
 
@@ -53,11 +60,12 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
   const { workspaceId } = useScopeContext();
   const [harFile, setHarFile] = useState<File | null>(null);
   const [harJson, setHarJson] = useState<Record<string, unknown> | null>(null);
-  const [importMode, setImportMode] = useState<ImportMode>('linear');
+  const [importMode, setImportMode] = useState<ImportMode>("linear");
   const [sanitize, setSanitize] = useState(true);
-  const [dryRunResult, setDryRunResult] = useState<HARImportDryRunResult | null>(null);
+  const [dryRunResult, setDryRunResult] =
+    useState<HARImportDryRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [groupTitle, setGroupTitle] = useState('');
+  const [groupTitle, setGroupTitle] = useState("");
   const { addImportedGroup } = usePalette();
 
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
@@ -73,7 +81,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
           const json = JSON.parse(event.target?.result as string);
           setHarJson(json);
         } catch (err) {
-          setError('Invalid HAR file: ' + (err as Error).message);
+          setError("Invalid HAR file: " + (err as Error).message);
           setHarJson(null);
         }
       };
@@ -92,14 +100,16 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
 
     const file = e.dataTransfer.files[0];
     if (file) {
-      const syntheticEvent = { target: { files: [file] } } as unknown as ChangeEvent<HTMLInputElement>;
+      const syntheticEvent = {
+        target: { files: [file] },
+      } as unknown as ChangeEvent<HTMLInputElement>;
       handleFileSelect(syntheticEvent);
     }
   };
 
   const handlePreview = async () => {
     if (!harFile) {
-      setError('Please select a HAR file first');
+      setError("Please select a HAR file first");
       return;
     }
 
@@ -108,55 +118,59 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
 
     try {
       const formData = new FormData();
-      formData.append('file', harFile);
-      formData.append('import_mode', importMode);
-      formData.append('sanitize', String(sanitize));
+      formData.append("file", harFile);
+      formData.append("import_mode", importMode);
+      formData.append("sanitize", String(sanitize));
 
-      const response = await authenticatedFetch(workflowImportHarUrl(workspaceId || '', true), {
-        method: 'POST',
-        body: formData,
-      });
+      const response = await authenticatedFetch(
+        workflowImportHarUrl(workspaceId || "", true),
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
 
       if (!response.ok) {
-        const errorData = await response.json() as { detail?: string };
-        throw new Error(errorData.detail || 'Preview failed');
+        const errorData = (await response.json()) as { detail?: string };
+        throw new Error(errorData.detail || "Preview failed");
       }
 
       const result = (await response.json()) as HARImportDryRunResult;
       setDryRunResult(result);
     } catch (err) {
-      console.error('Preview error:', err);
+      console.error("Preview error:", err);
       setError((err as Error).message);
     }
   };
 
   const handleImport = async () => {
     if (!harFile) {
-      setError('Please select a HAR file first');
+      setError("Please select a HAR file first");
       return;
     }
     if (!dryRunResult || !Array.isArray(dryRunResult.preview)) {
-      setError('Please run Preview first');
+      setError("Please run Preview first");
       return;
     }
 
     try {
       const items = dryRunResult.preview.map((entry) => ({
         label: `[${entry.method}] ${entry.url}`,
-        method: entry.method || 'GET',
-        url: entry.url || '',
-        headers: entry.headers || '',
-        cookies: '',
-        queryParams: '',
-        pathVariables: '',
-        body: entry.body || '',
+        method: entry.method || "GET",
+        url: entry.url || "",
+        headers: entry.headers || "",
+        cookies: "",
+        queryParams: "",
+        pathVariables: "",
+        body: entry.body || "",
         timeout: 30,
       }));
 
       const itemCount = items.length;
-      const finalTitle = groupTitle && groupTitle.trim()
-        ? `${groupTitle.trim()} (${itemCount})`
-        : `@${harFile.name.replace(/\.(har|json)$/i, '')} (${itemCount})`;
+      const finalTitle =
+        groupTitle && groupTitle.trim()
+          ? `${groupTitle.trim()} (${itemCount})`
+          : `@${harFile.name.replace(/\.(har|json)$/i, "")} (${itemCount})`;
 
       addImportedGroup({
         id: `grp-${Date.now()}`,
@@ -172,8 +186,17 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
   };
 
   return (
-    <dialog open className="fixed inset-0 z-50 bg-transparent p-0" aria-label="HAR import">
-      <button type="button" aria-label="Close HAR import" className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80" onClick={onClose} />
+    <dialog
+      open
+      className="fixed inset-0 z-50 bg-transparent p-0"
+      aria-label="HAR import"
+    >
+      <button
+        type="button"
+        aria-label="Close HAR import"
+        className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80"
+        onClick={onClose}
+      />
       <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
@@ -191,14 +214,17 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
             {/* Info */}
             <div>
               <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-                Import HTTP Archive (HAR) files to automatically create API test workflows from
-                recorded browser sessions or API calls.
+                Import HTTP Archive (HAR) files to automatically create API test
+                workflows from recorded browser sessions or API calls.
               </p>
             </div>
 
             {/* File Upload */}
             <div>
-              <label htmlFor="har-file-input" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+              <label
+                htmlFor="har-file-input"
+                className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
+              >
                 HAR File
               </label>
               <div
@@ -235,16 +261,18 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
             {harJson && (
               <div className="space-y-4">
                 <div>
-                <div className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                  Import Mode
-                </div>
+                  <div className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                    Import Mode
+                  </div>
                   <div className="flex gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="radio"
                         value="linear"
-                        checked={importMode === 'linear'}
-                        onChange={(e) => setImportMode(e.target.value as ImportMode)}
+                        checked={importMode === "linear"}
+                        onChange={(e) =>
+                          setImportMode(e.target.value as ImportMode)
+                        }
                         aria-label="Linear import mode"
                         className="w-4 h-4 text-primary border-border focus:ring-primary"
                       />
@@ -257,8 +285,10 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                       <input
                         type="radio"
                         value="grouped"
-                        checked={importMode === 'grouped'}
-                        onChange={(e) => setImportMode(e.target.value as ImportMode)}
+                        checked={importMode === "grouped"}
+                        onChange={(e) =>
+                          setImportMode(e.target.value as ImportMode)
+                        }
                         disabled
                         aria-label="Grouped import mode"
                         className="w-4 h-4 text-primary border-border focus:ring-primary"
@@ -300,19 +330,25 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                       <p className="text-2xl font-bold text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)]">
                         {dryRunResult.stats?.totalEntries || 0}
                       </p>
-                      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Total Requests</p>
+                      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                        Total Requests
+                      </p>
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-status-success dark:text-status-success-dark">
                         {dryRunResult.stats?.nodes || 0}
                       </p>
-                      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Nodes</p>
+                      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                        Nodes
+                      </p>
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-[var(--aw-branch-edge)] dark:text-[var(--aw-branch-edge)]">
                         {dryRunResult.stats?.edges || 0}
                       </p>
-                      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">Edges</p>
+                      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                        Edges
+                      </p>
                     </div>
                   </div>
 
@@ -323,12 +359,14 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                         First {dryRunResult.preview.length} requests:
                       </p>
                       <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {dryRunResult.preview.map((entry) => (
-                            <div
-                              key={`${entry.method}-${entry.url}-${entry.time ?? ''}`}
-                              className="flex items-center gap-3 text-xs bg-surface dark:bg-surface-dark p-2 rounded border border-border dark:border-border-dark"
+                        {dryRunResult.preview.map((entry) => (
+                          <div
+                            key={`${entry.method}-${entry.url}-${entry.time ?? ""}`}
+                            className="flex items-center gap-3 text-xs bg-surface dark:bg-surface-dark p-2 rounded border border-border dark:border-border-dark"
+                          >
+                            <span
+                              className={`font-medium px-2 py-0.5 rounded ${getMethodBadgeClasses(entry.method)}`}
                             >
-                            <span className={`font-medium px-2 py-0.5 rounded ${getMethodBadgeClasses(entry.method)}`}>
                               {entry.method}
                             </span>
                             <span className="flex-1 text-text-secondary dark:text-text-secondary-dark truncate">
@@ -352,7 +390,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                 <Input
                   value={groupTitle}
                   onChange={(e) => setGroupTitle(e.target.value)}
-                  placeholder={harFile?.name || 'My HAR Group'}
+                  placeholder={harFile?.name || "My HAR Group"}
                   label="Palette Group Title (optional)"
                   size="sm"
                 />
@@ -364,7 +402,9 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
               <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded p-4">
                 <div className="flex items-start">
                   <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2" />
-                  <p className="text-sm text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]">{error}</p>
+                  <p className="text-sm text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]">
+                    {error}
+                  </p>
                 </div>
               </div>
             )}

@@ -1,5 +1,5 @@
-import { useAuthContext } from './AuthProvider';
-import type { UseAuthReturn } from '../types';
+import { useAuthContext } from "./AuthProvider";
+import type { UseAuthReturn } from "../types";
 
 export function useAuth(): UseAuthReturn {
   const {
@@ -14,14 +14,16 @@ export function useAuth(): UseAuthReturn {
     refresh,
   } = useAuthContext();
 
-  const isLoading = status === 'loading';
-  const isAuthenticated = status === 'authenticated';
-  const isSingleUser = deploymentMode === 'single_user';
+  const isLoading = status === "loading";
+  const isAuthenticated = status === "authenticated";
+  const isSingleUser = deploymentMode === "single_user";
 
   const hasPermission = (permission: string): boolean => {
     if (!user) return false;
-    if (user.roles.includes('admin')) return true;
-    return Array.isArray(user.permissions) && user.permissions.includes(permission);
+    if (user.roles.includes("admin")) return true;
+    return (
+      Array.isArray(user.permissions) && user.permissions.includes(permission)
+    );
   };
 
   return {

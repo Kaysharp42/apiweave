@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ApprovedDomainManager } from '../components/auth/ApprovedDomainManager';
-import { Globe, ShieldCheck } from 'lucide-react';
-import { Spinner } from '../components/atoms/Spinner';
-import { StatusBadge } from '../components/molecules/StatusBadge';
-import { Panel } from '../components/molecules/Panel';
-import { authenticatedJson } from '../utils/authenticatedApi';
-import API_BASE_URL from '../utils/api';
-import { PROVIDER_DISPLAY_MAP, PROVIDER_IDS } from '../auth/providerConfig';
-import type { ProviderId } from '../auth/providerConfig';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useState } from "react";
+import { ApprovedDomainManager } from "../components/auth/ApprovedDomainManager";
+import { Globe, ShieldCheck } from "lucide-react";
+import { Spinner } from "../components/atoms/Spinner";
+import { StatusBadge } from "../components/molecules/StatusBadge";
+import { Panel } from "../components/molecules/Panel";
+import { authenticatedJson } from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/api";
+import { PROVIDER_DISPLAY_MAP, PROVIDER_IDS } from "../auth/providerConfig";
+import type { ProviderId } from "../auth/providerConfig";
+import { toast } from "sonner";
 
 interface ProviderStatus {
   id: string;
@@ -23,11 +23,11 @@ function SsoProviderSection() {
     try {
       setLoading(true);
       const data = await authenticatedJson<ProviderStatus[]>(
-        `${API_BASE_URL}/api/settings/providers`
+        `${API_BASE_URL}/api/settings/providers`,
       );
       setProviders(data);
     } catch {
-      toast.error('Failed to load SSO provider status');
+      toast.error("Failed to load SSO provider status");
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,7 @@ function SsoProviderSection() {
                   </td>
                   <td className="px-6 py-4 text-xs text-text-secondary dark:text-text-secondary-dark">
                     {enabled
-                      ? 'Client ID and secret are set in environment variables.'
+                      ? "Client ID and secret are set in environment variables."
                       : `Set ${id.toUpperCase()}_CLIENT_ID and ${id.toUpperCase()}_CLIENT_SECRET in the backend environment to enable.`}
                   </td>
                 </tr>
@@ -126,9 +126,10 @@ export default function AdminDomainsPage() {
               </h2>
             </div>
             <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
-              Manage email domains that are automatically approved to sign up and join the workspace.
-              Users signing up with an email from an approved domain will be granted the default
-              &apos;viewer&apos; role.
+              Manage email domains that are automatically approved to sign up
+              and join the workspace. Users signing up with an email from an
+              approved domain will be granted the default &apos;viewer&apos;
+              role.
             </p>
             <ApprovedDomainManager />
           </section>
@@ -142,8 +143,9 @@ export default function AdminDomainsPage() {
               </h2>
             </div>
             <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
-              View the configuration status of the supported SSO providers. Providers are enabled by
-              setting the corresponding environment variables on the backend.
+              View the configuration status of the supported SSO providers.
+              Providers are enabled by setting the corresponding environment
+              variables on the backend.
             </p>
             <SsoProviderSection />
           </section>

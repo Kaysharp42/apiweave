@@ -1,1 +1,1 @@
-export type ButtonIntent = 'default' | 'success' | 'error' | 'warning' | 'info';
+export type ButtonIntent = "default" | "success" | "error" | "warning" | "info";

@@ -11,9 +11,6 @@ Note: We test the underlying functions directly because importing WorkflowExecut
 triggers a circular import in the test environment. The executor methods are thin
 wrappers that delegate to these functions.
 """
-import logging
-
-import pytest
 
 from app.services.secret_utils import (
     REDACTED,
@@ -21,10 +18,10 @@ from app.services.secret_utils import (
     mask_secrets_structural,
 )
 
-
 # ---------------------------------------------------------------------------
 # _mask_secrets integration (executor delegates to mask_log_value)
 # ---------------------------------------------------------------------------
+
 
 class TestMaskSecretsLog:
     """mask_log_value is what executor._mask_secrets now calls."""
@@ -65,6 +62,7 @@ class TestMaskSecretsLog:
 # ---------------------------------------------------------------------------
 # _mask_result_secrets integration (executor delegates to mask_secrets_structural)
 # ---------------------------------------------------------------------------
+
 
 class TestMaskResultSecrets:
     """mask_secrets_structural is what executor._mask_result_secrets now calls."""
@@ -113,6 +111,7 @@ class TestMaskResultSecrets:
 # Env debug log redaction
 # ---------------------------------------------------------------------------
 
+
 class TestEnvDebugLogRedaction:
     """The env substitution debug log must not contain raw secret values.
 
@@ -141,6 +140,7 @@ class TestEnvDebugLogRedaction:
 # ---------------------------------------------------------------------------
 # Webhook payload sanitization
 # ---------------------------------------------------------------------------
+
 
 class TestWebhookPayloadSanitization:
     """Webhook payload is sanitized via mask_secrets_structural before

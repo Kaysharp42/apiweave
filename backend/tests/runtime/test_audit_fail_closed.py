@@ -6,12 +6,12 @@ Verifies that:
 - The executor raises the audit exception (does not swallow it)
 - No secret value is stored in executor.secrets when audit fails
 """
+
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
 from app.runner.executor import RunContext, WorkflowExecutor
 
 
@@ -60,7 +60,11 @@ class TestAuditFailClosed:
 
         with pytest.raises(RuntimeError, match="Audit DB connection refused"):
             await ex._resolve_single_secret(
-                "API_TOKEN", ctx, FakeRepo, mock_resolve, mock_audit_fail,
+                "API_TOKEN",
+                ctx,
+                FakeRepo,
+                mock_resolve,
+                mock_audit_fail,
             )
 
     @pytest.mark.asyncio
@@ -98,7 +102,11 @@ class TestAuditFailClosed:
 
         with pytest.raises(RuntimeError):
             await ex._resolve_single_secret(
-                "API_TOKEN", ctx, FakeRepo, mock_resolve, mock_audit_fail,
+                "API_TOKEN",
+                ctx,
+                FakeRepo,
+                mock_resolve,
+                mock_audit_fail,
             )
 
         # Secret must NOT be in the executor's secrets dict
@@ -136,7 +144,11 @@ class TestAuditFailClosed:
             return "ok"
 
         result = await ex._resolve_single_secret(
-            "API_TOKEN", ctx, FakeRepo, mock_resolve, mock_audit_ok,
+            "API_TOKEN",
+            ctx,
+            FakeRepo,
+            mock_resolve,
+            mock_audit_ok,
         )
         assert result == "resolved-value"
 
@@ -172,7 +184,11 @@ class TestAuditFailClosed:
 
         with pytest.raises(ValueError, match="Decryption failed"):
             await ex._resolve_single_secret(
-                "API_TOKEN", ctx, FakeRepo, mock_resolve_fail, mock_audit,
+                "API_TOKEN",
+                ctx,
+                FakeRepo,
+                mock_resolve_fail,
+                mock_audit,
             )
 
     @pytest.mark.asyncio
@@ -203,6 +219,10 @@ class TestAuditFailClosed:
             return "should-not-be-called"
 
         result = await ex._resolve_single_secret(
-            "MISSING_SECRET", ctx, FakeRepo, mock_resolve, mock_audit,
+            "MISSING_SECRET",
+            ctx,
+            FakeRepo,
+            mock_resolve,
+            mock_audit,
         )
         assert result is None

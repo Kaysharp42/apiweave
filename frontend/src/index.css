@@ -1,5 +1,5 @@
 /* Design system base styles (tokens, fonts, scrollbars) — must be first @import */
-@import './styles/base.css';
+@import "./styles/base.css";
 
 @tailwind base;
 @tailwind components;
@@ -105,12 +105,20 @@
 
 /* Background & attribution */
 .react-flow__attribution {
-  background-color: color-mix(in srgb, var(--aw-surface-raised) 90%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--aw-surface-raised) 90%,
+    transparent
+  );
   color: var(--aw-text-muted);
 }
 
 .dark .react-flow__attribution {
-  background-color: color-mix(in srgb, var(--aw-surface-raised) 90%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--aw-surface-raised) 90%,
+    transparent
+  );
   color: var(--aw-text-muted);
 }
 
@@ -124,7 +132,6 @@
   background: color-mix(in srgb, var(--aw-primary) 14%, transparent);
   border: 1px solid var(--aw-primary);
 }
-
 
 /* Node handles — token-based styling */
 .react-flow__handle {
@@ -215,4 +222,3 @@
     border-color: var(--aw-status-running) !important;
   }
 }
-

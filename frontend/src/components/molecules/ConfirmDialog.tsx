@@ -1,30 +1,42 @@
-import { Fragment, useRef } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
-import { AlertTriangle, Info, XCircle } from 'lucide-react';
-import { Button } from '../atoms/Button';
+import { Fragment, useRef } from "react";
+import { Dialog, Transition } from "@headlessui/react";
+import { AlertTriangle, Info, XCircle } from "lucide-react";
+import { Button } from "../atoms/Button";
 import {
   resolveConfirmDialogIntent,
   runConfirmDialogAction,
-} from '../../utils/confirmDialogActions';
-import type { ConfirmDialogProps } from '../../types';
+} from "../../utils/confirmDialogActions";
+import type { ConfirmDialogProps } from "../../types";
 
 export function ConfirmDialog({
   open = false,
   onClose,
   onConfirm,
-  title = 'Are you sure?',
+  title = "Are you sure?",
   message,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
-  intent = 'error',
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  intent = "error",
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmIntent = resolveConfirmDialogIntent(intent);
 
   const intentConfig = {
-    error: { icon: XCircle, iconBg: 'bg-status-error/10 dark:bg-[var(--aw-status-error)]/10', iconText: 'text-status-error dark:text-[var(--aw-status-error)]' },
-    warning: { icon: AlertTriangle, iconBg: 'bg-status-warning/10 dark:bg-[var(--aw-status-warning)]/10', iconText: 'text-status-warning dark:text-[var(--aw-status-warning)]' },
-    info: { icon: Info, iconBg: 'bg-status-info/10 dark:bg-[var(--aw-status-info)]/10', iconText: 'text-status-info dark:text-[var(--aw-status-info)]' },
+    error: {
+      icon: XCircle,
+      iconBg: "bg-status-error/10 dark:bg-[var(--aw-status-error)]/10",
+      iconText: "text-status-error dark:text-[var(--aw-status-error)]",
+    },
+    warning: {
+      icon: AlertTriangle,
+      iconBg: "bg-status-warning/10 dark:bg-[var(--aw-status-warning)]/10",
+      iconText: "text-status-warning dark:text-[var(--aw-status-warning)]",
+    },
+    info: {
+      icon: Info,
+      iconBg: "bg-status-info/10 dark:bg-[var(--aw-status-info)]/10",
+      iconText: "text-status-info dark:text-[var(--aw-status-info)]",
+    },
   };
 
   const config = intentConfig[intent];
@@ -47,7 +59,10 @@ export function ConfirmDialog({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-text-primary/30 dark:bg-surface-dark/80" aria-hidden="true" />
+          <div
+            className="fixed inset-0 bg-text-primary/30 dark:bg-surface-dark/80"
+            aria-hidden="true"
+          />
         </Transition.Child>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -62,7 +77,9 @@ export function ConfirmDialog({
           >
             <Dialog.Panel className="w-full max-w-md rounded-sm border border-border bg-surface-raised shadow-modal dark:border-border-dark dark:bg-surface-dark-raised">
               <div className="flex items-start gap-3 border-b border-border p-5 dark:border-border-dark">
-                <div className={`flex-shrink-0 rounded-full p-1 ${config.iconBg}`}>
+                <div
+                  className={`flex-shrink-0 rounded-full p-1 ${config.iconBg}`}
+                >
                   <IntentIcon className={`w-5 h-5 ${config.iconText}`} />
                 </div>
                 <div className="flex-1 min-w-0">

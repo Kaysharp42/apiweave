@@ -11,8 +11,6 @@ import ast
 import os
 from pathlib import Path
 
-import pytest
-
 from app.runner.dynamic_functions import DynamicFunctions
 
 PROVIDER_REGISTRY_PATH = Path(
@@ -46,15 +44,12 @@ def test_all_oauth_async_clients_have_timeout() -> None:
             continue
         if not isinstance(node.func, ast.Name) or node.func.id != "AsyncClient":
             continue
-        has_timeout = any(
-            kw.arg == "timeout" for kw in node.keywords if kw.arg is not None
-        )
+        has_timeout = any(kw.arg == "timeout" for kw in node.keywords if kw.arg is not None)
         if not has_timeout:
             offending.append(node.lineno)
 
     assert not offending, (
-        f"AsyncClient() calls without timeout on lines: {offending}. "
-        "Add timeout=10.0 to each."
+        f"AsyncClient() calls without timeout on lines: {offending}. " "Add timeout=10.0 to each."
     )
 
 

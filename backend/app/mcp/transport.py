@@ -5,6 +5,7 @@ Stdio transport supports local service-token configuration for authentication
 when running the MCP server as a local subprocess. The token's scope is
 propagated to MCP tool functions via scope_context contextvars.
 """
+
 import logging
 import os
 from collections.abc import AsyncGenerator

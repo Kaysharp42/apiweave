@@ -16,31 +16,31 @@
  * TypeScript STRICT: No `any` types.
  */
 
-import { describe, it, expect } from 'vitest';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { describe, it, expect } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
-const SRC_DIR = path.resolve(__dirname, '..');
+const SRC_DIR = path.resolve(__dirname, "..");
 
 const LEGACY_PATTERNS: readonly string[] = [
-  '/api/workflows',
-  '/api/environments',
-  '/api/collections',
+  "/api/workflows",
+  "/api/environments",
+  "/api/collections",
 ];
 
 const FIXTURE_FILE = path.resolve(
   __dirname,
-  'fixtures',
-  'strict-mode-fixture.ts',
+  "fixtures",
+  "strict-mode-fixture.ts",
 );
 
 /** Lines containing this annotation are exempt from the guard. */
-const LEGACY_ALLOWED_MARKER = '// @legacy-allowed:';
+const LEGACY_ALLOWED_MARKER = "// @legacy-allowed:";
 
-const mode: string = process.env.LEGACY_GUARD_MODE || 'strict';
-const isStrict: boolean = mode === 'strict';
+const mode: string = process.env.LEGACY_GUARD_MODE || "strict";
+const isStrict: boolean = mode === "strict";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -69,15 +69,15 @@ function collectProductionFiles(dir: string): string[] {
 
     for (const entry of entries) {
       // Skip hidden dirs, node_modules, and test directories
-      if (entry.name === 'node_modules') continue;
-      if (entry.name.startsWith('.')) continue;
-      if (entry.name === '__tests__') continue;
+      if (entry.name === "node_modules") continue;
+      if (entry.name.startsWith(".")) continue;
+      if (entry.name === "__tests__") continue;
 
       const fullPath: string = path.join(current, entry.name);
 
       if (entry.isDirectory()) {
         walk(fullPath);
-      } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) {
+      } else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) {
         results.push(fullPath);
       }
     }
@@ -97,10 +97,10 @@ function findMatches(files: string[]): Match[] {
   for (const file of files) {
     const relativePath: string = path
       .relative(SRC_DIR, file)
-      .replace(/\\/g, '/');
+      .replace(/\\/g, "/");
 
-    const content: string = fs.readFileSync(file, 'utf-8');
-    const lines: string[] = content.split('\n');
+    const content: string = fs.readFileSync(file, "utf-8");
+    const lines: string[] = content.split("\n");
 
     for (let i = 0; i < lines.length; i++) {
       const lineText: string = lines[i]!;
@@ -150,36 +150,38 @@ const matches: Match[] = findMatches(productionFiles);
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe('Legacy API URL guard', () => {
+describe("Legacy API URL guard", () => {
   if (matches.length > 0) {
     const reportLines: string[] = matches.map(
       (m) => `  ${m.file}:${m.line}  ${m.content}`,
     );
 
     // Always print the report
-    it('should report all legacy URL locations (report)', () => {
+    it("should report all legacy URL locations (report)", () => {
       console.log(`\n=== Legacy URL Report (${matches.length} matches) ===`);
       for (const line of reportLines) {
         console.log(line);
       }
-      console.log('========================================\n');
+      console.log("========================================\n");
       expect(true).toBe(true);
     });
   } else {
-    it('should confirm no legacy URLs found', () => {
-      console.log('\n=== No legacy URL patterns found in production code ===\n');
+    it("should confirm no legacy URLs found", () => {
+      console.log(
+        "\n=== No legacy URL patterns found in production code ===\n",
+      );
       expect(true).toBe(true);
     });
   }
 
   if (isStrict && matches.length > 0) {
-    it('should NOT contain legacy API URL patterns in production code (strict)', () => {
+    it("should NOT contain legacy API URL patterns in production code (strict)", () => {
       const reportLines: string[] = matches.map(
         (m) => `  ${m.file}:${m.line}  ${m.content}`,
       );
       expect(
         matches,
-        `Found ${matches.length} legacy URL(s) in production code:\n${reportLines.join('\n')}`,
+        `Found ${matches.length} legacy URL(s) in production code:\n${reportLines.join("\n")}`,
       ).toHaveLength(0);
     });
   }
@@ -188,16 +190,17 @@ describe('Legacy API URL guard', () => {
 // ─── Fixture self-test ───────────────────────────────────────────────────────
 // Verifies the guard's detection logic works by scanning a known-bad fixture.
 
-describe('Guard self-test with fixture', () => {
-  it('should detect the legacy URL in the strict-mode fixture file', () => {
+describe("Guard self-test with fixture", () => {
+  it("should detect the legacy URL in the strict-mode fixture file", () => {
     const fixtureFile: string = FIXTURE_FILE;
 
-    expect(fs.existsSync(fixtureFile), `Fixture not found: ${fixtureFile}`).toBe(
-      true,
-    );
+    expect(
+      fs.existsSync(fixtureFile),
+      `Fixture not found: ${fixtureFile}`,
+    ).toBe(true);
 
-    const content: string = fs.readFileSync(fixtureFile, 'utf-8');
-    const lines: string[] = content.split('\n');
+    const content: string = fs.readFileSync(fixtureFile, "utf-8");
+    const lines: string[] = content.split("\n");
     const fixtureMatches: Match[] = [];
 
     for (let i = 0; i < lines.length; i++) {
@@ -205,7 +208,7 @@ describe('Guard self-test with fixture', () => {
       for (const pattern of LEGACY_PATTERNS) {
         if (lineText.includes(pattern)) {
           fixtureMatches.push({
-            file: path.relative(SRC_DIR, fixtureFile).replace(/\\/g, '/'),
+            file: path.relative(SRC_DIR, fixtureFile).replace(/\\/g, "/"),
             line: i + 1,
             content: lineText.trim(),
           });
@@ -224,6 +227,6 @@ describe('Guard self-test with fixture', () => {
     for (const m of fixtureMatches) {
       console.log(`  ${m.file}:${m.line}  ${m.content}`);
     }
-    console.log('');
+    console.log("");
   });
 });

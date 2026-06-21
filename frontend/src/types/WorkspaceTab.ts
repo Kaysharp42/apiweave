@@ -1,4 +1,4 @@
-import type { Workflow } from './Workflow';
+import type { Workflow } from "./Workflow";
 
 export interface WorkspaceTab {
   id: string;

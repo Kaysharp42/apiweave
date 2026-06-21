@@ -12,8 +12,6 @@ GITLAB_CLIENT_SECRET, GOOGLE_CLIENT_ID, or MICROSOFT_CLIENT_ID required.
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from app.auth.permissions import (
     COLLECTIONS_CREATE,
     PRESET_ADMIN,
@@ -24,7 +22,6 @@ from app.auth.permissions import (
     WORKFLOWS_CREATE,
     WORKFLOWS_READ,
 )
-from app.repositories.auth_repositories import SessionRepository, UserRepository
 from tests.fixtures.auth_fixtures import (
     ADMIN_USER_ID,
     EDITOR_USER_ID,
@@ -32,7 +29,6 @@ from tests.fixtures.auth_fixtures import (
     WEBHOOK_ADMIN_USER_ID,
     WEBHOOK_OWNER_USER_ID,
     make_admin_client,
-    make_editor_client,
     make_invited_user_client,
     make_logged_out_client,
     make_setup_mode_client,
@@ -40,7 +36,6 @@ from tests.fixtures.auth_fixtures import (
     make_webhook_admin_client,
     make_webhook_owner_client,
 )
-
 
 # ---------------------------------------------------------------------------
 # make_logged_out_client
@@ -203,26 +198,27 @@ def test_webhook_admin_client_has_admin_role() -> None:
 
 def test_admin_fixture_can_access_protected_route() -> None:
     """Admin fixture successfully authenticates against a protected route."""
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
     from app.routes._legacy_disabled import workflows
+    from fastapi import FastAPI
 
     app = FastAPI()
     app.include_router(workflows.router)
 
     client, patches = make_admin_client(app=app)
-    with patches, patch.object(
-        workflows,
-        "svc_list_workflows",
-        new=AsyncMock(
-            return_value={
-                "workflows": [],
-                "total": 0,
-                "skip": 0,
-                "limit": 20,
-                "hasMore": False,
-            }
+    with (
+        patches,
+        patch.object(
+            workflows,
+            "svc_list_workflows",
+            new=AsyncMock(
+                return_value={
+                    "workflows": [],
+                    "total": 0,
+                    "skip": 0,
+                    "limit": 20,
+                    "hasMore": False,
+                }
+            ),
         ),
     ):
         response = client.get("/api/workflows")
@@ -232,9 +228,8 @@ def test_admin_fixture_can_access_protected_route() -> None:
 
 def test_viewer_fixture_cannot_create_workflow() -> None:
     """Viewer fixture is rejected when attempting a write operation."""
-    from fastapi import FastAPI
-
     from app.routes._legacy_disabled import workflows
+    from fastapi import FastAPI
 
     app = FastAPI()
     app.include_router(workflows.router)
@@ -248,9 +243,8 @@ def test_viewer_fixture_cannot_create_workflow() -> None:
 
 def test_logged_out_fixture_cannot_list_workflows() -> None:
     """Logged-out fixture returns 401 on any authenticated route."""
-    from fastapi import FastAPI
-
     from app.routes._legacy_disabled import workflows
+    from fastapi import FastAPI
 
     app = FastAPI()
     app.include_router(workflows.router)

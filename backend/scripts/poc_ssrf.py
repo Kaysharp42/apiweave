@@ -7,13 +7,13 @@ Usage:
     python poc_ssrf.py --expected=blocked     # default: assert exploit is blocked
     python poc_ssrf.py --expected=vulnerable  # assert exploit still works (pre-fix)
 """
+
 import argparse
 import json
 import os
 import sys
 import time
 import urllib.request
-from urllib.parse import urlencode
 
 SESSION = os.environ.get("APIWEAVE_SESSION")
 CSRF = os.environ.get("APIWEAVE_CSRF")
@@ -151,42 +151,43 @@ def main():
     body = res.get("body", {})
     result_status = res.get("status", "")
     error_msg = res.get("error", "")
-    body_str = json.dumps(body) if isinstance(body, (dict, list)) else str(body)
+    json.dumps(body) if isinstance(body, (dict, list)) else str(body)
 
-    ssrf_reached = (
-        isinstance(body, dict) and body.get("status") == "healthy"
-    )
+    ssrf_reached = isinstance(body, dict) and body.get("status") == "healthy"
 
     if expected == "blocked":
         # PASS if: node result status is error OR body does NOT contain healthy
         if result_status == "error" or not ssrf_reached:
-            detail = (
-                f"SSRF blocked: status={result_status}, "
-                f"body_has_healthy={ssrf_reached}"
-            )
+            detail = f"SSRF blocked: status={result_status}, " f"body_has_healthy={ssrf_reached}"
             if error_msg:
                 detail += f", error={error_msg[:120]}"
             results.append(("SSRF blocked (no internal reach)", True, detail))
         else:
-            results.append((
-                "SSRF blocked (no internal reach)",
-                False,
-                f"SSRF NOT blocked — executor reached {target} and got healthy response",
-            ))
+            results.append(
+                (
+                    "SSRF blocked (no internal reach)",
+                    False,
+                    f"SSRF NOT blocked — executor reached {target} and got healthy response",
+                )
+            )
     else:  # vulnerable
         # PASS if: body contains "status": "healthy"
         if ssrf_reached:
-            results.append((
-                "SSRF vulnerable (internal reach confirmed)",
-                True,
-                f"Executor reached {target} — SSRF confirmed",
-            ))
+            results.append(
+                (
+                    "SSRF vulnerable (internal reach confirmed)",
+                    True,
+                    f"Executor reached {target} — SSRF confirmed",
+                )
+            )
         else:
-            results.append((
-                "SSRF vulnerable (internal reach confirmed)",
-                False,
-                f"Expected SSRF to succeed but it did not — status={result_status}, error={error_msg[:120]}",
-            ))
+            results.append(
+                (
+                    "SSRF vulnerable (internal reach confirmed)",
+                    False,
+                    f"Expected SSRF to succeed but it did not — status={result_status}, error={error_msg[:120]}",
+                )
+            )
 
     # Cleanup
     req(BASE, "DELETE", f"/api/workflows/{workflow_id}")
@@ -206,7 +207,9 @@ def main():
     # Save evidence
     evidence_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        ".omo", "evidence", "task-6-poc-ssrf.txt",
+        ".omo",
+        "evidence",
+        "task-6-poc-ssrf.txt",
     )
     try:
         os.makedirs(os.path.dirname(evidence_path), exist_ok=True)

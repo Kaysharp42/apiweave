@@ -1,18 +1,18 @@
-import { useState, useCallback, type ChangeEvent } from 'react';
-import { Plus, Trash2, Image } from 'lucide-react';
-import { toast } from 'sonner';
-import type { FileUpload } from '../types/FileUpload';
-import type { FileUploadSectionProps } from '../types';
+import { useState, useCallback, type ChangeEvent } from "react";
+import { Plus, Trash2, Image } from "lucide-react";
+import { toast } from "sonner";
+import type { FileUpload } from "../types/FileUpload";
+import type { FileUploadSectionProps } from "../types";
 
 // Re-export for backward compatibility
-export type { FileUpload } from '../types/FileUpload';
+export type { FileUpload } from "../types/FileUpload";
 
 const EMPTY_FILE_UPLOADS: FileUpload[] = [];
 const EMPTY_VARIABLES: Record<string, unknown> = {};
 
 interface FormData {
   name: string;
-  type: FileUpload['type'];
+  type: FileUpload["type"];
   value: string;
   fieldName: string;
   mimeType: string;
@@ -20,12 +20,12 @@ interface FormData {
 }
 
 const defaultFormData: FormData = {
-  name: '',
-  type: 'base64',
-  value: '',
-  fieldName: 'file',
-  mimeType: 'application/octet-stream',
-  description: '',
+  name: "",
+  type: "base64",
+  value: "",
+  fieldName: "file",
+  mimeType: "application/octet-stream",
+  description: "",
 };
 
 export default function FileUploadSection({
@@ -46,13 +46,13 @@ export default function FileUploadSection({
       const base64String = event.target?.result as string;
       setFormData((prev) => ({
         ...prev,
-        type: 'base64',
+        type: "base64",
         value: base64String,
-        mimeType: file.type || 'application/octet-stream',
+        mimeType: file.type || "application/octet-stream",
         name: file.name,
       }));
 
-      if (file.type.startsWith('image/')) {
+      if (file.type.startsWith("image/")) {
         setPreviewImage(base64String);
       }
     };
@@ -60,8 +60,12 @@ export default function FileUploadSection({
   }, []);
 
   const handleAddFile = () => {
-    if (!formData.name.trim() || !formData.value.trim() || !formData.fieldName.trim()) {
-      toast.error('Please fill in name, value, and field name');
+    if (
+      !formData.name.trim() ||
+      !formData.value.trim() ||
+      !formData.fieldName.trim()
+    ) {
+      toast.error("Please fill in name, value, and field name");
       return;
     }
 
@@ -96,21 +100,30 @@ export default function FileUploadSection({
       <div className="space-y-1 mb-2">
         {fileUploads.length > 0 ? (
           fileUploads.map((file, idx) => (
-            <div key={`${file.fieldName}-${file.name}`} className="flex gap-1 items-center text-[9px] p-1 bg-surface dark:bg-surface-dark/30 rounded border border-border dark:border-border-dark">
+            <div
+              key={`${file.fieldName}-${file.name}`}
+              className="flex gap-1 items-center text-[9px] p-1 bg-surface dark:bg-surface-dark/30 rounded border border-border dark:border-border-dark"
+            >
               <div className="flex-1">
-                <div className="font-semibold text-text-primary dark:text-text-primary-dark">{file.name}</div>
+                <div className="font-semibold text-text-primary dark:text-text-primary-dark">
+                  {file.name}
+                </div>
                 <div className="text-[8px] text-text-muted dark:text-text-muted-dark">
-                  Type: <span className="font-mono">{file.type}</span> | Field: <span className="font-mono">{file.fieldName}</span>
+                  Type: <span className="font-mono">{file.type}</span> | Field:{" "}
+                  <span className="font-mono">{file.fieldName}</span>
                 </div>
                 {file.description && (
-                  <div className="text-[8px] text-text-muted dark:text-text-muted-dark italic">{file.description}</div>
-                )}
-                {file.type === 'base64' && file.value.startsWith('data:image') && (
-                  <div className="mt-0.5 text-primary dark:text-primary-dark flex items-center gap-1">
-                    <Image className="w-3 h-3" />
-                    Image preview available
+                  <div className="text-[8px] text-text-muted dark:text-text-muted-dark italic">
+                    {file.description}
                   </div>
                 )}
+                {file.type === "base64" &&
+                  file.value.startsWith("data:image") && (
+                    <div className="mt-0.5 text-primary dark:text-primary-dark flex items-center gap-1">
+                      <Image className="w-3 h-3" />
+                      Image preview available
+                    </div>
+                  )}
               </div>
               <button
                 type="button"
@@ -123,7 +136,9 @@ export default function FileUploadSection({
             </div>
           ))
         ) : (
-          <div className="text-[9px] text-text-muted dark:text-text-muted-dark italic">No files attached</div>
+          <div className="text-[9px] text-text-muted dark:text-text-muted-dark italic">
+            No files attached
+          </div>
         )}
       </div>
 
@@ -139,7 +154,10 @@ export default function FileUploadSection({
       ) : (
         <div className="space-y-1 p-1.5 bg-surface-overlay dark:bg-surface-dark-overlay rounded border border-dashed border-border dark:border-border-dark">
           <div>
-            <label htmlFor="file-upload-name" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label
+              htmlFor="file-upload-name"
+              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
+            >
               File Name (identifier)
             </label>
             <input
@@ -148,12 +166,17 @@ export default function FileUploadSection({
               placeholder="e.g., resume, invoice"
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
               value={formData.name}
-              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, name: e.target.value }))
+              }
             />
           </div>
 
           <div>
-            <label htmlFor="file-upload-reference-type" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label
+              htmlFor="file-upload-reference-type"
+              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
+            >
               Reference Type
             </label>
             <select
@@ -161,7 +184,11 @@ export default function FileUploadSection({
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
               value={formData.type}
               onChange={(e) => {
-                setFormData((prev) => ({ ...prev, type: e.target.value as FileUpload['type'], value: '' }));
+                setFormData((prev) => ({
+                  ...prev,
+                  type: e.target.value as FileUpload["type"],
+                  value: "",
+                }));
                 setPreviewImage(null);
               }}
             >
@@ -173,11 +200,11 @@ export default function FileUploadSection({
 
           <div>
             <div className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
-              {formData.type === 'base64' && 'Upload File or Paste Base64'}
-              {formData.type === 'path' && 'File Path'}
-              {formData.type === 'variable' && 'Variable Reference'}
+              {formData.type === "base64" && "Upload File or Paste Base64"}
+              {formData.type === "path" && "File Path"}
+              {formData.type === "variable" && "Variable Reference"}
             </div>
-            {formData.type === 'base64' ? (
+            {formData.type === "base64" ? (
               <div className="space-y-1">
                 <input
                   type="file"
@@ -192,17 +219,21 @@ export default function FileUploadSection({
                   className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={2}
                   value={formData.value}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, value: e.target.value }))}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, value: e.target.value }))
+                  }
                 />
               </div>
-            ) : formData.type === 'path' ? (
+            ) : formData.type === "path" ? (
               <textarea
                 aria-label="File path"
                 placeholder={`e.g., /uploads/document.pdf\nor {{env.UPLOAD_DIR}}/{{variables.filename}}`}
                 className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                 rows={2}
                 value={formData.value}
-                onChange={(e) => setFormData((prev) => ({ ...prev, value: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, value: e.target.value }))
+                }
               />
             ) : (
               <textarea
@@ -211,13 +242,18 @@ export default function FileUploadSection({
                 className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                 rows={2}
                 value={formData.value}
-                onChange={(e) => setFormData((prev) => ({ ...prev, value: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, value: e.target.value }))
+                }
               />
             )}
           </div>
 
           <div>
-            <label htmlFor="file-upload-html-field-name" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label
+              htmlFor="file-upload-html-field-name"
+              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
+            >
               HTML Field Name
             </label>
             <input
@@ -226,12 +262,17 @@ export default function FileUploadSection({
               placeholder="e.g., document, image, attachment"
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
               value={formData.fieldName}
-              onChange={(e) => setFormData((prev) => ({ ...prev, fieldName: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, fieldName: e.target.value }))
+              }
             />
           </div>
 
           <div>
-            <label htmlFor="file-upload-mime-type" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label
+              htmlFor="file-upload-mime-type"
+              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
+            >
               MIME Type
             </label>
             <input
@@ -240,12 +281,17 @@ export default function FileUploadSection({
               placeholder="e.g., application/pdf, image/png"
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
               value={formData.mimeType}
-              onChange={(e) => setFormData((prev) => ({ ...prev, mimeType: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, mimeType: e.target.value }))
+              }
             />
           </div>
 
           <div>
-            <label htmlFor="file-upload-description" className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
+            <label
+              htmlFor="file-upload-description"
+              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
+            >
               Description (optional)
             </label>
             <input
@@ -254,7 +300,12 @@ export default function FileUploadSection({
               placeholder="e.g., User resume document"
               className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
               value={formData.description}
-              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  description: e.target.value,
+                }))
+              }
             />
           </div>
 
@@ -289,36 +340,39 @@ export default function FileUploadSection({
             </button>
           </div>
 
-          {formData.type === 'variable' && Object.keys(variables).length > 0 && (
-            <div className="text-[8px] text-text-muted dark:text-text-muted-dark p-1 bg-surface dark:bg-surface-dark rounded">
-              <strong>Available variables:</strong>
-              <div className="flex flex-wrap gap-1 mt-0.5">
-                {Object.keys(variables).map((varName) => (
-                  <button
-                    key={varName}
-                    type="button"
-                    className="bg-surface-raised dark:bg-surface-dark-raised px-1 py-0.5 rounded cursor-pointer hover:bg-primary/20 dark:hover:bg-primary/30"
-                    onClick={() => setFormData((prev) => ({
-                      ...prev,
-                      value: `{{variables.${varName}}}`,
-                    }))}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
+          {formData.type === "variable" &&
+            Object.keys(variables).length > 0 && (
+              <div className="text-[8px] text-text-muted dark:text-text-muted-dark p-1 bg-surface dark:bg-surface-dark rounded">
+                <strong>Available variables:</strong>
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {Object.keys(variables).map((varName) => (
+                    <button
+                      key={varName}
+                      type="button"
+                      className="bg-surface-raised dark:bg-surface-dark-raised px-1 py-0.5 rounded cursor-pointer hover:bg-primary/20 dark:hover:bg-primary/30"
+                      onClick={() =>
                         setFormData((prev) => ({
                           ...prev,
                           value: `{{variables.${varName}}}`,
-                        }));
+                        }))
                       }
-                    }}
-                    title="Click to insert"
-                  >
-                    {`{{variables.${varName}}}`}
-                  </button>
-                ))}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setFormData((prev) => ({
+                            ...prev,
+                            value: `{{variables.${varName}}}`,
+                          }));
+                        }
+                      }}
+                      title="Click to insert"
+                    >
+                      {`{{variables.${varName}}}`}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
         </div>
       )}
     </div>

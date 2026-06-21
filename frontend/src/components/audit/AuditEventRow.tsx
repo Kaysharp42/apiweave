@@ -1,4 +1,4 @@
-import type { AuditEvent } from '../../types';
+import type { AuditEvent } from "../../types";
 
 interface AuditEventRowProps {
   event: AuditEvent;

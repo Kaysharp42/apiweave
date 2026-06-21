@@ -1,15 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
-import { ChevronDown } from 'lucide-react';
-import type { SelectOption, ButtonSelectProps } from '../types';
+import { useState, useRef, useEffect } from "react";
+import { ChevronDown } from "lucide-react";
+import type { SelectOption, ButtonSelectProps } from "../types";
 
 const EMPTY_OPTIONS: SelectOption[] = [];
 
 export default function ButtonSelect({
   options = EMPTY_OPTIONS,
-  value = '',
+  value = "",
   onChange = () => {},
-  placeholder = 'Select',
-  buttonClass = '',
+  placeholder = "Select",
+  buttonClass = "",
 }: ButtonSelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -20,8 +20,8 @@ export default function ButtonSelect({
         setOpen(false);
       }
     };
-    document.addEventListener('click', onDocClick);
-    return () => document.removeEventListener('click', onDocClick);
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
   }, []);
 
   const selected = options.find((o) => o.value === value);
@@ -51,8 +51,8 @@ export default function ButtonSelect({
                 }}
                 className={`w-full text-left px-3 py-2 text-sm transition-colors ${
                   opt.value === value
-                    ? 'bg-primary/10 dark:bg-primary-light/10 text-primary dark:text-primary-light font-medium font-mono'
-                    : 'text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
+                    ? "bg-primary/10 dark:bg-primary-light/10 text-primary dark:text-primary-light font-medium font-mono"
+                    : "text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
                 }`}
               >
                 {opt.label}

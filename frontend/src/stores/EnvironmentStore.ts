@@ -1,7 +1,7 @@
-import { create } from 'zustand';
-import type { ScopedEnvironment } from '../types/ScopedEnvironment';
-import { authenticatedFetch } from '../utils/authenticatedApi';
-import * as scopedApi from '../utils/scopedApi';
+import { create } from "zustand";
+import type { ScopedEnvironment } from "../types/ScopedEnvironment";
+import { authenticatedFetch } from "../utils/authenticatedApi";
+import * as scopedApi from "../utils/scopedApi";
 
 interface EnvironmentState {
   environments: ScopedEnvironment[];
@@ -31,13 +31,15 @@ const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
     set({ isLoading: true });
     try {
       const response = await authenticatedFetch(
-        scopedApi.environmentsUrl(workspaceId, 'all-accessible'),
+        scopedApi.environmentsUrl(workspaceId, "all-accessible"),
       );
       if (response.ok) {
         const data: ScopedEnvironment[] = await response.json();
         set({ environments: data });
       }
-    } catch { /* silent */ } finally {
+    } catch {
+      /* silent */
+    } finally {
       set({ isLoading: false });
     }
   },
@@ -62,7 +64,7 @@ const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
     set((s) => ({ environmentVersion: s.environmentVersion + 1 })),
 
   setDefaultEnv: (envId: string) => {
-    localStorage.setItem('defaultEnvironment', envId);
+    localStorage.setItem("defaultEnvironment", envId);
   },
 }));
 
@@ -86,7 +88,7 @@ export function getSelectedEnvironment(
   if (workflowEnvironmentId) {
     return workflowEnvironmentId;
   }
-  const globalDefault = localStorage.getItem('defaultEnvironment');
+  const globalDefault = localStorage.getItem("defaultEnvironment");
   if (globalDefault) {
     return globalDefault;
   }

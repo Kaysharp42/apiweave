@@ -1,36 +1,48 @@
-import { useState, useEffect, createContext, type ReactNode, useRef, useMemo } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Home from './pages/Home';
-import LandingPage from './pages/LandingPage';
-import LoginPage from './pages/LoginPage';
-import SetupPage from './pages/SetupPage';
-import InvitePage from './pages/InvitePage';
-import AdminUsersPage from './pages/AdminUsersPage';
-import AdminDomainsPage from './pages/AdminDomainsPage';
-import AccountSettingsPage from './pages/AccountSettingsPage';
-import InviteAdminPage from './pages/InviteAdminPage';
-import AuditPage from './pages/AuditPage';
-import { WorkspaceSecretsPage } from './pages/WorkspaceSecretsPage';
-import { WorkspaceTokensPage } from './pages/WorkspaceTokensPage';
-import WorkspaceEnvironmentsPage from './pages/WorkspaceEnvironmentsPage';
-import OrgSettingsPage from './pages/OrgSettingsPage';
-import { WorkspaceProjectPage } from './pages/WorkspaceProjectPage';
-import { NotFoundPage } from './pages/NotFoundPage';
-import { PaletteProvider } from './contexts/PaletteContext';
-import { WorkspaceProvider } from './contexts/WorkspaceContext';
-import { Toast } from './components/atoms/Toast';
-import { AuthProvider } from './auth/AuthProvider';
-import { useAuth } from './auth/useAuth';
-import { AdminRoute } from './auth/AdminRoute';
-import MainLayout from './components/layout/MainLayout';
-import useNavigationStore from './stores/NavigationStore';
-import { authenticatedJson } from './utils/authenticatedApi';
-import API_BASE_URL from './utils/api';
-import type { Workspace } from './types/Workspace';
-import type { Organization } from './types/Organization';
-import type { WorkspacePageShellProps } from './types/WorkspacePageShellProps';
+import {
+  useState,
+  useEffect,
+  createContext,
+  type ReactNode,
+  useRef,
+  useMemo,
+} from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+import Home from "./pages/Home";
+import LandingPage from "./pages/LandingPage";
+import LoginPage from "./pages/LoginPage";
+import SetupPage from "./pages/SetupPage";
+import InvitePage from "./pages/InvitePage";
+import AdminUsersPage from "./pages/AdminUsersPage";
+import AdminDomainsPage from "./pages/AdminDomainsPage";
+import AccountSettingsPage from "./pages/AccountSettingsPage";
+import InviteAdminPage from "./pages/InviteAdminPage";
+import AuditPage from "./pages/AuditPage";
+import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
+import { WorkspaceTokensPage } from "./pages/WorkspaceTokensPage";
+import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
+import OrgSettingsPage from "./pages/OrgSettingsPage";
+import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
+import { PaletteProvider } from "./contexts/PaletteContext";
+import { WorkspaceProvider } from "./contexts/WorkspaceContext";
+import { Toast } from "./components/atoms/Toast";
+import { AuthProvider } from "./auth/AuthProvider";
+import { useAuth } from "./auth/useAuth";
+import { AdminRoute } from "./auth/AdminRoute";
+import MainLayout from "./components/layout/MainLayout";
+import useNavigationStore from "./stores/NavigationStore";
+import { authenticatedJson } from "./utils/authenticatedApi";
+import API_BASE_URL from "./utils/api";
+import type { Workspace } from "./types/Workspace";
+import type { Organization } from "./types/Organization";
+import type { WorkspacePageShellProps } from "./types/WorkspacePageShellProps";
 
-const STORAGE_PREFIX = 'apiweave:v1:';
+const STORAGE_PREFIX = "apiweave:v1:";
 
 const getStoredValue = (key: string): string | null => {
   const versionedKey = `${STORAGE_PREFIX}${key}`;
@@ -63,7 +75,7 @@ export const AppContext = createContext<AppContextValue>({
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { status, deploymentMode, modeLoaded, error } = useAuth();
 
-  if (status === 'loading' || !modeLoaded) {
+  if (status === "loading" || !modeLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
         <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
@@ -74,7 +86,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   // In single-user mode, an unauthenticated /me response is a backend bug,
   // not a sign that the user needs to log in. Surface the error instead
   // of redirecting to /login (which would just bounce back via LoginEntry).
-  if (status === 'unauthenticated' && deploymentMode === 'single_user') {
+  if (status === "unauthenticated" && deploymentMode === "single_user") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
         <div className="max-w-md text-center">
@@ -95,7 +107,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     );
   }
 
-  if (status === 'unauthenticated') {
+  if (status === "unauthenticated") {
     return <Navigate to="/login" replace />;
   }
 
@@ -117,9 +129,11 @@ function DefaultWorkspaceRedirect() {
       ]);
       if (cancelled) return;
 
-      const workspace = response.workspaces.find((entry) => entry.isPersonal) ?? response.workspaces[0];
+      const workspace =
+        response.workspaces.find((entry) => entry.isPersonal) ??
+        response.workspaces[0];
       if (!workspace) {
-        setTargetPath('/setup');
+        setTargetPath("/setup");
         return;
       }
 
@@ -130,12 +144,12 @@ function DefaultWorkspaceRedirect() {
 
       const orgSlug = orgs.find((org) => org.orgId === workspace.orgId)?.slug;
       if (!orgSlug) {
-        setTargetPath('/login');
+        setTargetPath("/login");
         return;
       }
       setTargetPath(`/${orgSlug}/${workspace.slug}/workflows`);
     })().catch(() => {
-      if (!cancelled) setTargetPath('/login');
+      if (!cancelled) setTargetPath("/login");
     });
 
     return () => {
@@ -164,7 +178,7 @@ function AdminPageShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hasSet.current) {
-      setNavState('settings');
+      setNavState("settings");
       hasSet.current = true;
     }
   }, [setNavState]);
@@ -180,7 +194,10 @@ function AdminPageShell({ children }: { children: ReactNode }) {
   );
 }
 
-function WorkspacePageShell({ children, navState = 'settings' }: WorkspacePageShellProps) {
+function WorkspacePageShell({
+  children,
+  navState = "settings",
+}: WorkspacePageShellProps) {
   const setNavState = useNavigationStore((state) => state.setNavState);
   const hasSet = useRef(false);
 
@@ -207,9 +224,10 @@ function WorkspacePageShell({ children, navState = 'settings' }: WorkspacePageSh
 // ---------------------------------------------------------------------------
 
 function LoginEntry() {
-  const { status, isSingleUser, isAuthenticated, modeLoaded, error } = useAuth();
+  const { status, isSingleUser, isAuthenticated, modeLoaded, error } =
+    useAuth();
 
-  if (status === 'loading' || !modeLoaded) {
+  if (status === "loading" || !modeLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
         <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
@@ -249,9 +267,10 @@ function LoginEntry() {
 }
 
 function SetupEntry() {
-  const { status, isSingleUser, isAuthenticated, modeLoaded, error } = useAuth();
+  const { status, isSingleUser, isAuthenticated, modeLoaded, error } =
+    useAuth();
 
-  if (status === 'loading' || !modeLoaded) {
+  if (status === "loading" || !modeLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
         <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
@@ -288,9 +307,12 @@ function SetupEntry() {
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     try {
-      const stored = getStoredValue('darkMode');
-      if (stored !== null) return stored === 'true';
-      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const stored = getStoredValue("darkMode");
+      if (stored !== null) return stored === "true";
+      return (
+        window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches
+      );
     } catch {
       return false;
     }
@@ -298,8 +320,8 @@ function App() {
 
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
     try {
-      const stored = getStoredValue('autoSaveEnabled');
-      if (stored !== null) return stored === 'true';
+      const stored = getStoredValue("autoSaveEnabled");
+      if (stored !== null) return stored === "true";
       return true;
     } catch {
       return true;
@@ -309,13 +331,13 @@ function App() {
   useEffect(() => {
     try {
       if (darkMode) {
-        document.documentElement.classList.add('dark');
-        document.documentElement.setAttribute('data-theme', 'apiweave-dark');
+        document.documentElement.classList.add("dark");
+        document.documentElement.setAttribute("data-theme", "apiweave-dark");
       } else {
-        document.documentElement.classList.remove('dark');
-        document.documentElement.setAttribute('data-theme', 'apiweave');
+        document.documentElement.classList.remove("dark");
+        document.documentElement.setAttribute("data-theme", "apiweave");
       }
-      setStoredValue('darkMode', darkMode ? 'true' : 'false');
+      setStoredValue("darkMode", darkMode ? "true" : "false");
     } catch {
       // ignore
     }
@@ -323,7 +345,7 @@ function App() {
 
   useEffect(() => {
     try {
-      setStoredValue('autoSaveEnabled', autoSaveEnabled ? 'true' : 'false');
+      setStoredValue("autoSaveEnabled", autoSaveEnabled ? "true" : "false");
     } catch {
       // ignore
     }
@@ -340,10 +362,7 @@ function App() {
         <AuthProvider>
           <Router>
             <Routes>
-              <Route
-                path="/"
-                element={<LandingPage />}
-              />
+              <Route path="/" element={<LandingPage />} />
               <Route
                 path="/app"
                 element={

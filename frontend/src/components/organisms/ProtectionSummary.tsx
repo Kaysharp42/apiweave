@@ -1,12 +1,19 @@
-import { Shield, ShieldCheck, Users, CheckCircle2, XCircle, Key } from 'lucide-react';
-import { Badge } from '../atoms/Badge';
-import { Button } from '../atoms/Button';
-import type { ProtectionSummaryProps } from '../../types';
+import {
+  Shield,
+  ShieldCheck,
+  Users,
+  CheckCircle2,
+  XCircle,
+  Key,
+} from "lucide-react";
+import { Badge } from "../atoms/Badge";
+import { Button } from "../atoms/Button";
+import type { ProtectionSummaryProps } from "../../types";
 
 export function ProtectionSummary({
   protection,
   onEdit,
-  className = '',
+  className = "",
 }: ProtectionSummaryProps) {
   if (!protection) {
     return (
@@ -30,7 +37,7 @@ export function ProtectionSummary({
   }
 
   const reviewerCount = protection.requiredReviewers.length;
-  const bypassEnabled = protection.bypassPolicy === 'trusted_token_only';
+  const bypassEnabled = protection.bypassPolicy === "trusted_token_only";
   const allowlistCount = protection.bypassAllowlist.length;
 
   return (
@@ -56,7 +63,7 @@ export function ProtectionSummary({
         <div className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark">
           <Users className="w-3.5 h-3.5 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />
           <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
-            {reviewerCount} reviewer{reviewerCount !== 1 ? 's' : ''}
+            {reviewerCount} reviewer{reviewerCount !== 1 ? "s" : ""}
           </span>
         </div>
 
@@ -84,7 +91,7 @@ export function ProtectionSummary({
           <Key className="w-3.5 h-3.5 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />
           {bypassEnabled ? (
             <Badge variant="warning" size="xs">
-              {allowlistCount} token{allowlistCount !== 1 ? 's' : ''}
+              {allowlistCount} token{allowlistCount !== 1 ? "s" : ""}
             </Badge>
           ) : (
             <span className="text-xs text-text-muted dark:text-text-muted-dark">

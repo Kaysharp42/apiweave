@@ -3,18 +3,18 @@ Task 14 — Executor workspace/environment context and scoped secret resolution.
 
 QA Scenarios:
 - env-override: same secret at org/workspace/environment → environment value wins
-- no-runtime-secrets: runtime_secrets field is rejected by executor
+- no-runtime-secrets: runtime_secrets parameter was removed (TypeError if passed)
 - url-blocked: {{secrets.*}} in URL/query/path still raises ValueError
 """
+
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.modules.setdefault("app.services.run_service", MagicMock())
 
 from app.runner.executor import RunContext, WorkflowExecutor
-
 
 _ENV_SECRET_VALUE = "env-scope-value-t14"
 _WS_SECRET_VALUE = "ws-scope-value-t14"
@@ -31,31 +31,23 @@ def _make_secret_doc(name: str, ciphertext: str = "Y2lwaGVy", key_id: str = "kp-
 
 
 class TestRuntimeSecretsRejected:
-    """runtime_secrets field is rejected — all secrets must be stored before runs."""
+    """runtime_secrets parameter was removed — passing it raises TypeError."""
 
     def test_executor_rejects_runtime_secrets(self):
-        with pytest.raises(ValueError, match="runtime_secrets field is rejected"):
+        """Passing runtime_secrets kwarg raises TypeError (unknown parameter)."""
+        with pytest.raises(TypeError):
             WorkflowExecutor(
                 run_id="run-t14-reject",
                 workflow_id="wf-t14-reject",
                 runtime_secrets={"API_TOKEN": "should-not-be-accepted"},
             )
 
-    def test_executor_accepts_none_runtime_secrets(self):
+    def test_executor_constructs_without_runtime_secrets(self):
         ex = WorkflowExecutor(
             run_id="run-t14-ok",
             workflow_id="wf-t14-ok",
-            runtime_secrets=None,
         )
         assert ex.run_id == "run-t14-ok"
-
-    def test_executor_accepts_empty_runtime_secrets(self):
-        ex = WorkflowExecutor(
-            run_id="run-t14-empty",
-            workflow_id="wf-t14-empty",
-            runtime_secrets={},
-        )
-        assert ex.run_id == "run-t14-empty"
 
 
 class TestRunContext:
@@ -132,20 +124,28 @@ class TestEnvOverride:
         async def mock_audit(**kwargs):
             return "resolved-value"
 
-        with patch(
-            "app.repositories.secret_repository.SecretRepository.get_by_scope_and_name",
-            side_effect=mock_get_by_scope_and_name,
-        ), patch(
-            "app.services.scoped_secret_resolver.resolve_secret",
-            side_effect=mock_resolve_secret,
-        ), patch(
-            "app.services.audit_resolver_helper.resolve_secret_with_audit",
-            side_effect=mock_audit,
+        with (
+            patch(
+                "app.repositories.secret_repository.SecretRepository.get_by_scope_and_name",
+                side_effect=mock_get_by_scope_and_name,
+            ),
+            patch(
+                "app.services.scoped_secret_resolver.resolve_secret",
+                side_effect=mock_resolve_secret,
+            ),
+            patch(
+                "app.services.audit_resolver_helper.resolve_secret_with_audit",
+                side_effect=mock_audit,
+            ),
         ):
             await ex._resolve_single_secret(
                 secret_name,
                 ctx,
-                type("SecretRepo", (), {"get_by_scope_and_name": staticmethod(mock_get_by_scope_and_name)}),
+                type(
+                    "SecretRepo",
+                    (),
+                    {"get_by_scope_and_name": staticmethod(mock_get_by_scope_and_name)},
+                ),
                 mock_resolve_secret,
                 mock_audit,
             )
@@ -191,7 +191,11 @@ class TestEnvOverride:
             run_context=ctx,
         )
         result = await ex._resolve_single_secret(
-            "API_TOKEN", ctx, FakeRepo, mock_resolve, mock_audit,
+            "API_TOKEN",
+            ctx,
+            FakeRepo,
+            mock_resolve,
+            mock_audit,
         )
         assert result == _WS_SECRET_VALUE
 
@@ -230,7 +234,11 @@ class TestEnvOverride:
             run_context=ctx,
         )
         result = await ex._resolve_single_secret(
-            "API_TOKEN", ctx, FakeRepo, mock_resolve, mock_audit,
+            "API_TOKEN",
+            ctx,
+            FakeRepo,
+            mock_resolve,
+            mock_audit,
         )
         assert result == _ORG_SECRET_VALUE
 

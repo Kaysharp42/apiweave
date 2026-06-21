@@ -10,6 +10,7 @@ Stdio safety:
     - All diagnostics go to stderr via logging.
     - The .env file is loaded from the working directory.
 """
+
 import logging
 import sys
 from pathlib import Path

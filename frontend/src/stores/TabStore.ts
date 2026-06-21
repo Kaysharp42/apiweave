@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import type { WorkspaceTab } from '../types/WorkspaceTab';
-import type { Workflow } from '../types/Workflow';
+import { create } from "zustand";
+import type { WorkspaceTab } from "../types/WorkspaceTab";
+import type { Workflow } from "../types/Workflow";
 
 interface TabStoreState {
   tabs: WorkspaceTab[];
@@ -29,15 +29,15 @@ const useTabStore = create<TabStoreState>()((set, get) => ({
     if (existing) {
       set((s) => ({
         activeTabId: existing.id,
-        tabs: s.tabs.map((t) => (
+        tabs: s.tabs.map((t) =>
           t.workflowId === workflow.workflowId
             ? {
                 ...t,
                 name: workflow.name || t.name,
                 workflow,
               }
-            : t
-        )),
+            : t,
+        ),
       }));
       return;
     }
@@ -45,7 +45,7 @@ const useTabStore = create<TabStoreState>()((set, get) => ({
     const newTab: WorkspaceTab = {
       id: workflow.workflowId,
       workflowId: workflow.workflowId,
-      name: workflow.name || 'Untitled',
+      name: workflow.name || "Untitled",
       workflow,
       isDirty: false,
     };

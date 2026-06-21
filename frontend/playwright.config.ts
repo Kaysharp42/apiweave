@@ -1,4 +1,4 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Playwright configuration for APIWeave redesign QA harness.
@@ -7,36 +7,36 @@ import { defineConfig, devices } from '@playwright/test';
  * Screenshots and traces are written to `.omo/evidence/`.
  */
 export default defineConfig({
-  testDir: './e2e',
+  testDir: "./e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: [["list"], ["html", { open: "never" }]],
   timeout: 60_000,
   expect: { timeout: 10_000 },
 
-  outputDir: '.omo/evidence/playwright-results',
+  outputDir: ".omo/evidence/playwright-results",
 
   use: {
-    baseURL: 'http://127.0.0.1:3000',
-    trace: 'on-first-retry',
-    screenshot: 'on',
-    video: 'retain-on-failure',
+    baseURL: "http://127.0.0.1:3000",
+    trace: "on-first-retry",
+    screenshot: "on",
+    video: "retain-on-failure",
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
   },
 
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
     },
   ],
 
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1',
-    url: 'http://127.0.0.1:3000',
+    command: "npm run dev -- --host 127.0.0.1",
+    url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
   },

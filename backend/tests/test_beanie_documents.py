@@ -5,10 +5,9 @@ Test Beanie document models to verify they work correctly
 import uuid
 
 import pytest
-from pymongo.errors import ServerSelectionTimeoutError
-
 from app.database import close_db, connect_db
 from app.models import Collection, Environment, Run, Workflow
+from pymongo.errors import ServerSelectionTimeoutError
 
 
 @pytest.fixture(scope="function")
@@ -23,8 +22,9 @@ def _mongodb_available():
     """Check if MongoDB is reachable"""
     try:
         import asyncio
-        from motor.motor_asyncio import AsyncIOMotorClient
+
         from app.config import settings
+        from motor.motor_asyncio import AsyncIOMotorClient
 
         async def _check():
             client = AsyncIOMotorClient(settings.MONGODB_URL, serverSelectionTimeoutMS=2000)
@@ -81,7 +81,7 @@ class TestWorkflowDocument:
     async def test_workflow_tag_validation(self, setup_db):
         """Test workflow tag validation (max 10 tags)"""
         with pytest.raises(ValueError):
-            workflow = Workflow(
+            Workflow(
                 workflow_id=str(uuid.uuid4()),
                 name="Test Workflow",
                 tags=[
@@ -128,7 +128,7 @@ class TestRunDocument:
     async def test_run_status_enum(self, setup_db):
         """Test run status must be one of the enum values"""
         with pytest.raises(ValueError):
-            run = Run(
+            Run(
                 run_id=str(uuid.uuid4()),
                 workflow_id=str(uuid.uuid4()),
                 status="invalid_status",  # Invalid
@@ -203,7 +203,7 @@ class TestCollectionDocument:
     async def test_collection_color_validation(self, setup_db):
         """Test collection color must be valid hex"""
         with pytest.raises(ValueError):
-            collection = Collection(
+            Collection(
                 collection_id=str(uuid.uuid4()),
                 name="Test Collection",
                 color="invalid",  # Not a valid hex color

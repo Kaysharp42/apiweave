@@ -1,4 +1,4 @@
-import type { DryRunStats } from './DryRunStats';
+import type { DryRunStats } from "./DryRunStats";
 
 export interface DryRunResult {
   valid: boolean;

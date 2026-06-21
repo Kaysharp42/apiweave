@@ -1,12 +1,13 @@
-import { useRef, useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, Circle } from 'lucide-react';
-import { IconButton } from '../atoms/IconButton';
-import useTabStore from '../../stores/TabStore';
-import type { WorkspaceTab } from '../../types/WorkspaceTab';
-import type { ContextMenuState } from '../../types/ContextMenuState';
+import { useRef, useState, useEffect } from "react";
+import { X, ChevronLeft, ChevronRight, Circle } from "lucide-react";
+import { IconButton } from "../atoms/IconButton";
+import useTabStore from "../../stores/TabStore";
+import type { WorkspaceTab } from "../../types/WorkspaceTab";
+import type { ContextMenuState } from "../../types/ContextMenuState";
 
 export function TabBar() {
-  const { tabs, activeTabId, setActive, closeTab, closeOthers, closeAll } = useTabStore();
+  const { tabs, activeTabId, setActive, closeTab, closeOthers, closeAll } =
+    useTabStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const checkOverflowRef = useRef<() => void>(() => {});
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -25,18 +26,18 @@ export function TabBar() {
     const el = scrollRef.current;
     if (el) {
       const onScroll = () => checkOverflowRef.current();
-      el.addEventListener('scroll', onScroll, { passive: true });
+      el.addEventListener("scroll", onScroll, { passive: true });
       const ro = new ResizeObserver(onScroll);
       ro.observe(el);
       return () => {
-        el.removeEventListener('scroll', onScroll);
+        el.removeEventListener("scroll", onScroll);
         ro.disconnect();
       };
     }
   }, [tabs.length]);
 
   const scroll = (dir: number) => {
-    scrollRef.current?.scrollBy({ left: dir * 160, behavior: 'smooth' });
+    scrollRef.current?.scrollBy({ left: dir * 160, behavior: "smooth" });
   };
 
   const handleContextMenu = (e: React.MouseEvent, tabId: string) => {
@@ -47,8 +48,8 @@ export function TabBar() {
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
   }, [contextMenu]);
 
   const handleMouseDown = (e: React.MouseEvent, tabId: string) => {
@@ -80,21 +81,24 @@ export function TabBar() {
         {tabs.map((tab: WorkspaceTab) => {
           const isActive = tab.id === activeTabId;
           return (
-            <div key={tab.id} className="group relative flex items-stretch min-w-0 max-w-[220px] border-r border-border dark:border-border-dark">
+            <div
+              key={tab.id}
+              className="group relative flex items-stretch min-w-0 max-w-[220px] border-r border-border dark:border-border-dark"
+            >
               <button
                 type="button"
                 onClick={() => setActive(tab.id)}
                 onMouseDown={(e) => handleMouseDown(e, tab.id)}
                 onContextMenu={(e) => handleContextMenu(e, tab.id)}
                 className={[
-                  'relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors min-w-0 flex-1 cursor-pointer',
-                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2',
+                  "relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors min-w-0 flex-1 cursor-pointer",
+                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2",
                   isActive
-                    ? 'bg-surface-raised dark:bg-surface-dark-raised text-primary dark:text-primary-light font-medium'
-                    : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
+                    ? "bg-surface-raised dark:bg-surface-dark-raised text-primary dark:text-primary-light font-medium"
+                    : "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay",
                 ]
                   .filter(Boolean)
-                  .join(' ')}
+                  .join(" ")}
                 title={tab.name}
               >
                 {isActive && (
@@ -102,11 +106,12 @@ export function TabBar() {
                 )}
 
                 {tab.isDirty && (
-                  <Circle className="w-2 h-2 fill-current text-[var(--aw-status-warning)] flex-shrink-0" aria-label="Unsaved changes" />
+                  <Circle
+                    className="w-2 h-2 fill-current text-[var(--aw-status-warning)] flex-shrink-0"
+                    aria-label="Unsaved changes"
+                  />
                 )}
-                <span className="min-w-0 truncate">
-                  {tab.name}
-                </span>
+                <span className="min-w-0 truncate">{tab.name}</span>
               </button>
 
               <button
@@ -116,11 +121,11 @@ export function TabBar() {
                   closeTab(tab.id);
                 }}
                 className={[
-                  'px-1.5 rounded transition-colors self-center cursor-pointer flex-shrink-0',
-                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2',
-                  isActive ? '' : 'opacity-0 group-hover:opacity-100',
-                  'hover:bg-[var(--aw-status-error)]/20 hover:text-[var(--aw-status-error)]',
-                ].join(' ')}
+                  "px-1.5 rounded transition-colors self-center cursor-pointer flex-shrink-0",
+                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2",
+                  isActive ? "" : "opacity-0 group-hover:opacity-100",
+                  "hover:bg-[var(--aw-status-error)]/20 hover:text-[var(--aw-status-error)]",
+                ].join(" ")}
                 aria-label={`Close ${tab.name}`}
               >
                 <X className="w-3 h-3" />
@@ -149,14 +154,20 @@ export function TabBar() {
           <button
             type="button"
             className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
-            onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}
+            onClick={() => {
+              closeTab(contextMenu.tabId);
+              setContextMenu(null);
+            }}
           >
             Close
           </button>
           <button
             type="button"
             className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
-            onClick={() => { closeOthers(contextMenu.tabId); setContextMenu(null); }}
+            onClick={() => {
+              closeOthers(contextMenu.tabId);
+              setContextMenu(null);
+            }}
           >
             Close Others
           </button>
@@ -164,7 +175,10 @@ export function TabBar() {
           <button
             type="button"
             className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors text-[var(--aw-status-error)] cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
-            onClick={() => { closeAll(); setContextMenu(null); }}
+            onClick={() => {
+              closeAll();
+              setContextMenu(null);
+            }}
           >
             Close All
           </button>

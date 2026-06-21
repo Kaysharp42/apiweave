@@ -1,9 +1,18 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { BadgeCheck, LogOut, Settings, Shield } from 'lucide-react';
-import { useAuth } from '../../auth/useAuth';
-import { Button } from '../atoms/Button';
-import { getAccountDisplayName, getAccountInitials, getRoleSummary } from './accountMenuUtils';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { BadgeCheck, LogOut, Settings, Shield } from "lucide-react";
+import { useAuth } from "../../auth/useAuth";
+import { Button } from "../atoms/Button";
+import {
+  getAccountDisplayName,
+  getAccountInitials,
+  getRoleSummary,
+} from "./accountMenuUtils";
 
 export function AccountMenu() {
   const { user, isAuthenticated, logout, hasPermission } = useAuth();
@@ -12,9 +21,11 @@ export function AccountMenu() {
   const [avatarFailed, setAvatarFailed] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuItemRefs = useRef<Array<HTMLAnchorElement | HTMLButtonElement | null>>([]);
+  const menuItemRefs = useRef<
+    Array<HTMLAnchorElement | HTMLButtonElement | null>
+  >([]);
 
-  const isAdmin = hasPermission('users:invite');
+  const isAdmin = hasPermission("users:invite");
 
   useEffect(() => {
     setAvatarFailed(false);
@@ -24,26 +35,36 @@ export function AccountMenu() {
     if (!open) return undefined;
 
     const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     };
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setOpen(false);
         triggerRef.current?.focus();
       }
     };
 
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick as EventListener, { passive: true });
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener(
+      "touchstart",
+      handleOutsideClick as EventListener,
+      { passive: true },
+    );
+    document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('touchstart', handleOutsideClick as EventListener);
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener(
+        "touchstart",
+        handleOutsideClick as EventListener,
+      );
+      document.removeEventListener("keydown", handleEscape);
     };
   }, [open]);
 
@@ -68,14 +89,20 @@ export function AccountMenu() {
     item?.focus();
   };
 
-  const handleTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+  const handleTriggerKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (
+      event.key === "Enter" ||
+      event.key === " " ||
+      event.key === "ArrowDown"
+    ) {
       event.preventDefault();
       setOpen(true);
       requestAnimationFrame(() => focusMenuItem(0));
     }
 
-    if (event.key === 'Escape') {
+    if (event.key === "Escape") {
       event.preventDefault();
       closeMenu(true);
     }
@@ -84,7 +111,7 @@ export function AccountMenu() {
   const handleLogout = async () => {
     closeMenu();
     await logout();
-    navigate('/login', { replace: true });
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -212,5 +239,7 @@ export function AccountMenu() {
 }
 
 function CheckCircleLine() {
-  return <BadgeCheck className="h-3.5 w-3.5 text-status-success dark:text-status-success-dark" />;
+  return (
+    <BadgeCheck className="h-3.5 w-3.5 text-status-success dark:text-status-success-dark" />
+  );
 }

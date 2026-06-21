@@ -9,7 +9,6 @@ Covers:
 """
 
 import pytest
-
 from app.utils.slug import compose_slug, validate_slug
 
 

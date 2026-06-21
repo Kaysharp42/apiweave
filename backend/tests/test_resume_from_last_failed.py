@@ -4,11 +4,10 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from fastapi.testclient import TestClient
-
 from app.main import app
 from app.models import Node, Session, User
 from app.repositories.auth_repositories import SessionRepository, UserRepository
+from fastapi.testclient import TestClient
 
 _SESSION_TOKEN = "test-resume-session-token"
 
@@ -119,8 +118,9 @@ def _run(run_id: str, status: str, failed_nodes=None, node_statuses=None):
     )
 
 
-def test_latest_failed_endpoint_returns_none_when_latest_run_is_success_even_if_older_failed_exists(
-) -> None:
+def test_latest_failed_endpoint_returns_none_when_latest_run_is_success_even_if_older_failed_exists() -> (
+    None
+):
     workflow = _workflow_with_example_nodes()
     latest_success = _run("run-success", "completed")
 

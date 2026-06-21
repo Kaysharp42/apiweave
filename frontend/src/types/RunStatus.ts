@@ -1,1 +1,6 @@
-export type RunStatus = 'pending' | 'running' | 'success' | 'error' | 'cancelled';
+export type RunStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "error"
+  | "cancelled";

@@ -5,7 +5,7 @@ export interface SecretBinding {
   bindingId: string;
   secretId: string;
   userId: string;
-  targetScopeType: 'workspace' | 'environment';
+  targetScopeType: "workspace" | "environment";
   targetScopeId: string;
   createdAt: string;
 }

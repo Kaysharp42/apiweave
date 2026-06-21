@@ -5,13 +5,12 @@ Tests for webhook rate limiting middleware
 import time
 
 import pytest
-from fastapi import HTTPException
-
 from app.middleware.rate_limiter import (
     RateLimiter,
     check_webhook_rate_limit,
     get_rate_limit_headers,
 )
+from fastapi import HTTPException
 
 
 class TestRateLimiter:

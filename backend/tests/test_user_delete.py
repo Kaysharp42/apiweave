@@ -1,12 +1,9 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
-import pytest
-from fastapi import HTTPException, status
-from fastapi.testclient import TestClient
-
 import app.auth.provider_registry as provider_registry
 import app.auth.router as auth_router
+import pytest
 from app.auth.provider_registry import ProviderConfig, ProviderUserInfo
 from app.main import app
 from app.models import OAuthState, ProviderIdentity, Session, User
@@ -15,6 +12,8 @@ from app.repositories.auth_repositories import (
     SessionRepository,
     UserRepository,
 )
+from fastapi import HTTPException, status
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 

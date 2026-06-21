@@ -9,20 +9,18 @@ Covers the full lifecycle:
 - Outside collaborators (add, list, remove)
 - Negative authorization tests (403 for non-owners, non-members)
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-import pytest
-from fastapi import FastAPI, HTTPException
-from fastapi.testclient import TestClient
-
 from app.auth.dependencies import get_current_active_user
 from app.routes.orgs import router as orgs_router
 from app.routes.workspaces import router as workspaces_router
-
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -161,7 +159,7 @@ class TestOrgCRUDFlows:
             assert resp.json()["slug"] == "acme"
 
     def test_update_org(self) -> None:
-        now = datetime.now(UTC)
+        datetime.now(UTC)
         org_member = _make_member(role="owner")
         updated_org = _make_org_response()
         with (
@@ -182,7 +180,7 @@ class TestOrgCRUDFlows:
             assert resp.status_code == 200
 
     def test_delete_org(self) -> None:
-        now = datetime.now(UTC)
+        datetime.now(UTC)
         org_member = _make_member(role="owner")
         with (
             patch(
@@ -223,8 +221,12 @@ class TestOrgMemberFlows:
         org_member = _make_member(role="owner")
         members = [
             SimpleNamespace(
-                memberId="om-1", orgId="org-1", userId="user-1",
-                role="owner", createdAt=now, updatedAt=now,
+                memberId="om-1",
+                orgId="org-1",
+                userId="user-1",
+                role="owner",
+                createdAt=now,
+                updatedAt=now,
             ),
         ]
         with (
@@ -249,8 +251,12 @@ class TestOrgMemberFlows:
         now = datetime.now(UTC)
         org_member = _make_member(role="owner")
         new_member = SimpleNamespace(
-            memberId="om-2", orgId="org-1", userId="user-2",
-            role="member", createdAt=now, updatedAt=now,
+            memberId="om-2",
+            orgId="org-1",
+            userId="user-2",
+            role="member",
+            createdAt=now,
+            updatedAt=now,
         )
         with (
             patch(
@@ -276,8 +282,12 @@ class TestOrgMemberFlows:
         now = datetime.now(UTC)
         org_member = _make_member(role="owner")
         updated = SimpleNamespace(
-            memberId="om-2", orgId="org-1", userId="user-2",
-            role="billing", createdAt=now, updatedAt=now,
+            memberId="om-2",
+            orgId="org-1",
+            userId="user-2",
+            role="billing",
+            createdAt=now,
+            updatedAt=now,
         )
         with (
             patch(
@@ -300,7 +310,7 @@ class TestOrgMemberFlows:
             assert resp.status_code == 200
 
     def test_remove_member(self) -> None:
-        now = datetime.now(UTC)
+        datetime.now(UTC)
         org_member = _make_member(role="owner")
         with (
             patch(
@@ -373,7 +383,7 @@ class TestOrgTeamFlows:
         self.client = TestClient(self.app)
 
     def test_list_teams(self) -> None:
-        now = datetime.now(UTC)
+        datetime.now(UTC)
         org_member = _make_member(role="owner")
         with (
             patch(
@@ -394,12 +404,15 @@ class TestOrgTeamFlows:
 
     def test_create_team(self) -> None:
         team_resp = _make_team_response()
-        with patch(
-            "app.routes.orgs.org_service.get_org",
-            new=AsyncMock(return_value=_make_org_response()),
-        ), patch(
-            "app.routes.orgs.team_service.create_team",
-            new=AsyncMock(return_value=team_resp),
+        with (
+            patch(
+                "app.routes.orgs.org_service.get_org",
+                new=AsyncMock(return_value=_make_org_response()),
+            ),
+            patch(
+                "app.routes.orgs.team_service.create_team",
+                new=AsyncMock(return_value=team_resp),
+            ),
         ):
             resp = self.client.post(
                 "/api/orgs/acme/teams",
@@ -409,7 +422,7 @@ class TestOrgTeamFlows:
             assert resp.json()["slug"] == "backend"
 
     def test_get_team(self) -> None:
-        now = datetime.now(UTC)
+        datetime.now(UTC)
         org_member = _make_member(role="owner")
         team_resp = _make_team_response()
         with (
@@ -430,18 +443,21 @@ class TestOrgTeamFlows:
             assert resp.status_code == 200
 
     def test_delete_team(self) -> None:
-        with patch(
-            "app.routes.orgs.org_service.get_org",
-            new=AsyncMock(return_value=_make_org_response()),
-        ), patch(
-            "app.routes.orgs.team_service.delete_team",
-            new=AsyncMock(return_value={"status": "deleted"}),
+        with (
+            patch(
+                "app.routes.orgs.org_service.get_org",
+                new=AsyncMock(return_value=_make_org_response()),
+            ),
+            patch(
+                "app.routes.orgs.team_service.delete_team",
+                new=AsyncMock(return_value={"status": "deleted"}),
+            ),
         ):
             resp = self.client.delete("/api/orgs/acme/teams/backend")
             assert resp.status_code == 200
 
     def test_list_team_members(self) -> None:
-        now = datetime.now(UTC)
+        datetime.now(UTC)
         org_member = _make_member(role="owner")
         with (
             patch(
@@ -463,15 +479,21 @@ class TestOrgTeamFlows:
     def test_add_team_member(self) -> None:
         now = datetime.now(UTC)
         team_member = SimpleNamespace(
-            memberId="tm-1", teamId="team-1", userId="user-2",
-            role="member", createdAt=now,
+            memberId="tm-1",
+            teamId="team-1",
+            userId="user-2",
+            role="member",
+            createdAt=now,
         )
-        with patch(
-            "app.routes.orgs.org_service.get_org",
-            new=AsyncMock(return_value=_make_org_response()),
-        ), patch(
-            "app.routes.orgs.team_service.add_team_member",
-            new=AsyncMock(return_value=team_member),
+        with (
+            patch(
+                "app.routes.orgs.org_service.get_org",
+                new=AsyncMock(return_value=_make_org_response()),
+            ),
+            patch(
+                "app.routes.orgs.team_service.add_team_member",
+                new=AsyncMock(return_value=team_member),
+            ),
         ):
             resp = self.client.post(
                 "/api/orgs/acme/teams/backend/members",
@@ -480,7 +502,7 @@ class TestOrgTeamFlows:
             assert resp.status_code == 201
 
     def test_list_grants(self) -> None:
-        now = datetime.now(UTC)
+        datetime.now(UTC)
         org_member = _make_member(role="owner")
         with (
             patch(
@@ -502,17 +524,24 @@ class TestOrgTeamFlows:
     def test_add_grant(self) -> None:
         now = datetime.now(UTC)
         grant_resp = SimpleNamespace(
-            grantId="tg-1", teamId="team-1", orgId="org-1",
-            resourceType="workspace", resourceId="ws-1",
+            grantId="tg-1",
+            teamId="team-1",
+            orgId="org-1",
+            resourceType="workspace",
+            resourceId="ws-1",
             permissions=["workflows:read"],
-            grantedBy="user-1", createdAt=now,
+            grantedBy="user-1",
+            createdAt=now,
         )
-        with patch(
-            "app.routes.orgs.org_service.get_org",
-            new=AsyncMock(return_value=_make_org_response()),
-        ), patch(
-            "app.routes.orgs.team_service.add_permission_grant",
-            new=AsyncMock(return_value=grant_resp),
+        with (
+            patch(
+                "app.routes.orgs.org_service.get_org",
+                new=AsyncMock(return_value=_make_org_response()),
+            ),
+            patch(
+                "app.routes.orgs.team_service.add_permission_grant",
+                new=AsyncMock(return_value=grant_resp),
+            ),
         ):
             resp = self.client.post(
                 "/api/orgs/acme/teams/backend/grants",
@@ -542,12 +571,15 @@ class TestOrgInviteFlows:
 
     def test_create_invite(self) -> None:
         invite_resp = _make_invite_response()
-        with patch(
-            "app.routes.orgs.org_service.get_org",
-            new=AsyncMock(return_value=_make_org_response()),
-        ), patch(
-            "app.routes.orgs.org_invite_service.create_org_invite",
-            new=AsyncMock(return_value=invite_resp),
+        with (
+            patch(
+                "app.routes.orgs.org_service.get_org",
+                new=AsyncMock(return_value=_make_org_response()),
+            ),
+            patch(
+                "app.routes.orgs.org_invite_service.create_org_invite",
+                new=AsyncMock(return_value=invite_resp),
+            ),
         ):
             resp = self.client.post(
                 "/api/orgs/acme/invites",
@@ -556,7 +588,7 @@ class TestOrgInviteFlows:
             assert resp.status_code == 201
 
     def test_list_invites(self) -> None:
-        now = datetime.now(UTC)
+        datetime.now(UTC)
         org_member = _make_member(role="owner")
         with (
             patch(
@@ -578,10 +610,16 @@ class TestOrgInviteFlows:
     def test_accept_invite(self) -> None:
         now = datetime.now(UTC)
         consumed_invite = SimpleNamespace(
-            inviteId="oi-1", orgId="org-1", email="new@example.com",
-            token_hash="hash", role="member", invited_by="user-1",
-            created_at=now, expires_at=now + timedelta(days=7),
-            consumed=True, consumed_at=now,
+            inviteId="oi-1",
+            orgId="org-1",
+            email="new@example.com",
+            token_hash="hash",
+            role="member",
+            invited_by="user-1",
+            created_at=now,
+            expires_at=now + timedelta(days=7),
+            consumed=True,
+            consumed_at=now,
         )
         with patch(
             "app.routes.orgs.org_invite_service.accept_org_invite",
@@ -594,12 +632,15 @@ class TestOrgInviteFlows:
             assert resp.status_code == 200
 
     def test_cancel_invite(self) -> None:
-        with patch(
-            "app.routes.orgs.org_service.get_org",
-            new=AsyncMock(return_value=_make_org_response()),
-        ), patch(
-            "app.routes.orgs.org_invite_service.cancel_org_invite",
-            new=AsyncMock(return_value={"status": "cancelled"}),
+        with (
+            patch(
+                "app.routes.orgs.org_service.get_org",
+                new=AsyncMock(return_value=_make_org_response()),
+            ),
+            patch(
+                "app.routes.orgs.org_invite_service.cancel_org_invite",
+                new=AsyncMock(return_value={"status": "cancelled"}),
+            ),
         ):
             resp = self.client.delete("/api/orgs/acme/invites/oi-1")
             assert resp.status_code == 200
@@ -632,8 +673,10 @@ class TestOutsideCollaboratorFlows:
     def test_add_collaborator(self) -> None:
         now = datetime.now(UTC)
         collab = SimpleNamespace(
-            collaboratorId="oc-1", workspaceId="ws-1",
-            userId="user-2", role="read",
+            collaboratorId="oc-1",
+            workspaceId="ws-1",
+            userId="user-2",
+            role="read",
             createdAt=now,
         )
         with patch(

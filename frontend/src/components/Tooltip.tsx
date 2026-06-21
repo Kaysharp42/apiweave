@@ -1,20 +1,24 @@
-import { useState, useRef, type ReactNode } from 'react';
+import { useState, useRef, type ReactNode } from "react";
 
 interface TooltipComponentProps {
   children: ReactNode;
   text: string;
-  placement?: 'top' | 'bottom' | 'left' | 'right';
+  placement?: "top" | "bottom" | "left" | "right";
 }
 
-export default function Tooltip({ children, text, placement = 'top' }: TooltipComponentProps) {
+export default function Tooltip({
+  children,
+  text,
+  placement = "top",
+}: TooltipComponentProps) {
   const [visible, setVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const placementClasses: Record<string, string> = {
-    top: '-top-8 left-1/2 -translate-x-1/2',
-    bottom: 'top-full left-1/2 -translate-x-1/2 mt-1',
-    left: 'right-full top-1/2 -translate-y-1/2 mr-1',
-    right: 'left-full top-1/2 -translate-y-1/2 ml-1',
+    top: "-top-8 left-1/2 -translate-x-1/2",
+    bottom: "top-full left-1/2 -translate-x-1/2 mt-1",
+    left: "right-full top-1/2 -translate-y-1/2 mr-1",
+    right: "left-full top-1/2 -translate-y-1/2 ml-1",
   };
 
   return (

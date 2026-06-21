@@ -8,7 +8,7 @@ export interface ServiceTokenCreateResponse {
   tokenId: string;
   name: string;
   token: string;
-  scopeType: 'workspace' | 'organization';
+  scopeType: "workspace" | "organization";
   scopeId: string;
   permissions: string[];
   createdAt: string;

@@ -1,1 +1,1 @@
-export type NodeModalAssertionTabKey = 'rules' | 'settings';
+export type NodeModalAssertionTabKey = "rules" | "settings";

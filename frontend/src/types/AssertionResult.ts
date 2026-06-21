@@ -1,4 +1,4 @@
-import type { AssertionConfig } from './AssertionConfig';
+import type { AssertionConfig } from "./AssertionConfig";
 
 export interface AssertionResult {
   assertion: AssertionConfig;

@@ -1,24 +1,32 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Server, Plug, BookOpen, MessageSquare, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
-import { Button } from './atoms/Button';
-import { Badge } from './atoms/Badge';
-import { Spinner } from './atoms/Spinner';
-import { Panel } from './molecules/Panel';
-import { PanelTabs } from './molecules/PanelTabs';
-import { EmptyState } from './molecules/EmptyState';
-import type { MCPConfig } from '../types/MCPConfig';
-import type { MCPTool } from '../types/MCPTool';
-import { authenticatedFetch } from '../utils/authenticatedApi';
+import { useState, useEffect, useCallback } from "react";
+import {
+  Server,
+  Plug,
+  BookOpen,
+  MessageSquare,
+  CheckCircle,
+  XCircle,
+  ExternalLink,
+} from "lucide-react";
+import { Button } from "./atoms/Button";
+import { Badge } from "./atoms/Badge";
+import { Spinner } from "./atoms/Spinner";
+import { Panel } from "./molecules/Panel";
+import { PanelTabs } from "./molecules/PanelTabs";
+import { EmptyState } from "./molecules/EmptyState";
+import type { MCPConfig } from "../types/MCPConfig";
+import type { MCPTool } from "../types/MCPTool";
+import { authenticatedFetch } from "../utils/authenticatedApi";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-type TabKey = 'status' | 'tools' | 'resources' | 'prompts' | 'connect';
+type TabKey = "status" | "tools" | "resources" | "prompts" | "connect";
 
 interface MCPContentProps {
   activeTab: TabKey;
   config: MCPConfig;
   testing: boolean;
-  testResult: 'success' | 'error' | null;
+  testResult: "success" | "error" | null;
   testConnection: () => void;
 }
 
@@ -30,15 +38,15 @@ function MCPContent({
   testConnection,
 }: MCPContentProps) {
   switch (activeTab) {
-    case 'status':
+    case "status":
       return (
         <div className="space-y-4 p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
               MCP Server
             </span>
-            <Badge variant={config.enabled ? 'success' : 'error'} size="sm">
-              {config.enabled ? 'Enabled' : 'Disabled'}
+            <Badge variant={config.enabled ? "success" : "error"} size="sm">
+              {config.enabled ? "Enabled" : "Disabled"}
             </Badge>
           </div>
 
@@ -46,8 +54,11 @@ function MCPContent({
             <span className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
               HTTP Transport
             </span>
-            <Badge variant={config.httpEnabled ? 'success' : 'warning'} size="sm">
-              {config.httpEnabled ? 'Active' : 'Inactive'}
+            <Badge
+              variant={config.httpEnabled ? "success" : "warning"}
+              size="sm"
+            >
+              {config.httpEnabled ? "Active" : "Inactive"}
             </Badge>
           </div>
 
@@ -55,8 +66,11 @@ function MCPContent({
             <span className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
               API Key
             </span>
-            <Badge variant={config.apiKeyConfigured ? 'success' : 'warning'} size="sm">
-              {config.apiKeyConfigured ? 'Configured' : 'Not Set'}
+            <Badge
+              variant={config.apiKeyConfigured ? "success" : "warning"}
+              size="sm"
+            >
+              {config.apiKeyConfigured ? "Configured" : "Not Set"}
             </Badge>
           </div>
 
@@ -71,19 +85,25 @@ function MCPContent({
                 <div className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
                   {config.toolCount}
                 </div>
-                <div className="text-xs text-text-muted dark:text-text-muted-dark">Tools</div>
+                <div className="text-xs text-text-muted dark:text-text-muted-dark">
+                  Tools
+                </div>
               </div>
               <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
                 <div className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
                   {config.resourceCount}
                 </div>
-                <div className="text-xs text-text-muted dark:text-text-muted-dark">Resources</div>
+                <div className="text-xs text-text-muted dark:text-text-muted-dark">
+                  Resources
+                </div>
               </div>
               <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
                 <div className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
                   {config.promptCount}
                 </div>
-                <div className="text-xs text-text-muted dark:text-text-muted-dark">Prompts</div>
+                <div className="text-xs text-text-muted dark:text-text-muted-dark">
+                  Prompts
+                </div>
               </div>
             </div>
           </div>
@@ -104,12 +124,12 @@ function MCPContent({
               >
                 Test HTTP Endpoint
               </Button>
-              {testResult === 'success' && (
+              {testResult === "success" && (
                 <span className="flex items-center gap-1 text-xs text-[var(--aw-status-success)]">
                   <CheckCircle className="w-3.5 h-3.5" /> Connected
                 </span>
               )}
-              {testResult === 'error' && (
+              {testResult === "error" && (
                 <span className="flex items-center gap-1 text-xs text-[var(--aw-status-error)]">
                   <XCircle className="w-3.5 h-3.5" /> Failed
                 </span>
@@ -123,12 +143,17 @@ function MCPContent({
           </div>
         </div>
       );
-    case 'tools':
+    case "tools":
       return (
         <div className="p-4">
           {config.tools.length === 0 ? (
             <EmptyState
-              icon={<Plug className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+              icon={
+                <Plug
+                  className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+                  strokeWidth={1.5}
+                />
+              }
               title="No Tools Available"
               description="MCP tools are not registered. Check server configuration."
             />
@@ -153,27 +178,37 @@ function MCPContent({
           )}
         </div>
       );
-    case 'resources':
+    case "resources":
       return (
         <div className="p-4">
           <EmptyState
-            icon={<BookOpen className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+            icon={
+              <BookOpen
+                className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+                strokeWidth={1.5}
+              />
+            }
             title="Resources"
             description="MCP resources provide read-only data snapshots for agent context."
           />
         </div>
       );
-    case 'prompts':
+    case "prompts":
       return (
         <div className="p-4">
           <EmptyState
-            icon={<MessageSquare className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+            icon={
+              <MessageSquare
+                className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+                strokeWidth={1.5}
+              />
+            }
             title="Prompts"
             description="MCP prompts are pre-built templates for common APIWeave tasks."
           />
         </div>
       );
-    case 'connect':
+    case "connect":
       return (
         <div className="space-y-4 p-4">
           <div>
@@ -214,7 +249,7 @@ function MCPContent({
   "mcp": {
     "apiweave": {
       "type": "http",
-      "url": "${config.baseUrl || 'http://localhost:8000'}/mcp",
+      "url": "${config.baseUrl || "http://localhost:8000"}/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_MCP_API_KEY"
       }
@@ -242,7 +277,7 @@ function MCPContent({
               </div>
               <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3">
                 <code className="text-xs font-mono text-text-primary dark:text-text-primary-dark">
-                  /mcp add apiweave  (in Copilot CLI)
+                  /mcp add apiweave (in Copilot CLI)
                 </code>
                 <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
                   GitHub Copilot CLI
@@ -261,29 +296,35 @@ interface MCPManagerProps {
   className?: string;
 }
 
-export default function MCPManager({ className = '' }: MCPManagerProps) {
+export default function MCPManager({ className = "" }: MCPManagerProps) {
   const [config, setConfig] = useState<MCPConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>('status');
-  const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("status");
+  const [testResult, setTestResult] = useState<"success" | "error" | null>(
+    null,
+  );
   const [testing, setTesting] = useState(false);
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/api/mcp/config`);
+      const response = await authenticatedFetch(
+        `${API_BASE_URL}/api/mcp/config`,
+      );
       if (response.ok) {
         const data = await response.json();
         setConfig(data);
       } else if (response.status === 404) {
-        setError('MCP endpoint not found. Ensure MCP_ENABLED=true in backend .env');
+        setError(
+          "MCP endpoint not found. Ensure MCP_ENABLED=true in backend .env",
+        );
       } else {
-        setError('Failed to fetch MCP configuration');
+        setError("Failed to fetch MCP configuration");
       }
     } catch {
-      setError('Cannot connect to backend. Is the server running?');
+      setError("Cannot connect to backend. Is the server running?");
     } finally {
       setLoading(false);
     }
@@ -298,36 +339,36 @@ export default function MCPManager({ className = '' }: MCPManagerProps) {
     setTestResult(null);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/mcp`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json, text/event-stream',
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
         },
         body: JSON.stringify({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id: 1,
-          method: 'initialize',
+          method: "initialize",
           params: {
-            protocolVersion: '2024-11-05',
+            protocolVersion: "2024-11-05",
             capabilities: {},
-            clientInfo: { name: 'apiweave-ui', version: '0.1.0' },
+            clientInfo: { name: "apiweave-ui", version: "0.1.0" },
           },
         }),
       });
-      setTestResult(response.ok ? 'success' : 'error');
+      setTestResult(response.ok ? "success" : "error");
     } catch {
-      setTestResult('error');
+      setTestResult("error");
     } finally {
       setTesting(false);
     }
   };
 
   const tabs = [
-    { key: 'status' as TabKey, icon: Server, label: 'Status' },
-    { key: 'tools' as TabKey, icon: Plug, label: 'Tools' },
-    { key: 'resources' as TabKey, icon: BookOpen, label: 'Resources' },
-    { key: 'prompts' as TabKey, icon: MessageSquare, label: 'Prompts' },
-    { key: 'connect' as TabKey, icon: ExternalLink, label: 'Connect' },
+    { key: "status" as TabKey, icon: Server, label: "Status" },
+    { key: "tools" as TabKey, icon: Plug, label: "Tools" },
+    { key: "resources" as TabKey, icon: BookOpen, label: "Resources" },
+    { key: "prompts" as TabKey, icon: MessageSquare, label: "Prompts" },
+    { key: "connect" as TabKey, icon: ExternalLink, label: "Connect" },
   ];
 
   if (loading) {
@@ -342,7 +383,12 @@ export default function MCPManager({ className = '' }: MCPManagerProps) {
     return (
       <div className={`flex h-full flex-col ${className}`}>
         <EmptyState
-          icon={<Server className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+          icon={
+            <Server
+              className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+              strokeWidth={1.5}
+            />
+          }
           title="MCP Unavailable"
           description={error}
           action={
@@ -368,7 +414,11 @@ export default function MCPManager({ className = '' }: MCPManagerProps) {
         }
       >
         <PanelTabs
-          tabs={tabs.map(({ key, icon: Icon, label }) => ({ key, icon: Icon, label }))}
+          tabs={tabs.map(({ key, icon: Icon, label }) => ({
+            key,
+            icon: Icon,
+            label,
+          }))}
           activeTab={activeTab}
           onTabChange={(key: string) => setActiveTab(key as TabKey)}
         />

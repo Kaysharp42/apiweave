@@ -1,7 +1,6 @@
 import pytest
-from pydantic import ValidationError
-
 from app.config import Settings
+from pydantic import ValidationError
 
 
 def _base_settings_kwargs() -> dict[str, str]:

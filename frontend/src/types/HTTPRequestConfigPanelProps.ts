@@ -1,5 +1,5 @@
-import type { NodeModalHTTPRequestConfig } from './NodeModalHTTPRequestConfig';
-import type { NodeModalHttpTabKey } from './NodeModalHttpTabKey';
+import type { NodeModalHTTPRequestConfig } from "./NodeModalHTTPRequestConfig";
+import type { NodeModalHttpTabKey } from "./NodeModalHttpTabKey";
 
 export interface HTTPRequestConfigPanelProps {
   initialConfig: NodeModalHTTPRequestConfig;

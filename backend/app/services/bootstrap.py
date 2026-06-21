@@ -4,6 +4,7 @@ Bootstrap service — creates the first owner and default personal workspace.
 Called during setup mode when the first user registers.
 Also creates the default workspace environment.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,13 +41,9 @@ async def ensure_personal_workspace(user: User) -> Workspace:
     # The unique (orgId, slug) index prevents creating a second one.
     orphan = await WorkspaceRepository.get_orphan_personal("personal")
     if orphan is not None:
-        claimed = await WorkspaceRepository.claim_orphan_personal(
-            orphan.workspaceId, user.userId
-        )
+        claimed = await WorkspaceRepository.claim_orphan_personal(orphan.workspaceId, user.userId)
         if claimed is not None:
-            await _ensure_workspace_membership(
-                claimed.workspaceId, user.userId, role="admin"
-            )
+            await _ensure_workspace_membership(claimed.workspaceId, user.userId, role="admin")
             await create_default_workspace_environment(
                 workspace_id=claimed.workspaceId,
                 owner_type="user",

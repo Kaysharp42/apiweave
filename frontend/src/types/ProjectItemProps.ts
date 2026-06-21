@@ -1,6 +1,6 @@
-import type { Workflow } from './Workflow';
-import type { Project } from './Project';
-import type { ScopedEnvironment } from './ScopedEnvironment';
+import type { Workflow } from "./Workflow";
+import type { Project } from "./Project";
+import type { ScopedEnvironment } from "./ScopedEnvironment";
 
 export interface ProjectItemProps {
   project: Project;

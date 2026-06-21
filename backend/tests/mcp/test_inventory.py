@@ -6,11 +6,10 @@ Verifies that:
 - The tool inventory matches the expected scoped set
 - Old tools (collection_*, environment_set_secret) are NOT present
 """
+
 from __future__ import annotations
 
 import pytest
-from mcp.server.fastmcp import FastMCP
-
 from app.mcp.tools import environments as environment_tools
 from app.mcp.tools import imports as import_tools
 from app.mcp.tools import project_runs as project_run_tools
@@ -19,7 +18,7 @@ from app.mcp.tools import runs as run_tools
 from app.mcp.tools import secrets as secret_tools
 from app.mcp.tools import webhooks as webhook_tools
 from app.mcp.tools import workflows as workflow_tools
-
+from mcp.server.fastmcp import FastMCP
 
 # Old tools that must NOT be present in the scoped inventory
 OLD_FORBIDDEN_TOOLS = {
@@ -104,8 +103,8 @@ class TestMcpToolInventory:
             "webhook_create",
             "webhook_update",
             "webhook_delete",
-            "webhook_rotate_credentials",
-            "webhook_logs",
+            "webhook_regenerate_credentials",
+            "webhook_get_logs",
             # Import tools
             "import_openapi",
             "import_har",
@@ -132,9 +131,9 @@ class TestMcpToolInventory:
         tool_names = {tool.name for tool in await server.list_tools()}
 
         present_forbidden = OLD_FORBIDDEN_TOOLS & tool_names
-        assert not present_forbidden, (
-            f"Old forbidden tools still registered: {sorted(present_forbidden)}"
-        )
+        assert (
+            not present_forbidden
+        ), f"Old forbidden tools still registered: {sorted(present_forbidden)}"
 
     @pytest.mark.asyncio
     async def test_no_plaintext_secret_write_tools(self):
@@ -148,9 +147,7 @@ class TestMcpToolInventory:
 
         # These old plaintext secret tools must not exist
         plaintext_tools = {"environment_set_secret", "environment_delete_secret"}
-        assert not (plaintext_tools & tool_names), (
-            "Plaintext secret write tools still registered"
-        )
+        assert not (plaintext_tools & tool_names), "Plaintext secret write tools still registered"
 
     @pytest.mark.asyncio
     async def test_run_tools_reject_runtime_secrets_description(self):
@@ -162,9 +159,9 @@ class TestMcpToolInventory:
         run_tool = next((t for t in tools if t.name == "workflow_run"), None)
         assert run_tool is not None, "workflow_run tool not found"
         desc = run_tool.description or ""
-        assert "runtime" in desc.lower() and "secret" in desc.lower(), (
-            "workflow_run description should mention runtime secrets are not accepted"
-        )
+        assert (
+            "runtime" in desc.lower() and "secret" in desc.lower()
+        ), "workflow_run description should mention runtime secrets are not accepted"
 
     @pytest.mark.asyncio
     async def test_server_info_reports_scoped_auth(self):

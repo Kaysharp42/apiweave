@@ -10,7 +10,6 @@ Covers:
 from __future__ import annotations
 
 import pytest
-
 from app.runner.executor import WorkflowExecutor
 
 
@@ -134,9 +133,7 @@ class TestAllowSecretsFlag:
     def test_string_format_rejects_secrets(self) -> None:
         exe = _executor()
         with pytest.raises(ValueError, match="(?i)secret"):
-            exe._normalize_key_value_field(
-                "key={{secrets.MY_SECRET}}", allow_secrets=False
-            )
+            exe._normalize_key_value_field("key={{secrets.MY_SECRET}}", allow_secrets=False)
 
     def test_array_format_rejects_secrets(self) -> None:
         exe = _executor()

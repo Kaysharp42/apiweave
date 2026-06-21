@@ -1,8 +1,11 @@
-import { useState, useCallback, useEffect } from 'react';
-import { toast } from 'sonner';
-import { authenticatedJson, authenticatedFetch } from '../utils/authenticatedApi';
-import API_BASE_URL from '../utils/api';
-import type { Invite, InviteResponse } from '../types';
+import { useState, useCallback, useEffect } from "react";
+import { toast } from "sonner";
+import {
+  authenticatedJson,
+  authenticatedFetch,
+} from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/api";
+import type { Invite, InviteResponse } from "../types";
 
 /** Map a backend InviteResponse to the frontend Invite shape. */
 function toInvite(r: InviteResponse): Invite {
@@ -29,14 +32,16 @@ export function useInvites() {
   const fetchInvites = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await authenticatedJson<InviteResponse[]>(`${API_BASE_URL}/api/auth/invites`);
+      const data = await authenticatedJson<InviteResponse[]>(
+        `${API_BASE_URL}/api/auth/invites`,
+      );
       const now = new Date();
       const pending = data
         .filter((inv) => !inv.consumed && new Date(inv.expires_at) > now)
         .map(toInvite);
       setInvites(pending);
     } catch {
-      toast.error('Failed to load invites');
+      toast.error("Failed to load invites");
     } finally {
       setLoading(false);
     }
@@ -52,8 +57,8 @@ export function useInvites() {
         const response = await authenticatedJson<InviteResponse>(
           `${API_BASE_URL}/api/auth/invites`,
           {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, roles: [role] }),
           },
         );
@@ -66,13 +71,14 @@ export function useInvites() {
         // If SMTP is not configured the backend returns the link directly
         if (response.invite_url) {
           result.link = response.invite_url;
-          result.warning = 'email not sent';
+          result.warning = "email not sent";
         }
 
-        toast.success('Invite created successfully');
+        toast.success("Invite created successfully");
         return result;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to create invite';
+        const msg =
+          err instanceof Error ? err.message : "Failed to create invite";
         toast.error(msg);
         return null;
       }
@@ -80,20 +86,24 @@ export function useInvites() {
     [],
   );
 
-  const revokeInvite = useCallback(async (inviteId: string): Promise<boolean> => {
-    try {
-      await authenticatedFetch(`${API_BASE_URL}/api/invites/${inviteId}`, {
-        method: 'DELETE',
-      });
-      setInvites((prev) => prev.filter((inv) => inv.id !== inviteId));
-      toast.success('Invite revoked');
-      return true;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to revoke invite';
-      toast.error(msg);
-      return false;
-    }
-  }, []);
+  const revokeInvite = useCallback(
+    async (inviteId: string): Promise<boolean> => {
+      try {
+        await authenticatedFetch(`${API_BASE_URL}/api/invites/${inviteId}`, {
+          method: "DELETE",
+        });
+        setInvites((prev) => prev.filter((inv) => inv.id !== inviteId));
+        toast.success("Invite revoked");
+        return true;
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to revoke invite";
+        toast.error(msg);
+        return false;
+      }
+    },
+    [],
+  );
 
   return { invites, loading, fetchInvites, createInvite, revokeInvite };
 }

@@ -1,5 +1,5 @@
 /** Bypass policy options for environment protection. */
-export type BypassPolicy = 'none' | 'trusted_token_only';
+export type BypassPolicy = "none" | "trusted_token_only";
 
 /**
  * Protection policy for a scoped environment.

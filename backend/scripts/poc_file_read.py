@@ -9,6 +9,7 @@ Usage:
     python poc_file_read.py --expected=blocked     # default: assert file read blocked
     python poc_file_read.py --expected=vulnerable  # assert file read still works
 """
+
 import argparse
 import json
 import os
@@ -68,30 +69,47 @@ def main():
         "name": "File Read PoC - audit",
         "variables": {"evilpath": target_file},
         "nodes": [
-            {"nodeId": "s", "type": "start", "label": "Start", "position": {"x":0,"y":0}, "config":{}},
-            {"nodeId": "h", "type": "http-request", "label": "Upload", "position": {"x":100,"y":0},
-             "config": {
-                 "method": "POST",
-                 "url": f"{BASE}/health",
-                 "headers": "",
-                 "body": "",
-                 "bodyType": None,
-                 "timeout": 10,
-                 "fileUploads": [
-                     {
-                         "active": True,
-                         "type": "variable",
-                         "value": "{{variables.evilpath}}",
-                         "fieldName": "evilfile",
-                         "mimeType": "application/octet-stream",
-                     }
-                 ],
-             }},
-            {"nodeId": "e", "type": "end", "label": "End", "position": {"x":200,"y":0}, "config":{}},
+            {
+                "nodeId": "s",
+                "type": "start",
+                "label": "Start",
+                "position": {"x": 0, "y": 0},
+                "config": {},
+            },
+            {
+                "nodeId": "h",
+                "type": "http-request",
+                "label": "Upload",
+                "position": {"x": 100, "y": 0},
+                "config": {
+                    "method": "POST",
+                    "url": f"{BASE}/health",
+                    "headers": "",
+                    "body": "",
+                    "bodyType": None,
+                    "timeout": 10,
+                    "fileUploads": [
+                        {
+                            "active": True,
+                            "type": "variable",
+                            "value": "{{variables.evilpath}}",
+                            "fieldName": "evilfile",
+                            "mimeType": "application/octet-stream",
+                        }
+                    ],
+                },
+            },
+            {
+                "nodeId": "e",
+                "type": "end",
+                "label": "End",
+                "position": {"x": 200, "y": 0},
+                "config": {},
+            },
         ],
         "edges": [
-            {"edgeId":"e1","source":"s","target":"h"},
-            {"edgeId":"e2","source":"h","target":"e"},
+            {"edgeId": "e1", "source": "s", "target": "h"},
+            {"edgeId": "e2", "source": "h", "target": "e"},
         ],
     }
     code, w = req(BASE, "POST", "/api/workflows", wf)
@@ -121,7 +139,17 @@ def main():
         print(f"\n[*] Run log {log_path}:")
         with open(log_path, encoding="utf-8") as f:
             log_text = f.read()
-        for keyword in ["win.ini", "evilpath", "Resolved variable as file path", "Failed to resolve", "Path traversal", "Error", "blocked", "forbidden", "disallowed"]:
+        for keyword in [
+            "win.ini",
+            "evilpath",
+            "Resolved variable as file path",
+            "Failed to resolve",
+            "Path traversal",
+            "Error",
+            "blocked",
+            "forbidden",
+            "disallowed",
+        ]:
             if keyword in log_text:
                 start = max(0, log_text.find(keyword) - 100)
                 end = min(len(log_text), log_text.find(keyword) + 300)
@@ -146,9 +174,15 @@ def main():
 
     # Check for file-read blocking indicators
     block_indicators_log = [
-        "blocked", "forbidden", "not allowed", "disallowed",
-        "path traversal", "unsafe path", "invalid path",
-        "file read denied", "access denied",
+        "blocked",
+        "forbidden",
+        "not allowed",
+        "disallowed",
+        "path traversal",
+        "unsafe path",
+        "invalid path",
+        "file read denied",
+        "access denied",
     ]
     log_has_block = any(kw in log_text.lower() for kw in block_indicators_log)
 
@@ -156,14 +190,14 @@ def main():
     log_has_resolved = "Resolved variable as file path" in log_text and "win.ini" in log_text
 
     # Check result error for blocking
-    result_has_block_error = any(
-        kw in result_error.lower() for kw in block_indicators_log
-    )
+    result_has_block_error = any(kw in result_error.lower() for kw in block_indicators_log)
     result_is_error = result_status == "error"
 
     if expected == "blocked":
         # PASS if: log shows blocking OR result is error OR file was NOT resolved
-        file_blocked = log_has_block or result_has_block_error or result_is_error or not log_has_resolved
+        file_blocked = (
+            log_has_block or result_has_block_error or result_is_error or not log_has_resolved
+        )
         if file_blocked:
             detail = (
                 f"log_has_block={log_has_block}, result_is_error={result_is_error}, "
@@ -173,25 +207,31 @@ def main():
                 detail += f", error={result_error[:120]}"
             results.append(("File read blocked", True, detail))
         else:
-            results.append((
-                "File read blocked",
-                False,
-                f"File read NOT blocked — log shows resolved path and no blocking error",
-            ))
+            results.append(
+                (
+                    "File read blocked",
+                    False,
+                    "File read NOT blocked — log shows resolved path and no blocking error",
+                )
+            )
     else:  # vulnerable
         # PASS if: log shows the file was resolved (file was read)
         if log_has_resolved:
-            results.append((
-                "File read vulnerable (file was read)",
-                True,
-                "Log contains 'Resolved variable as file path' with win.ini — file read confirmed",
-            ))
+            results.append(
+                (
+                    "File read vulnerable (file was read)",
+                    True,
+                    "Log contains 'Resolved variable as file path' with win.ini — file read confirmed",
+                )
+            )
         else:
-            results.append((
-                "File read vulnerable (file was read)",
-                False,
-                "Expected log to show resolved file path but it did not — file read may be blocked",
-            ))
+            results.append(
+                (
+                    "File read vulnerable (file was read)",
+                    False,
+                    "Expected log to show resolved file path but it did not — file read may be blocked",
+                )
+            )
 
     # --- Report ---
     print("\n" + "=" * 60)
@@ -208,12 +248,16 @@ def main():
     # Save evidence
     evidence_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        ".omo", "evidence", "task-6-poc-file-read.txt",
+        ".omo",
+        "evidence",
+        "task-6-poc-file-read.txt",
     )
     try:
         os.makedirs(os.path.dirname(evidence_path), exist_ok=True)
         with open(evidence_path, "w", encoding="utf-8") as f:
-            f.write(f"poc_file_read.py — expected={expected}\nbase_url={BASE}\ntarget_file={target_file}\n\n")
+            f.write(
+                f"poc_file_read.py — expected={expected}\nbase_url={BASE}\ntarget_file={target_file}\n\n"
+            )
             f.write(f"Log text (first 4000 chars):\n{log_text[:4000]}\n\n")
             f.write(f"Node result:\n{json.dumps(result_data, indent=2)[:2000]}\n\n")
             f.write("Assertions:\n")

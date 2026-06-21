@@ -1,4 +1,4 @@
-import type { BranchInfo } from './BranchInfo';
+import type { BranchInfo } from "./BranchInfo";
 
 export interface MergeResult {
   mergeStrategy?: string;

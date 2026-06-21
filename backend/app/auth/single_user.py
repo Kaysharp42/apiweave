@@ -15,11 +15,11 @@ every cold start. ``ensure_personal_workspace`` is idempotent — calling it on
 every first-request path is safe; the repository checks for an existing
 personal workspace before creating one.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 from app.models import User
 from app.repositories.auth_repositories import UserRepository
@@ -31,7 +31,7 @@ SINGLE_USER_OWNER_ID = "usr-single-user-owner"
 SINGLE_USER_OWNER_EMAIL = "owner@localhost"
 SINGLE_USER_OWNER_NAME = "Owner"
 
-_cached_owner: Optional[User] = None
+_cached_owner: User | None = None
 _bootstrap_lock = asyncio.Lock()
 
 

@@ -1,23 +1,23 @@
-import { test } from 'vitest';
-import assert from 'node:assert/strict';
+import { test } from "vitest";
+import assert from "node:assert/strict";
 import {
   formatNodeOutputDuration,
   getNodeOutputStatusClass,
-} from './nodeOutputStatus.ts';
+} from "./nodeOutputStatus.ts";
 
-test('getNodeOutputStatusClass handles status ranges', () => {
+test("getNodeOutputStatusClass handles status ranges", () => {
   assert.match(getNodeOutputStatusClass(undefined), /bg-surface-overlay/);
   assert.match(getNodeOutputStatusClass(201), /bg-green-100/);
   assert.match(getNodeOutputStatusClass(302), /bg-orange-100/);
   assert.match(getNodeOutputStatusClass(500), /bg-red-100/);
 });
 
-test('formatNodeOutputDuration formats milliseconds and seconds', () => {
-  assert.equal(formatNodeOutputDuration(350), '350ms');
-  assert.equal(formatNodeOutputDuration(1250), '1.25s');
+test("formatNodeOutputDuration formats milliseconds and seconds", () => {
+  assert.equal(formatNodeOutputDuration(350), "350ms");
+  assert.equal(formatNodeOutputDuration(1250), "1.25s");
 });
 
-test('formatNodeOutputDuration returns null for invalid duration values', () => {
+test("formatNodeOutputDuration returns null for invalid duration values", () => {
   assert.equal(formatNodeOutputDuration(undefined), null);
-  assert.equal(formatNodeOutputDuration('abc' as never), null);
+  assert.equal(formatNodeOutputDuration("abc" as never), null);
 });

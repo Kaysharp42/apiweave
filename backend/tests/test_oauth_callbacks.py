@@ -16,10 +16,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
-import pytest
-
 import app.auth.provider_registry as provider_registry
 import app.auth.router as auth_router
+import pytest
 from app.auth.exceptions import OAuthLinkingBlockedError
 from app.auth.provider_registry import ProviderConfig, ProviderUserInfo
 from app.main import app
@@ -132,9 +131,7 @@ def _patch_all(
         "get_enabled_providers",
         lambda: enabled_providers or ["github", "gitlab", "google", "microsoft"],
     )
-    monkeypatch.setattr(
-        auth_router.OAuthStateRepository, "consume", AsyncMock(return_value=state)
-    )
+    monkeypatch.setattr(auth_router.OAuthStateRepository, "consume", AsyncMock(return_value=state))
     monkeypatch.setattr(
         provider_registry,
         "exchange_code_for_token",
@@ -151,16 +148,10 @@ def _patch_all(
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(auth_router.ProviderIdentityRepository, "create", AsyncMock())
-    monkeypatch.setattr(
-        auth_router.UserRepository, "get_by_email", AsyncMock(return_value=None)
-    )
+    monkeypatch.setattr(auth_router.UserRepository, "get_by_email", AsyncMock(return_value=None))
     monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=0))
-    monkeypatch.setattr(
-        auth_router.UserRepository, "create", AsyncMock(return_value=user)
-    )
-    monkeypatch.setattr(
-        auth_router.UserRepository, "update", AsyncMock(return_value=user)
-    )
+    monkeypatch.setattr(auth_router.UserRepository, "create", AsyncMock(return_value=user))
+    monkeypatch.setattr(auth_router.UserRepository, "update", AsyncMock(return_value=user))
     monkeypatch.setattr(
         auth_router.UserRepository,
         "add_oauth_account",
@@ -242,9 +233,7 @@ class TestDisabledFlag:
 
 
 class TestProviderNotConfigured:
-    def test_provider_not_configured_returns_503(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_provider_not_configured_returns_503(self, monkeypatch: pytest.MonkeyPatch) -> None:
         provider = "github"
         _patch_all(
             monkeypatch,
@@ -262,9 +251,7 @@ class TestProviderNotConfigured:
 
 
 class TestUnapprovedDomain:
-    def test_unapproved_domain_returns_403(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_unapproved_domain_returns_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
         provider = "github"
         _patch_all(
             monkeypatch,
@@ -273,9 +260,7 @@ class TestUnapprovedDomain:
             verified=True,
             email="user@blocked-domain.com",
         )
-        monkeypatch.setattr(
-            auth_router, "enforce_approved_domain", lambda email: False
-        )
+        monkeypatch.setattr(auth_router, "enforce_approved_domain", lambda email: False)
         response = client.get(
             f"/api/auth/callback/{provider}",
             params={"code": "valid-code", "state": "valid-state"},
@@ -286,9 +271,7 @@ class TestUnapprovedDomain:
 
 
 class TestUnverifiedEmail:
-    def test_unverified_email_returns_403(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_unverified_email_returns_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
         provider = "github"
         _patch_all(monkeypatch, provider, state=_oauth_state(provider), verified=False)
         response = client.get(
@@ -301,9 +284,7 @@ class TestUnverifiedEmail:
 
 
 class TestLinkingBlocked:
-    def test_linking_blocked_returns_409(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_linking_blocked_returns_409(self, monkeypatch: pytest.MonkeyPatch) -> None:
         provider = "github"
         _patch_all(monkeypatch, provider, state=_oauth_state(provider), verified=True)
 
@@ -361,9 +342,7 @@ class TestGoogleCallbackHappyPath:
 class TestMicrosoftCallbackHappyPath:
     """E3: Microsoft OIDC happy path — nonce validated, user created, redirect."""
 
-    def test_microsoft_callback_happy_path(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_microsoft_callback_happy_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         provider = "microsoft"
         _patch_all(monkeypatch, provider, state=_oauth_state(provider), verified=True)
         response = client.get(
@@ -406,9 +385,7 @@ class TestExpiredState:
 class TestStateProviderMismatch:
     """State was created for 'github' but callback hits '/callback/gitlab' → 400."""
 
-    def test_state_provider_mismatch_returns_400(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_state_provider_mismatch_returns_400(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # State was created for github
         state_for_github = _oauth_state("github")
         # But the callback is for gitlab

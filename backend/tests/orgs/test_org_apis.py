@@ -6,6 +6,7 @@ Covers the three mandatory QA scenarios:
   2. Team grants workspace permission
   3. Last-owner protection blocks unsafe removal/demotion
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -13,8 +14,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import FastAPI, HTTPException
-
 from app.auth.dependencies import get_current_active_user
 from app.auth.permissions import (
     WORKFLOWS_CREATE,
@@ -25,7 +24,7 @@ from app.auth.permissions import (
     WorkspaceRole,
     check_last_owner,
 )
-
+from fastapi import FastAPI, HTTPException
 
 # ---------------------------------------------------------------------------
 # Helpers — use SimpleNamespace to avoid Beanie init requirement
@@ -166,11 +165,27 @@ class TestOrgInviteAcceptsIntoMemberRole:
         invite = _make_invite()
 
         with (
-            patch.object(org_invite_service, "require_org_member", new=AsyncMock(return_value=owner_member)),
-            patch.object(org_invite_service.OrganizationRepository, "get_member", new=AsyncMock(return_value=None)),
-            patch.object(org_invite_service.OrgInviteRepository, "find_active_by_org_and_email", new=AsyncMock(return_value=None)),
-            patch.object(org_invite_service.OrgInviteRepository, "count_recent_by_org", new=AsyncMock(return_value=0)),
-            patch.object(org_invite_service.OrgInviteRepository, "create", new=AsyncMock(return_value=invite)),
+            patch.object(
+                org_invite_service, "require_org_member", new=AsyncMock(return_value=owner_member)
+            ),
+            patch.object(
+                org_invite_service.OrganizationRepository,
+                "get_member",
+                new=AsyncMock(return_value=None),
+            ),
+            patch.object(
+                org_invite_service.OrgInviteRepository,
+                "find_active_by_org_and_email",
+                new=AsyncMock(return_value=None),
+            ),
+            patch.object(
+                org_invite_service.OrgInviteRepository,
+                "count_recent_by_org",
+                new=AsyncMock(return_value=0),
+            ),
+            patch.object(
+                org_invite_service.OrgInviteRepository, "create", new=AsyncMock(return_value=invite)
+            ),
             patch.object(org_invite_service, "append_event", new=AsyncMock()) as mock_audit,
         ):
             result = await org_invite_service.create_org_invite(
@@ -195,11 +210,27 @@ class TestOrgInviteAcceptsIntoMemberRole:
         consumed_invite = _make_invite(email="new@example.com", consumed=True)
 
         with (
-            patch.object(org_invite_service.OrgInviteRepository, "get_by_token_hash", new=AsyncMock(return_value=invite)),
-            patch.object(org_invite_service.OrganizationRepository, "get_member", new=AsyncMock(return_value=None)),
-            patch.object(org_invite_service.OrganizationRepository, "add_member", new=AsyncMock()) as mock_add,
-            patch.object(org_invite_service.OrgInviteRepository, "consume", new=AsyncMock(return_value=True)),
-            patch.object(org_invite_service.OrgInviteRepository, "get_by_id", new=AsyncMock(return_value=consumed_invite)),
+            patch.object(
+                org_invite_service.OrgInviteRepository,
+                "get_by_token_hash",
+                new=AsyncMock(return_value=invite),
+            ),
+            patch.object(
+                org_invite_service.OrganizationRepository,
+                "get_member",
+                new=AsyncMock(return_value=None),
+            ),
+            patch.object(
+                org_invite_service.OrganizationRepository, "add_member", new=AsyncMock()
+            ) as mock_add,
+            patch.object(
+                org_invite_service.OrgInviteRepository, "consume", new=AsyncMock(return_value=True)
+            ),
+            patch.object(
+                org_invite_service.OrgInviteRepository,
+                "get_by_id",
+                new=AsyncMock(return_value=consumed_invite),
+            ),
             patch.object(org_invite_service, "append_event", new=AsyncMock()) as mock_audit,
         ):
             result = await org_invite_service.accept_org_invite("raw-token", accepting_user)
@@ -221,7 +252,11 @@ class TestOrgInviteAcceptsIntoMemberRole:
         invite = _make_invite(expired=True)
 
         with (
-            patch.object(org_invite_service.OrgInviteRepository, "get_by_token_hash", new=AsyncMock(return_value=invite)),
+            patch.object(
+                org_invite_service.OrgInviteRepository,
+                "get_by_token_hash",
+                new=AsyncMock(return_value=invite),
+            ),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await org_invite_service.accept_org_invite("raw-token", accepting_user)
@@ -235,7 +270,11 @@ class TestOrgInviteAcceptsIntoMemberRole:
         invite = _make_invite(email="new@example.com")
 
         with (
-            patch.object(org_invite_service.OrgInviteRepository, "get_by_token_hash", new=AsyncMock(return_value=invite)),
+            patch.object(
+                org_invite_service.OrgInviteRepository,
+                "get_by_token_hash",
+                new=AsyncMock(return_value=invite),
+            ),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await org_invite_service.accept_org_invite("raw-token", wrong_user)
@@ -288,10 +327,22 @@ class TestTeamGrantsWorkspacePermission:
         expected_grant = _make_grant()
 
         with (
-            patch.object(team_service, "require_org_owner", new=AsyncMock(return_value=owner_member)),
-            patch.object(team_service.TeamRepository, "get_by_slug", new=AsyncMock(return_value=team)),
-            patch.object(team_service.TeamPermissionGrantRepository, "get_by_team_and_resource", new=AsyncMock(return_value=None)),
-            patch.object(team_service.TeamPermissionGrantRepository, "create", new=AsyncMock(return_value=expected_grant)),
+            patch.object(
+                team_service, "require_org_owner", new=AsyncMock(return_value=owner_member)
+            ),
+            patch.object(
+                team_service.TeamRepository, "get_by_slug", new=AsyncMock(return_value=team)
+            ),
+            patch.object(
+                team_service.TeamPermissionGrantRepository,
+                "get_by_team_and_resource",
+                new=AsyncMock(return_value=None),
+            ),
+            patch.object(
+                team_service.TeamPermissionGrantRepository,
+                "create",
+                new=AsyncMock(return_value=expected_grant),
+            ),
             patch.object(team_service, "append_event", new=AsyncMock()) as mock_audit,
         ):
             result = await team_service.add_permission_grant(
@@ -319,9 +370,17 @@ class TestTeamGrantsWorkspacePermission:
         existing_grant = _make_grant()
 
         with (
-            patch.object(team_service, "require_org_owner", new=AsyncMock(return_value=owner_member)),
-            patch.object(team_service.TeamRepository, "get_by_slug", new=AsyncMock(return_value=team)),
-            patch.object(team_service.TeamPermissionGrantRepository, "get_by_team_and_resource", new=AsyncMock(return_value=existing_grant)),
+            patch.object(
+                team_service, "require_org_owner", new=AsyncMock(return_value=owner_member)
+            ),
+            patch.object(
+                team_service.TeamRepository, "get_by_slug", new=AsyncMock(return_value=team)
+            ),
+            patch.object(
+                team_service.TeamPermissionGrantRepository,
+                "get_by_team_and_resource",
+                new=AsyncMock(return_value=existing_grant),
+            ),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await team_service.add_permission_grant(
@@ -374,8 +433,14 @@ class TestLastOwnerProtection:
         target_member = _make_member(user_id="user-1", role="owner")
 
         with (
-            patch.object(org_service.OrganizationRepository, "get_member", new=AsyncMock(return_value=target_member)),
-            patch.object(org_service.OrganizationRepository, "count_owners", new=AsyncMock(return_value=1)),
+            patch.object(
+                org_service.OrganizationRepository,
+                "get_member",
+                new=AsyncMock(return_value=target_member),
+            ),
+            patch.object(
+                org_service.OrganizationRepository, "count_owners", new=AsyncMock(return_value=1)
+            ),
         ):
             with pytest.raises(LastOwnerError):
                 await org_service.update_member_role(
@@ -393,8 +458,14 @@ class TestLastOwnerProtection:
         target_member = _make_member(user_id="user-1", role="owner")
 
         with (
-            patch.object(org_service.OrganizationRepository, "get_member", new=AsyncMock(return_value=target_member)),
-            patch.object(org_service.OrganizationRepository, "count_owners", new=AsyncMock(return_value=1)),
+            patch.object(
+                org_service.OrganizationRepository,
+                "get_member",
+                new=AsyncMock(return_value=target_member),
+            ),
+            patch.object(
+                org_service.OrganizationRepository, "count_owners", new=AsyncMock(return_value=1)
+            ),
         ):
             with pytest.raises(LastOwnerError):
                 await org_service.remove_member(
@@ -412,9 +483,19 @@ class TestLastOwnerProtection:
         updated_member = _make_member(user_id="user-2", role="member")
 
         with (
-            patch.object(org_service.OrganizationRepository, "get_member", new=AsyncMock(return_value=target_member)),
-            patch.object(org_service.OrganizationRepository, "count_owners", new=AsyncMock(return_value=2)),
-            patch.object(org_service.OrganizationRepository, "update_member_role", new=AsyncMock(return_value=updated_member)),
+            patch.object(
+                org_service.OrganizationRepository,
+                "get_member",
+                new=AsyncMock(return_value=target_member),
+            ),
+            patch.object(
+                org_service.OrganizationRepository, "count_owners", new=AsyncMock(return_value=2)
+            ),
+            patch.object(
+                org_service.OrganizationRepository,
+                "update_member_role",
+                new=AsyncMock(return_value=updated_member),
+            ),
             patch.object(org_service, "append_event", new=AsyncMock()),
         ):
             result = await org_service.update_member_role(
@@ -440,10 +521,24 @@ class TestInviteRateLimiting:
         owner_member = _make_member(role="owner")
 
         with (
-            patch.object(org_invite_service, "require_org_member", new=AsyncMock(return_value=owner_member)),
-            patch.object(org_invite_service.OrganizationRepository, "get_member", new=AsyncMock(return_value=None)),
-            patch.object(org_invite_service.OrgInviteRepository, "find_active_by_org_and_email", new=AsyncMock(return_value=None)),
-            patch.object(org_invite_service.OrgInviteRepository, "count_recent_by_org", new=AsyncMock(return_value=10)),
+            patch.object(
+                org_invite_service, "require_org_member", new=AsyncMock(return_value=owner_member)
+            ),
+            patch.object(
+                org_invite_service.OrganizationRepository,
+                "get_member",
+                new=AsyncMock(return_value=None),
+            ),
+            patch.object(
+                org_invite_service.OrgInviteRepository,
+                "find_active_by_org_and_email",
+                new=AsyncMock(return_value=None),
+            ),
+            patch.object(
+                org_invite_service.OrgInviteRepository,
+                "count_recent_by_org",
+                new=AsyncMock(return_value=10),
+            ),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await org_invite_service.create_org_invite(
@@ -469,9 +564,15 @@ class TestOrgCRUD:
         org = _make_org()
 
         with (
-            patch.object(org_service.OrganizationRepository, "get_by_slug", new=AsyncMock(return_value=None)),
-            patch.object(org_service.OrganizationRepository, "create", new=AsyncMock(return_value=org)),
-            patch.object(org_service.OrganizationRepository, "add_member", new=AsyncMock()) as mock_add,
+            patch.object(
+                org_service.OrganizationRepository, "get_by_slug", new=AsyncMock(return_value=None)
+            ),
+            patch.object(
+                org_service.OrganizationRepository, "create", new=AsyncMock(return_value=org)
+            ),
+            patch.object(
+                org_service.OrganizationRepository, "add_member", new=AsyncMock()
+            ) as mock_add,
             patch.object(org_service, "append_event", new=AsyncMock()) as mock_audit,
         ):
             result = await org_service.create_org(
@@ -494,7 +595,11 @@ class TestOrgCRUD:
         existing_org = _make_org()
 
         with (
-            patch.object(org_service.OrganizationRepository, "get_by_slug", new=AsyncMock(return_value=existing_org)),
+            patch.object(
+                org_service.OrganizationRepository,
+                "get_by_slug",
+                new=AsyncMock(return_value=existing_org),
+            ),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await org_service.create_org(

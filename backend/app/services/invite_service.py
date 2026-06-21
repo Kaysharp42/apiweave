@@ -124,8 +124,7 @@ async def send_invite_email(
     """Send invite email via SMTP. Returns True on success, False on failure/missing config."""
     if not settings.is_smtp_configured():
         logger.warning(
-            "SMTP not configured — email not sent for invite %s to %s. "
-            "Copy link manually: %s",
+            "SMTP not configured — email not sent for invite %s to %s. " "Copy link manually: %s",
             invite.inviteId,
             invite.email,
             invite.invite_url,

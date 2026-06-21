@@ -1,11 +1,22 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ChevronDown, Building2, User } from 'lucide-react';
-import { useWorkspace } from '../../contexts/WorkspaceContext';
-import { Button } from '../atoms/Button';
-import type { WorkspaceEntry } from '../../types/WorkspaceContextValue';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import { ChevronDown, Building2, User } from "lucide-react";
+import { useWorkspace } from "../../contexts/WorkspaceContext";
+import { Button } from "../atoms/Button";
+import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
 
 export function OrgWorkspaceSwitcher() {
-  const { availableWorkspaces, currentOrg, currentWorkspace, switchTo, isLoading } = useWorkspace();
+  const {
+    availableWorkspaces,
+    currentOrg,
+    currentWorkspace,
+    switchTo,
+    isLoading,
+  } = useWorkspace();
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -16,60 +27,79 @@ export function OrgWorkspaceSwitcher() {
     if (!open) return undefined;
 
     const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     };
 
     const handleEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setOpen(false);
         triggerRef.current?.focus();
       }
     };
 
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick as EventListener, { passive: true });
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener(
+      "touchstart",
+      handleOutsideClick as EventListener,
+      { passive: true },
+    );
+    document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('touchstart', handleOutsideClick as EventListener);
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener(
+        "touchstart",
+        handleOutsideClick as EventListener,
+      );
+      document.removeEventListener("keydown", handleEscape);
     };
   }, [open]);
 
-  const handleTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+  const handleTriggerKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (
+      event.key === "Enter" ||
+      event.key === " " ||
+      event.key === "ArrowDown"
+    ) {
       event.preventDefault();
       setOpen(true);
       requestAnimationFrame(() => menuItemRefs.current[0]?.focus());
     }
-    if (event.key === 'Escape') {
+    if (event.key === "Escape") {
       event.preventDefault();
       setOpen(false);
     }
   };
 
   const handleSelect = (entry: WorkspaceEntry) => {
-    const orgSlug = entry.org?.slug ?? 'personal';
+    const orgSlug = entry.org?.slug ?? "personal";
     switchTo(orgSlug, entry.workspace.slug);
     setOpen(false);
     triggerRef.current?.focus();
   };
 
-  const handleItemKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
-    if (event.key === 'ArrowDown') {
+  const handleItemKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    if (event.key === "ArrowDown") {
       event.preventDefault();
       const next = menuItemRefs.current[index + 1];
       next?.focus();
     }
-    if (event.key === 'ArrowUp') {
+    if (event.key === "ArrowUp") {
       event.preventDefault();
       const prev = menuItemRefs.current[index - 1];
       prev?.focus();
     }
-    if (event.key === 'Escape') {
+    if (event.key === "Escape") {
       event.preventDefault();
       setOpen(false);
       triggerRef.current?.focus();
@@ -85,19 +115,24 @@ export function OrgWorkspaceSwitcher() {
   }
 
   // Separate personal and org workspaces
-  const personalWorkspace = availableWorkspaces.find((e) => e.workspace.isPersonal);
+  const personalWorkspace = availableWorkspaces.find(
+    (e) => e.workspace.isPersonal,
+  );
   const orgEntries = availableWorkspaces.filter((e) => !e.workspace.isPersonal);
 
   // Group org entries by org
-  const orgGroups = new Map<string, { orgName: string; entries: WorkspaceEntry[] }>();
+  const orgGroups = new Map<
+    string,
+    { orgName: string; entries: WorkspaceEntry[] }
+  >();
   for (const entry of orgEntries) {
-    const orgId = entry.org?.orgId ?? 'unknown';
+    const orgId = entry.org?.orgId ?? "unknown";
     const group = orgGroups.get(orgId);
     if (group) {
       group.entries.push(entry);
     } else {
       orgGroups.set(orgId, {
-        orgName: entry.org?.name ?? 'Unknown Org',
+        orgName: entry.org?.name ?? "Unknown Org",
         entries: [entry],
       });
     }
@@ -111,8 +146,8 @@ export function OrgWorkspaceSwitcher() {
   }
 
   const displayLabel = currentOrg
-    ? `${currentOrg.name} / ${currentWorkspace?.name ?? '...'}`
-    : currentWorkspace?.name ?? 'Personal';
+    ? `${currentOrg.name} / ${currentWorkspace?.name ?? "..."}`
+    : (currentWorkspace?.name ?? "Personal");
 
   return (
     <div className="relative" ref={wrapperRef}>
@@ -151,7 +186,8 @@ export function OrgWorkspaceSwitcher() {
                 index={0}
                 isActive={
                   !currentOrg &&
-                  currentWorkspace?.workspaceId === personalWorkspace.workspace.workspaceId
+                  currentWorkspace?.workspaceId ===
+                    personalWorkspace.workspace.workspaceId
                 }
                 icon={<User className="w-4 h-4 flex-shrink-0" />}
                 onSelect={handleSelect}
@@ -189,7 +225,8 @@ export function OrgWorkspaceSwitcher() {
                           index={flatIndex}
                           isActive={
                             currentOrg?.orgId === entry.org?.orgId &&
-                            currentWorkspace?.workspaceId === entry.workspace.workspaceId
+                            currentWorkspace?.workspaceId ===
+                              entry.workspace.workspaceId
                           }
                           icon={<Building2 className="w-4 h-4 flex-shrink-0" />}
                           onSelect={handleSelect}
@@ -227,7 +264,10 @@ interface WorkspaceItemProps {
   isActive: boolean;
   icon: React.ReactNode;
   onSelect: (entry: WorkspaceEntry) => void;
-  onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => void;
+  onKeyDown: (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => void;
   itemRef: (el: HTMLButtonElement | null) => void;
 }
 
@@ -248,23 +288,25 @@ function WorkspaceItem({
       aria-selected={isActive}
       onClick={() => onSelect(entry)}
       onKeyDown={(e) => onKeyDown(e, index)}
-        className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus:outline-none ${
+      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus:outline-none ${
         isActive
-          ? 'bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light'
-          : 'text-text-primary hover:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay'
+          ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
+          : "text-text-primary hover:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay"
       }`}
     >
       <span
         className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border ${
           isActive
-            ? 'bg-primary/15 text-primary dark:bg-primary-light/15 dark:text-primary-light'
-            : 'bg-border/30 text-text-secondary dark:bg-border-dark/30 dark:text-text-secondary-dark'
+            ? "bg-primary/15 text-primary dark:bg-primary-light/15 dark:text-primary-light"
+            : "bg-border/30 text-text-secondary dark:bg-border-dark/30 dark:text-text-secondary-dark"
         }`}
       >
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{entry.workspace.name}</div>
+        <div className="truncate text-sm font-medium">
+          {entry.workspace.name}
+        </div>
         {entry.org && (
           <div className="truncate text-[11px] text-text-muted dark:text-text-muted-dark">
             {entry.org.name}

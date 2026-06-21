@@ -1,5 +1,5 @@
-import type { ProviderDisplay } from '../types';
-import { Button } from './atoms/Button';
+import type { ProviderDisplay } from "../types";
+import { Button } from "./atoms/Button";
 
 interface OAuthButtonProps {
   provider: ProviderDisplay;
@@ -8,13 +8,18 @@ interface OAuthButtonProps {
   disabled?: boolean;
 }
 
-export function OAuthButton({ provider, onClick, loading = false, disabled = false }: OAuthButtonProps) {
+export function OAuthButton({
+  provider,
+  onClick,
+  loading = false,
+  disabled = false,
+}: OAuthButtonProps) {
   const { IconComponent, label, id } = provider;
-  const isGoogle = id === 'google';
-  
+  const isGoogle = id === "google";
+
   const iconClass = isGoogle
-    ? 'w-5 h-5 opacity-80 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0'
-    : 'w-5 h-5 text-text-secondary dark:text-text-secondary-dark group-hover:text-text-primary dark:group-hover:text-text-primary-dark transition-colors';
+    ? "w-5 h-5 opacity-80 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0"
+    : "w-5 h-5 text-text-secondary dark:text-text-secondary-dark group-hover:text-text-primary dark:group-hover:text-text-primary-dark transition-colors";
 
   return (
     <Button

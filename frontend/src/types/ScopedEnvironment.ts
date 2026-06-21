@@ -1,5 +1,5 @@
 /** Scope types for scoped environments. */
-export type EnvironmentScopeType = 'user' | 'organization' | 'workspace';
+export type EnvironmentScopeType = "user" | "organization" | "workspace";
 
 /**
  * Scoped environment — replaces the legacy Environment type.

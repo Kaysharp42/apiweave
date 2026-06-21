@@ -7,7 +7,6 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-
 from app.runner.executor import WorkflowExecutor
 
 
@@ -119,9 +118,7 @@ async def test_variable_type_rejects_outside_sandbox_path(
 
 
 @pytest.mark.asyncio
-async def test_variable_type_reads_file_in_sandbox(
-    sandboxed_file: Path, sandbox_dir: Path
-) -> None:
+async def test_variable_type_reads_file_in_sandbox(sandboxed_file: Path, sandbox_dir: Path) -> None:
     exe = _executor()
     file_ref = {
         "type": "variable",

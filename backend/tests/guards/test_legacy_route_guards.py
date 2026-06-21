@@ -79,8 +79,7 @@ class TestGrepGuards:
             if "include_router(collections.router)" in line
         ]
         assert not lines, (
-            "Flat collections.router is still mounted in main.py. "
-            "Projects replace collections."
+            "Flat collections.router is still mounted in main.py. " "Projects replace collections."
         )
 
     def test_no_flat_router_import_in_main(self) -> None:

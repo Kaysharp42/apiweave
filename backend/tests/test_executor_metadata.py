@@ -3,11 +3,9 @@ import json
 from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
 
 import aiohttp
 import pytest
-
 from app.runner import executor as executor_module
 from app.runner.executor import WorkflowExecutor
 from app.services import safe_http as safe_http_module
@@ -367,7 +365,7 @@ async def test_execute_http_request_counts_response_redirect_history(
     _install_fake_http(
         monkeypatch,
         FakeResponse(
-            "{\"ok\": true}",
+            '{"ok": true}',
             FakeResponseHeaders({"Content-Type": "application/json"}),
             history=[object(), object()],
         ),
@@ -384,7 +382,7 @@ async def test_execute_http_request_counts_response_redirect_history(
 async def test_execute_http_request_handles_missing_response_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    response = FakeResponse("{\"ok\": true}")
+    response = FakeResponse('{"ok": true}')
     delattr(response, "history")
     _install_fake_http(monkeypatch, response)
 

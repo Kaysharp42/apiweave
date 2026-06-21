@@ -1,12 +1,12 @@
-import { Dialog, Transition, TransitionChild } from '@headlessui/react';
-import { X } from 'lucide-react';
-import { IconButton } from '../atoms/IconButton';
-import type { SlidePanelProps } from '../../types';
+import { Dialog, Transition, TransitionChild } from "@headlessui/react";
+import { X } from "lucide-react";
+import { IconButton } from "../atoms/IconButton";
+import type { SlidePanelProps } from "../../types";
 
 const SIZE_MAP: Record<string, string> = {
-  sm: 'max-w-xs',
-  md: 'max-w-md',
-  lg: 'max-w-lg',
+  sm: "max-w-xs",
+  md: "max-w-md",
+  lg: "max-w-lg",
 };
 
 export function SlidePanel({
@@ -15,12 +15,12 @@ export function SlidePanel({
   title,
   children,
   footer,
-  side = 'right',
-  size = 'md',
+  side = "right",
+  size = "md",
   showClose = true,
-  className = '',
+  className = "",
 }: SlidePanelProps) {
-  const isRight = side === 'right';
+  const isRight = side === "right";
 
   return (
     <Transition show={open}>
@@ -39,21 +39,21 @@ export function SlidePanel({
         <div className="fixed inset-0 overflow-hidden">
           <div
             className={`absolute inset-y-0 flex ${
-              isRight ? 'right-0 justify-end' : 'left-0 justify-start'
+              isRight ? "right-0 justify-end" : "left-0 justify-start"
             }`}
           >
             <TransitionChild
               enter="transition-transform duration-250 ease-out"
-              enterFrom={isRight ? 'translate-x-full' : '-translate-x-full'}
+              enterFrom={isRight ? "translate-x-full" : "-translate-x-full"}
               enterTo="translate-x-0"
               leave="transition-transform duration-200 ease-in"
               leaveFrom="translate-x-0"
-              leaveTo={isRight ? 'translate-x-full' : '-translate-x-full'}
+              leaveTo={isRight ? "translate-x-full" : "-translate-x-full"}
             >
               <Dialog.Panel
                 className={`w-screen ${SIZE_MAP[size] || SIZE_MAP.md} h-full flex flex-col
                   bg-surface-raised dark:bg-surface-dark-raised border-border dark:border-border-dark
-                  ${isRight ? 'border-l' : 'border-r'} shadow-modal`}
+                  ${isRight ? "border-l" : "border-r"} shadow-modal`}
               >
                 <div className="flex items-center justify-between border-b border-border bg-surface-overlay px-4 py-3 dark:border-border-dark dark:bg-surface-dark-overlay">
                   <Dialog.Title className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
@@ -71,7 +71,9 @@ export function SlidePanel({
                   )}
                 </div>
 
-                <div className={`flex-1 overflow-y-auto px-4 py-3 ${className}`}>
+                <div
+                  className={`flex-1 overflow-y-auto px-4 py-3 ${className}`}
+                >
                   {children}
                 </div>
 

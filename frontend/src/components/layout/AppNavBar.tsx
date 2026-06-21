@@ -1,13 +1,21 @@
-import React from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Settings, Webhook, LayoutGrid, ChevronLeft, ChevronRight, Server } from 'lucide-react';
-import { Transition } from '@headlessui/react';
-import Tippy from '@tippyjs/react';
-import { IconButton } from '../atoms/IconButton';
-import useNavigationStore from '../../stores/NavigationStore';
-import { useWorkspace } from '../../contexts/WorkspaceContext';
-import { AppNavBarItems } from '../../constants/AppNavBar';
-import type { NavSection } from '../../types/NavSection';
+import React from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import {
+  Home,
+  Settings,
+  Webhook,
+  LayoutGrid,
+  ChevronLeft,
+  ChevronRight,
+  Server,
+} from "lucide-react";
+import { Transition } from "@headlessui/react";
+import Tippy from "@tippyjs/react";
+import { IconButton } from "../atoms/IconButton";
+import useNavigationStore from "../../stores/NavigationStore";
+import { useWorkspace } from "../../contexts/WorkspaceContext";
+import { AppNavBarItems } from "../../constants/AppNavBar";
+import type { NavSection } from "../../types/NavSection";
 
 type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
@@ -30,13 +38,13 @@ const navItems: NavItemConfig[] = [
     icon: LayoutGrid,
   },
   {
-    id: 'webhooks',
-    label: 'Webhooks',
+    id: "webhooks",
+    label: "Webhooks",
     icon: Webhook,
   },
   {
-    id: 'mcp',
-    label: 'MCP',
+    id: "mcp",
+    label: "MCP",
     icon: Server,
   },
   {
@@ -50,23 +58,32 @@ const navItems: NavItemConfig[] = [
 export function AppNavBar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
-  const updateNavigationSelectedValue = useNavigationStore((state) => state.setNavState);
+  const navigationSelectedValue = useNavigationStore(
+    (state) => state.selectedNavVal,
+  );
+  const updateNavigationSelectedValue = useNavigationStore(
+    (state) => state.setNavState,
+  );
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
-  const toggleNavBarCollapse = useNavigationStore((state) => state.toggleNavBarCollapse);
+  const toggleNavBarCollapse = useNavigationStore(
+    (state) => state.toggleNavBarCollapse,
+  );
   const { currentOrg, currentWorkspace } = useWorkspace();
 
-  const isOnSettingsRoute = location.pathname.includes('/settings/') || location.pathname === '/audit';
+  const isOnSettingsRoute =
+    location.pathname.includes("/settings/") || location.pathname === "/audit";
 
   return (
     <nav
       className={[
-        'relative flex h-full flex-col transition-all duration-300 ease-in-out motion-reduce:transition-none',
-        'bg-surface-raised dark:bg-surface-dark-raised',
-        'border-r border-border dark:border-border-dark',
-        'w-14 lg:w-auto',
-        isNavBarCollapsed ? 'lg:w-nav-collapsed lg:min-w-nav-collapsed' : 'lg:w-nav-expanded',
-      ].join(' ')}
+        "relative flex h-full flex-col transition-all duration-300 ease-in-out motion-reduce:transition-none",
+        "bg-surface-raised dark:bg-surface-dark-raised",
+        "border-r border-border dark:border-border-dark",
+        "w-14 lg:w-auto",
+        isNavBarCollapsed
+          ? "lg:w-nav-collapsed lg:min-w-nav-collapsed"
+          : "lg:w-nav-expanded",
+      ].join(" ")}
       aria-label="Main navigation"
     >
       <div className="flex-1 p-1">
@@ -78,21 +95,21 @@ export function AppNavBar() {
               type="button"
               key={id}
               className={[
-                'relative w-full rounded focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light',
-              ].join(' ')}
+                "relative w-full rounded focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light",
+              ].join(" ")}
               onClick={() => {
                 if (disabled) return;
                 updateNavigationSelectedValue(id as NavSection);
-                if (id === 'settings') {
-                  if (!isOnSettingsRoute) navigate('/settings/users');
+                if (id === "settings") {
+                  if (!isOnSettingsRoute) navigate("/settings/users");
                 } else if (isOnSettingsRoute) {
-                  const orgSlug = currentOrg?.slug ?? 'personal';
-                  const wsSlug = currentWorkspace?.slug ?? 'workflows';
+                  const orgSlug = currentOrg?.slug ?? "personal";
+                  const wsSlug = currentWorkspace?.slug ?? "workflows";
                   navigate(`/${orgSlug}/${wsSlug}/workflows`);
                 }
               }}
               disabled={disabled}
-              aria-current={isSelected ? 'page' : undefined}
+              aria-current={isSelected ? "page" : undefined}
               aria-label={disabled ? `${label} (coming soon)` : label}
             >
               {isSelected && (
@@ -100,14 +117,14 @@ export function AppNavBar() {
               )}
               <div
                 className={[
-                  'flex w-full items-center gap-3 rounded px-3 py-2.5 transition-colors duration-200 motion-reduce:transition-none',
-                  'justify-center',
-                  !isNavBarCollapsed && 'lg:justify-start',
+                  "flex w-full items-center gap-3 rounded px-3 py-2.5 transition-colors duration-200 motion-reduce:transition-none",
+                  "justify-center",
+                  !isNavBarCollapsed && "lg:justify-start",
                   isSelected
-                    ? 'bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light'
-                    : 'text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark',
-                  disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
-                ].join(' ')}
+                    ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
+                    : "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark",
+                  disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
+                ].join(" ")}
               >
                 <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
                 <Transition
@@ -124,7 +141,9 @@ export function AppNavBar() {
                   </span>
                 </Transition>
                 {disabled && !isNavBarCollapsed && (
-                  <span className="ml-auto rounded-full border border-border px-1.5 py-0.5 font-mono text-xxs text-text-muted dark:border-border-dark dark:text-text-muted-dark">Soon</span>
+                  <span className="ml-auto rounded-full border border-border px-1.5 py-0.5 font-mono text-xxs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
+                    Soon
+                  </span>
                 )}
               </div>
             </button>
@@ -146,7 +165,9 @@ export function AppNavBar() {
 
       <div className="hidden lg:block">
         <IconButton
-          tooltip={isNavBarCollapsed ? 'Expand Navigation' : 'Collapse Navigation'}
+          tooltip={
+            isNavBarCollapsed ? "Expand Navigation" : "Collapse Navigation"
+          }
           size="sm"
           onClick={toggleNavBarCollapse}
           className="w-full justify-start rounded-none border-t border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light"

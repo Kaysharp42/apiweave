@@ -1,1 +1,1 @@
-export type NodeModalAssertionFailureMode = 'first' | 'all';
+export type NodeModalAssertionFailureMode = "first" | "all";

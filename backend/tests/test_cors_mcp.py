@@ -1,8 +1,7 @@
 """Tests for CORS tightening and MCP CORS middleware (Wave 3 / Task 14)."""
 
-from starlette.testclient import TestClient
-
 from app.main import app
+from starlette.testclient import TestClient
 
 
 class TestCORSMiddlewareConfiguration:
@@ -35,13 +34,13 @@ class TestCORSMiddlewareConfiguration:
 
 class TestMCPCORSMiddleware:
     def test_mcp_cors_options_request(self):
+        from app.mcp.auth import MCPCORSMiddleware
         from starlette.applications import Starlette
         from starlette.routing import Route
 
-        from app.mcp.auth import MCPCORSMiddleware
-
         async def dummy(request):
             from starlette.responses import PlainTextResponse
+
             return PlainTextResponse("ok")
 
         inner = Starlette(routes=[Route("/", dummy)])
@@ -55,13 +54,13 @@ class TestMCPCORSMiddleware:
         assert "GET" in resp.headers["access-control-allow-methods"]
 
     def test_mcp_cors_adds_headers_to_normal_response(self):
+        from app.mcp.auth import MCPCORSMiddleware
         from starlette.applications import Starlette
         from starlette.routing import Route
 
-        from app.mcp.auth import MCPCORSMiddleware
-
         async def dummy(request):
             from starlette.responses import PlainTextResponse
+
             return PlainTextResponse("ok")
 
         inner = Starlette(routes=[Route("/", dummy)])

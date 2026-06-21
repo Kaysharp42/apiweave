@@ -1,1 +1,1 @@
-export type NodeModalConditionLogic = 'AND' | 'OR';
+export type NodeModalConditionLogic = "AND" | "OR";

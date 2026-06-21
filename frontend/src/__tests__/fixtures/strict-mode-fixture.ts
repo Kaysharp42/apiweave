@@ -13,4 +13,4 @@
  */
 
 // Legacy URL that must be detected by the guard:
-export const legacyUrl = 'http://localhost:8000/api/workflows/fake-id';
+export const legacyUrl = "http://localhost:8000/api/workflows/fake-id";

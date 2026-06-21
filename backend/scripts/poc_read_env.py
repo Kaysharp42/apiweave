@@ -8,6 +8,7 @@ Usage:
     python poc_read_env.py --expected=blocked     # default: assert file read blocked
     python poc_read_env.py --expected=vulnerable  # assert file read still works
 """
+
 import argparse
 import json
 import os
@@ -68,30 +69,47 @@ def main():
     wf = {
         "name": "File Read ENV PoC",
         "nodes": [
-            {"nodeId": "s", "type": "start", "label": "Start", "position": {"x":0,"y":0}, "config":{}},
-            {"nodeId": "h", "type": "http-request", "label": "ReadENV", "position": {"x":100,"y":0},
-             "config": {
-                 "method": "POST",
-                 "url": f"{BASE}/api/auth/csrf-token",
-                 "headers": "Content-Type: multipart/form-data",
-                 "body": "",
-                 "bodyType": None,
-                 "timeout": 10,
-                 "fileUploads": [
-                     {
-                         "active": True,
-                         "type": "path",
-                         "value": target,
-                         "fieldName": "envfile",
-                         "mimeType": "application/octet-stream",
-                     }
-                 ],
-             }},
-            {"nodeId": "e", "type": "end", "label": "End", "position": {"x":200,"y":0}, "config":{}},
+            {
+                "nodeId": "s",
+                "type": "start",
+                "label": "Start",
+                "position": {"x": 0, "y": 0},
+                "config": {},
+            },
+            {
+                "nodeId": "h",
+                "type": "http-request",
+                "label": "ReadENV",
+                "position": {"x": 100, "y": 0},
+                "config": {
+                    "method": "POST",
+                    "url": f"{BASE}/api/auth/csrf-token",
+                    "headers": "Content-Type: multipart/form-data",
+                    "body": "",
+                    "bodyType": None,
+                    "timeout": 10,
+                    "fileUploads": [
+                        {
+                            "active": True,
+                            "type": "path",
+                            "value": target,
+                            "fieldName": "envfile",
+                            "mimeType": "application/octet-stream",
+                        }
+                    ],
+                },
+            },
+            {
+                "nodeId": "e",
+                "type": "end",
+                "label": "End",
+                "position": {"x": 200, "y": 0},
+                "config": {},
+            },
         ],
         "edges": [
-            {"edgeId":"e1","source":"s","target":"h"},
-            {"edgeId":"e2","source":"h","target":"e"},
+            {"edgeId": "e1", "source": "s", "target": "h"},
+            {"edgeId": "e2", "source": "h", "target": "e"},
         ],
     }
     code, w = req(BASE, "POST", "/api/workflows", wf)
@@ -120,7 +138,17 @@ def main():
     if os.path.exists(log):
         with open(log, encoding="utf-8") as f:
             log_text = f.read()
-        for keyword in ["Resolved", "file", "Path", "Added", "Failed", "Error", "bytes", ".env", "SECRET"]:
+        for keyword in [
+            "Resolved",
+            "file",
+            "Path",
+            "Added",
+            "Failed",
+            "Error",
+            "bytes",
+            ".env",
+            "SECRET",
+        ]:
             if keyword in log_text:
                 start = max(0, log_text.find(keyword) - 80)
                 end = min(len(log_text), log_text.find(keyword) + 300)
@@ -134,7 +162,7 @@ def main():
     # Also check node result
     code, res = req(BASE, "GET", f"/api/workflows/{wid}/runs/{rid}/nodes/h/result")
     result_data = res.get("result", res) if isinstance(res, dict) else res
-    print(f"\n[*] Node result:")
+    print("\n[*] Node result:")
     print(json.dumps(result_data, indent=2)[:1500])
 
     req(BASE, "DELETE", f"/api/workflows/{wid}")
@@ -155,7 +183,7 @@ def main():
     if env_marker in log_text:
         # Check if any .env path indicator follows the marker
         idx = log_text.find(env_marker)
-        context = log_text[idx:idx + 300]
+        context = log_text[idx : idx + 300]
         for indicator in env_path_indicators:
             if indicator in context:
                 log_has_resolved_path = True
@@ -163,13 +191,17 @@ def main():
 
     # Also check for error/blocking indicators
     error_indicators = [
-        "blocked", "forbidden", "not allowed", "disallowed",
-        "path traversal", "unsafe path", "invalid path",
-        "file read denied", "access denied",
+        "blocked",
+        "forbidden",
+        "not allowed",
+        "disallowed",
+        "path traversal",
+        "unsafe path",
+        "invalid path",
+        "file read denied",
+        "access denied",
     ]
-    log_has_block_error = any(
-        kw in log_text.lower() for kw in error_indicators
-    )
+    any(kw in log_text.lower() for kw in error_indicators)
     result_status = result_data.get("status", "") if isinstance(result_data, dict) else ""
     result_error = result_data.get("error", "") if isinstance(result_data, dict) else ""
     result_is_error = result_status == "error" or any(
@@ -180,30 +212,38 @@ def main():
         # PASS if: log does NOT contain resolved .env path, OR result is error
         path_blocked = not log_has_resolved_path
         if path_blocked or result_is_error:
-            detail = f"log_has_resolved_path={log_has_resolved_path}, result_is_error={result_is_error}"
+            detail = (
+                f"log_has_resolved_path={log_has_resolved_path}, result_is_error={result_is_error}"
+            )
             if result_error:
                 detail += f", error={str(result_error)[:120]}"
             results.append(("File read .env blocked", True, detail))
         else:
-            results.append((
-                "File read .env blocked",
-                False,
-                f"File read NOT blocked — log contains resolved .env path: {log_has_resolved_path}",
-            ))
+            results.append(
+                (
+                    "File read .env blocked",
+                    False,
+                    f"File read NOT blocked — log contains resolved .env path: {log_has_resolved_path}",
+                )
+            )
     else:  # vulnerable
         # PASS if: log DOES contain resolved .env path
         if log_has_resolved_path:
-            results.append((
-                "File read .env vulnerable (file was read)",
-                True,
-                "Log contains 'Resolved file path: ...backend\\.env' — file read confirmed",
-            ))
+            results.append(
+                (
+                    "File read .env vulnerable (file was read)",
+                    True,
+                    "Log contains 'Resolved file path: ...backend\\.env' — file read confirmed",
+                )
+            )
         else:
-            results.append((
-                "File read .env vulnerable (file was read)",
-                False,
-                "Expected log to contain resolved .env path but it did not",
-            ))
+            results.append(
+                (
+                    "File read .env vulnerable (file was read)",
+                    False,
+                    "Expected log to contain resolved .env path but it did not",
+                )
+            )
 
     # --- Report ---
     print("\n" + "=" * 60)
@@ -220,7 +260,9 @@ def main():
     # Save evidence
     evidence_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        ".omo", "evidence", "task-6-poc-read-env.txt",
+        ".omo",
+        "evidence",
+        "task-6-poc-read-env.txt",
     )
     try:
         os.makedirs(os.path.dirname(evidence_path), exist_ok=True)

@@ -1,4 +1,4 @@
-import type { EnvironmentScopeType } from './ScopedEnvironment';
+import type { EnvironmentScopeType } from "./ScopedEnvironment";
 
 /**
  * ScopedEnvironmentParams — parameters for fetching environments at a given scope.

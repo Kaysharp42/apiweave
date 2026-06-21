@@ -1,23 +1,29 @@
-import { useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Shield } from 'lucide-react';
-import { useAuth } from '../auth/useAuth';
-import { Spinner } from '../components/atoms/Spinner';
-import { EmptyState } from '../components/molecules/EmptyState';
-import { SplitAuthLayout } from '../components/auth/SplitAuthLayout';
-import { AuthInteractiveHero } from '../components/auth/AuthInteractiveHero';
-import { OAuthButton } from '../components/OAuthButton';
-import { useOAuthProviders } from '../hooks/useOAuthProviders';
+import { useState } from "react";
+import { Navigate, useSearchParams } from "react-router-dom";
+import { AlertTriangle, Shield } from "lucide-react";
+import { useAuth } from "../auth/useAuth";
+import { Spinner } from "../components/atoms/Spinner";
+import { EmptyState } from "../components/molecules/EmptyState";
+import { SplitAuthLayout } from "../components/auth/SplitAuthLayout";
+import { AuthInteractiveHero } from "../components/auth/AuthInteractiveHero";
+import { OAuthButton } from "../components/OAuthButton";
+import { useOAuthProviders } from "../hooks/useOAuthProviders";
 
 export default function LoginPage() {
   const { login, status } = useAuth();
   const [searchParams] = useSearchParams();
-  const error = searchParams.get('error');
+  const error = searchParams.get("error");
 
-  const { providers, loading: loadingProviders, error: fetchError } = useOAuthProviders();
-  const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
+  const {
+    providers,
+    loading: loadingProviders,
+    error: fetchError,
+  } = useOAuthProviders();
+  const [loadingProviderId, setLoadingProviderId] = useState<string | null>(
+    null,
+  );
 
-  if (status === 'loading') {
+  if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface dark:bg-surface-dark">
         <Spinner size="lg" className="text-primary dark:text-primary-light" />
@@ -25,7 +31,7 @@ export default function LoginPage() {
     );
   }
 
-  if (status === 'authenticated') {
+  if (status === "authenticated") {
     return <Navigate to="/app" replace />;
   }
 
@@ -56,7 +62,12 @@ export default function LoginPage() {
 
           {fetchError && (
             <EmptyState
-              icon={<AlertTriangle className="w-10 h-10 text-status-error" strokeWidth={1.5} />}
+              icon={
+                <AlertTriangle
+                  className="w-10 h-10 text-status-error"
+                  strokeWidth={1.5}
+                />
+              }
               title="Sign-in options unavailable"
               description={fetchError}
             />
@@ -64,7 +75,10 @@ export default function LoginPage() {
 
           {loadingProviders && (
             <div className="flex flex-col items-center gap-3 py-10">
-              <Spinner size="lg" className="text-primary dark:text-primary-light" />
+              <Spinner
+                size="lg"
+                className="text-primary dark:text-primary-light"
+              />
               <p className="font-mono text-xs text-text-muted dark:text-text-muted-dark">
                 Loading sign-in options...
               </p>
@@ -73,26 +87,32 @@ export default function LoginPage() {
 
           {!loadingProviders && !fetchError && providers.length === 0 && (
             <EmptyState
-              icon={<Shield className="w-10 h-10 text-status-warning" strokeWidth={1.5} />}
+              icon={
+                <Shield
+                  className="w-10 h-10 text-status-warning"
+                  strokeWidth={1.5}
+                />
+              }
               title="No sign-in providers configured"
               description="Contact your administrator to enable authentication providers."
             />
           )}
 
-          {!loadingProviders && providers.map((provider) => {
-            const isLoading = loadingProviderId === provider.id;
-            const isDisabled = loadingProviderId !== null && !isLoading;
+          {!loadingProviders &&
+            providers.map((provider) => {
+              const isLoading = loadingProviderId === provider.id;
+              const isDisabled = loadingProviderId !== null && !isLoading;
 
-            return (
-              <OAuthButton
-                key={provider.id}
-                provider={provider}
-                onClick={handleProviderClick}
-                loading={isLoading}
-                disabled={isDisabled}
-              />
-            );
-          })}
+              return (
+                <OAuthButton
+                  key={provider.id}
+                  provider={provider}
+                  onClick={handleProviderClick}
+                  loading={isLoading}
+                  disabled={isDisabled}
+                />
+              );
+            })}
         </div>
 
         <p className="mt-10 font-mono text-[10px] text-text-muted dark:text-text-muted-dark">

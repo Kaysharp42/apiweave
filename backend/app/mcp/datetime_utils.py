@@ -1,4 +1,5 @@
 """Datetime normalization helpers for MCP structured output."""
+
 from datetime import UTC, datetime
 from typing import Any
 

@@ -1,7 +1,7 @@
-import type { Workflow } from './Workflow';
-import type { Collection } from './Collection';
-import type { ScopedEnvironment } from './ScopedEnvironment';
-import type { PaginationState } from './PaginationState';
+import type { Workflow } from "./Workflow";
+import type { Collection } from "./Collection";
+import type { ScopedEnvironment } from "./ScopedEnvironment";
+import type { PaginationState } from "./PaginationState";
 
 export interface WorkflowListProps {
   workflows: Workflow[];

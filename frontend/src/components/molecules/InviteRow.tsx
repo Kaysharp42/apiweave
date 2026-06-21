@@ -1,7 +1,7 @@
-import { Trash2, RefreshCw } from 'lucide-react';
-import { IconButton } from '../atoms/IconButton';
-import { StatusBadge } from './StatusBadge';
-import type { OrgInvite } from '../../types';
+import { Trash2, RefreshCw } from "lucide-react";
+import { IconButton } from "../atoms/IconButton";
+import { StatusBadge } from "./StatusBadge";
+import type { OrgInvite } from "../../types";
 
 export interface InviteRowProps {
   invite: OrgInvite;
@@ -10,7 +10,12 @@ export interface InviteRowProps {
   resending?: boolean;
 }
 
-export function InviteRow({ invite, onResend, onCancel, resending = false }: InviteRowProps) {
+export function InviteRow({
+  invite,
+  onResend,
+  onCancel,
+  resending = false,
+}: InviteRowProps) {
   const isExpired = new Date(invite.expires_at) < new Date();
   const isConsumed = invite.consumed;
 

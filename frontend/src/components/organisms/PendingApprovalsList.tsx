@@ -1,8 +1,16 @@
-import { CheckCircle2, XCircle, Clock, User, Bot, Globe, Cpu } from 'lucide-react';
-import { Button } from '../atoms/Button';
-import { Badge } from '../atoms/Badge';
-import { EmptyState } from '../molecules/EmptyState';
-import type { PendingApprovalsListProps, ApprovalActorType } from '../../types';
+import {
+  CheckCircle2,
+  XCircle,
+  Clock,
+  User,
+  Bot,
+  Globe,
+  Cpu,
+} from "lucide-react";
+import { Button } from "../atoms/Button";
+import { Badge } from "../atoms/Badge";
+import { EmptyState } from "../molecules/EmptyState";
+import type { PendingApprovalsListProps, ApprovalActorType } from "../../types";
 
 const ACTOR_ICONS: Record<ApprovalActorType, typeof User> = {
   user: User,
@@ -18,22 +26,30 @@ export function PendingApprovalsList({
   loading = false,
   currentUserId,
   requiredReviewerIds = [],
-  className = '',
+  className = "",
 }: PendingApprovalsListProps) {
-  const pendingApprovals = approvals.filter((a) => a.status === 'pending');
+  const pendingApprovals = approvals.filter((a) => a.status === "pending");
 
   if (pendingApprovals.length === 0) {
     return (
       <EmptyState
         title="No pending approvals"
         description="All runs have been reviewed."
-        icon={<CheckCircle2 className="w-12 h-12 text-status-success" strokeWidth={1.5} />}
+        icon={
+          <CheckCircle2
+            className="w-12 h-12 text-status-success"
+            strokeWidth={1.5}
+          />
+        }
         className={className}
       />
     );
   }
 
-  const canUserApprove = (currentUserId: string | undefined, reviewerIds: string[]): boolean => {
+  const canUserApprove = (
+    currentUserId: string | undefined,
+    reviewerIds: string[],
+  ): boolean => {
     if (!currentUserId) return false;
     return reviewerIds.includes(currentUserId);
   };
@@ -49,7 +65,10 @@ export function PendingApprovalsList({
 
       {pendingApprovals.map((approval) => {
         const ActorIcon = ACTOR_ICONS[approval.requestedByActorType] ?? User;
-        const userCanApprove = canUserApprove(currentUserId, requiredReviewerIds);
+        const userCanApprove = canUserApprove(
+          currentUserId,
+          requiredReviewerIds,
+        );
 
         return (
           <div
@@ -72,9 +91,11 @@ export function PendingApprovalsList({
                 </Badge>
               </div>
               <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                Requested by{' '}
-                <span className="font-medium">{approval.requestedByActorId.slice(0, 12)}...</span>
-                {' '}via {approval.requestedByActorType}
+                Requested by{" "}
+                <span className="font-medium">
+                  {approval.requestedByActorId.slice(0, 12)}...
+                </span>{" "}
+                via {approval.requestedByActorType}
               </p>
               <p className="text-xs text-text-muted dark:text-text-muted-dark mt-0.5">
                 {new Date(approval.createdAt).toLocaleString()}

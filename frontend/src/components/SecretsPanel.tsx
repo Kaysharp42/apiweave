@@ -1,13 +1,13 @@
-import { useState, useCallback } from 'react';
-import { Lock, Trash2, KeyRound } from 'lucide-react';
-import { toast } from 'sonner';
-import { Modal } from './molecules/Modal';
-import { Button } from './atoms/Button';
-import { IconButton } from './atoms/IconButton';
-import { EmptyState } from './molecules/EmptyState';
-import SecretValueEditor from './SecretValueEditor';
-import { deleteScopedSecret } from '../hooks/useSecretValues';
-import type { SecretsPanelProps, SecretScopeType } from '../types';
+import { useState, useCallback } from "react";
+import { Lock, Trash2, KeyRound } from "lucide-react";
+import { toast } from "sonner";
+import { Modal } from "./molecules/Modal";
+import { Button } from "./atoms/Button";
+import { IconButton } from "./atoms/IconButton";
+import { EmptyState } from "./molecules/EmptyState";
+import SecretValueEditor from "./SecretValueEditor";
+import { deleteScopedSecret } from "../hooks/useSecretValues";
+import type { SecretsPanelProps, SecretScopeType } from "../types";
 
 export default function SecretsPanel({
   isOpen,
@@ -21,8 +21,8 @@ export default function SecretsPanel({
     Object.keys(environment?.secrets ?? {}),
   );
 
-  const environmentId = environment?.environmentId ?? '';
-  const scopeType: SecretScopeType = 'environment';
+  const environmentId = environment?.environmentId ?? "";
+  const scopeType: SecretScopeType = "environment";
   const scopeId = environmentId;
 
   const refreshKeys = useCallback(() => {
@@ -49,7 +49,7 @@ export default function SecretsPanel({
         toast.success(`Secret "${secretName}" removed`);
         onSecretsChange?.(environment?.secrets ?? {}).catch(() => {});
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
+        const message = err instanceof Error ? err.message : "Unknown error";
         toast.error(`Failed to remove secret: ${message}`);
       } finally {
         setUnsetting(null);
@@ -65,7 +65,7 @@ export default function SecretsPanel({
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title={`Secrets: ${environment?.name ?? ''}`}
+        title={`Secrets: ${environment?.name ?? ""}`}
         size="md"
         footer={() => (
           <Button onClick={onClose} variant="ghost" fullWidth>
@@ -76,14 +76,20 @@ export default function SecretsPanel({
         <div className="p-5 space-y-4">
           <div className="p-4 bg-surface-overlay dark:bg-surface-dark-overlay rounded border border-border dark:border-border-dark">
             <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-              Secrets are encrypted in your browser before being sent to the server.
-              Values are never displayed after saving — only their set/unset state is shown.
+              Secrets are encrypted in your browser before being sent to the
+              server. Values are never displayed after saving — only their
+              set/unset state is shown.
             </p>
           </div>
 
           {!hasKeys ? (
             <EmptyState
-              icon={<KeyRound className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+              icon={
+                <KeyRound
+                  className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+                  strokeWidth={1.5}
+                />
+              }
               title="No secrets configured"
               description="Add secret keys in Environment Manager, then set their values here."
             />
@@ -129,9 +135,9 @@ export default function SecretsPanel({
               Usage in HTTP Requests:
             </p>
             <p className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-raised dark:bg-surface-dark-raised p-2 rounded break-all">
-              {'{{'}
-              {hasKeys ? secretKeys[0] : 'secretName'}
-              {'}}'}
+              {"{{"}
+              {hasKeys ? secretKeys[0] : "secretName"}
+              {"}}"}
             </p>
           </div>
         </div>

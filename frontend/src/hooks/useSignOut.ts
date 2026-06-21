@@ -1,8 +1,8 @@
-import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { authenticatedFetch } from '../utils/authenticatedApi';
-import API_BASE_URL from '../utils/api';
-import { useAuth } from '../auth/useAuth';
+import { useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { authenticatedFetch } from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/api";
+import { useAuth } from "../auth/useAuth";
 
 interface UseSignOutReturn {
   signOut: () => Promise<void>;
@@ -25,7 +25,7 @@ export function useSignOut(): UseSignOutReturn {
     setError(null);
     try {
       await authenticatedFetch(`${API_BASE_URL}/api/auth/signout`, {
-        method: 'POST',
+        method: "POST",
       });
     } catch (err) {
       // Ignore network errors — clear state regardless
@@ -34,7 +34,7 @@ export function useSignOut(): UseSignOutReturn {
       }
     } finally {
       await logout();
-      navigate('/login', { replace: true });
+      navigate("/login", { replace: true });
       setIsSigningOut(false);
     }
   }, [logout, navigate]);

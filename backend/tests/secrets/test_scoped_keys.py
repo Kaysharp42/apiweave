@@ -7,6 +7,7 @@ Covers:
 - Private key encryption at rest
 - Public key endpoint returns correct metadata
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -14,12 +15,11 @@ import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from nacl.public import PrivateKey, PublicKey, SealedBox
-
 from app.services import scoped_secrets
 from app.services.scoped_secret_resolver import resolve_secret
+from nacl.public import PrivateKey, PublicKey, SealedBox
 
-_MASTER_KEY = b"\xAB" * 32
+_MASTER_KEY = b"\xab" * 32
 
 
 @pytest.fixture(autouse=True)
@@ -239,6 +239,7 @@ class TestPublicKeyEndpoint:
 class TestResolverMissingKeypair:
     def test_missing_keypair_raises_value_error(self):
         """Resolver raises ValueError if keypair not found."""
+
         async def _resolve():
             with patch(
                 "app.services.scoped_secret_resolver.get_keypair_by_key_id",

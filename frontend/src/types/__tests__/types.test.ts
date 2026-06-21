@@ -29,78 +29,111 @@ import type {
   CanvasAction,
   ApiResponseEnvelope,
   PaginatedResponse,
-} from '../index';
+} from "../index";
 
 // ============================================================
 // Button type tests — verify union members are correct
 // ============================================================
 
-const _validVariants: ButtonVariant[] = ['primary', 'secondary', 'ghost'];
-const _validIntents: ButtonIntent[] = ['default', 'success', 'error', 'warning', 'info'];
-const _validSizes: ButtonSize[] = ['xs', 'sm', 'md', 'lg'];
+const _validVariants: ButtonVariant[] = ["primary", "secondary", "ghost"];
+const _validIntents: ButtonIntent[] = [
+  "default",
+  "success",
+  "error",
+  "warning",
+  "info",
+];
+const _validSizes: ButtonSize[] = ["xs", "sm", "md", "lg"];
 
 // ============================================================
 // Workflow type tests — verify structure
 // ============================================================
 
 const _mockWorkflow: Workflow = {
-  workflowId: 'wf-1',
-  name: 'Test Workflow',
+  workflowId: "wf-1",
+  name: "Test Workflow",
   nodes: [],
   edges: [],
-  createdAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
 };
 
 const _mockNode: WorkflowNode = {
-  id: 'node-1',
-  type: 'httpRequest',
+  id: "node-1",
+  type: "httpRequest",
   position: { x: 0, y: 0 },
   data: {
-    label: 'HTTP Request',
-    status: 'idle',
+    label: "HTTP Request",
+    status: "idle",
     config: {},
   },
 };
 
 const _mockEdge: WorkflowEdge = {
-  id: 'edge-1',
-  source: 'node-1',
-  target: 'node-2',
+  id: "edge-1",
+  source: "node-1",
+  target: "node-2",
 };
 
 // ============================================================
 // Node type tests — verify union members
 // ============================================================
 
-const _validNodeTypes: NodeType[] = ['start', 'end', 'httpRequest', 'assertion', 'delay', 'merge'];
-const _validNodeStatuses: NodeStatus[] = ['idle', 'running', 'success', 'error', 'warning'];
+const _validNodeTypes: NodeType[] = [
+  "start",
+  "end",
+  "httpRequest",
+  "assertion",
+  "delay",
+  "merge",
+];
+const _validNodeStatuses: NodeStatus[] = [
+  "idle",
+  "running",
+  "success",
+  "error",
+  "warning",
+];
 
 // ============================================================
 // HTTP method type tests
 // ============================================================
 
-const _validMethods: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+const _validMethods: HttpMethod[] = [
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+];
 
 // ============================================================
 // Run type tests
 // ============================================================
 
-const _validRunStatuses: RunStatus[] = ['pending', 'running', 'success', 'error', 'cancelled'];
+const _validRunStatuses: RunStatus[] = [
+  "pending",
+  "running",
+  "success",
+  "error",
+  "cancelled",
+];
 
 const _mockRun: Run = {
-  runId: 'run-1',
-  workflowId: 'wf-1',
-  status: 'success',
-  startedAt: '2026-01-01T00:00:00Z',
+  runId: "run-1",
+  workflowId: "wf-1",
+  status: "success",
+  startedAt: "2026-01-01T00:00:00Z",
   results: [],
 };
 
 const _mockRunResult: RunResult = {
-  nodeId: 'node-1',
-  nodeType: 'httpRequest',
-  status: 'success',
-  startedAt: '2026-01-01T00:00:00Z',
+  nodeId: "node-1",
+  nodeType: "httpRequest",
+  status: "success",
+  startedAt: "2026-01-01T00:00:00Z",
 };
 
 // ============================================================
@@ -108,11 +141,11 @@ const _mockRunResult: RunResult = {
 // ============================================================
 
 const _mockVariable: Variable = {
-  id: 'var-1',
-  name: 'baseUrl',
-  value: 'https://api.example.com',
-  type: 'string',
-  scope: 'environment',
+  id: "var-1",
+  name: "baseUrl",
+  value: "https://api.example.com",
+  type: "string",
+  scope: "environment",
 };
 
 // ============================================================
@@ -120,15 +153,15 @@ const _mockVariable: Variable = {
 // ============================================================
 
 const _mockEnvironment: ScopedEnvironment = {
-  environmentId: 'env-1',
-  name: 'Production',
-  variables: { baseUrl: 'https://api.example.com' },
-  scopeType: 'workspace',
-  scopeId: 'ws-1',
+  environmentId: "env-1",
+  name: "Production",
+  variables: { baseUrl: "https://api.example.com" },
+  scopeType: "workspace",
+  scopeId: "ws-1",
   isDefault: true,
-  allowedWorkspaceIds: ['ws-1'],
-  createdAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
+  allowedWorkspaceIds: ["ws-1"],
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
 };
 
 // ============================================================
@@ -136,12 +169,12 @@ const _mockEnvironment: ScopedEnvironment = {
 // ============================================================
 
 const _mockCollection: Collection = {
-  id: 'col-1',
-  collectionId: 'col-1',
-  name: 'API Tests',
-  workflowIds: ['wf-1', 'wf-2'],
-  createdAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
+  id: "col-1",
+  collectionId: "col-1",
+  name: "API Tests",
+  workflowIds: ["wf-1", "wf-2"],
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
 };
 
 // ============================================================
@@ -149,8 +182,8 @@ const _mockCollection: Collection = {
 // ============================================================
 
 const _mockKeyValue: KeyValue = {
-  key: 'Content-Type',
-  value: 'application/json',
+  key: "Content-Type",
+  value: "application/json",
   enabled: true,
 };
 
@@ -159,9 +192,9 @@ const _mockKeyValue: KeyValue = {
 // ============================================================
 
 const _mockTab: WorkspaceTab = {
-  id: 'wf-1',
-  workflowId: 'wf-1',
-  name: 'Test Workflow',
+  id: "wf-1",
+  workflowId: "wf-1",
+  name: "Test Workflow",
   isDirty: false,
 };
 
@@ -181,8 +214,8 @@ const _mockPagination: PaginationState = {
 // ============================================================
 
 const _mockAction: CanvasAction = {
-  type: 'duplicate',
-  nodeId: 'node-1',
+  type: "duplicate",
+  nodeId: "node-1",
   timestamp: Date.now(),
 };
 

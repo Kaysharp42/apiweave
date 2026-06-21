@@ -1,21 +1,21 @@
-import { useCallback } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
-import { Button } from '../atoms/Button';
-import { IconButton } from '../atoms/IconButton';
-import type { KeyValueEditorProps, KeyValuePair } from '../../types';
+import { useCallback } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { Button } from "../atoms/Button";
+import { IconButton } from "../atoms/IconButton";
+import type { KeyValueEditorProps, KeyValuePair } from "../../types";
 
 const EMPTY_PAIRS: KeyValuePair[] = [];
 
 export function KeyValueEditor({
   pairs = EMPTY_PAIRS,
   onChange,
-  keyPlaceholder = 'Key',
-  valuePlaceholder = 'Value',
+  keyPlaceholder = "Key",
+  valuePlaceholder = "Value",
   readOnly = false,
-  className = '',
+  className = "",
 }: KeyValueEditorProps) {
   const updatePair = useCallback(
-    (index: number, field: 'key' | 'value', newValue: string) => {
+    (index: number, field: "key" | "value", newValue: string) => {
       const updated = pairs.map((pair, i) =>
         i === index ? { ...pair, [field]: newValue } : pair,
       );
@@ -25,7 +25,7 @@ export function KeyValueEditor({
   );
 
   const addPair = useCallback(() => {
-    onChange([...pairs, { key: '', value: '' }]);
+    onChange([...pairs, { key: "", value: "" }]);
   }, [pairs, onChange]);
 
   const removePair = useCallback(
@@ -36,7 +36,7 @@ export function KeyValueEditor({
   );
 
   return (
-    <div className={['w-full', className].filter(Boolean).join(' ')}>
+    <div className={["w-full", className].filter(Boolean).join(" ")}>
       <div className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
         <span className="truncate px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
           {keyPlaceholder}
@@ -48,11 +48,14 @@ export function KeyValueEditor({
       </div>
 
       {pairs.map((pair, index) => (
-        <div key={pair.key} className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
+        <div
+          key={pair.key}
+          className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1"
+        >
           <input
             type="text"
             value={pair.key}
-            onChange={(e) => updatePair(index, 'key', e.target.value)}
+            onChange={(e) => updatePair(index, "key", e.target.value)}
             placeholder={keyPlaceholder}
             readOnly={readOnly}
             aria-label={`${keyPlaceholder} ${index + 1}`}
@@ -61,7 +64,7 @@ export function KeyValueEditor({
           <input
             type="text"
             value={pair.value}
-            onChange={(e) => updatePair(index, 'value', e.target.value)}
+            onChange={(e) => updatePair(index, "value", e.target.value)}
             placeholder={valuePlaceholder}
             readOnly={readOnly}
             aria-label={`${valuePlaceholder} ${index + 1}`}

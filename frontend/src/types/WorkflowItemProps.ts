@@ -1,6 +1,6 @@
-import type { Workflow } from './Workflow';
-import type { Collection } from './Collection';
-import type { ScopedEnvironment } from './ScopedEnvironment';
+import type { Workflow } from "./Workflow";
+import type { Collection } from "./Collection";
+import type { ScopedEnvironment } from "./ScopedEnvironment";
 
 export interface WorkflowItemProps {
   workflow: Workflow;

@@ -2,6 +2,7 @@
 Import service — shared business logic for OpenAPI, HAR, and curl parsing/import.
 Called by both FastAPI routes and MCP tools.
 """
+
 import json
 import logging
 import re
@@ -16,9 +17,7 @@ from app.services.secret_utils import detect_secrets_in_value
 logger = logging.getLogger(__name__)
 
 
-def parse_curl_to_workflow(
-    curl_commands: str, sanitize: bool = True
-) -> dict[str, Any]:
+def parse_curl_to_workflow(curl_commands: str, sanitize: bool = True) -> dict[str, Any]:
     """Convert curl command(s) to APIWeave workflow format."""
     import shlex
 
@@ -330,10 +329,7 @@ def parse_har_to_workflow(
         example_response = {
             "statusCode": response.get("status", 0),
             "statusText": response.get("statusText", ""),
-            "headers": {
-                h.get("name", ""): h.get("value", "")
-                for h in response.get("headers", [])
-            },
+            "headers": {h.get("name", ""): h.get("value", "") for h in response.get("headers", [])},
             "bodySize": response.get("bodySize", 0),
             "isExample": True,
         }
@@ -596,9 +592,7 @@ def _build_openapi_endpoint_fingerprint(
     return f"{scope_value}|{method_upper}|{normalized_path}|{operation_value}"
 
 
-def _generate_example_from_schema(
-    schema: dict[str, Any], openapi_data: dict[str, Any]
-) -> Any:
+def _generate_example_from_schema(schema: dict[str, Any], openapi_data: dict[str, Any]) -> Any:
     """Generate example data from OpenAPI schema with $ref resolution."""
     from app.utils.openapi_examples import generate_example_from_schema as _gen
 
@@ -752,9 +746,7 @@ async def fetch_openapi_from_url(
             definitions.append(
                 {
                     "name": query_hints.get("primaryName") or "Default",
-                    "specUrl": resolve_url(
-                        swagger_ui_url, query_hints["url"] or ""
-                    ),
+                    "specUrl": resolve_url(swagger_ui_url, query_hints["url"] or ""),
                     "source": "swagger-ui.query.url",
                 }
             )
@@ -778,9 +770,7 @@ async def fetch_openapi_from_url(
             )
 
         primary_name = query_hints.get("primaryName")
-        config_candidates = build_swagger_config_candidates(
-            swagger_ui_url, query_hints, html_hints
-        )
+        config_candidates = build_swagger_config_candidates(swagger_ui_url, query_hints, html_hints)
 
         for candidate in config_candidates:
             try:
@@ -804,9 +794,7 @@ async def fetch_openapi_from_url(
                 config_data = response.json()
                 if not isinstance(config_data, dict):
                     continue
-                extracted = extract_definitions_from_swagger_config(
-                    config_data, str(response.url)
-                )
+                extracted = extract_definitions_from_swagger_config(config_data, str(response.url))
                 if extracted.get("primaryName") and not primary_name:
                     primary_name = extracted["primaryName"]
                 definitions.extend(extracted.get("definitions") or [])
@@ -905,9 +893,7 @@ async def fetch_openapi_from_url(
                 spec_response.raise_for_status()
                 openapi_data = _extract_openapi_document(spec_response)
                 if not openapi_data:
-                    raise ValueError(
-                        "Definition URL did not return a valid OpenAPI JSON document"
-                    )
+                    raise ValueError("Definition URL did not return a valid OpenAPI JSON document")
 
                 return {
                     "status": "imported",
@@ -946,9 +932,7 @@ async def fetch_openapi_from_url(
 
     if not successful_specs:
         first_error = (
-            failed_definitions[0]["error"]
-            if failed_definitions
-            else "Unknown fetch error"
+            failed_definitions[0]["error"] if failed_definitions else "Unknown fetch error"
         )
         raise ValueError(f"Failed to fetch any OpenAPI definitions: {first_error}")
 
@@ -1013,8 +997,10 @@ async def fetch_openapi_from_url(
             }
         )
 
-    api_title = "Multiple APIs" if total_imported > 1 else (
-        successful_specs[0]["openapi_data"].get("info", {}).get("title", "API")
+    api_title = (
+        "Multiple APIs"
+        if total_imported > 1
+        else (successful_specs[0]["openapi_data"].get("info", {}).get("title", "API"))
     )
 
     warnings = [

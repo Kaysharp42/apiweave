@@ -4,6 +4,7 @@ Scoped Workflow Service — workspace-scoped workflow CRUD, run, import/export, 
 All workflow operations are scoped to a workspace. A user can only
 access workflows within workspaces they have access to.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # Response DTOs
 # ============================================================================
+
 
 def _workflow_to_response(wf: Workflow) -> dict[str, Any]:
     """Convert a Workflow document to a response dict."""
@@ -68,6 +70,7 @@ def _run_to_summary(run: Run) -> dict[str, Any]:
 # Scoped Workflow CRUD
 # ============================================================================
 
+
 async def create_scoped_workflow(
     workspace_id: str,
     workflow_data: WorkflowCreate,
@@ -98,6 +101,7 @@ async def create_scoped_workflow(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -183,6 +187,7 @@ async def delete_scoped_workflow(
 
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -217,9 +222,7 @@ async def list_scoped_workflows(
             workspace_id, project_id, skip, limit
         )
     else:
-        workflows, total = await WorkflowRepository.list_by_workspace(
-            workspace_id, skip, limit
-        )
+        workflows, total = await WorkflowRepository.list_by_workspace(workspace_id, skip, limit)
 
     return {
         "workflows": [_workflow_to_response(wf) for wf in workflows],
@@ -233,6 +236,7 @@ async def list_scoped_workflows(
 # ============================================================================
 # Scoped Run Listing
 # ============================================================================
+
 
 async def list_scoped_runs(
     workspace_id: str,
@@ -272,6 +276,7 @@ async def list_scoped_runs(
 # Workspace Access Helper
 # ============================================================================
 
+
 async def _verify_workspace_and_workflow(
     workspace_id: str,
     workflow_id: str,
@@ -293,6 +298,7 @@ async def _verify_workspace_and_workflow(
 # Scoped Run Trigger
 # ============================================================================
 
+
 async def trigger_scoped_run(
     workspace_id: str,
     workflow_id: str,
@@ -303,8 +309,8 @@ async def trigger_scoped_run(
     """Trigger a workflow run scoped to a workspace."""
     await _verify_workspace_and_workflow(workspace_id, workflow_id, actor_user_id)
 
-    from app.services.run_service import trigger_workflow_run
     from app.models import RunActorContext
+    from app.services.run_service import trigger_workflow_run
 
     actor = RunActorContext(actorType="user", actorId=actor_user_id)
     return await trigger_workflow_run(
@@ -320,6 +326,7 @@ async def trigger_scoped_run(
 # Scoped Run Status / Latest Failed / Node Result
 # ============================================================================
 
+
 async def get_scoped_latest_failed_run(
     workspace_id: str,
     workflow_id: str,
@@ -329,6 +336,7 @@ async def get_scoped_latest_failed_run(
     await _verify_workspace_and_workflow(workspace_id, workflow_id, actor_user_id)
 
     from app.services.run_service import get_latest_failed_run
+
     return await get_latest_failed_run(workflow_id)
 
 
@@ -342,6 +350,7 @@ async def get_scoped_run_status(
     await _verify_workspace_and_workflow(workspace_id, workflow_id, actor_user_id)
 
     from app.services.run_service import get_run_with_node_results
+
     return await get_run_with_node_results(run_id, workflow_id)
 
 
@@ -356,12 +365,14 @@ async def get_scoped_node_result(
     await _verify_workspace_and_workflow(workspace_id, workflow_id, actor_user_id)
 
     from app.services.run_service import get_node_result
+
     return await get_node_result(run_id, workflow_id, node_id)
 
 
 # ============================================================================
 # Scoped Export / Import
 # ============================================================================
+
 
 async def export_scoped_workflow(
     workspace_id: str,
@@ -374,6 +385,7 @@ async def export_scoped_workflow(
     await _verify_workspace_and_workflow(workspace_id, workflow_id, actor_user_id)
 
     from app.services.workflow_service import export_workflow
+
     return await export_workflow(
         workflow_id,
         include_environment=include_environment,
@@ -396,6 +408,7 @@ async def import_scoped_workflow(
     await _assert_workspace_access(ws, actor_user_id)
 
     from app.services.workflow_service import import_workflow
+
     result = await import_workflow(
         bundle,
         environment_mapping=environment_mapping,
@@ -422,12 +435,14 @@ async def import_scoped_workflow_dry_run(
 ) -> dict[str, Any]:
     """Validate a workflow bundle without persisting (no workspace needed)."""
     from app.services.workflow_service import import_workflow_dry_run
+
     return await import_workflow_dry_run(bundle)
 
 
 # ============================================================================
 # Scoped HAR / OpenAPI / Curl Import
 # ============================================================================
+
 
 async def import_scoped_har(
     workspace_id: str,
@@ -600,11 +615,15 @@ async def import_scoped_openapi_dry_run(
 
     available_tags = []
     for tag in openapi_data.get("tags", []):
-        available_tags.append({"name": tag.get("name", ""), "description": tag.get("description", "")})
+        available_tags.append(
+            {"name": tag.get("name", ""), "description": tag.get("description", "")}
+        )
 
     available_servers = []
     for server in openapi_data.get("servers", []):
-        available_servers.append({"url": server.get("url", ""), "description": server.get("description", "")})
+        available_servers.append(
+            {"url": server.get("url", ""), "description": server.get("description", "")}
+        )
 
     return {
         "message": "OpenAPI preview generated successfully",
@@ -672,7 +691,9 @@ async def import_scoped_curl(
                 edge["target"] = node_id_map[edge["target"]]
             edge["edgeId"] = str(uuid.uuid4())
 
-        existing_positions = [n.position for n in existing.nodes if n.position and len(n.position) > 0]
+        existing_positions = [
+            n.position for n in existing.nodes if n.position and len(n.position) > 0
+        ]
         if existing_positions:
             max_x = max(pos.get("x", 0) for pos in existing_positions)
         else:
@@ -682,8 +703,12 @@ async def import_scoped_curl(
             if "position" in node and isinstance(node["position"], dict):
                 node["position"]["x"] = node["position"].get("x", 0) + x_offset
 
-        existing_nodes_dicts = [n.model_dump() if hasattr(n, "model_dump") else n for n in existing.nodes]
-        existing_edges_dicts = [e.model_dump() if hasattr(e, "model_dump") else e for e in existing.edges]
+        existing_nodes_dicts = [
+            n.model_dump() if hasattr(n, "model_dump") else n for n in existing.nodes
+        ]
+        existing_edges_dicts = [
+            e.model_dump() if hasattr(e, "model_dump") else e for e in existing.edges
+        ]
         updated_nodes = existing_nodes_dicts + imported_nodes
         updated_edges = existing_edges_dicts + imported_edges
 
@@ -758,6 +783,7 @@ async def import_scoped_curl_dry_run(
 # ============================================================================
 # Scoped Templates
 # ============================================================================
+
 
 async def get_scoped_templates(
     workspace_id: str,

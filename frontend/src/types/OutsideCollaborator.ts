@@ -9,4 +9,4 @@ export interface OutsideCollaborator {
 }
 
 /** Workspace-level roles for outside collaborators. */
-export type WorkspaceRole = 'read' | 'triage' | 'write' | 'maintain' | 'admin';
+export type WorkspaceRole = "read" | "triage" | "write" | "maintain" | "admin";

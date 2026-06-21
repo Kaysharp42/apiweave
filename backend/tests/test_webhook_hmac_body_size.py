@@ -7,10 +7,9 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.main import app
 from app.routes.webhooks import _require_hmac_when_configured
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 

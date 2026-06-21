@@ -1,14 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
-import { Save, History, Play, Code, Upload, Loader2, RefreshCw, ChevronDown } from 'lucide-react';
-import { Button } from '../atoms/Button';
-import { IconButton } from '../atoms/IconButton';
-import ButtonSelect from '../ButtonSelect';
-import type { CanvasToolbarProps } from '../../types/CanvasToolbarProps';
-import type { ToolbarButtonProps } from '../../types/ToolbarButtonProps';
-import { buildEnvironmentOptions } from './canvasToolbarUtils';
+import { useEffect, useRef, useState } from "react";
+import {
+  Save,
+  History,
+  Play,
+  Code,
+  Upload,
+  Loader2,
+  RefreshCw,
+  ChevronDown,
+} from "lucide-react";
+import { Button } from "../atoms/Button";
+import { IconButton } from "../atoms/IconButton";
+import ButtonSelect from "../ButtonSelect";
+import type { CanvasToolbarProps } from "../../types/CanvasToolbarProps";
+import type { ToolbarButtonProps } from "../../types/ToolbarButtonProps";
+import { buildEnvironmentOptions } from "./canvasToolbarUtils";
 
 const EMPTY_ENVIRONMENTS: Array<{ environmentId: string; name: string }> = [];
-const EMPTY_RESUME_OPTIONS: NonNullable<CanvasToolbarProps['resumeOptions']> = [];
+const EMPTY_RESUME_OPTIONS: NonNullable<CanvasToolbarProps["resumeOptions"]> =
+  [];
 
 export function CanvasToolbar({
   onSave,
@@ -45,16 +55,16 @@ export function CanvasToolbar({
     };
 
     const onEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setIsRunMenuOpen(false);
       }
     };
 
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onEscape);
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onEscape);
     return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onEscape);
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onEscape);
     };
   }, [isRunMenuOpen]);
 
@@ -65,18 +75,41 @@ export function CanvasToolbar({
       aria-label="Workflow actions"
     >
       <div className="flex items-center">
-        <ToolbarButton icon={Save} label="Save" onClick={onSave} tooltip="Save workflow (Ctrl+S)" />
-        <ToolbarButton icon={History} label="History" onClick={onHistory} tooltip="Run history" />
-        <ToolbarButton icon={Code} label="JSON" onClick={onJsonEditor} tooltip="JSON editor (Ctrl+J)" />
-        <ToolbarButton icon={Upload} label="Import" onClick={onImport} tooltip="Import nodes" />
+        <ToolbarButton
+          icon={Save}
+          label="Save"
+          onClick={onSave}
+          tooltip="Save workflow (Ctrl+S)"
+        />
+        <ToolbarButton
+          icon={History}
+          label="History"
+          onClick={onHistory}
+          tooltip="Run history"
+        />
+        <ToolbarButton
+          icon={Code}
+          label="JSON"
+          onClick={onJsonEditor}
+          tooltip="JSON editor (Ctrl+J)"
+        />
+        <ToolbarButton
+          icon={Upload}
+          label="Import"
+          onClick={onImport}
+          tooltip="Import nodes"
+        />
       </div>
 
-      <div className="w-px h-6 bg-border dark:bg-border-dark mx-0.5" aria-hidden="true" />
+      <div
+        className="w-px h-6 bg-border dark:bg-border-dark mx-0.5"
+        aria-hidden="true"
+      />
 
       <ButtonSelect
-        key={`env-select-${workflowId ?? ''}`}
+        key={`env-select-${workflowId ?? ""}`}
         options={buildEnvironmentOptions(environments)}
-        value={selectedEnvironment || ''}
+        value={selectedEnvironment || ""}
         onChange={onEnvironmentChange}
         placeholder="No Environment"
         buttonClass="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none h-8 whitespace-nowrap"
@@ -88,41 +121,56 @@ export function CanvasToolbar({
         onClick={onRefreshSwagger}
         disabled={!onRefreshSwagger || isSwaggerRefreshing}
         className="h-8 whitespace-nowrap"
-        icon={<RefreshCw className={`w-4 h-4 flex-shrink-0 ${isSwaggerRefreshing ? 'animate-spin' : ''}`} />}
-        title={isSwaggerRefreshing ? 'Refreshing Swagger' : 'Refresh Swagger'}
+        icon={
+          <RefreshCw
+            className={`w-4 h-4 flex-shrink-0 ${isSwaggerRefreshing ? "animate-spin" : ""}`}
+          />
+        }
+        title={isSwaggerRefreshing ? "Refreshing Swagger" : "Refresh Swagger"}
       >
-        <span className="hidden lg:inline">{isSwaggerRefreshing ? 'Refreshing' : 'Refresh'}</span>
+        <span className="hidden lg:inline">
+          {isSwaggerRefreshing ? "Refreshing" : "Refresh"}
+        </span>
       </Button>
 
-      <div className="w-px h-6 bg-border dark:bg-border-dark mx-0.5" aria-hidden="true" />
+      <div
+        className="w-px h-6 bg-border dark:bg-border-dark mx-0.5"
+        aria-hidden="true"
+      />
 
       <div className="relative flex" ref={runMenuRef}>
         <Button
           variant="primary"
-          intent={isRunning ? 'warning' : 'default'}
+          intent={isRunning ? "warning" : "default"}
           size="sm"
           onClick={onRun}
           disabled={isRunning}
           className="rounded-r-none h-8 whitespace-nowrap font-semibold border-r border-surface-raised/30 dark:border-surface-dark-raised/30"
-          icon={isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+          icon={
+            isRunning ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )
+          }
         >
-          {isRunning ? 'Running…' : 'Run'}
+          {isRunning ? "Running…" : "Run"}
         </Button>
 
         <IconButton
           onClick={() => setIsRunMenuOpen((prev) => !prev)}
           disabled={isRunning}
           tooltip="Run options"
-          variant={isRunning ? 'warning' : 'primary'}
+          variant={isRunning ? "warning" : "primary"}
           size="sm"
           className={[
-            'h-8 rounded-l-none rounded-r-sm transition-colors border-l border-surface-raised/30 dark:border-surface-dark-raised/30',
-            isRunning
-              ? 'cursor-wait'
-              : 'hover:brightness-110',
-          ].join(' ')}
+            "h-8 rounded-l-none rounded-r-sm transition-colors border-l border-surface-raised/30 dark:border-surface-dark-raised/30",
+            isRunning ? "cursor-wait" : "hover:brightness-110",
+          ].join(" ")}
         >
-          <ChevronDown className={`w-4 h-4 transition-transform ${isRunMenuOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown
+            className={`w-4 h-4 transition-transform ${isRunMenuOpen ? "rotate-180" : ""}`}
+          />
         </IconButton>
 
         {isRunMenuOpen && (
@@ -165,21 +213,23 @@ export function CanvasToolbar({
               </div>
             )}
 
-            {!isResumeLoading && hasResumeOptions && safeResumeOptions.map((opt) => (
-              <Button
-                key={opt.nodeId}
-                onClick={() => {
-                  onRunFromFailedNode?.(opt.nodeId);
-                  setIsRunMenuOpen(false);
-                }}
-                disabled={isRunning}
-                variant="ghost"
-                className="w-full rounded-none justify-start px-3 py-2 text-sm"
-                title={opt.nodeId}
-              >
-                {opt.label}
-              </Button>
-            ))}
+            {!isResumeLoading &&
+              hasResumeOptions &&
+              safeResumeOptions.map((opt) => (
+                <Button
+                  key={opt.nodeId}
+                  onClick={() => {
+                    onRunFromFailedNode?.(opt.nodeId);
+                    setIsRunMenuOpen(false);
+                  }}
+                  disabled={isRunning}
+                  variant="ghost"
+                  className="w-full rounded-none justify-start px-3 py-2 text-sm"
+                  title={opt.nodeId}
+                >
+                  {opt.label}
+                </Button>
+              ))}
           </div>
         )}
       </div>
@@ -187,7 +237,12 @@ export function CanvasToolbar({
   );
 }
 
-function ToolbarButton({ icon: Icon, label, onClick, tooltip }: ToolbarButtonProps) {
+function ToolbarButton({
+  icon: Icon,
+  label,
+  onClick,
+  tooltip,
+}: ToolbarButtonProps) {
   return (
     <Button
       variant="ghost"

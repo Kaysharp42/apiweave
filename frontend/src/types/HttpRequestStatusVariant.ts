@@ -1,1 +1,6 @@
-export type HttpRequestStatusVariant = 'success' | 'info' | 'warning' | 'error' | 'secondary';
+export type HttpRequestStatusVariant =
+  | "success"
+  | "info"
+  | "warning"
+  | "error"
+  | "secondary";

@@ -11,6 +11,7 @@ Usage:
     cd backend
     python scripts/adopt_workspace.py <workspaceId>
 """
+
 import asyncio
 import sys
 import uuid

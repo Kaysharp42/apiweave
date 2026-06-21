@@ -1,7 +1,7 @@
-import type { AuditEvent } from '../../types';
-import { AuditEventRow } from './AuditEventRow';
-import { EmptyState } from '../molecules/EmptyState';
-import { Shield } from 'lucide-react';
+import type { AuditEvent } from "../../types";
+import { AuditEventRow } from "./AuditEventRow";
+import { EmptyState } from "../molecules/EmptyState";
+import { Shield } from "lucide-react";
 
 interface AuditEventTableProps {
   events: AuditEvent[];
@@ -20,7 +20,12 @@ export function AuditEventTable({ events, loading }: AuditEventTableProps) {
   if (events.length === 0) {
     return (
       <EmptyState
-        icon={<Shield className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+        icon={
+          <Shield
+            className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+            strokeWidth={1.5}
+          />
+        }
         title="No audit events"
         description="No events match the current filters. Try adjusting your filter criteria."
       />

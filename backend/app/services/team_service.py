@@ -3,6 +3,7 @@ Team service — business logic for team CRUD, membership, and permission grants
 
 All state-changing operations produce audit events.
 """
+
 from __future__ import annotations
 
 import logging

@@ -1,7 +1,7 @@
-import { Fragment } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
-import { X } from 'lucide-react';
-import type { ModalInternalProps } from '../../types';
+import { Fragment } from "react";
+import { Dialog, Transition } from "@headlessui/react";
+import { X } from "lucide-react";
+import type { ModalInternalProps } from "../../types";
 
 export function Modal({
   isOpen,
@@ -10,18 +10,18 @@ export function Modal({
   children,
   footer,
   headerExtra,
-  size = 'md',
-  className = '',
+  size = "md",
+  className = "",
   showClose = true,
   scrollable = true,
   initialFocus,
 }: ModalInternalProps) {
   const sizeClasses: Record<string, string> = {
-    sm: 'max-w-md',
-    md: 'max-w-2xl',
-    lg: 'max-w-4xl',
-    xl: 'max-w-6xl',
-    fullscreen: 'max-w-[95vw] max-h-[95vh]',
+    sm: "max-w-md",
+    md: "max-w-2xl",
+    lg: "max-w-4xl",
+    xl: "max-w-6xl",
+    fullscreen: "max-w-[95vw] max-h-[95vh]",
   };
 
   const panelSize = sizeClasses[size] ?? sizeClasses.md;
@@ -43,7 +43,10 @@ export function Modal({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-text-primary/40 dark:bg-surface-dark/80" aria-hidden="true" />
+          <div
+            className="fixed inset-0 bg-text-primary/40 dark:bg-surface-dark/80"
+            aria-hidden="true"
+          />
         </Transition.Child>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -58,15 +61,15 @@ export function Modal({
           >
             <Dialog.Panel
               className={[
-                'w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised',
-                'border border-border shadow-modal dark:border-border-dark',
-                'flex flex-col',
-                size === 'fullscreen' ? 'h-[90vh]' : 'max-h-[90vh]',
+                "w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised",
+                "border border-border shadow-modal dark:border-border-dark",
+                "flex flex-col",
+                size === "fullscreen" ? "h-[90vh]" : "max-h-[90vh]",
                 panelSize,
                 className,
               ]
                 .filter(Boolean)
-                .join(' ')}
+                .join(" ")}
             >
               {title && (
                 <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-5 py-3 dark:border-border-dark">
@@ -90,19 +93,16 @@ export function Modal({
               )}
 
               <div
-                className={[
-                  'flex-1 min-h-0',
-                  scrollable && 'overflow-y-auto',
-                ]
+                className={["flex-1 min-h-0", scrollable && "overflow-y-auto"]
                   .filter(Boolean)
-                  .join(' ')}
+                  .join(" ")}
               >
                 {children}
               </div>
 
               {footer && (
                 <div className="flex flex-shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-3 dark:border-border-dark">
-                  {typeof footer === 'function' ? footer() : footer}
+                  {typeof footer === "function" ? footer() : footer}
                 </div>
               )}
             </Dialog.Panel>

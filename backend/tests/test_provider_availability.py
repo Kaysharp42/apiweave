@@ -6,12 +6,11 @@ Covers:
 - No secrets leaked from /api/auth/providers
 - Regression: GitHub login succeeds even when GitLab env vars are absent
 """
+
 from unittest.mock import AsyncMock
 
-import pytest
-from fastapi.testclient import TestClient
-
 import app.auth.router as auth_router
+import pytest
 from app.auth.provider_registry import (
     _check_provider_enabled,
     get_configured_providers,
@@ -19,6 +18,7 @@ from app.auth.provider_registry import (
 )
 from app.config import settings
 from app.main import app
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 

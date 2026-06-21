@@ -1,4 +1,4 @@
-import type { AssertionValue } from './AssertionValue';
+import type { AssertionValue } from "./AssertionValue";
 
 export interface AssertionEditorProps {
   value: AssertionValue | null;

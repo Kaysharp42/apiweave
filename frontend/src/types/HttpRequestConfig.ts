@@ -1,6 +1,6 @@
-import type { HttpMethod } from './HttpMethod';
-import type { KeyValue } from './KeyValue';
-import type { VariableExtractor } from './VariableExtractor';
+import type { HttpMethod } from "./HttpMethod";
+import type { KeyValue } from "./KeyValue";
+import type { VariableExtractor } from "./VariableExtractor";
 
 export interface HttpRequestConfig {
   method: HttpMethod;
@@ -8,7 +8,7 @@ export interface HttpRequestConfig {
   headers: KeyValue[];
   queryParams: KeyValue[];
   body?: string;
-  bodyType?: 'json' | 'form-data' | 'raw' | 'none';
+  bodyType?: "json" | "form-data" | "raw" | "none";
   timeout?: number;
   extractors?: VariableExtractor[];
   followRedirects?: boolean;

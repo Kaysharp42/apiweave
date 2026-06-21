@@ -8,15 +8,15 @@ Usage:
     cd backend
     python scripts/wipe_db.py
 """
+
 import asyncio
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from motor.motor_asyncio import AsyncIOMotorClient
-
 from app.config import settings
+from motor.motor_asyncio import AsyncIOMotorClient
 
 
 async def wipe_database() -> None:

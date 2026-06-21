@@ -1,1 +1,1 @@
-export type ProviderId = 'github' | 'gitlab' | 'google' | 'microsoft';
+export type ProviderId = "github" | "gitlab" | "google" | "microsoft";

@@ -1,24 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Mail, Plus } from 'lucide-react';
-import { Button } from '../atoms/Button';
-import { Spinner } from '../atoms/Spinner';
-import { Input } from '../atoms/Input';
-import { EmptyState } from '../molecules/EmptyState';
-import { Panel } from '../molecules/Panel';
-import { Modal } from '../molecules/Modal';
-import { FormField } from '../molecules/FormField';
-import { InviteRow } from '../molecules/InviteRow';
-import { authenticatedJson, authenticatedFetch } from '../../utils/authenticatedApi';
-import API_BASE_URL from '../../utils/api';
-import type { OrgInvite, OrgInviteCreate, OrgRole } from '../../types';
-import { toast } from 'sonner';
+import { useState, useEffect, useCallback } from "react";
+import { Mail, Plus } from "lucide-react";
+import { Button } from "../atoms/Button";
+import { Spinner } from "../atoms/Spinner";
+import { Input } from "../atoms/Input";
+import { EmptyState } from "../molecules/EmptyState";
+import { Panel } from "../molecules/Panel";
+import { Modal } from "../molecules/Modal";
+import { FormField } from "../molecules/FormField";
+import { InviteRow } from "../molecules/InviteRow";
+import {
+  authenticatedJson,
+  authenticatedFetch,
+} from "../../utils/authenticatedApi";
+import API_BASE_URL from "../../utils/api";
+import type { OrgInvite, OrgInviteCreate, OrgRole } from "../../types";
+import { toast } from "sonner";
 
 export interface OrgInvitesSectionProps {
   orgSlug: string;
   orgId: string;
 }
 
-const INVITE_ROLES: OrgRole[] = ['member', 'billing', 'security'];
+const INVITE_ROLES: OrgRole[] = ["member", "billing", "security"];
 
 export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
   const [invites, setInvites] = useState<OrgInvite[]>([]);
@@ -26,8 +29,8 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
 
   // Invite modal
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<OrgRole>('member');
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<OrgRole>("member");
   const [inviting, setInviting] = useState(false);
   const [lastCreated, setLastCreated] = useState<OrgInviteCreate | null>(null);
 
@@ -41,7 +44,7 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
       );
       setInvites(data);
     } catch {
-      toast.error('Failed to load invites');
+      toast.error("Failed to load invites");
     } finally {
       setLoading(false);
     }
@@ -58,8 +61,8 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
       const created = await authenticatedJson<OrgInviteCreate>(
         `${API_BASE_URL}/api/orgs/${orgSlug}/invites`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
         },
       );
@@ -68,7 +71,7 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
       // Refresh list
       await fetchInvites();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to send invite');
+      toast.error(err instanceof Error ? err.message : "Failed to send invite");
     } finally {
       setInviting(false);
     }
@@ -78,7 +81,7 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
     setResendingId(inviteId);
     // Backend doesn't have a dedicated resend endpoint — cancel and re-create
     // For now, just show a toast indicating the action
-    toast.info('Resend not available — cancel and re-invite');
+    toast.info("Resend not available — cancel and re-invite");
     setTimeout(() => setResendingId(null), 1000);
   };
 
@@ -86,12 +89,14 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
     try {
       await authenticatedFetch(
         `${API_BASE_URL}/api/orgs/${orgSlug}/invites/${inviteId}`,
-        { method: 'DELETE' },
+        { method: "DELETE" },
       );
       setInvites((prev) => prev.filter((inv) => inv.inviteId !== inviteId));
-      toast.success('Invite cancelled');
+      toast.success("Invite cancelled");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to cancel invite');
+      toast.error(
+        err instanceof Error ? err.message : "Failed to cancel invite",
+      );
     }
   };
 
@@ -103,7 +108,14 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
         title="Invites"
         icon={Mail}
         headerActions={
-            <Button size="xs" variant="primary" onClick={() => { setLastCreated(null); setInviteOpen(true); }}>
+          <Button
+            size="xs"
+            variant="primary"
+            onClick={() => {
+              setLastCreated(null);
+              setInviteOpen(true);
+            }}
+          >
             <Plus className="w-3.5 h-3.5" />
             Invite
           </Button>
@@ -111,14 +123,24 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
       >
         {loading ? (
           <div className="flex justify-center p-12">
-            <Spinner size="lg" className="text-primary dark:text-primary-light" />
+            <Spinner
+              size="lg"
+              className="text-primary dark:text-primary-light"
+            />
           </div>
         ) : pendingInvites.length === 0 ? (
           <EmptyState
             title="No pending invites"
             description="Invite people to join your organization."
             action={
-              <Button size="sm" variant="primary" onClick={() => { setLastCreated(null); setInviteOpen(true); }}>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  setLastCreated(null);
+                  setInviteOpen(true);
+                }}
+              >
                 <Plus className="w-3.5 h-3.5" />
                 Send Invite
               </Button>
@@ -160,8 +182,12 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
         size="sm"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setInviteOpen(false)}>
-              {lastCreated ? 'Close' : 'Cancel'}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setInviteOpen(false)}
+            >
+              {lastCreated ? "Close" : "Cancel"}
             </Button>
             {!lastCreated && (
               <Button
@@ -184,7 +210,7 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
                 <Mail className="w-6 h-6 text-status-success" />
               </div>
               <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                Invite sent to{' '}
+                Invite sent to{" "}
                 <span className="font-semibold">{lastCreated.email}</span>
               </p>
               <p className="text-xs text-text-muted dark:text-text-muted-dark">

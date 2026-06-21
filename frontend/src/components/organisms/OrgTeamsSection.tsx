@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import {
   Users,
   Plus,
@@ -7,22 +7,25 @@ import {
   ChevronDown,
   ChevronRight,
   Shield,
-} from 'lucide-react';
-import { Button } from '../atoms/Button';
-import { IconButton } from '../atoms/IconButton';
-import { Spinner } from '../atoms/Spinner';
-import { Input } from '../atoms/Input';
-import { Badge } from '../atoms/Badge';
-import { EmptyState } from '../molecules/EmptyState';
-import { Panel } from '../molecules/Panel';
-import { Modal } from '../molecules/Modal';
-import { FormField } from '../molecules/FormField';
-import { ConfirmDialog } from '../molecules/ConfirmDialog';
-import { TeamPermissionRow } from '../molecules/TeamPermissionRow';
-import { authenticatedJson, authenticatedFetch } from '../../utils/authenticatedApi';
-import API_BASE_URL from '../../utils/api';
-import type { Team, TeamMember, TeamPermissionGrant } from '../../types';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { Button } from "../atoms/Button";
+import { IconButton } from "../atoms/IconButton";
+import { Spinner } from "../atoms/Spinner";
+import { Input } from "../atoms/Input";
+import { Badge } from "../atoms/Badge";
+import { EmptyState } from "../molecules/EmptyState";
+import { Panel } from "../molecules/Panel";
+import { Modal } from "../molecules/Modal";
+import { FormField } from "../molecules/FormField";
+import { ConfirmDialog } from "../molecules/ConfirmDialog";
+import { TeamPermissionRow } from "../molecules/TeamPermissionRow";
+import {
+  authenticatedJson,
+  authenticatedFetch,
+} from "../../utils/authenticatedApi";
+import API_BASE_URL from "../../utils/api";
+import type { Team, TeamMember, TeamPermissionGrant } from "../../types";
+import { toast } from "sonner";
 
 export interface OrgTeamsSectionProps {
   orgSlug: string;
@@ -45,24 +48,24 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
 
   // Create team modal
   const [createOpen, setCreateOpen] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newSlug, setNewSlug] = useState('');
-  const [newDesc, setNewDesc] = useState('');
+  const [newName, setNewName] = useState("");
+  const [newSlug, setNewSlug] = useState("");
+  const [newDesc, setNewDesc] = useState("");
   const [creating, setCreating] = useState(false);
 
   // Rename modal
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTeam, setRenameTeam] = useState<Team | null>(null);
-  const [renameName, setRenameName] = useState('');
+  const [renameName, setRenameName] = useState("");
 
   // Delete confirm
   const [deleteConfirm, setDeleteConfirm] = useState<Team | null>(null);
 
   // Add grant modal
   const [grantOpen, setGrantOpen] = useState(false);
-  const [grantResourceType, setGrantResourceType] = useState('workspace');
-  const [grantResourceId, setGrantResourceId] = useState('');
-  const [grantPermissions, setGrantPermissions] = useState('write');
+  const [grantResourceType, setGrantResourceType] = useState("workspace");
+  const [grantResourceId, setGrantResourceId] = useState("");
+  const [grantPermissions, setGrantPermissions] = useState("write");
 
   const fetchTeams = useCallback(async () => {
     try {
@@ -72,7 +75,7 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
       );
       setTeams(data);
     } catch {
-      toast.error('Failed to load teams');
+      toast.error("Failed to load teams");
     } finally {
       setLoading(false);
     }
@@ -123,8 +126,8 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
       const created = await authenticatedJson<Team>(
         `${API_BASE_URL}/api/orgs/${orgSlug}/teams`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: newName.trim(),
             slug: newSlug.trim(),
@@ -133,13 +136,13 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
         },
       );
       setTeams((prev) => [...prev, created]);
-      toast.success('Team created');
+      toast.success("Team created");
       setCreateOpen(false);
-      setNewName('');
-      setNewSlug('');
-      setNewDesc('');
+      setNewName("");
+      setNewSlug("");
+      setNewDesc("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create team');
+      toast.error(err instanceof Error ? err.message : "Failed to create team");
     } finally {
       setCreating(false);
     }
@@ -151,20 +154,20 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
       const updated = await authenticatedJson<Team>(
         `${API_BASE_URL}/api/orgs/${orgSlug}/teams/${renameTeam.slug}`,
         {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: renameName.trim() }),
         },
       );
       setTeams((prev) =>
         prev.map((t) => (t.teamId === renameTeam.teamId ? updated : t)),
       );
-      toast.success('Team renamed');
+      toast.success("Team renamed");
       setRenameOpen(false);
       setRenameTeam(null);
-      setRenameName('');
+      setRenameName("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to rename team');
+      toast.error(err instanceof Error ? err.message : "Failed to rename team");
     }
   };
 
@@ -173,16 +176,16 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
     try {
       await authenticatedFetch(
         `${API_BASE_URL}/api/orgs/${orgSlug}/teams/${deleteConfirm.slug}`,
-        { method: 'DELETE' },
+        { method: "DELETE" },
       );
       setTeams((prev) => prev.filter((t) => t.teamId !== deleteConfirm.teamId));
       if (expandedSlug === deleteConfirm.slug) {
         setExpandedSlug(null);
         setExpandedData(null);
       }
-      toast.success('Team deleted');
+      toast.success("Team deleted");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete team');
+      toast.error(err instanceof Error ? err.message : "Failed to delete team");
     } finally {
       setDeleteConfirm(null);
     }
@@ -193,7 +196,7 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
     try {
       await authenticatedFetch(
         `${API_BASE_URL}/api/orgs/${orgSlug}/teams/${expandedSlug}/grants/${grantId}`,
-        { method: 'DELETE' },
+        { method: "DELETE" },
       );
       setExpandedData((prev) =>
         prev
@@ -203,9 +206,9 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
             }
           : prev,
       );
-      toast.success('Permission revoked');
+      toast.success("Permission revoked");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to revoke');
+      toast.error(err instanceof Error ? err.message : "Failed to revoke");
     }
   };
 
@@ -215,24 +218,29 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
       const grant = await authenticatedJson<TeamPermissionGrant>(
         `${API_BASE_URL}/api/orgs/${orgSlug}/teams/${expandedSlug}/grants`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             resource_type: grantResourceType,
             resource_id: grantResourceId.trim(),
-            permissions: grantPermissions.split(',').map((p) => p.trim()).filter(Boolean),
+            permissions: grantPermissions
+              .split(",")
+              .map((p) => p.trim())
+              .filter(Boolean),
           }),
         },
       );
       setExpandedData((prev) =>
         prev ? { ...prev, grants: [...prev.grants, grant] } : prev,
       );
-      toast.success('Permission granted');
+      toast.success("Permission granted");
       setGrantOpen(false);
-      setGrantResourceId('');
-      setGrantPermissions('write');
+      setGrantResourceId("");
+      setGrantPermissions("write");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add permission');
+      toast.error(
+        err instanceof Error ? err.message : "Failed to add permission",
+      );
     }
   };
 
@@ -250,7 +258,10 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
       >
         {loading ? (
           <div className="flex justify-center p-12">
-            <Spinner size="lg" className="text-primary dark:text-primary-light" />
+            <Spinner
+              size="lg"
+              className="text-primary dark:text-primary-light"
+            />
           </div>
         ) : teams.length === 0 ? (
           <EmptyState
@@ -275,7 +286,7 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
+                      if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
                         toggleExpand(team);
                       }
@@ -420,7 +431,11 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
         size="sm"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setCreateOpen(false)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCreateOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -446,7 +461,11 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
           <FormField label="Slug" required hint="URL-friendly identifier">
             <Input
               value={newSlug}
-              onChange={(e) => setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+              onChange={(e) =>
+                setNewSlug(
+                  e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+                )
+              }
               placeholder="engineering"
             />
           </FormField>
@@ -468,10 +487,18 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
         size="sm"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setRenameOpen(false)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRenameOpen(false)}
+            >
               Cancel
             </Button>
-            <Button size="sm" onClick={handleRename} disabled={!renameName.trim()}>
+            <Button
+              size="sm"
+              onClick={handleRename}
+              disabled={!renameName.trim()}
+            >
               Rename
             </Button>
           </>
@@ -495,7 +522,11 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
         size="sm"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setGrantOpen(false)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setGrantOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -527,7 +558,10 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
               placeholder="workspace-id-here"
             />
           </FormField>
-          <FormField label="Permissions" hint="Comma-separated: read, write, admin">
+          <FormField
+            label="Permissions"
+            hint="Comma-separated: read, write, admin"
+          >
             <Input
               value={grantPermissions}
               onChange={(e) => setGrantPermissions(e.target.value)}
@@ -545,7 +579,7 @@ export function OrgTeamsSection({ orgSlug }: OrgTeamsSectionProps) {
         title="Delete Team"
         message={
           <>
-            Delete team{' '}
+            Delete team{" "}
             <span className="font-medium text-text-primary dark:text-text-primary-dark">
               {deleteConfirm?.name}
             </span>

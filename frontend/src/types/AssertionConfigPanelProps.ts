@@ -1,5 +1,5 @@
-import type { NodeModalAssertionConfig } from './NodeModalAssertionConfig';
-import type { NodeModalAssertionTabKey } from './NodeModalAssertionTabKey';
+import type { NodeModalAssertionConfig } from "./NodeModalAssertionConfig";
+import type { NodeModalAssertionTabKey } from "./NodeModalAssertionTabKey";
 
 export interface AssertionConfigPanelProps {
   initialConfig: Partial<NodeModalAssertionConfig>;

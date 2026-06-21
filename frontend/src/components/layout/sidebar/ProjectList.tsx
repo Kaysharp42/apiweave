@@ -1,8 +1,8 @@
-import { FolderKanban } from 'lucide-react';
-import { Button } from '../../atoms/Button';
-import { EmptyState } from '../../molecules/EmptyState';
-import { ProjectItem } from './ProjectItem';
-import type { ProjectListProps } from '../../../types';
+import { FolderKanban } from "lucide-react";
+import { Button } from "../../atoms/Button";
+import { EmptyState } from "../../molecules/EmptyState";
+import { ProjectItem } from "./ProjectItem";
+import type { ProjectListProps } from "../../../types";
 
 /**
  * Renders the project list section of the sidebar.
@@ -28,16 +28,27 @@ export function ProjectList({
   if (projects.length === 0) {
     return (
       <EmptyState
-        icon={<FolderKanban className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
-        title={searchQuery ? 'No matching projects' : 'No projects yet'}
+        icon={
+          <FolderKanban
+            className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+            strokeWidth={1.5}
+          />
+        }
+        title={searchQuery ? "No matching projects" : "No projects yet"}
         description={
           searchQuery
             ? `No projects match "${searchQuery}"`
-            : 'Create projects to organize your workflows'
+            : "Create projects to organize your workflows"
         }
         action={
           !searchQuery && (
-            <Button variant="primary" intent="default" size="sm" onClick={onCreateProject} icon={<FolderKanban className="w-4 h-4" />}>
+            <Button
+              variant="primary"
+              intent="default"
+              size="sm"
+              onClick={onCreateProject}
+              icon={<FolderKanban className="w-4 h-4" />}
+            >
               Create Project
             </Button>
           )
@@ -52,7 +63,9 @@ export function ProjectList({
         <ProjectItem
           key={project.projectId ?? project.collectionId}
           project={project}
-          isExpanded={expandedProjects.has(project.projectId ?? project.collectionId)}
+          isExpanded={expandedProjects.has(
+            project.projectId ?? project.collectionId,
+          )}
           workflows={workflows}
           projects={projects}
           environments={environments}

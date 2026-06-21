@@ -1,7 +1,7 @@
-import type { NodeStatus } from './NodeStatus';
-import type { HttpMethod } from './HttpMethod';
-import type { FileUpload } from './FileUpload';
-import type { SchemaWarning } from './SchemaWarning';
+import type { NodeStatus } from "./NodeStatus";
+import type { HttpMethod } from "./HttpMethod";
+import type { FileUpload } from "./FileUpload";
+import type { SchemaWarning } from "./SchemaWarning";
 
 export interface HTTPRequestNodeData {
   label?: string;
@@ -25,7 +25,7 @@ export interface HTTPRequestNodeData {
     headers?: string;
     cookies?: string;
     body?: string;
-    bodyType?: 'json' | 'form-data' | 'raw' | 'none';
+    bodyType?: "json" | "form-data" | "raw" | "none";
     timeout?: number;
     extractors?: Record<string, string>;
     fileUploads?: FileUpload[];

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react';
-import useTabStore from '../stores/TabStore';
+import { useEffect, useMemo, useRef } from "react";
+import useTabStore from "../stores/TabStore";
 
 interface UseAutoSaveParams {
   workflowId: string | undefined;
@@ -33,7 +33,11 @@ export default function useAutoSave({
   saveWorkflow,
 }: UseAutoSaveParams): void {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSnapshotRef = useRef<Snapshot>({ nodes: null, edges: null, vars: null });
+  const lastSnapshotRef = useRef<Snapshot>({
+    nodes: null,
+    edges: null,
+    vars: null,
+  });
 
   const nodesSig = useMemo(() => {
     const parts: string[] = [];
@@ -51,18 +55,20 @@ export default function useAutoSave({
       } else {
         dataId = -1;
       }
-      parts.push(`${node.id ?? '?'}:${dataId}`);
+      parts.push(`${node.id ?? "?"}:${dataId}`);
     }
-    return parts.join('|');
+    return parts.join("|");
   }, [nodes]);
 
   const edgesSig = useMemo(() => {
     const parts: string[] = [];
     for (const e of edges) {
       const edge = e as { id?: string; source?: string; target?: string };
-      parts.push(`${edge.id ?? '?'}:${edge.source ?? '?'}:${edge.target ?? '?'}`);
+      parts.push(
+        `${edge.id ?? "?"}:${edge.source ?? "?"}:${edge.target ?? "?"}`,
+      );
     }
-    return parts.join('|');
+    return parts.join("|");
   }, [edges]);
 
   useEffect(() => {
@@ -70,16 +76,32 @@ export default function useAutoSave({
 
     const lastSnapshot = lastSnapshotRef.current;
 
-    if (lastSnapshot.nodes === null && lastSnapshot.edges === null && lastSnapshot.vars === null) {
-      lastSnapshotRef.current = { nodes: nodesSig, edges: edgesSig, vars: workflowVariables };
+    if (
+      lastSnapshot.nodes === null &&
+      lastSnapshot.edges === null &&
+      lastSnapshot.vars === null
+    ) {
+      lastSnapshotRef.current = {
+        nodes: nodesSig,
+        edges: edgesSig,
+        vars: workflowVariables,
+      };
       return;
     }
 
-    if (lastSnapshot.nodes === nodesSig && lastSnapshot.edges === edgesSig && lastSnapshot.vars === workflowVariables) {
+    if (
+      lastSnapshot.nodes === nodesSig &&
+      lastSnapshot.edges === edgesSig &&
+      lastSnapshot.vars === workflowVariables
+    ) {
       return;
     }
 
-    lastSnapshotRef.current = { nodes: nodesSig, edges: edgesSig, vars: workflowVariables };
+    lastSnapshotRef.current = {
+      nodes: nodesSig,
+      edges: edgesSig,
+      vars: workflowVariables,
+    };
 
     if (timerRef.current) clearTimeout(timerRef.current);
 
@@ -96,5 +118,13 @@ export default function useAutoSave({
         timerRef.current = null;
       }
     };
-  }, [nodesSig, edgesSig, workflowVariables, autoSaveEnabled, workflowId, isHydrated, saveWorkflow]);
+  }, [
+    nodesSig,
+    edgesSig,
+    workflowVariables,
+    autoSaveEnabled,
+    workflowId,
+    isHydrated,
+    saveWorkflow,
+  ]);
 }

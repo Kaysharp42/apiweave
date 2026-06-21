@@ -1,5 +1,5 @@
-import type { HttpMethod } from './HttpMethod';
-import type { KeyValue } from './KeyValue';
+import type { HttpMethod } from "./HttpMethod";
+import type { KeyValue } from "./KeyValue";
 
 export interface HARImportResult {
   requests: Array<{

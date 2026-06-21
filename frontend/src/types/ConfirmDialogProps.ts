@@ -6,5 +6,5 @@ export interface ConfirmDialogProps {
   message: string | React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
-  intent?: 'error' | 'warning' | 'info';
+  intent?: "error" | "warning" | "info";
 }

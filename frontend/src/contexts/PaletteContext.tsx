@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 
 interface ImportedGroup {
   id: string;
@@ -17,7 +23,7 @@ const PaletteContext = createContext<PaletteContextValue | null>(null);
 
 export const usePalette = (): PaletteContextValue => {
   const ctx = useContext(PaletteContext);
-  if (!ctx) throw new Error('usePalette must be used within a PaletteProvider');
+  if (!ctx) throw new Error("usePalette must be used within a PaletteProvider");
   return ctx;
 };
 
@@ -32,7 +38,7 @@ export const PaletteProvider = ({ children }: PaletteProviderProps) => {
     setImportedGroups((prev) => {
       const filtered = prev.filter((g) => g.id !== group.id);
 
-      const baseTitle = group.title ?? 'Imported';
+      const baseTitle = group.title ?? "Imported";
       let finalTitle = baseTitle;
       let suffix = 2;
       const existingTitles = new Set(filtered.map((g) => g.title));
@@ -40,7 +46,10 @@ export const PaletteProvider = ({ children }: PaletteProviderProps) => {
         finalTitle = `${baseTitle} (${suffix})`;
         suffix += 1;
       }
-      return [...filtered, { ...group, title: finalTitle, id: group.id ?? `grp-${Date.now()}` }];
+      return [
+        ...filtered,
+        { ...group, title: finalTitle, id: group.id ?? `grp-${Date.now()}` },
+      ];
     });
   }, []);
 
@@ -58,9 +67,7 @@ export const PaletteProvider = ({ children }: PaletteProviderProps) => {
   };
 
   return (
-    <PaletteContext.Provider value={value}>
-      {children}
-    </PaletteContext.Provider>
+    <PaletteContext.Provider value={value}>{children}</PaletteContext.Provider>
   );
 };
 

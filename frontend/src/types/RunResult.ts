@@ -1,7 +1,7 @@
-import type { NodeType } from './NodeType';
-import type { NodeStatus } from './NodeStatus';
-import type { ApiResponse } from './ApiResponse';
-import type { AssertionResult } from './AssertionResult';
+import type { NodeType } from "./NodeType";
+import type { NodeStatus } from "./NodeStatus";
+import type { ApiResponse } from "./ApiResponse";
+import type { AssertionResult } from "./AssertionResult";
 
 export interface RunResult {
   nodeId: string;

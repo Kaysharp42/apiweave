@@ -9,11 +9,11 @@ All endpoints require authentication. Secret values, ciphertext, and private
 keys are NEVER returned — the AuditEventResponse model and audit service
 guarantee this at the data layer.
 """
+
 from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
@@ -30,6 +30,7 @@ router = APIRouter(prefix="/api/audit", tags=["audit"])
 
 class AuditEventListResponse(BaseModel):
     """Paginated response for audit event listing."""
+
     events: list[AuditEventResponse]
     total: int
     skip: int
@@ -41,15 +42,23 @@ class AuditEventListResponse(BaseModel):
     response_model=AuditEventListResponse,
     summary="List audit events",
     description="Returns paginated audit events with optional filters. "
-                "No secret values are ever included in responses.",
+    "No secret values are ever included in responses.",
 )
 async def list_audit_events(
-    actor: Optional[str] = Query(None, description="Filter by actor type (user, service_token, webhook_token, etc.)"),
-    action: Optional[str] = Query(None, description="Filter by action (secret_resolved, secret_created, etc.)"),
-    scope: Optional[str] = Query(None, description="Filter by scope (org, workspace, environment)"),
-    resource_type: Optional[str] = Query(None, alias="resourceType", description="Filter by resource type"),
-    from_date: Optional[datetime] = Query(None, alias="from", description="Start of date range (ISO 8601)"),
-    to_date: Optional[datetime] = Query(None, alias="to", description="End of date range (ISO 8601)"),
+    actor: str | None = Query(
+        None, description="Filter by actor type (user, service_token, webhook_token, etc.)"
+    ),
+    action: str | None = Query(
+        None, description="Filter by action (secret_resolved, secret_created, etc.)"
+    ),
+    scope: str | None = Query(None, description="Filter by scope (org, workspace, environment)"),
+    resource_type: str | None = Query(
+        None, alias="resourceType", description="Filter by resource type"
+    ),
+    from_date: datetime | None = Query(
+        None, alias="from", description="Start of date range (ISO 8601)"
+    ),
+    to_date: datetime | None = Query(None, alias="to", description="End of date range (ISO 8601)"),
     skip: int = Query(0, ge=0, description="Number of events to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum events to return"),
     current_user: User = Depends(get_current_active_user),
@@ -81,15 +90,19 @@ async def list_audit_events(
     "/events/export",
     summary="Export audit events as JSON",
     description="Downloads all matching audit events as a JSON file. "
-                "Guaranteed to contain no secret values.",
+    "Guaranteed to contain no secret values.",
 )
 async def export_audit_events(
-    actor: Optional[str] = Query(None, description="Filter by actor type"),
-    action: Optional[str] = Query(None, description="Filter by action"),
-    scope: Optional[str] = Query(None, description="Filter by scope"),
-    resource_type: Optional[str] = Query(None, alias="resourceType", description="Filter by resource type"),
-    from_date: Optional[datetime] = Query(None, alias="from", description="Start of date range (ISO 8601)"),
-    to_date: Optional[datetime] = Query(None, alias="to", description="End of date range (ISO 8601)"),
+    actor: str | None = Query(None, description="Filter by actor type"),
+    action: str | None = Query(None, description="Filter by action"),
+    scope: str | None = Query(None, description="Filter by scope"),
+    resource_type: str | None = Query(
+        None, alias="resourceType", description="Filter by resource type"
+    ),
+    from_date: datetime | None = Query(
+        None, alias="from", description="Start of date range (ISO 8601)"
+    ),
+    to_date: datetime | None = Query(None, alias="to", description="End of date range (ISO 8601)"),
     current_user: User = Depends(get_current_active_user),
 ) -> Response:
     """

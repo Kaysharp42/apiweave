@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { AppNavBarItems } from '../constants/AppNavBar';
-import type { NavSection } from '../types/NavSection';
+import { create } from "zustand";
+import { AppNavBarItems } from "../constants/AppNavBar";
+import type { NavSection } from "../types/NavSection";
 
 interface NavigationState {
   selectedNavVal: NavSection;
@@ -19,10 +19,13 @@ const useNavigationStore = create<NavigationState>()((set) => ({
   mobileSidebarOpen: false,
 
   setNavState: (navVal: NavSection) => set({ selectedNavVal: navVal }),
-  toggleNavBarCollapse: () => set((state) => ({ collapseNavBar: !state.collapseNavBar })),
-  setNavBarCollapsed: (collapsed: boolean) => set({ collapseNavBar: collapsed }),
+  toggleNavBarCollapse: () =>
+    set((state) => ({ collapseNavBar: !state.collapseNavBar })),
+  setNavBarCollapsed: (collapsed: boolean) =>
+    set({ collapseNavBar: collapsed }),
   setMobileSidebarOpen: (open: boolean) => set({ mobileSidebarOpen: open }),
-  toggleMobileSidebar: () => set((state) => ({ mobileSidebarOpen: !state.mobileSidebarOpen })),
+  toggleMobileSidebar: () =>
+    set((state) => ({ mobileSidebarOpen: !state.mobileSidebarOpen })),
 }));
 
 export default useNavigationStore;

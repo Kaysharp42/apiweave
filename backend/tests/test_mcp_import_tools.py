@@ -1,11 +1,11 @@
 """Tests for Phase 4 MCP import tools."""
+
 from __future__ import annotations
 
 import json
 from typing import Any
 
 import pytest
-
 from app.mcp.tools import imports as import_tools
 
 SAMPLE_OPENAPI_JSON = json.dumps(
@@ -82,9 +82,7 @@ SAMPLE_HAR_JSON = json.dumps(
                     "request": {
                         "method": "POST",
                         "url": "https://api.example.com/users",
-                        "headers": [
-                            {"name": "Content-Type", "value": "application/json"}
-                        ],
+                        "headers": [{"name": "Content-Type", "value": "application/json"}],
                         "queryString": [],
                         "cookies": [],
                         "postData": {"text": '{"name": "Alice"}'},
@@ -103,7 +101,7 @@ SAMPLE_HAR_JSON = json.dumps(
 
 SAMPLE_CURL = (
     "curl https://api.example.com/users\n"
-    'curl -X POST https://api.example.com/users '
+    "curl -X POST https://api.example.com/users "
     '-H "Content-Type: application/json" '
     '-d \'{"name": "Bob"}\''
 )
@@ -266,9 +264,7 @@ async def test_import_har_dry_run_missing_log():
 
 @pytest.mark.asyncio
 async def test_import_har_dry_run_empty_entries():
-    response = await import_tools.import_har_dry_run(
-        json.dumps({"log": {"entries": []}})
-    )
+    response = await import_tools.import_har_dry_run(json.dumps({"log": {"entries": []}}))
 
     assert response.valid is False
     assert any("no entries" in err.lower() for err in response.errors)
@@ -287,8 +283,7 @@ async def test_import_curl_returns_nodes():
 @pytest.mark.asyncio
 async def test_import_curl_sanitizes_secret_headers():
     curl_with_secret = (
-        'curl https://api.example.com/secure '
-        '-H "Authorization: Bearer sk-secret-token"'
+        "curl https://api.example.com/secure " '-H "Authorization: Bearer sk-secret-token"'
     )
 
     response = await import_tools.import_curl(curl_with_secret, sanitize=True)

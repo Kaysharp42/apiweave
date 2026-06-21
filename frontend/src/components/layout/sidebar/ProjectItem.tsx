@@ -1,12 +1,20 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, FolderKanban, Download, Trash2, Plus, FilePlus } from 'lucide-react';
-import { Badge } from '../../atoms/Badge';
-import { IconButton } from '../../atoms/IconButton';
-import { SidebarAction } from './SidebarAction';
-import { WorkflowItem } from './WorkflowItem';
-import { getSidebarItemLabel } from '../../../utils/sidebarItemLabel';
-import type { ProjectItemProps } from '../../../types';
-import type { Collection } from '../../../types/Collection';
+import { useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderKanban,
+  Download,
+  Trash2,
+  Plus,
+  FilePlus,
+} from "lucide-react";
+import { Badge } from "../../atoms/Badge";
+import { IconButton } from "../../atoms/IconButton";
+import { SidebarAction } from "./SidebarAction";
+import { WorkflowItem } from "./WorkflowItem";
+import { getSidebarItemLabel } from "../../../utils/sidebarItemLabel";
+import type { ProjectItemProps } from "../../../types";
+import type { Collection } from "../../../types/Collection";
 
 export function ProjectItem({
   project,
@@ -30,9 +38,15 @@ export function ProjectItem({
     ? workflows.filter((wf) => (wf.projectId ?? wf.collectionId) === projectId)
     : [];
   const unassignedWorkflows = Array.isArray(workflows)
-    ? workflows.filter((wf) => !wf.collectionId || wf.collectionId !== projectId)
+    ? workflows.filter(
+        (wf) => !wf.collectionId || wf.collectionId !== projectId,
+      )
     : [];
-  const projectLabel = getSidebarItemLabel(project.name, 40, 'Untitled project');
+  const projectLabel = getSidebarItemLabel(
+    project.name,
+    40,
+    "Untitled project",
+  );
 
   return (
     <li>
@@ -40,16 +54,18 @@ export function ProjectItem({
         <button
           type="button"
           className={[
-            'flex min-w-0 flex-1 items-center gap-2 text-left',
-            'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light',
-            'cursor-pointer rounded',
-          ].join(' ')}
+            "flex min-w-0 flex-1 items-center gap-2 text-left",
+            "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+            "cursor-pointer rounded",
+          ].join(" ")}
           onClick={() => onToggle(projectId)}
           aria-expanded={isExpanded}
         >
-          {isExpanded
-            ? <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
-            : <ChevronRight className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />}
+          {isExpanded ? (
+            <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+          )}
           <FolderKanban className="w-4 h-4 flex-shrink-0 text-primary dark:text-primary-light" />
           <span
             className="font-medium text-text-primary dark:text-text-primary-dark truncate"
@@ -57,7 +73,9 @@ export function ProjectItem({
           >
             {projectLabel.label}
           </span>
-          <Badge variant="ghost" size="xs">{projectWorkflows.length}</Badge>
+          <Badge variant="ghost" size="xs">
+            {projectWorkflows.length}
+          </Badge>
         </button>
 
         <div className="ml-1 flex w-[64px] shrink-0 items-center justify-end gap-1">
@@ -97,10 +115,12 @@ export function ProjectItem({
               key={workflow.workflowId}
               workflow={workflow}
               isActive={selectedWorkflowId === workflow.workflowId}
-              collections={projects.map((p) => ({
-                collectionId: p.projectId ?? p.collectionId,
-                name: p.name,
-              })) as Collection[]}
+              collections={
+                projects.map((p) => ({
+                  collectionId: p.projectId ?? p.collectionId,
+                  name: p.name,
+                })) as Collection[]
+              }
               environments={environments}
               onWorkflowClick={onWorkflowClick}
               onExportWorkflow={onExportWorkflow}
@@ -119,7 +139,7 @@ export function ProjectItem({
             </IconButton>
             <button
               type="button"
-                className="cursor-pointer rounded text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light dark:focus-visible:outline-primary-light"
+              className="cursor-pointer rounded text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light dark:focus-visible:outline-primary-light"
               onClick={() => onAddWorkflowToProject(projectId)}
             >
               Add workflow
@@ -133,7 +153,9 @@ export function ProjectItem({
               >
                 <FilePlus className="w-3 h-3" />
                 Assign
-                <ChevronDown className={`w-2.5 h-2.5 transition-transform ${showAssignDropdown ? 'rotate-180' : ''}`} />
+                <ChevronDown
+                  className={`w-2.5 h-2.5 transition-transform ${showAssignDropdown ? "rotate-180" : ""}`}
+                />
               </button>
             )}
           </li>
@@ -152,7 +174,9 @@ export function ProjectItem({
                     }}
                   >
                     <FilePlus className="w-3 h-3 flex-shrink-0 text-text-muted dark:text-text-muted-dark" />
-                    <span className="truncate text-text-primary dark:text-text-primary-dark">{wf.name}</span>
+                    <span className="truncate text-text-primary dark:text-text-primary-dark">
+                      {wf.name}
+                    </span>
                   </button>
                 ))}
               </div>

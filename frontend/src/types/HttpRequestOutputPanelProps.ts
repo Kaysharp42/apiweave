@@ -1,5 +1,5 @@
-import type { NodeModalNode } from './NodeModalNode';
-import type { NodeModalHTTPRequestConfig } from './NodeModalHTTPRequestConfig';
+import type { NodeModalNode } from "./NodeModalNode";
+import type { NodeModalHTTPRequestConfig } from "./NodeModalHTTPRequestConfig";
 
 export interface HttpRequestOutputPanelProps {
   node: NodeModalNode;

@@ -1,4 +1,4 @@
-import type { EnvironmentProtectionPolicy } from './EnvironmentProtectionPolicy';
+import type { EnvironmentProtectionPolicy } from "./EnvironmentProtectionPolicy";
 
 export interface ProtectionSummaryProps {
   /** Protection config to summarize. */

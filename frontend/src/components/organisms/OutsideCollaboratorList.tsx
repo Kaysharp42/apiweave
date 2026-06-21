@@ -1,15 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { UserCircle, Trash2 } from 'lucide-react';
-import { IconButton } from '../atoms/IconButton';
-import { Spinner } from '../atoms/Spinner';
-import { Badge } from '../atoms/Badge';
-import { EmptyState } from '../molecules/EmptyState';
-import { Panel } from '../molecules/Panel';
-import { ConfirmDialog } from '../molecules/ConfirmDialog';
-import { authenticatedJson, authenticatedFetch } from '../../utils/authenticatedApi';
-import API_BASE_URL from '../../utils/api';
-import type { OutsideCollaborator } from '../../types';
-import { toast } from 'sonner';
+import { useState, useEffect, useCallback } from "react";
+import { UserCircle, Trash2 } from "lucide-react";
+import { IconButton } from "../atoms/IconButton";
+import { Spinner } from "../atoms/Spinner";
+import { Badge } from "../atoms/Badge";
+import { EmptyState } from "../molecules/EmptyState";
+import { Panel } from "../molecules/Panel";
+import { ConfirmDialog } from "../molecules/ConfirmDialog";
+import {
+  authenticatedJson,
+  authenticatedFetch,
+} from "../../utils/authenticatedApi";
+import API_BASE_URL from "../../utils/api";
+import type { OutsideCollaborator } from "../../types";
+import { toast } from "sonner";
 
 export interface OutsideCollaboratorListProps {
   workspaceId: string;
@@ -20,10 +23,13 @@ interface CollaboratorsResponse {
   total: number;
 }
 
-export function OutsideCollaboratorList({ workspaceId }: OutsideCollaboratorListProps) {
+export function OutsideCollaboratorList({
+  workspaceId,
+}: OutsideCollaboratorListProps) {
   const [collaborators, setCollaborators] = useState<OutsideCollaborator[]>([]);
   const [loading, setLoading] = useState(true);
-  const [removeConfirm, setRemoveConfirm] = useState<OutsideCollaborator | null>(null);
+  const [removeConfirm, setRemoveConfirm] =
+    useState<OutsideCollaborator | null>(null);
   const [removing, setRemoving] = useState(false);
 
   const fetchCollaborators = useCallback(async () => {
@@ -51,14 +57,14 @@ export function OutsideCollaboratorList({ workspaceId }: OutsideCollaboratorList
     try {
       await authenticatedFetch(
         `${API_BASE_URL}/api/workspaces/${workspaceId}/collaborators/${removeConfirm.collaboratorId}`,
-        { method: 'DELETE' },
+        { method: "DELETE" },
       );
       setCollaborators((prev) =>
         prev.filter((c) => c.collaboratorId !== removeConfirm.collaboratorId),
       );
-      toast.success('Collaborator removed');
+      toast.success("Collaborator removed");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove');
+      toast.error(err instanceof Error ? err.message : "Failed to remove");
     } finally {
       setRemoving(false);
       setRemoveConfirm(null);
@@ -70,7 +76,10 @@ export function OutsideCollaboratorList({ workspaceId }: OutsideCollaboratorList
       <Panel title="Outside Collaborators" icon={UserCircle}>
         {loading ? (
           <div className="flex justify-center p-8">
-            <Spinner size="md" className="text-primary dark:text-primary-light" />
+            <Spinner
+              size="md"
+              className="text-primary dark:text-primary-light"
+            />
           </div>
         ) : collaborators.length === 0 ? (
           <EmptyState

@@ -1,16 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import LoginPage from '../pages/LoginPage';
-import type { ProviderDisplay } from '../types';
-import { Github, Gitlab } from 'lucide-react';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import LoginPage from "../pages/LoginPage";
+import type { ProviderDisplay } from "../types";
+import { Github, Gitlab } from "lucide-react";
 
 // Mock useAuth
 const mockLogin = vi.fn();
-vi.mock('../auth/useAuth', () => ({
+vi.mock("../auth/useAuth", () => ({
   useAuth: () => ({
     login: mockLogin,
-    status: 'unauthenticated',
+    status: "unauthenticated",
     user: null,
     error: null,
     isLoading: false,
@@ -24,31 +24,39 @@ vi.mock('../auth/useAuth', () => ({
 
 // Mock useOAuthProviders
 const mockUseOAuthProviders = vi.fn();
-vi.mock('../hooks/useOAuthProviders', () => ({
+vi.mock("../hooks/useOAuthProviders", () => ({
   useOAuthProviders: () => mockUseOAuthProviders(),
 }));
 
 // Mock react-router-dom
-vi.mock('react-router-dom', () => ({
+vi.mock("react-router-dom", () => ({
   Navigate: () => null,
   useSearchParams: () => [new URLSearchParams()],
 }));
 
 // Mock child components to simplify testing
-vi.mock('../components/auth/SplitAuthLayout', () => ({
-  SplitAuthLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+vi.mock("../components/auth/SplitAuthLayout", () => ({
+  SplitAuthLayout: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 
-vi.mock('../components/auth/AuthInteractiveHero', () => ({
+vi.mock("../components/auth/AuthInteractiveHero", () => ({
   AuthInteractiveHero: () => <div>Hero</div>,
 }));
 
-vi.mock('../components/molecules/Card', () => ({
+vi.mock("../components/molecules/Card", () => ({
   Card: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('../components/molecules/EmptyState', () => ({
-  EmptyState: ({ title, description }: { title: string; description: string }) => (
+vi.mock("../components/molecules/EmptyState", () => ({
+  EmptyState: ({
+    title,
+    description,
+  }: {
+    title: string;
+    description: string;
+  }) => (
     <div data-testid="empty-state">
       <h3>{title}</h3>
       <p>{description}</p>
@@ -56,16 +64,16 @@ vi.mock('../components/molecules/EmptyState', () => ({
   ),
 }));
 
-vi.mock('../components/atoms/Spinner', () => ({
+vi.mock("../components/atoms/Spinner", () => ({
   Spinner: () => <div data-testid="spinner">Loading...</div>,
 }));
 
-describe('LoginPage', () => {
+describe("LoginPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders empty state when no providers are configured', () => {
+  it("renders empty state when no providers are configured", () => {
     mockUseOAuthProviders.mockReturnValue({
       providers: [],
       loading: false,
@@ -74,12 +82,16 @@ describe('LoginPage', () => {
 
     render(<LoginPage />);
 
-    expect(screen.getByTestId('empty-state')).toBeInTheDocument();
-    expect(screen.getByText('No sign-in providers configured')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /continue with/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("empty-state")).toBeInTheDocument();
+    expect(
+      screen.getByText("No sign-in providers configured"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /continue with/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it('renders loading spinner while fetching providers', () => {
+  it("renders loading spinner while fetching providers", () => {
     mockUseOAuthProviders.mockReturnValue({
       providers: [],
       loading: true,
@@ -88,27 +100,27 @@ describe('LoginPage', () => {
 
     render(<LoginPage />);
 
-    expect(screen.getByTestId('spinner')).toBeInTheDocument();
-    expect(screen.getByText('Loading sign-in options...')).toBeInTheDocument();
+    expect(screen.getByTestId("spinner")).toBeInTheDocument();
+    expect(screen.getByText("Loading sign-in options...")).toBeInTheDocument();
   });
 
-  it('renders error state when provider fetch fails', () => {
+  it("renders error state when provider fetch fails", () => {
     mockUseOAuthProviders.mockReturnValue({
       providers: [],
       loading: false,
-      error: 'Unable to load sign-in options',
+      error: "Unable to load sign-in options",
     });
 
     render(<LoginPage />);
 
-    expect(screen.getByTestId('empty-state')).toBeInTheDocument();
-    expect(screen.getByText('Sign-in options unavailable')).toBeInTheDocument();
+    expect(screen.getByTestId("empty-state")).toBeInTheDocument();
+    expect(screen.getByText("Sign-in options unavailable")).toBeInTheDocument();
   });
 
-  it('renders one button per provider when providers are available', () => {
+  it("renders one button per provider when providers are available", () => {
     const mockProviders: ProviderDisplay[] = [
-      { id: 'github', label: 'Continue with GitHub', IconComponent: Github },
-      { id: 'gitlab', label: 'Continue with GitLab', IconComponent: Gitlab },
+      { id: "github", label: "Continue with GitHub", IconComponent: Github },
+      { id: "gitlab", label: "Continue with GitLab", IconComponent: Gitlab },
     ];
 
     mockUseOAuthProviders.mockReturnValue({
@@ -119,19 +131,23 @@ describe('LoginPage', () => {
 
     render(<LoginPage />);
 
-    const githubButton = screen.getByRole('button', { name: /continue with github/i });
-    const gitlabButton = screen.getByRole('button', { name: /continue with gitlab/i });
+    const githubButton = screen.getByRole("button", {
+      name: /continue with github/i,
+    });
+    const gitlabButton = screen.getByRole("button", {
+      name: /continue with gitlab/i,
+    });
 
     expect(githubButton).toBeInTheDocument();
     expect(gitlabButton).toBeInTheDocument();
-    expect(githubButton).toHaveAttribute('data-provider', 'github');
-    expect(gitlabButton).toHaveAttribute('data-provider', 'gitlab');
+    expect(githubButton).toHaveAttribute("data-provider", "github");
+    expect(gitlabButton).toHaveAttribute("data-provider", "gitlab");
   });
 
-  it('calls login with provider id when button is clicked', async () => {
+  it("calls login with provider id when button is clicked", async () => {
     const user = userEvent.setup();
     const mockProviders: ProviderDisplay[] = [
-      { id: 'github', label: 'Continue with GitHub', IconComponent: Github },
+      { id: "github", label: "Continue with GitHub", IconComponent: Github },
     ];
 
     mockUseOAuthProviders.mockReturnValue({
@@ -142,18 +158,24 @@ describe('LoginPage', () => {
 
     render(<LoginPage />);
 
-    const githubButton = screen.getByRole('button', { name: /continue with github/i });
+    const githubButton = screen.getByRole("button", {
+      name: /continue with github/i,
+    });
     await user.click(githubButton);
 
-    expect(mockLogin).toHaveBeenCalledWith('github');
+    expect(mockLogin).toHaveBeenCalledWith("github");
   });
 
-  it('renders all four providers when available', () => {
+  it("renders all four providers when available", () => {
     const mockProviders: ProviderDisplay[] = [
-      { id: 'github', label: 'Continue with GitHub', IconComponent: Github },
-      { id: 'gitlab', label: 'Continue with GitLab', IconComponent: Gitlab },
-      { id: 'google', label: 'Continue with Google', IconComponent: Github }, // Using Github as placeholder
-      { id: 'microsoft', label: 'Continue with Microsoft', IconComponent: Github }, // Using Github as placeholder
+      { id: "github", label: "Continue with GitHub", IconComponent: Github },
+      { id: "gitlab", label: "Continue with GitLab", IconComponent: Gitlab },
+      { id: "google", label: "Continue with Google", IconComponent: Github }, // Using Github as placeholder
+      {
+        id: "microsoft",
+        label: "Continue with Microsoft",
+        IconComponent: Github,
+      }, // Using Github as placeholder
     ];
 
     mockUseOAuthProviders.mockReturnValue({
@@ -164,9 +186,17 @@ describe('LoginPage', () => {
 
     render(<LoginPage />);
 
-    expect(screen.getByRole('button', { name: /continue with github/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /continue with gitlab/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /continue with google/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /continue with microsoft/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue with github/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue with gitlab/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue with google/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue with microsoft/i }),
+    ).toBeInTheDocument();
   });
 });

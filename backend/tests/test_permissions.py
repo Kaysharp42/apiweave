@@ -1,9 +1,6 @@
 from types import SimpleNamespace
 
 import pytest
-from fastapi import Depends, FastAPI
-from fastapi.testclient import TestClient
-
 from app.auth.permissions import (
     ALL_PERMISSIONS,
     COLLECTIONS_CREATE,
@@ -15,6 +12,8 @@ from app.auth.permissions import (
     PermissionEvaluator,
     require_permission,
 )
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
 
 
 def _user(
@@ -73,9 +72,7 @@ def test_denial_returns_403_error() -> None:
 
     @app.post("/protected")
     async def protected(
-        user: SimpleNamespace = Depends(
-            require_permission(USERS_INVITE, get_user=get_viewer)
-        ),
+        user: SimpleNamespace = Depends(require_permission(USERS_INVITE, get_user=get_viewer)),
     ) -> dict[str, bool]:
         return {"ok": bool(user)}
 

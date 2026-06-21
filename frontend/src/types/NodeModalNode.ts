@@ -1,5 +1,5 @@
-import type { NodeModalNodeType } from './NodeModalNodeType';
-import type { NodeModalData } from './NodeModalData';
+import type { NodeModalNodeType } from "./NodeModalNodeType";
+import type { NodeModalData } from "./NodeModalData";
 
 export interface NodeModalNode {
   id: string;

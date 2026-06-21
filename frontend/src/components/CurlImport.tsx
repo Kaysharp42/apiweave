@@ -1,12 +1,20 @@
-import { useState, useEffect, type ChangeEvent, type DragEvent } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle, X, Copy, Trash2 } from 'lucide-react';
-import useCanvasStore from '../stores/CanvasStore';
-import { Button } from './atoms/Button';
-import { TextArea } from './atoms/TextArea';
-import { IconButton } from './atoms/IconButton';
-import { authenticatedFetch } from '../utils/authenticatedApi';
-import { useScopeContext } from '../hooks/useScopeContext';
-import { workflowsUrl, workflowImportCurlUrl } from '../utils/scopedApi';
+import { useState, useEffect, type ChangeEvent, type DragEvent } from "react";
+import {
+  Upload,
+  FileText,
+  AlertCircle,
+  CheckCircle,
+  X,
+  Copy,
+  Trash2,
+} from "lucide-react";
+import useCanvasStore from "../stores/CanvasStore";
+import { Button } from "./atoms/Button";
+import { TextArea } from "./atoms/TextArea";
+import { IconButton } from "./atoms/IconButton";
+import { authenticatedFetch } from "../utils/authenticatedApi";
+import { useScopeContext } from "../hooks/useScopeContext";
+import { workflowsUrl, workflowImportCurlUrl } from "../utils/scopedApi";
 
 interface Workflow {
   workflowId: string;
@@ -31,9 +39,13 @@ interface CurlImportProps {
   currentWorkflowId?: string;
 }
 
-export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: CurlImportProps) {
+export function CurlImport({
+  onClose,
+  onImportSuccess,
+  currentWorkflowId,
+}: CurlImportProps) {
   const { workspaceId } = useScopeContext();
-  const [curlInput, setCurlInput] = useState<string>('');
+  const [curlInput, setCurlInput] = useState<string>("");
   const [sanitize, setSanitize] = useState<boolean>(true);
   const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null);
   const [importing, setImporting] = useState<boolean>(false);
@@ -41,19 +53,23 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(currentWorkflowId || '');
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(
+    currentWorkflowId || "",
+  );
   const [loadingWorkflows, setLoadingWorkflows] = useState<boolean>(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const response = await authenticatedFetch(workflowsUrl(workspaceId || '', { limit: 100 }));
+        const response = await authenticatedFetch(
+          workflowsUrl(workspaceId || "", { limit: 100 }),
+        );
         if (response.ok) {
           const data = await response.json();
           setWorkflows(data.workflows || []);
         }
       } catch (err) {
-        console.error('Error fetching workflows:', err);
+        console.error("Error fetching workflows:", err);
       } finally {
         setLoadingWorkflows(false);
       }
@@ -81,14 +97,14 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
       reader.onload = (event) => {
         try {
           const content = event.target?.result;
-          if (typeof content === 'string') {
+          if (typeof content === "string") {
             setCurlInput(content);
           }
           setError(null);
           setDryRunResult(null);
         } catch (err) {
           if (err instanceof Error) {
-            setError('Failed to read file: ' + err.message);
+            setError("Failed to read file: " + err.message);
           }
         }
       };
@@ -103,14 +119,14 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
       reader.onload = (event) => {
         try {
           const content = event.target?.result;
-          if (typeof content === 'string') {
+          if (typeof content === "string") {
             setCurlInput(content);
           }
           setError(null);
           setDryRunResult(null);
         } catch (err) {
           if (err instanceof Error) {
-            setError('Failed to read file: ' + err.message);
+            setError("Failed to read file: " + err.message);
           }
         }
       };
@@ -120,7 +136,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
   const handlePreview = async () => {
     if (!curlInput.trim()) {
-      setError('Please enter a curl command');
+      setError("Please enter a curl command");
       return;
     }
 
@@ -130,22 +146,25 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
     try {
       const params = new URLSearchParams();
-      params.append('curl_command', curlInput);
-      params.append('sanitize', String(sanitize));
+      params.append("curl_command", curlInput);
+      params.append("sanitize", String(sanitize));
 
-      const response = await authenticatedFetch(`${workflowImportCurlUrl(workspaceId || '', true)}?${params}`, {
-        method: 'POST',
-      });
+      const response = await authenticatedFetch(
+        `${workflowImportCurlUrl(workspaceId || "", true)}?${params}`,
+        {
+          method: "POST",
+        },
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Preview failed');
+        throw new Error(errorData.detail || "Preview failed");
       }
 
       const result = await response.json();
       setDryRunResult(result);
     } catch (err) {
-      console.error('Preview error:', err);
+      console.error("Preview error:", err);
       if (err instanceof Error) {
         setError(err.message);
       }
@@ -156,7 +175,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
   const handleImport = async () => {
     if (!curlInput.trim()) {
-      setError('Please enter a curl command');
+      setError("Please enter a curl command");
       return;
     }
 
@@ -165,19 +184,22 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
     try {
       const params = new URLSearchParams();
-      params.append('curl_command', curlInput);
-      params.append('sanitize', String(sanitize));
+      params.append("curl_command", curlInput);
+      params.append("sanitize", String(sanitize));
       if (selectedWorkflowId) {
-        params.append('workflowId', selectedWorkflowId);
+        params.append("workflowId", selectedWorkflowId);
       }
 
-      const response = await authenticatedFetch(`${workflowImportCurlUrl(workspaceId || '')}?${params}`, {
-        method: 'POST',
-      });
+      const response = await authenticatedFetch(
+        `${workflowImportCurlUrl(workspaceId || "")}?${params}`,
+        {
+          method: "POST",
+        },
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Import failed');
+        throw new Error(errorData.detail || "Import failed");
       }
 
       const data = await response.json();
@@ -191,7 +213,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
       }
       onClose();
     } catch (err) {
-      console.error('Import error:', err);
+      console.error("Import error:", err);
       if (err instanceof Error) {
         setError(err.message);
       }
@@ -201,7 +223,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
   };
 
   const handleClear = () => {
-    setCurlInput('');
+    setCurlInput("");
     setDryRunResult(null);
     setError(null);
   };
@@ -217,7 +239,12 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
   return (
     <>
-      <button type="button" aria-label="Close curl import" className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80" onClick={onClose} />
+      <button
+        type="button"
+        aria-label="Close curl import"
+        className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80"
+        onClick={onClose}
+      />
       <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border dark:border-border-dark">
@@ -227,11 +254,7 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
               Import curl Commands
             </h2>
           </div>
-          <IconButton
-            onClick={onClose}
-            tooltip="Close"
-            variant="ghost"
-          >
+          <IconButton onClick={onClose} tooltip="Close" variant="ghost">
             <X className="w-5 h-5" />
           </IconButton>
         </div>
@@ -241,7 +264,9 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
           {/* Info */}
           <div>
             <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-              Import curl commands to automatically create API test workflows. Supports single or multiple commands (one per line or separated by &&).
+              Import curl commands to automatically create API test workflows.
+              Supports single or multiple commands (one per line or separated by
+              &&).
             </p>
           </div>
 
@@ -252,13 +277,14 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
             onDrop={handleDrop}
             className={`border border-dashed rounded p-8 text-center transition-colors ${
               isDragging
-                ? 'border-primary/20 dark:border-primary/30 bg-primary/5 dark:bg-primary/10'
-                : 'border-border dark:border-border-dark'
+                ? "border-primary/20 dark:border-primary/30 bg-primary/5 dark:bg-primary/10"
+                : "border-border dark:border-border-dark"
             }`}
           >
             <Upload className="w-12 h-12 mx-auto mb-4 text-text-muted dark:text-text-muted-dark" />
             <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-2">
-              Drag & drop a text file with curl commands here, or click to browse
+              Drag & drop a text file with curl commands here, or click to
+              browse
             </p>
             <input
               type="file"
@@ -277,12 +303,15 @@ export function CurlImport({ onClose, onImportSuccess, currentWorkflowId }: Curl
 
           {/* Text Input Area */}
           <div>
-                <label htmlFor="curl-paste-area" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                  Or paste curl commands here:
-                </label>
-                <TextArea
-                  id="curl-paste-area"
-                  value={curlInput}
+            <label
+              htmlFor="curl-paste-area"
+              className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
+            >
+              Or paste curl commands here:
+            </label>
+            <TextArea
+              id="curl-paste-area"
+              value={curlInput}
               onChange={(e) => setCurlInput(e.target.value)}
               placeholder={`curl -X GET "https://api.example.com/users" \\
   -H "Authorization: Bearer token123" \\
@@ -320,7 +349,10 @@ curl -X POST "https://api.example.com/users" \\
             <div className="space-y-3 p-3 bg-surface dark:bg-surface-dark rounded border border-border dark:border-border-dark">
               {/* Workflow Selection */}
               <div>
-                <label htmlFor="curl-destination-workflow" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                <label
+                  htmlFor="curl-destination-workflow"
+                  className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
+                >
                   Destination Workflow
                 </label>
                 <select
@@ -331,7 +363,9 @@ curl -X POST "https://api.example.com/users" \\
                   className="w-full px-3 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <option value="">
-                    {loadingWorkflows ? 'Loading workflows...' : '+ Create New Workflow'}
+                    {loadingWorkflows
+                      ? "Loading workflows..."
+                      : "+ Create New Workflow"}
                   </option>
                   {workflows.map((wf) => (
                     <option key={wf.workflowId} value={wf.workflowId}>
@@ -373,7 +407,9 @@ curl -X POST "https://api.example.com/users" \\
             <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded p-4">
               <div className="flex items-start">
                 <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-status-error dark:text-status-error-dark">{error}</p>
+                <p className="text-sm text-status-error dark:text-status-error-dark">
+                  {error}
+                </p>
               </div>
             </div>
           )}
@@ -388,9 +424,15 @@ curl -X POST "https://api.example.com/users" \\
                     Preview: {dryRunResult.stats.totalRequests} request(s)
                   </h3>
                   <div className="text-sm text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)] space-y-1">
-                    <p><strong>Workflow:</strong> {dryRunResult.workflow.name}</p>
-                    <p><strong>Nodes:</strong> {dryRunResult.workflow.nodeCount}</p>
-                    <p><strong>Edges:</strong> {dryRunResult.workflow.edgeCount}</p>
+                    <p>
+                      <strong>Workflow:</strong> {dryRunResult.workflow.name}
+                    </p>
+                    <p>
+                      <strong>Nodes:</strong> {dryRunResult.workflow.nodeCount}
+                    </p>
+                    <p>
+                      <strong>Edges:</strong> {dryRunResult.workflow.edgeCount}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -408,7 +450,7 @@ curl -X POST "https://api.example.com/users" \\
             loading={isLoading}
             icon={!isLoading ? <FileText className="w-4 h-4" /> : undefined}
           >
-            {isLoading ? 'Previewing...' : 'Preview'}
+            {isLoading ? "Previewing..." : "Preview"}
           </Button>
           <Button
             onClick={handleImport}
@@ -419,12 +461,9 @@ curl -X POST "https://api.example.com/users" \\
             loading={importing}
             icon={!importing ? <Upload className="w-4 h-4" /> : undefined}
           >
-            {importing ? 'Importing...' : 'Import as Workflow'}
+            {importing ? "Importing..." : "Import as Workflow"}
           </Button>
-          <Button
-            onClick={onClose}
-            variant="outline"
-          >
+          <Button onClick={onClose} variant="outline">
             Close
           </Button>
         </div>

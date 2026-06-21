@@ -8,6 +8,7 @@ NEVER serialized into the export bundle.
 Import flow validates secret references against the target workspace and
 returns warnings for any missing references.
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,22 +37,24 @@ SCHEMA_VERSION = "2.0"
 # These are structural fields from the secret storage layer, NOT user variable names.
 # User variable names like "api_key" are sanitized by _sanitize_variables_for_export
 # but the key itself is allowed to remain (with a <SECRET> placeholder value).
-_FORBIDDEN_EXPORT_KEYS: frozenset[str] = frozenset({
-    "ciphertext",
-    "privateKey",
-    "private_key",
-    "plaintext",
-    "secretValue",
-    "secret_value",
-    "encryptedValue",
-    "encrypted_value",
-    "kek_id",
-    "kek",
-    "dek",
-    "wrapped_dek",
-    "hmacSecret",
-    "hmac_secret",
-})
+_FORBIDDEN_EXPORT_KEYS: frozenset[str] = frozenset(
+    {
+        "ciphertext",
+        "privateKey",
+        "private_key",
+        "plaintext",
+        "secretValue",
+        "secret_value",
+        "encryptedValue",
+        "encrypted_value",
+        "kek_id",
+        "kek",
+        "dek",
+        "wrapped_dek",
+        "hmacSecret",
+        "hmac_secret",
+    }
+)
 
 
 # ============================================================================
@@ -155,7 +158,10 @@ async def export_project_v2(
 
     # Gather workflows in this project
     workflows_list, _ = await WorkflowRepository.list_by_workspace_and_project(
-        workspace_id, project_id, skip=0, limit=10000,
+        workspace_id,
+        project_id,
+        skip=0,
+        limit=10000,
     )
 
     # Collect environment IDs referenced by workflows
@@ -196,8 +202,12 @@ async def export_project_v2(
 
         # Extract secret references from variables
         _collect_refs(
-            sanitized_vars, raw_vars, "workspace", workspace_id,
-            secret_references, seen_secret_refs,
+            sanitized_vars,
+            raw_vars,
+            "workspace",
+            workspace_id,
+            secret_references,
+            seen_secret_refs,
         )
 
         # Sanitize nodes
@@ -209,8 +219,11 @@ async def export_project_v2(
                 sanitized_config = _sanitize_variables_for_export(config)
                 # Extract secret refs from node config string values
                 _collect_refs_from_config(
-                    config, "workspace", workspace_id,
-                    secret_references, seen_secret_refs,
+                    config,
+                    "workspace",
+                    workspace_id,
+                    secret_references,
+                    seen_secret_refs,
                 )
                 node_copy["config"] = sanitized_config
             sanitized_nodes.append(node_copy)
@@ -235,11 +248,13 @@ async def export_project_v2(
                 ref_key = (key, env_export.get("scopeType", ""), env_export.get("scopeId", ""))
                 if ref_key not in seen_secret_refs:
                     seen_secret_refs.add(ref_key)
-                    secret_references.append({
-                        "name": key,
-                        "scopeType": env_export.get("scopeType", "workspace"),
-                        "scopeId": env_export.get("scopeId", workspace_id),
-                    })
+                    secret_references.append(
+                        {
+                            "name": key,
+                            "scopeType": env_export.get("scopeType", "workspace"),
+                            "scopeId": env_export.get("scopeId", workspace_id),
+                        }
+                    )
         # Sanitize env variables too
         env_export["variables"] = _sanitize_variables_for_export(env_vars)
 
@@ -299,11 +314,13 @@ def _collect_refs(
                 ref_key = (name, scope_type, scope_id)
                 if ref_key not in seen:
                     seen.add(ref_key)
-                    secret_references.append({
-                        "name": name,
-                        "scopeType": scope_type,
-                        "scopeId": scope_id,
-                    })
+                    secret_references.append(
+                        {
+                            "name": name,
+                            "scopeType": scope_type,
+                            "scopeId": scope_id,
+                        }
+                    )
         elif isinstance(value, dict):
             _collect_refs(value, value, scope_type, scope_id, secret_references, seen)
 
@@ -322,11 +339,13 @@ def _collect_refs_from_config(
                 ref_key = (name, scope_type, scope_id)
                 if ref_key not in seen:
                     seen.add(ref_key)
-                    secret_references.append({
-                        "name": name,
-                        "scopeType": scope_type,
-                        "scopeId": scope_id,
-                    })
+                    secret_references.append(
+                        {
+                            "name": name,
+                            "scopeType": scope_type,
+                            "scopeId": scope_id,
+                        }
+                    )
         elif isinstance(value, dict):
             _collect_refs_from_config(value, scope_type, scope_id, secret_references, seen)
         elif isinstance(value, list):
@@ -336,11 +355,13 @@ def _collect_refs_from_config(
                         ref_key = (name, scope_type, scope_id)
                         if ref_key not in seen:
                             seen.add(ref_key)
-                            secret_references.append({
-                                "name": name,
-                                "scopeType": scope_type,
-                                "scopeId": scope_id,
-                            })
+                            secret_references.append(
+                                {
+                                    "name": name,
+                                    "scopeType": scope_type,
+                                    "scopeId": scope_id,
+                                }
+                            )
                 elif isinstance(item, dict):
                     _collect_refs_from_config(item, scope_type, scope_id, secret_references, seen)
 
@@ -445,24 +466,28 @@ async def import_project_v2(
 
         nodes = []
         for node in wf_data.get("nodes", []):
-            nodes.append(Node(
-                nodeId=node.get("nodeId", str(uuid.uuid4())),
-                type=node.get("type", "http-request"),
-                label=node.get("label", ""),
-                position=node.get("position", {"x": 0, "y": 0}),
-                config=node.get("config", {}),
-            ))
+            nodes.append(
+                Node(
+                    nodeId=node.get("nodeId", str(uuid.uuid4())),
+                    type=node.get("type", "http-request"),
+                    label=node.get("label", ""),
+                    position=node.get("position", {"x": 0, "y": 0}),
+                    config=node.get("config", {}),
+                )
+            )
 
         edges = []
         for edge in wf_data.get("edges", []):
-            edges.append(Edge(
-                edgeId=edge.get("edgeId", str(uuid.uuid4())),
-                source=edge.get("source", ""),
-                target=edge.get("target", ""),
-                sourceHandle=edge.get("sourceHandle"),
-                targetHandle=edge.get("targetHandle"),
-                label=edge.get("label"),
-            ))
+            edges.append(
+                Edge(
+                    edgeId=edge.get("edgeId", str(uuid.uuid4())),
+                    source=edge.get("source", ""),
+                    target=edge.get("target", ""),
+                    sourceHandle=edge.get("sourceHandle"),
+                    targetHandle=edge.get("targetHandle"),
+                    label=edge.get("label"),
+                )
+            )
 
         # Map environment reference
         old_env_id = wf_data.get("selectedEnvironmentId")
@@ -516,6 +541,7 @@ async def import_project_v2(
     # Audit the import
     try:
         from app.services.audit_service import append_event
+
         await append_event(
             actor="user",
             actor_id=actor_user_id,
@@ -642,9 +668,7 @@ async def dry_run_import_v2(
         found = await _check_secret_exists(secret_name, target_workspace_id, ws.orgId)
         if not found:
             missing_count += 1
-            warnings.append(
-                f"Secret '{secret_name}' not found in target workspace"
-            )
+            warnings.append(f"Secret '{secret_name}' not found in target workspace")
 
     if missing_count > 0:
         warnings.append(

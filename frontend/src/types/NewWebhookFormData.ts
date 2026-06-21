@@ -1,5 +1,5 @@
 export interface NewWebhookFormData {
-  resourceType: 'workflow' | 'collection';
+  resourceType: "workflow" | "collection";
   resourceId: string;
   environmentId: string;
   description: string;

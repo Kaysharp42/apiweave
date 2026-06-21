@@ -1,23 +1,28 @@
-import { Inbox } from 'lucide-react';
-import type { EmptyStateProps } from '../../types';
+import { Inbox } from "lucide-react";
+import type { EmptyStateProps } from "../../types";
 
 export function EmptyState({
   icon,
-  title = 'Nothing here yet',
+  title = "Nothing here yet",
   description,
   action,
-  className = '',
+  className = "",
 }: EmptyStateProps) {
-  const defaultIcon = <Inbox className="w-12 h-12 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />;
+  const defaultIcon = (
+    <Inbox
+      className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+      strokeWidth={1.5}
+    />
+  );
 
   return (
     <div
       className={[
-        'flex flex-col items-center justify-center gap-3 px-6 py-12 text-center',
+        "flex flex-col items-center justify-center gap-3 px-6 py-12 text-center",
         className,
       ]
         .filter(Boolean)
-        .join(' ')}
+        .join(" ")}
     >
       <div className="flex items-center justify-center">
         {icon ?? defaultIcon}

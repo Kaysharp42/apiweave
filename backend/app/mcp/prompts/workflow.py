@@ -1,6 +1,7 @@
 """
 MCP workflow prompts — pre-built templates for workflow creation tasks.
 """
+
 import logging
 
 from mcp.server.fastmcp import FastMCP
@@ -88,4 +89,3 @@ Best practices:
 
 
 """ finish  work  """
-  

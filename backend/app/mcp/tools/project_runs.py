@@ -4,6 +4,7 @@ MCP project-run read tools — scoped read-only surface.
 Replaces collection_run tools. Lists runs for projects within
 the authenticated workspace scope.
 """
+
 from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
@@ -25,6 +26,7 @@ async def project_run_list(
 
     # Verify project belongs to workspace
     from app.services.project_service import get_project
+
     try:
         await get_project(
             project_id=project_id,

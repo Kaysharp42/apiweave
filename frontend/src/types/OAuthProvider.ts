@@ -1,4 +1,4 @@
-import type { ProviderId } from './ProviderId';
+import type { ProviderId } from "./ProviderId";
 
 export interface OAuthProvider {
   id: ProviderId;

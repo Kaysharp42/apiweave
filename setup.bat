@@ -11,7 +11,7 @@ call setup-backend.bat
 echo.
 echo ========================================
 
-REM Setup Frontend  
+REM Setup Frontend
 call setup-frontend.bat
 
 echo.

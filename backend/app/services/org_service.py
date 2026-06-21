@@ -4,6 +4,7 @@ Organization service — business logic for org CRUD, membership, and last-owner
 All state-changing operations produce audit events. Last-owner protection
 prevents demotion or removal of the sole organization owner.
 """
+
 from __future__ import annotations
 
 import logging

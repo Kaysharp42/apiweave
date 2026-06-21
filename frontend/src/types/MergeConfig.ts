@@ -1,4 +1,4 @@
 export interface MergeConfig {
-  mode: 'all' | 'any';
+  mode: "all" | "any";
   timeout?: number;
 }

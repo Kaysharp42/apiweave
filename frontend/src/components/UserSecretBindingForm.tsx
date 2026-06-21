@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Link2, Unlink } from 'lucide-react';
-import { Button } from './atoms/Button';
-import { EmptyState } from './molecules/EmptyState';
-import { ConfirmDialog } from './molecules/ConfirmDialog';
-import { authenticatedJson } from '../utils/authenticatedApi';
-import API_BASE_URL from '../utils/api';
-import type { Secret, SecretBinding } from '../types';
+import { useState, useEffect, useCallback } from "react";
+import { Link2, Unlink } from "lucide-react";
+import { Button } from "./atoms/Button";
+import { EmptyState } from "./molecules/EmptyState";
+import { ConfirmDialog } from "./molecules/ConfirmDialog";
+import { authenticatedJson } from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/api";
+import type { Secret, SecretBinding } from "../types";
 
 export interface UserSecretBindingFormProps {
   /** The target scope type (workspace or environment). */
-  targetScopeType: 'workspace' | 'environment';
+  targetScopeType: "workspace" | "environment";
   /** The target scope ID. */
   targetScopeId: string;
   className?: string;
@@ -32,7 +32,7 @@ interface SecretListResponse {
 export function UserSecretBindingForm({
   targetScopeType,
   targetScopeId,
-  className = '',
+  className = "",
 }: UserSecretBindingFormProps) {
   const [userSecrets, setUserSecrets] = useState<Secret[]>([]);
   const [bindings, setBindings] = useState<SecretBinding[]>([]);
@@ -40,7 +40,7 @@ export function UserSecretBindingForm({
   const [error, setError] = useState<string | null>(null);
   const [unbindTarget, setUnbindTarget] = useState<SecretBinding | null>(null);
   const [unbinding, setUnbinding] = useState(false);
-  const [bindingSecretId, setBindingSecretId] = useState('');
+  const [bindingSecretId, setBindingSecretId] = useState("");
   const [bindingInProgress, setBindingInProgress] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -59,7 +59,8 @@ export function UserSecretBindingForm({
       );
       setBindings(bindingsData.bindings);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load bindings';
+      const message =
+        err instanceof Error ? err.message : "Failed to load bindings";
       setError(message);
     } finally {
       setLoading(false);
@@ -71,7 +72,9 @@ export function UserSecretBindingForm({
   }, [fetchData]);
 
   const boundSecretIds = new Set(bindings.map((b) => b.secretId));
-  const availableSecrets = userSecrets.filter((s) => !boundSecretIds.has(s.secretId));
+  const availableSecrets = userSecrets.filter(
+    (s) => !boundSecretIds.has(s.secretId),
+  );
 
   const handleBind = useCallback(async () => {
     if (!bindingSecretId) return;
@@ -81,8 +84,8 @@ export function UserSecretBindingForm({
       await authenticatedJson(
         `${API_BASE_URL}/api/scopes/${encodeURIComponent(targetScopeType)}/${encodeURIComponent(targetScopeId)}/secrets/bindings`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             secretId: bindingSecretId,
             targetScopeType,
@@ -90,10 +93,11 @@ export function UserSecretBindingForm({
           }),
         },
       );
-      setBindingSecretId('');
+      setBindingSecretId("");
       await fetchData();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to bind secret';
+      const message =
+        err instanceof Error ? err.message : "Failed to bind secret";
       setError(message);
     } finally {
       setBindingInProgress(false);
@@ -106,12 +110,13 @@ export function UserSecretBindingForm({
     try {
       await authenticatedJson(
         `${API_BASE_URL}/api/scopes/${encodeURIComponent(targetScopeType)}/${encodeURIComponent(targetScopeId)}/secrets/bindings/${encodeURIComponent(unbindTarget.bindingId)}`,
-        { method: 'DELETE' },
+        { method: "DELETE" },
       );
       setUnbindTarget(null);
       await fetchData();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to unbind secret';
+      const message =
+        err instanceof Error ? err.message : "Failed to unbind secret";
       setError(message);
     } finally {
       setUnbinding(false);
@@ -120,7 +125,10 @@ export function UserSecretBindingForm({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8" aria-label="Loading bindings">
+      <div
+        className="flex items-center justify-center py-8"
+        aria-label="Loading bindings"
+      >
         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
       </div>
     );
@@ -145,12 +153,12 @@ export function UserSecretBindingForm({
             </label>
             <select
               className={[
-                'select select-bordered w-full px-3',
-                'bg-surface-raised dark:bg-surface-dark-raised',
-                'text-text-primary dark:text-text-primary-dark',
-                'border-border dark:border-border-dark',
-                'text-sm',
-              ].join(' ')}
+                "select select-bordered w-full px-3",
+                "bg-surface-raised dark:bg-surface-dark-raised",
+                "text-text-primary dark:text-text-primary-dark",
+                "border-border dark:border-border-dark",
+                "text-sm",
+              ].join(" ")}
               value={bindingSecretId}
               onChange={(e) => setBindingSecretId(e.target.value)}
               disabled={bindingInProgress}
@@ -180,7 +188,12 @@ export function UserSecretBindingForm({
       {/* Existing bindings */}
       {bindings.length === 0 ? (
         <EmptyState
-          icon={<Link2 className="w-10 h-10 text-text-muted dark:text-text-muted-dark" strokeWidth={1.5} />}
+          icon={
+            <Link2
+              className="w-10 h-10 text-text-muted dark:text-text-muted-dark"
+              strokeWidth={1.5}
+            />
+          }
           title="No bindings"
           description="Bind user-scoped secrets to this target to make them available."
         />
@@ -190,7 +203,9 @@ export function UserSecretBindingForm({
             Bound secrets ({bindings.length})
           </h4>
           {bindings.map((binding) => {
-            const secret = userSecrets.find((s) => s.secretId === binding.secretId);
+            const secret = userSecrets.find(
+              (s) => s.secretId === binding.secretId,
+            );
             return (
               <div
                 key={binding.bindingId}
@@ -220,7 +235,7 @@ export function UserSecretBindingForm({
         onConfirm={handleUnbind}
         title="Remove binding"
         message="This secret will no longer be available to the target scope. The secret itself is not deleted."
-        confirmLabel={unbinding ? 'Removing...' : 'Remove'}
+        confirmLabel={unbinding ? "Removing..." : "Remove"}
         intent="warning"
       />
     </div>

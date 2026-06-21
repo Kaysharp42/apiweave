@@ -1,7 +1,7 @@
-import { Trash2 } from 'lucide-react';
-import { IconButton } from '../atoms/IconButton';
-import { Badge } from '../atoms/Badge';
-import type { TeamPermissionGrant } from '../../types';
+import { Trash2 } from "lucide-react";
+import { IconButton } from "../atoms/IconButton";
+import { Badge } from "../atoms/Badge";
+import type { TeamPermissionGrant } from "../../types";
 
 export interface TeamPermissionRowProps {
   grant: TeamPermissionGrant;

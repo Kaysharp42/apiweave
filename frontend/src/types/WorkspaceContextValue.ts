@@ -1,5 +1,5 @@
-import type { Organization } from './Organization';
-import type { Workspace } from './Workspace';
+import type { Organization } from "./Organization";
+import type { Workspace } from "./Workspace";
 
 /** Entry in the workspace switcher — an org + workspace pair. */
 export interface WorkspaceEntry {

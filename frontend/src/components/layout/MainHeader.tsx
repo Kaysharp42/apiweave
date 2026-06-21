@@ -1,43 +1,63 @@
-import { useContext, useEffect, useState } from 'react';
-import { Popover, Transition } from '@headlessui/react';
-import { Link, useParams } from 'react-router-dom';
-import { AppContext } from '../../App';
-import { Moon, Sun, Folder, Save, Menu, ChevronDown, Settings, Globe } from 'lucide-react';
-import Tippy from '@tippyjs/react';
-import { Button } from '../atoms/Button';
-import { IconButton } from '../atoms/IconButton';
-import type { AppContextType } from '../../types/AppContextType';
-import { AccountMenu } from './AccountMenu';
-import { OrgWorkspaceSwitcher } from '../organisms/OrgWorkspaceSwitcher';
-import useNavigationStore from '../../stores/NavigationStore';
-import useEnvironmentStore from '../../stores/EnvironmentStore';
-import { useWorkspace } from '../../contexts/WorkspaceContext';
+import { useContext, useEffect, useState } from "react";
+import { Popover, Transition } from "@headlessui/react";
+import { Link, useParams } from "react-router-dom";
+import { AppContext } from "../../App";
+import {
+  Moon,
+  Sun,
+  Folder,
+  Save,
+  Menu,
+  ChevronDown,
+  Settings,
+  Globe,
+} from "lucide-react";
+import Tippy from "@tippyjs/react";
+import { Button } from "../atoms/Button";
+import { IconButton } from "../atoms/IconButton";
+import type { AppContextType } from "../../types/AppContextType";
+import { AccountMenu } from "./AccountMenu";
+import { OrgWorkspaceSwitcher } from "../organisms/OrgWorkspaceSwitcher";
+import useNavigationStore from "../../stores/NavigationStore";
+import useEnvironmentStore from "../../stores/EnvironmentStore";
+import { useWorkspace } from "../../contexts/WorkspaceContext";
 
 export function MainHeader() {
-  const { darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled } = useContext(AppContext) as AppContextType;
-  const [defaultEnvId, setDefaultEnvId] = useState(() => localStorage.getItem('defaultEnvironment') ?? '');
-  const toggleMobileSidebar = useNavigationStore((state) => state.toggleMobileSidebar);
+  const { darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled } =
+    useContext(AppContext) as AppContextType;
+  const [defaultEnvId, setDefaultEnvId] = useState(
+    () => localStorage.getItem("defaultEnvironment") ?? "",
+  );
+  const toggleMobileSidebar = useNavigationStore(
+    (state) => state.toggleMobileSidebar,
+  );
   const environments = useEnvironmentStore((state) => state.environments);
   const { currentOrg, currentWorkspace } = useWorkspace();
-  const { orgSlug, workspaceSlug } = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
+  const { orgSlug, workspaceSlug } = useParams<{
+    orgSlug?: string;
+    workspaceSlug?: string;
+  }>();
 
   useEffect(() => {
     const syncDefaultEnvironment = () => {
-      setDefaultEnvId(localStorage.getItem('defaultEnvironment') ?? '');
+      setDefaultEnvId(localStorage.getItem("defaultEnvironment") ?? "");
     };
 
-    window.addEventListener('storage', syncDefaultEnvironment);
-    window.addEventListener('focus', syncDefaultEnvironment);
+    window.addEventListener("storage", syncDefaultEnvironment);
+    window.addEventListener("focus", syncDefaultEnvironment);
     return () => {
-      window.removeEventListener('storage', syncDefaultEnvironment);
-      window.removeEventListener('focus', syncDefaultEnvironment);
+      window.removeEventListener("storage", syncDefaultEnvironment);
+      window.removeEventListener("focus", syncDefaultEnvironment);
     };
   }, []);
 
-  const selectedEnvironment = environments.find((env) => env.environmentId === defaultEnvId);
-  const selectedEnvironmentName = selectedEnvironment?.name ?? 'No Environment';
-  const manageOrgSlug = currentOrg?.slug ?? orgSlug ?? 'personal';
-  const manageWorkspaceSlug = currentWorkspace?.slug ?? workspaceSlug ?? 'workflows';
+  const selectedEnvironment = environments.find(
+    (env) => env.environmentId === defaultEnvId,
+  );
+  const selectedEnvironmentName = selectedEnvironment?.name ?? "No Environment";
+  const manageOrgSlug = currentOrg?.slug ?? orgSlug ?? "personal";
+  const manageWorkspaceSlug =
+    currentWorkspace?.slug ?? workspaceSlug ?? "workflows";
   const manageEnvironmentsPath = `/${manageOrgSlug}/${manageWorkspaceSlug}/settings/environments`;
 
   const handleEnvironmentSelect = (envId: string) => {
@@ -67,7 +87,10 @@ export function MainHeader() {
           APIWeave
         </h1>
 
-        <div className="mx-2 h-5 w-px bg-border/50 dark:bg-border-dark/50" aria-hidden="true" />
+        <div
+          className="mx-2 h-5 w-px bg-border/50 dark:bg-border-dark/50"
+          aria-hidden="true"
+        />
 
         <OrgWorkspaceSwitcher />
       </div>
@@ -87,9 +110,11 @@ export function MainHeader() {
                 icon={<Folder className="w-4 h-4 flex-shrink-0" />}
                 aria-label="Select default environment"
               >
-                <span className="hidden min-w-0 truncate sm:inline">{selectedEnvironmentName}</span>
+                <span className="hidden min-w-0 truncate sm:inline">
+                  {selectedEnvironmentName}
+                </span>
                 <ChevronDown
-                  className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+                  className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
                   aria-hidden="true"
                 />
               </Popover.Button>
@@ -109,7 +134,11 @@ export function MainHeader() {
                     </span>
                   </div>
 
-                  <div className="max-h-72 overflow-y-auto py-1" role="listbox" aria-label="Default environments">
+                  <div
+                    className="max-h-72 overflow-y-auto py-1"
+                    role="listbox"
+                    aria-label="Default environments"
+                  >
                     {environments.length === 0 ? (
                       <div className="px-3 py-3 text-sm text-text-muted dark:text-text-muted-dark">
                         No environments available.
@@ -131,12 +160,14 @@ export function MainHeader() {
                             }}
                             className={`w-full justify-start rounded-none px-3 py-2 text-left transition-colors duration-150 motion-reduce:transition-none ${
                               isSelected
-                                ? 'bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light'
-                                : 'text-text-primary hover:bg-primary/10 dark:text-text-primary-dark dark:hover:bg-primary-light/10'
+                                ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
+                                : "text-text-primary hover:bg-primary/10 dark:text-text-primary-dark dark:hover:bg-primary-light/10"
                             }`}
                             icon={<Globe className="w-4 h-4 flex-shrink-0" />}
                           >
-                            <span className="min-w-0 flex-1 truncate">{env.name}</span>
+                            <span className="min-w-0 flex-1 truncate">
+                              {env.name}
+                            </span>
                             <span className="ml-auto rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-secondary dark:border-border-dark dark:text-text-secondary-dark">
                               {env.scopeType}
                             </span>
@@ -152,7 +183,10 @@ export function MainHeader() {
                       onClick={() => close()}
                       className="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium text-text-secondary transition-colors duration-150 hover:bg-surface-overlay hover:text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:bg-surface-dark-overlay dark:hover:text-primary-light dark:focus-visible:outline-primary-light"
                     >
-                      <Settings className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                      <Settings
+                        className="w-4 h-4 flex-shrink-0"
+                        aria-hidden="true"
+                      />
                       <span>Manage Environments →</span>
                     </Link>
                   </div>
@@ -162,29 +196,43 @@ export function MainHeader() {
           )}
         </Popover>
 
-      <Tippy content={autoSaveEnabled ? 'Auto-save enabled' : 'Auto-save disabled'} placement="bottom">
+        <Tippy
+          content={autoSaveEnabled ? "Auto-save enabled" : "Auto-save disabled"}
+          placement="bottom"
+        >
           <button
             type="button"
             onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
-            aria-label={autoSaveEnabled ? 'Disable auto-save' : 'Enable auto-save'}
+            aria-label={
+              autoSaveEnabled ? "Disable auto-save" : "Enable auto-save"
+            }
             className={`inline-flex items-center justify-center w-9 h-9 rounded-sm border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2 ${
               autoSaveEnabled
-                ? 'border-status-success/40 bg-status-success/10 text-status-success hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
-                : 'border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay'
+                ? "border-status-success/40 bg-status-success/10 text-status-success hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
+                : "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
             }`}
           >
             <Save className="w-4 h-4" />
           </button>
         </Tippy>
 
-      <Tippy content={darkMode ? 'Switch to Light mode' : 'Switch to Dark mode'} placement="bottom">
+        <Tippy
+          content={darkMode ? "Switch to Light mode" : "Switch to Dark mode"}
+          placement="bottom"
+        >
           <button
             type="button"
             onClick={() => setDarkMode(!darkMode)}
-            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={
+              darkMode ? "Switch to light mode" : "Switch to dark mode"
+            }
             className="inline-flex items-center justify-center w-9 h-9 rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
           >
-            {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            {darkMode ? (
+              <Sun className="w-4 h-4" />
+            ) : (
+              <Moon className="w-4 h-4" />
+            )}
           </button>
         </Tippy>
 

@@ -1,6 +1,6 @@
 /*
  * APIWeave Design System — Base Styles
- * 
+ *
  * CSS custom properties for DaisyUI theme overrides,
  * global resets, and design token mappings.
  *
@@ -72,7 +72,7 @@
   --aw-shadow-raised: none;
   --aw-shadow-overlay: 0 2px 8px rgba(0, 0, 0, 0.04);
   --aw-shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --aw-shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.10);
+  --aw-shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.1);
 
   /* Border radius — sharp (Swiss) */
   --aw-radius-sm: 0;
@@ -138,28 +138,46 @@
 
 /* Apply design system fonts */
 body {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--aw-surface);
   color: var(--aw-text-primary);
-  transition: background-color var(--aw-transition-normal), color var(--aw-transition-normal);
+  transition:
+    background-color var(--aw-transition-normal),
+    color var(--aw-transition-normal);
 }
 
 /* Headings use display font (Inter — single family, weight-driven hierarchy) */
-h1, h2, h3, h4, h5, h6,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
 .font-display {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
 }
 
 /* Code blocks use mono font */
-code, pre, .font-mono,
+code,
+pre,
+.font-mono,
 .monaco-editor {
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
 }
 
 /* Smooth transitions for theme switching */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   transition-property: background-color, border-color, color;
   transition-duration: 0ms; /* default off — enable per-element */
 }

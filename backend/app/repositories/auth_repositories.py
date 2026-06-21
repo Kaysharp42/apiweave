@@ -179,9 +179,7 @@ class ProviderIdentityRepository:
         return identity
 
     @staticmethod
-    async def get_by_provider_subject(
-        provider: str, subject: str
-    ) -> ProviderIdentity | None:
+    async def get_by_provider_subject(provider: str, subject: str) -> ProviderIdentity | None:
         """Find identity by (provider, subject) compound key"""
         return await ProviderIdentity.find_one(
             ProviderIdentity.provider == provider,
@@ -191,23 +189,17 @@ class ProviderIdentityRepository:
     @staticmethod
     async def get_by_user_id(user_id: str) -> list[ProviderIdentity]:
         """Return all identities linked to a user"""
-        return await ProviderIdentity.find(
-            ProviderIdentity.userId == user_id
-        ).to_list()
+        return await ProviderIdentity.find(ProviderIdentity.userId == user_id).to_list()
 
     @staticmethod
     async def get_by_email(email: str) -> list[ProviderIdentity]:
         """Return all identities with the given verified email (account linking)"""
-        return await ProviderIdentity.find(
-            ProviderIdentity.email == email
-        ).to_list()
+        return await ProviderIdentity.find(ProviderIdentity.email == email).to_list()
 
     @staticmethod
     async def delete(identity_id: str) -> bool:
         """Delete identity; returns True if deleted, False if not found"""
-        identity = await ProviderIdentity.find_one(
-            ProviderIdentity.identityId == identity_id
-        )
+        identity = await ProviderIdentity.find_one(ProviderIdentity.identityId == identity_id)
         if not identity:
             return False
         await identity.delete()
@@ -566,9 +558,7 @@ class ApprovedDomainRepository:
     @staticmethod
     async def delete(domain_id: str) -> bool:
         """Delete approved domain; returns True if deleted, False if not found"""
-        approved = await ApprovedDomain.find_one(
-            ApprovedDomain.domainId == domain_id
-        )
+        approved = await ApprovedDomain.find_one(ApprovedDomain.domainId == domain_id)
         if not approved:
             return False
         await approved.delete()

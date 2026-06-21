@@ -108,13 +108,12 @@ class TeamRepository:
 
     @staticmethod
     async def list_teams_for_user_in_org(user_id: str, org_id: str) -> list[Team]:
-        memberships = await TeamMember.find(
-            TeamMember.userId == user_id
-        ).to_list()
+        memberships = await TeamMember.find(TeamMember.userId == user_id).to_list()
         team_ids = [m.teamId for m in memberships]
         if not team_ids:
             return []
         from beanie.operators import In
+
         return await Team.find(
             In(Team.teamId, team_ids),
             Team.orgId == org_id,

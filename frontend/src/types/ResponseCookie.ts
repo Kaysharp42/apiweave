@@ -1,4 +1,4 @@
-import type { ResponseCookieAttributes } from './ResponseCookieAttributes';
+import type { ResponseCookieAttributes } from "./ResponseCookieAttributes";
 
 export interface ResponseCookie {
   name: string;

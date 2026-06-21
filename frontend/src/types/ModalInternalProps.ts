@@ -1,4 +1,4 @@
-import type { ModalProps } from './ModalProps';
+import type { ModalProps } from "./ModalProps";
 
 export interface ModalInternalProps extends ModalProps {
   headerExtra?: React.ReactNode;

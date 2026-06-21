@@ -1,4 +1,4 @@
-import type { PendingApproval } from './PendingApproval';
+import type { PendingApproval } from "./PendingApproval";
 
 export interface PendingApprovalsListProps {
   /** Pending approvals to display. */

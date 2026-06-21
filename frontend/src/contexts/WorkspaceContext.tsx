@@ -6,13 +6,16 @@ import {
   useCallback,
   useMemo,
   type ReactNode,
-} from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import type { Organization } from '../types/Organization';
-import type { Workspace } from '../types/Workspace';
-import type { WorkspaceContextValue, WorkspaceEntry } from '../types/WorkspaceContextValue';
-import { authenticatedJson } from '../utils/authenticatedApi';
-import API_BASE_URL from '../utils/api';
+} from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import type { Organization } from "../types/Organization";
+import type { Workspace } from "../types/Workspace";
+import type {
+  WorkspaceContextValue,
+  WorkspaceEntry,
+} from "../types/WorkspaceContextValue";
+import { authenticatedJson } from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/api";
 
 // ---------------------------------------------------------------------------
 // Context
@@ -34,7 +37,9 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
 
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [memberships, setMemberships] = useState<Map<string, string>>(new Map());
+  const [memberships, setMemberships] = useState<Map<string, string>>(
+    new Map(),
+  );
   const [isLoading, setIsLoading] = useState(true);
 
   // Fetch orgs + workspaces on mount
@@ -60,7 +65,10 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
         const roleMap = new Map<string, string>();
         for (const ws of workspacesRes.workspaces) {
           // Default role: owner for personal, write for org workspaces
-          roleMap.set(ws.workspaceId, ws.ownerType === 'user' ? 'owner' : 'write');
+          roleMap.set(
+            ws.workspaceId,
+            ws.ownerType === "user" ? "owner" : "write",
+          );
         }
         setMemberships(roleMap);
       } catch {
@@ -85,13 +93,13 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     return workspaces.map((ws) => ({
       org: ws.orgId ? (orgMap.get(ws.orgId) ?? null) : null,
       workspace: ws,
-      role: memberships.get(ws.workspaceId) ?? 'read',
+      role: memberships.get(ws.workspaceId) ?? "read",
     }));
   }, [orgs, workspaces, memberships]);
 
   // Determine current org + workspace from URL params
   const currentOrg = useMemo<Organization | null>(() => {
-    if (!params.orgSlug || params.orgSlug === 'personal') return null;
+    if (!params.orgSlug || params.orgSlug === "personal") return null;
     return orgs.find((o) => o.slug === params.orgSlug) ?? null;
   }, [orgs, params.orgSlug]);
 
@@ -103,7 +111,8 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     if (currentOrg) {
       return (
         workspaces.find(
-          (ws) => ws.slug === params.workspaceSlug && ws.orgId === currentOrg.orgId,
+          (ws) =>
+            ws.slug === params.workspaceSlug && ws.orgId === currentOrg.orgId,
         ) ?? null
       );
     }
@@ -137,10 +146,22 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       switchTo,
       isLoading,
     }),
-    [orgs, availableWorkspaces, currentOrg, currentWorkspace, currentRole, switchTo, isLoading],
+    [
+      orgs,
+      availableWorkspaces,
+      currentOrg,
+      currentWorkspace,
+      currentRole,
+      switchTo,
+      isLoading,
+    ],
   );
 
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+  return (
+    <WorkspaceContext.Provider value={value}>
+      {children}
+    </WorkspaceContext.Provider>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +171,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
 export function useWorkspace(): WorkspaceContextValue {
   const ctx = useContext(WorkspaceContext);
   if (!ctx) {
-    throw new Error('useWorkspace must be used within a WorkspaceProvider');
+    throw new Error("useWorkspace must be used within a WorkspaceProvider");
   }
   return ctx;
 }

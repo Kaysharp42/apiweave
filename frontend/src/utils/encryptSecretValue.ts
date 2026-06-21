@@ -6,17 +6,17 @@
  * logged, or included in URLs.
  */
 
-import type { SecretPublicKey } from '../types';
+import type { SecretPublicKey } from "../types";
 
-type Sodium = typeof import('libsodium-wrappers') & {
-  default: typeof import('libsodium-wrappers');
+type Sodium = typeof import("libsodium-wrappers") & {
+  default: typeof import("libsodium-wrappers");
 };
 
 let sodiumPromise: Promise<Sodium> | null = null;
 
 function loadSodium(): Promise<Sodium> {
   if (!sodiumPromise) {
-    sodiumPromise = import('libsodium-wrappers').then(async (mod) => {
+    sodiumPromise = import("libsodium-wrappers").then(async (mod) => {
       await mod.ready;
       const sodium = mod.default ?? mod;
       return sodium as Sodium;

@@ -1,6 +1,6 @@
-import type { RunRecord } from './RunRecord';
+import type { RunRecord } from "./RunRecord";
 
-export type { RunRecord } from './RunRecord';
+export type { RunRecord } from "./RunRecord";
 
 export interface HistoryModalProps {
   workflowId: string;

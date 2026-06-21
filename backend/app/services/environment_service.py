@@ -2,6 +2,7 @@
 Environment service — shared business logic for environment CRUD with secret-safe DTOs.
 Called by both FastAPI routes and MCP tools.
 """
+
 from typing import Any
 
 from app.models import Environment, EnvironmentCreate, EnvironmentUpdate
@@ -29,9 +30,7 @@ async def create_environment(data: EnvironmentCreate) -> Environment:
     return await EnvironmentRepository.create(data)
 
 
-async def update_environment(
-    environment_id: str, data: EnvironmentUpdate
-) -> Environment:
+async def update_environment(environment_id: str, data: EnvironmentUpdate) -> Environment:
     """Update an environment. Raises ValueError if not found."""
     updated = await EnvironmentRepository.update(environment_id, data)
     if not updated:
@@ -99,9 +98,7 @@ async def get_environment_redacted(environment_id: str) -> dict[str, Any]:
     return redact_environment_for_export(env)
 
 
-async def set_environment_secret(
-    environment_id: str, key: str, value: str
-) -> Environment:
+async def set_environment_secret(environment_id: str, key: str, value: str) -> Environment:
     """Set a single secret key on an environment. Write-only — value is never returned."""
     env = await EnvironmentRepository.get_by_id(environment_id)
     if not env:
@@ -116,9 +113,7 @@ async def set_environment_secret(
     return updated
 
 
-async def delete_environment_secret(
-    environment_id: str, key: str
-) -> Environment:
+async def delete_environment_secret(environment_id: str, key: str) -> Environment:
     """Delete a single secret key from an environment."""
     env = await EnvironmentRepository.get_by_id(environment_id)
     if not env:

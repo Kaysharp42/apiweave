@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { Button } from './atoms/Button';
-import type { AssertionEditorProps } from '../types';
+import { useEffect, useRef, useState } from "react";
+import { Button } from "./atoms/Button";
+import type { AssertionEditorProps } from "../types";
 
 export default function AssertionEditor({
   value,
@@ -8,23 +8,31 @@ export default function AssertionEditor({
   onCancel,
   onSave,
 }: AssertionEditorProps) {
-  const local = value ?? { source: 'prev', path: '', operator: 'equals', expectedValue: '' };
+  const local = value ?? {
+    source: "prev",
+    path: "",
+    operator: "equals",
+    expectedValue: "",
+  };
   const { source, path, operator, expectedValue } = local;
   const inputRef = useRef<HTMLInputElement>(null);
-  const [errors, setErrors] = useState<{ path: string; expectedValue: string }>({ path: '', expectedValue: '' });
+  const [errors, setErrors] = useState<{ path: string; expectedValue: string }>(
+    { path: "", expectedValue: "" },
+  );
 
   useEffect(() => {
     if (inputRef.current) inputRef.current.focus();
   }, []);
 
   const validate = (): boolean => {
-    const next = { path: '', expectedValue: '' };
-    if (source !== 'status') {
-      if (['exists', 'notExists'].includes(operator)) {
-        if (!path || !path.trim()) next.path = 'Path is required';
+    const next = { path: "", expectedValue: "" };
+    if (source !== "status") {
+      if (["exists", "notExists"].includes(operator)) {
+        if (!path || !path.trim()) next.path = "Path is required";
       } else {
-        if (!path || !path.trim()) next.path = 'Path is required';
-        if (!expectedValue || !expectedValue.toString().trim()) next.expectedValue = 'Expected value is required';
+        if (!path || !path.trim()) next.path = "Path is required";
+        if (!expectedValue || !expectedValue.toString().trim())
+          next.expectedValue = "Expected value is required";
       }
     }
     setErrors(next);
@@ -32,8 +40,8 @@ export default function AssertionEditor({
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') onCancel();
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key === "Escape") onCancel();
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       if (validate()) onSave();
     }
   };
@@ -67,9 +75,13 @@ export default function AssertionEditor({
             onKeyDown={handleKey}
             placeholder="path or name"
             aria-label="Assertion path or name"
-            className={`w-full px-2 py-1 text-sm border rounded font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${errors.path ? 'border-status-error dark:border-[var(--aw-status-error)]' : 'border-border dark:border-border-dark'}`}
+            className={`w-full px-2 py-1 text-sm border rounded font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${errors.path ? "border-status-error dark:border-[var(--aw-status-error)]" : "border-border dark:border-border-dark"}`}
           />
-          {errors.path && <div className="text-[11px] text-status-error dark:text-[var(--aw-status-error)] mt-1">{errors.path}</div>}
+          {errors.path && (
+            <div className="text-[11px] text-status-error dark:text-[var(--aw-status-error)] mt-1">
+              {errors.path}
+            </div>
+          )}
         </div>
       </div>
 
@@ -94,21 +106,29 @@ export default function AssertionEditor({
           <option value="notExists">Does Not Exist</option>
         </select>
 
-        {!['exists', 'notExists'].includes(operator) ? (
+        {!["exists", "notExists"].includes(operator) ? (
           <div>
             <input
               type="text"
               value={expectedValue}
-              onChange={(e) => onChange({ ...local, expectedValue: e.target.value })}
+              onChange={(e) =>
+                onChange({ ...local, expectedValue: e.target.value })
+              }
               onKeyDown={handleKey}
               placeholder="expected value"
               aria-label="Assertion expected value"
-              className={`w-full px-2 py-1 text-sm border rounded font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${errors.expectedValue ? 'border-status-error dark:border-[var(--aw-status-error)]' : 'border-border dark:border-border-dark'}`}
+              className={`w-full px-2 py-1 text-sm border rounded font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${errors.expectedValue ? "border-status-error dark:border-[var(--aw-status-error)]" : "border-border dark:border-border-dark"}`}
             />
-            {errors.expectedValue && <div className="text-[11px] text-status-error dark:text-[var(--aw-status-error)] mt-1">{errors.expectedValue}</div>}
+            {errors.expectedValue && (
+              <div className="text-[11px] text-status-error dark:text-[var(--aw-status-error)] mt-1">
+                {errors.expectedValue}
+              </div>
+            )}
           </div>
         ) : (
-          <div className="text-sm text-text-muted dark:text-text-muted-dark flex items-center px-2">No value required</div>
+          <div className="text-sm text-text-muted dark:text-text-muted-dark flex items-center px-2">
+            No value required
+          </div>
         )}
       </div>
 

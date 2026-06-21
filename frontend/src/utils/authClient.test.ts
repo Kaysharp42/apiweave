@@ -115,7 +115,10 @@ test("authenticatedFetch attaches X-CSRF-Token on POST when cookie is present", 
   // @ts-expect-error — injecting minimal document mock for Node.js test env
   globalThis.document = { cookie: "csrftoken=test-csrf-value-abc" };
   try {
-    await authenticatedFetch("/api/workspaces/ws-1/workflows", { method: "POST", body: "{}" });
+    await authenticatedFetch("/api/workspaces/ws-1/workflows", {
+      method: "POST",
+      body: "{}",
+    });
     const headers = calls[0]!.init.headers;
     assert.equal(headers["x-csrf-token"], "test-csrf-value-abc");
   } finally {
@@ -148,7 +151,9 @@ test("authenticatedFetch attaches X-CSRF-Token on DELETE", async () => {
   globalThis.document = { cookie: "csrftoken=delete-csrf-token" };
   const originalDoc = globalThis.document;
   try {
-    await authenticatedFetch("/api/workspaces/ws-1/workflows/wf-1", { method: "DELETE" });
+    await authenticatedFetch("/api/workspaces/ws-1/workflows/wf-1", {
+      method: "DELETE",
+    });
     const headers = calls[0]!.init.headers;
     assert.equal(headers["x-csrf-token"], "delete-csrf-token");
   } finally {
@@ -182,7 +187,10 @@ test("authenticatedFetch does NOT attach X-CSRF-Token when cookie is absent", as
   globalThis.document = { cookie: "session=some-session-id" };
   const originalDoc = globalThis.document;
   try {
-    await authenticatedFetch("/api/workspaces/ws-1/workflows", { method: "POST", body: "{}" });
+    await authenticatedFetch("/api/workspaces/ws-1/workflows", {
+      method: "POST",
+      body: "{}",
+    });
     const headers = calls[0]!.init.headers;
     assert.equal(
       headers["x-csrf-token"],
@@ -250,7 +258,10 @@ test("authenticatedJson throws on non-2xx status", async () => {
     await assert.rejects(
       () => authenticatedJson("/api/workspaces/ws-1/workflows/missing"),
       (err: Error) => {
-        assert.ok(err.message.includes("404"), `Expected 404 in: ${err.message}`);
+        assert.ok(
+          err.message.includes("404"),
+          `Expected 404 in: ${err.message}`,
+        );
         return true;
       },
     );

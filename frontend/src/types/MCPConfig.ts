@@ -1,4 +1,4 @@
-import type { MCPTool } from './MCPTool';
+import type { MCPTool } from "./MCPTool";
 
 export type MCPConfig = {
   enabled: boolean;

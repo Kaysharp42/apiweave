@@ -8,17 +8,16 @@ Covers:
 5. OAuth signup with non-matching email does NOT consume invite
 6. Role-elevation check: viewer cannot invite admin
 """
+
 from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
-import pytest
-from fastapi.testclient import TestClient
-
 import app.auth.provider_registry as provider_registry
 import app.auth.router as auth_router
+import pytest
 from app.auth.permissions import PRESET_VIEWER
 from app.auth.provider_registry import ProviderConfig, ProviderUserInfo
 from app.main import app
@@ -28,6 +27,7 @@ from app.repositories.auth_repositories import (
     UserRepository,
 )
 from app.services import invite_service
+from fastapi.testclient import TestClient
 
 pytest_plugins = ("tests.fixtures.oauth_mocks",)
 
@@ -207,9 +207,7 @@ class TestAcceptValidToken:
 
 
 class TestAcceptExpiredToken:
-    def test_expired_token_returns_404(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_expired_token_returns_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             invite_service,
             "validate_invite_token",
@@ -220,9 +218,7 @@ class TestAcceptExpiredToken:
 
 
 class TestAcceptConsumedToken:
-    def test_consumed_token_returns_404(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_consumed_token_returns_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             invite_service,
             "validate_invite_token",
@@ -284,9 +280,7 @@ class TestRoleAppliedOnMatchingEmail:
             "get_by_token_hash",
             AsyncMock(return_value=invite),
         )
-        monkeypatch.setattr(
-            auth_router.InviteRepository, "consume", AsyncMock(return_value=True)
-        )
+        monkeypatch.setattr(auth_router.InviteRepository, "consume", AsyncMock(return_value=True))
         monkeypatch.setattr(
             auth_router.UserRepository, "create", AsyncMock(return_value=created_user)
         )
@@ -384,9 +378,7 @@ class TestEmailMismatchDoesNotConsume:
             "get_by_token_hash",
             AsyncMock(return_value=invite),
         )
-        monkeypatch.setattr(
-            auth_router.InviteRepository, "consume", AsyncMock(return_value=True)
-        )
+        monkeypatch.setattr(auth_router.InviteRepository, "consume", AsyncMock(return_value=True))
         monkeypatch.setattr(
             auth_router.UserRepository, "create", AsyncMock(return_value=created_user)
         )
@@ -453,9 +445,7 @@ class TestRoleElevationBlocked:
 class TestInviteWithAdminRole:
     """Invite with admin role preset is applied on matching OAuth signup."""
 
-    def test_admin_role_from_invite_applied(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_admin_role_from_invite_applied(self, monkeypatch: pytest.MonkeyPatch) -> None:
         provider = "github"
         invite_email = "admin-invited@example.com"
         invite = _make_invite(email=invite_email, role_preset="admin")
@@ -504,9 +494,7 @@ class TestInviteWithAdminRole:
             "get_by_token_hash",
             AsyncMock(return_value=invite),
         )
-        monkeypatch.setattr(
-            auth_router.InviteRepository, "consume", AsyncMock(return_value=True)
-        )
+        monkeypatch.setattr(auth_router.InviteRepository, "consume", AsyncMock(return_value=True))
         monkeypatch.setattr(
             auth_router.UserRepository, "create", AsyncMock(return_value=created_user)
         )
@@ -553,9 +541,7 @@ class TestInviteWithAdminRole:
 class TestInviteViaGitLabProvider:
     """Invite role applied when signing up via a non-GitHub provider."""
 
-    def test_gitlab_invite_role_applied(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_gitlab_invite_role_applied(self, monkeypatch: pytest.MonkeyPatch) -> None:
         provider = "gitlab"
         invite_email = "gl-invited@example.com"
         invite = _make_invite(email=invite_email, role_preset="editor")
@@ -604,9 +590,7 @@ class TestInviteViaGitLabProvider:
             "get_by_token_hash",
             AsyncMock(return_value=invite),
         )
-        monkeypatch.setattr(
-            auth_router.InviteRepository, "consume", AsyncMock(return_value=True)
-        )
+        monkeypatch.setattr(auth_router.InviteRepository, "consume", AsyncMock(return_value=True))
         monkeypatch.setattr(
             auth_router.UserRepository, "create", AsyncMock(return_value=created_user)
         )

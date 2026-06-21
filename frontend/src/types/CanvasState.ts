@@ -1,8 +1,12 @@
-import type { CanvasActionType } from './CanvasActionType';
-import type { ClipboardNodeData } from './ClipboardNodeData';
+import type { CanvasActionType } from "./CanvasActionType";
+import type { ClipboardNodeData } from "./ClipboardNodeData";
 
 export interface CanvasState {
-  pendingAction: { type: CanvasActionType; nodeId?: string; timestamp: number } | null;
+  pendingAction: {
+    type: CanvasActionType;
+    nodeId?: string;
+    timestamp: number;
+  } | null;
   clipboardNode: ClipboardNodeData | null;
   reloadWorkflowId: string | null;
   reloadVersion: number;
@@ -13,6 +17,15 @@ export interface CanvasState {
   setClipboardNode: (nodeData: ClipboardNodeData | null) => void;
   hydrateClipboard: () => void;
   signalWorkflowReload: (workflowId: string) => void;
-  registerWorkflowReloadHandler: (workflowId: string, handler: () => void) => () => void;
-  registerPendingActionHandler: (handler: (action: { type: CanvasActionType; nodeId?: string; timestamp: number }) => void) => () => void;
+  registerWorkflowReloadHandler: (
+    workflowId: string,
+    handler: () => void,
+  ) => () => void;
+  registerPendingActionHandler: (
+    handler: (action: {
+      type: CanvasActionType;
+      nodeId?: string;
+      timestamp: number;
+    }) => void,
+  ) => () => void;
 }

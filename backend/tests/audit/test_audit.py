@@ -6,22 +6,22 @@ Covers:
 - Audit write failure causes the resolver helper to raise AuditWriteUnavailableError.
 - JSON export contains no secret values.
 """
+
 import json
-from datetime import datetime, UTC
-from unittest.mock import AsyncMock, patch, MagicMock
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from app.models import AuditEvent, AuditEventCreate, AuditEventResponse
+from app.models import AuditEvent, AuditEventCreate
 from app.repositories.audit_repository import AuditRepository
-from app.services.audit_service import append_event, get_events, export_json
 from app.services.audit_resolver_helper import resolve_secret_with_audit
+from app.services.audit_service import append_event, export_json, get_events
 from app.services.exceptions import AuditWriteUnavailableError
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_audit_event_create(**overrides: object) -> AuditEventCreate:
     """Build a minimal AuditEventCreate for testing (Pydantic model, no Beanie init needed)."""
@@ -76,6 +76,7 @@ def _make_mock_audit_event(**overrides: object) -> MagicMock:
 # 4a: AuditEvent model
 # ---------------------------------------------------------------------------
 
+
 class TestAuditEventModel:
     """Verify the AuditEvent Beanie document shape and constraints."""
 
@@ -91,7 +92,14 @@ class TestAuditEventModel:
         assert isinstance(event.context, dict)
 
     def test_actor_type_validation(self):
-        for actor_type in ["user", "org_app", "service_token", "mcp_client", "webhook_token", "system_migration"]:
+        for actor_type in [
+            "user",
+            "org_app",
+            "service_token",
+            "mcp_client",
+            "webhook_token",
+            "system_migration",
+        ]:
             event = _make_audit_event_create(actor=actor_type)
             assert event.actor == actor_type
 
@@ -115,9 +123,11 @@ class TestAuditEventModel:
         for idx in index_models:
             doc = idx.document
             keys = doc.get("key", {}) if isinstance(doc, dict) else {}
-            if ("actor", 1) in list(keys.items()) and \
-               ("actorId", 1) in list(keys.items()) and \
-               ("eventId", 1) in list(keys.items()):
+            if (
+                ("actor", 1) in list(keys.items())
+                and ("actorId", 1) in list(keys.items())
+                and ("eventId", 1) in list(keys.items())
+            ):
                 assert doc.get("unique") is True or idx.kwargs.get("unique") is True
                 compound_found = True
         assert compound_found, "Compound unique index on (actor, actorId, eventId) not found"
@@ -126,6 +136,7 @@ class TestAuditEventModel:
 # ---------------------------------------------------------------------------
 # 4b: AuditRepository — append-only
 # ---------------------------------------------------------------------------
+
 
 class TestAuditRepository:
     """Verify the repository is append-only (no update/delete methods)."""
@@ -188,7 +199,9 @@ class TestAuditRepository:
                                 with patch.object(AuditEvent, "resourceType", create=True):
                                     with patch.object(AuditEvent, "resourceId", create=True):
                                         with patch.object(AuditEvent, "createdAt", create=True):
-                                            events, total = await AuditRepository.query(action="secret_resolved")
+                                            events, total = await AuditRepository.query(
+                                                action="secret_resolved"
+                                            )
                                             assert total == 1
                                             assert len(events) == 1
 
@@ -197,12 +210,15 @@ class TestAuditRepository:
 # 4c: AuditService — append_event, get_events, export_json
 # ---------------------------------------------------------------------------
 
+
 class TestAuditService:
     """Verify audit service methods."""
 
     async def test_append_event_sanitizes_context(self):
         mock_event = _make_mock_audit_event()
-        with patch.object(AuditRepository, "append", new_callable=AsyncMock, return_value=mock_event):
+        with patch.object(
+            AuditRepository, "append", new_callable=AsyncMock, return_value=mock_event
+        ):
             result = await append_event(
                 actor="user",
                 actor_id="user-1",
@@ -233,7 +249,8 @@ class TestAuditService:
     async def test_append_event_raises_on_write_failure(self):
         """Write failure must raise AuditWriteUnavailableError for fail-closed."""
         with patch.object(
-            AuditRepository, "append",
+            AuditRepository,
+            "append",
             new_callable=AsyncMock,
             side_effect=Exception("DB connection lost"),
         ):
@@ -251,7 +268,8 @@ class TestAuditService:
     async def test_get_events_returns_response_dtos(self):
         mock_event = _make_mock_audit_event()
         with patch.object(
-            AuditRepository, "query",
+            AuditRepository,
+            "query",
             new_callable=AsyncMock,
             return_value=([mock_event], 1),
         ):
@@ -263,7 +281,8 @@ class TestAuditService:
         """JSON export must contain event metadata but no secret values."""
         mock_event = _make_mock_audit_event()
         with patch.object(
-            AuditRepository, "query",
+            AuditRepository,
+            "query",
             new_callable=AsyncMock,
             return_value=([mock_event], 1),
         ):
@@ -295,6 +314,7 @@ class TestAuditService:
 # Secret resolution audit integration
 # ---------------------------------------------------------------------------
 
+
 class TestSecretResolutionAudit:
     """
     Every secret resolution records an event with actor, scope, runId, nodeId,
@@ -314,7 +334,9 @@ class TestSecretResolutionAudit:
             captured_context["scope_id"] = kwargs.get("scope_id")  # type: ignore[assignment]
             return _make_mock_audit_event()
 
-        with patch("app.services.audit_resolver_helper.append_event", side_effect=mock_append_event):
+        with patch(
+            "app.services.audit_resolver_helper.append_event", side_effect=mock_append_event
+        ):
             result = await resolve_secret_with_audit(
                 actor="user",
                 actor_id="user-123",
@@ -348,7 +370,9 @@ class TestSecretResolutionAudit:
             captured_kwargs.update(kwargs)
             return _make_mock_audit_event()
 
-        with patch("app.services.audit_resolver_helper.append_event", side_effect=mock_append_event):
+        with patch(
+            "app.services.audit_resolver_helper.append_event", side_effect=mock_append_event
+        ):
             await resolve_secret_with_audit(
                 actor="user",
                 actor_id="user-123",
@@ -394,6 +418,7 @@ class TestSecretResolutionAudit:
 # JSON export safety
 # ---------------------------------------------------------------------------
 
+
 class TestExportJsonSafety:
     """JSON export contains no secret values."""
 
@@ -404,7 +429,8 @@ class TestExportJsonSafety:
             _make_mock_audit_event(eventId="evt-2"),
         ]
         with patch.object(
-            AuditRepository, "query",
+            AuditRepository,
+            "query",
             new_callable=AsyncMock,
             return_value=(events, 2),
         ):
@@ -426,7 +452,8 @@ class TestExportJsonSafety:
             }
         )
         with patch.object(
-            AuditRepository, "query",
+            AuditRepository,
+            "query",
             new_callable=AsyncMock,
             return_value=([event], 1),
         ):

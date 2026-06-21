@@ -16,10 +16,10 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # 1. internal_http_mock_server
 # ---------------------------------------------------------------------------
+
 
 class _QuietHandler(BaseHTTPRequestHandler):
     """Minimal handler that returns 200 OK for any request."""
@@ -112,6 +112,7 @@ def blocked_ip_cases(request: pytest.FixtureRequest) -> dict[str, str]:
 # 3. env_secret
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def env_secret(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     """Register a test environment secret and tear it down after the test.
@@ -132,6 +133,7 @@ def env_secret(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # 4. upload_sandbox_tmp
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def upload_sandbox_tmp(
@@ -248,6 +250,7 @@ def openapi_spec_fixture() -> dict[str, Any]:
 # 6. webhook_body_cases
 # ---------------------------------------------------------------------------
 
+
 def _make_body(size_kb: int) -> bytes:
     """Generate a deterministic body of exactly *size_kb* kilobytes."""
     # Use a repeating pattern so content is predictable
@@ -277,6 +280,7 @@ def webhook_body_cases(request: pytest.FixtureRequest) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 7. safe_url_client
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def safe_url_client(internal_http_mock_server: SimpleNamespace) -> SimpleNamespace:

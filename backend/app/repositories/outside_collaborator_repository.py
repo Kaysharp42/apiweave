@@ -4,6 +4,7 @@ Outside Collaborator Repository — data access for OutsideCollaborator document
 Outside collaborators are users granted limited access to a workspace
 without being full members. They are typically contractors or partners.
 """
+
 from datetime import UTC, datetime
 
 from app.models import OutsideCollaborator
@@ -54,9 +55,7 @@ class OutsideCollaboratorRepository:
 
     @staticmethod
     async def list_by_user(user_id: str) -> list[OutsideCollaborator]:
-        return await OutsideCollaborator.find(
-            OutsideCollaborator.userId == user_id
-        ).to_list()
+        return await OutsideCollaborator.find(OutsideCollaborator.userId == user_id).to_list()
 
     @staticmethod
     async def update_role(

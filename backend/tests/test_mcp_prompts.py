@@ -1,8 +1,8 @@
 """
 Tests for MCP prompts — workflow creation and debugging templates.
 """
-import pytest
 
+import pytest
 from app.mcp.prompts.debug import register_debug_prompts
 from app.mcp.prompts.workflow import register_workflow_prompts
 
@@ -11,6 +11,7 @@ from app.mcp.prompts.workflow import register_workflow_prompts
 async def test_workflow_prompts_registered():
     """Workflow prompts are registered on the server."""
     from mcp.server.fastmcp import FastMCP
+
     server = FastMCP(name="TestServer")
     register_workflow_prompts(server)
 
@@ -25,6 +26,7 @@ async def test_workflow_prompts_registered():
 async def test_debug_prompts_registered():
     """Debug prompts are registered on the server."""
     from mcp.server.fastmcp import FastMCP
+
     server = FastMCP(name="TestServer")
     register_debug_prompts(server)
 
@@ -39,6 +41,7 @@ async def test_debug_prompts_registered():
 async def test_create_test_from_openapi_has_required_args():
     """Create test from OpenAPI prompt requires openapi_url argument."""
     from mcp.server.fastmcp import FastMCP
+
     server = FastMCP(name="TestServer")
     register_workflow_prompts(server)
 
@@ -54,6 +57,7 @@ async def test_create_test_from_openapi_has_required_args():
 async def test_debug_failed_run_has_required_args():
     """Debug failed run prompt requires workflow_id argument."""
     from mcp.server.fastmcp import FastMCP
+
     server = FastMCP(name="TestServer")
     register_debug_prompts(server)
 

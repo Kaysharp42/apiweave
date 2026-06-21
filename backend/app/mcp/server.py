@@ -5,6 +5,7 @@ All tools are scoped to workspace/organization via service token auth.
 Old flat tools (collection_*, environment_set_secret) have been replaced
 with scoped equivalents (project_*, secret_*).
 """
+
 import logging
 
 from mcp.server.fastmcp import FastMCP

@@ -1,51 +1,57 @@
-import { test } from 'vitest';
-import assert from 'node:assert/strict';
+import { test } from "vitest";
+import assert from "node:assert/strict";
 import {
   normalizeExportImportTab,
   resolveWorkflowExportImportInitialTab,
-} from './workflowExportImportTabs.ts';
+} from "./workflowExportImportTabs.ts";
 
-test('normalizeExportImportTab accepts valid tab names case-insensitively', () => {
-  assert.equal(normalizeExportImportTab('import'), 'import');
-  assert.equal(normalizeExportImportTab('EXPORT'), 'export');
+test("normalizeExportImportTab accepts valid tab names case-insensitively", () => {
+  assert.equal(normalizeExportImportTab("import"), "import");
+  assert.equal(normalizeExportImportTab("EXPORT"), "export");
 });
 
-test('normalizeExportImportTab returns null for invalid values', () => {
-  assert.equal(normalizeExportImportTab(''), null);
-  assert.equal(normalizeExportImportTab('something-else'), null);
+test("normalizeExportImportTab returns null for invalid values", () => {
+  assert.equal(normalizeExportImportTab(""), null);
+  assert.equal(normalizeExportImportTab("something-else"), null);
   assert.equal(normalizeExportImportTab(undefined), null);
 });
 
-test('resolveWorkflowExportImportInitialTab prioritizes explicit initialTab', () => {
+test("resolveWorkflowExportImportInitialTab prioritizes explicit initialTab", () => {
   assert.equal(
-    resolveWorkflowExportImportInitialTab({ initialTab: 'import', mode: 'export' }),
-    'import',
+    resolveWorkflowExportImportInitialTab({
+      initialTab: "import",
+      mode: "export",
+    }),
+    "import",
   );
 });
 
-test('resolveWorkflowExportImportInitialTab supports legacy mode prop', () => {
+test("resolveWorkflowExportImportInitialTab supports legacy mode prop", () => {
   assert.equal(
-    resolveWorkflowExportImportInitialTab({ mode: 'import' }),
-    'import',
+    resolveWorkflowExportImportInitialTab({ mode: "import" }),
+    "import",
   );
 });
 
-test('resolveWorkflowExportImportInitialTab falls back to export', () => {
-  assert.equal(resolveWorkflowExportImportInitialTab({}), 'export');
-  assert.equal(resolveWorkflowExportImportInitialTab({ mode: 'unknown' }), 'export');
+test("resolveWorkflowExportImportInitialTab falls back to export", () => {
+  assert.equal(resolveWorkflowExportImportInitialTab({}), "export");
+  assert.equal(
+    resolveWorkflowExportImportInitialTab({ mode: "unknown" }),
+    "export",
+  );
 });
 
-test('resolveWorkflowExportImportInitialTab supports reopen context changes', () => {
+test("resolveWorkflowExportImportInitialTab supports reopen context changes", () => {
   const openedFromWorkflowRow = resolveWorkflowExportImportInitialTab({
-    initialTab: 'export',
+    initialTab: "export",
     mode: undefined,
   });
 
   const reopenedFromSidebarImport = resolveWorkflowExportImportInitialTab({
-    initialTab: 'import',
+    initialTab: "import",
     mode: undefined,
   });
 
-  assert.equal(openedFromWorkflowRow, 'export');
-  assert.equal(reopenedFromSidebarImport, 'import');
+  assert.equal(openedFromWorkflowRow, "export");
+  assert.equal(reopenedFromSidebarImport, "import");
 });

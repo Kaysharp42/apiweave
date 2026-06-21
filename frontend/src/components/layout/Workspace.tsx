@@ -1,42 +1,55 @@
-import { useReducer, useEffect, useCallback } from 'react';
-import { Allotment } from 'allotment';
-import 'allotment/dist/style.css';
-import WorkflowCanvas from '../WorkflowCanvas';
-import VariablesPanel from '../VariablesPanel';
-import WorkflowSettingsPanel from '../WorkflowSettingsPanel';
-import DynamicFunctionsHelper from '../DynamicFunctionsHelper';
-import { WorkflowProvider } from '../../contexts/WorkflowContext';
-import { Settings, Sparkles, Package, PanelRightClose, Globe } from 'lucide-react';
-import { TabBar } from '../organisms/TabBar';
-import { KeyboardShortcutsHelp } from '../organisms/KeyboardShortcutsHelp';
-import { WorkspaceEmptyState } from '../molecules/WorkspaceEmptyState';
-import { PromptDialog } from '../molecules/PromptDialog';
-import { Panel } from '../molecules/Panel';
-import { PanelTabs } from '../molecules/PanelTabs';
-import { IconButton } from '../atoms/IconButton';
-import { Badge } from '../atoms/Badge';
-import useTabStore from '../../stores/TabStore';
-import useSidebarStore from '../../stores/SidebarStore';
-import useEnvironmentStore from '../../stores/EnvironmentStore';
-import useNavigationStore from '../../stores/NavigationStore';
-import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
-import { useScopeContext } from '../../hooks/useScopeContext';
-import type { WorkspaceProps } from '../../types/WorkspaceProps';
-import type { WorkspaceTab } from '../../types/WorkspaceTab';
-import type { TabItem } from '../../types/TabItem';
-import type { Workflow } from '../../types/Workflow';
-import { authenticatedFetch } from '../../utils/authenticatedApi';
-import { environmentsUrl, workflowsUrl } from '../../utils/scopedApi';
-import { toast } from 'sonner';
+import { useReducer, useEffect, useCallback } from "react";
+import { Allotment } from "allotment";
+import "allotment/dist/style.css";
+import WorkflowCanvas from "../WorkflowCanvas";
+import VariablesPanel from "../VariablesPanel";
+import WorkflowSettingsPanel from "../WorkflowSettingsPanel";
+import DynamicFunctionsHelper from "../DynamicFunctionsHelper";
+import { WorkflowProvider } from "../../contexts/WorkflowContext";
+import {
+  Settings,
+  Sparkles,
+  Package,
+  PanelRightClose,
+  Globe,
+} from "lucide-react";
+import { TabBar } from "../organisms/TabBar";
+import { KeyboardShortcutsHelp } from "../organisms/KeyboardShortcutsHelp";
+import { WorkspaceEmptyState } from "../molecules/WorkspaceEmptyState";
+import { PromptDialog } from "../molecules/PromptDialog";
+import { Panel } from "../molecules/Panel";
+import { PanelTabs } from "../molecules/PanelTabs";
+import { IconButton } from "../atoms/IconButton";
+import { Badge } from "../atoms/Badge";
+import useTabStore from "../../stores/TabStore";
+import useSidebarStore from "../../stores/SidebarStore";
+import useEnvironmentStore from "../../stores/EnvironmentStore";
+import useNavigationStore from "../../stores/NavigationStore";
+import useKeyboardShortcuts from "../../hooks/useKeyboardShortcuts";
+import { useScopeContext } from "../../hooks/useScopeContext";
+import type { WorkspaceProps } from "../../types/WorkspaceProps";
+import type { WorkspaceTab } from "../../types/WorkspaceTab";
+import type { TabItem } from "../../types/TabItem";
+import type { Workflow } from "../../types/Workflow";
+import { authenticatedFetch } from "../../utils/authenticatedApi";
+import { environmentsUrl, workflowsUrl } from "../../utils/scopedApi";
+import { toast } from "sonner";
 
 const panelTabs: TabItem[] = [
-  { key: 'variables', icon: Package, label: 'Variables' },
-  { key: 'dynamic', icon: Sparkles, label: 'Functions' },
-  { key: 'settings', icon: Settings, label: 'Settings' },
+  { key: "variables", icon: Package, label: "Variables" },
+  { key: "dynamic", icon: Sparkles, label: "Functions" },
+  { key: "settings", icon: Settings, label: "Settings" },
 ];
 
 export function Workspace(_props: WorkspaceProps) {
-  const { tabs, activeTabId, openTab, closeTab, activateNextTab, activatePrevTab } = useTabStore();
+  const {
+    tabs,
+    activeTabId,
+    openTab,
+    closeTab,
+    activateNextTab,
+    activatePrevTab,
+  } = useTabStore();
   const { workspaceId, orgId, isReady: isScopeReady } = useScopeContext();
 
   type WorkspaceState = {
@@ -49,59 +62,73 @@ export function Workspace(_props: WorkspaceProps) {
   };
 
   type WorkspaceAction =
-    | { type: 'set-show-variables-panel'; value: boolean }
-    | { type: 'set-active-panel-tab'; value: string }
-    | { type: 'set-environment-names'; value: Record<string, string> }
-    | { type: 'set-show-shortcuts-help'; value: boolean }
-    | { type: 'set-show-new-workflow-prompt'; value: boolean };
+    | { type: "set-show-variables-panel"; value: boolean }
+    | { type: "set-active-panel-tab"; value: string }
+    | { type: "set-environment-names"; value: Record<string, string> }
+    | { type: "set-show-shortcuts-help"; value: boolean }
+    | { type: "set-show-new-workflow-prompt"; value: boolean };
 
-  const [state, dispatch] = useReducer((current: WorkspaceState, action: WorkspaceAction): WorkspaceState => {
-    switch (action.type) {
-      case 'set-show-variables-panel':
-        return { ...current, showVariablesPanel: action.value };
-      case 'set-active-panel-tab':
-        return { ...current, activePanelTab: action.value };
-      case 'set-environment-names':
-        return { ...current, environmentNames: action.value, environmentNamesLoaded: true };
-      case 'set-show-shortcuts-help':
-        return { ...current, showShortcutsHelp: action.value };
-      case 'set-show-new-workflow-prompt':
-        return { ...current, showNewWorkflowPrompt: action.value };
-      default:
-        return current;
-    }
-  }, {
-    showVariablesPanel: false,
-    activePanelTab: 'variables',
-    environmentNames: {},
-    environmentNamesLoaded: false,
-    showShortcutsHelp: false,
-    showNewWorkflowPrompt: false,
-  });
+  const [state, dispatch] = useReducer(
+    (current: WorkspaceState, action: WorkspaceAction): WorkspaceState => {
+      switch (action.type) {
+        case "set-show-variables-panel":
+          return { ...current, showVariablesPanel: action.value };
+        case "set-active-panel-tab":
+          return { ...current, activePanelTab: action.value };
+        case "set-environment-names":
+          return {
+            ...current,
+            environmentNames: action.value,
+            environmentNamesLoaded: true,
+          };
+        case "set-show-shortcuts-help":
+          return { ...current, showShortcutsHelp: action.value };
+        case "set-show-new-workflow-prompt":
+          return { ...current, showNewWorkflowPrompt: action.value };
+        default:
+          return current;
+      }
+    },
+    {
+      showVariablesPanel: false,
+      activePanelTab: "variables",
+      environmentNames: {},
+      environmentNamesLoaded: false,
+      showShortcutsHelp: false,
+      showNewWorkflowPrompt: false,
+    },
+  );
 
-  const activeTab: WorkspaceTab | undefined = tabs.find((t) => t.id === activeTabId);
+  const activeTab: WorkspaceTab | undefined = tabs.find(
+    (t) => t.id === activeTabId,
+  );
 
   const fetchEnvironmentNames = useCallback(async () => {
     if (!isScopeReady || !workspaceId) {
-      dispatch({ type: 'set-environment-names', value: {} });
+      dispatch({ type: "set-environment-names", value: {} });
       return;
     }
 
     try {
-      const response = await authenticatedFetch(environmentsUrl(workspaceId, 'all-accessible', orgId));
+      const response = await authenticatedFetch(
+        environmentsUrl(workspaceId, "all-accessible", orgId),
+      );
       if (response.ok) {
-        const envs = await response.json() as Array<{ environmentId: string; name: string }>;
+        const envs = (await response.json()) as Array<{
+          environmentId: string;
+          name: string;
+        }>;
         const namesMap: Record<string, string> = {};
         envs.forEach((env) => {
           namesMap[env.environmentId] = env.name;
         });
-        dispatch({ type: 'set-environment-names', value: namesMap });
+        dispatch({ type: "set-environment-names", value: namesMap });
       } else {
-        dispatch({ type: 'set-environment-names', value: {} });
+        dispatch({ type: "set-environment-names", value: {} });
       }
     } catch (error) {
-      console.error('Error fetching environments:', error);
-      dispatch({ type: 'set-environment-names', value: {} });
+      console.error("Error fetching environments:", error);
+      dispatch({ type: "set-environment-names", value: {} });
     }
   }, [isScopeReady, orgId, workspaceId]);
 
@@ -117,44 +144,60 @@ export function Workspace(_props: WorkspaceProps) {
   }, [environmentVersion, fetchEnvironmentNames]);
 
   const handleNewWorkflow = useCallback(() => {
-    dispatch({ type: 'set-show-new-workflow-prompt', value: true });
+    dispatch({ type: "set-show-new-workflow-prompt", value: true });
   }, []);
 
-  const handleCreateWorkflow = useCallback(async (name: string) => {
-    if (!isScopeReady || !workspaceId) {
-      toast.error('Workspace context is still loading. Please retry once a workspace is selected.');
-      return;
-    }
-
-    try {
-      const response = await authenticatedFetch(workflowsUrl(workspaceId), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          description: '',
-          nodes: [{ nodeId: 'start-1', type: 'start', label: 'Start', position: { x: 100, y: 100 }, config: {} }],
-          edges: [],
-          variables: {},
-        }),
-      });
-      if (response.ok) {
-        const workflow = await response.json() as Workflow;
-        openTab(workflow);
-        useSidebarStore.getState().signalWorkflowsRefresh();
+  const handleCreateWorkflow = useCallback(
+    async (name: string) => {
+      if (!isScopeReady || !workspaceId) {
+        toast.error(
+          "Workspace context is still loading. Please retry once a workspace is selected.",
+        );
+        return;
       }
-    } catch (error) {
-      console.error('Error creating workflow:', error);
-    }
-  }, [isScopeReady, openTab, workspaceId]);
+
+      try {
+        const response = await authenticatedFetch(workflowsUrl(workspaceId), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            description: "",
+            nodes: [
+              {
+                nodeId: "start-1",
+                type: "start",
+                label: "Start",
+                position: { x: 100, y: 100 },
+                config: {},
+              },
+            ],
+            edges: [],
+            variables: {},
+          }),
+        });
+        if (response.ok) {
+          const workflow = (await response.json()) as Workflow;
+          openTab(workflow);
+          useSidebarStore.getState().signalWorkflowsRefresh();
+        }
+      } catch (error) {
+        console.error("Error creating workflow:", error);
+      }
+    },
+    [isScopeReady, openTab, workspaceId],
+  );
 
   useKeyboardShortcuts({
     onNewWorkflow: handleNewWorkflow,
-    onCloseTab: () => { if (activeTabId) closeTab(activeTabId); },
+    onCloseTab: () => {
+      if (activeTabId) closeTab(activeTabId);
+    },
     onNextTab: activateNextTab,
     onPrevTab: activatePrevTab,
     onToggleSidebar: () => useNavigationStore.getState().toggleNavBarCollapse(),
-    onShowShortcutsHelp: () => dispatch({ type: 'set-show-shortcuts-help', value: true }),
+    onShowShortcutsHelp: () =>
+      dispatch({ type: "set-show-shortcuts-help", value: true }),
   });
 
   return (
@@ -171,12 +214,19 @@ export function Workspace(_props: WorkspaceProps) {
             {/* Environment banner — compact, only when active */}
             {activeTab.workflow?.environmentId && (
               <div className="flex min-w-0 items-center gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 text-xs dark:border-primary-light/20 dark:bg-primary-light/10">
-                <Globe className="w-3.5 h-3.5 flex-shrink-0 text-primary dark:text-primary-light" aria-hidden="true" />
-                <span className="text-text-secondary dark:text-text-secondary-dark flex-shrink-0">Environment:</span>
+                <Globe
+                  className="w-3.5 h-3.5 flex-shrink-0 text-primary dark:text-primary-light"
+                  aria-hidden="true"
+                />
+                <span className="text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
+                  Environment:
+                </span>
                 <Badge variant="primary" size="sm" className="min-w-0 truncate">
                   <span className="min-w-0 truncate">
-                    {state.environmentNames[activeTab.workflow.environmentId]
-                      ?? (state.environmentNamesLoaded ? 'Environment unavailable' : 'Loading…')}
+                    {state.environmentNames[activeTab.workflow.environmentId] ??
+                      (state.environmentNamesLoaded
+                        ? "Environment unavailable"
+                        : "Loading…")}
                   </span>
                 </Badge>
               </div>
@@ -191,7 +241,9 @@ export function Workspace(_props: WorkspaceProps) {
                       workflow={activeTab.workflow}
                       isPanelOpen={state.showVariablesPanel}
                       showVariablesPanel={state.showVariablesPanel}
-                      onShowVariablesPanel={(value) => dispatch({ type: 'set-show-variables-panel', value })}
+                      onShowVariablesPanel={(value) =>
+                        dispatch({ type: "set-show-variables-panel", value })
+                      }
                     />
                   </div>
                 </Allotment.Pane>
@@ -206,7 +258,12 @@ export function Workspace(_props: WorkspaceProps) {
                         <IconButton
                           tooltip="Collapse panel"
                           size="xs"
-                          onClick={() => dispatch({ type: 'set-show-variables-panel', value: false })}
+                          onClick={() =>
+                            dispatch({
+                              type: "set-show-variables-panel",
+                              value: false,
+                            })
+                          }
                         >
                           <PanelRightClose className="w-4 h-4" />
                         </IconButton>
@@ -215,11 +272,19 @@ export function Workspace(_props: WorkspaceProps) {
                       <PanelTabs
                         tabs={panelTabs}
                         activeTab={state.activePanelTab}
-                        onTabChange={(value) => dispatch({ type: 'set-active-panel-tab', value })}
+                        onTabChange={(value) =>
+                          dispatch({ type: "set-active-panel-tab", value })
+                        }
                       />
-                      {state.activePanelTab === 'variables' && <VariablesPanel />}
-                      {state.activePanelTab === 'dynamic' && <DynamicFunctionsHelper />}
-                      {state.activePanelTab === 'settings' && <WorkflowSettingsPanel />}
+                      {state.activePanelTab === "variables" && (
+                        <VariablesPanel />
+                      )}
+                      {state.activePanelTab === "dynamic" && (
+                        <DynamicFunctionsHelper />
+                      )}
+                      {state.activePanelTab === "settings" && (
+                        <WorkflowSettingsPanel />
+                      )}
                     </Panel>
                   </Allotment.Pane>
                 )}
@@ -231,12 +296,19 @@ export function Workspace(_props: WorkspaceProps) {
         )}
       </div>
 
-      <KeyboardShortcutsHelp open={state.showShortcutsHelp} onClose={() => dispatch({ type: 'set-show-shortcuts-help', value: false })} />
+      <KeyboardShortcutsHelp
+        open={state.showShortcutsHelp}
+        onClose={() =>
+          dispatch({ type: "set-show-shortcuts-help", value: false })
+        }
+      />
 
       {state.showNewWorkflowPrompt && (
         <PromptDialog
           open={true}
-          onClose={() => dispatch({ type: 'set-show-new-workflow-prompt', value: false })}
+          onClose={() =>
+            dispatch({ type: "set-show-new-workflow-prompt", value: false })
+          }
           onSubmit={handleCreateWorkflow}
           title="New Workflow"
           message="Enter a name for your workflow."

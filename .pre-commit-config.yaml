@@ -1,0 +1,101 @@
+# Pre-commit checks for APIWeave.
+#
+# Goal: block low-quality code (style, syntax, type, lint) from being committed
+# locally, before it reaches CI. Anything fast enough for sub-second feedback
+# runs here; expensive checks (mypy, pytest, vitest, build) stay in CI.
+#
+# Install once:    pre-commit install
+# Run on all:      pre-commit run --all-files
+# Skip a hook:     SKIP=<hook-id> git commit ...
+# Update versions: pre-commit autoupdate
+
+default_install_hook_types: [pre-commit]
+default_stages: [pre-commit]
+fail_fast: false
+
+# Large vendored or generated trees we never want pre-commit to touch.
+exclude: |
+  (?x)^(
+      \.opencode/skills/.*|
+      \.agents/skills/.*|
+      \.claude/.*|
+      graphify-out/.*|
+      htmlcov/.*|
+      progress/.*|
+      node_modules/.*|
+      frontend/node_modules/.*|
+      backend/app/routes/_legacy_disabled/.*|
+      .*\.lock$|
+      .*-lock\.json$
+  )$
+
+repos:
+  # ---------------------------------------------------------------------------
+  # File hygiene
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-yaml
+      - id: check-json
+        # JSONC / JSON-with-comments files are not valid JSON, skip them.
+        exclude: |
+          (?x)^(
+              .*\.jsonc$|
+              .*tsconfig.*\.json$|
+              \.vscode/.*\.json$
+          )$
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # ---------------------------------------------------------------------------
+  # Backend: ruff lint + format (fast, configured via backend/pyproject.toml)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix, --config, backend/pyproject.toml]
+        files: ^backend/.*\.py$
+        exclude: backend/app/routes/_legacy_disabled/
+      - id: ruff-format
+        args: [--config, backend/pyproject.toml]
+        files: ^backend/.*\.py$
+
+  # ---------------------------------------------------------------------------
+  # Frontend: eslint, prettier, tsc
+  #
+  # We call the project's own binaries via `node` so we use the exact same
+  # versions and configs the dev/CI scripts use, and so this works on Windows
+  # without relying on bash or shell wrappers.
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: frontend-eslint
+        name: frontend eslint
+        entry: node frontend/scripts/precommit-eslint.mjs
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|cjs|mjs)$
+        pass_filenames: true
+
+      - id: frontend-prettier
+        name: frontend prettier --check
+        entry: node frontend/node_modules/prettier/bin/prettier.cjs
+        args: [--check, --ignore-unknown]
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|cjs|mjs|json|css|md)$
+        pass_filenames: true
+
+      - id: frontend-tsc
+        name: frontend tsc --noEmit
+        entry: node frontend/node_modules/typescript/bin/tsc
+        args: [-p, frontend/tsconfig.json, --noEmit]
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false

@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import type { NavSection } from './NavSection';
+import type { ReactNode } from "react";
+import type { NavSection } from "./NavSection";
 
 export interface WorkspacePageShellProps {
   children: ReactNode;

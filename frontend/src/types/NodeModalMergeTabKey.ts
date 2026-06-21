@@ -1,1 +1,1 @@
-export type NodeModalMergeTabKey = 'strategy' | 'conditions' | 'settings';
+export type NodeModalMergeTabKey = "strategy" | "conditions" | "settings";

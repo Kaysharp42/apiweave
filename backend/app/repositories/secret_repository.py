@@ -4,6 +4,7 @@ Repository layer for scoped secrets and secret bindings.
 SecretRepository: CRUD for Secret documents (metadata + sealed-box ciphertext).
 SecretBindingRepository: CRUD for SecretBinding documents (user-secret binding).
 """
+
 from datetime import UTC, datetime
 
 from app.models import Secret, SecretBinding
@@ -38,9 +39,7 @@ class SecretRepository:
         return await Secret.find_one(Secret.secretId == secret_id)
 
     @staticmethod
-    async def get_by_scope_and_name(
-        scope_type: str, scope_id: str, name: str
-    ) -> Secret | None:
+    async def get_by_scope_and_name(scope_type: str, scope_id: str, name: str) -> Secret | None:
         return await Secret.find_one(
             Secret.scopeType == scope_type,
             Secret.scopeId == scope_id,
@@ -49,10 +48,14 @@ class SecretRepository:
 
     @staticmethod
     async def list_by_scope(scope_type: str, scope_id: str) -> list[Secret]:
-        return await Secret.find(
-            Secret.scopeType == scope_type,
-            Secret.scopeId == scope_id,
-        ).sort(Secret.name).to_list()
+        return (
+            await Secret.find(
+                Secret.scopeType == scope_type,
+                Secret.scopeId == scope_id,
+            )
+            .sort(Secret.name)
+            .to_list()
+        )
 
     @staticmethod
     async def count_by_scope(scope_type: str, scope_id: str) -> int:
@@ -109,14 +112,10 @@ class SecretBindingRepository:
 
     @staticmethod
     async def get_by_id(binding_id: str) -> SecretBinding | None:
-        return await SecretBinding.find_one(
-            SecretBinding.bindingId == binding_id
-        )
+        return await SecretBinding.find_one(SecretBinding.bindingId == binding_id)
 
     @staticmethod
-    async def list_for_target(
-        target_scope_type: str, target_scope_id: str
-    ) -> list[SecretBinding]:
+    async def list_for_target(target_scope_type: str, target_scope_id: str) -> list[SecretBinding]:
         return await SecretBinding.find(
             SecretBinding.targetScopeType == target_scope_type,
             SecretBinding.targetScopeId == target_scope_id,

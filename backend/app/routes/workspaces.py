@@ -50,6 +50,7 @@ Nested resource routes:
 
   GET    /api/workspaces/{workspace_id}/runs              — list runs
 """
+
 import json
 import logging
 from typing import Any
@@ -73,6 +74,7 @@ router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 # ============================================================================
 # Request / Response Models
 # ============================================================================
+
 
 class WorkspaceCreateRequest(BaseModel):
     name: str
@@ -113,6 +115,7 @@ class ProjectUpdateRequest(BaseModel):
     name: str | None = None
     description: str | None = None
     color: str | None = None
+
 
 @router.get("", response_model=dict[str, Any])
 async def list_workspaces(
@@ -214,6 +217,7 @@ async def restore_workspace(
 # Workspace Members
 # ============================================================================
 
+
 @router.get("/{workspace_id}/members", response_model=dict[str, Any])
 async def list_members(
     workspace_id: str,
@@ -284,6 +288,7 @@ async def remove_member(
 # Outside Collaborators
 # ============================================================================
 
+
 @router.get("/{workspace_id}/collaborators", response_model=dict[str, Any])
 async def list_collaborators(
     workspace_id: str,
@@ -341,6 +346,7 @@ async def remove_collaborator(
 # ============================================================================
 # Projects (nested under workspace)
 # ============================================================================
+
 
 @router.get("/{workspace_id}/projects", response_model=dict[str, Any])
 async def list_projects(
@@ -476,6 +482,7 @@ async def remove_workflow_from_project(
 # Workflows (nested under workspace)
 # ============================================================================
 
+
 @router.get("/{workspace_id}/workflows", response_model=dict[str, Any])
 async def list_workflows(
     workspace_id: str,
@@ -572,6 +579,7 @@ async def delete_workflow(
 # Runs (scoped to workspace)
 # ============================================================================
 
+
 @router.get("/{workspace_id}/runs", response_model=dict[str, Any])
 async def list_workspace_runs(
     workspace_id: str,
@@ -612,6 +620,7 @@ async def list_workflow_runs(
 # Run Trigger (scoped)
 # ============================================================================
 
+
 @router.post(
     "/{workspace_id}/workflows/{workflow_id}/run",
     response_model=dict[str, Any],
@@ -647,6 +656,7 @@ async def trigger_workflow_run(
 # ============================================================================
 # Run Status / Latest Failed / Node Result (scoped)
 # ============================================================================
+
 
 @router.get(
     "/{workspace_id}/workflows/{workflow_id}/runs/latest-failed",
@@ -713,6 +723,7 @@ async def get_node_result(
 # Export (scoped)
 # ============================================================================
 
+
 @router.get(
     "/{workspace_id}/workflows/{workflow_id}/export",
     response_model=dict[str, Any],
@@ -746,6 +757,7 @@ async def export_workflow(
 # ============================================================================
 # Import (scoped)
 # ============================================================================
+
 
 @router.post(
     "/{workspace_id}/workflows/import",
@@ -800,17 +812,29 @@ async def import_har(
 ) -> dict[str, Any]:
     try:
         if not file:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="HAR file is required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="HAR file is required"
+            )
         contents = await file.read()
         try:
             har_data = json.loads(contents.decode("utf-8"))
         except json.JSONDecodeError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid JSON in HAR file: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON in HAR file: {str(e)}",
+            )
         if "log" not in har_data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid HAR file: missing 'log' key")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid HAR file: missing 'log' key",
+            )
         return await scoped_workflow_service.import_scoped_har(
-            workspace_id, har_data, current_user.userId,
-            import_mode=import_mode, sanitize=sanitize, parse_only=parse_only,
+            workspace_id,
+            har_data,
+            current_user.userId,
+            import_mode=import_mode,
+            sanitize=sanitize,
+            parse_only=parse_only,
             environment_id=environment_id,
         )
     except HTTPException:
@@ -821,7 +845,10 @@ async def import_har(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.exception("HAR import error")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to import HAR file: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import HAR file: {str(e)}",
+        )
 
 
 @router.post(
@@ -837,17 +864,28 @@ async def import_har_dry_run(
 ) -> dict[str, Any]:
     try:
         if not file:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="HAR file is required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="HAR file is required"
+            )
         contents = await file.read()
         try:
             har_data = json.loads(contents.decode("utf-8"))
         except json.JSONDecodeError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid JSON in HAR file: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON in HAR file: {str(e)}",
+            )
         if "log" not in har_data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid HAR file: missing 'log' key")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid HAR file: missing 'log' key",
+            )
         return await scoped_workflow_service.import_scoped_har_dry_run(
-            workspace_id, har_data, current_user.userId,
-            import_mode=import_mode, sanitize=sanitize,
+            workspace_id,
+            har_data,
+            current_user.userId,
+            import_mode=import_mode,
+            sanitize=sanitize,
         )
     except HTTPException:
         raise
@@ -857,7 +895,10 @@ async def import_har_dry_run(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.exception("HAR dry-run error")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to preview HAR file: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to preview HAR file: {str(e)}",
+        )
 
 
 @router.post(
@@ -875,17 +916,30 @@ async def import_openapi(
 ) -> dict[str, Any]:
     try:
         if not file:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OpenAPI file is required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="OpenAPI file is required"
+            )
         contents = await file.read()
         try:
             openapi_data = json.loads(contents.decode("utf-8"))
         except json.JSONDecodeError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid JSON in OpenAPI file: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON in OpenAPI file: {str(e)}",
+            )
         if "paths" not in openapi_data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OpenAPI file: missing 'paths' key")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid OpenAPI file: missing 'paths' key",
+            )
         return await scoped_workflow_service.import_scoped_openapi(
-            workspace_id, openapi_data, current_user.userId,
-            base_url=base_url, tag_filter=tag_filter, sanitize=sanitize, parse_only=parse_only,
+            workspace_id,
+            openapi_data,
+            current_user.userId,
+            base_url=base_url,
+            tag_filter=tag_filter,
+            sanitize=sanitize,
+            parse_only=parse_only,
         )
     except HTTPException:
         raise
@@ -895,7 +949,10 @@ async def import_openapi(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.exception("OpenAPI import error")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to import OpenAPI file: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import OpenAPI file: {str(e)}",
+        )
 
 
 @router.get(
@@ -1009,17 +1066,29 @@ async def import_openapi_dry_run(
 ) -> dict[str, Any]:
     try:
         if not file:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OpenAPI file is required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="OpenAPI file is required"
+            )
         contents = await file.read()
         try:
             openapi_data = json.loads(contents.decode("utf-8"))
         except json.JSONDecodeError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid JSON in OpenAPI file: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON in OpenAPI file: {str(e)}",
+            )
         if "paths" not in openapi_data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OpenAPI file: missing 'paths' key")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid OpenAPI file: missing 'paths' key",
+            )
         return await scoped_workflow_service.import_scoped_openapi_dry_run(
-            workspace_id, openapi_data, current_user.userId,
-            base_url=base_url, tag_filter=tag_filter, sanitize=sanitize,
+            workspace_id,
+            openapi_data,
+            current_user.userId,
+            base_url=base_url,
+            tag_filter=tag_filter,
+            sanitize=sanitize,
         )
     except HTTPException:
         raise
@@ -1029,7 +1098,10 @@ async def import_openapi_dry_run(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.exception("OpenAPI dry-run error")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to preview OpenAPI file: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to preview OpenAPI file: {str(e)}",
+        )
 
 
 @router.post(
@@ -1046,10 +1118,16 @@ async def import_curl(
 ) -> dict[str, Any]:
     try:
         if not curl_command:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="curl command is required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="curl command is required"
+            )
         return await scoped_workflow_service.import_scoped_curl(
-            workspace_id, curl_command, current_user.userId,
-            sanitize=sanitize, workflow_id=workflowId, parse_only=parse_only,
+            workspace_id,
+            curl_command,
+            current_user.userId,
+            sanitize=sanitize,
+            workflow_id=workflowId,
+            parse_only=parse_only,
         )
     except HTTPException:
         raise
@@ -1059,7 +1137,10 @@ async def import_curl(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.exception("Curl import error")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to import curl command: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import curl command: {str(e)}",
+        )
 
 
 @router.post(
@@ -1074,9 +1155,14 @@ async def import_curl_dry_run(
 ) -> dict[str, Any]:
     try:
         if not curl_command:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="curl command is required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="curl command is required"
+            )
         return await scoped_workflow_service.import_scoped_curl_dry_run(
-            workspace_id, curl_command, current_user.userId, sanitize=sanitize,
+            workspace_id,
+            curl_command,
+            current_user.userId,
+            sanitize=sanitize,
         )
     except HTTPException:
         raise
@@ -1086,12 +1172,16 @@ async def import_curl_dry_run(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.exception("Curl dry-run error")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to preview curl command: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to preview curl command: {str(e)}",
+        )
 
 
 # ============================================================================
 # Templates (scoped)
 # ============================================================================
+
 
 @router.get(
     "/{workspace_id}/workflows/{workflow_id}/templates",
@@ -1167,12 +1257,13 @@ async def clear_workflow_templates(
 # Helpers
 # ============================================================================
 
+
 async def _get_verified_workspace(workspace_id: str, actor_user_id: str):
     from app.repositories.workspace_repository import WorkspaceRepository
     from app.services.workspace_service import _assert_workspace_access
+
     ws = await WorkspaceRepository.get_by_id(workspace_id)
     if not ws:
         raise ResourceNotFoundError(f"Workspace {workspace_id} not found")
     await _assert_workspace_access(ws, actor_user_id)
     return ws
-

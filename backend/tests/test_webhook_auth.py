@@ -8,7 +8,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-
 from app.middleware.webhook_auth import (
     InvalidSignatureError,
     InvalidTokenError,

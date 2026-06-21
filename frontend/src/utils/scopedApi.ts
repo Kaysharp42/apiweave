@@ -1,5 +1,9 @@
-import API_BASE_URL from './api';
-import type { ScopedWorkflowParams, ScopedEnvironmentParams, ScopedSecretParams } from '../types';
+import API_BASE_URL from "./api";
+import type {
+  ScopedWorkflowParams,
+  ScopedEnvironmentParams,
+  ScopedSecretParams,
+} from "../types";
 
 // ---------------------------------------------------------------------------
 // Scoped URL builders
@@ -34,28 +38,28 @@ export function workflowUrl(workspaceId: string, workflowId: string): string {
 export function environmentsUrl(params: ScopedEnvironmentParams): string;
 export function environmentsUrl(
   workspaceId: string,
-  scope?: 'workspace' | 'all-accessible',
+  scope?: "workspace" | "all-accessible",
   orgId?: string | null,
 ): string;
 export function environmentsUrl(
   paramsOrWorkspaceId: ScopedEnvironmentParams | string,
-  scope: 'workspace' | 'all-accessible' = 'workspace',
+  scope: "workspace" | "all-accessible" = "workspace",
   orgId?: string | null,
 ): string {
-  if (typeof paramsOrWorkspaceId === 'string') {
+  if (typeof paramsOrWorkspaceId === "string") {
     const base = `${API_BASE_URL}/api/workspaces/${encodeURIComponent(paramsOrWorkspaceId)}/environments`;
-    if (scope === 'all-accessible') {
-      const orgQuery = orgId ? `?org_id=${encodeURIComponent(orgId)}` : '';
+    if (scope === "all-accessible") {
+      const orgQuery = orgId ? `?org_id=${encodeURIComponent(orgId)}` : "";
       return `${base}/all-accessible${orgQuery}`;
     }
     return base;
   }
 
   const { scopeType, scopeId } = paramsOrWorkspaceId;
-  if (scopeType === 'user') {
+  if (scopeType === "user") {
     return `${API_BASE_URL}/api/users/${encodeURIComponent(scopeId)}/environments`;
   }
-  if (scopeType === 'organization') {
+  if (scopeType === "organization") {
     return `${API_BASE_URL}/api/orgs/${encodeURIComponent(scopeId)}/environments`;
   }
   return `${API_BASE_URL}/api/workspaces/${encodeURIComponent(scopeId)}/environments`;
@@ -67,10 +71,7 @@ export function environmentsUrl(
  * @param workspaceId - The workspace to scope to.
  * @param projectId   - Optional — when provided targets a specific project.
  */
-export function projectsUrl(
-  workspaceId: string,
-  projectId?: string,
-): string {
+export function projectsUrl(workspaceId: string, projectId?: string): string {
   const base = `${API_BASE_URL}/api/workspaces/${encodeURIComponent(workspaceId)}/projects`;
   if (projectId) {
     return `${base}/${encodeURIComponent(projectId)}`;
@@ -87,11 +88,8 @@ export function projectExportUrl(
   return `${projectsUrl(workspaceId, projectId)}/export?include_environment=${include}`;
 }
 
-export function projectImportUrl(
-  workspaceId: string,
-  dryRun = false,
-): string {
-  const suffix = dryRun ? '/import/dry-run' : '/import';
+export function projectImportUrl(workspaceId: string, dryRun = false): string {
+  const suffix = dryRun ? "/import/dry-run" : "/import";
   return `${projectsUrl(workspaceId)}${suffix}`;
 }
 
@@ -124,7 +122,10 @@ export function workflowsCreateInProjectUrl(
  * Scoped secrets live under `/api/scopes/{scopeType}/{scopeId}/secrets`.
  * When `secretId` is provided, targets a specific secret resource.
  */
-export function secretsUrl(params: ScopedSecretParams, secretId?: string): string {
+export function secretsUrl(
+  params: ScopedSecretParams,
+  secretId?: string,
+): string {
   const { scopeType, scopeId } = params;
   const base = `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets`;
   if (secretId) {
@@ -271,7 +272,7 @@ export function workflowImportDryRunUrl(workspaceId: string): string {
  */
 export function workflowImportFormatUrl(
   workspaceId: string,
-  format: 'har' | 'openapi' | 'curl',
+  format: "har" | "openapi" | "curl",
   dryRun = false,
 ): string {
   const base = `${workflowImportUrl(workspaceId)}/${format}`;
@@ -284,8 +285,11 @@ export function workflowImportFormatUrl(
  * POST `/api/workspaces/{ws}/workflows/import/har`
  * POST `/api/workspaces/{ws}/workflows/import/har/dry-run`
  */
-export function workflowImportHarUrl(workspaceId: string, dryRun = false): string {
-  return workflowImportFormatUrl(workspaceId, 'har', dryRun);
+export function workflowImportHarUrl(
+  workspaceId: string,
+  dryRun = false,
+): string {
+  return workflowImportFormatUrl(workspaceId, "har", dryRun);
 }
 
 /**
@@ -294,8 +298,11 @@ export function workflowImportHarUrl(workspaceId: string, dryRun = false): strin
  * POST `/api/workspaces/{ws}/workflows/import/openapi`
  * POST `/api/workspaces/{ws}/workflows/import/openapi/dry-run`
  */
-export function workflowImportOpenapiUrl(workspaceId: string, dryRun = false): string {
-  return workflowImportFormatUrl(workspaceId, 'openapi', dryRun);
+export function workflowImportOpenapiUrl(
+  workspaceId: string,
+  dryRun = false,
+): string {
+  return workflowImportFormatUrl(workspaceId, "openapi", dryRun);
 }
 
 /**
@@ -315,8 +322,11 @@ export function workflowImportOpenapiUrlUrl(workspaceId: string): string {
  * POST `/api/workspaces/{ws}/workflows/import/curl`
  * POST `/api/workspaces/{ws}/workflows/import/curl/dry-run`
  */
-export function workflowImportCurlUrl(workspaceId: string, dryRun = false): string {
-  return workflowImportFormatUrl(workspaceId, 'curl', dryRun);
+export function workflowImportCurlUrl(
+  workspaceId: string,
+  dryRun = false,
+): string {
+  return workflowImportFormatUrl(workspaceId, "curl", dryRun);
 }
 
 /**
@@ -331,8 +341,8 @@ export function workflowImportOpenapiRemoteUrl(
 ): string {
   const base = workflowImportOpenapiUrlUrl(workspaceId);
   const params = new URLSearchParams();
-  params.set('swagger_url', swaggerUrl);
-  params.set('sanitize', String(sanitize));
+  params.set("swagger_url", swaggerUrl);
+  params.set("sanitize", String(sanitize));
   return `${base}?${params.toString()}`;
 }
 

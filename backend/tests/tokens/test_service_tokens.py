@@ -10,11 +10,11 @@ Covers:
 - Permission narrowing affects subsequent calls
 - All token actions are audited
 """
+
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.models import (
     ServiceToken,
     ServiceTokenCreateRequest,
@@ -199,9 +199,7 @@ class TestServiceTokenMetadata:
             new_callable=AsyncMock,
             return_value=mock_tokens,
         ):
-            results = await service_token_service.list_tokens_by_scope(
-                "workspace", "ws-abc"
-            )
+            results = await service_token_service.list_tokens_by_scope("workspace", "ws-abc")
 
             assert len(results) == 2
             for r in results:
@@ -270,9 +268,7 @@ class TestServiceTokenScope:
             assert result is None
 
     async def test_expired_token_fails_validation(self):
-        mock_token = _make_mock_token(
-            expires_at=datetime.now(UTC) - timedelta(hours=1)
-        )
+        mock_token = _make_mock_token(expires_at=datetime.now(UTC) - timedelta(hours=1))
         with patch.object(
             service_token_service.ServiceTokenRepository,
             "get_by_hash",
@@ -333,7 +329,6 @@ class TestServiceTokenRotation:
 
     async def test_rotate_audits_event(self):
         mock_token = _make_mock_token()
-        audit_called = False
 
         with patch.object(
             service_token_service.ServiceTokenRepository,

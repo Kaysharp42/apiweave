@@ -43,9 +43,11 @@ class ProjectRepository:
     @staticmethod
     async def list_by_workspace(workspace_id: str) -> list[Project]:
         """List all projects in a workspace."""
-        return await Project.find(
-            Project.workspaceId == workspace_id
-        ).sort(-Project.createdAt).to_list()
+        return (
+            await Project.find(Project.workspaceId == workspace_id)
+            .sort(-Project.createdAt)
+            .to_list()
+        )
 
     @staticmethod
     async def update(
@@ -81,14 +83,13 @@ class ProjectRepository:
     @staticmethod
     async def count_by_workspace(workspace_id: str) -> int:
         """Count projects in a workspace."""
-        return await Project.find(
-            Project.workspaceId == workspace_id
-        ).count()
+        return await Project.find(Project.workspaceId == workspace_id).count()
 
     @staticmethod
     async def update_workflow_count(project_id: str) -> Project | None:
         """Recalculate and update the workflowCount for a project."""
         from app.repositories.workflow_repository import WorkflowRepository
+
         project = await ProjectRepository.get_by_id(project_id)
         if not project:
             return None

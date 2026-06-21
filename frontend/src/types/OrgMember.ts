@@ -9,4 +9,4 @@ export interface OrgMember {
 }
 
 /** Valid organization-level roles. */
-export type OrgRole = 'owner' | 'member' | 'billing' | 'security';
+export type OrgRole = "owner" | "member" | "billing" | "security";

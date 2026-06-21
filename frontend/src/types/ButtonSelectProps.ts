@@ -1,4 +1,4 @@
-import type { SelectOption } from './SelectOption';
+import type { SelectOption } from "./SelectOption";
 
 export interface ButtonSelectProps {
   options?: SelectOption[];

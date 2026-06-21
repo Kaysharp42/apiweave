@@ -9,7 +9,6 @@ from pathlib import Path
 
 import aiohttp
 import pytest
-
 from app.runner.executor import WorkflowExecutor
 
 

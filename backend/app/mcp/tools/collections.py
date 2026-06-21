@@ -1,6 +1,7 @@
 """
 MCP collection tools.
 """
+
 from typing import Annotated, Any, cast
 
 from mcp.server.fastmcp import FastMCP

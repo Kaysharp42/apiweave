@@ -260,4 +260,3 @@ This repository uses branch protection rules:
 - [TotT: Refactoring Tests in the Red](https://testing.googleblog.com/2007/04/tott-refactoring-tests-in-red.html) - Apr 2007
 - [TotT: Stubs Speed up Your Unit Tests](https://testing.googleblog.com/2007/04/tott-stubs-speed-up-your-unit-tests.html) - Apr 2007
 - [TotT: Extracting Methods to Simplify Testing](https://testing.googleblog.com/2007/06/tott-extracting-methods-to-simplify.html) - Jun 2007
-

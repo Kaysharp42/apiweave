@@ -1,25 +1,31 @@
-import { useEffect } from 'react';
-import { Allotment } from 'allotment';
-import 'allotment/dist/style.css';
-import { useLocation } from 'react-router-dom';
-import { AppNavBar } from './AppNavBar';
-import { Sidebar } from './Sidebar';
-import { Workspace } from './Workspace';
-import { MainHeader } from './MainHeader';
-import { MainFooter } from './MainFooter';
-import useNavigationStore from '../../stores/NavigationStore';
-import useSidebarStore from '../../stores/SidebarStore';
-import useEnvironmentStore from '../../stores/EnvironmentStore';
-import { AppNavBarStyles } from '../../constants/AppNavBar';
-import { HorizontalDivider } from '../atoms/HorizontalDivider';
-import type { MainLayoutProps } from '../../types/MainLayoutProps';
+import { useEffect } from "react";
+import { Allotment } from "allotment";
+import "allotment/dist/style.css";
+import { useLocation } from "react-router-dom";
+import { AppNavBar } from "./AppNavBar";
+import { Sidebar } from "./Sidebar";
+import { Workspace } from "./Workspace";
+import { MainHeader } from "./MainHeader";
+import { MainFooter } from "./MainFooter";
+import useNavigationStore from "../../stores/NavigationStore";
+import useSidebarStore from "../../stores/SidebarStore";
+import useEnvironmentStore from "../../stores/EnvironmentStore";
+import { AppNavBarStyles } from "../../constants/AppNavBar";
+import { HorizontalDivider } from "../atoms/HorizontalDivider";
+import type { MainLayoutProps } from "../../types/MainLayoutProps";
 
 export function MainLayout({ children }: MainLayoutProps) {
-  const navigationSelectedValue = useNavigationStore((state) => state.selectedNavVal);
+  const navigationSelectedValue = useNavigationStore(
+    (state) => state.selectedNavVal,
+  );
   const setNavState = useNavigationStore((state) => state.setNavState);
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
-  const mobileSidebarOpen = useNavigationStore((state) => state.mobileSidebarOpen);
-  const setMobileSidebarOpen = useNavigationStore((state) => state.setMobileSidebarOpen);
+  const mobileSidebarOpen = useNavigationStore(
+    (state) => state.mobileSidebarOpen,
+  );
+  const setMobileSidebarOpen = useNavigationStore(
+    (state) => state.setMobileSidebarOpen,
+  );
   const location = useLocation();
   const refreshAll = useSidebarStore((state) => state.refreshAll);
   const resetPagination = useSidebarStore((state) => state.resetPagination);
@@ -32,17 +38,19 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, []);
 
   useEffect(() => {
-    const isSettingsRoute = location.pathname.includes('/settings/') || location.pathname === '/audit';
-    if (!isSettingsRoute && navigationSelectedValue === 'settings') {
-      setNavState('workflows');
+    const isSettingsRoute =
+      location.pathname.includes("/settings/") ||
+      location.pathname === "/audit";
+    if (!isSettingsRoute && navigationSelectedValue === "settings") {
+      setNavState("workflows");
     }
   }, [location.pathname, navigationSelectedValue, setNavState]);
 
   useEffect(() => {
-    if (navigationSelectedValue === 'workflows') {
+    if (navigationSelectedValue === "workflows") {
       resetPagination();
       void refreshAll(navigationSelectedValue);
-    } else if (navigationSelectedValue === 'projects') {
+    } else if (navigationSelectedValue === "projects") {
       void refreshAll(navigationSelectedValue);
     }
   }, [navigationSelectedValue, refreshAll, resetPagination]);
@@ -50,12 +58,12 @@ export function MainLayout({ children }: MainLayoutProps) {
   // Close mobile sidebar on Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && mobileSidebarOpen) {
+      if (e.key === "Escape" && mobileSidebarOpen) {
         setMobileSidebarOpen(false);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mobileSidebarOpen, setMobileSidebarOpen]);
 
   const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth!.absolute;
@@ -83,7 +91,9 @@ export function MainLayout({ children }: MainLayoutProps) {
       <div className="hidden lg:flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
         <Allotment>
           <Allotment.Pane
-            preferredSize={isNavBarCollapsed ? collapsedWidth : expandedPreferred}
+            preferredSize={
+              isNavBarCollapsed ? collapsedWidth : expandedPreferred
+            }
             minSize={isNavBarCollapsed ? collapsedWidth : expandedMin}
             maxSize={isNavBarCollapsed ? collapsedWidth : expandedMax}
             snap={false}

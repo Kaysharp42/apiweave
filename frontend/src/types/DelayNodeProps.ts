@@ -1,6 +1,6 @@
-import type { DelayNodeData } from './DelayNodeData';
+import type { DelayNodeData } from "./DelayNodeData";
 
-export type { DelayNodeData } from './DelayNodeData';
+export type { DelayNodeData } from "./DelayNodeData";
 
 export interface DelayNodeProps {
   id: string;

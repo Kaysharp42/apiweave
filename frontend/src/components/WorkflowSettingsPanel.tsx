@@ -1,15 +1,28 @@
-import { useState } from 'react';
-import { useWorkflow } from '../contexts/WorkflowContext';
-import { toast } from 'sonner';
-import { ToggleLeft, Check, X, RefreshCw, Plus, Info, ChevronDown, LayoutGrid, Search } from 'lucide-react';
-import { Button } from './atoms/Button';
-import { Toggle } from './atoms/Toggle';
-import { Spinner } from './atoms/Spinner';
-import { Input } from './atoms/Input';
-import { EmptyState } from './molecules/EmptyState';
-import { authenticatedFetch } from '../utils/authenticatedApi';
-import { useScopeContext } from '../hooks/useScopeContext';
-import { projectWorkflowAssignUrl, projectWorkflowRemoveUrl } from '../utils/scopedApi';
+import { useState } from "react";
+import { useWorkflow } from "../contexts/WorkflowContext";
+import { toast } from "sonner";
+import {
+  ToggleLeft,
+  Check,
+  X,
+  RefreshCw,
+  Plus,
+  Info,
+  ChevronDown,
+  LayoutGrid,
+  Search,
+} from "lucide-react";
+import { Button } from "./atoms/Button";
+import { Toggle } from "./atoms/Toggle";
+import { Spinner } from "./atoms/Spinner";
+import { Input } from "./atoms/Input";
+import { EmptyState } from "./molecules/EmptyState";
+import { authenticatedFetch } from "../utils/authenticatedApi";
+import { useScopeContext } from "../hooks/useScopeContext";
+import {
+  projectWorkflowAssignUrl,
+  projectWorkflowRemoveUrl,
+} from "../utils/scopedApi";
 
 type BackgroundColor = string;
 
@@ -35,24 +48,38 @@ export function WorkflowSettingsPanel() {
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const { workspaceId } = useScopeContext();
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
 
   const normalizedQuery = searchTerm.trim().toLowerCase();
-  const matchesSearch = (value: string): boolean => !normalizedQuery || value.toLowerCase().includes(normalizedQuery);
+  const matchesSearch = (value: string): boolean =>
+    !normalizedQuery || value.toLowerCase().includes(normalizedQuery);
 
-  const executionSectionMatch = matchesSearch('execution settings continue on fail');
-  const continueOnFailItemMatch = matchesSearch('continue on fail stops at first api failure continues even if api fails');
+  const executionSectionMatch = matchesSearch(
+    "execution settings continue on fail",
+  );
+  const continueOnFailItemMatch = matchesSearch(
+    "continue on fail stops at first api failure continues even if api fails",
+  );
   const showExecutionSection = executionSectionMatch || continueOnFailItemMatch;
   const showExecutionItem = executionSectionMatch || continueOnFailItemMatch;
 
-  const collectionsSectionMatch = matchesSearch('projects project assignment add remove');
-  const collectionAssignmentItemMatch = matchesSearch('add to project remove from project workflow project assignment');
-  const showCollectionsSection = collectionsSectionMatch || collectionAssignmentItemMatch;
-  const showCollectionsItem = collectionsSectionMatch || collectionAssignmentItemMatch;
+  const collectionsSectionMatch = matchesSearch(
+    "projects project assignment add remove",
+  );
+  const collectionAssignmentItemMatch = matchesSearch(
+    "add to project remove from project workflow project assignment",
+  );
+  const showCollectionsSection =
+    collectionsSectionMatch || collectionAssignmentItemMatch;
+  const showCollectionsItem =
+    collectionsSectionMatch || collectionAssignmentItemMatch;
 
-  const infoSectionMatch = matchesSearch('about continue on fail useful for testing error scenarios conditional workflows');
+  const infoSectionMatch = matchesSearch(
+    "about continue on fail useful for testing error scenarios conditional workflows",
+  );
   const showInfoSection = infoSectionMatch;
-  const hasSearchMatches = showExecutionSection || showCollectionsSection || showInfoSection;
+  const hasSearchMatches =
+    showExecutionSection || showCollectionsSection || showInfoSection;
 
   const handleContinueOnFailChange = (value: boolean): void => {
     updateSettings({
@@ -62,11 +89,11 @@ export function WorkflowSettingsPanel() {
 
   const handleAssignToProject = async (projectId: string): Promise<void> => {
     if (!workflowId) {
-      toast.error('Workflow ID not found');
+      toast.error("Workflow ID not found");
       return;
     }
     if (!workspaceId) {
-      toast.error('Workspace scope is not ready');
+      toast.error("Workspace scope is not ready");
       return;
     }
 
@@ -74,7 +101,7 @@ export function WorkflowSettingsPanel() {
       (project) => (project.projectId ?? project.collectionId) === projectId,
     );
     if (!selectedProject) {
-      toast.error('Project not found');
+      toast.error("Project not found");
       return;
     }
 
@@ -82,7 +109,7 @@ export function WorkflowSettingsPanel() {
     try {
       const response = await authenticatedFetch(
         projectWorkflowAssignUrl(workspaceId, projectId, workflowId),
-        { method: 'POST' }
+        { method: "POST" },
       );
 
       if (response.ok) {
@@ -93,11 +120,11 @@ export function WorkflowSettingsPanel() {
           refreshCollectionsAndWorkflows();
         }
       } else {
-        const errorData = await response.json() as { message?: string };
-        toast.error(errorData.message ?? 'Failed to add workflow to project');
+        const errorData = (await response.json()) as { message?: string };
+        toast.error(errorData.message ?? "Failed to add workflow to project");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = error instanceof Error ? error.message : "Unknown error";
       toast.error(`Failed to add workflow to project: ${message}`);
     } finally {
       setAssignmentLoading(false);
@@ -106,19 +133,23 @@ export function WorkflowSettingsPanel() {
 
   const handleRemoveFromProject = async (): Promise<void> => {
     if (!workflowId || !currentCollection) {
-      toast.error('No project assignment to remove');
+      toast.error("No project assignment to remove");
       return;
     }
     if (!workspaceId) {
-      toast.error('Workspace scope is not ready');
+      toast.error("Workspace scope is not ready");
       return;
     }
 
     setAssignmentLoading(true);
     try {
       const response = await authenticatedFetch(
-        projectWorkflowRemoveUrl(workspaceId, currentCollection.collectionId, workflowId),
-        { method: 'DELETE' }
+        projectWorkflowRemoveUrl(
+          workspaceId,
+          currentCollection.collectionId,
+          workflowId,
+        ),
+        { method: "DELETE" },
       );
 
       if (response.ok) {
@@ -129,11 +160,13 @@ export function WorkflowSettingsPanel() {
           refreshCollectionsAndWorkflows();
         }
       } else {
-        const errorData = await response.json() as { message?: string };
-        toast.error(errorData.message ?? 'Failed to remove workflow from project');
+        const errorData = (await response.json()) as { message?: string };
+        toast.error(
+          errorData.message ?? "Failed to remove workflow from project",
+        );
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = error instanceof Error ? error.message : "Unknown error";
       toast.error(`Failed to remove workflow from project: ${message}`);
     } finally {
       setAssignmentLoading(false);
@@ -169,8 +202,10 @@ export function WorkflowSettingsPanel() {
                   <div className="flex-1 min-w-0">
                     <Toggle
                       label="Continue on Fail"
-                      checked={settings.continueOnFail as boolean ?? false}
-                      onChange={(e) => handleContinueOnFailChange(e.target.checked)}
+                      checked={(settings.continueOnFail as boolean) ?? false}
+                      onChange={(e) =>
+                        handleContinueOnFailChange(e.target.checked)
+                      }
                       size="sm"
                       variant="primary"
                     />
@@ -178,12 +213,16 @@ export function WorkflowSettingsPanel() {
                       {settings.continueOnFail ? (
                         <span className="flex items-center gap-1 min-w-0">
                           <Check className="w-3 h-3 text-status-success dark:text-[var(--aw-status-success)] flex-shrink-0" />
-                          <span className="min-w-0 truncate">Workflow continues even if an API fails</span>
+                          <span className="min-w-0 truncate">
+                            Workflow continues even if an API fails
+                          </span>
                         </span>
                       ) : (
                         <span className="flex items-center gap-1 min-w-0">
                           <X className="w-3 h-3 text-status-error dark:text-[var(--aw-status-error)] flex-shrink-0" />
-                          <span className="min-w-0 truncate">Workflow stops at the first API failure</span>
+                          <span className="min-w-0 truncate">
+                            Workflow stops at the first API failure
+                          </span>
                         </span>
                       )}
                     </p>
@@ -205,7 +244,9 @@ export function WorkflowSettingsPanel() {
                 {isLoadingCollections ? (
                   <div className="flex items-center justify-center py-3 px-4 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded">
                     <Spinner size="sm" />
-                    <span className="ml-2 text-sm text-text-secondary dark:text-text-secondary-dark">Loading projects…</span>
+                    <span className="ml-2 text-sm text-text-secondary dark:text-text-secondary-dark">
+                      Loading projects…
+                    </span>
                   </div>
                 ) : currentCollection ? (
                   <div className="flex items-center justify-between px-4 py-3 text-sm bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 border border-[var(--aw-primary)]/20 dark:border-[var(--aw-primary)]/30 rounded min-w-0 gap-3">
@@ -213,16 +254,24 @@ export function WorkflowSettingsPanel() {
                       {(currentCollection as unknown as LocalProject).color && (
                         <div
                           className="w-3 h-3 rounded-full flex-shrink-0 border border-[var(--aw-primary)]/30 dark:border-[var(--aw-primary)]/50"
-                          style={{ backgroundColor: (currentCollection as unknown as LocalProject).color }}
+                          style={{
+                            backgroundColor: (
+                              currentCollection as unknown as LocalProject
+                            ).color,
+                          }}
                         />
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)] truncate">
                           {(currentCollection as unknown as LocalProject).name}
                         </div>
-                        {(currentCollection as unknown as LocalProject).description && (
+                        {(currentCollection as unknown as LocalProject)
+                          .description && (
                           <div className="text-xs text-text-secondary dark:text-text-secondary-dark truncate">
-                            {(currentCollection as unknown as LocalProject).description}
+                            {
+                              (currentCollection as unknown as LocalProject)
+                                .description
+                            }
                           </div>
                         )}
                       </div>
@@ -233,7 +282,13 @@ export function WorkflowSettingsPanel() {
                       size="xs"
                       onClick={handleRemoveFromProject}
                       disabled={assignmentLoading}
-                      icon={assignmentLoading ? <RefreshCw className="w-3 h-3 animate-spin motion-reduce:animate-none" /> : <X className="w-3 h-3" />}
+                      icon={
+                        assignmentLoading ? (
+                          <RefreshCw className="w-3 h-3 animate-spin motion-reduce:animate-none" />
+                        ) : (
+                          <X className="w-3 h-3" />
+                        )
+                      }
                     >
                       Remove
                     </Button>
@@ -244,15 +299,17 @@ export function WorkflowSettingsPanel() {
                       variant="outline"
                       size="sm"
                       fullWidth
-                       onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+                      onClick={() =>
+                        setShowProjectDropdown(!showProjectDropdown)
+                      }
                       disabled={assignmentLoading}
                       className="justify-between"
                       icon={<Plus className="w-4 h-4" />}
                     >
-                       <span className="min-w-0 truncate">Add to Project</span>
+                      <span className="min-w-0 truncate">Add to Project</span>
                       <ChevronDown
                         className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 motion-reduce:transition-none ${
-                           showProjectDropdown ? 'rotate-180' : ''
+                          showProjectDropdown ? "rotate-180" : ""
                         }`}
                       />
                     </Button>
@@ -326,12 +383,22 @@ export function WorkflowSettingsPanel() {
           <div className="p-2 bg-[var(--aw-status-info)]/5 dark:bg-[var(--aw-status-info)]/10 border border-[var(--aw-status-info)]/20 dark:border-[var(--aw-status-info)]/30 rounded text-[10px] text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)] space-y-1">
             <p className="flex items-center gap-1 min-w-0">
               <Info className="w-3 h-3 flex-shrink-0" />
-              <span className="font-semibold min-w-0 truncate">About Continue on Fail</span>
+              <span className="font-semibold min-w-0 truncate">
+                About Continue on Fail
+              </span>
             </p>
             <ul className="list-disc list-inside space-y-0.5 pl-1">
-              <li>When <strong>disabled (default)</strong>: Stops workflow at first failed API call</li>
-              <li>When <strong>enabled</strong>: Continues to next API even if current one fails</li>
-              <li>Useful for testing error scenarios or conditional workflows</li>
+              <li>
+                When <strong>disabled (default)</strong>: Stops workflow at
+                first failed API call
+              </li>
+              <li>
+                When <strong>enabled</strong>: Continues to next API even if
+                current one fails
+              </li>
+              <li>
+                Useful for testing error scenarios or conditional workflows
+              </li>
             </ul>
           </div>
         )}

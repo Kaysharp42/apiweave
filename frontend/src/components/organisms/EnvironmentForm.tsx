@@ -1,19 +1,19 @@
-import { useState, useEffect } from 'react';
-import { Lock, X } from 'lucide-react';
-import { toast } from 'sonner';
-import { Button } from '../atoms/Button';
-import { IconButton } from '../atoms/IconButton';
-import { Input } from '../atoms/Input';
-import { TextArea } from '../atoms/TextArea';
-import { FormField } from '../molecules/FormField';
-import { Card } from '../molecules/Card';
-import SecretsPanel from '../SecretsPanel';
-import type { EnvironmentFormProps, EnvironmentFormData } from '../../types';
+import { useState, useEffect } from "react";
+import { Lock, X } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "../atoms/Button";
+import { IconButton } from "../atoms/IconButton";
+import { Input } from "../atoms/Input";
+import { TextArea } from "../atoms/TextArea";
+import { FormField } from "../molecules/FormField";
+import { Card } from "../molecules/Card";
+import SecretsPanel from "../SecretsPanel";
+import type { EnvironmentFormProps, EnvironmentFormData } from "../../types";
 
 const EMPTY_FORM: EnvironmentFormData = {
-  name: '',
-  description: '',
-  swaggerDocUrl: '',
+  name: "",
+  description: "",
+  swaggerDocUrl: "",
   variables: {},
   allowedWorkspaceIds: [],
 };
@@ -25,11 +25,11 @@ export function EnvironmentForm({
   submitting = false,
   availableWorkspaces = [],
   showAllowedWorkspaces = false,
-  className = '',
+  className = "",
 }: EnvironmentFormProps) {
   const [form, setForm] = useState<EnvironmentFormData>(EMPTY_FORM);
-  const [newVarKey, setNewVarKey] = useState<string>('');
-  const [newVarValue, setNewVarValue] = useState<string>('');
+  const [newVarKey, setNewVarKey] = useState<string>("");
+  const [newVarValue, setNewVarValue] = useState<string>("");
   const [showSecretsPanel, setShowSecretsPanel] = useState<boolean>(false);
   const [nameError, setNameError] = useState<string | null>(null);
 
@@ -37,22 +37,25 @@ export function EnvironmentForm({
     if (environment) {
       setForm({
         name: environment.name,
-        description: environment.description ?? '',
-        swaggerDocUrl: environment.swaggerDocUrl ?? '',
+        description: environment.description ?? "",
+        swaggerDocUrl: environment.swaggerDocUrl ?? "",
         variables: { ...environment.variables },
         allowedWorkspaceIds: environment.allowedWorkspaceIds ?? [],
       });
     } else {
       setForm(EMPTY_FORM);
     }
-    setNewVarKey('');
-    setNewVarValue('');
+    setNewVarKey("");
+    setNewVarValue("");
     setShowSecretsPanel(false);
   }, [environment]);
 
-  function updateField<K extends keyof EnvironmentFormData>(key: K, value: EnvironmentFormData[K]) {
+  function updateField<K extends keyof EnvironmentFormData>(
+    key: K,
+    value: EnvironmentFormData[K],
+  ) {
     setForm((prev) => ({ ...prev, [key]: value }));
-    if (key === 'name') setNameError(null);
+    if (key === "name") setNameError(null);
   }
 
   function toggleWorkspace(wsId: string) {
@@ -72,16 +75,16 @@ export function EnvironmentForm({
     if (!trimmedKey || !newVarValue) return;
 
     if (Object.prototype.hasOwnProperty.call(form.variables, trimmedKey)) {
-      toast.error('Variable already exists');
+      toast.error("Variable already exists");
       return;
     }
 
-    updateField('variables', {
+    updateField("variables", {
       ...form.variables,
       [trimmedKey]: newVarValue,
     });
-    setNewVarKey('');
-    setNewVarValue('');
+    setNewVarKey("");
+    setNewVarValue("");
   }
 
   function handleRemoveVariable(key: string) {
@@ -94,7 +97,7 @@ export function EnvironmentForm({
 
   function validate(): boolean {
     if (!form.name.trim()) {
-      setNameError('Name is required');
+      setNameError("Name is required");
       return false;
     }
     setNameError(null);
@@ -110,30 +113,36 @@ export function EnvironmentForm({
   return (
     <>
       <form onSubmit={handleSubmit} className={`space-y-4 ${className}`}>
-        <Card title={environment ? 'Edit Environment' : 'New Environment'}>
+        <Card title={environment ? "Edit Environment" : "New Environment"}>
           <div className="space-y-4">
-            <FormField label="Name" required error={nameError ?? ''}>
+            <FormField label="Name" required error={nameError ?? ""}>
               <Input
                 value={form.name}
-                onChange={(e) => updateField('name', e.target.value)}
+                onChange={(e) => updateField("name", e.target.value)}
                 placeholder="e.g. Production"
-                error={nameError ?? ''}
+                error={nameError ?? ""}
               />
             </FormField>
 
-            <FormField label="Description" hint="Optional description of this environment">
+            <FormField
+              label="Description"
+              hint="Optional description of this environment"
+            >
               <TextArea
                 value={form.description}
-                onChange={(e) => updateField('description', e.target.value)}
+                onChange={(e) => updateField("description", e.target.value)}
                 placeholder="e.g. Production API endpoints"
                 rows={2}
               />
             </FormField>
 
-            <FormField label="Swagger Doc URL" hint="Optional OpenAPI spec URL for this environment">
+            <FormField
+              label="Swagger Doc URL"
+              hint="Optional OpenAPI spec URL for this environment"
+            >
               <Input
                 value={form.swaggerDocUrl}
-                onChange={(e) => updateField('swaggerDocUrl', e.target.value)}
+                onChange={(e) => updateField("swaggerDocUrl", e.target.value)}
                 placeholder="https://api.example.com/openapi.json"
               />
             </FormField>
@@ -145,10 +154,19 @@ export function EnvironmentForm({
 
               <div className="space-y-2 mb-3">
                 {Object.entries(form.variables).map(([key, value]) => (
-                  <div key={key} className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded">
-                    <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">{key}</span>
-                    <span className="text-text-muted dark:text-text-muted-dark">=</span>
-                    <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark flex-1 truncate">{value}</span>
+                  <div
+                    key={key}
+                    className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded"
+                  >
+                    <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
+                      {key}
+                    </span>
+                    <span className="text-text-muted dark:text-text-muted-dark">
+                      =
+                    </span>
+                    <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark flex-1 truncate">
+                      {value}
+                    </span>
                     <IconButton
                       onClick={() => handleRemoveVariable(key)}
                       variant="error"
@@ -178,17 +196,22 @@ export function EnvironmentForm({
                   className="flex-1"
                   placeholder="Value"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (e.key === "Enter") {
                       e.preventDefault();
                       handleAddVariable();
                     }
                   }}
                 />
-                <Button variant="ghost" size="sm" onClick={handleAddVariable}>Add</Button>
+                <Button variant="ghost" size="sm" onClick={handleAddVariable}>
+                  Add
+                </Button>
               </div>
 
               <p className="text-xs text-text-muted dark:text-text-muted-dark mt-2">
-                Use in workflows: <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">{'{{env.variableName}}'}</code>
+                Use in workflows:{" "}
+                <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">
+                  {"{{env.variableName}}"}
+                </code>
               </p>
             </div>
 
@@ -198,12 +221,17 @@ export function EnvironmentForm({
                   <label className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
                     Secrets ({Object.keys(environment.secrets ?? {}).length})
                   </label>
-                  <Button variant="outline" size="xs" onClick={() => setShowSecretsPanel(true)}>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={() => setShowSecretsPanel(true)}
+                  >
                     <Lock className="w-3 h-3 mr-1" /> Manage
                   </Button>
                 </div>
                 <p className="text-xs text-text-muted dark:text-text-muted-dark">
-                  Secrets are sensitive values (API keys, tokens) that users provide when running workflows.
+                  Secrets are sensitive values (API keys, tokens) that users
+                  provide when running workflows.
                 </p>
               </div>
             )}
@@ -214,7 +242,8 @@ export function EnvironmentForm({
         {showAllowedWorkspaces && availableWorkspaces.length > 0 && (
           <Card title="Allowed Workspaces">
             <p className="text-xs text-text-secondary dark:text-text-secondary-dark mb-3">
-              Select which workspaces can use this organization environment. Leave empty to allow all.
+              Select which workspaces can use this organization environment.
+              Leave empty to allow all.
             </p>
             <div className="space-y-1.5">
               {availableWorkspaces.map((ws) => (
@@ -225,7 +254,9 @@ export function EnvironmentForm({
                   <input
                     type="checkbox"
                     className="checkbox checkbox-primary checkbox-sm"
-                    checked={(form.allowedWorkspaceIds ?? []).includes(ws.workspaceId)}
+                    checked={(form.allowedWorkspaceIds ?? []).includes(
+                      ws.workspaceId,
+                    )}
                     onChange={() => toggleWorkspace(ws.workspaceId)}
                   />
                   <div className="min-w-0">
@@ -247,14 +278,19 @@ export function EnvironmentForm({
           <Button variant="outline" onClick={onCancel} disabled={submitting}>
             Cancel
           </Button>
-          <Button variant="primary" intent="success" loading={submitting} type="submit">
-            {environment ? 'Save Changes' : 'Create Environment'}
+          <Button
+            variant="primary"
+            intent="success"
+            loading={submitting}
+            type="submit"
+          >
+            {environment ? "Save Changes" : "Create Environment"}
           </Button>
         </div>
       </form>
 
       <SecretsPanel
-        key={environment?.environmentId ?? 'no-environment'}
+        key={environment?.environmentId ?? "no-environment"}
         isOpen={showSecretsPanel && !!environment}
         environment={environment ?? null}
         onClose={() => setShowSecretsPanel(false)}

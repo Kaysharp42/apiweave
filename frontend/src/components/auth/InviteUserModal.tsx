@@ -1,12 +1,12 @@
-import React, { useReducer } from 'react';
-import { Modal } from '../molecules/Modal';
-import { FormField } from '../molecules/FormField';
-import { Input } from '../atoms/Input';
-import { Button } from '../atoms/Button';
-import { authenticatedJson } from '../../utils/authenticatedApi';
-import API_BASE_URL from '../../utils/api';
-import type { InviteResponse, InviteUserModalProps } from '../../types';
-import { toast } from 'sonner';
+import React, { useReducer } from "react";
+import { Modal } from "../molecules/Modal";
+import { FormField } from "../molecules/FormField";
+import { Input } from "../atoms/Input";
+import { Button } from "../atoms/Button";
+import { authenticatedJson } from "../../utils/authenticatedApi";
+import API_BASE_URL from "../../utils/api";
+import type { InviteResponse, InviteUserModalProps } from "../../types";
+import { toast } from "sonner";
 
 export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
   type InviteState = {
@@ -18,76 +18,86 @@ export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
   };
 
   type InviteAction =
-    | { type: 'set-email'; value: string }
-    | { type: 'set-role'; value: string }
-    | { type: 'set-loading'; value: boolean }
-    | { type: 'set-error'; value: string | null }
-    | { type: 'set-invite-url'; value: string | null }
-    | { type: 'reset' };
+    | { type: "set-email"; value: string }
+    | { type: "set-role"; value: string }
+    | { type: "set-loading"; value: boolean }
+    | { type: "set-error"; value: string | null }
+    | { type: "set-invite-url"; value: string | null }
+    | { type: "reset" };
 
-  const [state, dispatch] = useReducer((current: InviteState, action: InviteAction): InviteState => {
-    switch (action.type) {
-      case 'set-email':
-        return { ...current, email: action.value };
-      case 'set-role':
-        return { ...current, role: action.value };
-      case 'set-loading':
-        return { ...current, loading: action.value };
-      case 'set-error':
-        return { ...current, error: action.value };
-      case 'set-invite-url':
-        return { ...current, inviteUrl: action.value };
-      case 'reset':
-        return { email: '', role: 'viewer', loading: false, error: null, inviteUrl: null };
-      default:
-        return current;
-    }
-  }, { email: '', role: 'viewer', loading: false, error: null, inviteUrl: null });
+  const [state, dispatch] = useReducer(
+    (current: InviteState, action: InviteAction): InviteState => {
+      switch (action.type) {
+        case "set-email":
+          return { ...current, email: action.value };
+        case "set-role":
+          return { ...current, role: action.value };
+        case "set-loading":
+          return { ...current, loading: action.value };
+        case "set-error":
+          return { ...current, error: action.value };
+        case "set-invite-url":
+          return { ...current, inviteUrl: action.value };
+        case "reset":
+          return {
+            email: "",
+            role: "viewer",
+            loading: false,
+            error: null,
+            inviteUrl: null,
+          };
+        default:
+          return current;
+      }
+    },
+    { email: "", role: "viewer", loading: false, error: null, inviteUrl: null },
+  );
 
   const setEmail = (value: string): void => {
-    dispatch({ type: 'set-email', value });
+    dispatch({ type: "set-email", value });
   };
 
   const setRole = (value: string): void => {
-    dispatch({ type: 'set-role', value });
+    dispatch({ type: "set-role", value });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!state.email) {
-      dispatch({ type: 'set-error', value: 'Email is required' });
+      dispatch({ type: "set-error", value: "Email is required" });
       return;
     }
 
-    dispatch({ type: 'set-loading', value: true });
-    dispatch({ type: 'set-error', value: null });
-    dispatch({ type: 'set-invite-url', value: null });
+    dispatch({ type: "set-loading", value: true });
+    dispatch({ type: "set-error", value: null });
+    dispatch({ type: "set-invite-url", value: null });
 
     try {
       const response = await authenticatedJson<InviteResponse>(
         `${API_BASE_URL}/api/auth/invites`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
           body: JSON.stringify({ email: state.email, roles: [state.role] }),
-        }
+        },
       );
-      dispatch({ type: 'set-invite-url', value: response.invite_url });
-      toast.success('Invite created successfully');
+      dispatch({ type: "set-invite-url", value: response.invite_url });
+      toast.success("Invite created successfully");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create invite';
-      dispatch({ type: 'set-error', value: msg });
+      const msg =
+        err instanceof Error ? err.message : "Failed to create invite";
+      dispatch({ type: "set-error", value: msg });
     } finally {
-      dispatch({ type: 'set-loading', value: false });
+      dispatch({ type: "set-loading", value: false });
     }
   };
 
   const resetAndClose = () => {
-    setEmail('');
-    setRole('viewer');
-    dispatch({ type: 'reset' });
+    setEmail("");
+    setRole("viewer");
+    dispatch({ type: "reset" });
     onClose();
   };
 
@@ -97,10 +107,14 @@ export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
       onClose={resetAndClose}
       title="Invite User"
       size="sm"
-      footer={() => (
+      footer={() =>
         !state.inviteUrl ? (
           <>
-            <Button variant="outline" onClick={resetAndClose} disabled={state.loading}>
+            <Button
+              variant="outline"
+              onClick={resetAndClose}
+              disabled={state.loading}
+            >
               Cancel
             </Button>
             <Button type="submit" form="invite-form" loading={state.loading}>
@@ -108,7 +122,7 @@ export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
             </Button>
           </>
         ) : null
-      )}
+      }
     >
       <div className="p-5">
         {state.inviteUrl ? (
@@ -117,18 +131,21 @@ export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
               Invite link generated successfully! Share this link with the user.
             </p>
             <div className="bg-surface dark:bg-surface-dark p-3 rounded border border-border dark:border-border-dark flex items-center justify-between">
-                <span className="text-sm font-mono truncate mr-2" title={state.inviteUrl}>
+              <span
+                className="text-sm font-mono truncate mr-2"
+                title={state.inviteUrl}
+              >
                 {state.inviteUrl}
-                </span>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  onClick={() => {
-                    if (!state.inviteUrl) return;
-                    navigator.clipboard.writeText(state.inviteUrl);
-                    toast.success('Copied to clipboard');
-                  }}
-                >
+              </span>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => {
+                  if (!state.inviteUrl) return;
+                  navigator.clipboard.writeText(state.inviteUrl);
+                  toast.success("Copied to clipboard");
+                }}
+              >
                 Copy
               </Button>
             </div>
@@ -137,8 +154,16 @@ export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
             </div>
           </div>
         ) : (
-            <form id="invite-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <FormField label="Email Address" {...(state.error ? { error: state.error } : {})} required>
+          <form
+            id="invite-form"
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-4"
+          >
+            <FormField
+              label="Email Address"
+              {...(state.error ? { error: state.error } : {})}
+              required
+            >
               <Input
                 type="email"
                 value={state.email}

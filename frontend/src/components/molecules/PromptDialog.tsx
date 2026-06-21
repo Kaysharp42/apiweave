@@ -1,19 +1,19 @@
-import React, { Fragment, useRef, useState } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
-import { FileText } from 'lucide-react';
-import { Button } from '../atoms/Button';
-import type { PromptDialogProps } from '../../types';
+import React, { Fragment, useRef, useState } from "react";
+import { Dialog, Transition } from "@headlessui/react";
+import { FileText } from "lucide-react";
+import { Button } from "../atoms/Button";
+import type { PromptDialogProps } from "../../types";
 
 export function PromptDialog({
   open = false,
   onClose,
   onSubmit,
-  title = 'Enter a name',
+  title = "Enter a name",
   message,
-  placeholder = '',
-  defaultValue = '',
-  submitLabel = 'Create',
-  cancelLabel = 'Cancel',
+  placeholder = "",
+  defaultValue = "",
+  submitLabel = "Create",
+  cancelLabel = "Cancel",
 }: PromptDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(defaultValue);
@@ -44,7 +44,10 @@ export function PromptDialog({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-text-primary/30 dark:bg-surface-dark/80" aria-hidden="true" />
+          <div
+            className="fixed inset-0 bg-text-primary/30 dark:bg-surface-dark/80"
+            aria-hidden="true"
+          />
         </Transition.Child>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">

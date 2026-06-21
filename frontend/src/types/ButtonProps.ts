@@ -1,7 +1,7 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
-import type { ButtonVariant } from './ButtonVariant';
-import type { ButtonIntent } from './ButtonIntent';
-import type { ButtonSize } from './ButtonSize';
+import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonVariant } from "./ButtonVariant";
+import type { ButtonIntent } from "./ButtonIntent";
+import type { ButtonSize } from "./ButtonSize";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;

@@ -1,4 +1,4 @@
-import type { NodeStatus } from './NodeStatus';
+import type { NodeStatus } from "./NodeStatus";
 
 export interface NodeData {
   label: string;

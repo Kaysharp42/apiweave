@@ -1,8 +1,8 @@
-import { Pencil, Trash2, Copy, ChevronRight } from 'lucide-react';
-import { IconButton } from '../atoms/IconButton';
-import { EmptyState } from '../molecules/EmptyState';
-import { EnvironmentScopeBadge } from '../atoms/EnvironmentScopeBadge';
-import type { ScopedEnvironmentListProps } from '../../types';
+import { Pencil, Trash2, Copy, ChevronRight } from "lucide-react";
+import { IconButton } from "../atoms/IconButton";
+import { EmptyState } from "../molecules/EmptyState";
+import { EnvironmentScopeBadge } from "../atoms/EnvironmentScopeBadge";
+import type { ScopedEnvironmentListProps } from "../../types";
 
 export function ScopedEnvironmentList({
   environments,
@@ -14,9 +14,11 @@ export function ScopedEnvironmentList({
   onDelete,
   onDuplicate,
   selectedId,
-  className = '',
+  className = "",
 }: ScopedEnvironmentListProps) {
-  const sectionTitle = title ?? `${scopeType.charAt(0).toUpperCase() + scopeType.slice(1)} Environments`;
+  const sectionTitle =
+    title ??
+    `${scopeType.charAt(0).toUpperCase() + scopeType.slice(1)} Environments`;
 
   if (environments.length === 0) {
     return (
@@ -72,16 +74,16 @@ export function ScopedEnvironmentList({
             <div
               key={env.environmentId}
               className={[
-                'group flex items-center gap-3 px-3 py-2.5 rounded border transition-colors cursor-pointer',
+                "group flex items-center gap-3 px-3 py-2.5 rounded border transition-colors cursor-pointer",
                 isSelected
-                  ? 'border-[var(--aw-primary)] bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10'
-                  : 'border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay',
-              ].join(' ')}
+                  ? "border-[var(--aw-primary)] bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10"
+                  : "border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay",
+              ].join(" ")}
               onClick={() => onSelect(env)}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   onSelect(env);
                 }
@@ -92,7 +94,11 @@ export function ScopedEnvironmentList({
                   <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark truncate">
                     {env.name}
                   </span>
-                  <EnvironmentScopeBadge scopeType={env.scopeType} isDefault={env.isDefault} size="xs" />
+                  <EnvironmentScopeBadge
+                    scopeType={env.scopeType}
+                    isDefault={env.isDefault}
+                    size="xs"
+                  />
                 </div>
                 {env.description && (
                   <p className="text-xs text-text-secondary dark:text-text-secondary-dark truncate mt-0.5">
@@ -141,8 +147,8 @@ export function ScopedEnvironmentList({
               <ChevronRight
                 className={`w-4 h-4 flex-shrink-0 transition-colors ${
                   isSelected
-                    ? 'text-[var(--aw-primary)]'
-                    : 'text-text-muted dark:text-text-muted-dark'
+                    ? "text-[var(--aw-primary)]"
+                    : "text-text-muted dark:text-text-muted-dark"
                 }`}
               />
             </div>

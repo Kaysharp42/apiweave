@@ -1,17 +1,19 @@
-import { memo } from 'react';
-import { Square } from 'lucide-react';
-import { BaseNode } from '../atoms/flow/BaseNode';
-import type { EndNodeProps } from '../../types/EndNodeProps';
+import { memo } from "react";
+import { Square } from "lucide-react";
+import { BaseNode } from "../atoms/flow/BaseNode";
+import type { EndNodeProps } from "../../types/EndNodeProps";
 
 const EndNode = ({ id, selected }: EndNodeProps) => {
   return (
     <BaseNode
       title="End"
-      icon={<Square className="w-3.5 h-3.5 fill-current text-text-secondary dark:text-text-secondary-dark" />}
+      icon={
+        <Square className="w-3.5 h-3.5 fill-current text-text-secondary dark:text-text-secondary-dark" />
+      }
       status="idle"
       selected={selected ?? false}
       nodeId={id}
-      handleLeft={{ type: 'target' }}
+      handleLeft={{ type: "target" }}
       collapsible={true}
       defaultExpanded={false}
       className="min-w-[160px]"
@@ -24,10 +26,9 @@ const EndNode = ({ id, selected }: EndNodeProps) => {
             </div>
           )}
           {isExpanded && (
-            <div
-              className="text-[10px] leading-relaxed rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark"
-            >
-              Final step of the workflow. Use it to mark completion after all required branches and assertions finish.
+            <div className="text-[10px] leading-relaxed rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark">
+              Final step of the workflow. Use it to mark completion after all
+              required branches and assertions finish.
             </div>
           )}
         </div>

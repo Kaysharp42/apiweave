@@ -1,15 +1,18 @@
-import React, { useReducer, useEffect, useCallback } from 'react';
-import { Button } from '../atoms/Button';
-import { Input } from '../atoms/Input';
-import { Spinner } from '../atoms/Spinner';
-import { FormField } from '../molecules/FormField';
-import { EmptyState } from '../molecules/EmptyState';
-import { Panel } from '../molecules/Panel';
-import { authenticatedJson, authenticatedFetch } from '../../utils/authenticatedApi';
-import API_BASE_URL from '../../utils/api';
-import type { ApprovedDomain } from '../../types';
-import { toast } from 'sonner';
-import { Globe, Trash2 } from 'lucide-react';
+import React, { useReducer, useEffect, useCallback } from "react";
+import { Button } from "../atoms/Button";
+import { Input } from "../atoms/Input";
+import { Spinner } from "../atoms/Spinner";
+import { FormField } from "../molecules/FormField";
+import { EmptyState } from "../molecules/EmptyState";
+import { Panel } from "../molecules/Panel";
+import {
+  authenticatedJson,
+  authenticatedFetch,
+} from "../../utils/authenticatedApi";
+import API_BASE_URL from "../../utils/api";
+import type { ApprovedDomain } from "../../types";
+import { toast } from "sonner";
+import { Globe, Trash2 } from "lucide-react";
 
 export function ApprovedDomainManager() {
   type ApprovedDomainState = {
@@ -21,41 +24,49 @@ export function ApprovedDomainManager() {
   };
 
   type ApprovedDomainAction =
-    | { type: 'set-domains'; value: ApprovedDomain[] }
-    | { type: 'set-loading'; value: boolean }
-    | { type: 'set-new-domain'; value: string }
-    | { type: 'set-adding'; value: boolean }
-    | { type: 'set-error'; value: string | null }
-    | { type: 'reset-form' };
+    | { type: "set-domains"; value: ApprovedDomain[] }
+    | { type: "set-loading"; value: boolean }
+    | { type: "set-new-domain"; value: string }
+    | { type: "set-adding"; value: boolean }
+    | { type: "set-error"; value: string | null }
+    | { type: "reset-form" };
 
-  const [state, dispatch] = useReducer((current: ApprovedDomainState, action: ApprovedDomainAction): ApprovedDomainState => {
-    switch (action.type) {
-      case 'set-domains':
-        return { ...current, domains: action.value };
-      case 'set-loading':
-        return { ...current, loading: action.value };
-      case 'set-new-domain':
-        return { ...current, newDomain: action.value };
-      case 'set-adding':
-        return { ...current, adding: action.value };
-      case 'set-error':
-        return { ...current, error: action.value };
-      case 'reset-form':
-        return { ...current, newDomain: '', error: null, adding: false };
-      default:
-        return current;
-    }
-  }, { domains: [], loading: true, newDomain: '', adding: false, error: null });
+  const [state, dispatch] = useReducer(
+    (
+      current: ApprovedDomainState,
+      action: ApprovedDomainAction,
+    ): ApprovedDomainState => {
+      switch (action.type) {
+        case "set-domains":
+          return { ...current, domains: action.value };
+        case "set-loading":
+          return { ...current, loading: action.value };
+        case "set-new-domain":
+          return { ...current, newDomain: action.value };
+        case "set-adding":
+          return { ...current, adding: action.value };
+        case "set-error":
+          return { ...current, error: action.value };
+        case "reset-form":
+          return { ...current, newDomain: "", error: null, adding: false };
+        default:
+          return current;
+      }
+    },
+    { domains: [], loading: true, newDomain: "", adding: false, error: null },
+  );
 
   const fetchDomains = useCallback(async () => {
     try {
-      dispatch({ type: 'set-loading', value: true });
-      const data = await authenticatedJson<ApprovedDomain[]>(`${API_BASE_URL}/api/auth/domains`);
-      dispatch({ type: 'set-domains', value: data });
+      dispatch({ type: "set-loading", value: true });
+      const data = await authenticatedJson<ApprovedDomain[]>(
+        `${API_BASE_URL}/api/auth/domains`,
+      );
+      dispatch({ type: "set-domains", value: data });
     } catch {
-      toast.error('Failed to load approved domains');
+      toast.error("Failed to load approved domains");
     } finally {
-      dispatch({ type: 'set-loading', value: false });
+      dispatch({ type: "set-loading", value: false });
     }
   }, []);
 
@@ -67,45 +78,51 @@ export function ApprovedDomainManager() {
     e.preventDefault();
     const domainStr = state.newDomain.trim();
     if (!domainStr) {
-      dispatch({ type: 'set-error', value: 'Domain is required' });
+      dispatch({ type: "set-error", value: "Domain is required" });
       return;
     }
 
-    dispatch({ type: 'set-adding', value: true });
-    dispatch({ type: 'set-error', value: null });
+    dispatch({ type: "set-adding", value: true });
+    dispatch({ type: "set-error", value: null });
 
     try {
       const added = await authenticatedJson<ApprovedDomain>(
         `${API_BASE_URL}/api/auth/domains`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ domain: domainStr }),
-        }
+        },
       );
-      dispatch({ type: 'set-domains', value: [...state.domains, added] });
-      dispatch({ type: 'reset-form' });
-      toast.success('Domain added successfully');
+      dispatch({ type: "set-domains", value: [...state.domains, added] });
+      dispatch({ type: "reset-form" });
+      toast.success("Domain added successfully");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to add domain';
-      dispatch({ type: 'set-error', value: msg });
+      const msg = err instanceof Error ? err.message : "Failed to add domain";
+      dispatch({ type: "set-error", value: msg });
     } finally {
-      dispatch({ type: 'set-adding', value: false });
+      dispatch({ type: "set-adding", value: false });
     }
   };
 
   const handleRemoveDomain = async (domainId: string) => {
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/auth/domains/${domainId}`, {
-        method: 'DELETE',
-      });
+      const res = await authenticatedFetch(
+        `${API_BASE_URL}/api/auth/domains/${domainId}`,
+        {
+          method: "DELETE",
+        },
+      );
       if (!res.ok) {
-        throw new Error('Failed to delete domain');
+        throw new Error("Failed to delete domain");
       }
-      dispatch({ type: 'set-domains', value: state.domains.filter((d) => d.id !== domainId) });
-      toast.success('Domain removed');
+      dispatch({
+        type: "set-domains",
+        value: state.domains.filter((d) => d.id !== domainId),
+      });
+      toast.success("Domain removed");
     } catch {
-      toast.error('Failed to remove domain');
+      toast.error("Failed to remove domain");
     }
   };
 
@@ -119,20 +136,32 @@ export function ApprovedDomainManager() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Panel title="Add Approved Domain" icon={Globe as React.ComponentType<{ className?: string }>}>
+      <Panel
+        title="Add Approved Domain"
+        icon={Globe as React.ComponentType<{ className?: string }>}
+      >
         <div className="p-5 border-b border-border dark:border-border-dark">
           <form onSubmit={handleAddDomain} className="flex items-end gap-3">
             <div className="flex-1">
-              <FormField label="Domain Name" {...(state.error ? { error: state.error } : {})}>
+              <FormField
+                label="Domain Name"
+                {...(state.error ? { error: state.error } : {})}
+              >
                 <Input
                   placeholder="example.com"
                   value={state.newDomain}
-                  onChange={(e) => dispatch({ type: 'set-new-domain', value: e.target.value })}
+                  onChange={(e) =>
+                    dispatch({ type: "set-new-domain", value: e.target.value })
+                  }
                   disabled={state.adding}
                 />
               </FormField>
             </div>
-            <Button type="submit" loading={state.adding} disabled={!state.newDomain.trim()}>
+            <Button
+              type="submit"
+              loading={state.adding}
+              disabled={!state.newDomain.trim()}
+            >
               Add
             </Button>
           </form>

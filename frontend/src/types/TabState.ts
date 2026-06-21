@@ -1,5 +1,5 @@
-import type { WorkspaceTab } from './WorkspaceTab';
-import type { Workflow } from './Workflow';
+import type { WorkspaceTab } from "./WorkspaceTab";
+import type { Workflow } from "./Workflow";
 
 export interface TabState {
   tabs: WorkspaceTab[];
