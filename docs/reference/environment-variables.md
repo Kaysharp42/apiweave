@@ -191,7 +191,8 @@ Settings for the Model Context Protocol server, used by AI agents for machine-to
 | --- | --- | --- | --- |
 | `MCP_ENABLED` | No | `false` | Enables the MCP server. Set to `true` to expose MCP tools to AI agents. |
 | `MCP_HTTP_ENABLED` | No | `false` | Enables the HTTP transport for MCP. Stdio MCP is always available locally. |
-| `MCP_ALLOWED_ORIGINS` | No | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated origins allowed to call the MCP HTTP endpoint. Replace with your agent host in production. |
+| `MCP_ALLOWED_ORIGINS` | No | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated origins allowed to call the MCP HTTP endpoint. The MCP SDK also derives a Host header allowlist (DNS rebinding protection) from these origins automatically, so each origin's hostname accepts any port. Override with `MCP_ALLOWED_HOSTS` if the backend is served on a host that doesn't appear in this list. |
+| `MCP_ALLOWED_HOSTS` | No | empty | Optional override for the MCP Host header allowlist (DNS rebinding protection). Normally derived from `MCP_ALLOWED_ORIGINS`; set only when the backend is served on a host not present in the origin list (e.g. reverse proxy). Accepts the MCP SDK's `host:*` wildcard syntax to match any port. |
 
 The bearer token for MCP is now a scoped service token. Create one in the workspace or organization settings and pass it as `Authorization: Bearer <token>` on every HTTP MCP request.
 

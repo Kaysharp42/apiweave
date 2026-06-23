@@ -9,17 +9,34 @@ with scoped equivalents (project_*, secret_*).
 import logging
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 _tools_registered = False
 
+
+def _build_transport_security() -> TransportSecuritySettings:
+    """Build DNS-rebinding protection settings from app config.
+
+    FastMCP's default only whitelists 127.0.0.1/localhost/[::1]. We extend it
+    so non-default loopback aliases (e.g. 127.0.0.2) and reverse-proxied hosts
+    can be allowed via MCP_ALLOWED_HOSTS / MCP_ALLOWED_ORIGINS.
+    """
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=settings.get_mcp_allowed_hosts_list(),
+        allowed_origins=settings.get_mcp_allowed_origins_list(),
+    )
+
+
 mcp_server = FastMCP(
     name="APIWeave",
     stateless_http=True,
     json_response=True,
     streamable_http_path="/",
+    transport_security=_build_transport_security(),
 )
 
 

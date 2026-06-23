@@ -171,6 +171,10 @@ The stdio transport uses stdout for protocol frames and stderr for logs. A missi
 
 `401` means the `Authorization: Bearer <token>` header is missing, the value does not match a current scoped service token, the token is expired, or the token is revoked. Trailing whitespace from a password manager copy is a common culprit. `403` means the request authenticated but the `Origin` header is not in `MCP_ALLOWED_ORIGINS`, or the token's permission set does not include the called tool. Add the exact origin the agent calls from, narrow or widen the token's permission set, and restart the backend if you changed the allowlist. The header contract and a working HTTP example are in [MCP Integration](../features/mcp-integration.md).
 
+### Why does the HTTP MCP return 421 "Invalid Host header"?
+
+The MCP Python SDK has built-in DNS rebinding protection. It validates the `Host` header on every request. If the `Host` header (e.g. `127.0.0.2:8000`) doesn't match the allowlist, the SDK returns 421 before any application code runs. By default the Host allowlist is derived from `MCP_ALLOWED_ORIGINS` (scheme stripped, port wildcarded), so setting `MCP_ALLOWED_ORIGINS` to the correct frontend origin usually fixes this. If the backend is bound to a host that doesn't appear in the origins (e.g. a reverse proxy), set `MCP_ALLOWED_HOSTS` explicitly in `backend/.env` and restart.
+
 ### How does MCP prevent secret leakage in tool responses?
 
 Every tool response runs through a redaction layer that scans for known secret patterns and replaces matches with a placeholder before the response leaves the backend. If a secret slips through, the detection patterns are missing the shape, not the redaction. Add the pattern that catches it in the secret detection service and avoid pasting the secret into public channels. Read and export tools also redact persisted secrets at the response layer; the secret service has no read API for stored values.

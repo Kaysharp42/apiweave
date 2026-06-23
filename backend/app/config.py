@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     MCP_HTTP_ENABLED: bool = False
     MCP_API_KEY: str | None = None
     MCP_ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # Optional override for MCP DNS-rebinding Host header allowlist. By default,
+    # the allowlist is derived automatically from MCP_ALLOWED_ORIGINS (scheme is
+    # stripped and the port is wildcarded). Set this only if your backend is
+    # served on a host that doesn't appear in MCP_ALLOWED_ORIGINS (e.g. split
+    # frontend/backend domains behind a reverse proxy). Supports the MCP SDK's
+    # "host:*" wildcard syntax to match any port.
+    MCP_ALLOWED_HOSTS: str = ""
     MCP_REQUIRE_API_KEY: bool = True
     MCP_ALLOW_SECRET_WRITES: bool = False
 
@@ -98,6 +105,29 @@ class Settings(BaseSettings):
 
     def get_mcp_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.MCP_ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    def get_mcp_allowed_hosts_list(self) -> list[str]:
+        """Return MCP DNS-rebinding allowlist.
+
+        If ``MCP_ALLOWED_HOSTS`` is set, use it verbatim. Otherwise derive the
+        list from ``MCP_ALLOWED_ORIGINS`` by stripping the scheme and port, then
+        appending ``:*`` so every port on that host is accepted.
+        """
+        explicit = [host.strip() for host in self.MCP_ALLOWED_HOSTS.split(",") if host.strip()]
+        if explicit:
+            return explicit
+
+        from urllib.parse import urlparse
+
+        derived: list[str] = []
+        for origin in self.get_mcp_allowed_origins_list():
+            parsed = urlparse(origin)
+            host = parsed.hostname or ""
+            if host == "localhost" or host.startswith("127."):
+                derived.append(f"{host}:*")
+        # Always include loopback defaults even if origins don't mention them.
+        defaults = {"127.0.0.1:*", "localhost:*", "[::1]:*"}
+        return sorted(defaults | set(derived))
 
     def is_smtp_configured(self) -> bool:
         return bool(self.SMTP_HOST and self.SMTP_FROM_ADDRESS)

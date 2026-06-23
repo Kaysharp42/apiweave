@@ -237,7 +237,7 @@ When `MCP_HTTP_ENABLED=true`:
 - The `Origin` header is validated against the comma-separated list in `MCP_ALLOWED_ORIGINS`. A missing or unmatched origin returns 403.
 - A request with no token, an unknown token, an expired token, or a revoked token returns 401.
 - A request whose token does not have the permission for the called tool returns 403 with the missing permission in the response body.
-- The `Host` header is also checked against the trusted host list to prevent DNS rebinding.
+- The `Host` header is checked against a trusted host list (DNS rebinding protection) that is derived automatically from `MCP_ALLOWED_ORIGINS` — each origin's hostname is accepted on any port. Override with `MCP_ALLOWED_HOSTS` only if the backend is served on a host that doesn't appear in the origin list.
 
 Production deployments must set `MCP_ALLOWED_ORIGINS` to the exact origins the agent will call from, generate tokens with the narrowest permission set that still works, and rotate or revoke tokens on agent retirements.
 

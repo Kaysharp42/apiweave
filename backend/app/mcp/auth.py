@@ -38,12 +38,33 @@ def _mcp_cors_origin_header() -> str:
     return ", ".join(allowed) if allowed else "*"
 
 
-def _mcp_cors_headers() -> dict[str, str]:
+def _mcp_cors_headers(request: Request | None = None) -> dict[str, str]:
+    allowed = settings.get_mcp_allowed_origins_list()
+    request_origin = request.headers.get("origin") if request is not None else None
+    if request_origin and request_origin in allowed:
+        origin = request_origin
+    else:
+        origin = _mcp_cors_origin_header()
     return {
-        "Access-Control-Allow-Origin": _mcp_cors_origin_header(),
+        "Access-Control-Allow-Origin": origin,
         "Access-Control-Allow-Methods": _MCP_CORS_METHODS,
         "Access-Control-Allow-Headers": _MCP_CORS_HEADERS,
+        "Access-Control-Allow-Credentials": "true",
+        "Vary": "Origin",
     }
+
+
+def _mcp_error_response(request: Request, status_code: int, message: str) -> JSONResponse:
+    """Build a JSONResponse for MCP auth errors with CORS headers attached.
+
+    Without these headers the browser blocks the response body, masking 401/403
+    as opaque CORS failures instead of the real auth error.
+    """
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": message},
+        headers=_mcp_cors_headers(request),
+    )
 
 
 def _extract_bearer_token(request: Request) -> str | None:
@@ -97,8 +118,10 @@ async def auth_middleware(request: Request, call_next):
     """
     ASGI middleware for MCP Streamable HTTP auth.
 
-    All MCP access requires a scoped service token (Bearer awst_...).
-    The legacy flat API key path has been removed.
+    All MCP access requires a scoped service token (Bearer awst_...) unless
+    MCP_REQUIRE_API_KEY is False, in which case auth is skipped (intended for
+    local single-user deployments). All error responses include CORS headers so
+    browser clients can read the body instead of getting an opaque CORS block.
     """
     if not settings.MCP_ENABLED or not settings.MCP_HTTP_ENABLED:
         return await call_next(request)
@@ -106,43 +129,43 @@ async def auth_middleware(request: Request, call_next):
     if not request.url.path.startswith("/mcp"):
         return await call_next(request)
 
-    # Require scoped service token
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    if not settings.MCP_REQUIRE_API_KEY:
+        return await call_next(request)
+
     bearer_token = _extract_bearer_token(request)
     if not bearer_token:
         logger.warning("MCP request rejected: missing Authorization header")
-        return JSONResponse(
-            status_code=401,
-            content={
-                "error": "Unauthorized: scoped service token required. "
-                "Use Bearer awst_... authentication."
-            },
+        return _mcp_error_response(
+            request,
+            401,
+            "Unauthorized: scoped service token required. "
+            "Use Bearer awst_... authentication.",
         )
 
     if not bearer_token.startswith(_SERVICE_TOKEN_PREFIX):
         logger.warning("MCP request rejected: invalid token prefix")
-        return JSONResponse(
-            status_code=401,
-            content={
-                "error": "Unauthorized: invalid token format. "
-                "Scoped service tokens start with 'awst_'."
-            },
+        return _mcp_error_response(
+            request,
+            401,
+            "Unauthorized: invalid token format. "
+            "Scoped service tokens start with 'awst_'.",
         )
 
     if not await _validate_and_set_scope(request, bearer_token):
         logger.warning("MCP request rejected: invalid or expired service token")
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Unauthorized: invalid or expired service token"},
+        return _mcp_error_response(
+            request,
+            401,
+            "Unauthorized: invalid or expired service token",
         )
 
-    # Origin validation
     allowed = settings.get_mcp_allowed_origins_list()
     if not validate_origin(request, allowed):
         logger.warning("MCP request rejected: origin not allowed")
-        return JSONResponse(
-            status_code=403,
-            content={"error": "Forbidden: origin not allowed"},
-        )
+        return _mcp_error_response(request, 403, "Forbidden: origin not allowed")
 
     return await call_next(request)
 
@@ -151,7 +174,7 @@ class MCPCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        cors_headers = _mcp_cors_headers()
+        cors_headers = _mcp_cors_headers(request)
 
         if request.method == "OPTIONS":
             return Response(status_code=200, headers=cors_headers)
