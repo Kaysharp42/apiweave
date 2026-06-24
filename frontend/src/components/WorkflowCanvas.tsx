@@ -10,6 +10,7 @@ import {
 import ReactFlow, {
   MiniMap,
   Controls,
+  ControlButton,
   Background,
   BackgroundVariant,
   useNodesState,
@@ -56,6 +57,8 @@ import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
 import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
 import { workflowDetailUrl } from "../utils/scopedApi";
+import { autoLayout } from "../utils/autoLayout";
+import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
@@ -862,6 +865,12 @@ export function WorkflowCanvas({
       instance;
   }, []);
 
+  // Position changes flow through onNodesChange, so the 700ms autosave persists them.
+  const handleAutoLayout = useCallback(() => {
+    setNodes((nds) => autoLayout(nds, edgesRef.current));
+    requestAnimationFrame(() => rfInstanceRef.current?.fitView(fitViewOptions));
+  }, [setNodes]);
+
   return (
     <main
       className="w-full h-full min-h-0 relative overflow-hidden bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark transition-colors duration-300"
@@ -916,7 +925,11 @@ export function WorkflowCanvas({
           position="bottom-left"
           fitViewOptions={fitViewOptions}
           showInteractive={false}
-        />
+        >
+          <ControlButton onClick={handleAutoLayout} title="Auto-layout">
+            <Wand2 />
+          </ControlButton>
+        </Controls>
 
         <Panel position="bottom-right" style={{ bottom: 10, right: 10 }}>
           <MiniMap

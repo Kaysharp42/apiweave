@@ -1,4 +1,4 @@
-"""
+﻿"""
 MCP capability discovery tool.
 
 Returns a machine-readable catalog of the APIWeave MCP server's surface and
@@ -169,6 +169,11 @@ DOCS_RESOURCES: list[dict[str, str]] = [
         "summary": "The seven node types, canvas actions, and resume behavior.",
     },
     {
+        "uri": "apiweave://docs/swagger-import",
+        "title": "Swagger and OpenAPI Import Guide",
+        "summary": "Environment-linked sync, one-time file import, and supported versions.",
+    },
+    {
         "uri": "apiweave://docs/environments-and-secrets",
         "title": "Environments and Secrets Guide",
         "summary": "Scoped environments, write-only secret model, override chain.",
@@ -197,6 +202,7 @@ RESOURCE_URIS: list[dict[str, str]] = [
 QUICK_START: list[str] = [
     "Call workflow_list and environment_list to inventory the workspace.",
     "Read apiweave://docs/workflows-and-nodes for the canonical node-type reference.",
+    "Read apiweave://docs/swagger-import for environment-linked Swagger/OpenAPI import.",
     "Read apiweave://docs/placeholders for the four placeholder namespaces.",
     "Use {{randomString(N)}} or {{uuid()}} for unique-per-run test data instead of hardcoded values.",
     (

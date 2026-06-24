@@ -85,6 +85,19 @@ def register_doc_resources(server: FastMCP) -> None:
         return _read_doc("features/workflows-and-nodes.md")
 
     @server.resource(
+        "apiweave://docs/swagger-import",
+        name="Swagger and OpenAPI Import Guide",
+        description=(
+            "Environment-linked Swagger/OpenAPI sync, one-time file import, "
+            "the Check API warning badge, and supported versions."
+        ),
+        mime_type="text/markdown",
+    )
+    async def swagger_import_doc() -> str:
+        """Canonical Swagger/OpenAPI import reference."""
+        return _read_doc("features/swagger-import.md")
+
+    @server.resource(
         "apiweave://docs/environments-and-secrets",
         name="Environments and Secrets Guide",
         description=(

@@ -268,9 +268,9 @@ const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
         </span>
         <input
           type="text"
-          placeholder="data.access_token"
+          placeholder="data.name"
           aria-label="Extractor path (after response.body.)"
-          className="nodrag flex-1 px-1 py-0.5 text-xs font-mono bg-transparent text-text-primary dark:text-text-primary-dark focus:outline-none"
+          className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
           value={varPath}
           onChange={(e) => setVarPath(e.target.value)}
         />
