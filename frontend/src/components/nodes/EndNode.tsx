@@ -21,12 +21,12 @@ const EndNode = ({ id, selected }: EndNodeProps) => {
       {({ isExpanded }) => (
         <div className="p-3">
           {!isExpanded && (
-            <div className="text-[9px] font-mono uppercase tracking-[0.12em] text-text-muted dark:text-text-muted-dark">
+            <div className="text-xs text-text-muted dark:text-text-muted-dark">
               Final step
             </div>
           )}
           {isExpanded && (
-            <div className="text-[10px] leading-relaxed rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark">
+            <div className="text-xs leading-relaxed rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark">
               Final step of the workflow. Use it to mark completion after all
               required branches and assertions finish.
             </div>

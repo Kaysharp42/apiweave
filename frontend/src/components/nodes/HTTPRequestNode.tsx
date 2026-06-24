@@ -149,10 +149,11 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
       <button
         ref={triggerRef}
         type="button"
-        className="nodrag text-[9px] px-1.5 py-0.5 rounded-sm font-mono border border-status-warning/30 bg-status-warning/10 text-status-warning flex items-center gap-0.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+        className="nodrag text-xs px-1.5 py-0.5 rounded-sm font-mono border border-status-warning/30 bg-status-warning/10 text-status-warning flex items-center gap-0.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
         title={warning.text ?? "Swagger docs changed. Verify this request."}
-        aria-haspopup="dialog"
+        aria-haspopup="true"
         aria-expanded={isOpen}
+        aria-controls="schema-warning-popover"
         aria-label="Show Swagger warning details"
         onClick={(event) => {
           event.stopPropagation();
@@ -164,8 +165,9 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
       </button>
 
       {isOpen && (
-        <dialog
-          open
+        <div
+          id="schema-warning-popover"
+          role="dialog"
           aria-label="Swagger warning details"
           className="nodrag absolute top-full right-0 mt-1 z-[120] w-[260px] max-w-[calc(100vw-2rem)] rounded-sm border p-2 shadow-node bg-surface-raised dark:bg-surface-dark-raised"
           style={{
@@ -173,20 +175,17 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
           }}
         >
           <div
-            className="text-[10px] font-semibold mb-1"
+            className="text-xs font-semibold mb-1"
             style={{ color: "var(--aw-status-warning)" }}
           >
             Swagger Warning
           </div>
-          <p
-            className="text-[10px] leading-snug break-words"
-            style={{ color: "var(--aw-text-primary)" }}
-          >
+          <p className="text-xs leading-snug break-words text-text-primary dark:text-text-primary-dark">
             {warning.text}
           </p>
 
           <div
-            className="mt-2 pt-2 border-t space-y-1 text-[9px]"
+            className="mt-2 pt-2 border-t space-y-1 text-xs"
             style={{
               borderColor: "var(--aw-border)",
               color: "var(--aw-text-secondary)",
@@ -196,7 +195,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
               <Clock3 className="w-3 h-3" />
               <span className="font-semibold">Refreshed:</span>
             </div>
-            <div style={{ color: "var(--aw-text-primary)" }} className="pl-4">
+            <div className="pl-4 text-text-primary dark:text-text-primary-dark">
               {refreshedLabel}
             </div>
 
@@ -217,12 +216,12 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
                 {warning.sourceUrl}
               </a>
             ) : (
-              <div className="pl-4" style={{ color: "var(--aw-text-muted)" }}>
+              <div className="pl-4 text-text-muted dark:text-text-muted-dark">
                 Unavailable
               </div>
             )}
           </div>
-        </dialog>
+        </div>
       )}
     </div>
   );
@@ -250,7 +249,7 @@ const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
         type="text"
         placeholder="Variable name (e.g., token)"
         aria-label="Extractor variable name"
-        className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-[9px] bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+        className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
         value={varName}
         onChange={(e) => setVarName(e.target.value)}
       />
@@ -258,7 +257,7 @@ const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
         type="text"
         placeholder="Path (e.g., response.body.token)"
         aria-label="Extractor path"
-        className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-[9px] font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+        className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
         value={varPath}
         onChange={(e) => setVarPath(e.target.value)}
       />
@@ -266,7 +265,7 @@ const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
         type="button"
         onClick={handleAdd}
         aria-label="Add extractor"
-        className="w-full px-2 py-1 text-surface-raised dark:text-surface-dark-raised text-[9px] font-semibold rounded-sm nodrag transition-colors flex items-center justify-center gap-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none bg-primary dark:bg-primary-light"
+        className="w-full px-2 py-1 text-surface-raised dark:text-surface-dark-raised text-xs font-semibold rounded-sm nodrag transition-colors flex items-center justify-center gap-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none bg-primary dark:bg-primary-light"
       >
         <Plus className="w-3 h-3" />
         <span>Add Extractor</span>
@@ -360,27 +359,23 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
 
   return (
     <div className="mt-2 pt-2 border-t border-border dark:border-border-dark">
-      <div
-        className="text-[10px] font-semibold mb-1"
-        style={{ color: "var(--aw-text-secondary)" }}
-      >
+      <div className="text-xs font-semibold mb-1 text-text-secondary dark:text-text-secondary-dark">
         Response
       </div>
 
       {result.statusCode && (
-        <div className="flex items-center gap-2 flex-wrap text-[10px]">
+        <div className="flex items-center gap-2 flex-wrap text-xs">
           <span className={`font-mono px-1.5 py-0.5 rounded-sm ${codeClass}`}>
             {result.statusCode}
           </span>
-          <span
-            className="flex items-center gap-1"
-            style={{ color: "var(--aw-text-secondary)" }}
-          >
+          <span className="flex items-center gap-1 text-text-secondary dark:text-text-secondary-dark">
             {statusLabel}
           </span>
           {responseTime !== undefined && (
             <>
-              <span style={{ color: "var(--aw-text-muted)" }}>&bull;</span>
+              <span className="text-text-muted dark:text-text-muted-dark">
+                &bull;
+              </span>
               <span className="font-mono px-1.5 py-0.5 rounded-sm bg-[var(--aw-status-info)]/10 text-[var(--aw-status-info)]">
                 {formatResponseDuration(responseTime)}
               </span>
@@ -390,10 +385,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
       )}
 
       {responseMetadata.length > 0 && (
-        <div
-          className="mt-1 flex items-center gap-1 flex-wrap text-[9px]"
-          style={{ color: "var(--aw-text-secondary)" }}
-        >
+        <div className="mt-1 flex items-center gap-1 flex-wrap text-xs text-text-secondary dark:text-text-secondary-dark">
           {responseMetadata.map((metadata) => (
             <span
               key={metadata}
@@ -406,12 +398,9 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
       )}
 
       {result.cookies && Object.keys(result.cookies).length > 0 && (
-        <div
-          className="mt-1 text-[10px]"
-          style={{ color: "var(--aw-text-secondary)" }}
-        >
+        <div className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
           <span className="font-semibold">Cookies:</span>
-          <div className="pl-2 text-[9px] space-y-0.5 mt-0.5">
+          <div className="pl-2 text-xs space-y-0.5 mt-0.5">
             {Object.entries(result.cookies).map(([key, value]) => (
               <div key={key}>
                 <code className="px-1 rounded-sm bg-surface-overlay dark:bg-surface-dark-overlay">
@@ -429,7 +418,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
           className={`mt-1 rounded-sm ${status === "error" ? "border border-status-error bg-[var(--aw-status-error)]/5" : ""}`}
         >
           <div
-            className={`text-[10px] font-semibold mb-0.5 flex items-center justify-between ${status === "error" ? "" : ""}`}
+            className={`text-xs font-semibold mb-0.5 flex items-center justify-between ${status === "error" ? "" : ""}`}
             style={{
               color:
                 status === "error"
@@ -438,13 +427,12 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
             }}
           >
             <span>Body{status === "error" ? " (Error)" : ""}</span>
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={handleToggleBodyFormat}
                 aria-label={isBodyBeautified ? "Minify JSON" : "Beautify JSON"}
-                className="p-0.5 rounded transition-colors nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
-                style={{ backgroundColor: "transparent" }}
+                className="p-1.5 rounded transition-colors nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
                 title={isBodyBeautified ? "Minify JSON" : "Beautify JSON"}
               >
                 <Puzzle className="w-3 h-3" />
@@ -457,8 +445,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
                     ? "Collapse response body"
                     : "Expand response body"
                 }
-                className="p-0.5 rounded transition-colors nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
-                style={{ backgroundColor: "transparent" }}
+                className="p-1.5 rounded transition-colors nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
                 title={isBodyExpanded ? "Collapse" : "Expand"}
               >
                 {isBodyExpanded ? (
@@ -470,7 +457,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
             </div>
           </div>
           <textarea
-            className={`w-full px-1.5 py-1 border text-[10px] font-mono nodrag rounded-sm overflow-y-auto focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${status === "error" ? "bg-[var(--aw-status-error)]/5" : "bg-surface-raised dark:bg-surface-dark-raised"}`}
+            className={`w-full px-1.5 py-1 border text-xs font-mono nodrag rounded-sm overflow-y-auto focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${status === "error" ? "bg-[var(--aw-status-error)]/5" : "bg-surface-raised dark:bg-surface-dark-raised"}`}
             style={{
               height: isBodyExpanded ? "600px" : "150px",
               resize: "vertical",
@@ -493,7 +480,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
       )}
 
       {result.error && (
-        <div className="text-[10px] mt-1 p-1.5 rounded-sm bg-[var(--aw-status-error)]/5 text-status-error dark:text-status-error-dark">
+        <div className="text-xs mt-1 p-1.5 rounded-sm bg-[var(--aw-status-error)]/5 text-status-error dark:text-status-error-dark">
           <span className="font-semibold">Error:</span> {result.error}
         </div>
       )}
@@ -541,7 +528,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
     () => (
       <span className="mr-2 inline-flex items-center gap-1">
         <span
-          className={`inline-flex items-center justify-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono border rounded-sm leading-none ${methodBadgeClass}`}
+          className={`inline-flex items-center justify-center gap-0.5 px-1.5 py-0.5 text-xs font-mono border rounded-sm leading-none ${methodBadgeClass}`}
           title={`HTTP ${method}`}
         >
           <Globe className="w-2.5 h-2.5" aria-hidden="true" />
@@ -568,7 +555,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
         )}
         {data.branchCount && data.branchCount > 1 && (
           <span
-            className="text-[9px] px-1.5 py-0.5 rounded-sm font-mono border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex items-center gap-0.5"
+            className="text-xs px-1.5 py-0.5 rounded-sm font-mono border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex items-center gap-0.5"
             title={`${data.branchCount} parallel branches`}
           >
             <Snowflake className="w-3 h-3" /> {data.branchCount}x
@@ -605,7 +592,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
           >
             <select
               aria-label="HTTP method"
-              className={`nodrag px-2 py-1 border rounded-sm text-[10px] font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer ${methodBadgeClass}`}
+              className={`nodrag px-2 py-1 border rounded-sm text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer ${methodBadgeClass}`}
               value={method}
               onChange={(e) => updateNodeData("method", e.target.value)}
             >
@@ -650,7 +637,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
           </div>
 
           {!isExpanded && (
-            <div className="flex gap-1.5 text-[9px] flex-wrap text-text-muted dark:text-text-muted-dark">
+            <div className="flex gap-1.5 text-xs flex-wrap text-text-muted dark:text-text-muted-dark">
               {data.config?.url && (
                 <span
                   className="px-1.5 py-0.5 rounded-sm truncate max-w-full font-mono bg-surface-overlay dark:bg-surface-dark-overlay"
@@ -688,21 +675,17 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               <div>
                 <label
                   htmlFor="http-request-query-params"
-                  className="block text-[10px] font-semibold mb-0.5"
-                  style={{ color: "var(--aw-text-secondary)" }}
+                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                 >
                   Query Params{" "}
-                  <span
-                    className="font-normal"
-                    style={{ color: "var(--aw-text-muted)" }}
-                  >
+                  <span className="font-normal text-text-muted dark:text-text-muted-dark">
                     (key=value)
                   </span>
                 </label>
                 <textarea
                   id="http-request-query-params"
                   aria-label="Query parameters"
-                  className="nodrag w-full px-1.5 py-1 border rounded text-[10px] font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                  className="nodrag w-full px-1.5 py-1 border rounded text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                   style={{
                     borderColor: "var(--aw-border)",
                     backgroundColor: "var(--aw-surface-raised)",
@@ -720,21 +703,17 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               <div>
                 <label
                   htmlFor="http-request-path-variables"
-                  className="block text-[10px] font-semibold mb-0.5"
-                  style={{ color: "var(--aw-text-secondary)" }}
+                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                 >
                   Path Variables{" "}
-                  <span
-                    className="font-normal"
-                    style={{ color: "var(--aw-text-muted)" }}
-                  >
+                  <span className="font-normal text-text-muted dark:text-text-muted-dark">
                     (Use :varName in URL)
                   </span>
                 </label>
                 <textarea
                   id="http-request-path-variables"
                   aria-label="Path variables"
-                  className="nodrag w-full px-1.5 py-1 border rounded text-[10px] font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                  className="nodrag w-full px-1.5 py-1 border rounded text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                   style={{
                     borderColor: "var(--aw-border)",
                     backgroundColor: "var(--aw-surface-raised)",
@@ -752,21 +731,17 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               <div>
                 <label
                   htmlFor="http-request-headers"
-                  className="block text-[10px] font-semibold mb-0.5"
-                  style={{ color: "var(--aw-text-secondary)" }}
+                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                 >
                   Headers{" "}
-                  <span
-                    className="font-normal"
-                    style={{ color: "var(--aw-text-muted)" }}
-                  >
+                  <span className="font-normal text-text-muted dark:text-text-muted-dark">
                     (key=value)
                   </span>
                 </label>
                 <textarea
                   id="http-request-headers"
                   aria-label="Headers"
-                  className="nodrag w-full px-1.5 py-1 border rounded text-[10px] font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                  className="nodrag w-full px-1.5 py-1 border rounded text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                   style={{
                     borderColor: "var(--aw-border)",
                     backgroundColor: "var(--aw-surface-raised)",
@@ -784,21 +759,17 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               <div>
                 <label
                   htmlFor="http-request-cookies"
-                  className="block text-[10px] font-semibold mb-0.5"
-                  style={{ color: "var(--aw-text-secondary)" }}
+                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                 >
                   Cookies{" "}
-                  <span
-                    className="font-normal"
-                    style={{ color: "var(--aw-text-muted)" }}
-                  >
+                  <span className="font-normal text-text-muted dark:text-text-muted-dark">
                     (key=value)
                   </span>
                 </label>
                 <textarea
                   id="http-request-cookies"
                   aria-label="Cookies"
-                  className="nodrag w-full px-1.5 py-1 border rounded text-[10px] font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                  className="nodrag w-full px-1.5 py-1 border rounded text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                   style={{
                     borderColor: "var(--aw-border)",
                     backgroundColor: "var(--aw-surface-raised)",
@@ -815,8 +786,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                 <div>
                   <label
                     htmlFor="http-request-body"
-                    className="block text-[10px] font-semibold mb-0.5"
-                    style={{ color: "var(--aw-text-secondary)" }}
+                    className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                   >
                     Body
                   </label>
@@ -824,7 +794,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                     <textarea
                       id="http-request-body"
                       aria-label="Request body"
-                      className="nodrag w-full px-1.5 py-1 border rounded text-[10px] font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                      className="nodrag w-full px-1.5 py-1 border rounded text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                       style={{
                         borderColor: "var(--aw-border)",
                         backgroundColor: "var(--aw-surface-raised)",
@@ -848,8 +818,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               <div>
                 <label
                   htmlFor="http-request-timeout"
-                  className="block text-[10px] font-semibold mb-0.5"
-                  style={{ color: "var(--aw-text-secondary)" }}
+                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                 >
                   Timeout (seconds)
                 </label>
@@ -875,10 +844,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                 className="border-t pt-2 mt-2"
                 style={{ borderColor: "var(--aw-border)" }}
               >
-                <div
-                  className="block text-[10px] font-semibold mb-1 flex items-center gap-1"
-                  style={{ color: "var(--aw-text-secondary)" }}
-                >
+                <div className="block text-xs font-semibold mb-1 flex items-center gap-1 text-text-secondary dark:text-text-secondary-dark">
                   <Puzzle className="w-3.5 h-3.5" />
                   <span>Store Response As Variables</span>
                 </div>
@@ -889,12 +855,12 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                       ([varName, varPath]) => (
                         <div
                           key={varName}
-                          className="flex gap-1 items-center text-[9px]"
+                          className="flex gap-1 items-center text-xs"
                         >
                           <code className="px-1.5 py-0.5 rounded-sm flex-1 truncate bg-[var(--aw-status-success)]/10 text-status-success dark:text-status-success-dark">
                             {varName}
                           </code>
-                          <span style={{ color: "var(--aw-text-muted)" }}>
+                          <span className="text-text-muted dark:text-text-muted-dark">
                             &larr;
                           </span>
                           <code className="px-1.5 py-0.5 rounded-sm flex-1 truncate bg-[var(--aw-status-info)]/10 text-status-info dark:text-status-info-dark">
@@ -919,10 +885,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                       ),
                     )
                   ) : (
-                    <div
-                      className="text-[9px] italic"
-                      style={{ color: "var(--aw-text-muted)" }}
-                    >
+                    <div className="text-xs italic text-text-muted dark:text-text-muted-dark">
                       No extractors configured
                     </div>
                   )}
@@ -944,9 +907,9 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                 variables={variables}
               />
 
-              <div className="text-[9px] p-1.5 rounded-sm space-y-0.5 bg-[var(--aw-status-info)]/5 text-text-muted dark:text-text-muted-dark">
+              <div className="text-xs p-1.5 rounded-sm space-y-0.5 bg-[var(--aw-status-info)]/5 text-text-muted dark:text-text-muted-dark">
                 <div>
-                  <strong style={{ color: "var(--aw-text-primary)" }}>
+                  <strong className="text-text-primary dark:text-text-primary-dark">
                     Variable Reference:
                   </strong>
                 </div>

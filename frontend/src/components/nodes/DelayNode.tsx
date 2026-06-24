@@ -42,7 +42,7 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
 
   const titleExtra = useMemo(
     () => (
-      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-[var(--aw-status-warning)]/10 text-status-warning dark:text-status-warning-dark border border-status-warning/30">
+      <span className="text-xs font-mono px-1.5 py-0.5 rounded-sm bg-[var(--aw-status-warning)]/10 text-status-warning dark:text-status-warning-dark border border-status-warning/30">
         {humanLabel}
       </span>
     ),
@@ -65,15 +65,12 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
     >
       {({ isExpanded }) => (
         <div className="p-3 space-y-1.5">
-          <div
-            className="text-[10px]"
-            style={{ color: "var(--aw-text-muted)" }}
-          >
+          <div className="text-xs text-text-muted dark:text-text-muted-dark">
             Wait before next step
           </div>
 
           {!isExpanded && duration > 0 && (
-            <div className="text-[9px] px-1.5 py-0.5 rounded-sm inline-block bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark font-mono">
+            <div className="text-xs px-1.5 py-0.5 rounded-sm inline-block bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark font-mono">
               {humanLabel}
             </div>
           )}
@@ -96,10 +93,7 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
                 onChange={(e) => updateNodeData(parseInt(e.target.value) || 0)}
                 min="0"
               />
-              <span
-                className="text-[10px] font-medium"
-                style={{ color: "var(--aw-text-secondary)" }}
-              >
+              <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">
                 ms
               </span>
             </div>

@@ -192,3 +192,4 @@ frontend/package-lock.json
 .agents/
 frontend/.visualqa/
 .github/skills/
+.impeccable/
