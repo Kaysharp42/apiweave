@@ -25,7 +25,7 @@ from app.models import Run, RunActorContext, RunCreate
 from app.repositories import EnvironmentRepository, RunRepository, WorkflowRepository
 from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
 from app.repositories.workspace_repository import WorkspaceRepository
-from app.runner.executor import RunContext, WorkflowExecutor
+from app.runner.executor import RunContext, WorkflowExecutor, _StopBranch
 from app.services import audit_service
 from app.services.exceptions import ConflictError, ResourceNotFoundError
 from app.services.secret_utils import SecretMasker
@@ -111,6 +111,12 @@ async def _execute_workflow_background(
     _register_executor(run_id, executor, cancel_event)
     try:
         await executor.execute()
+    except _StopBranch:
+        # Normal control-flow signal; status already persisted by execute().
+        pass
+    except asyncio.CancelledError:
+        # Never swallow cancellation — let the event loop unwind cleanly.
+        raise
     except Exception:
         logger.exception("Background workflow execution failed for run %s", run_id)
     finally:

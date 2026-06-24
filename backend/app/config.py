@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -70,6 +71,12 @@ class Settings(BaseSettings):
 
     # Security
     BLOCK_PRIVATE_NETWORKS: bool = True
+    # Surgical opt-in for loopback (127.0.0.0/8 and ::1) only. Does NOT
+    # allow RFC1918, link-local, or cloud metadata ranges. Auto-enabled
+    # when DEPLOYMENT_MODE=single_user and APP_ENV=development so a normal
+    # laptop user can hit local services without flipping the global SSRF
+    # switch. Production refuses to boot with this set to True.
+    ALLOW_LOOPBACK: bool = False
     MAX_WEBHOOK_BODY_SIZE: int = 65536
     UPLOADS_BASE_DIR: str = "uploads"
     RATE_LIMITER_BACKEND: Literal["memory", "mongodb"] = "memory"
@@ -109,31 +116,53 @@ class Settings(BaseSettings):
     def get_mcp_allowed_hosts_list(self) -> list[str]:
         """Return MCP DNS-rebinding allowlist.
 
-        If ``MCP_ALLOWED_HOSTS`` is set, use it verbatim. Otherwise derive the
-        list from ``MCP_ALLOWED_ORIGINS`` by stripping the scheme and port, then
-        appending ``:*`` so every port on that host is accepted.
+        If ``MCP_ALLOWED_HOSTS`` is set, use it verbatim. Otherwise derive from
+        every ``MCP_ALLOWED_ORIGINS`` entry: each origin's hostname becomes a
+        ``host:*`` token so any port on that host is accepted. Loopback
+        defaults (127.0.0.1, localhost, [::1]) are always merged in so the
+        backend stays reachable on standard loopback aliases even when the
+        origin list does not mention them.
         """
         explicit = [host.strip() for host in self.MCP_ALLOWED_HOSTS.split(",") if host.strip()]
         if explicit:
             return explicit
 
-        from urllib.parse import urlparse
-
-        derived: list[str] = []
+        derived: set[str] = set()
         for origin in self.get_mcp_allowed_origins_list():
             parsed = urlparse(origin)
             host = parsed.hostname or ""
-            if host == "localhost" or host.startswith("127."):
-                derived.append(f"{host}:*")
-        # Always include loopback defaults even if origins don't mention them.
+            if not host:
+                continue
+            # IPv6 literals must be bracketed for the MCP SDK host check.
+            host_token = f"[{host}]" if ":" in host else host
+            derived.add(f"{host_token}:*")
         defaults = {"127.0.0.1:*", "localhost:*", "[::1]:*"}
-        return sorted(defaults | set(derived))
+        return sorted(defaults | derived)
 
     def is_smtp_configured(self) -> bool:
         return bool(self.SMTP_HOST and self.SMTP_FROM_ADDRESS)
 
     def get_approved_domains_list(self) -> list[str]:
         return [domain.strip() for domain in self.APPROVED_DOMAINS.split(",") if domain.strip()]
+
+    def get_allow_loopback(self) -> bool:
+        """Allow loopback (127.0.0.0/8 + ::1) for outbound HTTP requests.
+
+        Returns True when either:
+        - ``ALLOW_LOOPBACK`` is explicitly set to True, OR
+        - ``DEPLOYMENT_MODE=single_user`` AND ``APP_ENV=development`` — the
+          laptop-developer case where hitting localhost services is the
+          dominant workflow.
+
+        RFC1918, link-local, and metadata ranges are never affected by this
+        flag; only 127.0.0.0/8 and ::1/128 become reachable.
+        """
+        if self.ALLOW_LOOPBACK:
+            return True
+        return (
+            self.DEPLOYMENT_MODE == "single_user"
+            and self.APP_ENV.lower() == "development"
+        )
 
     def get_session_cookie_secure(self) -> bool:
         if self.APP_ENV.lower() == "development":
@@ -174,6 +203,12 @@ class Settings(BaseSettings):
 
             if not self.BLOCK_PRIVATE_NETWORKS:
                 raise ValueError("BLOCK_PRIVATE_NETWORKS must be True in production")
+
+            if self.ALLOW_LOOPBACK:
+                raise ValueError(
+                    "ALLOW_LOOPBACK must be False in production. "
+                    "Use APPROVED_DOMAINS for any host the server needs to reach."
+                )
 
             if self.MAX_WEBHOOK_BODY_SIZE > 1_048_576:
                 raise ValueError(

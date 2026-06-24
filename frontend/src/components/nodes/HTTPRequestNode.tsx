@@ -21,6 +21,12 @@ import {
 } from "lucide-react";
 import { BeautifyButton } from "../molecules/BeautifyButton";
 import { StatusBadge } from "../molecules/StatusBadge";
+import {
+  countKeyValuePairs,
+  previewBody,
+  stringifyBody,
+  stringifyKeyValuePairs,
+} from "../node-modal/httpRequestConfigCompat";
 import type { NodeStatus } from "../../types/NodeStatus";
 import type { HttpMethod } from "../../types/HttpMethod";
 import type {
@@ -68,14 +74,6 @@ const formatBytes = (bytes: number): string => {
   const kilobytes = bytes / 1024;
   if (kilobytes < 1024) return `${kilobytes.toFixed(1)} KB`;
   return `${(kilobytes / 1024).toFixed(1)} MB`;
-};
-
-const getBodyPreview = (body: string | undefined): string => {
-  const normalizedBody = body?.trim().replace(/\s+/g, " ") ?? "";
-  if (!normalizedBody) return "";
-  return normalizedBody.length > 50
-    ? `${normalizedBody.slice(0, 50)}...`
-    : normalizedBody;
 };
 
 interface SchemaWarningBadgeProps {
@@ -232,15 +230,23 @@ interface ExtractorFormProps {
   onAdd: (varName: string, varPath: string) => void;
 }
 
+const EXTRACTOR_PATH_PREFIX = "response.body.";
+const normalizeExtractorPath = (path: string): string => {
+  const trimmed = String(path).trim();
+  return trimmed.startsWith("response.")
+    ? trimmed
+    : `${EXTRACTOR_PATH_PREFIX}${trimmed}`;
+};
+
 const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
   const [varName, setVarName] = useState("");
-  const [varPath, setVarPath] = useState("response.body.");
+  const [varPath, setVarPath] = useState("");
 
   const handleAdd = () => {
     if (varName.trim() && varPath.trim()) {
       onAdd(varName.trim(), varPath.trim());
       setVarName("");
-      setVarPath("response.body.");
+      setVarPath("");
     }
   };
 
@@ -254,14 +260,24 @@ const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
         value={varName}
         onChange={(e) => setVarName(e.target.value)}
       />
-      <input
-        type="text"
-        placeholder="Path (e.g., response.body.token)"
-        aria-label="Extractor path"
-        className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-[9px] font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-        value={varPath}
-        onChange={(e) => setVarPath(e.target.value)}
-      />
+      <div
+        className="flex items-center gap-0 border rounded-sm bg-surface-raised dark:bg-surface-dark-raised border-border dark:border-border-dark focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[var(--aw-focus-ring-offset)]"
+      >
+        <span
+          className="nodrag pl-1.5 pr-1 text-[9px] font-mono text-text-muted dark:text-text-muted-dark select-none"
+          aria-hidden="true"
+        >
+          {EXTRACTOR_PATH_PREFIX}
+        </span>
+        <input
+          type="text"
+          placeholder="data.access_token"
+          aria-label="Extractor path (after response.body.)"
+          className="nodrag flex-1 px-1 py-0.5 text-[9px] font-mono bg-transparent text-text-primary dark:text-text-primary-dark focus:outline-none"
+          value={varPath}
+          onChange={(e) => setVarPath(e.target.value)}
+        />
+      </div>
       <button
         type="button"
         onClick={handleAdd}
@@ -527,15 +543,13 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
   const method = (data.config?.method ?? "GET") as HttpMethod;
   const methodBadgeClass = methodBadgeClasses[method] ?? methodBadgeClasses.GET;
 
-  const headerCount = (data.config?.headers ?? "")
-    .split("\n")
-    .filter(Boolean).length;
+  const headerCount = countKeyValuePairs(data.config?.headers);
   const extractorCount = data.config?.extractors
     ? Object.keys(data.config.extractors).length
     : 0;
   const hasBody = data.config?.body && data.config?.method !== "GET";
   const bodyFormat = data.config?.bodyType ?? "raw";
-  const bodyPreview = getBodyPreview(data.config?.body);
+  const bodyPreview = previewBody(data.config?.body);
 
   const icon = useMemo(
     () => (
@@ -672,7 +686,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               {hasBody && bodyPreview && (
                 <span
                   className="px-1.5 py-0.5 rounded-sm font-mono truncate max-w-full bg-surface-overlay dark:bg-surface-dark-overlay"
-                  title={data.config?.body}
+                  title={stringifyBody(data.config?.body)}
                 >
                   {bodyPreview}
                 </span>
@@ -776,7 +790,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   placeholder={
                     "Content-Type=application/json\nAuthorization=Bearer {{variables.token}}"
                   }
-                  value={data.config?.headers ?? ""}
+                  value={stringifyKeyValuePairs(data.config?.headers)}
                   onChange={(e) => updateNodeData("headers", e.target.value)}
                 />
               </div>
@@ -806,7 +820,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   }}
                   rows={2}
                   placeholder={"session={{prev.response.cookies.session}}"}
-                  value={data.config?.cookies ?? ""}
+                  value={stringifyKeyValuePairs(data.config?.cookies)}
                   onChange={(e) => updateNodeData("cookies", e.target.value)}
                 />
               </div>
@@ -832,12 +846,12 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                       }}
                       rows={3}
                       placeholder={'{\n  "key": "value"\n}'}
-                      value={data.config?.body ?? ""}
+                      value={stringifyBody(data.config?.body)}
                       onChange={(e) => updateNodeData("body", e.target.value)}
                     />
                     <div className="absolute top-1 right-1">
                       <BeautifyButton
-                        value={data.config?.body ?? ""}
+                        value={stringifyBody(data.config?.body)}
                         onChange={(val) => updateNodeData("body", val)}
                       />
                     </div>
@@ -886,7 +900,9 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   {data.config?.extractors &&
                   Object.entries(data.config.extractors).length > 0 ? (
                     Object.entries(data.config.extractors).map(
-                      ([varName, varPath]) => (
+                      ([varName, varPath]) => {
+                        const displayPath = normalizeExtractorPath(varPath);
+                        return (
                         <div
                           key={varName}
                           className="flex gap-1 items-center text-[9px]"
@@ -898,7 +914,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                             &larr;
                           </span>
                           <code className="px-1.5 py-0.5 rounded-sm flex-1 truncate bg-[var(--aw-status-info)]/10 text-status-info dark:text-status-info-dark">
-                            {varPath}
+                            {displayPath}
                           </code>
                           <button
                             type="button"
@@ -916,7 +932,8 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                             <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
-                      ),
+                        );
+                      },
                     )
                   ) : (
                     <div
@@ -930,7 +947,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                 <ExtractorForm
                   onAdd={(varName, varPath) => {
                     const newExtractors = data.config?.extractors ?? {};
-                    newExtractors[varName] = varPath;
+                    newExtractors[varName] = normalizeExtractorPath(varPath);
                     updateNodeData("extractors", newExtractors);
                   }}
                 />

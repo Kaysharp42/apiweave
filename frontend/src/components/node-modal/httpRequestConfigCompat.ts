@@ -25,6 +25,65 @@ function getNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function bodyToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "";
+  }
+}
+
+export function stringifyKeyValuePairs(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (isRecord(entry) && "key" in entry) {
+          return `${getString(entry.key)}=${getString(entry.value)}`;
+        }
+        return String(entry ?? "");
+      })
+      .join("\n");
+  }
+  if (isRecord(value)) {
+    return Object.entries(value)
+      .map(([k, v]) => `${k}=${String(v ?? "")}`)
+      .join("\n");
+  }
+  return String(value);
+}
+
+export function stringifyBody(value: unknown): string {
+  return bodyToString(value);
+}
+
+export function previewBody(value: unknown, maxLength = 50): string {
+  const normalized = bodyToString(value).trim().replace(/\s+/g, " ");
+  if (!normalized) return "";
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength)}...`
+    : normalized;
+}
+
+export function countKeyValuePairs(value: unknown): number {
+  if (value == null) return 0;
+  if (Array.isArray(value)) {
+    return value.filter(
+      (entry) => isRecord(entry) && getString(entry.key).trim().length > 0,
+    ).length;
+  }
+  if (isRecord(value)) {
+    return Object.keys(value).length;
+  }
+  if (typeof value === "string") {
+    return value.split(/\r?\n/).filter((line) => line.trim().length > 0).length;
+  }
+  return 0;
+}
+
 export function parseKeyValuePairs(value: unknown): KeyValuePair[] {
   if (Array.isArray(value)) {
     return value.reduce<KeyValuePair[]>((pairs, entry) => {
@@ -147,7 +206,7 @@ export function normalizeHttpRequestConfig(
     queryParams: parseKeyValuePairs(config.queryParams),
     headers: parseKeyValuePairs(config.headers),
     cookies: parseKeyValuePairs(config.cookies),
-    body: config.body || "",
+    body: bodyToString(config.body),
     bodyType: normalizeBodyType(config.bodyType),
     timeout: Math.min(Math.max(getNumber(config.timeout, 30), 1), 300),
     fileUploads: config.fileUploads || [],

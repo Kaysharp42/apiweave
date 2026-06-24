@@ -30,6 +30,7 @@ def _patch_settings(
     *,
     approved_domains_enabled: bool = False,
     approved_domains: str = "",
+    allow_loopback: bool = False,
 ):
     """Return a patch context manager that overrides the relevant settings."""
     mock_settings = MagicMock()
@@ -37,7 +38,19 @@ def _patch_settings(
     mock_settings.get_approved_domains_list.return_value = [
         d.strip() for d in approved_domains.split(",") if d.strip()
     ]
+    mock_settings.get_allow_loopback.return_value = allow_loopback
     return patch("app.services.safe_http.settings", mock_settings)
+
+
+@pytest.fixture(autouse=True)
+def _safe_default_settings():
+    """Baseline patch so tests don't inherit developer .env (which may set
+    DEPLOYMENT_MODE=single_user + APP_ENV=development, auto-enabling
+    loopback). Inner ``_patch_settings()`` calls override this for tests
+    that need different behavior.
+    """
+    with _patch_settings():
+        yield
 
 
 class TestIsSafeUrlBlockedIPs:
@@ -607,6 +620,68 @@ class TestSafeRequest:
             call_kwargs = mock_connector_cls.call_args.kwargs
             ssl_arg = call_kwargs.get("ssl")
             assert isinstance(ssl_arg, ssl_module.SSLContext)
+
+
+class TestAllowLoopback:
+    """When get_allow_loopback() is True, only 127.0.0.0/8 and ::1 are unblocked.
+
+    RFC1918, link-local, metadata, multicast, and unique-local IPv6 must
+    remain blocked regardless of the flag — those are out of scope for
+    "allow the user to hit localhost."
+    """
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://127.0.0.1/",
+            "http://127.0.0.1:8080/",
+            "https://127.0.0.1/",
+            "http://127.255.255.255/",
+        ],
+        ids=["loopback", "loopback-port", "loopback-https", "loopback-high"],
+    )
+    def test_loopback_ipv4_allowed_when_flag_on(self, url: str):
+        with _patch_settings(allow_loopback=True):
+            assert is_safe_url(url) is True
+
+    def test_loopback_ipv6_allowed_when_flag_on(self):
+        with _patch_settings(allow_loopback=True):
+            assert is_safe_url("http://[::1]/") is True
+            assert is_safe_url("http://[::1]:8080/") is True
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://10.0.0.1/",
+            "http://192.168.1.1/",
+            "http://172.16.0.1/",
+            "http://169.254.169.254/",  # AWS metadata
+        ],
+        ids=["10-net", "192.168", "172.16", "aws-metadata"],
+    )
+    def test_rfc1918_and_metadata_still_blocked_when_flag_on(self, url: str):
+        """The flag is narrow — only loopback. RFC1918 and metadata stay blocked."""
+        with _patch_settings(allow_loopback=True):
+            assert is_safe_url(url) is False
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://[fe80::1]/",
+            "http://[fc00::1]/",
+            "http://[fd00::1]/",
+        ],
+        ids=["link-local", "unique-local", "fd00"],
+    )
+    def test_ipv6_private_still_blocked_when_flag_on(self, url: str):
+        with _patch_settings(allow_loopback=True):
+            assert is_safe_url(url) is False
+
+    def test_loopback_blocked_when_flag_off(self):
+        """Default behavior — loopback is blocked."""
+        with _patch_settings(allow_loopback=False):
+            assert is_safe_url("http://127.0.0.1/") is False
+            assert is_safe_url("http://[::1]/") is False
 
 
 class TestBlockedNetworksConfig:

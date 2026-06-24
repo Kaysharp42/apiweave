@@ -3,6 +3,7 @@ Workflow service — shared business logic for workflow CRUD, export, import, an
 Called by both FastAPI routes and MCP tools.
 """
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,11 +14,13 @@ from app.models import (
     WorkflowCreate,
     WorkflowUpdate,
 )
-from app.repositories import EnvironmentRepository, WorkflowRepository
+from app.repositories import EnvironmentRepository, WorkflowRepository, WorkspaceRepository
 from app.services.secret_utils import (
     sanitize_secrets_in_dict,
     serialize_document_for_export,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def list_workflows(
@@ -198,8 +201,18 @@ async def import_workflow(
     environment_mapping: dict[str, str] | None = None,
     create_missing_environments: bool = True,
     sanitize: bool = False,
+    workspace_id: str | None = None,
+    actor_user_id: str | None = None,
 ) -> dict[str, Any]:
-    """Import a workflow bundle. Returns workflowId and metadata."""
+    """Import a workflow bundle. Returns workflowId and metadata.
+
+    When ``workspace_id`` is provided, the workflow is created via
+    :meth:`WorkflowRepository.create_scoped` so it is visible to all
+    workspace-scoped lookups (``workflow_get``, ``workflow_list``,
+    ``workflow_run``, ``workflow_set_environment``). Without ``workspace_id``
+    the import falls back to the legacy unscoped create (used by FastAPI
+    routes that pass their own scope resolution).
+    """
     if "workflow" not in bundle:
         raise ValueError("Invalid bundle: missing 'workflow' key")
 
@@ -232,6 +245,10 @@ async def import_workflow(
                 new_env = await EnvironmentRepository.create(env_create)
                 new_env_id = new_env.environmentId
 
+    logger.warning(
+        "import_workflow: sanitize=%r type=%s workflow_id_param=%r",
+        sanitize, type(sanitize).__name__, workspace_id,
+    )
     if sanitize:
         if workflow_data.get("variables"):
             refs: list[str] = []
@@ -252,7 +269,19 @@ async def import_workflow(
         nodeTemplates=workflow_data.get("nodeTemplates", []),
     )
 
-    created = await WorkflowRepository.create(workflow_create)
+    if workspace_id:
+        ws = await WorkspaceRepository.get_by_id(workspace_id)
+        if not ws:
+            raise ValueError(f"Workspace {workspace_id} not found")
+        created = await WorkflowRepository.create_scoped(
+            workflow_data=workflow_create,
+            workspace_id=workspace_id,
+            org_id=ws.orgId,
+            owner_type=ws.ownerType,
+        )
+    else:
+        created = await WorkflowRepository.create(workflow_create)
+
     if new_env_id:
         created.environmentId = new_env_id
         created.updatedAt = datetime.now(UTC)
@@ -263,6 +292,7 @@ async def import_workflow(
         "workflowId": created.workflowId,
         "environmentId": new_env_id,
         "secretReferences": bundle.get("secretReferences", []),
+        "actorUserId": actor_user_id,
     }
 
 

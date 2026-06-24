@@ -50,6 +50,13 @@ BLOCKED_NETWORKS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
     ipaddress.ip_network("ff00::/8"),  # multicast
 ]
 
+# Loopback subset — surgically opt-in via settings.get_allow_loopback().
+# RFC1918, link-local, and metadata stay blocked regardless of this set.
+LOOPBACK_NETWORKS: frozenset[ipaddress.IPv4Network | ipaddress.IPv6Network] = frozenset({
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+})
+
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
@@ -65,7 +72,16 @@ class SafeUrlError(Exception):
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Return True if *ip* falls within any blocked network."""
+    """Return True if *ip* falls within any blocked network.
+
+    When ``settings.get_allow_loopback()`` is True, addresses in
+    :data:`LOOPBACK_NETWORKS` (127.0.0.0/8 and ::1/128) are allowed through.
+    RFC1918, link-local (including cloud metadata at 169.254.169.254),
+    unique-local IPv6, multicast, and unspecified ranges remain blocked
+    regardless of the flag.
+    """
+    if settings.get_allow_loopback() and any(ip in net for net in LOOPBACK_NETWORKS):
+        return False
     return any(ip in net for net in BLOCKED_NETWORKS)
 
 

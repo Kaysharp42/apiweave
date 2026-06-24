@@ -173,7 +173,8 @@ SSRF and request routing controls.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `BLOCK_PRIVATE_NETWORKS` | No | `true` | Blocks HTTP nodes from reaching `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, and other reserved ranges. SSRF protection. Must be `true` in production. |
+| `BLOCK_PRIVATE_NETWORKS` | No | `true` | Blocks HTTP nodes from reaching `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, and other reserved ranges. SSRF protection. **Must be `true` in production.** Do not flip this to `false` to allow localhost — use `ALLOW_LOOPBACK` instead, which only unblocks loopback (not RFC1918 or cloud metadata). The startup validator refuses to boot in production when this is `false`. |
+| `ALLOW_LOOPBACK` | No | `false` (auto-`true` for single-user dev) | Surgically unblocks `127.0.0.0/8` and `::1/128` so workflows can hit services on the same machine. RFC1918 (`10.x`, `192.168.x`, `172.16.x`), link-local (`169.254.x` — cloud metadata), and unique-local IPv6 stay blocked. Auto-enabled when `DEPLOYMENT_MODE=single_user` AND `APP_ENV=development`, so a normal laptop user does not need to set anything. **Refused in production** — the startup validator rejects `true` when `APP_ENV=production`. For self-hosted prod deployments that need to reach specific internal hosts, use `APPROVED_DOMAINS` to whitelist them explicitly. |
 
 ## Rate Limiter
 
@@ -191,8 +192,9 @@ Settings for the Model Context Protocol server, used by AI agents for machine-to
 | --- | --- | --- | --- |
 | `MCP_ENABLED` | No | `false` | Enables the MCP server. Set to `true` to expose MCP tools to AI agents. |
 | `MCP_HTTP_ENABLED` | No | `false` | Enables the HTTP transport for MCP. Stdio MCP is always available locally. |
-| `MCP_ALLOWED_ORIGINS` | No | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated origins allowed to call the MCP HTTP endpoint. The MCP SDK also derives a Host header allowlist (DNS rebinding protection) from these origins automatically, so each origin's hostname accepts any port. Override with `MCP_ALLOWED_HOSTS` if the backend is served on a host that doesn't appear in this list. |
+| `MCP_ALLOWED_ORIGINS` | No | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated origins allowed to call the MCP HTTP endpoint. The MCP SDK also derives a Host header allowlist (DNS rebinding protection) from these origins automatically: every origin's hostname is added with a `:*` port wildcard (loopback defaults `127.0.0.1`, `localhost`, `[::1]` are always merged in as well). Override with `MCP_ALLOWED_HOSTS` only if the backend is reached on a host that does not appear in any origin (rare — most reverse-proxy setups still match by the public origin). |
 | `MCP_ALLOWED_HOSTS` | No | empty | Optional override for the MCP Host header allowlist (DNS rebinding protection). Normally derived from `MCP_ALLOWED_ORIGINS`; set only when the backend is served on a host not present in the origin list (e.g. reverse proxy). Accepts the MCP SDK's `host:*` wildcard syntax to match any port. |
+| `MCP_REQUIRE_API_KEY` | No | `true` | When `true`, every MCP HTTP request must carry a valid `Bearer awst_...` scoped service token. Set to `false` for local single-user deployments where no token is needed; the single-user owner's personal workspace is used automatically. |
 
 The bearer token for MCP is now a scoped service token. Create one in the workspace or organization settings and pass it as `Authorization: Bearer <token>` on every HTTP MCP request.
 

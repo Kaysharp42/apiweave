@@ -47,7 +47,7 @@ class TestMCPCORSMiddleware:
         inner.add_middleware(MCPCORSMiddleware)
 
         client = TestClient(inner)
-        resp = client.options("/")
+        resp = client.options("/", headers={"Origin": "http://localhost:3000"})
         assert resp.status_code == 200
         assert "access-control-allow-origin" in resp.headers
         assert "access-control-allow-methods" in resp.headers
@@ -67,7 +67,7 @@ class TestMCPCORSMiddleware:
         inner.add_middleware(MCPCORSMiddleware)
 
         client = TestClient(inner)
-        resp = client.get("/")
+        resp = client.get("/", headers={"Origin": "http://localhost:3000"})
         assert resp.status_code == 200
         assert "access-control-allow-origin" in resp.headers
         assert "access-control-allow-methods" in resp.headers
