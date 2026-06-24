@@ -10,6 +10,8 @@ Verifies that:
 from __future__ import annotations
 
 import pytest
+from mcp.server.fastmcp import FastMCP
+
 from app.mcp.tools import environments as environment_tools
 from app.mcp.tools import imports as import_tools
 from app.mcp.tools import project_runs as project_run_tools
@@ -18,7 +20,6 @@ from app.mcp.tools import runs as run_tools
 from app.mcp.tools import secrets as secret_tools
 from app.mcp.tools import webhooks as webhook_tools
 from app.mcp.tools import workflows as workflow_tools
-from mcp.server.fastmcp import FastMCP
 
 # Old tools that must NOT be present in the scoped inventory
 OLD_FORBIDDEN_TOOLS = {
@@ -47,6 +48,8 @@ class TestMcpToolInventory:
         """All expected scoped tools are registered."""
         server = FastMCP(name="test-inventory")
 
+        from app.mcp.tools import discovery as discovery_tools
+
         workflow_tools.register_workflow_tools(server)
         environment_tools.register_environment_tools(server)
         project_tools.register_project_tools(server)
@@ -55,11 +58,14 @@ class TestMcpToolInventory:
         import_tools.register_import_tools(server)
         secret_tools.register_secret_tools(server)
         webhook_tools.register_webhook_tools(server)
+        discovery_tools.register_discovery_tools(server)
 
         tool_names = {tool.name for tool in await server.list_tools()}
 
         # Core scoped tools that MUST be present
         expected_scoped = {
+            # Capability discovery
+            "mcp_describe_capabilities",
             # Workflow tools
             "workflow_list",
             "workflow_get",

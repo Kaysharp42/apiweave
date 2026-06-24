@@ -152,7 +152,7 @@ export function HTTPRequestConfigPanel({
   const jsonError = useMemo(
     () =>
       draftConfig.bodyType === "json"
-        ? validateJson(draftConfig.body || "")
+        ? validateJson(draftConfig.body ?? "")
         : undefined,
     [draftConfig.body, draftConfig.bodyType],
   );

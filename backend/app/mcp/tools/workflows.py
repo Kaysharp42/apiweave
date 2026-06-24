@@ -303,7 +303,7 @@ async def workflow_import(
 ) -> WorkflowImportResponse:
     """Import a workflow bundle into the authenticated workspace."""
     await ensure_mcp_database()
-    # Import uses shared service (scope enforced at workflow creation level)
+    scope = require_scope()
     from app.services.workflow_service import import_workflow
 
     try:
@@ -312,6 +312,8 @@ async def workflow_import(
             environment_mapping=environment_mapping,
             create_missing_environments=create_missing_environments,
             sanitize=sanitize,
+            workspace_id=scope.scope_id,
+            actor_user_id=scope.actor_id,
         )
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
@@ -441,6 +443,54 @@ async def workflow_set_environment(
     )
 
 
+WORKFLOW_GRAMMAR_REFERENCE = """
+
+Node types (each node has type-specific `config`):
+  start / end           {}  (control flow boundaries)
+  http-request          {method, url, headers, queryParams, pathVariables, cookies, body,
+                         timeout, followRedirects, extractors, fileUploads}
+  assertion             {assertions: [{field, operator, expected}, ...]}
+  delay                 {duration} in milliseconds
+  merge                 {mergeStrategy: "all"|"any"|"first"|"conditional", conditions?}
+  condition             {condition, operator, value}
+
+Placeholder grammar (resolved before each node runs):
+  {{variables.NAME}}    workflow-scoped; written by HTTP extractors or the Variables panel
+  {{env.NAME}}          from the selected environment
+  {{prev.PATH}}         previous node's response. Use prev.response.body.id or flat keys
+                        like prev.statusCode, prev.headers; prev[INDEX].PATH after a Merge node
+  {{secrets.NAME}}      scope override chain: env > workspace > org > bound user
+  {{nodeId.PATH}}       reference any node by its ID (e.g. node_abc123.response.body.id);
+                        works for non-adjacent nodes, not just the immediate predecessor
+
+Path syntax: dot-separated keys with [N] array indexing only. No JSONPath features
+($, .., *, filters) — those silently resolve to empty.
+
+SECURITY: URL, query params, and path variables BLOCK {{secrets.*}} placeholders
+(raises ValueError). Use secrets only in body, headers, cookies, or auth fields.
+
+Dynamic functions (callable inside any {{...}}):
+  uuid(), randomString(length=10), randomAlpha(length=10), randomNumeric(length=10),
+  randomHex(length=16), randomEmail(), randomNumber(size=6), randomChoice("a,b,c"),
+  timestamp(), iso_timestamp(), date(format="%Y-%m-%d"),
+  futureDate(days=1, format="%Y-%m-%d"), pastDate(days=1, format="%Y-%m-%d").
+
+HTTP-request extractors write workflow variables from responses. Shape is dict[str, str]
+mapping variable name to dot-notation path. Example:
+  extractors: {"token": "response.body.access_token"}
+Then any later node can use Authorization: Bearer {{variables.token}}.
+
+Reference docs (read via resources/read):
+  apiweave://docs/placeholders               full grammar + edge cases
+  apiweave://docs/dynamic-functions          all 13 functions with signatures
+  apiweave://docs/variables-and-extractors   extractor recipes
+  apiweave://docs/workflows-and-nodes        per-node-type field reference
+  apiweave://docs/environments-and-secrets   override chain + write-only secret model
+
+Call mcp_describe_capabilities for the full machine-readable catalog.
+"""
+
+
 def register_workflow_tools(server: FastMCP) -> None:
     """Register scoped workflow tools."""
     server.tool(
@@ -452,15 +502,28 @@ def register_workflow_tools(server: FastMCP) -> None:
     )(workflow_list)
     server.tool(
         name="workflow_get",
-        description="Get a workflow scoped to the authenticated workspace.",
+        description=(
+            "Get a workflow scoped to the authenticated workspace. Secrets are redacted "
+            "to <SECRET>; the redacted_secret_references list tells you which paths were "
+            "redacted so you can re-apply them via {{secrets.NAME}} placeholders."
+            + WORKFLOW_GRAMMAR_REFERENCE
+        ),
     )(workflow_get)
     server.tool(
         name="workflow_create",
-        description="Create a workflow in the authenticated workspace.",
+        description=(
+            "Create a workflow in the authenticated workspace."
+            + WORKFLOW_GRAMMAR_REFERENCE
+        ),
     )(workflow_create)
     server.tool(
         name="workflow_update",
-        description="Update a workflow scoped to the authenticated workspace.",
+        description=(
+            "Update a workflow scoped to the authenticated workspace. Only the fields you "
+            "pass replace the stored values; omitted fields are left unchanged. To clear a "
+            "field, pass an empty list/dict (None means 'leave alone')."
+            + WORKFLOW_GRAMMAR_REFERENCE
+        ),
     )(workflow_update)
     server.tool(
         name="workflow_export",
@@ -468,7 +531,13 @@ def register_workflow_tools(server: FastMCP) -> None:
     )(workflow_export)
     server.tool(
         name="workflow_import",
-        description="Import a workflow bundle into the authenticated workspace.",
+        description=(
+            "Import a workflow bundle into the authenticated workspace. The bundle has "
+            "shape {workflow: {name, nodes, edges, variables, ...}, environment?, ...}. "
+            "Call workflow_import_dry_run first to surface validation errors without "
+            "persisting anything."
+            + WORKFLOW_GRAMMAR_REFERENCE
+        ),
     )(workflow_import)
     server.tool(
         name="workflow_import_dry_run",

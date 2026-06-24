@@ -403,7 +403,7 @@ class WorkflowExecutor:
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for result in results:
-                    if isinstance(result, Exception):
+                    if isinstance(result, (Exception, _StopBranch)):
                         self.has_failures = True
                         if not self.first_error_message:
                             self.first_error_message = str(result)
@@ -458,6 +458,15 @@ class WorkflowExecutor:
                 self.logger.error(f"⚠️  Failed to update run completion status: {str(update_error)}")
                 self.logger.info("   Run completed, but status update failed")
                 # Don't fail the run just because status update failed
+
+        except _StopBranch as e:
+            # _StopBranch is raised when continue_on_fail=False and a node fails.
+            # The executor already has has_failures/failed_nodes/first_error_message set
+            # before raising, so we just need to persist the final status.
+            self.logger.info(
+                "🛑 Branch stopped: %s — persisting failed status", e.message
+            )
+            await self._fail_run(e.message)
 
         except Exception as e:
             # Only fail if actual execution error (not document size issues)
@@ -981,6 +990,33 @@ class WorkflowExecutor:
             return self._masker.mask_text(text)
         return text
 
+    @staticmethod
+    def _resolve_dotted_path(value: Any, path_parts: list[str], fallback: str) -> str:
+        """Walk a dotted path through nested dicts and lists.
+
+        Each ``part`` is either a plain key (dict lookup) or ``key[N]`` (dict
+        lookup followed by list index). On any miss — non-dict at a key,
+        missing key, non-list at an index, or out-of-range index — returns
+        ``fallback`` (typically the original ``{{...}}`` placeholder so the
+        substitution becomes a no-op).
+        """
+        for part in path_parts:
+            array_match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$", part)
+            if array_match:
+                key = array_match.group(1)
+                index = int(array_match.group(2))
+                if not (isinstance(value, dict) and key in value):
+                    return fallback
+                value = value.get(key)
+                if not (isinstance(value, list) and 0 <= index < len(value)):
+                    return fallback
+                value = value[index]
+            elif isinstance(value, dict):
+                value = value.get(part)
+            else:
+                return fallback
+        return str(value) if value is not None else fallback
+
     def _substitute_variables(self, text: str, *, allow_secrets: bool = True) -> str:
         """Replace {{variable}} placeholders with actual values from context.
 
@@ -1241,32 +1277,9 @@ class WorkflowExecutor:
                                     prev_result = results_list[branch_index]
                                     path_parts = path_after_index.split(".")
 
-                                    value = prev_result
-                                    for part in path_parts:
-                                        # Handle array indexing: data[0], items[1], etc.
-                                        array_match = re.match(
-                                            r"^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$", part
-                                        )
-                                        if array_match:
-                                            key = array_match.group(1)
-                                            index = int(array_match.group(2))
-                                            # First get the key from dict, then index into array
-                                            if isinstance(value, dict) and key in value:
-                                                value = value.get(key)
-                                                if isinstance(value, list) and 0 <= index < len(
-                                                    value
-                                                ):
-                                                    value = value[index]
-                                                else:
-                                                    return str(match.group(0))
-                                            else:
-                                                return str(match.group(0))
-                                        elif isinstance(value, dict):
-                                            value = value.get(part)
-                                        else:
-                                            return str(match.group(0))
-
-                                    return str(value) if value is not None else str(match.group(0))
+                                    return self._resolve_dotted_path(
+                                        prev_result, path_parts, str(match.group(0))
+                                    )
                         return str(match.group(0))
 
                     else:
@@ -1276,32 +1289,17 @@ class WorkflowExecutor:
                             prev_result = list(self.results.values())[-1]
                             path_parts = var_path.split(".")[1:]  # Remove 'prev'
 
-                            value = prev_result
-                            for part in path_parts:
-                                # Handle array indexing: data[0], items[1], etc.
-                                array_match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$", part)
-                                if array_match:
-                                    key = array_match.group(1)
-                                    index = int(array_match.group(2))
-                                    # First get the key from dict, then index into array
-                                    if isinstance(value, dict) and key in value:
-                                        value = value.get(key)
-                                        if isinstance(value, list) and 0 <= index < len(value):
-                                            value = value[index]
-                                        else:
-                                            return str(
-                                                match.group(0)
-                                            )  # Return original if not found
-                                    else:
-                                        return str(match.group(0))  # Return original if not found
-                                elif isinstance(value, dict):
-                                    value = value.get(part)
-                                else:
-                                    return str(match.group(0))  # Return original if not found
-
-                            return str(value) if value is not None else str(match.group(0))
+                            return self._resolve_dotted_path(
+                                prev_result, path_parts, str(match.group(0))
+                            )
                         return str(match.group(0))
                 else:
+                    first_part = var_path.split(".")[0]
+                    if first_part in self.results:
+                        path_parts = var_path.split(".")[1:]
+                        return self._resolve_dotted_path(
+                            self.results[first_part], path_parts, str(match.group(0))
+                        )
                     # Support direct context variables
                     ctx_value = self.context.get(var_path, match.group(0))
                     return str(ctx_value)
@@ -1384,6 +1382,12 @@ class WorkflowExecutor:
                     raw_value, allow_secrets=allow_secrets
                 )
             return result
+
+        if isinstance(value, dict):
+            return {
+                k: self._substitute_variables(str(v), allow_secrets=allow_secrets)
+                for k, v in value.items()
+            }
 
         # Unknown type — fall back to empty dict rather than crashing.
         self.logger.warning(
@@ -1707,6 +1711,12 @@ class WorkflowExecutor:
 
         # Substitute variables in body
         if body:
+            # If body is a dict (from workflow JSON), convert to JSON string first
+            # and default Content-Type to application/json unless the caller set one.
+            if isinstance(body, dict):
+                body = json.dumps(body)
+                if not any(h.lower() == "content-type" for h in headers):
+                    headers["Content-Type"] = "application/json"
             body = self._substitute_variables(body)
 
             # NEW: Warn if secrets are used in request body

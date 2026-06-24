@@ -15,6 +15,8 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 _tools_registered = False
+_resources_registered = False
+_prompts_registered = False
 
 
 def _build_transport_security() -> TransportSecuritySettings:
@@ -61,6 +63,8 @@ def register_tools() -> None:
 
     # Scoped workflow tools (workspace-scoped)
     # Scoped environment tools (workspace/org-scoped)
+    # Capability discovery tool (catalogs tools/resources/grammar for agents)
+    from app.mcp.tools.discovery import register_discovery_tools
     from app.mcp.tools.environments import register_environment_tools
 
     # Import tools (utility — no scope needed)
@@ -90,6 +94,8 @@ def register_tools() -> None:
     register_import_tools(mcp_server)
     register_secret_tools(mcp_server)
     register_webhook_tools(mcp_server)
+    # Discovery is registered LAST so it can enumerate every other tool.
+    register_discovery_tools(mcp_server)
 
     _tools_registered = True
     logger.info("MCP scoped tools registered")
@@ -97,6 +103,10 @@ def register_tools() -> None:
 
 def register_resources() -> None:
     """Register all MCP resources from resource modules."""
+    global _resources_registered
+    if _resources_registered:
+        return
+    from app.mcp.resources.docs import register_doc_resources
     from app.mcp.resources.environments import register_environment_resources
     from app.mcp.resources.runs import register_run_resources
     from app.mcp.resources.workflows import register_workflow_resources
@@ -104,16 +114,22 @@ def register_resources() -> None:
     register_workflow_resources(mcp_server)
     register_environment_resources(mcp_server)
     register_run_resources(mcp_server)
+    register_doc_resources(mcp_server)
 
+    _resources_registered = True
     logger.info("MCP resources registered")
 
 
 def register_prompts() -> None:
     """Register all MCP prompts from prompt modules."""
+    global _prompts_registered
+    if _prompts_registered:
+        return
     from app.mcp.prompts.debug import register_debug_prompts
     from app.mcp.prompts.workflow import register_workflow_prompts
 
     register_workflow_prompts(mcp_server)
     register_debug_prompts(mcp_server)
 
+    _prompts_registered = True
     logger.info("MCP prompts registered")
