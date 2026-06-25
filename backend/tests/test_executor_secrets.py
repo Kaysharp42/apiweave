@@ -244,6 +244,49 @@ class TestE2SecretInAuthHeader:
         assert captured_headers.get("Authorization") == f"Bearer {_SECRET_HEADER_VALUE}"
 
     @pytest.mark.asyncio
+    async def test_bearer_header_collapses_extra_space_after_secret_resolution(self):
+        ex = WorkflowExecutor(run_id="run-t16-hdr-space", workflow_id="wf-t16-hdr-space")
+        ex.secrets = {"apiKey": _SECRET_HEADER_VALUE}
+        ex.environment_variables = {}
+        ex.workflow_variables = {}
+        ex.results = {}
+
+        node = {
+            "nodeId": "http_space",
+            "type": "httpRequest",
+            "config": {
+                "method": "GET",
+                "url": "https://api.example.com/data",
+                "headers": "Authorization: Bearer  {{secrets.apiKey}}",
+                "body": "",
+                "timeout": 5,
+                "queryParams": "",
+                "pathVariables": "",
+                "cookies": "",
+                "fileUploads": [],
+            },
+        }
+
+        mock_resp = _make_mock_response()
+        mock_sess = _make_mock_session()
+        captured_headers: dict = {}
+
+        async def fake_safe_request(method, url, **kwargs):
+            captured_headers.update(kwargs.get("headers", {}))
+            return mock_resp, mock_sess
+
+        with (
+            patch(
+                "app.services.safe_http.safe_request",
+                side_effect=fake_safe_request,
+            ),
+            patch("app.services.safe_http.validate_url"),
+        ):
+            await ex._execute_http_request(node)
+
+        assert captured_headers.get("Authorization") == f"Bearer {_SECRET_HEADER_VALUE}"
+
+    @pytest.mark.asyncio
     async def test_multiple_secret_headers_resolved(self):
         ex = WorkflowExecutor(run_id="run-t16-hdr2", workflow_id="wf-t16-hdr2")
         ex.secrets = {"apiKey": _SECRET_HEADER_VALUE, "dbPass": _SECRET_BODY_VALUE}

@@ -170,6 +170,7 @@ export default function WorkspaceEnvironmentsPage() {
             name: data.name,
             description: data.description || undefined,
             swaggerDocUrl: data.swaggerDocUrl || undefined,
+            variables: data.variables,
             allowedWorkspaceIds: data.allowedWorkspaceIds,
           }),
         },
@@ -203,6 +204,7 @@ export default function WorkspaceEnvironmentsPage() {
           name: data.name,
           description: data.description || undefined,
           swaggerDocUrl: data.swaggerDocUrl || undefined,
+          variables: data.variables,
           allowedWorkspaceIds: data.allowedWorkspaceIds,
         }),
       });

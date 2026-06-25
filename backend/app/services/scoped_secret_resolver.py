@@ -10,10 +10,21 @@ that should ever hold plaintext secret values at runtime.
 from __future__ import annotations
 
 import base64
+import binascii
 
 from nacl.public import PrivateKey, SealedBox
 
 from app.services.scoped_secrets import decrypt_private_key, get_keypair_by_key_id
+
+
+def _decode_ciphertext(ciphertext_b64: str) -> bytes:
+    value = ciphertext_b64.strip()
+    padded = value + ("=" * (-len(value) % 4))
+
+    try:
+        return base64.b64decode(padded, validate=True)
+    except binascii.Error:
+        return base64.urlsafe_b64decode(padded)
 
 
 async def resolve_secret(
@@ -54,6 +65,6 @@ async def resolve_secret(
     private_key = PrivateKey(private_key_bytes)
     sealed_box = SealedBox(private_key)
 
-    ciphertext = base64.b64decode(ciphertext_b64)
+    ciphertext = _decode_ciphertext(ciphertext_b64)
     plaintext = sealed_box.decrypt(ciphertext)
     return plaintext.decode("utf-8")

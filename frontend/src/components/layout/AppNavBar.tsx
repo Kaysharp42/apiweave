@@ -1,5 +1,5 @@
 import React from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
 import {
   Home,
   Settings,
@@ -16,6 +16,7 @@ import useNavigationStore from "../../stores/NavigationStore";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { AppNavBarItems } from "../../constants/AppNavBar";
 import type { NavSection } from "../../types/NavSection";
+import { useAuth } from "../../auth/useAuth";
 
 type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
@@ -58,6 +59,10 @@ const navItems: NavItemConfig[] = [
 export function AppNavBar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { orgSlug, workspaceSlug } = useParams<{
+    orgSlug?: string;
+    workspaceSlug?: string;
+  }>();
   const navigationSelectedValue = useNavigationStore(
     (state) => state.selectedNavVal,
   );
@@ -69,9 +74,13 @@ export function AppNavBar() {
     (state) => state.toggleNavBarCollapse,
   );
   const { currentOrg, currentWorkspace } = useWorkspace();
+  const { isSingleUser } = useAuth();
 
   const isOnSettingsRoute =
     location.pathname.includes("/settings/") || location.pathname === "/audit";
+  const settingsPath = isSingleUser
+    ? `/${currentOrg?.slug ?? orgSlug ?? "personal"}/${currentWorkspace?.slug ?? workspaceSlug ?? "personal"}/settings/environments`
+    : "/settings/users";
 
   return (
     <nav
@@ -101,7 +110,7 @@ export function AppNavBar() {
                 if (disabled) return;
                 updateNavigationSelectedValue(id as NavSection);
                 if (id === "settings") {
-                  if (!isOnSettingsRoute) navigate("/settings/users");
+                  if (!isOnSettingsRoute) navigate(settingsPath);
                 } else if (isOnSettingsRoute) {
                   const orgSlug = currentOrg?.slug ?? "personal";
                   const wsSlug = currentWorkspace?.slug ?? "workflows";

@@ -41,4 +41,8 @@ describe("WorkspaceEnvironmentsPage", () => {
     );
     expect(source).toContain("/api/orgs/${orgId}/workspaces");
   });
+
+  it("saves edited environment variables", () => {
+    expect(source.match(/variables: data\.variables/g)).toHaveLength(2);
+  });
 });
