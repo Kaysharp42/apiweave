@@ -207,7 +207,7 @@ export function WorkflowCanvas({
     isEditorOverlayOpen,
   });
 
-  const { isWorkflowHydratedRef, hydratedBaselineRef } = useHydration({
+  const { isHydrated, hydratedBaselineRef } = useHydration({
     workflow,
     setNodes,
     setEdges,
@@ -821,7 +821,7 @@ export function WorkflowCanvas({
   useAutoSave({
     workflowId,
     autoSaveEnabled: autoSaveEnabled && !isRunning && !isSwaggerRefreshing,
-    isHydrated: isWorkflowHydratedRef.current,
+    isHydrated,
     nodes,
     edges,
     workflowVariables,
@@ -952,7 +952,7 @@ export function WorkflowCanvas({
         onSave={() => saveWorkflow(false)}
         onHistory={() => setShowHistory(true)}
         onJsonEditor={() => {
-          if (!isWorkflowHydratedRef.current) {
+          if (!isHydrated) {
             toast.info(
               "Workflow is still loading. Try JSON again in a moment.",
             );

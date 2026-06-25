@@ -1471,12 +1471,6 @@ class WorkflowExecutor:
         self.logger.warning("Unknown auth.type '%s' — treating as 'none'", auth_type)
         return headers, url
 
-    def _normalize_authorization_header(self, headers: dict[str, str]) -> None:
-        for name, value in list(headers.items()):
-            if name.lower() == "authorization":
-                headers[name] = re.sub(r"^(Bearer|Basic)\s+", r"\1 ", value, flags=re.IGNORECASE)
-                return
-
     def _extract_variables(self, extractors: dict[str, str], response: dict):
         """Extract variables from HTTP response using JSONPath-like syntax"""
         for var_name, var_path in extractors.items():
@@ -1712,7 +1706,6 @@ class WorkflowExecutor:
 
         # Apply auth config (bearer/basic/apiKey). Config headers win on collision.
         headers, url = self._apply_auth_to_request(config, headers, url)
-        self._normalize_authorization_header(headers)
 
         # Substitute variables in body
         if body:

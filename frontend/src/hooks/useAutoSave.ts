@@ -18,8 +18,8 @@ interface Snapshot {
 }
 
 // Module-level WeakMap assigns a stable numeric ID to each data object by reference.
-// ReactFlow preserves data refs during position-only changes (pan/drag), so the
-// signature only shifts when a node's data is actually replaced — not every frame.
+// The dataId alone drives "did the node's editable content change?" — position is
+// tracked separately in the signature, so a drag fires the debounced save.
 const dataIdMap = new WeakMap<object, number>();
 let nextDataId = 0;
 
@@ -42,7 +42,11 @@ export default function useAutoSave({
   const nodesSig = useMemo(() => {
     const parts: string[] = [];
     for (const n of nodes) {
-      const node = n as { id?: string; data?: object };
+      const node = n as {
+        id?: string;
+        data?: object;
+        position?: { x?: number; y?: number };
+      };
       let dataId: number;
       if (node.data) {
         const existing = dataIdMap.get(node.data);
@@ -55,7 +59,11 @@ export default function useAutoSave({
       } else {
         dataId = -1;
       }
-      parts.push(`${node.id ?? "?"}:${dataId}`);
+      // ponytail: include position so drag/auto-layout fires the debounced save.
+      // The 700ms debounce absorbs per-frame churn during continuous drag.
+      parts.push(
+        `${node.id ?? "?"}:${dataId}:${node.position?.x ?? 0},${node.position?.y ?? 0}`,
+      );
     }
     return parts.join("|");
   }, [nodes]);
@@ -63,9 +71,17 @@ export default function useAutoSave({
   const edgesSig = useMemo(() => {
     const parts: string[] = [];
     for (const e of edges) {
-      const edge = e as { id?: string; source?: string; target?: string };
+      const edge = e as {
+        id?: string;
+        source?: string;
+        target?: string;
+        label?: unknown;
+        animated?: boolean;
+      };
+      // ponytail: include label + animated so edge edits (assertion pass/fail text,
+      // branch label) re-fire the debounced save.
       parts.push(
-        `${edge.id ?? "?"}:${edge.source ?? "?"}:${edge.target ?? "?"}`,
+        `${edge.id ?? "?"}:${edge.source ?? "?"}:${edge.target ?? "?"}:${typeof edge.label === "string" ? edge.label : ""}:${edge.animated ? 1 : 0}`,
       );
     }
     return parts.join("|");

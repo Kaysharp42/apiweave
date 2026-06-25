@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Node, Edge } from "reactflow";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
@@ -23,7 +23,7 @@ interface UseHydrationParams {
 }
 
 interface UseHydrationReturn {
-  isWorkflowHydratedRef: React.MutableRefObject<boolean>;
+  isHydrated: boolean;
   hydratedBaselineRef: React.MutableRefObject<HydratedBaseline | null>;
 }
 
@@ -32,7 +32,7 @@ export function useHydration({
   setNodes,
   setEdges,
 }: UseHydrationParams): UseHydrationReturn {
-  const isWorkflowHydratedRef = useRef(false);
+  const [isHydrated, setIsHydrated] = useState(false);
   const hydratedBaselineRef = useRef<HydratedBaseline | null>(null);
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export function useHydration({
       !Array.isArray(workflow.nodes) ||
       !Array.isArray(workflow.edges)
     ) {
-      isWorkflowHydratedRef.current = false;
+      setIsHydrated(false);
       return;
     }
 
@@ -93,14 +93,14 @@ export function useHydration({
 
     setNodes(loadedNodes);
     setEdges(loadedEdges);
-    isWorkflowHydratedRef.current = true;
+    setIsHydrated(true);
     hydratedBaselineRef.current = {
       nodeCount: loadedNodes.length,
       edgeCount: loadedEdges.length,
     };
   }, [workflow, setNodes, setEdges]);
 
-  return { isWorkflowHydratedRef, hydratedBaselineRef };
+  return { isHydrated, hydratedBaselineRef };
 }
 
 export { assertionEdgeColor, edgeLabelBackground };
