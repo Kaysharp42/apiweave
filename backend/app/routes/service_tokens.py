@@ -20,8 +20,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.auth.dependencies import get_current_user, require_permission
-from app.auth.permissions import SECRETS_CREATE, SECRETS_DELETE, SECRETS_READ, SECRETS_UPDATE
+from app.auth.dependencies import get_current_user, require_scope_permission
 from app.models import (
     ServiceTokenCreateRequest,
     ServiceTokenCreateResponse,
@@ -68,7 +67,7 @@ class ServiceTokenPermissionsUpdateRequest(BaseModel):
 @router.get(
     "/{scope_type}/{scope_id}/tokens",
     response_model=ServiceTokenListResponse,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_READ)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "read")],
 )
 async def list_tokens(scope_type: str, scope_id: str):
     """
@@ -84,7 +83,7 @@ async def list_tokens(scope_type: str, scope_id: str):
 @router.get(
     "/{scope_type}/{scope_id}/tokens/{token_id}",
     response_model=ServiceTokenMetadataResponse,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_READ)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "read")],
 )
 async def get_token(scope_type: str, scope_id: str, token_id: str):
     """
@@ -113,7 +112,7 @@ async def get_token(scope_type: str, scope_id: str, token_id: str):
     "/{scope_type}/{scope_id}/tokens",
     response_model=ServiceTokenCreateResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_CREATE)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "create")],
 )
 async def create_token(
     scope_type: str,
@@ -142,7 +141,7 @@ async def create_token(
 @router.post(
     "/{scope_type}/{scope_id}/tokens/{token_id}/rotate",
     response_model=ServiceTokenRotateResponse,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_UPDATE)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "update")],
 )
 async def rotate_token(
     scope_type: str,
@@ -181,7 +180,7 @@ async def rotate_token(
 @router.post(
     "/{scope_type}/{scope_id}/tokens/{token_id}/revoke",
     response_model=ServiceTokenMetadataResponse,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_DELETE)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "delete")],
 )
 async def revoke_token(
     scope_type: str,
@@ -216,7 +215,7 @@ async def revoke_token(
 @router.patch(
     "/{scope_type}/{scope_id}/tokens/{token_id}/permissions",
     response_model=ServiceTokenMetadataResponse,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_UPDATE)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "update")],
 )
 async def update_token_permissions(
     scope_type: str,
