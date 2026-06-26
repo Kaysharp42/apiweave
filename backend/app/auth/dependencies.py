@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import Depends, HTTPException, Request, status
 
 from app.auth.permissions import PermissionEvaluator, ScopedPermissionEvaluator
-from app.auth.scope_resolver import ResourceScopeResolver
+from app.auth.scope_resolver import ResolvedScope, ResourceScopeResolver
 from app.config import settings
 from app.models import Session, User
 from app.repositories.auth_repositories import SessionRepository, UserRepository
@@ -147,6 +147,61 @@ def require_scoped_permission(resource: str, action: str):
         return current_user
 
     return Depends(_check_scoped_permission)
+
+
+def require_scope_permission(resource: str, action: str):
+    """Authorize an /api/scopes/{scope_type}/{scope_id}/* request.
+
+    Binds ``scope_id`` to the caller (roadmap P1.4): out-of-scope callers get
+    404 (existence-hiding), not 403. A user managing their own personal scope is
+    fully authorized by ownership; for org/workspace/environment scopes the
+    caller must additionally hold the scoped permission for ``action``.
+    """
+
+    async def _check_scope_permission(
+        request: Request,
+        current_user: User = Depends(get_current_active_user),
+    ) -> User:
+        scope_type = request.path_params.get("scope_type")
+        scope_id = request.path_params.get("scope_id")
+        if not scope_type or not scope_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+        access = await ResourceScopeResolver.resolve_scope_access(
+            current_user, scope_type, scope_id
+        )
+        if not access.allowed:
+            # 404, not 403 — do not confirm the scope exists to a non-member.
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+        # Owning your personal scope is full authorization for it.
+        if access.own_user_scope:
+            return current_user
+
+        resolved = ResolvedScope(
+            resource=resource,
+            action=action,
+            org_id=access.org_id,
+            workspace_id=access.workspace_id,
+        )
+        scope_context = await ResourceScopeResolver.build_scope_context(current_user, resolved)
+        effective = ScopedPermissionEvaluator.evaluate(
+            org_role=scope_context["org_role"],
+            workspace_role=scope_context["workspace_role"],
+            team_grants=scope_context["team_grants"],
+            outside_collaborator_permissions=scope_context["outside_collaborator_permissions"],
+            service_token_permissions=scope_context["service_token_permissions"],
+            global_roles=scope_context["global_roles"],
+            global_permissions=scope_context["global_permissions"],
+        )
+        if not ScopedPermissionEvaluator.has_permission(effective, resolved.required_permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required permission: {resolved.required_permission}",
+            )
+        return current_user
+
+    return Depends(_check_scope_permission)
 
 
 async def csrf_protect(request: Request) -> None:

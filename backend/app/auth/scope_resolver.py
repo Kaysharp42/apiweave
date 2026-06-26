@@ -8,9 +8,27 @@ from fastapi import Request
 from app.auth.permissions import PermissionScope, permission
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.outside_collaborator_repository import OutsideCollaboratorRepository
+from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
 from app.repositories.team_permission_grant_repository import TeamPermissionGrantRepository
 from app.repositories.team_repository import TeamRepository
 from app.repositories.workspace_repository import WorkspaceRepository
+
+
+@dataclass(frozen=True)
+class ScopeAccess:
+    """Result of binding a {scope_type}/{scope_id} pair to the caller.
+
+    ``allowed`` is whether the caller may *see* the scope at all (used for
+    existence-hiding 404s on the /api/scopes/* routes). ``own_user_scope``
+    marks a user managing their own personal scope, where ownership alone is
+    full authorization. ``org_id`` / ``workspace_id`` feed the permission
+    evaluator for org/workspace/environment scopes.
+    """
+
+    allowed: bool
+    own_user_scope: bool = False
+    org_id: str | None = None
+    workspace_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,6 +56,60 @@ class ResourceScopeResolver:
             org_id=str(org_id) if org_id else None,
             workspace_id=str(workspace_id) if workspace_id else None,
         )
+
+    @staticmethod
+    async def _has_workspace_access(user_id: str, workspace_id: str) -> bool:
+        """True if the caller has ANY access path to the workspace."""
+        if await WorkspaceRepository.get_member(workspace_id, user_id) is not None:
+            return True
+        if (
+            await OutsideCollaboratorRepository.get_by_workspace_and_user(workspace_id, user_id)
+            is not None
+        ):
+            return True
+        workspace = await WorkspaceRepository.get_by_id(workspace_id)
+        if workspace is not None and getattr(workspace, "orgId", None):
+            if await OrganizationRepository.get_member(workspace.orgId, user_id) is not None:
+                return True
+        return False
+
+    @staticmethod
+    async def resolve_scope_access(user: Any, scope_type: str, scope_id: str) -> ScopeAccess:
+        """Bind a {scope_type}/{scope_id} pair to the caller (roadmap P1.3/P1.4).
+
+        Closes the cross-tenant enumeration hole: the secret/service-token
+        routes used a global permission check and never bound ``scope_id`` to
+        the caller, so any holder of the global role could enumerate any
+        tenant's scope. Membership is required here; the global role alone does
+        NOT grant access.
+        """
+        user_id = getattr(user, "userId", None)
+        if not user_id:
+            return ScopeAccess(allowed=False)
+
+        if scope_type == "user":
+            return ScopeAccess(
+                allowed=scope_id == user_id,
+                own_user_scope=scope_id == user_id,
+            )
+
+        if scope_type == "organization":
+            member = await OrganizationRepository.get_member(scope_id, user_id)
+            return ScopeAccess(allowed=member is not None, org_id=scope_id)
+
+        if scope_type == "workspace":
+            allowed = await ResourceScopeResolver._has_workspace_access(user_id, scope_id)
+            return ScopeAccess(allowed=allowed, workspace_id=scope_id)
+
+        if scope_type == "environment":
+            env = await ScopedEnvironmentRepository.get_by_id(scope_id)
+            if env is None:
+                return ScopeAccess(allowed=False)
+            return await ResourceScopeResolver.resolve_scope_access(
+                user, env.scopeType, env.scopeId
+            )
+
+        return ScopeAccess(allowed=False)
 
     @staticmethod
     async def build_scope_context(
