@@ -184,7 +184,7 @@ The bootstrap flow:
 3. The frontend redirects to `/personal/workflows`, the workflows list of the new personal workspace.
 4. The owner opens the org switcher, creates the first organization, and uses it to create the first organization-owned workspace.
 
-The default `SETUP_MODE_ENABLED` is `false` in 2.0. The first-admin bootstrap that 1.0 exposed is gone. There is exactly one owner per instance.
+`SETUP_MODE_ENABLED` (default `true`) gates the first-admin bootstrap: in `multi_tenant` mode the first verified sign-in on an empty database becomes the per-instance owner, after which the backend auto-disables setup mode. Set `SETUP_MODE_ENABLED=false` once the owner exists — production startup checks reject `true`. There is exactly one owner per instance. (In `single_user` mode the flag is ignored; the synthetic owner is bootstrapped on first request.)
 
 ## Docker Compose
 

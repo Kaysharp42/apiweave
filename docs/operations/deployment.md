@@ -60,7 +60,7 @@ APP_ENV=development
 
 Production must add at minimum `APP_ENV=production`, `BASE_URL`, `PUBLIC_BASE_URL`, `ALLOWED_ORIGINS`, `TRUSTED_HOSTS`, `SESSION_SECRET_KEY`, `SESSION_COOKIE_SECURE=true`, `CSRF_ENABLED=true`, `WEBHOOK_REQUIRE_HMAC=true`, `SECRET_ENCRYPTION_KEY`, and the OAuth client credentials for any provider you enable. Treat the [Security Guide](security.md) checklist as the source of truth.
 
-The 1.0 `MCP_API_KEY` and `MCP_REQUIRE_API_KEY` variables are gone. The bearer token for HTTP MCP is a scoped service token created in the workspace or organization settings. The 1.0 `SETUP_MODE_ENABLED` first-admin bootstrap is gone; the first sign-in becomes the per-instance owner.
+The 1.0 `MCP_API_KEY` and `MCP_REQUIRE_API_KEY` variables are gone. The bearer token for HTTP MCP is a scoped service token created in the workspace or organization settings. `SETUP_MODE_ENABLED` (default `true`) still gates the first-admin bootstrap: the first verified sign-in becomes the per-instance owner, after which setup mode auto-disables — set it `false` in production (startup checks reject `true`).
 
 ### Single-User Self-Host
 

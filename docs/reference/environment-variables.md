@@ -126,7 +126,7 @@ Client credentials for the supported OAuth providers. Leave unused providers bla
 | `GOOGLE_CLIENT_ID` | No | empty | Google OAuth client ID. |
 | `GOOGLE_CLIENT_SECRET` | No | empty | Google OAuth client secret. |
 
-The first sign-in on a clean database becomes the per-instance owner. The 1.0 `SETUP_MODE_ENABLED` first-admin bootstrap is gone in 2.0.
+The first sign-in on a clean database becomes the per-instance owner, gated by `SETUP_MODE_ENABLED` (default `true`). The backend auto-disables setup mode after the first owner is created; set `SETUP_MODE_ENABLED=false` in production (startup checks reject `true`).
 
 ## Sessions and CSRF
 

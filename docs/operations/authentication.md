@@ -85,7 +85,7 @@ The org/workspace switcher continues to show the personal workspace in both mode
 
 APIWeave 2.0 has a single per-instance owner. The first user to sign in through any enabled provider becomes the owner, and the backend auto-creates a default personal workspace at the slug `personal` for that user. The owner can then create the first organization, invite teammates, and create organization-owned workspaces.
 
-The 1.0 `SETUP_MODE_ENABLED` first-admin bootstrap is gone. There is no separate "setup mode" flag. The first sign-in is the bootstrap. Subsequent sign-ins are normal logins.
+In `multi_tenant` mode the first sign-in *is* the bootstrap, and it is gated by `SETUP_MODE_ENABLED` (default `true`): when the flag is on and the user table is empty, the first verified OAuth sign-in is created as the owner (`admin`), after which the backend auto-disables setup mode for the running process. Set `SETUP_MODE_ENABLED=false` in your environment once the owner exists — production startup checks reject `true` in a production deployment. Subsequent sign-ins are normal logins. (In `single_user` mode this flag is irrelevant: there is no OAuth or sign-in; the synthetic owner is bootstrapped on first request — see [Deployment Mode](#deployment-mode).)
 
 Operational rules:
 
