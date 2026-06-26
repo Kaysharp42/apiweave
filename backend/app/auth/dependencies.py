@@ -127,7 +127,7 @@ def require_scoped_permission(resource: str, action: str):
         current_user: User = Depends(get_current_active_user),
     ) -> User:
         resolved = ResourceScopeResolver.from_request(request, resource, action)
-        scope_context = ResourceScopeResolver.build_scope_context(current_user, resolved)
+        scope_context = await ResourceScopeResolver.build_scope_context(current_user, resolved)
 
         effective = ScopedPermissionEvaluator.evaluate(
             org_role=scope_context["org_role"],
