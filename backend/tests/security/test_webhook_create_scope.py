@@ -105,3 +105,15 @@ def test_member_creates_webhook_bound_to_resource_workspace(
     # The persisted workspace is the resource's, NOT the caller-supplied one.
     assert created["workspaceId"] == "real-ws"
     assert created["scopeId"] == "real-ws"
+
+
+def test_non_member_cannot_list_workflow_webhooks(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_no_access(monkeypatch)
+
+    async def get_workflow(workflow_id: str) -> object:
+        return SimpleNamespace(workflowId=workflow_id, workspaceId="real-ws")
+
+    monkeypatch.setattr(WorkflowRepository, "get_by_id", get_workflow)
+
+    resp = _client(_user("outsider")).get("/api/webhooks/workflows/wf-1")
+    assert resp.status_code == 404

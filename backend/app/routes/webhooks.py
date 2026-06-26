@@ -381,12 +381,31 @@ async def create_webhook(
     }
 
 
-@router.get(
-    "/workflows/{workflow_id}",
-    response_model=list[dict],
-    dependencies=[require_permission(WEBHOOKS_READ)],
-)
-async def list_workflow_webhooks(workflow_id: str):
+async def _authorize_resource_read(resource_type: str, resource_id: str, user: User) -> None:
+    """404 unless the caller has webhooks:read in the resource's workspace.
+
+    Listing a resource's webhooks previously used a global WEBHOOKS_READ check
+    with no resource→workspace binding, leaking webhook metadata cross-tenant.
+    """
+    if resource_type == "workflow":
+        resource = await WorkflowRepository.get_by_id(resource_id)
+    else:
+        resource = await CollectionRepository.get_by_id(resource_id)
+    workspace_id = getattr(resource, "workspaceId", None) if resource else None
+    if not workspace_id or not await evaluate_scoped_permission(
+        user, "webhooks", "read", workspace_id=workspace_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{resource_type.capitalize()} not found: {resource_id}",
+        )
+
+
+@router.get("/workflows/{workflow_id}", response_model=list[dict])
+async def list_workflow_webhooks(
+    workflow_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
     """
     List all webhooks for a specific workflow
 
@@ -398,6 +417,7 @@ async def list_workflow_webhooks(workflow_id: str):
     Returns:
         List of webhooks (without sensitive credentials)
     """
+    await _authorize_resource_read("workflow", workflow_id, current_user)
     webhooks = await WebhookRepository.get_by_resource("workflow", workflow_id)
 
     return [
@@ -418,12 +438,11 @@ async def list_workflow_webhooks(workflow_id: str):
     ]
 
 
-@router.get(
-    "/collections/{collection_id}",
-    response_model=list[dict],
-    dependencies=[require_permission(WEBHOOKS_READ)],
-)
-async def list_collection_webhooks(collection_id: str):
+@router.get("/collections/{collection_id}", response_model=list[dict])
+async def list_collection_webhooks(
+    collection_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
     """
     List all webhooks for a specific collection
 
@@ -435,6 +454,7 @@ async def list_collection_webhooks(collection_id: str):
     Returns:
         List of webhooks (without sensitive credentials)
     """
+    await _authorize_resource_read("collection", collection_id, current_user)
     webhooks = await WebhookRepository.get_by_resource("collection", collection_id)
 
     return [
