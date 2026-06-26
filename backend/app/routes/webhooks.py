@@ -22,7 +22,6 @@ from app.auth.dependencies import (
 from app.auth.permissions import (
     PRESET_ADMIN,
     WEBHOOKS_DELETE,
-    WEBHOOKS_READ,
     WEBHOOKS_ROTATE,
     WEBHOOKS_UPDATE,
 )
@@ -475,25 +474,44 @@ async def list_collection_webhooks(
     ]
 
 
-@router.get("/{webhook_id}", response_model=dict, dependencies=[require_permission(WEBHOOKS_READ)])
-async def get_webhook(webhook_id: str):
+def require_webhook_scoped_read():
+    """Load a webhook by id and require webhooks:read in its workspace.
+
+    Replaces the global WEBHOOKS_READ by-id check that leaked any webhook's
+    metadata cross-tenant. Binds on the stored webhook.workspaceId.
+    """
+
+    async def _check(
+        webhook_id: str,
+        current_user: User = Depends(get_current_active_user),
+    ) -> Webhook:
+        webhook = await WebhookRepository.get_by_id(webhook_id)
+        workspace_id = getattr(webhook, "workspaceId", None) if webhook else None
+        if (
+            not webhook
+            or not workspace_id
+            or not await evaluate_scoped_permission(
+                current_user, "webhooks", "read", workspace_id=workspace_id
+            )
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Webhook not found: {webhook_id}"
+            )
+        return webhook
+
+    return Depends(_check)
+
+
+@router.get("/{webhook_id}", response_model=dict)
+async def get_webhook(webhook: Webhook = require_webhook_scoped_read()):
     """
     Get webhook details by ID
 
     Note: Token and hmacSecret are never returned after creation
 
-    Args:
-        webhook_id: The webhook ID
-
     Returns:
         Webhook details (without sensitive credentials)
     """
-    webhook = await WebhookRepository.get_by_id(webhook_id)
-    if not webhook:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Webhook not found: {webhook_id}"
-        )
-
     resource_type_path = "workflows" if webhook.resourceType == "workflow" else "collections"
 
     return {
@@ -647,10 +665,13 @@ async def delete_webhook(
     return None
 
 
-@router.get(
-    "/{webhook_id}/logs", response_model=dict, dependencies=[require_permission(WEBHOOKS_READ)]
-)
-async def get_webhook_logs(webhook_id: str, limit: int = 50, offset: int = 0):
+@router.get("/{webhook_id}/logs", response_model=dict)
+async def get_webhook_logs(
+    webhook_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    _authorized_webhook: Webhook = require_webhook_scoped_read(),
+):
     """
     Get execution logs for a webhook
 

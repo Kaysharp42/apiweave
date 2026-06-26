@@ -117,3 +117,15 @@ def test_non_member_cannot_list_workflow_webhooks(monkeypatch: pytest.MonkeyPatc
 
     resp = _client(_user("outsider")).get("/api/webhooks/workflows/wf-1")
     assert resp.status_code == 404
+
+
+def test_non_member_cannot_get_webhook_by_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_no_access(monkeypatch)
+
+    async def get_webhook(webhook_id: str) -> object:
+        return SimpleNamespace(webhookId=webhook_id, workspaceId="real-ws")
+
+    monkeypatch.setattr(webhooks_route.WebhookRepository, "get_by_id", get_webhook)
+
+    resp = _client(_user("outsider")).get("/api/webhooks/wh-1")
+    assert resp.status_code == 404
