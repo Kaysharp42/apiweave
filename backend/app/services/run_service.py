@@ -272,50 +272,15 @@ async def trigger_workflow_run(
 
     cancel_event = asyncio.Event()
 
-    # Build RunContext for scoped execution
-    run_context: RunContext | None = None
-    if effective_workspace_id and actor:
-        # Resolve environment scope info
-        env_scope_type = "workspace"
-        env_scope_id = effective_workspace_id
-        if environment_id:
-            env_doc = await ScopedEnvironmentRepository.get_by_id(environment_id)
-            if env_doc:
-                env_scope_type = env_doc.scopeType
-                env_scope_id = env_doc.scopeId or effective_workspace_id
-
-        # Resolve actor's workspace role for permission check
-        workspace_role: str | None = None
-        if actor.actorType == "user":
-            member = await WorkspaceRepository.get_member(effective_workspace_id, actor.actorId)
-            if member:
-                workspace_role = member.role
-            elif effective_owner_type == "user" and workflow.ownerUserId == actor.actorId:
-                workspace_role = "admin"  # Owner gets admin
-
-        # Evaluate effective permissions
-        effective_perms = ScopedPermissionEvaluator.evaluate(
-            workspace_role=workspace_role,
-            service_token_permissions=set() if actor.actorType != "service_token" else None,
-        )
-
-        # Permission check: actor must have workflows:run
-        if not ScopedPermissionEvaluator.has_permission(effective_perms, WORKFLOWS_RUN):
-            raise ConflictError(
-                f"Actor {actor.actorType}:{actor.actorId} lacks permission to run workflows "
-                f"in workspace {effective_workspace_id}"
-            )
-
-        run_context = RunContext(
-            workspace_id=effective_workspace_id,
-            org_id=effective_org_id,
-            actor_type=actor.actorType,
-            actor_id=actor.actorId,
-            environment_id=environment_id,
-            environment_scope_type=env_scope_type,
-            environment_scope_id=env_scope_id,
-            effective_permissions=effective_perms,
-        )
+    # Build RunContext for scoped execution (also enforces workflows:run).
+    run_context = await _build_run_context(
+        workflow=workflow,
+        environment_id=environment_id,
+        workspace_id=effective_workspace_id,
+        org_id=effective_org_id,
+        owner_type=effective_owner_type,
+        actor=actor,
+    )
 
     # Environment protection gate (roadmap §3.3): a protected environment must
     # not execute without approval. Manual / scoped / UI runs previously skipped
@@ -384,6 +349,122 @@ async def trigger_workflow_run(
             "terminalStatuses": ["completed", "failed", "cancelled"],
         },
     }
+
+
+async def _build_run_context(
+    *,
+    workflow: Any,
+    environment_id: str | None,
+    workspace_id: str | None,
+    org_id: str | None,
+    owner_type: str | None,
+    actor: RunActorContext | None,
+) -> RunContext | None:
+    """Build the scoped RunContext and enforce workflows:run for the actor.
+
+    Shared by the initial trigger and the resume-on-approval path so a held run
+    executes with the same scoped context it would have had originally.
+    """
+    if not (workspace_id and actor):
+        return None
+
+    env_scope_type = "workspace"
+    env_scope_id = workspace_id
+    if environment_id:
+        env_doc = await ScopedEnvironmentRepository.get_by_id(environment_id)
+        if env_doc:
+            env_scope_type = env_doc.scopeType
+            env_scope_id = env_doc.scopeId or workspace_id
+
+    workspace_role: str | None = None
+    if actor.actorType == "user":
+        member = await WorkspaceRepository.get_member(workspace_id, actor.actorId)
+        if member:
+            workspace_role = member.role
+        elif owner_type == "user" and workflow.ownerUserId == actor.actorId:
+            workspace_role = "admin"  # Owner gets admin
+
+    effective_perms = ScopedPermissionEvaluator.evaluate(
+        workspace_role=workspace_role,
+        service_token_permissions=set() if actor.actorType != "service_token" else None,
+    )
+    if not ScopedPermissionEvaluator.has_permission(effective_perms, WORKFLOWS_RUN):
+        raise ConflictError(
+            f"Actor {actor.actorType}:{actor.actorId} lacks permission to run workflows "
+            f"in workspace {workspace_id}"
+        )
+
+    return RunContext(
+        workspace_id=workspace_id,
+        org_id=org_id,
+        actor_type=actor.actorType,
+        actor_id=actor.actorId,
+        environment_id=environment_id,
+        environment_scope_type=env_scope_type,
+        environment_scope_id=env_scope_id,
+        effective_permissions=effective_perms,
+    )
+
+
+async def resume_approved_run(run_id: str) -> dict[str, Any]:
+    """Start a run that was held in pending_approval after its gate cleared.
+
+    Called by the approvals route after approve/bypass. Reconstructs the scoped
+    context from the stored run and starts background execution. Idempotent:
+    a run that is not pending_approval is left untouched.
+    """
+    run = await RunRepository.get_by_id(run_id)
+    if not run:
+        raise ValueError(f"Run {run_id} not found")
+    if run.status != "pending_approval":
+        return {"runId": run_id, "status": run.status, "message": "Run is not pending approval"}
+
+    workflow = await WorkflowRepository.get_by_id(run.workflowId)
+    if not workflow:
+        raise ValueError(f"Workflow {run.workflowId} not found")
+
+    actor = (
+        RunActorContext(actorType=run.actorType, actorId=run.actorId)
+        if run.actorType and run.actorId
+        else None
+    )
+    run_context = await _build_run_context(
+        workflow=workflow,
+        environment_id=run.environmentId,
+        workspace_id=run.workspaceId,
+        org_id=run.orgId,
+        owner_type=run.ownerType,
+        actor=actor,
+    )
+
+    run.status = "pending"
+    await run.save()
+
+    cancel_event = asyncio.Event()
+    asyncio.create_task(
+        _execute_workflow_background(
+            run_id,
+            run.workflowId,
+            run.resumeFromNodeIds or None,
+            run.resumeFromRunId,
+            cancel_event,
+            run_context=run_context,
+        )
+    )
+    return {"runId": run_id, "status": "pending"}
+
+
+async def cancel_pending_run(run_id: str) -> dict[str, str]:
+    """Cancel a run that was held in pending_approval (gate rejected)."""
+    run = await RunRepository.get_by_id(run_id)
+    if not run:
+        raise ValueError(f"Run {run_id} not found")
+    if run.status != "pending_approval":
+        return {"runId": run_id, "status": run.status}
+    run.status = "cancelled"
+    run.completedAt = datetime.now(UTC)
+    await run.save()
+    return {"runId": run_id, "status": "cancelled"}
 
 
 async def list_runs(

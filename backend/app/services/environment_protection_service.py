@@ -172,6 +172,63 @@ async def approve_run(
     return updated
 
 
+async def reject_run(
+    approval_id: str,
+    reviewer_user_id: str,
+) -> PendingRunApproval:
+    """Reject a pending run as a qualified reviewer.
+
+    Mirrors approve_run's authorization: the reviewer must be in the
+    environment's requiredReviewers list. The held run is cancelled by the
+    caller (approvals route) after this returns.
+    """
+    approval = await PendingApprovalRepository.get_by_id(approval_id)
+    if not approval:
+        raise ApprovalNotFoundError(f"Approval {approval_id} not found")
+
+    if approval.status != "pending":
+        raise ApprovalNotPendingError(f"Approval {approval_id} is already {approval.status}")
+
+    protection = await ScopedEnvironmentRepository.get_protection(approval.environmentId)
+    if not protection:
+        raise ApprovalNotFoundError(
+            f"No protection config for environment {approval.environmentId}"
+        )
+
+    if reviewer_user_id not in protection.requiredReviewers:
+        raise ConflictError(
+            f"User {reviewer_user_id} is not a required reviewer for "
+            f"environment {approval.environmentId}"
+        )
+
+    updated = await PendingApprovalRepository.reject(
+        approval_id=approval_id,
+        resolved_by=reviewer_user_id,
+        resolved_by_actor_type="user",
+    )
+    if not updated:
+        raise ResourceNotFoundError(f"Failed to update approval {approval_id}")
+
+    await audit_service.append_event(
+        actor="user",
+        actor_id=reviewer_user_id,
+        action="run_rejected",
+        scope="environment",
+        scope_id=approval.environmentId,
+        resource_type="run",
+        resource_id=approval.runId,
+        context={"approvalId": approval_id, "workspaceId": approval.workspaceId},
+    )
+
+    logger.info(
+        "Run %s rejected by %s for environment %s",
+        approval.runId,
+        reviewer_user_id,
+        approval.environmentId,
+    )
+    return updated
+
+
 # ======================================================================
 # Trusted-Token Bypass
 # ======================================================================
