@@ -14,10 +14,13 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import (
+    evaluate_scoped_permission,
+    get_current_active_user,
+    require_permission,
+)
 from app.auth.permissions import (
     PRESET_ADMIN,
-    WEBHOOKS_CREATE,
     WEBHOOKS_DELETE,
     WEBHOOKS_READ,
     WEBHOOKS_ROTATE,
@@ -286,7 +289,8 @@ def require_webhook_owner_or_admin(permission: str):
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_webhook(
-    webhook_data: WebhookCreate, current_user: User = require_permission(WEBHOOKS_CREATE)
+    webhook_data: WebhookCreate,
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Create a new webhook for CI/CD integration
@@ -316,6 +320,20 @@ async def create_webhook(
                 detail=f"Collection not found: {webhook_data.resourceId}",
             )
 
+    # Scope-bind to the resource's OWN workspace, not the caller-supplied field:
+    # previously a global WEBHOOKS_CREATE holder could attach a webhook to any
+    # tenant's workflow/collection and even mis-attribute workspaceId.
+    resource_workspace_id = getattr(resource, "workspaceId", None)
+    if not resource_workspace_id or not await evaluate_scoped_permission(
+        current_user, "webhooks", "create", workspace_id=resource_workspace_id
+    ):
+        # 404 (existence-hiding) — do not confirm the resource to a non-member.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{webhook_data.resourceType.capitalize()} not found: "
+            f"{webhook_data.resourceId}",
+        )
+
     # Generate webhook ID, token, and HMAC secret
     webhook_id = f"wh-{uuid.uuid4().hex[:12]}"
     token = f"secret_{secrets.token_urlsafe(32)}"
@@ -328,9 +346,9 @@ async def create_webhook(
             "resourceType": webhook_data.resourceType,
             "resourceId": webhook_data.resourceId,
             "environmentId": webhook_data.environmentId,
-            "workspaceId": webhook_data.workspaceId,
+            "workspaceId": resource_workspace_id,
             "scopeType": "workspace",
-            "scopeId": webhook_data.workspaceId,
+            "scopeId": resource_workspace_id,
             "token": token,
             "hmacSecret": hmac_secret,
             "enabled": True,
