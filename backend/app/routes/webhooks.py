@@ -58,6 +58,7 @@ from app.services.environment_protection_service import (
     BypassNotAllowedError,
     bypass_protection,
     check_protection_and_maybe_gate,
+    reject_gate_record,
 )
 from app.services.webhook_runner import QueueFull, WebhookDelivery, webhook_runner
 
@@ -70,6 +71,24 @@ async def _get_protection(environment_id: str):
     from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
 
     return await ScopedEnvironmentRepository.get_protection(environment_id)
+
+
+async def _deny_gated_webhook(gate_result, gate_record, bypass_reason, token_id) -> None:
+    """A protected environment denies a webhook whose token cannot bypass it.
+
+    Without bypass authorization there is no human-resolvable run for a machine
+    trigger, so the protected environment must NOT execute (roadmap §3.3). The
+    placeholder approval is rejected to keep the pending list clean.
+    """
+    if gate_result == "pending_approval" and bypass_reason is None:
+        if gate_record:
+            await reject_gate_record(gate_record.approvalId, token_id)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Environment is protected and this webhook token is not " "authorized to bypass it."
+            ),
+        )
 
 
 async def _run_workflow_and_update_webhook(
@@ -1005,6 +1024,9 @@ async def execute_workflow_webhook(
             except BypassNotAllowedError:
                 pass
 
+    # Protected environment + token not authorized to bypass → deny (no run).
+    await _deny_gated_webhook(gate_result, gate_record, bypass_reason, actor.tokenId)
+
     # ── 8d. Audit webhook execution ───────────────────────────────────────────
     try:
         await audit_service.append_event(
@@ -1254,6 +1276,9 @@ async def execute_collection_webhook(
                 bypass_reason = f"Webhook {webhook_id} automated bypass"
             except BypassNotAllowedError:
                 pass
+
+    # Protected environment + token not authorized to bypass → deny (no run).
+    await _deny_gated_webhook(gate_result, gate_record, bypass_reason, actor.tokenId)
 
     # ── 8d. Audit webhook execution ───────────────────────────────────────────
     try:

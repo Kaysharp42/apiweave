@@ -47,6 +47,24 @@ class ApprovalNotPendingError(ConflictError):
 # ======================================================================
 
 
+async def reject_gate_record(
+    approval_id: str,
+    actor_id: str,
+    actor_type: str = "webhook_token",
+) -> None:
+    """Reject a placeholder approval that won't be resolved (machine deny path).
+
+    Used when a protected environment denies a non-bypass webhook: the gate
+    created a pending approval, but there is no human-resolvable run, so we mark
+    it rejected to keep the pending-approvals list clean.
+    """
+    await PendingApprovalRepository.reject(
+        approval_id=approval_id,
+        resolved_by=actor_id,
+        resolved_by_actor_type=actor_type,
+    )
+
+
 async def check_protection_and_maybe_gate(
     run_id: str,
     environment_id: str,
