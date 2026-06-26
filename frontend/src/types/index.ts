@@ -250,6 +250,7 @@ export type { Team } from "./Team";
 export type { TeamMember } from "./TeamMember";
 export type { TeamPermissionGrant } from "./TeamPermissionGrant";
 export type { OrgInvite, OrgInviteCreate } from "./OrgInvite";
+export type { CreateOrganizationModalProps } from "./CreateOrganizationModalProps";
 export type { OutsideCollaborator, WorkspaceRole } from "./OutsideCollaborator";
 export type {
   WorkspaceContextValue,
