@@ -11,7 +11,21 @@ from pydantic import Field
 
 from app.mcp.database import ensure_mcp_database
 from app.mcp.datetime_utils import utc_datetime
-from app.repositories import CollectionRunRepository
+from app.mcp.scope_context import require_scope
+from app.repositories import CollectionRepository, CollectionRunRepository
+
+
+async def _assert_collection_in_scope(collection_id: str) -> None:
+    """Raise ValueError unless the collection belongs to the token's scope.
+
+    These read tools previously returned collection-run metadata for any
+    collection_id, leaking cross-tenant. Bind to the token's workspace.
+    """
+    scope = require_scope()
+    collection = await CollectionRepository.get_by_id(collection_id)
+    workspace_id = getattr(collection, "workspaceId", None) if collection else None
+    if not workspace_id or workspace_id != scope.scope_id:
+        raise ValueError(f"Collection not found: {collection_id}")
 
 
 class CollectionRunSummary:
@@ -53,6 +67,7 @@ async def collection_run_list(
 ) -> dict:
     """List collection runs for a collection with pagination. Read-only."""
     await ensure_mcp_database()
+    await _assert_collection_in_scope(collection_id)
     runs = await CollectionRunRepository.get_by_collection(collection_id, skip=skip, limit=limit)
     total = await CollectionRunRepository.count_by_collection(collection_id)
     summaries = [CollectionRunSummary(r).to_dict() for r in runs]
@@ -74,6 +89,7 @@ async def collection_run_get(
     run = await CollectionRunRepository.get_by_id(collection_run_id)
     if not run:
         raise ValueError(f"Collection run not found: {collection_run_id}")
+    await _assert_collection_in_scope(run.collectionId)
     return CollectionRunSummary(run).to_dict()
 
 
@@ -82,6 +98,7 @@ async def collection_run_latest(
 ) -> dict:
     """Get the latest collection run for a collection. Read-only."""
     await ensure_mcp_database()
+    await _assert_collection_in_scope(collection_id)
     run = await CollectionRunRepository.get_latest_by_collection(collection_id)
     if not run:
         return {"collectionId": collection_id, "hasRun": False}
