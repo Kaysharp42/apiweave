@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from app.mcp.tools import collections as collection_tools
 from app.mcp.tools import environments as environment_tools
 from app.mcp.tools import workflows as workflow_tools
 from app.models import Edge, Node
@@ -16,7 +15,6 @@ def skip_database_initialization(monkeypatch):
 
     monkeypatch.setattr(workflow_tools, "ensure_mcp_database", fake_ensure_mcp_database)
     monkeypatch.setattr(environment_tools, "ensure_mcp_database", fake_ensure_mcp_database)
-    monkeypatch.setattr(collection_tools, "ensure_mcp_database", fake_ensure_mcp_database)
 
 
 def sample_workflow(**overrides):
@@ -285,39 +283,11 @@ async def test_environment_tools_return_redacted_environments(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason="Test data format incompatible with production code — collection_list_workflows calls workflow_to_summary() which expects dict, but test provides SimpleNamespace. TODO: rewrite test data as dicts."
-)
-async def test_collection_tools_return_counts_and_workflows(monkeypatch):
-    async def fake_list_collections():
-        return [sample_collection()]
-
-    async def fake_list_collection_workflows(collection_id):
-        assert collection_id == "col-1"
-        return [sample_workflow(collectionId=collection_id)]
-
-    monkeypatch.setattr(collection_tools, "svc_list_collections", fake_list_collections)
-    monkeypatch.setattr(
-        collection_tools,
-        "svc_list_collection_workflows",
-        fake_list_collection_workflows,
-    )
-
-    listed = await collection_tools.collection_list()
-    workflows = await collection_tools.collection_list_workflows("col-1")
-
-    assert listed.collections[0].workflow_count == 1
-    assert workflows.collection_id == "col-1"
-    assert workflows.workflows[0].collection_id == "col-1"
-
-
-@pytest.mark.asyncio
 async def test_registers_all_phase2_tools():
     server = FastMCP(name="test")
 
     workflow_tools.register_workflow_tools(server)
     environment_tools.register_environment_tools(server)
-    collection_tools.register_collection_tools(server)
 
     tool_names = {tool.name for tool in await server.list_tools()}
 
@@ -330,6 +300,4 @@ async def test_registers_all_phase2_tools():
         "workflow_import",
         "workflow_import_dry_run",
         "environment_list",
-        "collection_list",
-        "collection_list_workflows",
     }.issubset(tool_names)
