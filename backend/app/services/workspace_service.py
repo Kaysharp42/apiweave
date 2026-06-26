@@ -11,6 +11,8 @@ import re
 import uuid
 from typing import Any
 
+from fastapi import HTTPException, status
+
 from app.models import Workspace, WorkspaceMember
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.outside_collaborator_repository import OutsideCollaboratorRepository
@@ -94,6 +96,24 @@ async def create_workspace(
     The creating user becomes an admin member.
     """
     slug = _validate_slug(slug)
+
+    # Authorization (roadmap §3.5): you may only provision a workspace in a scope
+    # you belong to. Without this, any authenticated user could create a
+    # workspace inside ANY org (becoming its admin) or under another user.
+    if owner_type == "organization":
+        if not org_id:
+            raise ValueError("org_id is required for organization-owned workspaces")
+        # Raises 403 if the actor is not a member of the target org.
+        from app.services.org_service import require_org_member
+
+        await require_org_member(org_id, actor_user_id)
+    elif owner_type == "user":
+        if owner_user_id and owner_user_id != actor_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot create a personal workspace owned by another user",
+            )
+        owner_user_id = actor_user_id
 
     # Check slug availability
     if owner_type == "organization" and org_id:
