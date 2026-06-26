@@ -317,6 +317,39 @@ async def trigger_workflow_run(
             effective_permissions=effective_perms,
         )
 
+    # Environment protection gate (roadmap §3.3): a protected environment must
+    # not execute without approval. Manual / scoped / UI runs previously skipped
+    # this entirely — only webhooks consulted it. Hold the run as
+    # pending_approval and do NOT start execution when gated.
+    if environment_id and effective_workspace_id:
+        # Lazy import avoids a circular import via app.services.__init__.
+        from app.services import environment_protection_service
+
+        gate_actor_type = actor.actorType if actor else "system"
+        gate_actor_id = actor.actorId if actor else "system"
+        decision, approval = await environment_protection_service.check_protection_and_maybe_gate(
+            run_id=run_id,
+            environment_id=environment_id,
+            workspace_id=effective_workspace_id,
+            actor_type=gate_actor_type,
+            actor_id=gate_actor_id,
+            requested_by_user_id=(actor.actorId if actor and actor.actorType == "user" else None),
+        )
+        if decision == "pending_approval":
+            run.status = "pending_approval"
+            await run.save()
+            return {
+                "message": "Workflow run requires approval",
+                "runId": run_id,
+                "workflowId": workflow_id,
+                "environmentId": environment_id,
+                "workspaceId": effective_workspace_id,
+                "actorType": actor.actorType if actor else None,
+                "actorId": actor.actorId if actor else None,
+                "approvalId": approval.approvalId if approval else None,
+                "status": "pending_approval",
+            }
+
     asyncio.create_task(
         _execute_workflow_background(
             run_id,
