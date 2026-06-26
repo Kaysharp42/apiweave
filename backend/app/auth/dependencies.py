@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, Request, status
 
-from app.auth.permissions import PermissionEvaluator, ScopedPermissionEvaluator
+from app.auth.permissions import PermissionEvaluator, ScopedPermissionEvaluator, permission
 from app.auth.scope_resolver import ResolvedScope, ResourceScopeResolver
 from app.config import settings
 from app.models import Session, User
@@ -121,25 +121,48 @@ def require_permission(permission: str):
     return Depends(_check_permission)
 
 
+async def evaluate_scoped_permission(
+    user: User,
+    resource: str,
+    action: str,
+    *,
+    org_id: str | None = None,
+    workspace_id: str | None = None,
+) -> bool:
+    """True if ``user`` holds ``resource:action`` in the given scope.
+
+    Shared core for every scoped check (path-param routes, /api/scopes routes,
+    and run routes that resolve the workspace from the resource).
+    """
+    resolved = ResolvedScope(
+        resource=resource, action=action, org_id=org_id, workspace_id=workspace_id
+    )
+    scope_context = await ResourceScopeResolver.build_scope_context(user, resolved)
+    effective = ScopedPermissionEvaluator.evaluate(
+        org_role=scope_context["org_role"],
+        workspace_role=scope_context["workspace_role"],
+        team_grants=scope_context["team_grants"],
+        outside_collaborator_permissions=scope_context["outside_collaborator_permissions"],
+        service_token_permissions=scope_context["service_token_permissions"],
+        global_roles=scope_context["global_roles"],
+        global_permissions=scope_context["global_permissions"],
+    )
+    return ScopedPermissionEvaluator.has_permission(effective, resolved.required_permission)
+
+
 def require_scoped_permission(resource: str, action: str):
     async def _check_scoped_permission(
         request: Request,
         current_user: User = Depends(get_current_active_user),
     ) -> User:
         resolved = ResourceScopeResolver.from_request(request, resource, action)
-        scope_context = await ResourceScopeResolver.build_scope_context(current_user, resolved)
-
-        effective = ScopedPermissionEvaluator.evaluate(
-            org_role=scope_context["org_role"],
-            workspace_role=scope_context["workspace_role"],
-            team_grants=scope_context["team_grants"],
-            outside_collaborator_permissions=scope_context["outside_collaborator_permissions"],
-            service_token_permissions=scope_context["service_token_permissions"],
-            global_roles=scope_context["global_roles"],
-            global_permissions=scope_context["global_permissions"],
-        )
-
-        if not ScopedPermissionEvaluator.has_permission(effective, resolved.required_permission):
+        if not await evaluate_scoped_permission(
+            current_user,
+            resource,
+            action,
+            org_id=resolved.org_id,
+            workspace_id=resolved.workspace_id,
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Missing required permission: {resolved.required_permission}",
@@ -178,26 +201,16 @@ def require_scope_permission(resource: str, action: str):
         if access.own_user_scope:
             return current_user
 
-        resolved = ResolvedScope(
-            resource=resource,
-            action=action,
+        if not await evaluate_scoped_permission(
+            current_user,
+            resource,
+            action,
             org_id=access.org_id,
             workspace_id=access.workspace_id,
-        )
-        scope_context = await ResourceScopeResolver.build_scope_context(current_user, resolved)
-        effective = ScopedPermissionEvaluator.evaluate(
-            org_role=scope_context["org_role"],
-            workspace_role=scope_context["workspace_role"],
-            team_grants=scope_context["team_grants"],
-            outside_collaborator_permissions=scope_context["outside_collaborator_permissions"],
-            service_token_permissions=scope_context["service_token_permissions"],
-            global_roles=scope_context["global_roles"],
-            global_permissions=scope_context["global_permissions"],
-        )
-        if not ScopedPermissionEvaluator.has_permission(effective, resolved.required_permission):
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Missing required permission: {resolved.required_permission}",
+                detail=f"Missing required permission: {permission(resource, action)}",
             )
         return current_user
 
