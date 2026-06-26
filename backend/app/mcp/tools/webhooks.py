@@ -31,6 +31,22 @@ from app.mcp.scope_context import require_scope
 from app.repositories import WebhookRepository
 
 
+async def _assert_webhook_in_scope(webhook_id: str) -> Any:
+    """Load a webhook and require it to belong to the token's workspace scope.
+
+    webhook_get/update/delete/regenerate_credentials/get_logs previously operated
+    by id with no scope check — allowing cross-tenant read, credential rotation,
+    and deletion. Returns the webhook on success.
+    """
+    scope = require_scope()
+    webhook = await WebhookRepository.get_by_id(webhook_id)
+    if not webhook or getattr(webhook, "workspaceId", None) != scope.scope_id:
+        raise ValueError(
+            make_not_found_error("Webhook", webhook_id, "webhook_list").model_dump_json()
+        )
+    return webhook
+
+
 async def webhook_list(
     resource_type: Annotated[
         str | None,
@@ -93,10 +109,7 @@ async def webhook_get(
 ) -> WebhookGetResponse:
     """Get webhook details with credentials redacted (scoped)."""
     await ensure_mcp_database()
-    webhook = await WebhookRepository.get_by_id(webhook_id)
-    if not webhook:
-        err = make_not_found_error("Webhook", webhook_id, "webhook_list")
-        raise ValueError(err.model_dump_json())
+    webhook = await _assert_webhook_in_scope(webhook_id)
     return WebhookGetResponse(webhook=webhook_to_detail(webhook, settings.BASE_URL))
 
 
@@ -179,6 +192,7 @@ async def webhook_update(
 ) -> WebhookGetResponse:
     """Update webhook configuration (scoped)."""
     await ensure_mcp_database()
+    await _assert_webhook_in_scope(webhook_id)
 
     update_data: dict[str, Any] = {}
     if environment_id is not None:
@@ -204,6 +218,7 @@ async def webhook_delete(
 ) -> WebhookDeleteResponse:
     """Delete a webhook (scoped)."""
     await ensure_mcp_database()
+    await _assert_webhook_in_scope(webhook_id)
     deleted = await WebhookRepository.delete(webhook_id)
     if not deleted:
         raise ValueError(make_not_found_error("Webhook", webhook_id).model_dump_json())
@@ -220,9 +235,7 @@ async def webhook_regenerate_credentials(
     import secrets
 
     await ensure_mcp_database()
-    webhook = await WebhookRepository.get_by_id(webhook_id)
-    if not webhook:
-        raise ValueError(make_not_found_error("Webhook", webhook_id).model_dump_json())
+    await _assert_webhook_in_scope(webhook_id)
 
     new_token = f"secret_{secrets.token_urlsafe(32)}"
     new_hmac_secret = f"hmac_{secrets.token_urlsafe(32)}"
@@ -260,9 +273,7 @@ async def webhook_get_logs(
     """Get webhook execution logs (scoped). Sensitive payload fields are redacted."""
     await ensure_mcp_database()
 
-    webhook = await WebhookRepository.get_by_id(webhook_id)
-    if not webhook:
-        raise ValueError(make_not_found_error("Webhook", webhook_id).model_dump_json())
+    await _assert_webhook_in_scope(webhook_id)
 
     limit = min(limit, 100)
 
