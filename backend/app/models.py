@@ -678,6 +678,28 @@ class WebhookLog(Document):
         ]
 
 
+class RateLimitCounter(Document):
+    """Fixed-window rate-limit counter shared across API instances.
+
+    One document per (key, windowStart); the count is incremented atomically so
+    a multi-instance deployment shares a single effective limit (roadmap §3.7,
+    P1.8). A TTL index expires stale windows. Used only when
+    RATE_LIMITER_BACKEND=mongodb; the default memory backend is process-local.
+    """
+
+    key: str  # e.g. "webhook:<webhookId>"
+    windowStart: int  # unix epoch seconds at the start of the window
+    hits: int = 0  # not "count" — that shadows Document.count
+    expires_at: datetime
+
+    class Settings:
+        name = "rate_limit_counters"
+        indexes = [
+            IndexModel([("key", ASCENDING), ("windowStart", ASCENDING)], unique=True),
+            IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),
+        ]
+
+
 class IdempotencyKey(Document):
     webhookId: str
     idempotencyKey: str

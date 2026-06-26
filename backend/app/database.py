@@ -25,6 +25,7 @@ from app.models import (
     PendingRunApproval,
     Project,
     ProviderIdentity,
+    RateLimitCounter,
     Run,
     ScopedKeypair,
     Secret,
@@ -69,6 +70,7 @@ async def connect_db():
             CollectionRun,
             WebhookLog,
             IdempotencyKey,
+            RateLimitCounter,
             # Auth models
             User,
             DeletedUser,
