@@ -569,6 +569,18 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
             )
         raise
     workspace = await ensure_personal_workspace(user)
+
+    # Auto-accept any pending org invites for this verified email, so an invited
+    # user who signs in via OAuth (e.g. GitHub/Microsoft) with the invited
+    # address joins the org — mirroring the magic-link path. A provider email
+    # that differs from the invite simply won't match (use the magic link).
+    try:
+        from app.services import org_invite_service
+
+        await org_invite_service.accept_pending_invites_for_user(user)
+    except Exception:
+        logger.warning("OAuth org-invite auto-accept failed for %s", user.userId, exc_info=True)
+
     response = RedirectResponse(
         _frontend_url(f"/{workspace.slug}/workflows"),
         status_code=status.HTTP_302_FOUND,
