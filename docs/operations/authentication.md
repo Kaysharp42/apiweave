@@ -145,15 +145,23 @@ REGISTRATION_MODE=invite_only   # or "open" for public approved-domain signup
 
 Approved domains gate which email addresses can create accounts. Domain matching is based on the verified email (returned by the OAuth provider, or proven by the email magic link); unverified provider emails are rejected and cannot be used for signup or account linking. The gate is enforced on every OAuth sign-in once the provider is enabled, and on email magic-link sign-in. It composes with `REGISTRATION_MODE` (see [Email Magic-Link Sign-In](#email-magic-link-sign-in)).
 
-| Mode | Configuration | Behavior |
+Signup is governed by `REGISTRATION_MODE`; approved-domains is an independent filter layered on top. The two compose:
+
+| Goal | Configuration | Behavior |
 |------|---------------|----------|
-| Invite-only | `APPROVED_DOMAINS_ENABLED=false` | First owner via first sign-in. Admins and owners generate invite links; invitees sign in through OAuth. |
-| Domain signup | `APPROVED_DOMAINS_ENABLED=true` plus `APPROVED_DOMAINS` | First owner via first sign-in. Verified emails on listed domains sign in directly through OAuth; admins and owners can still send invites. |
+| Invite-only (self-host default) | `REGISTRATION_MODE=invite_only` | First owner via first sign-in. Only invited users (or existing users) can sign in, via OAuth or magic link. Uninvited users are rejected — **even on an approved domain**. |
+| Invite-only, domain-filtered | `REGISTRATION_MODE=invite_only` + `APPROVED_DOMAINS_ENABLED=true` + `APPROVED_DOMAINS` | As above, and additionally every sign-in email must be on a listed domain. |
+| Open, domain-restricted (public hosted) | `REGISTRATION_MODE=open` + `APPROVED_DOMAINS_ENABLED=true` + `APPROVED_DOMAINS` | Anyone with a verified email on a listed domain self-registers (OAuth or magic link). Admins/owners can still invite. |
+| Open, unrestricted | `REGISTRATION_MODE=open` + `APPROVED_DOMAINS_ENABLED=false` | Anyone may self-register. Use only for fully public instances. |
 
 ```env
+# Public hosted: open signup restricted to your tenant domains
+REGISTRATION_MODE=open
 APPROVED_DOMAINS_ENABLED=true
 APPROVED_DOMAINS=example.com,example.org
 ```
+
+> **Migration note:** setting `APPROVED_DOMAINS_ENABLED=true` alone no longer enables open domain-signup — open self-registration now requires `REGISTRATION_MODE=open`. With the default `invite_only`, approved-domains acts purely as a filter on top of invites.
 
 Owners retain the ability to issue invites in either mode. Treat `APPROVED_DOMAINS` as a tenant allowlist: include only the domains your organization owns, and review the list every time you add or remove a corporate domain.
 
