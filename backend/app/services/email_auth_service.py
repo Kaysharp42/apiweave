@@ -214,6 +214,8 @@ async def _smtp_send(msg: EmailMessage, email: str) -> bool:
             username=settings.SMTP_USERNAME,
             password=settings.SMTP_PASSWORD,
             start_tls=settings.SMTP_TLS,
+            use_tls=settings.SMTP_USE_SSL,
+            validate_certs=settings.SMTP_TLS_VERIFY,
         )
         return True
     except Exception:

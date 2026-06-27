@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.auth.dependencies import STATE_CHANGING_METHODS, csrf_protect
 from app.auth.router import router as auth_router
@@ -63,6 +64,11 @@ app = FastAPI(
     description="Visual API Test Workflows Made Simple",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.get_trusted_hosts_list(),
 )
 
 # CORS middleware

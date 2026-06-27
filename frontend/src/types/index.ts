@@ -104,6 +104,7 @@ export type { AppContextType } from "./AppContextType";
 export type { IconSwitchProps } from "./IconSwitchProps";
 export type { ApprovedDomain } from "./ApprovedDomain";
 export type { InviteResponse } from "./InviteResponse";
+export type { EmailLoginResponse } from "./EmailLoginResponse";
 export type { ProviderInfo } from "./ProviderInfo";
 export type { SplitAuthLayoutProps } from "./SplitAuthLayoutProps";
 export type { InviteUserModalProps } from "./InviteUserModalProps";

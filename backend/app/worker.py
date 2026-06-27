@@ -12,7 +12,7 @@ from app.database import close_db, connect_db, get_database
 from app.runner.executor import WorkflowExecutor
 
 
-async def process_pending_runs():
+async def process_pending_runs() -> None:
     """Poll for and process pending workflow runs"""
     db = get_database()
 
@@ -24,20 +24,20 @@ async def process_pending_runs():
     )
 
     if run:
-        print(f"📋 Processing run: {run['runId']}")
+        print(f"Processing run: {run['runId']}")
         try:
             # Execute the workflow
             executor = WorkflowExecutor(run["runId"], run["workflowId"])
             await executor.execute()
-            print(f"✅ Completed run: {run['runId']}")
+            print(f"Completed run: {run['runId']}")
         except Exception as e:
-            print(f"❌ Run {run['runId']} failed: {e}")
+            print(f"Run {run['runId']} failed: {e}")
 
 
-async def worker_loop():
+async def worker_loop() -> None:
     """Main worker loop"""
-    print("🚀 APIWeave Worker started")
-    print(f"⏱️  Poll interval: {settings.WORKER_POLL_INTERVAL} seconds")
+    print("APIWeave Worker started")
+    print(f"Poll interval: {settings.WORKER_POLL_INTERVAL} seconds")
 
     await connect_db()
 
@@ -46,23 +46,23 @@ async def worker_loop():
             try:
                 await process_pending_runs()
             except Exception as e:
-                print(f"❌ Error processing run: {e}")
+                print(f"Error processing run: {e}")
 
             # Wait before next poll
             await asyncio.sleep(settings.WORKER_POLL_INTERVAL)
 
     except KeyboardInterrupt:
-        print("\n🛑 Worker stopped by user")
+        print("\nWorker stopped by user")
     finally:
         await close_db()
 
 
-def main():
+def main() -> None:
     """Entry point"""
     try:
         asyncio.run(worker_loop())
     except KeyboardInterrupt:
-        print("\n👋 Worker shutdown complete")
+        print("\nWorker shutdown complete")
         sys.exit(0)
 
 

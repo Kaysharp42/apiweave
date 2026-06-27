@@ -74,13 +74,13 @@ export function InviteUserModal({ isOpen, onClose }: InviteUserModalProps) {
 
     try {
       const response = await authenticatedJson<InviteResponse>(
-        `${API_BASE_URL}/api/auth/invites`,
+        `${API_BASE_URL}/api/invites`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ email: state.email, roles: [state.role] }),
+          body: JSON.stringify({ email: state.email, role: state.role }),
         },
       );
       dispatch({ type: "set-invite-url", value: response.invite_url });

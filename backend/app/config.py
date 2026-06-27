@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     MONGODB_DB_NAME: str
 
     ALLOWED_ORIGINS: str
+    TRUSTED_HOSTS: str = "localhost,127.0.0.1"
 
     API_KEY_HEADER: str = "Authorization"
 
@@ -113,9 +114,14 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     SMTP_FROM_ADDRESS: str | None = None
     SMTP_TLS: bool = True
+    SMTP_USE_SSL: bool = False
+    SMTP_TLS_VERIFY: bool = True
 
     def get_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    def get_trusted_hosts_list(self) -> list[str]:
+        return [host.strip() for host in self.TRUSTED_HOSTS.split(",") if host.strip()]
 
     def get_rate_limiter_backend(self) -> str:
         return self.RATE_LIMITER_BACKEND

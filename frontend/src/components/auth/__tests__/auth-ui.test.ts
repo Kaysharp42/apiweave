@@ -45,11 +45,12 @@ test("LoginPage fetches configured-only providers and preserves inline states", 
     "Should consume providers via hook",
   );
   assert.ok(
-    content.includes("No sign-in providers configured"),
+    content.includes("No OAuth providers configured"),
     "Should show empty provider state",
   );
   assert.ok(
-    content.includes("error = searchParams.get('error')"),
+    content.includes('error = searchParams.get("error")') ||
+      content.includes("error = searchParams.get('error')"),
     "Should extract error from search params",
   );
 });
