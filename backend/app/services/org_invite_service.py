@@ -127,6 +127,50 @@ async def create_org_invite(
     )
 
 
+async def resend_org_invite(
+    org_id: str,
+    invite_id: str,
+    *,
+    actor: User,
+) -> OrgInviteCreateResponse:
+    """Resend a pending org invite by rotating its token.
+
+    Implemented as cancel-old + create-new so it reuses create_org_invite's
+    validation (rate limit, role checks, audit) and returns a fresh raw token
+    for the UI to surface (and for SMTP delivery once wired). The old token is
+    invalidated. Owner authorization is enforced at the route.
+    """
+    await require_org_member(org_id, actor.userId)
+
+    invite = await OrgInviteRepository.get_by_id(invite_id)
+    if not invite or invite.orgId != org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found")
+    if invite.consumed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invite has already been accepted and cannot be resent",
+        )
+
+    email = invite.email
+    role = invite.role
+    # Remove the old invite so create_org_invite's active-invite guard passes
+    # and the old token is invalidated.
+    await OrgInviteRepository.cancel(invite_id)
+
+    await append_event(
+        actor="user",
+        actor_id=actor.userId,
+        action="org.invite.resent",
+        scope="org",
+        scope_id=org_id,
+        resource_type="org_invite",
+        resource_id=invite_id,
+        context={"email": email},
+    )
+
+    return await create_org_invite(org_id, email=email, role=role, actor=actor)
+
+
 async def list_org_invites(org_id: str) -> list[OrgInviteResponse]:
     invites = await OrgInviteRepository.list_pending_by_org(org_id)
     return [OrgInviteResponse.model_validate(i) for i in invites]
