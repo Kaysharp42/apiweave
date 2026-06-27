@@ -148,6 +148,17 @@ async def _is_domain_approved(email: str) -> bool:
     return await ApprovedDomainRepository.is_domain_approved(domain)
 
 
+async def domain_allowed(email: str) -> bool:
+    """Shared signup domain gate: allow all when the approved-domains policy is
+    disabled, otherwise require the email's domain to be approved (env + DB).
+
+    Single source of truth for both OAuth signup and email magic-link signup.
+    """
+    if not settings.APPROVED_DOMAINS_ENABLED:
+        return True
+    return await _is_domain_approved(email)
+
+
 async def _reconcile_orphan_invite(user: User, invite_token: str | None) -> User:
     if invite_token is not None:
         return user
@@ -324,7 +335,10 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
                     raise
                 updated = await UserRepository.update(user.userId, is_setup_complete=True)
                 user = updated or user
-            elif await _is_domain_approved(userinfo.email):
+            elif settings.REGISTRATION_MODE == "open" and await domain_allowed(userinfo.email):
+                # Open self-registration (REGISTRATION_MODE=open). In invite_only
+                # an uninvited user — even on an approved domain — falls through to
+                # the 403 below and must be invited. Consistent with email login.
                 try:
                     user = await UserRepository.create(
                         user_id=f"usr-{uuid.uuid4().hex[:12]}",

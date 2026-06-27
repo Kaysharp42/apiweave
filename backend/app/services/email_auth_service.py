@@ -45,13 +45,10 @@ def _as_utc(dt: datetime) -> datetime:
 
 
 async def _domain_approved(email: str) -> bool:
-    # Approved-domains is enforced only when enabled; otherwise all domains pass.
-    if not settings.APPROVED_DOMAINS_ENABLED:
-        return True
-    # Enabled: reuse the OAuth path's comprehensive env + DB check.
-    from app.auth.router import _is_domain_approved
+    # Single source of truth shared with the OAuth signup path.
+    from app.auth.router import domain_allowed
 
-    return await _is_domain_approved(email)
+    return await domain_allowed(email)
 
 
 async def _eligible_for_new_account(email: str) -> bool:
