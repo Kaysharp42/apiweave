@@ -116,13 +116,34 @@ A user can be a member of multiple organizations. A user can be a direct member 
 
 ## Invites and Team Membership
 
-Organization invites are sent by email from the org settings page. Each invite carries a one-time token, an expiry, and a role (`member`, `billing`, or `security`; the `owner` role is reserved for the bootstrap owner and a hand-off flow). Invites can be resent and cancelled before acceptance.
+Organization invites are sent by email from the org settings page. Each invite carries an expiry and a role (`member`, `billing`, or `security`; the `owner` role is reserved for the bootstrap owner and a hand-off flow). Invites can be resent (which rotates the token) and cancelled before acceptance.
+
+**Delivery is a magic link.** When `EMAIL_LOGIN_ENABLED=true`, an invite is emailed as a single-use magic link. Clicking it signs the invitee in (creating their account if the policy allows — see [Email Magic-Link Sign-In](#email-magic-link-sign-in)) and **auto-accepts the invite**, adding them to the org. This sidesteps the provider-email-mismatch problem: the link itself proves ownership of the invited address, so the invitee can join regardless of which OAuth provider they would otherwise use. If an invitee instead signs in via OAuth using the **same** verified email as the invite, the pending invite is auto-accepted then too; if their provider email differs, they use the magic link.
 
 Team membership is a separate layer. A team lives inside an organization, has members, and receives permission grants for workspaces, environments, secrets, and approvals. Outside collaborators join a single workspace without becoming a team or org member.
 
+## Email Magic-Link Sign-In
+
+Passwordless email sign-in (multi_tenant only). The user enters their email at the login page and receives a single-use sign-in link; clicking it establishes a session — no password, no OAuth provider required. Enable with `EMAIL_LOGIN_ENABLED=true` and a configured SMTP server. Tokens are single-use, hashed at rest, and expire after `EMAIL_LOGIN_TOKEN_TTL_MINUTES` (default 15). The request endpoint never reveals whether an account exists (it always responds the same way).
+
+Who may obtain a **new** account is governed by `REGISTRATION_MODE`, and approved-domains is always enforced when enabled:
+
+| `REGISTRATION_MODE` | Who can sign in | Typical use |
+|---------------------|-----------------|-------------|
+| `invite_only` (default) | Existing users, plus any email with a pending general/org invite. Unknown emails get nothing. | Self-host / private team. Operators may also set `APPROVED_DOMAINS`. |
+| `open` | Anyone whose email passes the approved-domains policy may self-register on first sign-in. | Public hosted (set `APPROVED_DOMAINS` to your tenant domains). |
+
+This is the same policy applied to OAuth signup, so a deployment behaves consistently across both sign-in methods. Endpoints: `POST /api/auth/email/request` (send link) and `GET /api/auth/email/verify?token=...` (consume link, set session, redirect into the app).
+
+```env
+EMAIL_LOGIN_ENABLED=true
+REGISTRATION_MODE=invite_only   # or "open" for public approved-domain signup
+# SMTP_* must be configured for links to be delivered
+```
+
 ## Approved Domains
 
-Approved domains gate which email addresses can create accounts. Domain matching is based on the verified email returned by the provider; unverified provider emails are rejected and cannot be used for signup or account linking. The gate is enforced on every OAuth sign-in once the provider is enabled.
+Approved domains gate which email addresses can create accounts. Domain matching is based on the verified email (returned by the OAuth provider, or proven by the email magic link); unverified provider emails are rejected and cannot be used for signup or account linking. The gate is enforced on every OAuth sign-in once the provider is enabled, and on email magic-link sign-in. It composes with `REGISTRATION_MODE` (see [Email Magic-Link Sign-In](#email-magic-link-sign-in)).
 
 | Mode | Configuration | Behavior |
 |------|---------------|----------|
