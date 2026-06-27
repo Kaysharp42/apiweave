@@ -1686,7 +1686,7 @@ class WorkflowExecutor:
         try:
             validate_url(url)
         except SafeUrlError as exc:
-            self.logger.warning(f"Blocked unsafe outbound URL: {url} ({exc})")
+            self.logger.warning("Blocked unsafe outbound URL: %s (%s)", url, exc)
             return {
                 "status": "error",
                 "error": f"SSRF blocked: {exc}",
@@ -1722,7 +1722,8 @@ class WorkflowExecutor:
                 for secret_key, secret_value in self.secrets.items():
                     if secret_value and secret_value in body:
                         self.logger.warning(
-                            f"⚠️ Secret '{secret_key}' is used in request body - this data may be logged or cached"
+                            "⚠️ Secret '%s' is used in request body - this data may be logged or cached",
+                            secret_key,
                         )
 
         # Start timing
@@ -1740,7 +1741,7 @@ class WorkflowExecutor:
                 if header_name.lower() in {"content-type", "content-length"}:
                     removed_value = headers.pop(header_name)
                     self.logger.warning(
-                        f"Removed header for multipart upload: {header_name}={removed_value}"
+                        "Removed header for multipart upload: %s=%s", header_name, removed_value
                     )
 
         try:
