@@ -823,3 +823,49 @@ async def remove_approved_domain(domain_id: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Domain not found",
         )
+
+
+# ===========================================================================
+# Passwordless email magic-link sign-in (multi_tenant only; requires SMTP)
+# ===========================================================================
+
+
+class EmailLoginRequest(BaseModel):
+    email: str
+
+
+def _require_email_login_enabled() -> None:
+    if is_single_user_mode() or not settings.EMAIL_LOGIN_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Email sign-in is not enabled",
+        )
+
+
+@router.post("/email/request")
+async def email_login_request(body: EmailLoginRequest) -> dict[str, str]:
+    """Send a magic-link if the email is eligible. Always succeeds (no
+    account-existence disclosure)."""
+    _require_email_login_enabled()
+    from app.services import email_auth_service
+
+    await email_auth_service.request_login_link(body.email)
+    return {
+        "message": "If an account exists for that email, a sign-in link has been sent.",
+    }
+
+
+@router.get("/email/verify")
+async def email_login_verify(token: str) -> RedirectResponse:
+    """Consume a magic-link token, establish a session, and redirect into the app."""
+    _require_email_login_enabled()
+    from app.services import email_auth_service
+
+    user = await email_auth_service.verify_login_token(token)
+    workspace = await ensure_personal_workspace(user)
+    response = RedirectResponse(
+        _frontend_url(f"/{workspace.slug}/workflows"),
+        status_code=status.HTTP_302_FOUND,
+    )
+    await _create_session(response, user)
+    return response

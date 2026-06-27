@@ -13,6 +13,7 @@ from app.models import (
     AuditEvent,
     CollectionRun,
     DeletedUser,
+    EmailAuthToken,
     Environment,
     EnvironmentProtection,
     IdempotencyKey,
@@ -71,6 +72,7 @@ async def connect_db():
             WebhookLog,
             IdempotencyKey,
             RateLimitCounter,
+            EmailAuthToken,
             # Auth models
             User,
             DeletedUser,

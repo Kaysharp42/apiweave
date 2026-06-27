@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     APPROVED_DOMAINS: str = ""
     SETUP_MODE_ENABLED: bool = True
 
+    # Passwordless email magic-link sign-in (multi_tenant only). Requires SMTP.
+    EMAIL_LOGIN_ENABLED: bool = False
+    # Who may obtain a new account. "invite_only": existing users + pending
+    # invites only (self-host default). "open": anyone whose email passes the
+    # approved-domains policy may sign up (e.g. public hosted with approved
+    # domains set). Approved-domains is always enforced when enabled, in both
+    # modes. Magic-link TTL in minutes.
+    REGISTRATION_MODE: Literal["invite_only", "open"] = "invite_only"
+    EMAIL_LOGIN_TOKEN_TTL_MINUTES: int = 15
+
     # Deployment mode:
     #   - "single_user":  self-hosted, no OAuth. A synthetic owner User is
     #     auto-created on first request and used for every API call. No
@@ -159,10 +169,7 @@ class Settings(BaseSettings):
         """
         if self.ALLOW_LOOPBACK:
             return True
-        return (
-            self.DEPLOYMENT_MODE == "single_user"
-            and self.APP_ENV.lower() == "development"
-        )
+        return self.DEPLOYMENT_MODE == "single_user" and self.APP_ENV.lower() == "development"
 
     def get_session_cookie_secure(self) -> bool:
         if self.APP_ENV.lower() == "development":

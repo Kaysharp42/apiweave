@@ -700,6 +700,32 @@ class RateLimitCounter(Document):
         ]
 
 
+class EmailAuthToken(Document):
+    """Single-use passwordless email sign-in token (magic link).
+
+    Only the SHA-256 hash of the raw token is stored (never the raw token).
+    Single-use (consumed flag) with a short TTL index. Used by EMAIL_LOGIN and,
+    later, org-invite magic links.
+    """
+
+    tokenId: str
+    tokenHash: str
+    email: str  # normalized (lowercased) target email
+    consumed: bool = False
+    consumed_at: datetime | None = None
+    createdAt: datetime
+    expires_at: datetime
+
+    class Settings:
+        name = "email_auth_tokens"
+        indexes = [
+            IndexModel([("tokenId", ASCENDING)], unique=True),
+            IndexModel([("tokenHash", ASCENDING)], unique=True),
+            IndexModel([("email", ASCENDING)]),
+            IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),
+        ]
+
+
 class IdempotencyKey(Document):
     webhookId: str
     idempotencyKey: str
