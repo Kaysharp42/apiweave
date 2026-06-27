@@ -117,6 +117,19 @@ async def create_org_invite(
         context={"email": normalized_email, "role": role},
     )
 
+    # Deliver as a magic link (org invite = magic link): clicking it signs the
+    # invitee in and auto-accepts. Best-effort — never fail invite creation on a
+    # mail error, and no-op when EMAIL_LOGIN is off / SMTP unconfigured.
+    try:
+        org = await OrganizationRepository.get_by_id(org_id)
+        from app.services import email_auth_service
+
+        await email_auth_service.send_org_invite_link(
+            normalized_email, org.name if org else "the organization"
+        )
+    except Exception:
+        logger.warning("Failed to send org-invite email for %s", normalized_email, exc_info=True)
+
     return OrgInviteCreateResponse(
         inviteId=invite.inviteId,
         orgId=org_id,
@@ -169,6 +182,41 @@ async def resend_org_invite(
     )
 
     return await create_org_invite(org_id, email=email, role=role, actor=actor)
+
+
+async def accept_pending_invites_for_user(user: User) -> int:
+    """Accept all active org invites addressed to the user's verified email.
+
+    Used by the magic-link sign-in flow: clicking the emailed link proves
+    ownership of the invited address, so any pending org invite(s) for that
+    email are accepted (the user is added to each org). Idempotent — already-a-
+    member orgs are skipped. Returns the number of invites accepted.
+    """
+    email = user.verified_email.lower()
+    invites = await OrgInviteRepository.list_active_by_email(email)
+    accepted = 0
+    for invite in invites:
+        existing = await OrganizationRepository.get_member(invite.orgId, user.userId)
+        if existing is None:
+            await OrganizationRepository.add_member(
+                member_id=f"om-{uuid.uuid4().hex[:12]}",
+                org_id=invite.orgId,
+                user_id=user.userId,
+                role=invite.role,
+            )
+            accepted += 1
+        await OrgInviteRepository.consume(invite.inviteId)
+        await append_event(
+            actor="user",
+            actor_id=user.userId,
+            action="org.invite.accepted",
+            scope="org",
+            scope_id=invite.orgId,
+            resource_type="org_invite",
+            resource_id=invite.inviteId,
+            context={"email": email, "role": invite.role, "via": "magic_link"},
+        )
+    return accepted
 
 
 async def list_org_invites(org_id: str) -> list[OrgInviteResponse]:

@@ -128,6 +128,46 @@ async def test_verify_rejects_unknown_in_invite_only(seeded, monkeypatch) -> Non
     assert exc.value.status_code == 403
 
 
+async def test_verify_auto_accepts_org_invite(seeded, monkeypatch) -> None:
+    # org invite = magic link: an invited email is eligible even in invite_only,
+    # and clicking the link signs them in AND joins the org.
+    monkeypatch.setattr(settings, "REGISTRATION_MODE", "invite_only")
+    from datetime import timedelta
+
+    from app.models import Organization, OrgInvite
+    from app.repositories.org_invite_repository import OrgInviteRepository
+    from app.repositories.organization_repository import OrganizationRepository
+
+    future = datetime.now(UTC) + timedelta(days=7)
+    await Organization(
+        orgId="org-x",
+        slug="org-x",
+        name="Org X",
+        ownerUserId="founder",
+        createdAt=datetime.now(UTC),
+        updatedAt=datetime.now(UTC),
+    ).insert()
+    await OrgInvite(
+        inviteId="oi-x",
+        orgId="org-x",
+        email="invitee@example.com",
+        token_hash="h",
+        role="member",
+        invited_by="founder",
+        created_at=datetime.now(UTC),
+        expires_at=future,
+        consumed=False,
+    ).insert()
+
+    raw = await _make_token("invitee@example.com")
+    user = await svc.verify_login_token(raw)
+
+    member = await OrganizationRepository.get_member("org-x", user.userId)
+    assert member is not None and member.role == "member"
+    invite = await OrgInviteRepository.get_by_id("oi-x")
+    assert invite is not None and invite.consumed
+
+
 # --- route gating ---
 
 

@@ -77,16 +77,32 @@ async def request_login_link(email: str) -> None:
     if user is None and not await _eligible_for_new_account(norm):
         return  # invite-only and no user/invite — silently do nothing
 
+    raw_token = await _issue_token(norm)
+    await _send_login_email(norm, raw_token)
+
+
+async def _issue_token(email_norm: str) -> str:
+    """Create a single-use magic-link token for an email; return the raw token."""
     raw_token = secrets.token_urlsafe(32)
     now = datetime.now(UTC)
     await EmailAuthTokenRepository.create(
         token_id=f"eat-{uuid.uuid4().hex[:12]}",
         token_hash=_hash_token(raw_token),
-        email=norm,
+        email=email_norm,
         created_at=now,
         expires_at=now + timedelta(minutes=settings.EMAIL_LOGIN_TOKEN_TTL_MINUTES),
     )
-    await _send_login_email(norm, raw_token)
+    return raw_token
+
+
+async def send_org_invite_link(email: str, org_name: str) -> None:
+    """Email an org-invite magic link (best-effort). Clicking it signs the user
+    in (creating the account if needed) and auto-accepts the pending invite."""
+    if not settings.EMAIL_LOGIN_ENABLED:
+        return  # the verify endpoint is disabled; link would not work
+    norm = _normalize_email(email)
+    raw_token = await _issue_token(norm)
+    await _send_org_invite_email(norm, raw_token, org_name)
 
 
 async def verify_login_token(raw_token: str) -> User:
@@ -127,6 +143,16 @@ async def verify_login_token(raw_token: str) -> User:
 
         await ensure_personal_workspace(user)
 
+    # Clicking the emailed link proves ownership of the address — accept any
+    # pending org invites for it (org invite = magic link). Best-effort: a
+    # failure here must not block sign-in.
+    try:
+        from app.services import org_invite_service
+
+        await org_invite_service.accept_pending_invites_for_user(user)
+    except Exception:
+        logger.warning("Auto-accept of org invites failed for %s", email, exc_info=True)
+
     return user
 
 
@@ -151,6 +177,36 @@ async def _send_login_email(email: str, raw_token: str) -> bool:
         f"This link expires in {settings.EMAIL_LOGIN_TOKEN_TTL_MINUTES} minutes "
         f"and can be used once. If you didn't request it, ignore this email.\n"
     )
+    return await _smtp_send(msg, email)
+
+
+async def _send_org_invite_email(email: str, raw_token: str, org_name: str) -> bool:
+    """Send an org-invite magic link. Returns False (and logs) if SMTP is off."""
+    verify_url = f"{settings.BASE_URL.rstrip('/')}/api/auth/email/verify?token={raw_token}"
+    if not settings.is_smtp_configured():
+        logger.warning(
+            "SMTP not configured — org-invite email not sent to %s (org %s). Link: %s",
+            email,
+            org_name,
+            verify_url,
+        )
+        return False
+
+    msg = EmailMessage()
+    msg["Subject"] = f"You're invited to {org_name} on {settings.APP_NAME}"
+    msg["From"] = settings.SMTP_FROM_ADDRESS
+    msg["To"] = email
+    msg.set_content(
+        f"You've been invited to join {org_name} on {settings.APP_NAME}.\n\n"
+        f"Click the link below to sign in and accept the invitation:\n\n"
+        f"{verify_url}\n\n"
+        f"This link expires in {settings.EMAIL_LOGIN_TOKEN_TTL_MINUTES} minutes "
+        f"and can be used once.\n"
+    )
+    return await _smtp_send(msg, email)
+
+
+async def _smtp_send(msg: EmailMessage, email: str) -> bool:
     try:
         import aiosmtplib
 
@@ -164,5 +220,5 @@ async def _send_login_email(email: str, raw_token: str) -> bool:
         )
         return True
     except Exception:
-        logger.exception("Failed to send magic-link email to %s", email)
+        logger.exception("Failed to send email to %s", email)
         return False
