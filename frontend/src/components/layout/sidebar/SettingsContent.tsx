@@ -135,7 +135,11 @@ export function SettingsContent({
               "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
               "cursor-pointer transition-colors",
             ].join(" ")}
-            onClick={() => onNavigate(`${wsBase}/settings/org`)}
+            onClick={() =>
+              onNavigate(
+                currentOrg ? `${wsBase}/settings/org` : "/organizations",
+              )
+            }
           >
             <Building2 className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
             <div className="min-w-0 text-left">

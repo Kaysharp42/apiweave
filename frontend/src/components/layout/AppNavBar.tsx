@@ -17,6 +17,7 @@ import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { AppNavBarItems } from "../../constants/AppNavBar";
 import type { NavSection } from "../../types/NavSection";
 import { useAuth } from "../../auth/useAuth";
+import { isSettingsRoute } from "../../utils/isSettingsRoute";
 
 type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
@@ -74,13 +75,18 @@ export function AppNavBar() {
     (state) => state.toggleNavBarCollapse,
   );
   const { currentOrg, currentWorkspace } = useWorkspace();
-  const { isSingleUser } = useAuth();
+  const { isSingleUser, hasPermission } = useAuth();
 
-  const isOnSettingsRoute =
-    location.pathname.includes("/settings/") || location.pathname === "/audit";
+  const isOnSettingsRoute = isSettingsRoute(location.pathname);
+  // Admin-only landing (/settings/users) would bounce non-admins via AdminRoute
+  // back to /app → workflows. Send everyone else to a settings page they can
+  // actually open; the sidebar exposes the rest.
+  const wsSettingsPath = `/${currentOrg?.slug ?? orgSlug ?? "personal"}/${currentWorkspace?.slug ?? workspaceSlug ?? "personal"}/settings/environments`;
   const settingsPath = isSingleUser
-    ? `/${currentOrg?.slug ?? orgSlug ?? "personal"}/${currentWorkspace?.slug ?? workspaceSlug ?? "personal"}/settings/environments`
-    : "/settings/users";
+    ? wsSettingsPath
+    : hasPermission("users:invite")
+      ? "/settings/users"
+      : wsSettingsPath;
 
   return (
     <nav
