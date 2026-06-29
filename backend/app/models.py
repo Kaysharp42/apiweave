@@ -1198,6 +1198,9 @@ class Organization(Document):
     description: str | None = None
     avatarUrl: str | None = None
     ownerUserId: str
+    # Billing tier (Phase 4). "free" until a paid plan is purchased; existing
+    # orgs default to free. Entitlement logic reads this — see entitlements.py.
+    plan: str = "free"
     createdAt: datetime
     updatedAt: datetime
     deletedAt: datetime | None = None

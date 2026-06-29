@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.repositories.org_invite_repository import OrgInviteRepository
 from app.repositories.organization_repository import OrganizationRepository
+from app.services import entitlements
 from app.services.audit_service import append_event
 from app.services.org_service import require_org_member
 
@@ -79,6 +80,9 @@ async def create_org_invite(
             status_code=status.HTTP_409_CONFLICT,
             detail="An active invite already exists for this email",
         )
+
+    # Billing seam: a new invite consumes a seat. Allow-all until billing is on.
+    await entitlements.require_can_add_org_member(org_id)
 
     since = datetime.now(UTC) - timedelta(hours=RATE_LIMIT_WINDOW_HOURS)
     recent_count = await OrgInviteRepository.count_recent_by_org(org_id, since)

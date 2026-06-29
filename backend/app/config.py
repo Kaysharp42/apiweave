@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     #     behavior and the default.
     DEPLOYMENT_MODE: Literal["single_user", "multi_tenant"] = "multi_tenant"
 
+    # Billing (Phase 4). When False (default) entitlement checks allow
+    # everything — orgs/workspaces/invites are unrestricted. Phase 4 wires
+    # plan/seat/quota logic behind this single flag (see services/entitlements.py).
+    BILLING_ENABLED: bool = False
+
     # Security
     BLOCK_PRIVATE_NETWORKS: bool = True
     # Surgical opt-in for loopback (127.0.0.0/8 and ::1) only. Does NOT

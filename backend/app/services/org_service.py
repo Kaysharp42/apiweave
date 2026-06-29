@@ -21,6 +21,7 @@ from app.models import (
     User,
 )
 from app.repositories.organization_repository import OrganizationRepository
+from app.services import entitlements
 from app.services.audit_service import append_event
 from app.services.exceptions import ResourceNotFoundError
 from app.utils.slug import validate_slug
@@ -37,6 +38,9 @@ async def create_org(
     owner_user: User,
     description: str | None = None,
 ) -> OrganizationResponse:
+    # Billing seam: gate org creation. Allow-all until billing is enabled.
+    await entitlements.require_can_create_org(owner_user)
+
     normalized_slug = validate_slug(slug)
 
     existing = await OrganizationRepository.get_by_slug(normalized_slug)
@@ -239,6 +243,9 @@ async def add_member(
             status_code=status.HTTP_409_CONFLICT,
             detail="User is already a member of this organization",
         )
+
+    # Billing seam: a new member consumes a seat. Allow-all until billing is on.
+    await entitlements.require_can_add_org_member(org_id)
 
     member = await OrganizationRepository.add_member(
         member_id=f"om-{uuid.uuid4().hex[:12]}",
