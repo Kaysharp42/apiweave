@@ -18,6 +18,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
+from email.utils import formataddr, formatdate, make_msgid
 
 from fastapi import HTTPException, status
 
@@ -204,6 +205,17 @@ async def _send_org_invite_email(email: str, raw_token: str, org_name: str) -> b
 
 
 async def _smtp_send(msg: EmailMessage, email: str) -> bool:
+    # Mail without Date/Message-ID scores high on spam filters (aiosmtplib does
+    # not add them). A bare-address From also looks spammy — give it a name.
+    if "Date" not in msg:
+        msg["Date"] = formatdate(localtime=True)
+    if "Message-ID" not in msg:
+        from_domain = settings.SMTP_FROM_ADDRESS.rpartition("@")[2] or None
+        msg["Message-ID"] = make_msgid(domain=from_domain)
+    if "@" in (msg["From"] or "") and "<" not in (msg["From"] or ""):
+        del msg["From"]
+        msg["From"] = formataddr((settings.APP_NAME, settings.SMTP_FROM_ADDRESS))
+
     try:
         import aiosmtplib
 
