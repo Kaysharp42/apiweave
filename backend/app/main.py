@@ -18,6 +18,7 @@ from app.database import close_db, connect_db
 from app.routes import (
     audit,
     auth_admin,
+    billing,
     environment_protection,
     invites,
     keys,
@@ -104,6 +105,7 @@ app.include_router(secrets.router)
 app.include_router(service_tokens.router)
 app.include_router(environment_protection.router)
 app.include_router(audit.router)
+app.include_router(billing.router)
 
 _CSRF_EXEMPT_PREFIXES = (
     "/api/auth/login",

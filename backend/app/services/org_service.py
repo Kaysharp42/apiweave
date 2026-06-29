@@ -37,9 +37,13 @@ async def create_org(
     slug: str,
     owner_user: User,
     description: str | None = None,
+    skip_entitlement: bool = False,
 ) -> OrganizationResponse:
     # Billing seam: gate org creation. Allow-all until billing is enabled.
-    await entitlements.require_can_create_org(owner_user)
+    # skip_entitlement: the Stripe webhook creates the org AFTER Team payment,
+    # so it bypasses the gate that would otherwise block a not-yet-subscribed user.
+    if not skip_entitlement:
+        await entitlements.require_can_create_org(owner_user)
 
     normalized_slug = validate_slug(slug)
 

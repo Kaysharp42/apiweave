@@ -85,6 +85,18 @@ class Settings(BaseSettings):
     # plan/seat/quota logic behind this single flag (see services/entitlements.py).
     BILLING_ENABLED: bool = False
 
+    # Stripe (Phase 4). Keys come from deployment secrets / .env — never the repo.
+    # Price IDs are the recurring monthly prices created in the Stripe account
+    # (Individual = pay-what-you-want custom amount; Team = $5/seat).
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRICE_INDIVIDUAL: str = ""
+    STRIPE_PRICE_TEAM: str = ""
+    # Where Stripe Checkout/Portal return the user (frontend origin).
+    BILLING_SUCCESS_URL: str = "/settings/billing?status=success"
+    BILLING_CANCEL_URL: str = "/settings/billing?status=cancel"
+
     # Security
     BLOCK_PRIVATE_NETWORKS: bool = True
     # Surgical opt-in for loopback (127.0.0.0/8 and ::1) only. Does NOT
