@@ -4,15 +4,18 @@ import { Building2, Plus } from "lucide-react";
 import { Button } from "../components/atoms/Button";
 import { EmptyState } from "../components/molecules/EmptyState";
 import { CreateOrganizationModal } from "../components/organisms/CreateOrganizationModal";
+import { CreateWorkspaceModal } from "../components/organisms/CreateWorkspaceModal";
 import { useAuth } from "../auth/useAuth";
 import { useWorkspace } from "../contexts/WorkspaceContext";
-import type { Organization } from "../types";
+import type { Organization, Workspace } from "../types";
 
 export default function OrganizationsPage() {
   const { isSingleUser } = useAuth();
-  const { orgs, refresh } = useWorkspace();
+  const { orgs, refresh, switchTo } = useWorkspace();
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
+  // Org to create a workspace under (null when the modal is closed).
+  const [wsOrg, setWsOrg] = useState<Organization | null>(null);
 
   if (isSingleUser) {
     return <Navigate to="/app" replace />;
@@ -20,6 +23,14 @@ export default function OrganizationsPage() {
 
   const handleCreated = async (_organization: Organization): Promise<void> => {
     await refresh();
+  };
+
+  const handleWorkspaceCreated = async (
+    workspace: Workspace,
+  ): Promise<void> => {
+    const org = wsOrg;
+    await refresh();
+    if (org) switchTo(org.slug, workspace.slug);
   };
 
   return (
@@ -87,15 +98,24 @@ export default function OrganizationsPage() {
                         {org.description ? ` · ${org.description}` : ""}
                       </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        navigate(`/organizations/${org.slug}/settings`)
-                      }
-                    >
-                      Settings
-                    </Button>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setWsOrg(org)}
+                      >
+                        New workspace
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          navigate(`/organizations/${org.slug}/settings`)
+                        }
+                      >
+                        Settings
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -108,6 +128,14 @@ export default function OrganizationsPage() {
         isOpen={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={handleCreated}
+      />
+
+      <CreateWorkspaceModal
+        isOpen={wsOrg !== null}
+        onClose={() => setWsOrg(null)}
+        orgId={wsOrg?.orgId ?? null}
+        orgName={wsOrg?.name ?? ""}
+        onCreated={handleWorkspaceCreated}
       />
     </div>
   );

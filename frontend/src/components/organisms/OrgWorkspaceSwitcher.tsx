@@ -11,7 +11,8 @@ import { useAuth } from "../../auth/useAuth";
 import { Button } from "../atoms/Button";
 import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
 import { CreateOrganizationModal } from "./CreateOrganizationModal";
-import type { Organization } from "../../types";
+import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
+import type { Organization, Workspace } from "../../types";
 
 export function OrgWorkspaceSwitcher() {
   const {
@@ -26,6 +27,7 @@ export function OrgWorkspaceSwitcher() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
+  const [createWsOpen, setCreateWsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -98,6 +100,15 @@ export function OrgWorkspaceSwitcher() {
   ): Promise<void> => {
     await refresh();
     navigate("/organizations");
+  };
+
+  // New workspace is created in the current context: under the active org, or
+  // personal when none is selected. After creating, switch into it.
+  const handleWorkspaceCreated = async (
+    workspace: Workspace,
+  ): Promise<void> => {
+    await refresh();
+    switchTo(currentOrg?.slug ?? "personal", workspace.slug);
   };
 
   const handleItemKeyDown = (
@@ -274,6 +285,20 @@ export function OrgWorkspaceSwitcher() {
                 icon={<Plus className="h-4 w-4" aria-hidden="true" />}
                 onClick={() => {
                   setOpen(false);
+                  setCreateWsOpen(true);
+                }}
+              >
+                New workspace
+                {currentOrg ? ` in ${currentOrg.name}` : ""}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                fullWidth
+                className="justify-start text-xs"
+                icon={<Plus className="h-4 w-4" aria-hidden="true" />}
+                onClick={() => {
+                  setOpen(false);
                   setCreateOrgOpen(true);
                 }}
               >
@@ -301,6 +326,14 @@ export function OrgWorkspaceSwitcher() {
         isOpen={createOrgOpen}
         onClose={() => setCreateOrgOpen(false)}
         onCreated={handleOrgCreated}
+      />
+
+      <CreateWorkspaceModal
+        isOpen={createWsOpen}
+        onClose={() => setCreateWsOpen(false)}
+        orgId={currentOrg?.orgId ?? null}
+        orgName={currentOrg?.name ?? ""}
+        onCreated={handleWorkspaceCreated}
       />
     </div>
   );
