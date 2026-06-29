@@ -26,6 +26,7 @@ import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
 import { WorkspaceTokensPage } from "./pages/WorkspaceTokensPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import OrgSettingsPage from "./pages/OrgSettingsPage";
+import BillingPage from "./pages/BillingPage";
 import OrganizationsPage from "./pages/OrganizationsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -432,6 +433,14 @@ function App() {
                 element={
                   <WorkspacePageShell>
                     <AccountSettingsPage />
+                  </WorkspacePageShell>
+                }
+              />
+              <Route
+                path="/settings/billing"
+                element={
+                  <WorkspacePageShell>
+                    <BillingPage />
                   </WorkspacePageShell>
                 }
               />
