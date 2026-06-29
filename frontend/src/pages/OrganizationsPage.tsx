@@ -7,11 +7,13 @@ import { CreateOrganizationModal } from "../components/organisms/CreateOrganizat
 import { CreateWorkspaceModal } from "../components/organisms/CreateWorkspaceModal";
 import { useAuth } from "../auth/useAuth";
 import { useWorkspace } from "../contexts/WorkspaceContext";
+import { useBillingConfig } from "../hooks/useBillingConfig";
 import type { Organization, Workspace } from "../types";
 
 export default function OrganizationsPage() {
   const { isSingleUser } = useAuth();
   const { orgs, refresh, switchTo } = useWorkspace();
+  const billing = useBillingConfig();
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
   // Org to create a workspace under (null when the modal is closed).
@@ -20,6 +22,15 @@ export default function OrganizationsPage() {
   if (isSingleUser) {
     return <Navigate to="/app" replace />;
   }
+
+  // With billing on, orgs require a Teams plan — send users to the checkout.
+  const startCreateOrg = () => {
+    if (billing?.billingEnabled) {
+      navigate("/settings/billing");
+    } else {
+      setCreateOpen(true);
+    }
+  };
 
   const handleCreated = async (_organization: Organization): Promise<void> => {
     await refresh();
@@ -53,7 +64,7 @@ export default function OrganizationsPage() {
         <Button
           size="sm"
           icon={<Plus className="h-4 w-4" aria-hidden="true" />}
-          onClick={() => setCreateOpen(true)}
+          onClick={startCreateOrg}
         >
           New organization
         </Button>
@@ -75,7 +86,7 @@ export default function OrganizationsPage() {
                 <Button
                   size="sm"
                   icon={<Plus className="h-4 w-4" aria-hidden="true" />}
-                  onClick={() => setCreateOpen(true)}
+                  onClick={startCreateOrg}
                 >
                   Create organization
                 </Button>

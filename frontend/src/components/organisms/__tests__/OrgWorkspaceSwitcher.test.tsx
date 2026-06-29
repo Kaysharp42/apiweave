@@ -24,6 +24,10 @@ vi.mock("../../../utils/authenticatedApi", () => ({
   authenticatedJson: (...args: unknown[]) => mockAuthenticatedJson(...args),
 }));
 
+vi.mock("../../../hooks/useBillingConfig", () => ({
+  useBillingConfig: () => ({ billingEnabled: false, publishableKey: "" }),
+}));
+
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));

@@ -43,6 +43,26 @@ async def billing_config() -> dict:
     }
 
 
+@router.get("/me")
+async def my_billing(current_user: User = Depends(get_current_active_user)) -> dict:
+    """The caller's current plan + subscription, for the billing page."""
+    from app.billing.entitlement_resolver import resolve_plan
+    from app.repositories.subscription_repository import SubscriptionRepository
+
+    plan = await resolve_plan("user", current_user.userId)
+    sub = await SubscriptionRepository.get_for("user", current_user.userId)
+    return {
+        "plan": plan.key,
+        "planName": plan.name,
+        "status": sub.status if sub else None,
+        "currentPeriodEnd": (
+            sub.currentPeriodEnd.isoformat() if sub and sub.currentPeriodEnd else None
+        ),
+        "canCreateOrgs": plan.can_create_orgs,
+        "hasSubscription": sub is not None,
+    }
+
+
 @router.post("/checkout")
 async def checkout(
     body: CheckoutRequest,

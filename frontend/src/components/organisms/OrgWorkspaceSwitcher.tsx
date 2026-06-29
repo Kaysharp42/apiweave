@@ -12,6 +12,7 @@ import { Button } from "../atoms/Button";
 import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
 import { CreateOrganizationModal } from "./CreateOrganizationModal";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
+import { useBillingConfig } from "../../hooks/useBillingConfig";
 import type { Organization, Workspace } from "../../types";
 
 export function OrgWorkspaceSwitcher() {
@@ -24,6 +25,7 @@ export function OrgWorkspaceSwitcher() {
     isLoading,
   } = useWorkspace();
   const { isSingleUser } = useAuth();
+  const billing = useBillingConfig();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
@@ -299,7 +301,13 @@ export function OrgWorkspaceSwitcher() {
                 icon={<Plus className="h-4 w-4" aria-hidden="true" />}
                 onClick={() => {
                   setOpen(false);
-                  setCreateOrgOpen(true);
+                  // Billing on: orgs require Teams — go to checkout, not the
+                  // direct-create modal (which would 402).
+                  if (billing?.billingEnabled) {
+                    navigate("/settings/billing");
+                  } else {
+                    setCreateOrgOpen(true);
+                  }
                 }}
               >
                 Create organization

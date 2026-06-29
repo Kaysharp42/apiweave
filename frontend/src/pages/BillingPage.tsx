@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { CreditCard, User as UserIcon, Building2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { CreditCard, User as UserIcon, Building2, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../components/atoms/Button";
 import { Input } from "../components/atoms/Input";
@@ -7,6 +8,14 @@ import { FormField } from "../components/molecules/FormField";
 import { useAuth } from "../auth/useAuth";
 import { authenticatedJson } from "../utils/authenticatedApi";
 import API_BASE_URL from "../utils/api";
+
+interface MyBilling {
+  plan: string;
+  planName: string;
+  status: string | null;
+  currentPeriodEnd: string | null;
+  hasSubscription: boolean;
+}
 
 function toSlug(value: string): string {
   return (
@@ -20,11 +29,52 @@ function toSlug(value: string): string {
 
 export default function BillingPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [busy, setBusy] = useState<string | null>(null);
+  const [me, setMe] = useState<MyBilling | null>(null);
   const [individualAmount, setIndividualAmount] = useState(1);
   const [teamName, setTeamName] = useState("");
   const [teamSlug, setTeamSlug] = useState("");
   const [seats, setSeats] = useState(2);
+
+  const loadMe = useCallback(async () => {
+    try {
+      setMe(
+        await authenticatedJson<MyBilling>(`${API_BASE_URL}/api/billing/me`),
+      );
+    } catch {
+      /* leave as null */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadMe();
+  }, [loadMe]);
+
+  // Handle the Stripe redirect. The subscription lands via webhook, which can
+  // arrive a moment after redirect — poll a few times so the plan shows.
+  useEffect(() => {
+    const status = searchParams.get("status");
+    if (!status) return;
+    if (status === "success") {
+      toast.success("Payment received — activating your subscription…");
+      // The subscription lands via webhook, which can arrive just after the
+      // redirect — poll a few times until it shows.
+      const poll = async (tries: number) => {
+        const cur = await authenticatedJson<MyBilling>(
+          `${API_BASE_URL}/api/billing/me`,
+        ).catch(() => null);
+        if (cur) setMe(cur);
+        if (!cur?.hasSubscription && tries < 5) {
+          setTimeout(() => void poll(tries + 1), 1500);
+        }
+      };
+      void poll(0);
+    } else if (status === "cancel") {
+      toast.info("Checkout canceled.");
+    }
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams, loadMe]);
 
   const go = async (label: string, body: Record<string, unknown>) => {
     setBusy(label);
@@ -88,6 +138,30 @@ export default function BillingPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {me && (
+          <div className="mx-auto mb-5 flex max-w-4xl items-center justify-between gap-3 rounded border border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised">
+            <div className="flex items-center gap-2">
+              {me.hasSubscription && me.status === "active" && (
+                <Check className="h-4 w-4 text-status-success" />
+              )}
+              <span className="text-sm text-text-primary dark:text-text-primary-dark">
+                Current plan: <strong>{me.planName}</strong>
+                {me.status ? (
+                  <span className="text-text-secondary dark:text-text-secondary-dark">
+                    {" "}
+                    · {me.status}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+            {me.currentPeriodEnd && (
+              <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                Renews {new Date(me.currentPeriodEnd).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="mx-auto grid max-w-4xl gap-5 sm:grid-cols-2">
           {/* Individual */}
           <div className={cardClass}>
