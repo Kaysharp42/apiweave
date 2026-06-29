@@ -420,6 +420,14 @@ function App() {
                 }
               />
               <Route
+                path="/organizations/:orgSlug/settings"
+                element={
+                  <WorkspacePageShell>
+                    <OrgSettingsPage />
+                  </WorkspacePageShell>
+                }
+              />
+              <Route
                 path="/settings/account"
                 element={
                   <WorkspacePageShell>

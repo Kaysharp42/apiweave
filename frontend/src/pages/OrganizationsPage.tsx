@@ -10,19 +10,13 @@ import type { Organization } from "../types";
 
 export default function OrganizationsPage() {
   const { isSingleUser } = useAuth();
-  const { orgs, availableWorkspaces, refresh } = useWorkspace();
+  const { orgs, refresh } = useWorkspace();
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
 
   if (isSingleUser) {
     return <Navigate to="/app" replace />;
   }
-
-  const firstWorkspaceByOrg = new Map(
-    availableWorkspaces
-      .filter((entry) => entry.org)
-      .map((entry) => [entry.org!.orgId, entry.workspace]),
-  );
 
   const handleCreated = async (_organization: Organization): Promise<void> => {
     await refresh();
@@ -79,7 +73,6 @@ export default function OrganizationsPage() {
           ) : (
             <div className="overflow-hidden rounded border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
               {orgs.map((org) => {
-                const workspace = firstWorkspaceByOrg.get(org.orgId);
                 return (
                   <div
                     key={org.orgId}
@@ -94,23 +87,15 @@ export default function OrganizationsPage() {
                         {org.description ? ` · ${org.description}` : ""}
                       </p>
                     </div>
-                    {workspace ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          navigate(
-                            `/${org.slug}/${workspace.slug}/settings/org`,
-                          )
-                        }
-                      >
-                        Settings
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                        Create a workspace next
-                      </span>
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        navigate(`/organizations/${org.slug}/settings`)
+                      }
+                    >
+                      Settings
+                    </Button>
                   </div>
                 );
               })}

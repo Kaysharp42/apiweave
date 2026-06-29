@@ -10,6 +10,8 @@ describe("isSettingsRoute", () => {
     // Regression: /organizations must count, else MainLayout flips the sidebar
     // back to workflows on landing.
     expect(isSettingsRoute("/organizations")).toBe(true);
+    // Org-scoped settings (no workspace) must also count.
+    expect(isSettingsRoute("/organizations/test/settings")).toBe(true);
   });
 
   it("does not match workflow/home routes", () => {

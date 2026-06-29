@@ -6,5 +6,6 @@
  */
 export const isSettingsRoute = (pathname: string): boolean =>
   pathname.includes("/settings/") ||
+  pathname.endsWith("/settings") ||
   pathname === "/audit" ||
-  pathname === "/organizations";
+  pathname.startsWith("/organizations");
