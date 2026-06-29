@@ -25,6 +25,19 @@ async def db():
     )
 
 
+def test_as_dict_handles_stripe_objects_and_plain_dicts():
+    # Plain dict passes through; a Stripe-like object (str() is JSON) is parsed.
+    assert stripe_service._as_dict({"a": 1}) == {"a": 1}
+
+    class FakeStripeObj:
+        def __str__(self) -> str:
+            return '{"metadata": {"plan": "individual"}, "items": {"data": [{"quantity": 2}]}}'
+
+    out = stripe_service._as_dict(FakeStripeObj())
+    assert out["metadata"]["plan"] == "individual"
+    assert out["items"]["data"][0]["quantity"] == 2  # nested is plain too
+
+
 def test_parse_event_requires_webhook_secret(monkeypatch):
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", "")
     with pytest.raises(HTTPException) as exc:

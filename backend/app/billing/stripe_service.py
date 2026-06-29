@@ -10,6 +10,7 @@ Keys/price IDs come from settings (.env / deployment secrets), never the repo.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -35,9 +36,16 @@ def _client() -> None:
 
 
 def _abs_url(path: str) -> str:
+    """Resolve a frontend path to an absolute URL. Stripe success/cancel/return
+    land on FRONTEND routes, so use the frontend origin (not the backend
+    BASE_URL) — same resolution the auth redirects use."""
     if path.startswith("http"):
         return path
-    return f"{settings.BASE_URL.rstrip('/')}{path}"
+    base = settings.FRONTEND_URL
+    if not base:
+        origins = settings.get_allowed_origins_list()
+        base = origins[0] if origins else "http://localhost:3000"
+    return f"{base.rstrip('/')}{path if path.startswith('/') else '/' + path}"
 
 
 async def create_checkout_session(
@@ -127,9 +135,18 @@ def parse_event(payload: bytes, sig_header: str) -> stripe.Event:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid webhook signature") from e
 
 
+def _as_dict(obj: object) -> dict:
+    """Stripe SDK objects don't expose dict.get the way plain dicts do; their
+    str() is a JSON dump, so round-trip to a fully-plain nested dict."""
+    if isinstance(obj, dict):
+        return obj
+    return json.loads(str(obj))
+
+
 async def handle_event(event: stripe.Event) -> None:
+    _client()  # webhook path also needs stripe.api_key set for retrieve()
     kind = event["type"]
-    obj = event["data"]["object"]
+    obj = _as_dict(event["data"]["object"])
     if kind == "checkout.session.completed":
         await _on_checkout_completed(obj)
     elif kind in ("customer.subscription.updated", "customer.subscription.deleted"):
@@ -139,7 +156,13 @@ async def handle_event(event: stripe.Event) -> None:
 
 
 def _period_end(stripe_sub: dict) -> datetime | None:
+    # Stripe moved current_period_end onto subscription items (API 2024-+);
+    # fall back to the top-level field for older versions.
     ts = stripe_sub.get("current_period_end")
+    if not ts:
+        items = stripe_sub.get("items", {}).get("data", [])
+        if items:
+            ts = items[0].get("current_period_end")
     return datetime.fromtimestamp(ts, tz=UTC) if ts else None
 
 
@@ -178,7 +201,7 @@ async def _on_checkout_completed(session: dict) -> None:
     sub_id = session.get("subscription")
     if not sub_id:
         return
-    stripe_sub = stripe.Subscription.retrieve(sub_id)
+    stripe_sub = _as_dict(stripe.Subscription.retrieve(sub_id))
 
     if meta.get("subject_type") == "user":
         await _upsert(
