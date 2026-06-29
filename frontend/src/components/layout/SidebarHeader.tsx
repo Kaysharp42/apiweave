@@ -7,6 +7,7 @@ import {
   Terminal,
   ChevronRight,
   User,
+  Building2,
 } from "lucide-react";
 import WorkflowExportImport from "../WorkflowExportImport";
 import HARImport from "../HARImport";
@@ -17,6 +18,7 @@ import { Button } from "../atoms/Button";
 import { Spinner } from "../atoms/Spinner";
 import { SearchInput } from "../molecules/SearchInput";
 import useSidebarStore from "../../stores/SidebarStore";
+import { useWorkspace } from "../../contexts/WorkspaceContext";
 import type { SidebarHeaderProps } from "../../types";
 
 type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
@@ -128,6 +130,11 @@ export function SidebarHeader({
 
   const searchQuery = useSidebarStore((s) => s.searchQuery);
   const setSearchQuery = useSidebarStore((s) => s.setSearchQuery);
+  const { currentWorkspace, currentOrg } = useWorkspace();
+
+  const inOrg = Boolean(currentOrg);
+  const WorkspaceIcon = inOrg ? Building2 : User;
+  const workspaceLabel = currentWorkspace?.name ?? "Workspace";
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -223,9 +230,9 @@ export function SidebarHeader({
       <div className="flex flex-col border-b border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
         <div className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-1 text-sm min-w-0">
-            <User className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+            <WorkspaceIcon className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
             <span className="text-text-secondary dark:text-text-secondary-dark truncate">
-              My Workspace
+              {workspaceLabel}
             </span>
             <ChevronRight className="w-3 h-3 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
             <span className="font-semibold text-text-primary dark:text-text-primary-dark truncate">
