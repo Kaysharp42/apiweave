@@ -39,6 +39,7 @@ interface SidebarState {
     skip?: number,
     append?: boolean,
     limit?: number,
+    includeAttached?: boolean,
   ) => Promise<void>;
   fetchCollections: () => Promise<void>;
   fetchProjects: () => Promise<void>;
@@ -90,7 +91,12 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
     }
   },
 
-  fetchWorkflows: async (skip = 0, append = false, limit = 20) => {
+  fetchWorkflows: async (
+    skip = 0,
+    append = false,
+    limit = 20,
+    includeAttached = false,
+  ) => {
     const { activeWorkspaceId } = get();
     if (!activeWorkspaceId) {
       set({ isLoadingMore: false, isRefreshing: false });
@@ -99,7 +105,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
     try {
       const response = await authenticatedFetch(
-        workflowsUrl(activeWorkspaceId, { skip, limit }),
+        workflowsUrl(activeWorkspaceId, { skip, limit, includeAttached }),
       );
       if (response.ok) {
         const data: PaginatedWorkflowResponse = await response.json();
@@ -169,7 +175,10 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
       await fetchWorkflows(0);
     } else if (selectedNav === "projects") {
       await fetchProjects();
-      await fetchWorkflows(0, false, 100);
+      // Projects view groups workflows under projects — needs attached ones too.
+      await fetchWorkflows(0, false, 100, true);
+    } else {
+      set({ isRefreshing: false });
     }
   },
 

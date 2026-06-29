@@ -169,16 +169,21 @@ class WorkflowRepository:
         workspace_id: str,
         skip: int = 0,
         limit: int = 20,
+        include_attached: bool = False,
     ) -> tuple[list[Workflow], int]:
-        """List a workspace's workflows that are NOT attached to a project.
+        """List a workspace's workflows.
 
-        Project-attached workflows show only under their project listing
-        (`list_by_workspace_and_project`), so the default workspace view
-        excludes them (collectionId is None)."""
-        query = Workflow.find(
-            Workflow.workspaceId == workspace_id,
-            Workflow.collectionId == None,  # noqa: E711 — Beanie needs ==, not `is`
-        )
+        By default returns only workflows NOT attached to a project
+        (collectionId is None) — the Workflows tab. The Projects view passes
+        include_attached=True to get every workflow so it can group them under
+        their projects."""
+        if include_attached:
+            query = Workflow.find(Workflow.workspaceId == workspace_id)
+        else:
+            query = Workflow.find(
+                Workflow.workspaceId == workspace_id,
+                Workflow.collectionId == None,  # noqa: E711 — Beanie needs ==, not `is`
+            )
         total = await query.count()
         workflows = await query.sort(-Workflow.createdAt).skip(skip).limit(limit).to_list()
         return workflows, total

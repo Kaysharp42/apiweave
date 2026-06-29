@@ -207,9 +207,15 @@ async def list_scoped_workflows(
     project_id: str | None = None,
     skip: int = 0,
     limit: int = 20,
+    include_attached: bool = False,
 ) -> dict[str, Any]:
     """
-    List workflows in a workspace, optionally filtered by project.
+    List workflows in a workspace.
+
+    - project_id set: only that project's workflows.
+    - include_attached=True (Projects view): every workflow, so the UI can
+      group them under projects.
+    - default (Workflows tab): only workflows not attached to a project.
     """
     ws = await WorkspaceRepository.get_by_id(workspace_id)
     if not ws:
@@ -222,7 +228,9 @@ async def list_scoped_workflows(
             workspace_id, project_id, skip, limit
         )
     else:
-        workflows, total = await WorkflowRepository.list_by_workspace(workspace_id, skip, limit)
+        workflows, total = await WorkflowRepository.list_by_workspace(
+            workspace_id, skip, limit, include_attached=include_attached
+        )
 
     return {
         "workflows": [_workflow_to_response(wf) for wf in workflows],

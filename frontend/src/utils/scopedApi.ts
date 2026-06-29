@@ -21,7 +21,8 @@ export function workflowsUrl(
 ): string {
   const skip = params?.skip ?? 0;
   const limit = params?.limit ?? 20;
-  return `${API_BASE_URL}/api/workspaces/${encodeURIComponent(workspaceId)}/workflows?skip=${skip}&limit=${limit}`;
+  const attached = params?.includeAttached ? "&include_attached=true" : "";
+  return `${API_BASE_URL}/api/workspaces/${encodeURIComponent(workspaceId)}/workflows?skip=${skip}&limit=${limit}${attached}`;
 }
 
 export function workflowUrl(workspaceId: string, workflowId: string): string {

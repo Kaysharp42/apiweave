@@ -48,3 +48,10 @@ async def test_default_listing_excludes_project_attached(db):
     )
     assert proj_total == 1
     assert {w.workflowId for w in in_project} == {"attached-1"}
+
+    # Projects view (include_attached) sees everything so it can group them.
+    everything, all_total = await WorkflowRepository.list_by_workspace(
+        "ws-1", include_attached=True
+    )
+    assert all_total == 3
+    assert {w.workflowId for w in everything} == {"free-1", "free-2", "attached-1"}
