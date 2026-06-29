@@ -118,6 +118,10 @@ class OrganizationRepository:
         return await OrganizationMember.find(OrganizationMember.orgId == org_id).to_list()
 
     @staticmethod
+    async def count_members(org_id: str) -> int:
+        return await OrganizationMember.find(OrganizationMember.orgId == org_id).count()
+
+    @staticmethod
     async def update_member_role(
         org_id: str,
         user_id: str,

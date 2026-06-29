@@ -33,6 +33,7 @@ from app.models import (
     SecretBinding,
     ServiceToken,
     Session,
+    Subscription,
     Team,
     TeamMember,
     TeamPermissionGrant,
@@ -89,6 +90,7 @@ async def connect_db():
             # Multi-tenant models
             Organization,
             OrganizationMember,
+            Subscription,
             Team,
             TeamMember,
             Workspace,

@@ -1214,6 +1214,33 @@ class Organization(Document):
         ]
 
 
+class Subscription(Document):
+    """Billing subscription (Phase 4). Dual subject: ownerType "user" for
+    free/individual, "organization" for team/enterprise. One active row per
+    (ownerType, ownerId). Stripe fields are null until checkout completes."""
+
+    subscriptionId: str
+    ownerType: str  # "user" | "organization"
+    ownerId: str
+    plan: str = "free"  # plans.PLAN_BY_KEY value
+    status: str = "active"  # active | trialing | past_due | canceled | unpaid
+    seats: int = 1
+    stripeCustomerId: str | None = None
+    stripeSubscriptionId: str | None = None
+    currentPeriodEnd: datetime | None = None
+    cancelAtPeriodEnd: bool = False
+    createdAt: datetime
+    updatedAt: datetime
+
+    class Settings:
+        name = "subscriptions"
+        indexes = [
+            IndexModel([("subscriptionId", ASCENDING)], unique=True),
+            IndexModel([("ownerType", ASCENDING), ("ownerId", ASCENDING)], unique=True),
+            IndexModel([("stripeSubscriptionId", ASCENDING)]),
+        ]
+
+
 class OrganizationMember(Document):
     memberId: str
     orgId: str
