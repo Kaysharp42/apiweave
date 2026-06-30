@@ -114,6 +114,21 @@ async def enforce_run_history_retention(workspace_id: str, workflow_id: str) -> 
     await RunRepository.prune_workflow_runs(workflow_id, keep_latest=1)
 
 
+async def enforce_webhook_log_retention(workspace_id: str, log_id: str | None) -> None:
+    """Free tier does not persist webhook run logs — delete the log once the run
+    has used it. No-op for plans that persist logs."""
+    if not log_id:
+        return
+    plan = await resolve_plan_for_workspace(workspace_id)
+    if plan.persist_webhook_logs:
+        return
+    from app.models import WebhookLog
+
+    doc = await WebhookLog.find_one(WebhookLog.logId == log_id)
+    if doc is not None:
+        await doc.delete()
+
+
 async def require_can_add_org_member(org_id: str) -> None:
     """An org may gain another member only if it has a free seat under its plan."""
     plan = await resolve_plan("organization", org_id)

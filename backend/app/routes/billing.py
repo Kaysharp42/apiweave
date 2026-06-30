@@ -86,6 +86,7 @@ async def my_usage(current_user: User = Depends(get_current_active_user)) -> dic
         "webhookRunsPerDay": plan.webhook_runs_per_day,
         # Capabilities
         "persistRunHistory": plan.persist_run_history,
+        "persistWebhookLogs": plan.persist_webhook_logs,
         "canCreateProjects": plan.can_create_projects,
         "canCreateOrgs": plan.can_create_orgs,
         "canRerunFromFailed": plan.can_rerun_from_failed,

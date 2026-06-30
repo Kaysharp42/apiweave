@@ -12,7 +12,14 @@ import pytest
 from app.billing import plans
 from app.billing.entitlement_resolver import resolve_plan
 from app.config import settings
-from app.models import OrganizationMember, RateLimitCounter, Run, Subscription, Workspace
+from app.models import (
+    OrganizationMember,
+    RateLimitCounter,
+    Run,
+    Subscription,
+    WebhookLog,
+    Workspace,
+)
 from app.services import entitlements
 from beanie import init_beanie
 from fastapi import HTTPException
@@ -33,6 +40,7 @@ async def billing_db(monkeypatch):
             Workspace,
             Run,
             RateLimitCounter,
+            WebhookLog,
         ],
     )
 
@@ -128,6 +136,30 @@ async def test_run_history_retention_free_keeps_one_paid_keeps_all(billing_db):
     await _runs("wf-paid", 3)
     await entitlements.enforce_run_history_retention("ws-paid", "wf-paid")
     assert await Run.find(Run.workflowId == "wf-paid").count() == 3
+
+
+async def _log(log_id: str) -> None:
+    await WebhookLog(
+        logId=log_id,
+        webhookId="wh-1",
+        timestamp=_T,
+        status="success",
+        duration=1,
+        responseStatus=202,
+    ).insert()
+
+
+async def test_webhook_log_retention_free_deletes_paid_keeps(billing_db):
+    await _ws("ws-free", "u-free")
+    await _log("log-free")
+    await entitlements.enforce_webhook_log_retention("ws-free", "log-free")
+    assert await WebhookLog.find(WebhookLog.logId == "log-free").count() == 0
+
+    await _sub("user", "u-paid", "individual")
+    await _ws("ws-paid", "u-paid")
+    await _log("log-paid")
+    await entitlements.enforce_webhook_log_retention("ws-paid", "log-paid")
+    assert await WebhookLog.find(WebhookLog.logId == "log-paid").count() == 1
 
 
 async def test_webhook_daily_quota_enforced(billing_db):

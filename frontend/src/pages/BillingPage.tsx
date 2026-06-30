@@ -24,6 +24,7 @@ interface MyBilling {
   webhookRunsToday: number;
   webhookRunsPerDay: number | null;
   persistRunHistory: boolean;
+  persistWebhookLogs: boolean;
   canCreateProjects: boolean;
   canCreateOrgs: boolean;
   canRerunFromFailed: boolean;
@@ -206,6 +207,7 @@ export default function BillingPage() {
               {[
                 ["Projects", me.canCreateProjects],
                 ["Full run history", me.persistRunHistory],
+                ["Webhook run logs", me.persistWebhookLogs],
                 ["Re-run from last failed", me.canRerunFromFailed],
                 ["Organizations & teams", me.canCreateOrgs],
               ].map(([label, on]) => (
