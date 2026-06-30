@@ -138,6 +138,9 @@ async def test_webhook_daily_quota_enforced(billing_db):
         await entitlements.require_webhook_run_allowed("ws-free")
     assert exc.value.status_code == 402
 
+    # The /usage meter must read the same counter (key/window must not drift).
+    assert await entitlements.webhook_runs_today("user", "u-free") >= 5
+
 
 async def test_seat_limit_enforced(billing_db):
     # Free-plan org (max 1 seat) with one member already → next add denied.

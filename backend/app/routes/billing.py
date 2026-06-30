@@ -63,6 +63,35 @@ async def my_billing(current_user: User = Depends(get_current_active_user)) -> d
     }
 
 
+@router.get("/usage")
+async def my_usage(current_user: User = Depends(get_current_active_user)) -> dict:
+    """The caller's plan, capabilities, and current usage vs limits (for the
+    billing page meters). User-subject (personal) — org usage lives in org settings."""
+    from app.billing.entitlement_resolver import resolve_plan
+    from app.repositories.subscription_repository import SubscriptionRepository
+    from app.services.entitlements import webhook_runs_today
+
+    plan = await resolve_plan("user", current_user.userId)
+    sub = await SubscriptionRepository.get_for("user", current_user.userId)
+    return {
+        "plan": plan.key,
+        "planName": plan.name,
+        "status": sub.status if sub else None,
+        "currentPeriodEnd": (
+            sub.currentPeriodEnd.isoformat() if sub and sub.currentPeriodEnd else None
+        ),
+        "hasSubscription": sub is not None,
+        # Usage vs limits (null limit = unlimited)
+        "webhookRunsToday": await webhook_runs_today("user", current_user.userId),
+        "webhookRunsPerDay": plan.webhook_runs_per_day,
+        # Capabilities
+        "persistRunHistory": plan.persist_run_history,
+        "canCreateProjects": plan.can_create_projects,
+        "canCreateOrgs": plan.can_create_orgs,
+        "canRerunFromFailed": plan.can_rerun_from_failed,
+    }
+
+
 @router.post("/checkout")
 async def checkout(
     body: CheckoutRequest,

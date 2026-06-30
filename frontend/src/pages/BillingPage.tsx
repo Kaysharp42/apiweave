@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CreditCard, User as UserIcon, Building2, Check } from "lucide-react";
+import {
+  CreditCard,
+  User as UserIcon,
+  Building2,
+  Check,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../components/atoms/Button";
 import { Input } from "../components/atoms/Input";
@@ -15,6 +21,12 @@ interface MyBilling {
   status: string | null;
   currentPeriodEnd: string | null;
   hasSubscription: boolean;
+  webhookRunsToday: number;
+  webhookRunsPerDay: number | null;
+  persistRunHistory: boolean;
+  canCreateProjects: boolean;
+  canCreateOrgs: boolean;
+  canRerunFromFailed: boolean;
 }
 
 function toSlug(value: string): string {
@@ -40,7 +52,7 @@ export default function BillingPage() {
   const loadMe = useCallback(async () => {
     try {
       setMe(
-        await authenticatedJson<MyBilling>(`${API_BASE_URL}/api/billing/me`),
+        await authenticatedJson<MyBilling>(`${API_BASE_URL}/api/billing/usage`),
       );
     } catch {
       /* leave as null */
@@ -62,7 +74,7 @@ export default function BillingPage() {
       // redirect — poll a few times until it shows.
       const poll = async (tries: number) => {
         const cur = await authenticatedJson<MyBilling>(
-          `${API_BASE_URL}/api/billing/me`,
+          `${API_BASE_URL}/api/billing/usage`,
         ).catch(() => null);
         if (cur) setMe(cur);
         if (!cur?.hasSubscription && tries < 5) {
@@ -159,6 +171,57 @@ export default function BillingPage() {
                 Renews {new Date(me.currentPeriodEnd).toLocaleDateString()}
               </span>
             )}
+          </div>
+        )}
+
+        {me && (
+          <div className="mx-auto mb-5 max-w-4xl rounded border border-border bg-surface-raised p-4 dark:border-border-dark dark:bg-surface-dark-raised">
+            <h2 className="mb-3 text-sm font-semibold text-text-primary dark:text-text-primary-dark">
+              Usage &amp; limits
+            </h2>
+            {/* Webhook runs/day meter */}
+            <div className="mb-3">
+              <div className="mb-1 flex justify-between text-xs text-text-secondary dark:text-text-secondary-dark">
+                <span>Webhook runs today</span>
+                <span>
+                  {me.webhookRunsToday}
+                  {me.webhookRunsPerDay === null
+                    ? " (unlimited)"
+                    : ` / ${me.webhookRunsPerDay}`}
+                </span>
+              </div>
+              {me.webhookRunsPerDay !== null && (
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-overlay dark:bg-surface-dark-overlay">
+                  <div
+                    className="h-full rounded-full bg-primary dark:bg-primary-light"
+                    style={{
+                      width: `${Math.min(100, (me.webhookRunsToday / me.webhookRunsPerDay) * 100)}%`,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+            {/* Capability checklist */}
+            <ul className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+              {[
+                ["Projects", me.canCreateProjects],
+                ["Full run history", me.persistRunHistory],
+                ["Re-run from last failed", me.canRerunFromFailed],
+                ["Organizations & teams", me.canCreateOrgs],
+              ].map(([label, on]) => (
+                <li
+                  key={label as string}
+                  className="flex items-center gap-1.5 text-text-secondary dark:text-text-secondary-dark"
+                >
+                  {on ? (
+                    <Check className="h-3.5 w-3.5 text-status-success" />
+                  ) : (
+                    <X className="h-3.5 w-3.5 text-text-muted dark:text-text-muted-dark" />
+                  )}
+                  {label}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

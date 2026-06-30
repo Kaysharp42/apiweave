@@ -68,6 +68,21 @@ async def require_can_rerun_from_failed(workspace_id: str) -> None:
 _SECONDS_PER_DAY = 86400
 
 
+async def webhook_runs_today(owner_type: str, owner_id: str) -> int:
+    """Read-only: how many webhook runs the subject has used in today's window."""
+    import time
+
+    from app.models import RateLimitCounter
+
+    now = int(time.time())
+    window_start = now - (now % _SECONDS_PER_DAY)
+    doc = await RateLimitCounter.find_one(
+        RateLimitCounter.key == f"whrun:{owner_type}:{owner_id}",
+        RateLimitCounter.windowStart == window_start,
+    )
+    return doc.hits if doc else 0
+
+
 async def require_webhook_run_allowed(workspace_id: str) -> None:
     """Enforce the plan's webhook-runs-per-day quota for the workspace's billing
     subject (quota pools across the subject's workspaces). No-op when the plan
