@@ -27,18 +27,27 @@ async def resolve_plan(owner_type: str, owner_id: str) -> Plan:
     return FREE
 
 
+async def resolve_subject_for_workspace(workspace_id: str) -> tuple[str | None, str | None]:
+    """The billing subject that owns a workspace: ("organization", orgId) if
+    org-owned, else ("user", ownerUserId). Quotas pool per subject."""
+    from app.repositories.workspace_repository import WorkspaceRepository
+
+    ws = await WorkspaceRepository.get_by_id(workspace_id)
+    if ws is None:
+        return (None, None)
+    if ws.orgId:
+        return ("organization", ws.orgId)
+    if ws.ownerUserId:
+        return ("user", ws.ownerUserId)
+    return (None, None)
+
+
 async def resolve_plan_for_workspace(workspace_id: str) -> Plan:
     """Plan that governs a workspace: its org's plan if org-owned, else the
     owner-user's plan. Used for per-workspace feature gates (projects, etc.)."""
     if not settings.BILLING_ENABLED:
         return UNLIMITED
-    from app.repositories.workspace_repository import WorkspaceRepository
-
-    ws = await WorkspaceRepository.get_by_id(workspace_id)
-    if ws is None:
+    owner_type, owner_id = await resolve_subject_for_workspace(workspace_id)
+    if owner_id is None:
         return FREE
-    if ws.orgId:
-        return await resolve_plan("organization", ws.orgId)
-    if ws.ownerUserId:
-        return await resolve_plan("user", ws.ownerUserId)
-    return FREE
+    return await resolve_plan(owner_type, owner_id)  # type: ignore[arg-type]

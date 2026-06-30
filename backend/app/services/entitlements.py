@@ -14,7 +14,11 @@ from __future__ import annotations
 
 from fastapi import HTTPException, status
 
-from app.billing.entitlement_resolver import resolve_plan, resolve_plan_for_workspace
+from app.billing.entitlement_resolver import (
+    resolve_plan,
+    resolve_plan_for_workspace,
+    resolve_subject_for_workspace,
+)
 from app.models import User
 from app.repositories.organization_repository import OrganizationRepository
 
@@ -59,6 +63,40 @@ async def require_can_rerun_from_failed(workspace_id: str) -> None:
     plan = await resolve_plan_for_workspace(workspace_id)
     if not plan.can_rerun_from_failed:
         deny("Re-running from the last failed node requires a paid plan. " + _UPGRADE_HINT)
+
+
+_SECONDS_PER_DAY = 86400
+
+
+async def require_webhook_run_allowed(workspace_id: str) -> None:
+    """Enforce the plan's webhook-runs-per-day quota for the workspace's billing
+    subject (quota pools across the subject's workspaces). No-op when the plan
+    is unlimited (incl. billing disabled)."""
+    plan = await resolve_plan_for_workspace(workspace_id)
+    if plan.webhook_runs_per_day is None:
+        return
+    owner_type, owner_id = await resolve_subject_for_workspace(workspace_id)
+    if owner_id is None:
+        return
+    from app.middleware.rate_limiter import _check_rate_limit_mongodb
+
+    key = f"whrun:{owner_type}:{owner_id}"
+    allowed, _remaining, _reset = await _check_rate_limit_mongodb(
+        key, plan.webhook_runs_per_day, _SECONDS_PER_DAY
+    )
+    if not allowed:
+        deny(f"Daily webhook-run limit reached ({plan.webhook_runs_per_day}/day). " + _UPGRADE_HINT)
+
+
+async def enforce_run_history_retention(workspace_id: str, workflow_id: str) -> None:
+    """Free tier keeps only the latest run per workflow — prune older ones after
+    a new run is created. No-op for plans that persist full history."""
+    plan = await resolve_plan_for_workspace(workspace_id)
+    if plan.persist_run_history:
+        return
+    from app.repositories.run_repository import RunRepository
+
+    await RunRepository.prune_workflow_runs(workflow_id, keep_latest=1)
 
 
 async def require_can_add_org_member(org_id: str) -> None:

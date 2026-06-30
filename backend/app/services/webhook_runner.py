@@ -103,6 +103,13 @@ class WebhookRunner:
                 )
                 return existing.run_id
 
+        # Billing seam: enforce the plan's daily webhook-run quota (no-op when
+        # the plan is unlimited / billing off).
+        if delivery.workspace_id:
+            from app.services import entitlements
+
+            await entitlements.require_webhook_run_allowed(delivery.workspace_id)
+
         masked_payload = mask_secrets_structural(delivery.payload, [])
         triggered_at = datetime.now(UTC)
 
@@ -117,6 +124,12 @@ class WebhookRunner:
                 actor_id=delivery.actor_id,
                 workspace_id=delivery.workspace_id,
             )
+            if delivery.workspace_id:
+                from app.services import entitlements
+
+                await entitlements.enforce_run_history_retention(
+                    delivery.workspace_id, delivery.resource_id
+                )
         elif delivery.resource_type == "collection":
             run_id = f"crun-{uuid.uuid4().hex[:12]}"
             collection = await CollectionRepository.get_by_id(delivery.resource_id)

@@ -5,14 +5,14 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 from app.billing import plans
 from app.billing.entitlement_resolver import resolve_plan
 from app.config import settings
-from app.models import OrganizationMember, Subscription, Workspace
+from app.models import OrganizationMember, RateLimitCounter, Run, Subscription, Workspace
 from app.services import entitlements
 from beanie import init_beanie
 from fastapi import HTTPException
@@ -27,7 +27,13 @@ async def billing_db(monkeypatch):
     client = AsyncMongoMockClient()
     await init_beanie(
         database=client["billing_test"],
-        document_models=[Subscription, OrganizationMember, Workspace],
+        document_models=[
+            Subscription,
+            OrganizationMember,
+            Workspace,
+            Run,
+            RateLimitCounter,
+        ],
     )
 
 
@@ -98,6 +104,39 @@ async def test_project_and_rerun_gated_by_workspace_owner_plan(billing_db):
     await _ws("ws-paid", "u-paid")
     await entitlements.require_can_create_project("ws-paid")  # no raise
     await entitlements.require_can_rerun_from_failed("ws-paid")  # no raise
+
+
+async def _runs(workflow_id: str, n: int) -> None:
+    for i in range(n):
+        await Run(
+            runId=f"{workflow_id}-r{i}",
+            workflowId=workflow_id,
+            status="completed",
+            trigger="manual",
+            createdAt=_T + timedelta(minutes=i),
+        ).insert()
+
+
+async def test_run_history_retention_free_keeps_one_paid_keeps_all(billing_db):
+    await _ws("ws-free", "u-free")
+    await _runs("wf-free", 3)
+    await entitlements.enforce_run_history_retention("ws-free", "wf-free")
+    assert await Run.find(Run.workflowId == "wf-free").count() == 1
+
+    await _sub("user", "u-paid", "individual")
+    await _ws("ws-paid", "u-paid")
+    await _runs("wf-paid", 3)
+    await entitlements.enforce_run_history_retention("ws-paid", "wf-paid")
+    assert await Run.find(Run.workflowId == "wf-paid").count() == 3
+
+
+async def test_webhook_daily_quota_enforced(billing_db):
+    await _ws("ws-free", "u-free")  # free plan -> 5 webhook runs/day
+    for _ in range(5):
+        await entitlements.require_webhook_run_allowed("ws-free")  # no raise
+    with pytest.raises(HTTPException) as exc:
+        await entitlements.require_webhook_run_allowed("ws-free")
+    assert exc.value.status_code == 402
 
 
 async def test_seat_limit_enforced(billing_db):

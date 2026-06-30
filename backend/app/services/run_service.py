@@ -255,6 +255,12 @@ async def trigger_workflow_run(
     )
     await run.insert()
 
+    # Billing seam: Free tier keeps only the latest run — prune older ones.
+    if effective_workspace_id:
+        from app.services import entitlements
+
+        await entitlements.enforce_run_history_retention(effective_workspace_id, workflow_id)
+
     # Audit: run created
     if effective_workspace_id and actor:
         try:
