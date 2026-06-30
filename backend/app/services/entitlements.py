@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException, status
 
-from app.billing.entitlement_resolver import resolve_plan
+from app.billing.entitlement_resolver import resolve_plan, resolve_plan_for_workspace
 from app.models import User
 from app.repositories.organization_repository import OrganizationRepository
 
@@ -45,6 +45,20 @@ async def require_can_create_workspace(*, actor_user_id: str, org_id: str | None
     plan = await resolve_plan("organization", org_id)
     if not plan.can_create_orgs:
         deny("Team workspaces require a Teams plan. " + _UPGRADE_HINT)
+
+
+async def require_can_create_project(workspace_id: str) -> None:
+    """Projects are a paid feature (Free has none)."""
+    plan = await resolve_plan_for_workspace(workspace_id)
+    if not plan.can_create_projects:
+        deny("Projects require a paid plan. " + _UPGRADE_HINT)
+
+
+async def require_can_rerun_from_failed(workspace_id: str) -> None:
+    """Re-running from the last failed node is a paid feature."""
+    plan = await resolve_plan_for_workspace(workspace_id)
+    if not plan.can_rerun_from_failed:
+        deny("Re-running from the last failed node requires a paid plan. " + _UPGRADE_HINT)
 
 
 async def require_can_add_org_member(org_id: str) -> None:

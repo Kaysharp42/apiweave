@@ -25,3 +25,20 @@ async def resolve_plan(owner_type: str, owner_id: str) -> Plan:
     if sub is not None and sub.status in _ACTIVE_STATUSES:
         return PLAN_BY_KEY.get(sub.plan, FREE)
     return FREE
+
+
+async def resolve_plan_for_workspace(workspace_id: str) -> Plan:
+    """Plan that governs a workspace: its org's plan if org-owned, else the
+    owner-user's plan. Used for per-workspace feature gates (projects, etc.)."""
+    if not settings.BILLING_ENABLED:
+        return UNLIMITED
+    from app.repositories.workspace_repository import WorkspaceRepository
+
+    ws = await WorkspaceRepository.get_by_id(workspace_id)
+    if ws is None:
+        return FREE
+    if ws.orgId:
+        return await resolve_plan("organization", ws.orgId)
+    if ws.ownerUserId:
+        return await resolve_plan("user", ws.ownerUserId)
+    return FREE

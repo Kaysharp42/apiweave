@@ -12,7 +12,7 @@ import pytest
 from app.billing import plans
 from app.billing.entitlement_resolver import resolve_plan
 from app.config import settings
-from app.models import OrganizationMember, Subscription
+from app.models import OrganizationMember, Subscription, Workspace
 from app.services import entitlements
 from beanie import init_beanie
 from fastapi import HTTPException
@@ -27,7 +27,7 @@ async def billing_db(monkeypatch):
     client = AsyncMongoMockClient()
     await init_beanie(
         database=client["billing_test"],
-        document_models=[Subscription, OrganizationMember],
+        document_models=[Subscription, OrganizationMember, Workspace],
     )
 
 
@@ -72,6 +72,32 @@ async def test_personal_workspace_always_allowed_org_workspace_gated(billing_db)
     # Under a Team org: allowed.
     await _sub("organization", "org-team", "team")
     await entitlements.require_can_create_workspace(actor_user_id="u-x", org_id="org-team")
+
+
+async def _ws(workspace_id: str, owner_user_id: str) -> None:
+    await Workspace(
+        workspaceId=workspace_id,
+        slug=workspace_id,
+        name=workspace_id,
+        ownerType="user",
+        ownerUserId=owner_user_id,
+        isPersonal=True,
+        createdAt=_T,
+        updatedAt=_T,
+    ).insert()
+
+
+async def test_project_and_rerun_gated_by_workspace_owner_plan(billing_db):
+    await _ws("ws-free", "u-free")
+    with pytest.raises(HTTPException):
+        await entitlements.require_can_create_project("ws-free")
+    with pytest.raises(HTTPException):
+        await entitlements.require_can_rerun_from_failed("ws-free")
+
+    await _sub("user", "u-paid", "individual")
+    await _ws("ws-paid", "u-paid")
+    await entitlements.require_can_create_project("ws-paid")  # no raise
+    await entitlements.require_can_rerun_from_failed("ws-paid")  # no raise
 
 
 async def test_seat_limit_enforced(billing_db):

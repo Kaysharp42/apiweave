@@ -179,6 +179,13 @@ async def trigger_workflow_run(
     node_ids.discard(None)
 
     if resume_mode in VALID_RESUME_MODES:
+        # Billing seam: re-running from the last failed node is a paid feature.
+        from app.services import entitlements
+
+        ws_id = workspace_id or getattr(workflow, "workspaceId", None)
+        if ws_id:
+            await entitlements.require_can_rerun_from_failed(ws_id)
+
         if not resume_from_run_id:
             latest_failed = await RunRepository.get_latest_failed_run(workflow_id)
             if not latest_failed:
