@@ -18,13 +18,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.auth.dependencies import get_current_user, require_permission
-from app.auth.permissions import (
-    SECRETS_CREATE,
-    SECRETS_DELETE,
-    SECRETS_READ,
-    SECRETS_UPDATE,
-)
+from app.auth.dependencies import get_current_user, require_scope_permission
 from app.models import (
     SecretBindingCreateRequest,
     SecretBindingResponse,
@@ -64,7 +58,7 @@ class SecretListResponse(BaseModel):
 @router.get(
     "/{scope_type}/{scope_id}/secrets",
     response_model=SecretListResponse,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_READ)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "read")],
 )
 async def list_secrets(scope_type: str, scope_id: str):
     """
@@ -80,7 +74,7 @@ async def list_secrets(scope_type: str, scope_id: str):
 @router.get(
     "/{scope_type}/{scope_id}/secrets/{secret_id}",
     response_model=SecretMetadataResponse,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_READ)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "read")],
 )
 async def get_secret(scope_type: str, scope_id: str, secret_id: str):
     """
@@ -109,7 +103,7 @@ async def get_secret(scope_type: str, scope_id: str, secret_id: str):
     "/{scope_type}/{scope_id}/secrets",
     response_model=SecretMetadataResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_CREATE)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "create")],
 )
 async def create_secret(
     scope_type: str,
@@ -147,7 +141,7 @@ async def create_secret(
 @router.put(
     "/{scope_type}/{scope_id}/secrets/{secret_id}",
     response_model=SecretMetadataResponse,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_UPDATE)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "update")],
 )
 async def update_secret(
     scope_type: str,
@@ -192,7 +186,7 @@ async def update_secret(
 @router.delete(
     "/{scope_type}/{scope_id}/secrets/{secret_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_DELETE)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "delete")],
 )
 async def delete_secret(
     scope_type: str,
@@ -239,7 +233,7 @@ class BindingListResponse(BaseModel):
 @router.get(
     "/{scope_type}/{scope_id}/secrets/bindings",
     response_model=BindingListResponse,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_READ)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "read")],
 )
 async def list_bindings(scope_type: str, scope_id: str):
     """
@@ -264,7 +258,7 @@ async def list_bindings(scope_type: str, scope_id: str):
     "/{scope_type}/{scope_id}/secrets/bindings",
     response_model=SecretBindingResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_CREATE)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "create")],
 )
 async def create_binding(
     scope_type: str,
@@ -316,7 +310,7 @@ async def create_binding(
 @router.delete(
     "/{scope_type}/{scope_id}/secrets/bindings/{binding_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(get_current_user), require_permission(SECRETS_DELETE)],
+    dependencies=[Depends(get_current_user), require_scope_permission("secrets", "delete")],
 )
 async def delete_binding(
     scope_type: str,

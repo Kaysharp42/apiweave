@@ -42,6 +42,38 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
   );
   const [isLoading, setIsLoading] = useState(true);
 
+  const loadWorkspaceData = useCallback(async () => {
+    const [orgsRes, workspacesRes] = await Promise.all([
+      authenticatedJson<Organization[]>(`${API_BASE_URL}/api/orgs`),
+      authenticatedJson<{ workspaces: Workspace[]; total: number }>(
+        `${API_BASE_URL}/api/workspaces`,
+      ),
+    ]);
+
+    const roleMap = new Map<string, string>();
+    for (const ws of workspacesRes.workspaces) {
+      roleMap.set(ws.workspaceId, ws.ownerType === "user" ? "owner" : "write");
+    }
+
+    return { orgs: orgsRes, workspaces: workspacesRes.workspaces, roleMap };
+  }, []);
+
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await loadWorkspaceData();
+      setOrgs(data.orgs);
+      setWorkspaces(data.workspaces);
+      setMemberships(data.roleMap);
+    } catch {
+      setOrgs([]);
+      setWorkspaces([]);
+      setMemberships(new Map());
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadWorkspaceData]);
+
   // Fetch orgs + workspaces on mount
   useEffect(() => {
     let cancelled = false;
@@ -49,33 +81,19 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     (async () => {
       setIsLoading(true);
       try {
-        const [orgsRes, workspacesRes] = await Promise.all([
-          authenticatedJson<Organization[]>(`${API_BASE_URL}/api/orgs`),
-          authenticatedJson<{ workspaces: Workspace[]; total: number }>(
-            `${API_BASE_URL}/api/workspaces`,
-          ),
-        ]);
+        const data = await loadWorkspaceData();
 
         if (cancelled) return;
 
-        setOrgs(orgsRes);
-        setWorkspaces(workspacesRes.workspaces);
-
-        // Build a map of workspaceId -> role for the current user
-        const roleMap = new Map<string, string>();
-        for (const ws of workspacesRes.workspaces) {
-          // Default role: owner for personal, write for org workspaces
-          roleMap.set(
-            ws.workspaceId,
-            ws.ownerType === "user" ? "owner" : "write",
-          );
-        }
-        setMemberships(roleMap);
+        setOrgs(data.orgs);
+        setWorkspaces(data.workspaces);
+        setMemberships(data.roleMap);
       } catch {
         // Silently handle — user may not have orgs/workspaces yet
         if (!cancelled) {
           setOrgs([]);
           setWorkspaces([]);
+          setMemberships(new Map());
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -85,7 +103,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadWorkspaceData]);
 
   // Build available workspaces list (personal + org workspaces)
   const availableWorkspaces = useMemo<WorkspaceEntry[]>(() => {
@@ -144,6 +162,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       currentWorkspace,
       currentRole,
       switchTo,
+      refresh,
       isLoading,
     }),
     [
@@ -153,6 +172,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       currentWorkspace,
       currentRole,
       switchTo,
+      refresh,
       isLoading,
     ],
   );

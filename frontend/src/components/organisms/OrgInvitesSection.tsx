@@ -79,10 +79,20 @@ export function OrgInvitesSection({ orgSlug }: OrgInvitesSectionProps) {
 
   const handleResend = async (inviteId: string) => {
     setResendingId(inviteId);
-    // Backend doesn't have a dedicated resend endpoint — cancel and re-create
-    // For now, just show a toast indicating the action
-    toast.info("Resend not available — cancel and re-invite");
-    setTimeout(() => setResendingId(null), 1000);
+    try {
+      const resent = await authenticatedJson<OrgInviteCreate>(
+        `${API_BASE_URL}/api/orgs/${orgSlug}/invites/${inviteId}/resend`,
+        { method: "POST" },
+      );
+      toast.success(`Invite re-sent to ${resent.email}`);
+      await fetchInvites();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to resend invite",
+      );
+    } finally {
+      setResendingId(null);
+    }
   };
 
   const handleCancel = async (inviteId: string) => {

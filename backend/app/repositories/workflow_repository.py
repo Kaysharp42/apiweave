@@ -137,12 +137,27 @@ class WorkflowRepository:
     async def update_collection_assignment(
         workflow_id: str, collection_id: str | None
     ) -> Workflow | None:
-        """Assign or unassign workflow to/from a collection"""
+        """Assign or unassign workflow to/from a collection."""
         workflow = await WorkflowRepository.get_by_id(workflow_id)
         if not workflow:
             return None
 
         workflow.collectionId = collection_id
+        workflow.updatedAt = datetime.now(UTC)
+        await workflow.save()
+
+        return workflow
+
+    @staticmethod
+    async def update_environment_assignment(
+        workflow_id: str, environment_id: str | None
+    ) -> Workflow | None:
+        """Assign or clear a workflow's default scoped environment."""
+        workflow = await WorkflowRepository.get_by_id(workflow_id)
+        if not workflow:
+            return None
+
+        workflow.selectedEnvironmentId = environment_id
         workflow.updatedAt = datetime.now(UTC)
         await workflow.save()
 
@@ -169,9 +184,21 @@ class WorkflowRepository:
         workspace_id: str,
         skip: int = 0,
         limit: int = 20,
+        include_attached: bool = False,
     ) -> tuple[list[Workflow], int]:
-        """List workflows scoped to a workspace."""
-        query = Workflow.find(Workflow.workspaceId == workspace_id)
+        """List a workspace's workflows.
+
+        By default returns only workflows NOT attached to a project
+        (collectionId is None) — the Workflows tab. The Projects view passes
+        include_attached=True to get every workflow so it can group them under
+        their projects."""
+        if include_attached:
+            query = Workflow.find(Workflow.workspaceId == workspace_id)
+        else:
+            query = Workflow.find(
+                Workflow.workspaceId == workspace_id,
+                Workflow.collectionId == None,  # noqa: E711 — Beanie needs ==, not `is`
+            )
         total = await query.count()
         workflows = await query.sort(-Workflow.createdAt).skip(skip).limit(limit).to_list()
         return workflows, total

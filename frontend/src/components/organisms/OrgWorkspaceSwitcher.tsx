@@ -4,20 +4,32 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { ChevronDown, Building2, User } from "lucide-react";
+import { ChevronDown, Building2, User, Plus, ListTree } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
+import { useAuth } from "../../auth/useAuth";
 import { Button } from "../atoms/Button";
 import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
+import { CreateOrganizationModal } from "./CreateOrganizationModal";
+import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
+import { useBillingConfig } from "../../hooks/useBillingConfig";
+import type { Organization, Workspace } from "../../types";
 
 export function OrgWorkspaceSwitcher() {
   const {
     availableWorkspaces,
     currentOrg,
     currentWorkspace,
+    refresh,
     switchTo,
     isLoading,
   } = useWorkspace();
+  const { isSingleUser } = useAuth();
+  const billing = useBillingConfig();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [createOrgOpen, setCreateOrgOpen] = useState(false);
+  const [createWsOpen, setCreateWsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -83,6 +95,22 @@ export function OrgWorkspaceSwitcher() {
     switchTo(orgSlug, entry.workspace.slug);
     setOpen(false);
     triggerRef.current?.focus();
+  };
+
+  const handleOrgCreated = async (
+    _organization: Organization,
+  ): Promise<void> => {
+    await refresh();
+    navigate("/organizations");
+  };
+
+  // New workspace is created in the current context: under the active org, or
+  // personal when none is selected. After creating, switch into it.
+  const handleWorkspaceCreated = async (
+    workspace: Workspace,
+  ): Promise<void> => {
+    await refresh();
+    switchTo(currentOrg?.slug ?? "personal", workspace.slug);
   };
 
   const handleItemKeyDown = (
@@ -248,8 +276,73 @@ export function OrgWorkspaceSwitcher() {
               </div>
             )}
           </div>
+
+          {!isSingleUser && (
+            <div className="space-y-1 border-t border-border/80 p-2 dark:border-border-dark/80">
+              <Button
+                variant="ghost"
+                size="sm"
+                fullWidth
+                className="justify-start text-xs"
+                icon={<Plus className="h-4 w-4" aria-hidden="true" />}
+                onClick={() => {
+                  setOpen(false);
+                  setCreateWsOpen(true);
+                }}
+              >
+                New workspace
+                {currentOrg ? ` in ${currentOrg.name}` : ""}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                fullWidth
+                className="justify-start text-xs"
+                icon={<Plus className="h-4 w-4" aria-hidden="true" />}
+                onClick={() => {
+                  setOpen(false);
+                  // Billing on: orgs require Teams — go to checkout, not the
+                  // direct-create modal (which would 402).
+                  if (billing?.billingEnabled) {
+                    navigate("/settings/billing");
+                  } else {
+                    setCreateOrgOpen(true);
+                  }
+                }}
+              >
+                Create organization
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                fullWidth
+                className="justify-start text-xs"
+                icon={<ListTree className="h-4 w-4" aria-hidden="true" />}
+                onClick={() => {
+                  setOpen(false);
+                  navigate("/organizations");
+                }}
+              >
+                Manage organizations
+              </Button>
+            </div>
+          )}
         </div>
       )}
+
+      <CreateOrganizationModal
+        isOpen={createOrgOpen}
+        onClose={() => setCreateOrgOpen(false)}
+        onCreated={handleOrgCreated}
+      />
+
+      <CreateWorkspaceModal
+        isOpen={createWsOpen}
+        onClose={() => setCreateWsOpen(false)}
+        orgId={currentOrg?.orgId ?? null}
+        orgName={currentOrg?.name ?? ""}
+        onCreated={handleWorkspaceCreated}
+      />
     </div>
   );
 }

@@ -104,6 +104,7 @@ export type { AppContextType } from "./AppContextType";
 export type { IconSwitchProps } from "./IconSwitchProps";
 export type { ApprovedDomain } from "./ApprovedDomain";
 export type { InviteResponse } from "./InviteResponse";
+export type { EmailLoginResponse } from "./EmailLoginResponse";
 export type { ProviderInfo } from "./ProviderInfo";
 export type { SplitAuthLayoutProps } from "./SplitAuthLayoutProps";
 export type { InviteUserModalProps } from "./InviteUserModalProps";
@@ -250,6 +251,8 @@ export type { Team } from "./Team";
 export type { TeamMember } from "./TeamMember";
 export type { TeamPermissionGrant } from "./TeamPermissionGrant";
 export type { OrgInvite, OrgInviteCreate } from "./OrgInvite";
+export type { CreateOrganizationModalProps } from "./CreateOrganizationModalProps";
+export type { CreateWorkspaceModalProps } from "./CreateWorkspaceModalProps";
 export type { OutsideCollaborator, WorkspaceRole } from "./OutsideCollaborator";
 export type {
   WorkspaceContextValue,

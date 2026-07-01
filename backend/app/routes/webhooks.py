@@ -14,12 +14,14 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import (
+    evaluate_scoped_permission,
+    get_current_active_user,
+    require_permission,
+)
 from app.auth.permissions import (
     PRESET_ADMIN,
-    WEBHOOKS_CREATE,
     WEBHOOKS_DELETE,
-    WEBHOOKS_READ,
     WEBHOOKS_ROTATE,
     WEBHOOKS_UPDATE,
 )
@@ -56,6 +58,7 @@ from app.services.environment_protection_service import (
     BypassNotAllowedError,
     bypass_protection,
     check_protection_and_maybe_gate,
+    reject_gate_record,
 )
 from app.services.webhook_runner import QueueFull, WebhookDelivery, webhook_runner
 
@@ -68,6 +71,24 @@ async def _get_protection(environment_id: str):
     from app.repositories.scoped_environment_repository import ScopedEnvironmentRepository
 
     return await ScopedEnvironmentRepository.get_protection(environment_id)
+
+
+async def _deny_gated_webhook(gate_result, gate_record, bypass_reason, token_id) -> None:
+    """A protected environment denies a webhook whose token cannot bypass it.
+
+    Without bypass authorization there is no human-resolvable run for a machine
+    trigger, so the protected environment must NOT execute (roadmap §3.3). The
+    placeholder approval is rejected to keep the pending list clean.
+    """
+    if gate_result == "pending_approval" and bypass_reason is None:
+        if gate_record:
+            await reject_gate_record(gate_record.approvalId, token_id)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Environment is protected and this webhook token is not " "authorized to bypass it."
+            ),
+        )
 
 
 async def _run_workflow_and_update_webhook(
@@ -286,7 +307,8 @@ def require_webhook_owner_or_admin(permission: str):
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_webhook(
-    webhook_data: WebhookCreate, current_user: User = require_permission(WEBHOOKS_CREATE)
+    webhook_data: WebhookCreate,
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Create a new webhook for CI/CD integration
@@ -316,6 +338,20 @@ async def create_webhook(
                 detail=f"Collection not found: {webhook_data.resourceId}",
             )
 
+    # Scope-bind to the resource's OWN workspace, not the caller-supplied field:
+    # previously a global WEBHOOKS_CREATE holder could attach a webhook to any
+    # tenant's workflow/collection and even mis-attribute workspaceId.
+    resource_workspace_id = getattr(resource, "workspaceId", None)
+    if not resource_workspace_id or not await evaluate_scoped_permission(
+        current_user, "webhooks", "create", workspace_id=resource_workspace_id
+    ):
+        # 404 (existence-hiding) — do not confirm the resource to a non-member.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{webhook_data.resourceType.capitalize()} not found: "
+            f"{webhook_data.resourceId}",
+        )
+
     # Generate webhook ID, token, and HMAC secret
     webhook_id = f"wh-{uuid.uuid4().hex[:12]}"
     token = f"secret_{secrets.token_urlsafe(32)}"
@@ -328,9 +364,9 @@ async def create_webhook(
             "resourceType": webhook_data.resourceType,
             "resourceId": webhook_data.resourceId,
             "environmentId": webhook_data.environmentId,
-            "workspaceId": webhook_data.workspaceId,
+            "workspaceId": resource_workspace_id,
             "scopeType": "workspace",
-            "scopeId": webhook_data.workspaceId,
+            "scopeId": resource_workspace_id,
             "token": token,
             "hmacSecret": hmac_secret,
             "enabled": True,
@@ -363,12 +399,31 @@ async def create_webhook(
     }
 
 
-@router.get(
-    "/workflows/{workflow_id}",
-    response_model=list[dict],
-    dependencies=[require_permission(WEBHOOKS_READ)],
-)
-async def list_workflow_webhooks(workflow_id: str):
+async def _authorize_resource_read(resource_type: str, resource_id: str, user: User) -> None:
+    """404 unless the caller has webhooks:read in the resource's workspace.
+
+    Listing a resource's webhooks previously used a global WEBHOOKS_READ check
+    with no resource→workspace binding, leaking webhook metadata cross-tenant.
+    """
+    if resource_type == "workflow":
+        resource = await WorkflowRepository.get_by_id(resource_id)
+    else:
+        resource = await CollectionRepository.get_by_id(resource_id)
+    workspace_id = getattr(resource, "workspaceId", None) if resource else None
+    if not workspace_id or not await evaluate_scoped_permission(
+        user, "webhooks", "read", workspace_id=workspace_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{resource_type.capitalize()} not found: {resource_id}",
+        )
+
+
+@router.get("/workflows/{workflow_id}", response_model=list[dict])
+async def list_workflow_webhooks(
+    workflow_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
     """
     List all webhooks for a specific workflow
 
@@ -380,6 +435,7 @@ async def list_workflow_webhooks(workflow_id: str):
     Returns:
         List of webhooks (without sensitive credentials)
     """
+    await _authorize_resource_read("workflow", workflow_id, current_user)
     webhooks = await WebhookRepository.get_by_resource("workflow", workflow_id)
 
     return [
@@ -400,12 +456,11 @@ async def list_workflow_webhooks(workflow_id: str):
     ]
 
 
-@router.get(
-    "/collections/{collection_id}",
-    response_model=list[dict],
-    dependencies=[require_permission(WEBHOOKS_READ)],
-)
-async def list_collection_webhooks(collection_id: str):
+@router.get("/collections/{collection_id}", response_model=list[dict])
+async def list_collection_webhooks(
+    collection_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
     """
     List all webhooks for a specific collection
 
@@ -417,6 +472,7 @@ async def list_collection_webhooks(collection_id: str):
     Returns:
         List of webhooks (without sensitive credentials)
     """
+    await _authorize_resource_read("collection", collection_id, current_user)
     webhooks = await WebhookRepository.get_by_resource("collection", collection_id)
 
     return [
@@ -437,25 +493,44 @@ async def list_collection_webhooks(collection_id: str):
     ]
 
 
-@router.get("/{webhook_id}", response_model=dict, dependencies=[require_permission(WEBHOOKS_READ)])
-async def get_webhook(webhook_id: str):
+def require_webhook_scoped_read():
+    """Load a webhook by id and require webhooks:read in its workspace.
+
+    Replaces the global WEBHOOKS_READ by-id check that leaked any webhook's
+    metadata cross-tenant. Binds on the stored webhook.workspaceId.
+    """
+
+    async def _check(
+        webhook_id: str,
+        current_user: User = Depends(get_current_active_user),
+    ) -> Webhook:
+        webhook = await WebhookRepository.get_by_id(webhook_id)
+        workspace_id = getattr(webhook, "workspaceId", None) if webhook else None
+        if (
+            not webhook
+            or not workspace_id
+            or not await evaluate_scoped_permission(
+                current_user, "webhooks", "read", workspace_id=workspace_id
+            )
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Webhook not found: {webhook_id}"
+            )
+        return webhook
+
+    return Depends(_check)
+
+
+@router.get("/{webhook_id}", response_model=dict)
+async def get_webhook(webhook: Webhook = require_webhook_scoped_read()):
     """
     Get webhook details by ID
 
     Note: Token and hmacSecret are never returned after creation
 
-    Args:
-        webhook_id: The webhook ID
-
     Returns:
         Webhook details (without sensitive credentials)
     """
-    webhook = await WebhookRepository.get_by_id(webhook_id)
-    if not webhook:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Webhook not found: {webhook_id}"
-        )
-
     resource_type_path = "workflows" if webhook.resourceType == "workflow" else "collections"
 
     return {
@@ -609,10 +684,13 @@ async def delete_webhook(
     return None
 
 
-@router.get(
-    "/{webhook_id}/logs", response_model=dict, dependencies=[require_permission(WEBHOOKS_READ)]
-)
-async def get_webhook_logs(webhook_id: str, limit: int = 50, offset: int = 0):
+@router.get("/{webhook_id}/logs", response_model=dict)
+async def get_webhook_logs(
+    webhook_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    _authorized_webhook: Webhook = require_webhook_scoped_read(),
+):
     """
     Get execution logs for a webhook
 
@@ -946,6 +1024,9 @@ async def execute_workflow_webhook(
             except BypassNotAllowedError:
                 pass
 
+    # Protected environment + token not authorized to bypass → deny (no run).
+    await _deny_gated_webhook(gate_result, gate_record, bypass_reason, actor.tokenId)
+
     # ── 8d. Audit webhook execution ───────────────────────────────────────────
     try:
         await audit_service.append_event(
@@ -1195,6 +1276,9 @@ async def execute_collection_webhook(
                 bypass_reason = f"Webhook {webhook_id} automated bypass"
             except BypassNotAllowedError:
                 pass
+
+    # Protected environment + token not authorized to bypass → deny (no run).
+    await _deny_gated_webhook(gate_result, gate_record, bypass_reason, actor.tokenId)
 
     # ── 8d. Audit webhook execution ───────────────────────────────────────────
     try:

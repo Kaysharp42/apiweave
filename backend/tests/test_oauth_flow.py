@@ -438,6 +438,8 @@ async def test_create_or_link_user_refetches_user_after_duplicate_key_race(
     create = AsyncMock(side_effect=DuplicateKeyError("duplicate verified_email"))
 
     monkeypatch.setattr(auth_router.settings, "SETUP_MODE_ENABLED", False)
+    # Open registration so the domain-approved self-signup branch is exercised.
+    monkeypatch.setattr(auth_router.settings, "REGISTRATION_MODE", "open")
     monkeypatch.setattr(
         auth_router.ProviderIdentityRepository,
         "get_by_provider_subject",
@@ -469,6 +471,35 @@ async def test_create_or_link_user_refetches_user_after_duplicate_key_race(
     assert user == existing_user
     assert get_by_email.await_count == 2
     create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_invite_only_rejects_uninvited_approved_domain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Alignment with REGISTRATION_MODE: in invite_only, an uninvited user on an
+    # approved domain must NOT be auto-created (must be invited).
+    provider = "github"
+    monkeypatch.setattr(auth_router.settings, "SETUP_MODE_ENABLED", False)
+    monkeypatch.setattr(auth_router.settings, "REGISTRATION_MODE", "invite_only")
+    monkeypatch.setattr(
+        auth_router.ProviderIdentityRepository,
+        "get_by_provider_subject",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(auth_router.UserRepository, "get_by_email", AsyncMock(return_value=None))
+    monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
+    monkeypatch.setattr(
+        auth_router.InviteRepository, "find_active_by_email", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        auth_router.InviteRepository, "get_valid_by_email", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(auth_router, "domain_allowed", AsyncMock(return_value=True))
+
+    with pytest.raises(HTTPException) as exc:
+        await auth_router._create_or_link_user(_userinfo(provider))
+    assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
 @pytest.mark.asyncio

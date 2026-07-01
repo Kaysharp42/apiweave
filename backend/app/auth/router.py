@@ -148,6 +148,17 @@ async def _is_domain_approved(email: str) -> bool:
     return await ApprovedDomainRepository.is_domain_approved(domain)
 
 
+async def domain_allowed(email: str) -> bool:
+    """Shared signup domain gate: allow all when the approved-domains policy is
+    disabled, otherwise require the email's domain to be approved (env + DB).
+
+    Single source of truth for both OAuth signup and email magic-link signup.
+    """
+    if not settings.APPROVED_DOMAINS_ENABLED:
+        return True
+    return await _is_domain_approved(email)
+
+
 async def _reconcile_orphan_invite(user: User, invite_token: str | None) -> User:
     if invite_token is not None:
         return user
@@ -324,7 +335,10 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
                     raise
                 updated = await UserRepository.update(user.userId, is_setup_complete=True)
                 user = updated or user
-            elif await _is_domain_approved(userinfo.email):
+            elif settings.REGISTRATION_MODE == "open" and await domain_allowed(userinfo.email):
+                # Open self-registration (REGISTRATION_MODE=open). In invite_only
+                # an uninvited user — even on an approved domain — falls through to
+                # the 403 below and must be invited. Consistent with email login.
                 try:
                     user = await UserRepository.create(
                         user_id=f"usr-{uuid.uuid4().hex[:12]}",
@@ -569,6 +583,18 @@ async def oauth_callback(provider: str, request: Request) -> RedirectResponse:
             )
         raise
     workspace = await ensure_personal_workspace(user)
+
+    # Auto-accept any pending org invites for this verified email, so an invited
+    # user who signs in via OAuth (e.g. GitHub/Microsoft) with the invited
+    # address joins the org — mirroring the magic-link path. A provider email
+    # that differs from the invite simply won't match (use the magic link).
+    try:
+        from app.services import org_invite_service
+
+        await org_invite_service.accept_pending_invites_for_user(user)
+    except Exception:
+        logger.warning("OAuth org-invite auto-accept failed for %s", user.userId, exc_info=True)
+
     response = RedirectResponse(
         _frontend_url(f"/{workspace.slug}/workflows"),
         status_code=status.HTTP_302_FOUND,
@@ -823,3 +849,49 @@ async def remove_approved_domain(domain_id: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Domain not found",
         )
+
+
+# ===========================================================================
+# Passwordless email magic-link sign-in (multi_tenant only; requires SMTP)
+# ===========================================================================
+
+
+class EmailLoginRequest(BaseModel):
+    email: str
+
+
+def _require_email_login_enabled() -> None:
+    if is_single_user_mode() or not settings.EMAIL_LOGIN_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Email sign-in is not enabled",
+        )
+
+
+@router.post("/email/request")
+async def email_login_request(body: EmailLoginRequest) -> dict[str, str]:
+    """Send a magic-link if the email is eligible. Always succeeds (no
+    account-existence disclosure)."""
+    _require_email_login_enabled()
+    from app.services import email_auth_service
+
+    await email_auth_service.request_login_link(body.email)
+    return {
+        "message": "If an account exists for that email, a sign-in link has been sent.",
+    }
+
+
+@router.get("/email/verify")
+async def email_login_verify(token: str) -> RedirectResponse:
+    """Consume a magic-link token, establish a session, and redirect into the app."""
+    _require_email_login_enabled()
+    from app.services import email_auth_service
+
+    user = await email_auth_service.verify_login_token(token)
+    workspace = await ensure_personal_workspace(user)
+    response = RedirectResponse(
+        _frontend_url(f"/{workspace.slug}/workflows"),
+        status_code=status.HTTP_302_FOUND,
+    )
+    await _create_session(response, user)
+    return response

@@ -65,7 +65,7 @@ test("AdminUsersPage has role-change handler wired to /api/users/:id/roles", () 
     "Must define handleRoleChange handler",
   );
   assert.ok(
-    content.includes("method: 'PATCH'"),
+    content.includes('method: "PATCH"') || content.includes("method: 'PATCH'"),
     "Role update must use PATCH method",
   );
 });
@@ -150,16 +150,16 @@ test("AdminUsersPage refreshes user list after invite modal closes", () => {
 
 // ── InviteUserModal source tests ─────────────────────────────────────────────
 
-test("InviteUserModal posts to /api/auth/invites with email and roles", () => {
+test("InviteUserModal posts to /api/invites with email and role", () => {
   const content = readAuthComponent("InviteUserModal.tsx");
+  assert.ok(content.includes("/api/invites"), "Must POST to /api/invites");
   assert.ok(
-    content.includes("/api/auth/invites"),
-    "Must POST to /api/auth/invites",
+    content.includes('method: "POST"') || content.includes("method: 'POST'"),
+    "Must use POST method",
   );
-  assert.ok(content.includes("method: 'POST'"), "Must use POST method");
   assert.ok(
-    content.includes("email") && content.includes("roles"),
-    "Must send email and roles in request body",
+    content.includes("email") && content.includes("role"),
+    "Must send email and role in request body",
   );
 });
 
@@ -203,12 +203,17 @@ test("InviteUserModal resets state on close", () => {
     "Must define resetAndClose to clear state on close",
   );
   assert.ok(
-    content.includes("type: 'reset'") ||
+    content.includes('type: "reset"') ||
+      content.includes("type: 'reset'") ||
+      content.includes('dispatch({ type: "reset" })') ||
       content.includes("dispatch({ type: 'reset' })"),
     "Must reset invite form state on close",
   );
   assert.ok(
-    content.includes("role: 'viewer'") || content.includes("type: 'reset'"),
+    content.includes('role: "viewer"') ||
+      content.includes("role: 'viewer'") ||
+      content.includes('type: "reset"') ||
+      content.includes("type: 'reset'"),
     "Must reset role on close",
   );
 });
@@ -300,7 +305,9 @@ test("AdminUsersPage shows delete confirmation dialog before deleting user or in
     "Must define handleDeleteConfirmed to execute deletion",
   );
   assert.ok(
-    content.includes(`/api/users/`) && content.includes("method: 'DELETE'"),
+    content.includes(`/api/users/`) &&
+      (content.includes('method: "DELETE"') ||
+        content.includes("method: 'DELETE'")),
     "Must call DELETE /api/users/{id} for user deletion",
   );
   assert.ok(
@@ -308,7 +315,9 @@ test("AdminUsersPage shows delete confirmation dialog before deleting user or in
     "Must call DELETE /api/invites/{id} for invite deletion",
   );
   assert.ok(
-    content.includes("type: 'user'") && content.includes("type: 'invite'"),
+    (content.includes('type: "user"') || content.includes("type: 'user'")) &&
+      (content.includes('type: "invite"') ||
+        content.includes("type: 'invite'")),
     "Must distinguish between user and invite delete types",
   );
 });

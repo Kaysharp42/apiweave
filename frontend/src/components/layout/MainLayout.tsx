@@ -13,6 +13,7 @@ import useEnvironmentStore from "../../stores/EnvironmentStore";
 import { AppNavBarStyles } from "../../constants/AppNavBar";
 import { HorizontalDivider } from "../atoms/HorizontalDivider";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
+import { isSettingsRoute } from "../../utils/isSettingsRoute";
 
 export function MainLayout({ children }: MainLayoutProps) {
   const navigationSelectedValue = useNavigationStore(
@@ -38,10 +39,10 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, []);
 
   useEffect(() => {
-    const isSettingsRoute =
-      location.pathname.includes("/settings/") ||
-      location.pathname === "/audit";
-    if (!isSettingsRoute && navigationSelectedValue === "settings") {
+    if (
+      !isSettingsRoute(location.pathname) &&
+      navigationSelectedValue === "settings"
+    ) {
       setNavState("workflows");
     }
   }, [location.pathname, navigationSelectedValue, setNavState]);

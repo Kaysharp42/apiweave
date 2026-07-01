@@ -8,4 +8,6 @@ export interface ScopedWorkflowParams {
   skip?: number;
   /** Maximum number of items to return. */
   limit?: number;
+  /** Include project-attached workflows (Projects view). Default false. */
+  includeAttached?: boolean;
 }

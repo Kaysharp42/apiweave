@@ -678,6 +678,54 @@ class WebhookLog(Document):
         ]
 
 
+class RateLimitCounter(Document):
+    """Fixed-window rate-limit counter shared across API instances.
+
+    One document per (key, windowStart); the count is incremented atomically so
+    a multi-instance deployment shares a single effective limit (roadmap §3.7,
+    P1.8). A TTL index expires stale windows. Used only when
+    RATE_LIMITER_BACKEND=mongodb; the default memory backend is process-local.
+    """
+
+    key: str  # e.g. "webhook:<webhookId>"
+    windowStart: int  # unix epoch seconds at the start of the window
+    hits: int = 0  # not "count" — that shadows Document.count
+    expires_at: datetime
+
+    class Settings:
+        name = "rate_limit_counters"
+        indexes = [
+            IndexModel([("key", ASCENDING), ("windowStart", ASCENDING)], unique=True),
+            IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),
+        ]
+
+
+class EmailAuthToken(Document):
+    """Single-use passwordless email sign-in token (magic link).
+
+    Only the SHA-256 hash of the raw token is stored (never the raw token).
+    Single-use (consumed flag) with a short TTL index. Used by EMAIL_LOGIN and,
+    later, org-invite magic links.
+    """
+
+    tokenId: str
+    tokenHash: str
+    email: str  # normalized (lowercased) target email
+    consumed: bool = False
+    consumed_at: datetime | None = None
+    createdAt: datetime
+    expires_at: datetime
+
+    class Settings:
+        name = "email_auth_tokens"
+        indexes = [
+            IndexModel([("tokenId", ASCENDING)], unique=True),
+            IndexModel([("tokenHash", ASCENDING)], unique=True),
+            IndexModel([("email", ASCENDING)]),
+            IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),
+        ]
+
+
 class IdempotencyKey(Document):
     webhookId: str
     idempotencyKey: str
@@ -1150,6 +1198,9 @@ class Organization(Document):
     description: str | None = None
     avatarUrl: str | None = None
     ownerUserId: str
+    # Billing tier (Phase 4). "free" until a paid plan is purchased; existing
+    # orgs default to free. Entitlement logic reads this — see entitlements.py.
+    plan: str = "free"
     createdAt: datetime
     updatedAt: datetime
     deletedAt: datetime | None = None
@@ -1160,6 +1211,33 @@ class Organization(Document):
             IndexModel([("orgId", ASCENDING)], unique=True),
             IndexModel([("slug", ASCENDING)], unique=True),
             IndexModel([("ownerUserId", ASCENDING)]),
+        ]
+
+
+class Subscription(Document):
+    """Billing subscription (Phase 4). Dual subject: ownerType "user" for
+    free/individual, "organization" for team/enterprise. One active row per
+    (ownerType, ownerId). Stripe fields are null until checkout completes."""
+
+    subscriptionId: str
+    ownerType: str  # "user" | "organization"
+    ownerId: str
+    plan: str = "free"  # plans.PLAN_BY_KEY value
+    status: str = "active"  # active | trialing | past_due | canceled | unpaid
+    seats: int = 1
+    stripeCustomerId: str | None = None
+    stripeSubscriptionId: str | None = None
+    currentPeriodEnd: datetime | None = None
+    cancelAtPeriodEnd: bool = False
+    createdAt: datetime
+    updatedAt: datetime
+
+    class Settings:
+        name = "subscriptions"
+        indexes = [
+            IndexModel([("subscriptionId", ASCENDING)], unique=True),
+            IndexModel([("ownerType", ASCENDING), ("ownerId", ASCENDING)], unique=True),
+            IndexModel([("stripeSubscriptionId", ASCENDING)]),
         ]
 
 

@@ -333,16 +333,20 @@ export default function WorkspaceEnvironmentsPage() {
   }
 
   async function handleDeny(approvalId: string) {
-    // Deny = delete the approval (or mark rejected)
+    // Reject the approval, which also cancels the held run (backend P2.3).
     if (!selectedEnv || !workspaceId) return;
     try {
       await authenticatedJson(
-        `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}/approvals/${approvalId}`,
-        { method: "DELETE" },
+        `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}/approvals/${approvalId}/reject`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        },
       );
       await refreshEnvironments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to deny");
+      setError(err instanceof Error ? err.message : "Failed to reject");
     }
   }
 

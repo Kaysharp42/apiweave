@@ -698,7 +698,9 @@ export default function AdminUsersPage() {
                           Created
                         </span>
                         <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                          {formatDate(selectedUser.invite.created_at)}
+                          {selectedUser.invite.created_at
+                            ? formatDate(selectedUser.invite.created_at)
+                            : "Unknown"}
                         </p>
                       </div>
                       <div>

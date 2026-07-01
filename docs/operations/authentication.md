@@ -85,7 +85,7 @@ The org/workspace switcher continues to show the personal workspace in both mode
 
 APIWeave 2.0 has a single per-instance owner. The first user to sign in through any enabled provider becomes the owner, and the backend auto-creates a default personal workspace at the slug `personal` for that user. The owner can then create the first organization, invite teammates, and create organization-owned workspaces.
 
-The 1.0 `SETUP_MODE_ENABLED` first-admin bootstrap is gone. There is no separate "setup mode" flag. The first sign-in is the bootstrap. Subsequent sign-ins are normal logins.
+In `multi_tenant` mode the first sign-in *is* the bootstrap, and it is gated by `SETUP_MODE_ENABLED` (default `true`): when the flag is on and the user table is empty, the first verified OAuth sign-in is created as the owner (`admin`), after which the backend auto-disables setup mode for the running process. Set `SETUP_MODE_ENABLED=false` in your environment once the owner exists — production startup checks reject `true` in a production deployment. Subsequent sign-ins are normal logins. (In `single_user` mode this flag is irrelevant: there is no OAuth or sign-in; the synthetic owner is bootstrapped on first request — see [Deployment Mode](#deployment-mode).)
 
 Operational rules:
 
@@ -116,23 +116,52 @@ A user can be a member of multiple organizations. A user can be a direct member 
 
 ## Invites and Team Membership
 
-Organization invites are sent by email from the org settings page. Each invite carries a one-time token, an expiry, and a role (`member`, `billing`, or `security`; the `owner` role is reserved for the bootstrap owner and a hand-off flow). Invites can be resent and cancelled before acceptance.
+Organization invites are sent by email from the org settings page. Each invite carries an expiry and a role (`member`, `billing`, or `security`; the `owner` role is reserved for the bootstrap owner and a hand-off flow). Invites can be resent (which rotates the token) and cancelled before acceptance.
+
+**Delivery is a magic link.** When `EMAIL_LOGIN_ENABLED=true`, an invite is emailed as a single-use magic link. Clicking it signs the invitee in (creating their account if the policy allows — see [Email Magic-Link Sign-In](#email-magic-link-sign-in)) and **auto-accepts the invite**, adding them to the org. This sidesteps the provider-email-mismatch problem: the link itself proves ownership of the invited address, so the invitee can join regardless of which OAuth provider they would otherwise use. If an invitee instead signs in via OAuth using the **same** verified email as the invite, the pending invite is auto-accepted then too; if their provider email differs, they use the magic link.
 
 Team membership is a separate layer. A team lives inside an organization, has members, and receives permission grants for workspaces, environments, secrets, and approvals. Outside collaborators join a single workspace without becoming a team or org member.
 
-## Approved Domains
+## Email Magic-Link Sign-In
 
-Approved domains gate which email addresses can create accounts. Domain matching is based on the verified email returned by the provider; unverified provider emails are rejected and cannot be used for signup or account linking. The gate is enforced on every OAuth sign-in once the provider is enabled.
+Passwordless email sign-in (multi_tenant only). The user enters their email at the login page and receives a single-use sign-in link; clicking it establishes a session — no password, no OAuth provider required. Enable with `EMAIL_LOGIN_ENABLED=true` and a configured SMTP server. Tokens are single-use, hashed at rest, and expire after `EMAIL_LOGIN_TOKEN_TTL_MINUTES` (default 15). The request endpoint never reveals whether an account exists (it always responds the same way).
 
-| Mode | Configuration | Behavior |
-|------|---------------|----------|
-| Invite-only | `APPROVED_DOMAINS_ENABLED=false` | First owner via first sign-in. Admins and owners generate invite links; invitees sign in through OAuth. |
-| Domain signup | `APPROVED_DOMAINS_ENABLED=true` plus `APPROVED_DOMAINS` | First owner via first sign-in. Verified emails on listed domains sign in directly through OAuth; admins and owners can still send invites. |
+Who may obtain a **new** account is governed by `REGISTRATION_MODE`, and approved-domains is always enforced when enabled:
+
+| `REGISTRATION_MODE` | Who can sign in | Typical use |
+|---------------------|-----------------|-------------|
+| `invite_only` (default) | Existing users, plus any email with a pending general/org invite. Unknown emails get nothing. | Self-host / private team. Operators may also set `APPROVED_DOMAINS`. |
+| `open` | Anyone whose email passes the approved-domains policy may self-register on first sign-in. | Public hosted (set `APPROVED_DOMAINS` to your tenant domains). |
+
+This is the same policy applied to OAuth signup, so a deployment behaves consistently across both sign-in methods. Endpoints: `POST /api/auth/email/request` (send link) and `GET /api/auth/email/verify?token=...` (consume link, set session, redirect into the app).
 
 ```env
+EMAIL_LOGIN_ENABLED=true
+REGISTRATION_MODE=invite_only   # or "open" for public approved-domain signup
+# SMTP_* must be configured for links to be delivered
+```
+
+## Approved Domains
+
+Approved domains gate which email addresses can create accounts. Domain matching is based on the verified email (returned by the OAuth provider, or proven by the email magic link); unverified provider emails are rejected and cannot be used for signup or account linking. The gate is enforced on every OAuth sign-in once the provider is enabled, and on email magic-link sign-in. It composes with `REGISTRATION_MODE` (see [Email Magic-Link Sign-In](#email-magic-link-sign-in)).
+
+Signup is governed by `REGISTRATION_MODE`; approved-domains is an independent filter layered on top. The two compose:
+
+| Goal | Configuration | Behavior |
+|------|---------------|----------|
+| Invite-only (self-host default) | `REGISTRATION_MODE=invite_only` | First owner via first sign-in. Only invited users (or existing users) can sign in, via OAuth or magic link. Uninvited users are rejected — **even on an approved domain**. |
+| Invite-only, domain-filtered | `REGISTRATION_MODE=invite_only` + `APPROVED_DOMAINS_ENABLED=true` + `APPROVED_DOMAINS` | As above, and additionally every sign-in email must be on a listed domain. |
+| Open, domain-restricted (public hosted) | `REGISTRATION_MODE=open` + `APPROVED_DOMAINS_ENABLED=true` + `APPROVED_DOMAINS` | Anyone with a verified email on a listed domain self-registers (OAuth or magic link). Admins/owners can still invite. |
+| Open, unrestricted | `REGISTRATION_MODE=open` + `APPROVED_DOMAINS_ENABLED=false` | Anyone may self-register. Use only for fully public instances. |
+
+```env
+# Public hosted: open signup restricted to your tenant domains
+REGISTRATION_MODE=open
 APPROVED_DOMAINS_ENABLED=true
 APPROVED_DOMAINS=example.com,example.org
 ```
+
+> **Migration note:** setting `APPROVED_DOMAINS_ENABLED=true` alone no longer enables open domain-signup — open self-registration now requires `REGISTRATION_MODE=open`. With the default `invite_only`, approved-domains acts purely as a filter on top of invites.
 
 Owners retain the ability to issue invites in either mode. Treat `APPROVED_DOMAINS` as a tenant allowlist: include only the domains your organization owns, and review the list every time you add or remove a corporate domain.
 

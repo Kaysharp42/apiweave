@@ -126,7 +126,7 @@ Client credentials for the supported OAuth providers. Leave unused providers bla
 | `GOOGLE_CLIENT_ID` | No | empty | Google OAuth client ID. |
 | `GOOGLE_CLIENT_SECRET` | No | empty | Google OAuth client secret. |
 
-The first sign-in on a clean database becomes the per-instance owner. The 1.0 `SETUP_MODE_ENABLED` first-admin bootstrap is gone in 2.0.
+The first sign-in on a clean database becomes the per-instance owner, gated by `SETUP_MODE_ENABLED` (default `true`). The backend auto-disables setup mode after the first owner is created; set `SETUP_MODE_ENABLED=false` in production (startup checks reject `true`).
 
 ## Sessions and CSRF
 
@@ -146,8 +146,18 @@ Restrict signup to a list of email domains. Useful for single-tenant deployments
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `APPROVED_DOMAINS_ENABLED` | No | `false` | Enables the approved-domain gate. When `true`, signup is restricted to the domains listed in `APPROVED_DOMAINS`. |
+| `APPROVED_DOMAINS_ENABLED` | No | `false` | Enables the approved-domain gate. When `true`, signup is restricted to the domains listed in `APPROVED_DOMAINS`. Enforced for both OAuth and email magic-link sign-in. |
 | `APPROVED_DOMAINS` | No | empty | Comma-separated email domains allowed to sign up. Example: `example.com,example.org`. |
+| `REGISTRATION_MODE` | No | `invite_only` | Who may obtain a **new** account. `invite_only` (self-host default): only existing users or emails with a pending invite (general or org). `open`: anyone whose email passes the approved-domains policy may self-register (e.g. public hosted with `APPROVED_DOMAINS` set). Approved-domains is always enforced when enabled, in both modes. Applies to OAuth and email sign-in. |
+
+## Email Sign-In (Magic Link)
+
+Passwordless email sign-in (multi_tenant only). A user enters their email and receives a single-use sign-in link. Requires SMTP (see below). Org invites are also delivered as magic links when this is enabled.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `EMAIL_LOGIN_ENABLED` | No | `false` | Enables email magic-link sign-in (`POST /api/auth/email/request`, `GET /api/auth/email/verify`) and magic-link delivery of org invites. Requires SMTP to be configured to actually send mail. Ignored in `single_user` mode. |
+| `EMAIL_LOGIN_TOKEN_TTL_MINUTES` | No | `15` | Lifetime of a magic-link token in minutes. Each link is single-use. |
 
 ## Webhooks
 

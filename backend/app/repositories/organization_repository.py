@@ -55,6 +55,16 @@ class OrganizationRepository:
         return org
 
     @staticmethod
+    async def set_plan(org_id: str, plan: str) -> Organization | None:
+        org = await OrganizationRepository.get_by_id(org_id)
+        if not org:
+            return None
+        org.plan = plan
+        org.updatedAt = datetime.now(UTC)
+        await org.save()
+        return org
+
+    @staticmethod
     async def soft_delete(org_id: str) -> Organization | None:
         org = await OrganizationRepository.get_by_id(org_id)
         if not org:
@@ -116,6 +126,10 @@ class OrganizationRepository:
     @staticmethod
     async def list_members(org_id: str) -> list[OrganizationMember]:
         return await OrganizationMember.find(OrganizationMember.orgId == org_id).to_list()
+
+    @staticmethod
+    async def count_members(org_id: str) -> int:
+        return await OrganizationMember.find(OrganizationMember.orgId == org_id).count()
 
     @staticmethod
     async def update_member_role(

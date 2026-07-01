@@ -40,6 +40,25 @@ def _env_to_summary(env: Any) -> EnvironmentSummary:
     )
 
 
+async def _assert_environment_in_scope(environment_id: str) -> Any:
+    """Load an environment and require it to belong to the token's scope.
+
+    environment_get/update/delete previously operated by id with no scope
+    check, allowing cross-tenant read/modify/delete. Returns the env on success.
+    """
+    scope = require_scope()
+    try:
+        env = await scoped_environment_service.get_scoped_environment(environment_id)
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+    if (
+        getattr(env, "scopeType", None) != scope.scope_type
+        or getattr(env, "scopeId", None) != scope.scope_id
+    ):
+        raise ValueError(f"Environment not found: {environment_id}")
+    return env
+
+
 async def environment_list() -> EnvironmentListResponse:
     """List environments accessible from the authenticated scope."""
     await ensure_mcp_database()
@@ -85,10 +104,7 @@ async def environment_get(
 ) -> EnvironmentGetResponse:
     """Get an environment by ID (scoped)."""
     await ensure_mcp_database()
-    try:
-        env = await scoped_environment_service.get_scoped_environment(environment_id)
-    except Exception as exc:
-        raise ValueError(str(exc)) from exc
+    env = await _assert_environment_in_scope(environment_id)
     return EnvironmentGetResponse(environment=_env_to_summary(env))
 
 
@@ -101,6 +117,7 @@ async def environment_update(
 ) -> EnvironmentUpdateResponse:
     """Update environment metadata and variables (scoped)."""
     await ensure_mcp_database()
+    await _assert_environment_in_scope(environment_id)
 
     update_fields: dict[str, Any] = {}
     if name is not None:
@@ -131,6 +148,7 @@ async def environment_delete(
 ) -> EnvironmentDeleteResponse:
     """Delete an environment (scoped). Blocked if it's the workspace default."""
     await ensure_mcp_database()
+    await _assert_environment_in_scope(environment_id)
     try:
         await scoped_environment_service.delete_scoped_environment(environment_id)
     except Exception as exc:

@@ -64,6 +64,11 @@ async def create_project(
 
     await _assert_workspace_access(ws, actor_user_id)
 
+    # Billing seam: projects are a paid feature (Free tier has none).
+    from app.services import entitlements
+
+    await entitlements.require_can_create_project(workspace_id)
+
     project_id = f"prj-{uuid.uuid4().hex[:16]}"
     project = await ProjectRepository.create(
         project_id=project_id,

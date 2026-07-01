@@ -47,6 +47,26 @@ class OrgInviteRepository:
         )
 
     @staticmethod
+    async def find_active_by_email(email: str) -> OrgInvite | None:
+        """Any active (unconsumed, unexpired) invite for an email, across orgs."""
+        now = datetime.now(UTC)
+        return await OrgInvite.find_one(
+            OrgInvite.email == email,
+            OrgInvite.consumed == False,  # noqa: E712
+            OrgInvite.expires_at > now,
+        )
+
+    @staticmethod
+    async def list_active_by_email(email: str) -> list[OrgInvite]:
+        """All active (unconsumed, unexpired) invites for an email, across orgs."""
+        now = datetime.now(UTC)
+        return await OrgInvite.find(
+            OrgInvite.email == email,
+            OrgInvite.consumed == False,  # noqa: E712
+            OrgInvite.expires_at > now,
+        ).to_list()
+
+    @staticmethod
     async def list_pending_by_org(org_id: str) -> list[OrgInvite]:
         now = datetime.now(UTC)
         return (

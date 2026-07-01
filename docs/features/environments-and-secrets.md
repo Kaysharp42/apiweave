@@ -12,9 +12,9 @@
 
 An environment is a named bundle of variables and a scope. Every environment in APIWeave 2.0 lives at one of three scopes:
 
-- **User scope** (`/api/users/me/environments`): the personal workspace's environments, available only to the user who created them.
-- **Organization scope** (`/api/orgs/{orgSlug}/environments`): the organization's environments, available to workspaces that the organization allowlists.
-- **Workspace scope** (`/api/orgs/{orgSlug}/workspaces/{workspaceSlug}/environments`): the workspace's environments, available to every workflow in that workspace.
+- **User scope** (`/api/users/{userId}/environments`): the personal workspace's environments, available only to the user who created them.
+- **Organization scope** (`/api/orgs/{orgId}/environments`): the organization's environments, available to workspaces that the organization allowlists.
+- **Workspace scope** (`/api/workspaces/{workspaceId}/environments`): the workspace's environments, available to every workflow in that workspace.
 
 A run selects exactly one environment explicitly. There is no global "active" environment flag. The selected environment is the one whose variables feed `{{env.*}}` and whose secret store wins the override chain for `{{secrets.*}}`.
 
