@@ -213,12 +213,11 @@ async def trigger_workflow_run(
     elif resume_from_run_id or start_node_ids:
         raise ValueError("Resume source and start nodes require a resume mode.")
 
-    if environment_id:
-        environment = await ScopedEnvironmentRepository.get_by_id(environment_id)
-        if not environment:
-            environment = await EnvironmentRepository.get_by_id(environment_id)
-        if not environment:
-            raise ValueError(f"Environment {environment_id} not found")
+    requested_environment_id = (
+        environment_id
+        or getattr(workflow, "selectedEnvironmentId", None)
+        or getattr(workflow, "environmentId", None)
+    )
 
     run_id = str(uuid.uuid4())
     now = datetime.now(UTC)
@@ -228,6 +227,25 @@ async def trigger_workflow_run(
     effective_workspace_id = workspace_id or workflow.workspaceId
     effective_org_id = workflow.orgId
     effective_owner_type = workflow.ownerType
+
+    if effective_workspace_id:
+        from app.services.scoped_environment_service import resolve_run_environment
+
+        environment_selection = await resolve_run_environment(
+            workspace_id=effective_workspace_id,
+            org_id=effective_org_id,
+            explicit_environment_id=requested_environment_id,
+        )
+        environment_id = environment_selection.environmentId
+    elif requested_environment_id:
+        environment = await ScopedEnvironmentRepository.get_by_id(requested_environment_id)
+        if not environment:
+            environment = await EnvironmentRepository.get_by_id(requested_environment_id)
+        if not environment:
+            raise ValueError(f"Environment {requested_environment_id} not found")
+        environment_id = requested_environment_id
+    else:
+        environment_id = None
 
     run = models.Run(
         runId=run_id,

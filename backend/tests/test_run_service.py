@@ -72,6 +72,43 @@ async def test_trigger_workflow_run_does_not_persist_or_return_runtime_secrets(
 
 
 @pytest.mark.asyncio
+async def test_trigger_workflow_run_uses_workflow_selected_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeWorkflowRepository:
+        @staticmethod
+        async def get_by_id(workflow_id: str) -> SimpleNamespace:
+            return SimpleNamespace(
+                workflowId=workflow_id,
+                selectedEnvironmentId="env-workflow-default",
+                environmentId=None,
+                variables={},
+                nodes=[SimpleNamespace(nodeId="start")],
+                workspaceId=None,
+                orgId=None,
+                ownerType=None,
+            )
+
+    class FakeScopedEnvironmentRepository:
+        @staticmethod
+        async def get_by_id(env_id: str) -> SimpleNamespace:
+            assert env_id == "env-workflow-default"
+            return SimpleNamespace(environmentId=env_id)
+
+    FakeRun.inserted = {}
+    monkeypatch.setattr(run_service, "WorkflowRepository", FakeWorkflowRepository)
+    monkeypatch.setattr(run_service, "ScopedEnvironmentRepository", FakeScopedEnvironmentRepository)
+    monkeypatch.setattr(run_service.models, "Run", FakeRun)
+    _patch_background_task(monkeypatch)
+
+    result = await run_service.trigger_workflow_run("wf-1")
+
+    assert result["environmentId"] == "env-workflow-default"
+    assert FakeRun.inserted["environmentId"] == "env-workflow-default"
+    assert FakeRun.inserted["selectedEnvironmentId"] == "env-workflow-default"
+
+
+@pytest.mark.asyncio
 async def test_trigger_workflow_run_resolves_latest_failed_run_for_single_resume(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

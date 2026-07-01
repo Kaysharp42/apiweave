@@ -137,12 +137,27 @@ class WorkflowRepository:
     async def update_collection_assignment(
         workflow_id: str, collection_id: str | None
     ) -> Workflow | None:
-        """Assign or unassign workflow to/from a collection"""
+        """Assign or unassign workflow to/from a collection."""
         workflow = await WorkflowRepository.get_by_id(workflow_id)
         if not workflow:
             return None
 
         workflow.collectionId = collection_id
+        workflow.updatedAt = datetime.now(UTC)
+        await workflow.save()
+
+        return workflow
+
+    @staticmethod
+    async def update_environment_assignment(
+        workflow_id: str, environment_id: str | None
+    ) -> Workflow | None:
+        """Assign or clear a workflow's default scoped environment."""
+        workflow = await WorkflowRepository.get_by_id(workflow_id)
+        if not workflow:
+            return None
+
+        workflow.selectedEnvironmentId = environment_id
         workflow.updatedAt = datetime.now(UTC)
         await workflow.save()
 

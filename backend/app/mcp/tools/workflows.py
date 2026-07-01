@@ -26,6 +26,8 @@ from app.mcp.schemas.workflows import (
 )
 from app.mcp.scope_context import require_scope
 from app.models import Edge, Node, WorkflowCreate, WorkflowUpdate
+from app.repositories.workflow_repository import WorkflowRepository
+from app.services.scoped_environment_service import resolve_run_environment
 from app.services.scoped_workflow_service import (
     create_scoped_workflow,
     delete_scoped_workflow,
@@ -386,15 +388,9 @@ async def workflow_attach_collection(
     except Exception as exc:
         raise ValueError(str(exc)) from exc
 
-    from app.models import Workflow
-
-    wf = await Workflow.get(workflow_id)
-    if wf:
-        wf.collectionId = collection_id
-        from datetime import UTC, datetime
-
-        wf.updatedAt = datetime.now(UTC)
-        await wf.save()
+    updated = await WorkflowRepository.update_collection_assignment(workflow_id, collection_id)
+    if not updated:
+        raise ValueError(f"Workflow {workflow_id} not found")
 
     return WorkflowAttachCollectionResponse(
         message="Workflow project assignment updated",
@@ -418,23 +414,23 @@ async def workflow_set_environment(
     from app.services.scoped_workflow_service import get_scoped_workflow
 
     try:
-        await get_scoped_workflow(
+        workflow = await get_scoped_workflow(
             workspace_id=workspace_id,
             workflow_id=workflow_id,
             actor_user_id=scope.actor_id,
         )
+        if environment_id is not None:
+            await resolve_run_environment(
+                workspace_id=workspace_id,
+                org_id=cast(str | None, workflow.get("orgId")),
+                explicit_environment_id=environment_id,
+            )
     except Exception as exc:
         raise ValueError(str(exc)) from exc
 
-    from app.models import Workflow
-
-    wf = await Workflow.get(workflow_id)
-    if wf:
-        wf.selectedEnvironmentId = environment_id
-        from datetime import UTC, datetime
-
-        wf.updatedAt = datetime.now(UTC)
-        await wf.save()
+    updated = await WorkflowRepository.update_environment_assignment(workflow_id, environment_id)
+    if not updated:
+        raise ValueError(f"Workflow {workflow_id} not found")
 
     return WorkflowSetEnvironmentResponse(
         message="Workflow environment updated",
