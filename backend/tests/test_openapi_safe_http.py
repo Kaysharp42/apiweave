@@ -155,7 +155,12 @@ async def test_fetch_openapi_from_webjars_localhost_uses_primary_definition():
             kwargs["transport"] = httpx.MockTransport(handler)
             super().__init__(*args, **kwargs)
 
-    with patch("httpx.AsyncClient", MockedAsyncClient):
+    # localhost -> host.docker.internal fallback is a dev/self-host flow, which
+    # requires the loopback opt-in; prod (loopback off) correctly blocks it.
+    with (
+        patch("httpx.AsyncClient", MockedAsyncClient),
+        patch("app.config.Settings.get_allow_loopback", return_value=True),
+    ):
         result = await fetch_openapi_from_url(
             "http://localhost:8800/webjars/swagger-ui/index.html" "?urls.primaryName=Actor+Service"
         )
@@ -165,6 +170,73 @@ async def test_fetch_openapi_from_webjars_localhost_uses_primary_definition():
     assert len(result["definitions"]) == 1
     assert result["definitions"][0]["name"] == "Actor Service"
     assert result["nodes"][0]["config"]["url"] == "/actors"
+
+
+class TestSSRFSafeTransport:
+    """The pinning transport must connect to a validated IP while preserving
+    Host + TLS SNI, closing DNS-rebinding on the OpenAPI import path."""
+
+    @pytest.mark.asyncio
+    async def test_pins_connection_to_validated_ip(self, monkeypatch):
+        from app.services import import_service
+
+        captured: dict[str, object] = {}
+
+        async def fake_super(self, request: httpx.Request) -> httpx.Response:
+            captured["host"] = request.url.host
+            captured["sni"] = request.extensions.get("sni_hostname")
+            captured["host_header"] = request.headers.get("host")
+            return httpx.Response(200)
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", fake_super)
+        monkeypatch.setattr(import_service, "resolve_and_pin_ip", lambda host: "93.184.216.34")
+
+        transport = import_service._SSRFSafeTransport()
+        request = httpx.Request("GET", "https://example.com:8443/openapi.json")
+        await transport.handle_async_request(request)
+
+        # Connects to the exact validated IP, not a re-resolved one.
+        assert captured["host"] == "93.184.216.34"
+        # TLS cert verified against the hostname, and the origin Host is sent.
+        assert captured["sni"] == "example.com"
+        assert captured["host_header"] == "example.com:8443"
+
+    @pytest.mark.asyncio
+    async def test_rejects_host_that_resolves_to_blocked(self, monkeypatch):
+        from app.services import import_service
+        from app.services.safe_http import SafeUrlError
+
+        def blocked(host: str) -> str:
+            raise SafeUrlError(f"Host {host!r} resolves to blocked address 169.254.169.254")
+
+        monkeypatch.setattr(import_service, "resolve_and_pin_ip", blocked)
+
+        transport = import_service._SSRFSafeTransport()
+        request = httpx.Request("GET", "https://rebind.evil.com/openapi.json")
+        with pytest.raises(SafeUrlError):
+            await transport.handle_async_request(request)
+
+    @pytest.mark.asyncio
+    async def test_passes_through_when_no_pin(self, monkeypatch):
+        """Dev-allowed / unresolvable hosts (pin=None) connect unchanged."""
+        from app.services import import_service
+
+        captured: dict[str, object] = {}
+
+        async def fake_super(self, request: httpx.Request) -> httpx.Response:
+            captured["host"] = request.url.host
+            captured["sni"] = request.extensions.get("sni_hostname")
+            return httpx.Response(200)
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", fake_super)
+        monkeypatch.setattr(import_service, "resolve_and_pin_ip", lambda host: None)
+
+        transport = import_service._SSRFSafeTransport()
+        request = httpx.Request("GET", "http://host.docker.internal:8800/spec")
+        await transport.handle_async_request(request)
+
+        assert captured["host"] == "host.docker.internal"
+        assert captured["sni"] is None
 
 
 class TestImportOpenapiFromUrlRouteBlocksPrivateIPs:

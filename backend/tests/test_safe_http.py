@@ -17,6 +17,8 @@ from app.services.safe_http import (
     BLOCKED_NETWORKS,
     MAX_REDIRECT_HOPS,
     SafeUrlError,
+    _SafeResolver,
+    assert_host_resolves_safe,
     check_redirect_allowed,
     is_safe_url,
     safe_get,
@@ -599,7 +601,10 @@ class TestSafeRequest:
             patch("app.services.safe_http.aiohttp.TCPConnector") as mock_connector_cls,
         ):
             await safe_request("GET", "https://example.com/", ssl_verify=False)
-            mock_connector_cls.assert_called_once_with(ssl=False)
+            mock_connector_cls.assert_called_once()
+            call_kwargs = mock_connector_cls.call_args.kwargs
+            assert call_kwargs.get("ssl") is False
+            assert "resolver" in call_kwargs
 
     @pytest.mark.asyncio
     async def test_ssl_verify_true_passes_default_context(self):
@@ -682,6 +687,120 @@ class TestAllowLoopback:
         with _patch_settings(allow_loopback=False):
             assert is_safe_url("http://127.0.0.1/") is False
             assert is_safe_url("http://[::1]/") is False
+
+
+class TestSafeResolver:
+    """The aiohttp resolver must reject hosts resolving to blocked networks —
+    this is what closes DNS-rebinding SSRF at connect time."""
+
+    def _resolver_with(self, infos):
+        resolver = _SafeResolver()
+        resolver._inner = AsyncMock()
+        resolver._inner.resolve.return_value = infos
+        return resolver
+
+    @pytest.mark.asyncio
+    async def test_rejects_host_resolving_to_private(self):
+        resolver = self._resolver_with([{"host": "10.0.0.1", "port": 80}])
+        with _patch_settings():
+            with pytest.raises(SafeUrlError, match="blocked address"):
+                await resolver.resolve("evil.example.com", 80)
+
+    @pytest.mark.asyncio
+    async def test_rejects_host_resolving_to_metadata(self):
+        resolver = self._resolver_with([{"host": "169.254.169.254", "port": 80}])
+        with _patch_settings():
+            with pytest.raises(SafeUrlError):
+                await resolver.resolve("metadata.evil.com", 80)
+
+    @pytest.mark.asyncio
+    async def test_allows_host_resolving_to_public(self):
+        infos = [{"host": "93.184.216.34", "port": 443}]
+        resolver = self._resolver_with(infos)
+        with _patch_settings():
+            assert await resolver.resolve("example.com", 443) is infos
+
+    @pytest.mark.asyncio
+    async def test_rejects_mixed_public_and_private_answer(self):
+        """A DNS answer mixing a public and a private address is rejected —
+        aiohttp would otherwise be free to connect to the private one."""
+        resolver = self._resolver_with(
+            [
+                {"host": "93.184.216.34", "port": 80},
+                {"host": "169.254.169.254", "port": 80},
+            ]
+        )
+        with _patch_settings():
+            with pytest.raises(SafeUrlError):
+                await resolver.resolve("rebind.example.com", 80)
+
+
+class TestAssertHostResolvesSafe:
+    """assert_host_resolves_safe guards non-aiohttp clients (httpx import)."""
+
+    @staticmethod
+    def _addrinfo(ip: str):
+        return [(2, 1, 6, "", (ip, 0))]
+
+    def test_blocks_private_resolution(self):
+        with (
+            _patch_settings(),
+            patch(
+                "app.services.safe_http.socket.getaddrinfo", return_value=self._addrinfo("10.1.2.3")
+            ),
+        ):
+            with pytest.raises(SafeUrlError, match="blocked address"):
+                assert_host_resolves_safe("intranet.example.com")
+
+    def test_blocks_metadata_resolution(self):
+        with (
+            _patch_settings(),
+            patch(
+                "app.services.safe_http.socket.getaddrinfo",
+                return_value=self._addrinfo("169.254.169.254"),
+            ),
+        ):
+            with pytest.raises(SafeUrlError):
+                assert_host_resolves_safe("metadata.evil.com")
+
+    def test_allows_public_resolution(self):
+        with (
+            _patch_settings(),
+            patch(
+                "app.services.safe_http.socket.getaddrinfo", return_value=self._addrinfo("8.8.8.8")
+            ),
+        ):
+            assert_host_resolves_safe("dns.google")  # no raise
+
+    def test_unresolvable_host_passes_through(self):
+        """An unresolvable host is not an SSRF risk; let the client surface it."""
+        with (
+            _patch_settings(),
+            patch("app.services.safe_http.socket.getaddrinfo", side_effect=OSError("no host")),
+        ):
+            assert_host_resolves_safe("does-not-exist.invalid")  # no raise
+
+    def test_dev_host_bypasses_when_loopback_on(self):
+        """host.docker.internal is permitted (without resolving) in dev."""
+        with (
+            _patch_settings(allow_loopback=True),
+            patch(
+                "app.services.safe_http.socket.getaddrinfo",
+                side_effect=AssertionError("dev host should not be resolved"),
+            ),
+        ):
+            assert_host_resolves_safe("host.docker.internal")  # no raise
+
+    def test_dev_host_blocked_when_loopback_off(self):
+        with (
+            _patch_settings(allow_loopback=False),
+            patch(
+                "app.services.safe_http.socket.getaddrinfo",
+                return_value=self._addrinfo("192.168.65.2"),
+            ),
+        ):
+            with pytest.raises(SafeUrlError):
+                assert_host_resolves_safe("host.docker.internal")
 
 
 class TestBlockedNetworksConfig:
