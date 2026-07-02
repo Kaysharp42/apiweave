@@ -132,7 +132,7 @@ describe("Task 7c: Auto-save uses scoped PATCH", () => {
 
     // Find the saveWorkflow function and verify it uses PATCH
     const saveWorkflowMatch = content.match(
-      /const saveWorkflow = useCallback\(async[\s\S]*?method:\s*'(\w+)'/,
+      /const saveWorkflow = useCallback\(\s*async[\s\S]*?method:\s*["'](\w+)["']/,
     );
     expect(saveWorkflowMatch).not.toBeNull();
     expect(saveWorkflowMatch?.[1]).toBe("PATCH");
@@ -149,7 +149,7 @@ describe("Task 7c: Auto-save uses scoped PATCH", () => {
     const content = fs.readFileSync(canvasFile, "utf-8");
 
     // Find all PATCH occurrences — should be at least 2 (save + JSON apply)
-    const patchCount = (content.match(/method:\s*'PATCH'/g) || []).length;
+    const patchCount = (content.match(/method:\s*["']PATCH["']/g) || []).length;
     expect(patchCount).toBeGreaterThanOrEqual(2);
   });
 
