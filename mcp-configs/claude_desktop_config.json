@@ -18,6 +18,11 @@
       },
       "disabled": true,
       "autoApprove": []
+    },
+    "codebase-memory-mcp": {
+      "command": "codebase-memory-mcp",
+      "disabled": false,
+      "autoApprove": []
     }
   }
 }

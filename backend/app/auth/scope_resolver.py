@@ -69,7 +69,8 @@ class ResourceScopeResolver:
             return True
         workspace = await WorkspaceRepository.get_by_id(workspace_id)
         if workspace is not None and getattr(workspace, "orgId", None):
-            if await OrganizationRepository.get_member(workspace.orgId, user_id) is not None:
+            org_id = getattr(workspace, "orgId", None)
+            if org_id and await OrganizationRepository.get_member(org_id, user_id) is not None:
                 return True
         return False
 
@@ -106,7 +107,7 @@ class ResourceScopeResolver:
             if env is None:
                 return ScopeAccess(allowed=False)
             return await ResourceScopeResolver.resolve_scope_access(
-                user, env.scopeType, env.scopeId
+                user, env.scopeType, env.scopeId or ""
             )
 
         return ScopeAccess(allowed=False)
@@ -150,7 +151,7 @@ class ResourceScopeResolver:
                     resolved.org_id
                 ) or await OrganizationRepository.get_by_slug(resolved.org_id)
             elif workspace is not None and getattr(workspace, "orgId", None):
-                org = await OrganizationRepository.get_by_id(workspace.orgId)
+                org = await OrganizationRepository.get_by_id(workspace.orgId or "")
             if org is not None:
                 org_member = await OrganizationRepository.get_member(org.orgId, user_id)
                 if org_member is not None:

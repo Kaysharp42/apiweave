@@ -10,15 +10,24 @@ Covers:
   - read-after-purge returns None
 """
 
-import uuid
 from collections.abc import AsyncGenerator
 
+import mongomock
 import pytest
-from app.config import settings
 from app.utils.soft_delete import DocumentSoftDeletedError, SoftDeleteMixin
 from beanie import Document, init_beanie
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import ServerSelectionTimeoutError
+from mongomock_motor import AsyncMongoMockClient
+
+# Beanie calls list_collection_names(authorizedCollections=..., nameOnly=...);
+# mongomock's signature rejects those kwargs. Swallow extras (test-only shim).
+_orig_list_collection_names = mongomock.database.Database.list_collection_names
+
+
+def _list_collection_names(self, *args, **kwargs):  # noqa: ANN001, ANN202
+    return _orig_list_collection_names(self)
+
+
+mongomock.database.Database.list_collection_names = _list_collection_names
 
 # ── Test model ──────────────────────────────────────────────────
 
@@ -36,38 +45,13 @@ class SoftDeleteTestModel(SoftDeleteMixin, Document):
 # ── Fixtures ────────────────────────────────────────────────────
 
 
-def _mongodb_available() -> bool:
-    try:
-        import asyncio
-
-        async def _check() -> bool:
-            client: AsyncIOMotorClient = AsyncIOMotorClient(
-                settings.MONGODB_URL, serverSelectionTimeoutMS=2000
-            )
-            await client.admin.command("ping")
-            await client.close()
-            return True
-
-        return asyncio.get_event_loop().run_until_complete(_check())
-    except (ServerSelectionTimeoutError, Exception):
-        return False
-
-
-requires_mongodb = pytest.mark.skipif(
-    not _mongodb_available(),
-    reason="MongoDB not available or unreachable",
-)
-
-
 @pytest.fixture(scope="module")
 async def init_beanie_once() -> AsyncGenerator[None, None]:
-    """Initialize Beanie with the test model (runs once per module)."""
-    client: AsyncIOMotorClient = AsyncIOMotorClient(settings.MONGODB_URL)
-    db = client[settings.MONGODB_DB_NAME + "_test_soft_delete"]
+    """Initialize Beanie with the test model against in-memory mongomock."""
+    client = AsyncMongoMockClient()
+    db = client["soft_delete_test_db"]
     await init_beanie(database=db, document_models=[SoftDeleteTestModel])
     yield
-    # Drop the test collection and close connection
-    await db.drop_collection("soft_delete_test")
     client.close()
 
 
@@ -77,7 +61,6 @@ async def sample_doc(
 ) -> AsyncGenerator[SoftDeleteTestModel, None]:
     """Create a fresh test document for each test."""
     doc = SoftDeleteTestModel(
-        id=uuid.uuid4().hex,
         name="test-resource",
         value="some-value",
     )
@@ -96,7 +79,6 @@ async def sample_doc(
 class TestSoftDeleteMixin:
     """Tests for the SoftDeleteMixin lifecycle."""
 
-    @requires_mongodb
     async def test_soft_delete_sets_fields(self, sample_doc: SoftDeleteTestModel) -> None:
         """Soft-deleting sets deleted_at and deleted_by."""
         assert sample_doc.deleted_at is None
@@ -110,7 +92,6 @@ class TestSoftDeleteMixin:
         assert reloaded.deleted_at is not None
         assert reloaded.deleted_by == "user-abc"
 
-    @requires_mongodb
     async def test_restore_clears_fields(self, sample_doc: SoftDeleteTestModel) -> None:
         """Restore clears deleted_at and deleted_by."""
         await sample_doc.soft_delete(by_user_id="user-abc")
@@ -123,7 +104,6 @@ class TestSoftDeleteMixin:
         assert reloaded.deleted_at is None
         assert reloaded.deleted_by is None
 
-    @requires_mongodb
     async def test_purge_removes_document(self, sample_doc: SoftDeleteTestModel) -> None:
         """Purge permanently deletes the document."""
         await sample_doc.purge()
@@ -131,7 +111,6 @@ class TestSoftDeleteMixin:
         gone = await SoftDeleteTestModel.get(sample_doc.id)
         assert gone is None
 
-    @requires_mongodb
     async def test_save_raises_on_deleted_document(
         self,
         sample_doc: SoftDeleteTestModel,
@@ -145,7 +124,6 @@ class TestSoftDeleteMixin:
 
         assert "Cannot modify soft-deleted" in str(exc_info.value)
 
-    @requires_mongodb
     async def test_insert_raises_on_deleted_document(
         self,
         sample_doc: SoftDeleteTestModel,
@@ -166,7 +144,6 @@ class TestSoftDeleteMixin:
 
         assert "Cannot modify soft-deleted" in str(exc_info.value)
 
-    @requires_mongodb
     async def test_read_after_restore_succeeds(
         self,
         sample_doc: SoftDeleteTestModel,
@@ -183,7 +160,6 @@ class TestSoftDeleteMixin:
         assert reloaded.name == "updated-after-restore"
         assert reloaded.deleted_at is None
 
-    @requires_mongodb
     async def test_raise_if_deleted_method(self, sample_doc: SoftDeleteTestModel) -> None:
         """raise_if_deleted() can be called explicitly."""
         # Should not raise on fresh doc
@@ -194,7 +170,6 @@ class TestSoftDeleteMixin:
         with pytest.raises(DocumentSoftDeletedError):
             sample_doc.raise_if_deleted()
 
-    @requires_mongodb
     async def test_read_after_purge_returns_none(
         self,
         sample_doc: SoftDeleteTestModel,

@@ -244,7 +244,7 @@ def require_permission(
     if get_user is None:
         from app.auth.dependencies import get_current_active_user
 
-        user_dependency = get_current_active_user
+        user_dependency: Any = get_current_active_user
     else:
         user_dependency = get_user
 

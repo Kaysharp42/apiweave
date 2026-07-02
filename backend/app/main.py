@@ -110,6 +110,7 @@ app.include_router(billing.router)
 _CSRF_EXEMPT_PREFIXES = (
     "/api/auth/login",
     "/api/auth/callback",
+    "/api/webhooks/",  # Webhooks are called by external systems, not browsers
 )
 _CSRF_EXEMPT_EXACT = {
     "/api/auth/csrf-token",

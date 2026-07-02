@@ -405,7 +405,7 @@ async def _create_or_link_user(userinfo: Any, invite_token: str | None = None) -
     return await _reconcile_orphan_invite(user, invite_token)
 
 
-async def _create_session(response: Response, user: User):
+async def _create_session(response: Response, user: User) -> None:
     now = datetime.now(UTC)
     token = secrets.token_hex(32)
     await SessionRepository.create(
@@ -623,7 +623,7 @@ async def logout(
         SESSION_COOKIE_NAME,
         httponly=True,
         secure=settings.get_session_cookie_secure(),
-        samesite=settings.get_session_cookie_samesite().lower(),
+        samesite=settings.get_session_cookie_samesite(),
         path="/",
     )
     return {"revoked": revoked}
@@ -646,14 +646,14 @@ async def signout(
         SESSION_COOKIE_NAME,
         httponly=True,
         secure=settings.get_session_cookie_secure(),
-        samesite=settings.get_session_cookie_samesite().lower(),
+        samesite=settings.get_session_cookie_samesite(),
         path="/",
     )
     response.delete_cookie(
         CSRF_COOKIE_NAME,
         httponly=False,
         secure=settings.get_session_cookie_secure(),
-        samesite=settings.get_session_cookie_samesite().lower(),
+        samesite=settings.get_session_cookie_samesite(),
         path="/",
     )
     return {"revoked": revoked}
@@ -688,7 +688,7 @@ async def csrf_token(response: Response) -> dict[str, str]:
         token,
         httponly=False,
         secure=settings.get_session_cookie_secure(),
-        samesite=settings.get_session_cookie_samesite().lower(),
+        samesite=settings.get_session_cookie_samesite(),
         path="/",
     )
     return {"csrfToken": token}

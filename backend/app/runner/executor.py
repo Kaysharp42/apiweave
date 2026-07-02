@@ -115,24 +115,36 @@ class WorkflowExecutor:
         self.start_node_ids = start_node_ids or []
         self.resume_from_run_id = resume_from_run_id
         self.cancel_event = cancel_event or asyncio.Event()
-        self.results = {}
-        self.context = {}  # Stores variables and results from previous nodes
-        self.workflow_variables = {}  # Workflow-level variables that persist across nodes
-        self.environment_variables = {}  # Environment variables from active environment
-        self.secrets = {}  # Resolved scoped secrets (plaintext at runtime only)
+        self.results: dict[str, Any] = {}
+        self.context: dict[str, Any] = {}  # Stores variables and results from previous nodes
+        self.workflow_variables: dict[
+            str, Any
+        ] = {}  # Workflow-level variables that persist across nodes
+        self.environment_variables: dict[
+            str, Any
+        ] = {}  # Environment variables from active environment
+        self.secrets: dict[str, str] = {}  # Resolved scoped secrets (plaintext at runtime only)
         self._masker: Any = (
             None  # SecretMasker for value-based masking (built after secrets resolve)
         )
         self.continue_on_fail = False  # Workflow setting: whether to continue on API failure
-        self.start_time = None  # Track workflow execution start time
-        self.branch_results = {}  # Track merged branch results per merge node: {merge_node_id: [(node_id, result), ...]}
-        self.current_branch_context = []  # Current branch context for prev[N] variable substitution
+        self.start_time: float | None = None  # Track workflow execution start time
+        self.branch_results: dict[
+            str, list[tuple[str, Any]]
+        ] = {}  # Track merged branch results per merge node: {merge_node_id: [(node_id, result), ...]}
+        self.current_branch_context: list[
+            tuple[str, Any]
+        ] = []  # Current branch context for prev[N] variable substitution
         self.logger = setup_run_logger(run_id)  # Setup logger for this run
-        self.merge_locks = {}  # Locks for merge nodes to prevent race conditions: {merge_node_id: asyncio.Lock}
-        self.merge_completed = {}  # Track which merge nodes have completed: {merge_node_id: bool}
+        self.merge_locks: dict[
+            str, asyncio.Lock
+        ] = {}  # Locks for merge nodes to prevent race conditions: {merge_node_id: asyncio.Lock}
+        self.merge_completed: dict[
+            str, bool
+        ] = {}  # Track which merge nodes have completed: {merge_node_id: bool}
         self.has_failures = False  # Track if any node has failed during execution
-        self.failed_nodes = []  # List of node IDs that failed
-        self.first_error_message = None  # Store the first error message for the run
+        self.failed_nodes: list[str] = []  # List of node IDs that failed
+        self.first_error_message: str | None = None  # Store the first error message for the run
 
         # Wave 3: scoped run context
         self.run_context = run_context
@@ -215,7 +227,7 @@ class WorkflowExecutor:
         self,
         name: str,
         ctx: "RunContext",
-        secret_repo: type,
+        secret_repo: Any,
         resolver_fn: Any,
         audit_fn: Any,
     ) -> str | None:
@@ -280,7 +292,7 @@ class WorkflowExecutor:
                 scope_type,
                 scope_id,
             )
-            return plaintext
+            return None if plaintext is None else str(plaintext)
 
         self.logger.warning("Secret %s not found in any scope", name)
         return None
@@ -476,7 +488,7 @@ class WorkflowExecutor:
 
     async def _hydrate_resume_context(self, db, nodes: dict, edges: list):
         """Hydrate execution context from a previous run for resume support."""
-        source_run = await RunRepository.get_by_id(self.resume_from_run_id)
+        source_run = await RunRepository.get_by_id(self.resume_from_run_id)  # type: ignore[arg-type]
         if not source_run or source_run.workflowId != self.workflow_id:
             raise Exception("Invalid resume source run")
 
@@ -484,7 +496,7 @@ class WorkflowExecutor:
         # earlier attempts where context/results were available.
         lineage = []
         seen_run_ids = set()
-        current = source_run
+        current: Any = source_run
         while (
             current and current.workflowId == self.workflow_id and current.runId not in seen_run_ids
         ):
@@ -530,7 +542,7 @@ class WorkflowExecutor:
 
                         file_id = ObjectId(stored.get("gridfs_file_id"))
                         stream = await gridfs_bucket.open_download_stream(file_id)
-                        data = await stream.read()
+                        data: bytes = await stream.read()
                         result = json.loads(data.decode("utf-8"))
                     except Exception as read_error:
                         self.logger.warning(
@@ -985,7 +997,7 @@ class WorkflowExecutor:
             return text
         self._ensure_masker()
         if self._masker and self._masker.has_secrets:
-            return self._masker.mask_text(text)
+            return str(self._masker.mask_text(text))
         return text
 
     @staticmethod
@@ -1086,7 +1098,7 @@ class WorkflowExecutor:
                 if var_path.startswith("secrets."):
                     # NEW: Access secrets from environment
                     path_parts = var_path.split(".")[1:]  # Remove 'secrets'
-                    value = self.secrets
+                    value: Any = self.secrets
 
                     for part in path_parts:
                         # Handle array indexing: data[0], items[1], etc.
@@ -1381,12 +1393,7 @@ class WorkflowExecutor:
                 )
             return result
 
-        if isinstance(value, dict):
-            return {
-                k: self._substitute_variables(str(v), allow_secrets=allow_secrets)
-                for k, v in value.items()
-            }
-
+        # ponytail: dict is not a valid key-value field — fall through to unknown-type branch.
         # Unknown type — fall back to empty dict rather than crashing.
         self.logger.warning(
             "Unsupported key-value field type: %s — treating as empty",
@@ -1623,6 +1630,9 @@ class WorkflowExecutor:
             error_msg = f"Failed to resolve file upload: {str(e)}"
             self.logger.error(error_msg)
             raise Exception(error_msg)
+        raise Exception(
+            f"Unreachable: file resolution did not return for type={file_ref.get('type')}"
+        )
 
     def _build_upload_filename(
         self, file_ref: dict[str, str], field_name: str, mime_type: str
@@ -1706,6 +1716,12 @@ class WorkflowExecutor:
 
         # Apply auth config (bearer/basic/apiKey). Config headers win on collision.
         headers, url = self._apply_auth_to_request(config, headers, url)
+
+        # Normalize Authorization: collapse runs of whitespace left by secret
+        # substitution (e.g. "Bearer  <token>" → "Bearer <token>").
+        _auth = headers.get("Authorization")
+        if _auth:
+            headers["Authorization"] = re.sub(r"\s+", " ", _auth).strip()
 
         # Substitute variables in body
         if body:
@@ -2059,7 +2075,7 @@ class WorkflowExecutor:
 
         try:
             parts = path.split(".")
-            value = obj
+            value: Any = obj
 
             for part in parts:
                 # Handle array indexing: data[0], items[1], etc.
@@ -2242,7 +2258,7 @@ class WorkflowExecutor:
                 )
                 max_wait = 30  # seconds
                 wait_interval = 0.1  # seconds
-                elapsed = 0
+                elapsed: float = 0.0
 
                 while missing_predecessors and elapsed < max_wait:
                     if await self._check_cancelled():
@@ -2486,7 +2502,7 @@ class WorkflowExecutor:
                     "conditionLogic", "OR"
                 )  # Default to OR for backward compatibility
                 merged_branches = []
-                failed_branches = []  # Track branches that failed conditions
+                failed_branches: list[dict[str, Any]] = []  # Track branches that failed conditions
 
                 self.logger.info(f"🎯 Evaluating conditions with {condition_logic} logic")
                 self.logger.info(

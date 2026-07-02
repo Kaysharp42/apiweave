@@ -43,7 +43,6 @@ async def secret_get_public_key(
     Clients use this to encrypt secret values with libsodium sealed-box
     before calling secret_create or secret_update.
     """
-    await ensure_mcp_database()
     scope = require_scope()
 
     # Default to token scope if not specified
@@ -58,6 +57,7 @@ async def secret_get_public_key(
             f"Token scope is {scope.scope_type}/{scope.scope_id}."
         )
 
+    await ensure_mcp_database()
     key_info = await scoped_secrets.get_public_key(
         scope_type=effective_scope_type,
         scope_id=effective_scope_id,
@@ -76,8 +76,9 @@ async def secret_list() -> dict:
 
     Returns metadata only — no ciphertext or plaintext values.
     """
-    await ensure_mcp_database()
     scope = require_scope()
+
+    await ensure_mcp_database()
 
     secrets_list = await secret_service.list_secrets(
         scope_type=scope.scope_type,
@@ -122,8 +123,9 @@ async def secret_create(
     secret_get_public_key for this scope. Plaintext values are
     NEVER accepted.
     """
-    await ensure_mcp_database()
     scope = require_scope()
+
+    await ensure_mcp_database()
 
     try:
         result = await secret_service.create_secret(
@@ -166,8 +168,9 @@ async def secret_update(
     ],
 ) -> dict:
     """Update a secret's ciphertext. Name cannot be changed."""
-    await ensure_mcp_database()
     scope = require_scope()
+
+    await ensure_mcp_database()
 
     try:
         result = await secret_service.update_secret(
@@ -200,8 +203,9 @@ async def secret_delete(
     secret_id: Annotated[str, Field(description="Secret ID to delete.")],
 ) -> dict:
     """Delete a scoped secret."""
-    await ensure_mcp_database()
     scope = require_scope()
+
+    await ensure_mcp_database()
 
     try:
         await secret_service.delete_secret(

@@ -48,6 +48,9 @@ python -m ruff check app tests # Linting
 - **frontend/DESIGN_SYSTEM.md**: Full component inventory, atomic design architecture, DaisyUI themes, CSS custom properties, and the redesign contract.
 - **`.impeccable/` directory**: Design tooling config for `/impeccable` commands.
 
+## MCP Tools (codebase-memory-mcp)
+- **Use `codebase-memory-mcp` tools** for codebase queries BEFORE falling back to grep/read — `get_architecture`, `search_graph`, `trace_path`, `search_code`, `detect_changes`. Avoid file-by-file exploration when the graph already has the answer.
+
 ## Commits & Work Tracking
 - Check `todo.md` for current phase tasks and the required commit message format.
 - **NEVER stage or commit**: `todo.md`, `progress/learnings.md`, or any file in the `progress/` directory.

@@ -43,10 +43,10 @@ async def encrypt(plaintext: str, kek_id: str | None = None) -> EncryptedBlob:
     ciphertext = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
 
     return EncryptedBlob(
-        ciphertext=ciphertext,  # bytes → auto base64 via field_validator
+        ciphertext=ciphertext,  # type: ignore[arg-type]  # bytes → auto base64 via field_validator
         kek_id=kek_id,
         algorithm=_ALGORITHM,
-        nonce=nonce,  # bytes → auto base64 via field_validator
+        nonce=nonce,  # type: ignore[arg-type]  # bytes → auto base64 via field_validator
     )
 
 

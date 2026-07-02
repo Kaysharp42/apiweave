@@ -48,8 +48,8 @@ from app.models import (
 logger = logging.getLogger(__name__)
 
 # Global database client
-client: AsyncIOMotorClient = None
-db: AsyncIOMotorDatabase = None
+client: AsyncIOMotorClient | None = None
+db: AsyncIOMotorDatabase | None = None
 
 
 async def connect_db():
@@ -123,4 +123,6 @@ def get_database() -> AsyncIOMotorDatabase:
     Note: With Beanie, you typically don't need direct database access.
     Use Document models and repositories instead for type safety.
     """
+    if db is None:
+        raise RuntimeError("Database not initialized. Call connect_db() first.")
     return db

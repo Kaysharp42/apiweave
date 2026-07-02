@@ -83,7 +83,7 @@ def redact_environment_for_export(env: Environment) -> dict[str, Any]:
         env_dict["variables"] = sanitize_secrets_in_dict(
             env_dict["variables"], secret_refs, "variables"
         )
-    return env_dict
+    return dict(env_dict)
 
 
 async def list_environments_redacted() -> list[dict[str, Any]]:

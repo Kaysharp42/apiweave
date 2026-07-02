@@ -11,6 +11,38 @@ async def _noop_database() -> None:
     return None
 
 
+@pytest.fixture(autouse=True)
+def _mcp_read_scope(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Scope + scoped-workspace bypass for run read/cancel unit tests.
+
+    The run tools bind every read/cancel to the token scope via
+    ``_assert_workflow_in_scope`` → ``get_scoped_workflow``. Unit tests that
+    exercise only the response-shaping logic need a scope set and the
+    workspace lookup stubbed so the scope gate does not raise.
+    """
+    from app.mcp.scope_context import McpScopeContext, clear_scope, set_scope
+
+    set_scope(
+        McpScopeContext(
+            actor_type="service_token",
+            actor_id="token-test",
+            scope_type="workspace",
+            scope_id="ws-test",
+            permissions=["workflows.run"],
+        )
+    )
+
+    async def _fake_get_scoped_workflow(workspace_id, workflow_id, actor_user_id):
+        return {"workflowId": workflow_id, "name": "Test"}
+
+    monkeypatch.setattr(
+        "app.services.scoped_workflow_service.get_scoped_workflow",
+        _fake_get_scoped_workflow,
+    )
+    yield
+    clear_scope()
+
+
 @pytest.mark.asyncio
 async def test_workflow_run_returns_polling_hint_without_secret_echo(
     monkeypatch: pytest.MonkeyPatch,
@@ -333,7 +365,11 @@ async def test_run_cancel_returns_cancellation_response(
         assert run_id == "run-to-cancel"
         return {"message": f"Run {run_id} cancelled", "runId": run_id, "status": "cancelled"}
 
+    async def fake_get_run(run_id: str) -> SimpleNamespace:
+        return SimpleNamespace(workflowId="wf-1")
+
     monkeypatch.setattr(run_tools, "ensure_mcp_database", _noop_database)
+    monkeypatch.setattr(run_tools, "svc_get_run", fake_get_run)
     monkeypatch.setattr(run_tools, "svc_cancel_run", fake_cancel_run)
 
     response = await run_tools.run_cancel("run-to-cancel")
@@ -348,7 +384,11 @@ async def test_run_cancel_raises_on_invalid_run(monkeypatch: pytest.MonkeyPatch)
     async def fake_cancel_run(run_id: str) -> dict[str, str]:
         raise ValueError(f"Run {run_id} not found")
 
+    async def fake_get_run(run_id: str) -> SimpleNamespace:
+        raise ValueError(f"Run {run_id} not found")
+
     monkeypatch.setattr(run_tools, "ensure_mcp_database", _noop_database)
+    monkeypatch.setattr(run_tools, "svc_get_run", fake_get_run)
     monkeypatch.setattr(run_tools, "svc_cancel_run", fake_cancel_run)
 
     with pytest.raises(ValueError, match="Run missing-run not found"):

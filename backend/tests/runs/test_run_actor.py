@@ -11,7 +11,7 @@ Scenario: Workspace owns run while actor is service token.
 
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app.models import RunActorContext
@@ -40,6 +40,33 @@ def _patch_background_task(monkeypatch: pytest.MonkeyPatch) -> None:
         coro.close()
 
     monkeypatch.setattr(run_service.asyncio, "create_task", fake_create_task)
+
+
+def _patch_cross_module_service_calls(monkeypatch: pytest.MonkeyPatch, *, scope_id: str) -> None:
+    """Stub cross-module service calls that would otherwise hit uninitialized Beanie.
+
+    trigger_workflow_run calls into scoped_environment_service and
+    environment_protection_service directly (not via the run_service-level
+    repositories the test already fakes). Those modules query Beanie
+    documents that are not initialized in this unit test, so stub the
+    entry points: resolve_run_environment returns a valid selection, and
+    the protection gate returns "approved" (run proceeds to execution).
+    """
+    monkeypatch.setattr(
+        "app.services.scoped_environment_service.resolve_run_environment",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                environmentId="env-1",
+                scopeType="workspace",
+                scopeId=scope_id,
+                name="Test",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.environment_protection_service.check_protection_and_maybe_gate",
+        AsyncMock(return_value=("approved", None)),
+    )
 
 
 @pytest.mark.asyncio
@@ -106,6 +133,7 @@ async def test_workspace_owns_run_while_actor_is_service_token(
     monkeypatch.setattr(run_service, "ScopedPermissionEvaluator", FakeScopedPermissionEvaluator)
     monkeypatch.setattr(run_service.models, "Run", FakeRun)
     _patch_background_task(monkeypatch)
+    _patch_cross_module_service_calls(monkeypatch, scope_id="ws-abc")
 
     actor = RunActorContext(actorType="service_token", actorId="token-xyz")
     result = await run_service.trigger_workflow_run(
@@ -252,6 +280,7 @@ async def test_run_with_user_actor(
     monkeypatch.setattr(run_service, "ScopedPermissionEvaluator", FakeScopedPermissionEvaluator)
     monkeypatch.setattr(run_service.models, "Run", FakeRun)
     _patch_background_task(monkeypatch)
+    _patch_cross_module_service_calls(monkeypatch, scope_id="ws-personal")
 
     actor = RunActorContext(actorType="user", actorId="user-123")
     result = await run_service.trigger_workflow_run(

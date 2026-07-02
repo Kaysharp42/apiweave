@@ -17,12 +17,34 @@ import pytest
 from app.main import app
 from fastapi.testclient import TestClient
 
-client = TestClient(app)
+client = TestClient(app, base_url="http://testserver")
 
 
 @pytest.fixture(autouse=True)
 def _allow_token_only(monkeypatch):
     monkeypatch.setattr("app.routes.webhooks.settings.WEBHOOK_REQUIRE_HMAC", False)
+
+
+@pytest.fixture(autouse=True)
+def _mock_webhook_deps(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    monkeypatch.setattr(
+        "app.routes.webhooks.resolve_webhook_actor",
+        AsyncMock(return_value=MagicMock(tokenId="wh-test")),
+    )
+    monkeypatch.setattr(
+        "app.routes.webhooks.check_protection_and_maybe_gate",
+        AsyncMock(return_value=("proceed", None)),
+    )
+    monkeypatch.setattr(
+        "app.routes.webhooks.audit_service",
+        MagicMock(append_event=AsyncMock()),
+    )
+    monkeypatch.setattr(
+        "app.routes.webhooks._get_protection",
+        AsyncMock(return_value=None),
+    )
 
 
 def _mock_log(*args, **kwargs):
@@ -39,7 +61,17 @@ def _enabled_webhook(token: str = "test-token", **kw):
     wh.resourceId = kw.get("resourceId", "wf-abc")
     wh.environmentId = kw.get("environmentId", "env-1")
     wh.usageCount = 0
+    wh.scopeType = kw.get("scopeType", "workspace")
+    wh.scopeId = kw.get("scopeId", "ws-1")
+    wh.workspaceId = kw.get("workspaceId", "ws-1")
+    wh.resourceType = kw.get("resourceType", "workflow")
     return wh
+
+
+def _mock_workflow(**kw):
+    wf = MagicMock()
+    wf.workspaceId = kw.get("workspaceId", "ws-1")
+    return wf
 
 
 def _make_hmac(secret: str, timestamp: str, body: bytes) -> str:
@@ -53,7 +85,9 @@ class TestValidDeliveryCreatesRun:
             patch(
                 "app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()
             ),
-            patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=MagicMock()),
+            patch(
+                "app.routes.webhooks.WorkflowRepository.get_by_id", return_value=_mock_workflow()
+            ),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
         ):
@@ -87,7 +121,9 @@ class TestIdempotencyReplay:
             patch(
                 "app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()
             ),
-            patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=MagicMock()),
+            patch(
+                "app.routes.webhooks.WorkflowRepository.get_by_id", return_value=_mock_workflow()
+            ),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
             patch(
@@ -190,12 +226,16 @@ class TestRateLimit:
 
 class TestCollectionPath:
     def test_collection_path_creates_collection_run(self):
+        collection_mock = MagicMock()
+        collection_mock.workspaceId = "ws-1"
         with (
             patch(
                 "app.routes.webhooks.WebhookRepository.get_by_id",
                 return_value=_enabled_webhook(resourceId="col-1"),
             ),
-            patch("app.routes.webhooks.CollectionRepository.get_by_id", return_value=MagicMock()),
+            patch(
+                "app.routes.webhooks.CollectionRepository.get_by_id", return_value=collection_mock
+            ),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
         ):
@@ -224,7 +264,9 @@ class TestRunMetadata:
             patch(
                 "app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()
             ),
-            patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=MagicMock()),
+            patch(
+                "app.routes.webhooks.WorkflowRepository.get_by_id", return_value=_mock_workflow()
+            ),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
         ):
@@ -252,7 +294,9 @@ class TestQueueFullMapsTo503:
             patch(
                 "app.routes.webhooks.WebhookRepository.get_by_id", return_value=_enabled_webhook()
             ),
-            patch("app.routes.webhooks.WorkflowRepository.get_by_id", return_value=MagicMock()),
+            patch(
+                "app.routes.webhooks.WorkflowRepository.get_by_id", return_value=_mock_workflow()
+            ),
             patch("app.routes.webhooks.WebhookLog", side_effect=_mock_log),
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
         ):

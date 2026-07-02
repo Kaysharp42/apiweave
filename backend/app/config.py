@@ -199,8 +199,8 @@ class Settings(BaseSettings):
             return False
         return self.SESSION_COOKIE_SECURE
 
-    def get_session_cookie_samesite(self) -> str:
-        return self.SESSION_COOKIE_SAMESITE
+    def get_session_cookie_samesite(self) -> Literal["lax", "strict", "none"]:
+        return self.SESSION_COOKIE_SAMESITE  # type: ignore[return-value]
 
     @model_validator(mode="after")
     def validate_auth_configuration(self) -> "Settings":
@@ -354,4 +354,4 @@ class Settings(BaseSettings):
     )
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]  # pydantic-settings reads required fields from env

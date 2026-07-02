@@ -210,11 +210,12 @@ async def _smtp_send(msg: EmailMessage, email: str) -> bool:
     if "Date" not in msg:
         msg["Date"] = formatdate(localtime=True)
     if "Message-ID" not in msg:
-        from_domain = settings.SMTP_FROM_ADDRESS.rpartition("@")[2] or None
+        from_address = settings.SMTP_FROM_ADDRESS or ""
+        from_domain = from_address.rpartition("@")[2] or None
         msg["Message-ID"] = make_msgid(domain=from_domain)
     if "@" in (msg["From"] or "") and "<" not in (msg["From"] or ""):
         del msg["From"]
-        msg["From"] = formataddr((settings.APP_NAME, settings.SMTP_FROM_ADDRESS))
+        msg["From"] = formataddr((settings.APP_NAME, settings.SMTP_FROM_ADDRESS or ""))
 
     try:
         import aiosmtplib

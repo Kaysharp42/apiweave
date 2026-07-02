@@ -28,7 +28,6 @@ def _project_to_response(project: Any) -> dict[str, Any]:
     """Convert a Project document to a response dict using project terminology."""
     return {
         "projectId": project.projectId or project.collectionId,
-        "collectionId": project.collectionId,
         "name": project.name,
         "description": project.description,
         "color": project.color,

@@ -9,7 +9,7 @@ import logging
 import secrets
 import uuid
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -575,7 +575,7 @@ async def update_webhook(
         )
 
     # Build update dictionary (only non-None values)
-    update_data = {}
+    update_data: dict[str, Any] = {}
     if webhook_data.environmentId is not None:
         update_data["environmentId"] = webhook_data.environmentId
     if webhook_data.enabled is not None:

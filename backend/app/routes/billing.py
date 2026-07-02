@@ -113,8 +113,6 @@ async def portal(
     body: PortalRequest,
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    # ponytail: org-owner check happens in the resolver via subscription ownership;
-    # a user can only reach a portal for a subscription whose customer is theirs.
     url = await stripe_service.create_portal_session(
         user=current_user,
         owner_type=body.owner_type,

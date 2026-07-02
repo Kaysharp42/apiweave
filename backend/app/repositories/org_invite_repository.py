@@ -75,7 +75,7 @@ class OrgInviteRepository:
                 OrgInvite.consumed == False,  # noqa: E712
                 OrgInvite.expires_at > now,
             )
-            .sort([("created_at", -1)])
+            .sort([("created_at", -1)])  # type: ignore[list-item]
             .to_list()
         )
 

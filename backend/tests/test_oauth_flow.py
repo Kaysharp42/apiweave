@@ -332,6 +332,9 @@ def test_callback_rejects_invalid_invite_token(
         state=_oauth_state(provider, invite_token="wrong-token"),
         verified=True,
     )
+    # invite_only mode so an invalid invite token is rejected (the runtime .env
+    # ships REGISTRATION_MODE=open, which would let open self-registration in).
+    monkeypatch.setattr(auth_router.settings, "REGISTRATION_MODE", "invite_only")
     monkeypatch.setattr(auth_router.UserRepository, "count", AsyncMock(return_value=1))
     monkeypatch.setattr(
         auth_router.InviteRepository,

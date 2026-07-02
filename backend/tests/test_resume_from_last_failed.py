@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from app.main import app
 from app.models import Node, Session, User
 from app.repositories.auth_repositories import SessionRepository, UserRepository
@@ -58,7 +59,44 @@ client.headers.update({"X-CSRF-Token": "resume-csrf-token"})
 
 
 WORKFLOW_ID = "fc87c260-e0b8-4b63-a762-47169f04f690"
+WORKSPACE_ID = "ws-resume-test"
 ENV_ID = "10ab043b-f164-4745-8274-dbd1e8312a7a"
+
+
+@pytest.fixture(autouse=True)
+def _stub_cross_module_run_services(monkeypatch):
+    """Stub scoped_environment + env-protection entry points for run-trigger tests.
+
+    trigger_workflow_run calls resolve_run_environment and the env-protection gate
+    directly (cross-module), not via the run_service repositories the tests already
+    patch. Those modules query uninitialized Beanie docs in this unit test, so stub
+    them: resolve to the explicit ENV_ID, gate as approved (run proceeds).
+    """
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        "app.services.scoped_environment_service.resolve_run_environment",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                environmentId=ENV_ID,
+                scopeType="workspace",
+                scopeId=WORKSPACE_ID,
+                name="Test",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.environment_protection_service.check_protection_and_maybe_gate",
+        AsyncMock(return_value=("approved", None)),
+    )
+    monkeypatch.setattr(
+        "app.services.run_service.audit_service",
+        SimpleNamespace(append_event=AsyncMock(return_value=SimpleNamespace(eventId="evt-1"))),
+    )
+    monkeypatch.setattr(
+        "app.services.run_service._build_run_context",
+        AsyncMock(return_value=None),
+    )
 
 
 class _DummyRunInsert:
@@ -77,6 +115,9 @@ def _close_scheduled_coroutine(coro):
 def _workflow_with_example_nodes():
     return SimpleNamespace(
         workflowId=WORKFLOW_ID,
+        orgId=None,
+        workspaceId=WORKSPACE_ID,
+        ownerType="user",
         variables={"catID": "response.body.id"},
         nodes=[
             Node(
@@ -129,10 +170,15 @@ def test_latest_failed_endpoint_returns_none_when_latest_run_is_success_even_if_
         session_patch,
         touch_patch,
         user_patch,
-        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
-        patch("app.routes.workflows.RunRepository.get_latest_run", return_value=latest_success),
+        patch(
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow", return_value=None
+        ),
+        patch("app.services.run_service.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.services.run_service.RunRepository.get_latest_run", return_value=latest_success),
     ):
-        response = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
+        response = client.get(
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/runs/latest-failed"
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -156,10 +202,15 @@ def test_latest_failed_endpoint_uses_latest_failed_when_latest_run_failed():
         session_patch,
         touch_patch,
         user_patch,
-        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
-        patch("app.routes.workflows.RunRepository.get_latest_run", return_value=latest_failed),
+        patch(
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow", return_value=None
+        ),
+        patch("app.services.run_service.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.services.run_service.RunRepository.get_latest_run", return_value=latest_failed),
     ):
-        response = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
+        response = client.get(
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/runs/latest-failed"
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -187,10 +238,15 @@ def test_latest_failed_endpoint_falls_back_to_node_statuses_when_failed_nodes_mi
         session_patch,
         touch_patch,
         user_patch,
-        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
-        patch("app.routes.workflows.RunRepository.get_latest_run", return_value=latest_failed),
+        patch(
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow", return_value=None
+        ),
+        patch("app.services.run_service.WorkflowRepository.get_by_id", return_value=workflow),
+        patch("app.services.run_service.RunRepository.get_latest_run", return_value=latest_failed),
     ):
-        response = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
+        response = client.get(
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/runs/latest-failed"
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -214,20 +270,27 @@ def test_resume_run_accepts_workflow_nodes_as_pydantic_models_regression_for_nod
         session_patch,
         touch_patch,
         user_patch,
-        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch(
-            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow", return_value=None
+        ),
+        patch("app.services.entitlements.require_can_rerun_from_failed", return_value=None),
+        patch("app.services.run_service.WorkflowRepository.get_by_id", return_value=workflow),
+        patch(
+            "app.services.run_service.EnvironmentRepository.get_by_id",
             return_value=SimpleNamespace(environmentId=ENV_ID),
         ),
         patch(
-            "app.routes.workflows.RunRepository.get_latest_failed_run", return_value=latest_failed
+            "app.services.run_service.RunRepository.get_latest_failed_run",
+            return_value=latest_failed,
         ),
-        patch("app.routes.workflows.RunRepository.get_by_id", return_value=latest_failed),
+        patch("app.services.run_service.RunRepository.get_by_id", return_value=latest_failed),
         patch("app.models.Run", _DummyRunInsert),
-        patch("app.routes.workflows.asyncio.create_task", side_effect=_close_scheduled_coroutine),
+        patch(
+            "app.services.run_service.asyncio.create_task", side_effect=_close_scheduled_coroutine
+        ),
     ):
         response = client.post(
-            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
             json={
                 "resume": {
                     "mode": "all-failed",
@@ -266,18 +329,26 @@ def test_resume_run_uses_node_status_fallback_when_source_failed_nodes_empty():
         session_patch,
         touch_patch,
         user_patch,
-        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch(
-            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow", return_value=None
+        ),
+        patch("app.services.entitlements.require_can_rerun_from_failed", return_value=None),
+        patch("app.services.run_service.WorkflowRepository.get_by_id", return_value=workflow),
+        patch(
+            "app.services.run_service.EnvironmentRepository.get_by_id",
             return_value=SimpleNamespace(environmentId=ENV_ID),
         ),
-        patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=source_run),
-        patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
+        patch(
+            "app.services.run_service.RunRepository.get_latest_failed_run", return_value=source_run
+        ),
+        patch("app.services.run_service.RunRepository.get_by_id", return_value=source_run),
         patch("app.models.Run", _DummyRunInsert),
-        patch("app.routes.workflows.asyncio.create_task", side_effect=_close_scheduled_coroutine),
+        patch(
+            "app.services.run_service.asyncio.create_task", side_effect=_close_scheduled_coroutine
+        ),
     ):
         response = client.post(
-            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
             json={
                 "resume": {
                     "mode": "all-failed",
@@ -302,15 +373,19 @@ def test_resume_run_returns_409_when_no_failed_run_exists_for_auto_resume():
         session_patch,
         touch_patch,
         user_patch,
-        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch(
-            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow", return_value=None
+        ),
+        patch("app.services.entitlements.require_can_rerun_from_failed", return_value=None),
+        patch("app.services.run_service.WorkflowRepository.get_by_id", return_value=workflow),
+        patch(
+            "app.services.run_service.EnvironmentRepository.get_by_id",
             return_value=SimpleNamespace(environmentId=ENV_ID),
         ),
-        patch("app.routes.workflows.RunRepository.get_latest_failed_run", return_value=None),
+        patch("app.services.run_service.RunRepository.get_latest_failed_run", return_value=None),
     ):
         response = client.post(
-            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
             json={"resume": {"mode": "single"}},
         )
 
@@ -327,20 +402,34 @@ def test_resume_run_returns_400_for_invalid_resume_node_ids():
         session_patch,
         touch_patch,
         user_patch,
-        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch(
-            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow", return_value=None
+        ),
+        patch("app.services.entitlements.require_can_rerun_from_failed", return_value=None),
+        patch("app.services.run_service.WorkflowRepository.get_by_id", return_value=workflow),
+        patch(
+            "app.services.run_service.EnvironmentRepository.get_by_id",
             return_value=SimpleNamespace(environmentId=ENV_ID),
         ),
-        patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
+        patch(
+            "app.services.run_service.RunRepository.get_latest_failed_run", return_value=source_run
+        ),
+        patch("app.services.run_service.RunRepository.get_by_id", return_value=source_run),
+        patch("app.models.Run", _DummyRunInsert),
+        patch(
+            "app.services.run_service.asyncio.create_task", side_effect=_close_scheduled_coroutine
+        ),
     ):
         response = client.post(
-            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
             json={
                 "resume": {
                     "mode": "all-failed",
-                    "sourceRunId": "run-source-3",
-                    "startNodeIds": ["does-not-exist"],
+                    "sourceRunId": "run-source",
+                    "startNodeIds": [
+                        "http-request-1761432741713",
+                        "http-request-1761477525560",
+                    ],
                 }
             },
         )
@@ -362,17 +451,22 @@ def test_resume_single_mode_trims_multiple_failed_nodes_to_first():
         session_patch,
         touch_patch,
         user_patch,
-        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch(
-            "app.routes.workflows.EnvironmentRepository.get_by_id",
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow", return_value=None
+        ),
+        patch("app.services.run_service.WorkflowRepository.get_by_id", return_value=workflow),
+        patch(
+            "app.services.run_service.EnvironmentRepository.get_by_id",
             return_value=SimpleNamespace(environmentId=ENV_ID),
         ),
-        patch("app.routes.workflows.RunRepository.get_by_id", return_value=source_run),
+        patch("app.services.run_service.RunRepository.get_by_id", return_value=source_run),
         patch("app.models.Run", _DummyRunInsert),
-        patch("app.routes.workflows.asyncio.create_task", side_effect=_close_scheduled_coroutine),
+        patch(
+            "app.services.run_service.asyncio.create_task", side_effect=_close_scheduled_coroutine
+        ),
     ):
         response = client.post(
-            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
             json={
                 "resume": {
                     "mode": "single",
@@ -406,14 +500,21 @@ def test_latest_failed_endpoint_follows_latest_run_transitions_failed_then_succe
         session_patch,
         touch_patch,
         user_patch,
-        patch("app.routes.workflows.WorkflowRepository.get_by_id", return_value=workflow),
         patch(
-            "app.routes.workflows.RunRepository.get_latest_run",
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow", return_value=None
+        ),
+        patch("app.services.run_service.WorkflowRepository.get_by_id", return_value=workflow),
+        patch(
+            "app.services.run_service.RunRepository.get_latest_run",
             side_effect=[latest_failed, latest_success],
         ),
     ):
-        first = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
-        second = client.get(f"/api/workflows/{WORKFLOW_ID}/runs/latest-failed")
+        first = client.get(
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/runs/latest-failed"
+        )
+        second = client.get(
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/runs/latest-failed"
+        )
 
     assert first.status_code == 200
     assert first.json()["hasFailedRun"] is True
@@ -448,6 +549,9 @@ def _three_node_workflow():
     """Workflow: start → http-1 → http-2 → http-3 → end."""
     return SimpleNamespace(
         workflowId=WORKFLOW_ID,
+        orgId=None,
+        workspaceId=WORKSPACE_ID,
+        ownerType="user",
         variables={},
         nodes=[
             Node(
@@ -512,25 +616,29 @@ def test_resume_skips_first():
         touch_patch,
         user_patch,
         patch(
-            "app.routes.workflows.WorkflowRepository.get_by_id",
+            "app.services.scoped_workflow_service._verify_workspace_and_workflow",
+            return_value=None,
+        ),
+        patch(
+            "app.services.entitlements.require_can_rerun_from_failed",
+            return_value=None,
+        ),
+        patch(
+            "app.services.run_service.WorkflowRepository.get_by_id",
             return_value=workflow,
         ),
         patch(
-            "app.routes.workflows.EnvironmentRepository.get_by_id",
-            return_value=SimpleNamespace(environmentId=ENV_ID),
-        ),
-        patch(
-            "app.routes.workflows.RunRepository.get_by_id",
+            "app.services.run_service.RunRepository.get_by_id",
             return_value=source_run,
         ),
         patch("app.models.Run", _DummyRunInsert),
         patch(
-            "app.routes.workflows.asyncio.create_task",
+            "app.services.run_service.asyncio.create_task",
             side_effect=_close_scheduled_coroutine,
         ),
     ):
         response = client.post(
-            f"/api/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
+            f"/api/workspaces/{WORKSPACE_ID}/workflows/{WORKFLOW_ID}/run?environmentId={ENV_ID}",
             json={
                 "resume": {
                     "mode": "all-failed",

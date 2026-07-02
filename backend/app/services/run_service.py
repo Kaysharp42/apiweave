@@ -13,7 +13,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
@@ -204,7 +204,14 @@ async def trigger_workflow_run(
         if resume_mode == "single" and len(start_node_ids) > 1:
             start_node_ids = [start_node_ids[0]]
 
-        invalid_node_ids = [node_id for node_id in start_node_ids if node_id not in node_ids]
+        # Resume entry points must be workflow nodes AND failed nodes of the
+        # source run — a run can only retry from nodes that actually failed.
+        source_failed = set(_derive_failed_node_ids(source_run))
+        invalid_node_ids = [
+            node_id
+            for node_id in start_node_ids
+            if node_id not in node_ids or node_id not in source_failed
+        ]
         if invalid_node_ids:
             raise ValueError(f"Invalid resume node(s): {invalid_node_ids}")
 
@@ -574,7 +581,7 @@ async def get_run_with_node_results(run_id: str, workflow_id: str) -> dict[str, 
                             grid_out = await gridfs_bucket.open_download_stream(
                                 ObjectId(gridfs_file_id)
                             )
-                            file_data = await grid_out.read()
+                            file_data: bytes = await grid_out.read()
                             actual_result = json.loads(file_data.decode("utf-8"))
                             run["nodeStatuses"][node_id] = {
                                 "status": full_result.get("status"),
@@ -602,7 +609,7 @@ async def get_run_with_node_results(run_id: str, workflow_id: str) -> dict[str, 
                         "timestamp": full_result.get("timestamp"),
                     }
 
-    return run
+    return cast(dict[str, Any], run)
 
 
 async def get_node_result(run_id: str, workflow_id: str, node_id: str) -> dict[str, Any]:
@@ -629,7 +636,7 @@ async def get_node_result(run_id: str, workflow_id: str, node_id: str) -> dict[s
         try:
             gridfs_bucket = AsyncIOMotorGridFSBucket(db)
             grid_out = await gridfs_bucket.open_download_stream(ObjectId(gridfs_file_id))
-            file_data = await grid_out.read()
+            file_data: bytes = await grid_out.read()
             full_result = json.loads(file_data.decode("utf-8"))
 
             return {
@@ -752,7 +759,7 @@ def _node_id(node: Any) -> str | None:
 
 def _node_label(node: Any, fallback: str) -> str:
     if isinstance(node, dict):
-        return node.get("label", fallback)
+        return str(node.get("label", fallback))
     return getattr(node, "label", fallback)
 
 
@@ -804,9 +811,9 @@ async def get_latest_failed_run(workflow_id: str) -> dict[str, Any]:
     node_map = {_node_id(node): node for node in workflow.nodes}
     node_map.pop(None, None)
 
-    failed_nodes = []
+    failed_nodes: list[dict[str, Any]] = []
     for nid in failed_node_ids:
-        node = node_map.get(nid, {})
+        node: Any = node_map.get(nid, {})
         node_status = latest_run.nodeStatuses.get(nid, {}) if latest_run.nodeStatuses else {}
         failed_nodes.append(
             {

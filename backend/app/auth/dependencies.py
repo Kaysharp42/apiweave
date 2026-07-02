@@ -86,13 +86,14 @@ async def get_current_user(request: Request) -> User:
     session = await get_current_session(request)
     await SessionRepository.touch(session.sessionId, datetime.now(UTC))
 
-    user = await UserRepository.get_by_id(session.userId)
-    if not user:
+    found_user = await UserRepository.get_by_id(session.userId)
+    if not found_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
 
+    user = found_user
     request.state.user = user
     return user
 

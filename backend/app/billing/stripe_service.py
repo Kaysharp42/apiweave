@@ -14,6 +14,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 import stripe
 from fastapi import HTTPException, status
@@ -22,6 +23,7 @@ from app.config import settings
 from app.models import Subscription, User
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.subscription_repository import SubscriptionRepository
+from app.utils.slug import validate_slug
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +63,8 @@ async def create_checkout_session(
     if plan not in ("individual", "team"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown plan")
 
-    common = {
-        "mode": "subscription",
-        "success_url": _abs_url(settings.BILLING_SUCCESS_URL),
-        "cancel_url": _abs_url(settings.BILLING_CANCEL_URL),
-        "client_reference_id": user.userId,
-        "customer_email": user.verified_email,
-    }
+    success_url = _abs_url(settings.BILLING_SUCCESS_URL)
+    cancel_url = _abs_url(settings.BILLING_CANCEL_URL)
 
     if plan == "individual":
         if not settings.STRIPE_PRICE_INDIVIDUAL:
@@ -81,9 +78,13 @@ async def create_checkout_session(
                 }
             ],
             metadata={"subject_type": "user", "subject_id": user.userId, "plan": "individual"},
-            **common,
+            mode="subscription",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            client_reference_id=user.userId,
+            customer_email=user.verified_email,
         )
-        return session.url
+        return _session_url(session.url)
 
     # team — checkout-first: org is created by the webhook on success.
     if not settings.STRIPE_PRICE_TEAM:
@@ -92,6 +93,7 @@ async def create_checkout_session(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "org_name and org_slug are required for Teams"
         )
+    normalized_slug = await _normalize_available_org_slug(org_slug)
     session = stripe.checkout.Session.create(
         line_items=[{"price": settings.STRIPE_PRICE_TEAM, "quantity": max(1, seats)}],
         metadata={
@@ -99,11 +101,51 @@ async def create_checkout_session(
             "plan": "team",
             "owner_user_id": user.userId,
             "org_name": org_name,
-            "org_slug": org_slug,
+            "org_slug": normalized_slug,
         },
-        **common,
+        mode="subscription",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        client_reference_id=user.userId,
+        customer_email=user.verified_email,
     )
-    return session.url
+    return _session_url(session.url)
+
+
+def _session_url(url: str | None) -> str:
+    if not url:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Stripe did not return a session URL")
+    return url
+
+
+async def _normalize_available_org_slug(org_slug: str) -> str:
+    try:
+        normalized_slug = validate_slug(org_slug)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid organization slug") from exc
+
+    existing = await OrganizationRepository.get_by_slug(normalized_slug)
+    if existing:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {"error": "slug_conflict", "slug": normalized_slug},
+        )
+    return normalized_slug
+
+
+async def _require_portal_access(*, user: User, owner_type: str, owner_id: str) -> None:
+    if owner_type == "user":
+        if owner_id != user.userId:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your subscription")
+        return
+
+    if owner_type == "organization":
+        from app.services import org_service
+
+        await org_service.require_org_owner(owner_id, user.userId)
+        return
+
+    raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown billing owner")
 
 
 async def create_portal_session(
@@ -111,6 +153,7 @@ async def create_portal_session(
 ) -> str:
     """Return a Stripe Customer Portal URL for the subject's subscription."""
     _client()
+    await _require_portal_access(user=user, owner_type=owner_type, owner_id=owner_id)
     sub = await SubscriptionRepository.get_for(owner_type, owner_id)
     if sub is None or not sub.stripeCustomerId:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No active subscription")
@@ -126,24 +169,29 @@ async def create_portal_session(
 # ---------------------------------------------------------------------------
 
 
-def parse_event(payload: bytes, sig_header: str) -> stripe.Event:
+def parse_event(payload: bytes, sig_header: str) -> dict[str, Any]:
     if not settings.STRIPE_WEBHOOK_SECRET:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Webhook not configured")
     try:
-        return stripe.Webhook.construct_event(payload, sig_header, settings.STRIPE_WEBHOOK_SECRET)
+        return _as_dict(
+            stripe.Webhook.construct_event(payload, sig_header, settings.STRIPE_WEBHOOK_SECRET)
+        )
     except (ValueError, stripe.SignatureVerificationError) as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid webhook signature") from e
 
 
-def _as_dict(obj: object) -> dict:
+def _as_dict(obj: object) -> dict[str, Any]:
     """Stripe SDK objects don't expose dict.get the way plain dicts do; their
     str() is a JSON dump, so round-trip to a fully-plain nested dict."""
     if isinstance(obj, dict):
-        return obj
-    return json.loads(str(obj))
+        return {str(key): value for key, value in obj.items()}
+    parsed = json.loads(str(obj))
+    if not isinstance(parsed, dict):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Stripe payload")
+    return {str(key): value for key, value in parsed.items()}
 
 
-async def handle_event(event: stripe.Event) -> None:
+async def handle_event(event: dict[str, Any]) -> None:
     _client()  # webhook path also needs stripe.api_key set for retrieve()
     kind = event["type"]
     obj = _as_dict(event["data"]["object"])
@@ -199,7 +247,10 @@ async def _on_checkout_completed(session: dict) -> None:
     plan = meta.get("plan")
     customer_id = session.get("customer")
     sub_id = session.get("subscription")
-    if not sub_id:
+    if not isinstance(sub_id, str):
+        return
+    if not isinstance(customer_id, str):
+        logger.error("Stripe checkout session %s has no customer", session.get("id"))
         return
     stripe_sub = _as_dict(stripe.Subscription.retrieve(sub_id))
 
@@ -220,12 +271,25 @@ async def _on_checkout_completed(session: dict) -> None:
         if owner is None:
             logger.error("Team checkout for unknown user %s", meta.get("owner_user_id"))
             return
-        org = await org_service.create_org(
-            name=meta["org_name"],
-            slug=meta["org_slug"],
-            owner_user=owner,
-            skip_entitlement=True,
-        )
+        org_slug = _safe_checkout_org_slug(meta.get("org_slug"))
+        try:
+            org = await org_service.create_org(
+                name=meta["org_name"],
+                slug=org_slug,
+                owner_user=owner,
+                skip_entitlement=True,
+            )
+        except HTTPException as exc:
+            if exc.status_code != status.HTTP_409_CONFLICT:
+                raise
+            org_slug = f"{org_slug}_{uuid.uuid4().hex[:8]}"
+            logger.warning("Team checkout slug was claimed before webhook; using %s", org_slug)
+            org = await org_service.create_org(
+                name=meta["org_name"],
+                slug=org_slug,
+                owner_user=owner,
+                skip_entitlement=True,
+            )
         await _upsert(
             owner_type="organization",
             owner_id=org.orgId,
@@ -235,14 +299,29 @@ async def _on_checkout_completed(session: dict) -> None:
         )
 
 
+def _safe_checkout_org_slug(raw_slug: str | None) -> str:
+    try:
+        return validate_slug(raw_slug or "")
+    except ValueError:
+        fallback_slug = f"team_{uuid.uuid4().hex[:8]}"
+        logger.warning("Team checkout had invalid org slug; using %s", fallback_slug)
+        return fallback_slug
+
+
 async def _on_subscription_changed(stripe_sub: dict) -> None:
-    existing = await SubscriptionRepository.get_by_stripe_subscription(stripe_sub.get("id"))
+    stripe_sub_id = stripe_sub.get("id")
+    if not isinstance(stripe_sub_id, str):
+        return
+    existing = await SubscriptionRepository.get_by_stripe_subscription(stripe_sub_id)
     if existing is None:
         return  # not ours / not yet recorded
+    customer_id = existing.stripeCustomerId or stripe_sub.get("customer")
+    if not isinstance(customer_id, str):
+        return
     await _upsert(
         owner_type=existing.ownerType,
         owner_id=existing.ownerId,
         plan=existing.plan,
         stripe_sub=stripe_sub,
-        customer_id=existing.stripeCustomerId or stripe_sub.get("customer"),
+        customer_id=customer_id,
     )

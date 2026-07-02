@@ -227,8 +227,7 @@ async def auth_middleware(request: Request, call_next):
         return _mcp_error_response(
             request,
             401,
-            "Unauthorized: scoped service token required. "
-            "Use Bearer awst_... authentication.",
+            "Unauthorized: scoped service token required. " "Use Bearer awst_... authentication.",
         )
 
     if not bearer_token.startswith(_SERVICE_TOKEN_PREFIX):
@@ -236,8 +235,7 @@ async def auth_middleware(request: Request, call_next):
         return _mcp_error_response(
             request,
             401,
-            "Unauthorized: invalid token format. "
-            "Scoped service tokens start with 'awst_'.",
+            "Unauthorized: invalid token format. " "Scoped service tokens start with 'awst_'.",
         )
 
     if not await _validate_and_set_scope(request, bearer_token):
@@ -293,7 +291,7 @@ def check_token_scope(
     """
     if not token:
         return False
-    return token.scopeType == expected_scope_type and token.scopeId == expected_scope_id
+    return bool(token.scopeType == expected_scope_type and token.scopeId == expected_scope_id)
 
 
 def check_token_permission(token, required_permission: str) -> bool:

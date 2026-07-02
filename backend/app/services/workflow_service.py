@@ -5,7 +5,7 @@ Called by both FastAPI routes and MCP tools.
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from app.models import (
     EnvironmentCreate,
@@ -96,7 +96,9 @@ async def attach_to_collection(workflow_id: str, collection_id: str | None) -> W
         collection = await CollectionRepository.get_by_id(collection_id)
         if not collection:
             raise ValueError(f"Collection {collection_id} not found")
-    return await WorkflowRepository.update_collection_assignment(workflow_id, collection_id)
+    return cast(
+        Workflow, await WorkflowRepository.update_collection_assignment(workflow_id, collection_id)
+    )
 
 
 async def list_by_collection(collection_id: str) -> list[Workflow]:
@@ -247,7 +249,9 @@ async def import_workflow(
 
     logger.warning(
         "import_workflow: sanitize=%r type=%s workflow_id_param=%r",
-        sanitize, type(sanitize).__name__, workspace_id,
+        sanitize,
+        type(sanitize).__name__,
+        workspace_id,
     )
     if sanitize:
         if workflow_data.get("variables"):
