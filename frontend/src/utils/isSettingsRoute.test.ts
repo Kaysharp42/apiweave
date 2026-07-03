@@ -16,6 +16,7 @@ describe("isSettingsRoute", () => {
 
   it("does not match workflow/home routes", () => {
     expect(isSettingsRoute("/personal/personal/workflows")).toBe(false);
+    expect(isSettingsRoute("/organizationsXYZ")).toBe(false);
     expect(isSettingsRoute("/app")).toBe(false);
     expect(isSettingsRoute("/")).toBe(false);
   });

@@ -7,8 +7,8 @@ Scope binding (roadmap §3.4): these flat routes previously used only a GLOBAL
 require_permission check, so any session holding the global runs role could
 read/cancel ANY tenant's run, and list_runs returned every tenant's runs.
 Each route now resolves the run (or target workflow) to its workspace and
-evaluates the scoped permission against the caller's membership — 404 for
-non-members (existence-hiding), 403 for members lacking the action.
+evaluates the scoped permission against the caller's membership. Failed scope
+checks return 404 to hide cross-tenant resource existence.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -40,17 +40,17 @@ _NOT_FOUND = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run no
 
 
 async def _authorize_workspace(user: User, workspace_id: str | None, action: str) -> None:
-    """404 if the caller can't access the workspace, 403 if they lack the action.
+    """Raise 404 when the caller cannot perform the action in the workspace.
 
     A run/workflow with no workspaceId predates scoping; treat it as not found
-    rather than globally readable.
+    rather than globally readable. Permission failures also return 404 to keep
+    flat run endpoints existence-hiding.
     """
     if not workspace_id:
         raise _NOT_FOUND
     if not await evaluate_scoped_permission(user, "runs", action, workspace_id=workspace_id):
-        # Distinguish "not a member" (404) from "member without permission" (403)
-        # would require a second lookup; a 404 here is the safe, existence-hiding
-        # default and matches the secret routes.
+        # Keep flat run endpoints existence-hiding for both non-members and
+        # members without the requested action.
         raise _NOT_FOUND
 
 
