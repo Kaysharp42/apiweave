@@ -2,6 +2,7 @@ import { Github, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Tippy from "@tippyjs/react";
 import { IconButton } from "../atoms/IconButton";
 import useNavigationStore from "../../stores/NavigationStore";
+import { version as appVersion } from "../../../package.json";
 
 export function MainFooter() {
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
@@ -13,7 +14,7 @@ export function MainFooter() {
     <footer className="flex h-footer min-h-0 items-center justify-between border-t border-border bg-surface-raised px-4 font-mono text-xs text-text-secondary transition-colors dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark">
       <div className="flex items-center gap-2">
         <span className="rounded-full border border-border bg-surface-overlay px-2 py-0.5 text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
-          v0.1.0
+          v{appVersion}
         </span>
       </div>
 

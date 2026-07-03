@@ -14,9 +14,16 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 3000,
     host: true,
+    allowedHosts: process.env.FRONTEND_ALLOWED_HOST
+      ? [process.env.FRONTEND_ALLOWED_HOST]
+      : undefined,
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        target: process.env.BACKEND_INTERNAL_URL || "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/mcp": {
+        target: process.env.BACKEND_INTERNAL_URL || "http://localhost:8000",
         changeOrigin: true,
       },
     },

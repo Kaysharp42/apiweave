@@ -6,16 +6,40 @@ cd "$ROOT_DIR/backend"
 
 echo "Setting up Backend..."
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "Error: python3 not found on PATH. Install Python 3.8+ and try again." >&2
+PYTHON_BIN=""
+for candidate in python3.13 python3.12 python3; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    PYTHON_BIN="$candidate"
+    break
+  fi
+done
+
+if [ -z "$PYTHON_BIN" ]; then
+  echo "Error: Python 3.12+ not found on PATH. Install Python 3.12 or 3.13 and try again." >&2
+  exit 1
+fi
+
+PYTHON_VERSION="$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+PYTHON_MAJOR="${PYTHON_VERSION%%.*}"
+PYTHON_MINOR="${PYTHON_VERSION#*.}"
+
+if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 12 ]; }; then
+  echo "Error: $PYTHON_BIN is Python $PYTHON_VERSION, but APIWeave requires Python 3.12+." >&2
+  echo "Install Python 3.12 or 3.13, then rerun setup with that interpreter available on PATH." >&2
   exit 1
 fi
 
 if [ -d venv ]; then
-  echo "Virtual environment already exists at ./venv. Skipping creation.";
+  VENV_VERSION="$(./venv/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo unknown)"
+  if [ "$VENV_VERSION" != "unknown" ] && { [ "${VENV_VERSION%%.*}" -lt 3 ] || { [ "${VENV_VERSION%%.*}" -eq 3 ] && [ "${VENV_VERSION#*.}" -lt 12 ]; }; }; then
+    echo "Existing virtual environment uses Python $VENV_VERSION, which is too old for APIWeave."
+    echo "Remove backend/venv and rerun setup after installing Python 3.12 or 3.13."
+    exit 1
+  fi
+  echo "Virtual environment already exists at ./venv and is compatible. Skipping creation."
 else
   echo "Creating virtual environment..."
-  python3 -m venv venv
+  "$PYTHON_BIN" -m venv venv
 fi
 
 echo "Activating virtual environment..."

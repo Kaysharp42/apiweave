@@ -153,7 +153,9 @@ async def send_invite_email(
             port=settings.SMTP_PORT,
             username=settings.SMTP_USERNAME,
             password=settings.SMTP_PASSWORD,
-            use_tls=settings.SMTP_TLS,
+            start_tls=settings.SMTP_TLS,
+            use_tls=settings.SMTP_USE_SSL,
+            validate_certs=settings.SMTP_TLS_VERIFY,
         )
         logger.info("Invite email sent to %s for invite %s", invite.email, invite.inviteId)
         return True

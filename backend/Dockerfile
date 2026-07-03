@@ -2,13 +2,13 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install dependencies
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e .
-
 # Copy application
+COPY pyproject.toml .
 COPY app/ ./app/
 COPY mcp_stdio.py .
+
+# Install dependencies
+RUN pip install --no-cache-dir -e .
 
 # Expose port
 EXPOSE 8000

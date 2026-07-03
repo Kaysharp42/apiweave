@@ -1,11 +1,7 @@
-version: '3.8'
-
 services:
   mongodb:
     image: mongo:7
     container_name: apiweave-mongodb
-    ports:
-      - "27017:27017"
     volumes:
       - mongodb_data:/data/db
     environment:
@@ -17,16 +13,12 @@ services:
       dockerfile: Dockerfile
     container_name: apiweave-backend
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8210}:8000"
+    env_file:
+      - ./backend/.env
     environment:
       - MONGODB_URL=mongodb://mongodb:27017
       - MONGODB_DB_NAME=apiweave
-      - DEBUG=true
-      - MCP_ENABLED=true
-      - MCP_HTTP_ENABLED=true
-      - MCP_API_KEY=dev-api-key-change-in-production
-      - MCP_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-      - MCP_REQUIRE_API_KEY=false
     depends_on:
       - mongodb
     volumes:
@@ -39,10 +31,11 @@ services:
       dockerfile: Dockerfile
     container_name: apiweave-mcp-stdio
     command: python mcp_stdio.py
+    env_file:
+      - ./backend/.env
     environment:
       - MONGODB_URL=mongodb://mongodb:27017
       - MONGODB_DB_NAME=apiweave
-      - MCP_ENABLED=true
       - MCP_HTTP_ENABLED=false
     depends_on:
       - mongodb
@@ -58,6 +51,8 @@ services:
       dockerfile: Dockerfile
     container_name: apiweave-worker
     command: python -m app.worker
+    env_file:
+      - ./backend/.env
     environment:
       - MONGODB_URL=mongodb://mongodb:27017
       - MONGODB_DB_NAME=apiweave
@@ -74,9 +69,12 @@ services:
       dockerfile: Dockerfile
     container_name: apiweave-frontend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3210}:3000"
+    env_file:
+      - ./frontend/.env
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - BACKEND_INTERNAL_URL=http://backend:8000
+      - FRONTEND_ALLOWED_HOST=${FRONTEND_ALLOWED_HOST:-apiweave.kaysharp.com}
     depends_on:
       - backend
     volumes:
