@@ -2,7 +2,7 @@
 
 All notable changes to APIWeave are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] - 2026-06-17
+## [0.5.0] - 2026-06-17
 
 The 2.0 release replaces the flat global resource model with a GitHub-style multi-tenant design. Every user gets a personal workspace, organizations own workspaces, projects replace collections, environments and secrets are scoped, and secret values are write-only.
 

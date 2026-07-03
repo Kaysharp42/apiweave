@@ -1,6 +1,6 @@
 [project]
 name = "apiweave"
-version = "0.1.0"
+version = "0.5.0"
 description = "Visual API Test Workflows Made Simple"
 authors = [{name = "Ahmed KHIARI"}]
 readme = "README.md"
