@@ -29,6 +29,7 @@ from app.models import Edge, Node, WorkflowCreate, WorkflowUpdate
 from app.repositories.workflow_repository import WorkflowRepository
 from app.services.scoped_environment_service import resolve_run_environment
 from app.services.scoped_workflow_service import (
+    add_node_to_scoped_workflow,
     create_scoped_workflow,
     delete_scoped_workflow,
     get_scoped_workflow,
@@ -245,6 +246,66 @@ async def workflow_update(
             workflow_id=workflow_id,
             update_data=WorkflowUpdate(**update_data),
             actor_user_id=scope.actor_id,
+        )
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+    return _workflow_dict_to_detail(result)
+
+
+async def workflow_add_node(
+    workflow_id: Annotated[str, Field(description="Workflow ID to add a node to.")],
+    node: Annotated[
+        Node,
+        Field(description="The node to add: {nodeId, type, config, position, label}."),
+    ],
+    after: Annotated[
+        str | None,
+        Field(
+            description="nodeId that should connect INTO the new node (its predecessor); "
+            "creates an after->node edge."
+        ),
+    ] = None,
+    before: Annotated[
+        str | None,
+        Field(
+            description="nodeId the new node should connect TO (its successor); "
+            "creates a node->before edge."
+        ),
+    ] = None,
+    source_handle: Annotated[
+        str | None,
+        Field(
+            description="Handle on the `after` node for branching sources "
+            "(e.g. 'pass'/'fail' on assertion/condition nodes)."
+        ),
+    ] = None,
+    edge_label: Annotated[
+        str | None,
+        Field(description="Label for the incoming (after->node) edge, e.g. 'Pass'/'Fail'."),
+    ] = None,
+    splice: Annotated[
+        bool,
+        Field(
+            description="If `after` and `before` are directly connected, remove that direct "
+            "edge so the new node is inserted between them."
+        ),
+    ] = True,
+) -> WorkflowDetail:
+    """Add a single node (and its neighbour edges) without resending the whole graph."""
+    await ensure_mcp_database()
+    scope = require_scope()
+
+    try:
+        result = await add_node_to_scoped_workflow(
+            workspace_id=scope.scope_id,
+            workflow_id=workflow_id,
+            node=node,
+            actor_user_id=scope.actor_id,
+            after=after,
+            before=before,
+            source_handle=source_handle,
+            edge_label=edge_label,
+            splice=splice,
         )
     except Exception as exc:
         raise ValueError(str(exc)) from exc
@@ -521,6 +582,17 @@ def register_workflow_tools(server: FastMCP) -> None:
             + WORKFLOW_GRAMMAR_REFERENCE
         ),
     )(workflow_update)
+    server.tool(
+        name="workflow_add_node",
+        description=(
+            "Add ONE node to a workflow without resending the whole graph — use this "
+            "instead of workflow_update for incremental edits. Pass `after` (predecessor "
+            "nodeId) and/or `before` (successor nodeId) to auto-wire edges; if the two are "
+            "directly connected the new node is spliced between them. Use `source_handle` "
+            "('pass'/'fail') to branch off assertion/condition nodes."
+            + WORKFLOW_GRAMMAR_REFERENCE
+        ),
+    )(workflow_add_node)
     server.tool(
         name="workflow_export",
         description="Export a sanitized workflow bundle from the authenticated workspace.",

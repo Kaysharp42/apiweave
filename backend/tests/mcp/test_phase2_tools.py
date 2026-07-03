@@ -170,6 +170,96 @@ async def test_workflow_update_omits_unset_fields(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_add_node_splices_between_neighbours(monkeypatch):
+    from app.services import scoped_workflow_service as svc
+
+    existing = SimpleNamespace(
+        nodes=[Node(nodeId="n1", type="start"), Node(nodeId="n2", type="end")],
+        edges=[Edge(edgeId="e1", source="n1", target="n2")],
+    )
+    captured = {}
+
+    async def fake_get_by_id(_wid):
+        return object()
+
+    async def fake_assert(_ws, _actor):
+        return None
+
+    async def fake_get_in_ws(_wid, _wsid):
+        return existing
+
+    async def fake_update(_wid, update_data):
+        captured["update"] = update_data
+        return SimpleNamespace(
+            workflowId="wf-1",
+            name="w",
+            description=None,
+            workspaceId="ws-test",
+            collectionId=None,
+            orgId=None,
+            ownerType=None,
+            nodes=update_data.nodes,
+            edges=update_data.edges,
+            variables={},
+            tags=[],
+            selectedEnvironmentId=None,
+            createdAt=None,
+            updatedAt=None,
+            version=1,
+        )
+
+    monkeypatch.setattr(svc.WorkspaceRepository, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(svc, "_assert_workspace_access", fake_assert)
+    monkeypatch.setattr(svc.WorkflowRepository, "get_by_id_in_workspace", fake_get_in_ws)
+    monkeypatch.setattr(svc.WorkflowRepository, "update", fake_update)
+
+    await svc.add_node_to_scoped_workflow(
+        workspace_id="ws-test",
+        workflow_id="wf-1",
+        node=Node(nodeId="nX", type="http-request"),
+        actor_user_id="token-test",
+        after="n1",
+        before="n2",
+    )
+
+    edges = {(e.source, e.target) for e in captured["update"].edges}
+    # Old direct edge spliced out; new node wired in between.
+    assert ("n1", "n2") not in edges
+    assert ("n1", "nX") in edges
+    assert ("nX", "n2") in edges
+    assert len(captured["update"].nodes) == 3
+
+
+@pytest.mark.asyncio
+async def test_add_node_rejects_unknown_neighbour(monkeypatch):
+    from app.services import scoped_workflow_service as svc
+
+    existing = SimpleNamespace(nodes=[Node(nodeId="n1", type="start")], edges=[])
+
+    async def fake_get_by_id(_wid):
+        return object()
+
+    async def fake_assert(_ws, _actor):
+        return None
+
+    async def fake_get_in_ws(_wid, _wsid):
+        return existing
+
+    monkeypatch.setattr(svc.WorkspaceRepository, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(svc, "_assert_workspace_access", fake_assert)
+    monkeypatch.setattr(svc.WorkflowRepository, "get_by_id_in_workspace", fake_get_in_ws)
+
+    with pytest.raises(ValueError, match="after node 'ghost' not found"):
+        await svc.add_node_to_scoped_workflow(
+            workspace_id="ws-test",
+            workflow_id="wf-1",
+            node=Node(nodeId="nX", type="delay"),
+            actor_user_id="token-test",
+            after="ghost",
+        )
+
+
+@pytest.mark.asyncio
 async def test_workflow_export_wraps_sanitized_bundle(monkeypatch):
     captured = {}
 
