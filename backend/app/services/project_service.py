@@ -28,7 +28,6 @@ def _project_to_response(project: Any) -> dict[str, Any]:
     """Convert a Project document to a response dict using project terminology."""
     return {
         "projectId": project.projectId or project.collectionId,
-        "collectionId": project.collectionId,
         "name": project.name,
         "description": project.description,
         "color": project.color,
@@ -63,6 +62,11 @@ async def create_project(
         raise ResourceNotFoundError(f"Workspace {workspace_id} not found")
 
     await _assert_workspace_access(ws, actor_user_id)
+
+    # Billing seam: projects are a paid feature (Free tier has none).
+    from app.services import entitlements
+
+    await entitlements.require_can_create_project(workspace_id)
 
     project_id = f"prj-{uuid.uuid4().hex[:16]}"
     project = await ProjectRepository.create(

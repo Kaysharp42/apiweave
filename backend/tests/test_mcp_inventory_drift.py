@@ -7,7 +7,6 @@ environment_get_active, environment_activate) must NOT be present.
 """
 
 import pytest
-
 from app.mcp.server import mcp_server, register_tools
 
 # ── Source-of-truth: expected scoped tool inventory ──────────────────────────
@@ -18,11 +17,12 @@ EXPECTED_SCOPED_TOOLS = sorted(
         "server_info",
         # Capability discovery (catalogs tools/resources/grammar for agents)
         "mcp_describe_capabilities",
-        # Scoped workflow tools (10)
+        # Scoped workflow tools (11)
         "workflow_list",
         "workflow_get",
         "workflow_create",
         "workflow_update",
+        "workflow_add_node",
         "workflow_export",
         "workflow_import",
         "workflow_import_dry_run",

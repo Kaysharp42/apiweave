@@ -26,13 +26,13 @@
 
 ## What Is a Webhook
 
-A webhook is a workspace-scoped credential pair that lets an external system (a CI/CD pipeline, a deploy bot, a scheduler) start a workflow or project run on demand. The external system calls `POST /api/orgs/{orgSlug}/workspaces/{workspaceSlug}/webhooks/{id}/execute` with the right headers, and APIWeave starts the run. The trigger is **machine-to-machine**: the caller authenticates with the workspace's scoped service token plus the webhook's HMAC signature, not with a human session.
+A webhook is a workspace-scoped credential pair that lets an external system (a CI/CD pipeline, a deploy bot, a scheduler) start a workflow or project run on demand. The external system calls `POST /api/webhooks/workflows/{webhookId}/execute` or `POST /api/webhooks/collections/{webhookId}/execute` with the right headers, and APIWeave starts the run. The trigger is **machine-to-machine**: the caller authenticates with the workspace's scoped service token plus the webhook's HMAC signature, not with a human session.
 
 Webhooks are bound to a workspace. An organization-scoped webhook does not exist in 2.0; a webhook always lives in the workspace that owns the workflow or project the trigger fires. If you need cross-workspace triggers, create a webhook in each workspace.
 
 ## Webhook Management
 
-Webhook management is a human action done in the UI or through the workspace-scoped `/api/orgs/{orgSlug}/workspaces/{workspaceSlug}/webhooks` CRUD API. You need an APIWeave SSO session with the workspace's `webhooks:create`, `webhooks:read`, or `webhooks:delete` permission, and the standard CSRF token for state-changing browser calls. CI/CD systems do **not** use these management endpoints; they use the execution endpoint with the machine token.
+Webhook management is a human action done in the UI or through the scope-bound `/api/webhooks` CRUD API. You need an APIWeave SSO session with the workspace's `webhooks:create`, `webhooks:read`, or `webhooks:delete` permission, and the standard CSRF token for state-changing browser calls. CI/CD systems do **not** use these management endpoints; they use the execution endpoint with the machine token.
 
 ### Create a webhook (UI)
 
@@ -46,7 +46,7 @@ Webhook management is a human action done in the UI or through the workspace-sco
 ### Create a webhook (API)
 
 ```bash
-curl -X POST "$BASE_URL/api/orgs/$ORG_SLUG/workspaces/$WORKSPACE_SLUG/webhooks" \
+curl -X POST "$BASE_URL/api/webhooks" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: $CSRF_TOKEN" \
   -H "Cookie: session=$SESSION_COOKIE" \
@@ -118,7 +118,7 @@ With `WEBHOOK_REQUIRE_HMAC=false`, you can call the execute endpoint with only `
 A retried CI/CD call must not start a second run. Send a unique `Idempotency-Key` header:
 
 ```bash
-curl -X POST "$BASE_URL/api/orgs/$ORG_SLUG/workspaces/$WORKSPACE_SLUG/webhooks/$WEBHOOK_ID/execute" \
+curl -X POST "$BASE_URL/api/webhooks/workflows/$WEBHOOK_ID/execute" \
   -H "X-Webhook-Token: $TOKEN" \
   -H "Idempotency-Key: $CI_PIPELINE_ID-$BUILD_NUMBER" \
   -H "Content-Type: application/json" \
@@ -146,7 +146,7 @@ Response headers on every execution call:
 | `X-RateLimit-Reset` | Unix epoch timestamp when the window resets. |
 | `Retry-After` | Seconds to wait before retrying (present on `429`). |
 
-A multi-process API deployment enforces the limit per process when using the in-memory limiter. Run a single API process for the exact 100/hour number, or put an external limiter in front until a shared-backend limiter ships.
+Memory-backed limiting is per process and is intended for local or single-instance deployments. Public multi-instance hosts should set `RATE_LIMITER_BACKEND=mongodb` so every API process shares one atomic per-webhook counter.
 
 ## CI/CD Integration
 
@@ -169,8 +169,6 @@ jobs:
       - name: Trigger Webhook (HMAC)
         env:
           BASE_URL: ${{ secrets.APIWEAVE_BASE_URL }}
-          ORG_SLUG: ${{ secrets.APIWEAVE_ORG_SLUG }}
-          WORKSPACE_SLUG: ${{ secrets.APIWEAVE_WORKSPACE_SLUG }}
           TOKEN: ${{ secrets.APIWEAVE_WEBHOOK_TOKEN }}
           SECRET: ${{ secrets.APIWEAVE_HMAC_SECRET }}
           KEY: ${{ github.run_id }}-${{ github.run_number }}
@@ -181,7 +179,7 @@ jobs:
             | openssl dgst -sha256 -hmac "$SECRET" \
             | awk '{print $2}')
           echo "::add-mask::$SIGNATURE"
-          curl -X POST "$BASE_URL/api/orgs/$ORG_SLUG/workspaces/$WORKSPACE_SLUG/webhooks/${{ secrets.APIWEAVE_WEBHOOK_ID }}/execute" \
+          curl -X POST "$BASE_URL/api/webhooks/workflows/${{ secrets.APIWEAVE_WEBHOOK_ID }}/execute" \
             -H "X-Webhook-Token: $TOKEN" \
             -H "X-Webhook-Signature: $SIGNATURE" \
             -H "X-Webhook-Timestamp: $TIMESTAMP" \
@@ -204,7 +202,7 @@ trigger_tests:
       SIGNATURE=$(printf '%s%s' "$TIMESTAMP" "$BODY" \
         | openssl dgst -sha256 -hmac "${APIWEAVE_HMAC_SECRET}" \
         | awk '{print $2}')
-      curl -X POST "${APIWEAVE_BASE_URL}/api/orgs/${APIWEAVE_ORG_SLUG}/workspaces/${APIWEAVE_WORKSPACE_SLUG}/webhooks/${APIWEAVE_WEBHOOK_ID}/execute" \
+      curl -X POST "${APIWEAVE_BASE_URL}/api/webhooks/workflows/${APIWEAVE_WEBHOOK_ID}/execute" \
         -H "X-Webhook-Token: ${APIWEAVE_WEBHOOK_TOKEN}" \
         -H "X-Webhook-Signature: ${SIGNATURE}" \
         -H "X-Webhook-Timestamp: ${TIMESTAMP}" \
@@ -225,8 +223,6 @@ pipeline {
             steps {
                 withCredentials([
                     string(credentialsId: 'apiweave-base-url',     variable: 'APIWEAVE_BASE_URL'),
-                    string(credentialsId: 'apiweave-org-slug',     variable: 'APIWEAVE_ORG_SLUG'),
-                    string(credentialsId: 'apiweave-workspace-slug', variable: 'APIWEAVE_WORKSPACE_SLUG'),
                     string(credentialsId: 'apiweave-token',         variable: 'APIWEAVE_WEBHOOK_TOKEN'),
                     string(credentialsId: 'apiweave-hmac-secret',  variable: 'APIWEAVE_HMAC_SECRET')
                 ]) {
@@ -236,7 +232,7 @@ pipeline {
                         SIGNATURE=$(printf "%s%s" "$TIMESTAMP" "$BODY" \
                           | openssl dgst -sha256 -hmac "$APIWEAVE_HMAC_SECRET" \
                           | awk "{print \$2}")
-                        curl -X POST "${APIWEAVE_BASE_URL}/api/orgs/${APIWEAVE_ORG_SLUG}/workspaces/${APIWEAVE_WORKSPACE_SLUG}/webhooks/${APIWEAVE_WEBHOOK_ID}/execute" \
+                        curl -X POST "${APIWEAVE_BASE_URL}/api/webhooks/workflows/${APIWEAVE_WEBHOOK_ID}/execute" \
                           -H "X-Webhook-Token: ${APIWEAVE_WEBHOOK_TOKEN}" \
                           -H "X-Webhook-Signature: ${SIGNATURE}" \
                           -H "X-Webhook-Timestamp: ${TIMESTAMP}" \
@@ -258,7 +254,7 @@ Each `/execute` call writes a `WebhookLog` document scoped to the workspace, wit
 View logs from the UI by opening the webhook and clicking `Logs`, or fetch them through the workspace API:
 
 ```bash
-curl "$BASE_URL/api/orgs/$ORG_SLUG/workspaces/$WORKSPACE_SLUG/webhooks/$WEBHOOK_ID/logs?limit=50" \
+curl "$BASE_URL/api/webhooks/$WEBHOOK_ID/logs?limit=50" \
   -H "Cookie: session=$SESSION_COOKIE"
 ```
 
@@ -269,11 +265,11 @@ The `result` field is `accepted` for a successful run start, or `rejected_*` for
 - **If you get `401 Invalid or missing token`**, the `X-Webhook-Token` header is missing, mistyped, or from a webhook that was regenerated. Copy the current token from the Webhooks page (you may need to regenerate) and update the CI/CD secret store.
 - **If you get `401 Missing X-Webhook-Signature header`**, the server has `WEBHOOK_REQUIRE_HMAC=true` and the request did not include `X-Webhook-Signature` and `X-Webhook-Timestamp`. Compute the signature over `timestamp + body`, send all three headers, and re-run.
 - **If you get `403 Webhook disabled`**, the webhook was disabled in the UI. Re-enable it from the Webhooks page, or call the management API to flip the `enabled` flag.
-- **If you get `404 Webhook not found`**, the webhook id in the URL is wrong, or the webhook was deleted. Check `GET /api/orgs/{orgSlug}/workspaces/{workspaceSlug}/webhooks` for the list of ids in the workspace and confirm the URL path matches.
+- **If you get `404 Webhook not found`**, the webhook id in the URL is wrong, the webhook was deleted, or your session cannot see the workspace that owns it. Check `GET /api/webhooks/workflows/{workflowId}` or `GET /api/webhooks/collections/{projectId}` for the list of ids bound to the target resource.
 - **If you get `429 Too Many Requests`**, you hit the 100/hour limit for that webhook. Read the `Retry-After` and `X-RateLimit-Reset` headers, wait, and retry. Lower the trigger frequency, or split work across multiple webhooks.
 - **If the signature never verifies**, the most common cause is a `printf` vs `echo` mismatch. Use `printf '%s%s' "$TIMESTAMP" "$BODY"` so the trailing newline from `echo` does not contaminate the HMAC input. Also confirm the body you sign is byte-identical to the body you send.
 - **If a retried CI build starts a second run**, you did not send an `Idempotency-Key`, or the key differs between retries. Use a deterministic key tied to the build (`$CI_PIPELINE_ID-$BUILD_NUMBER`, `${{ github.run_id }}-${{ github.run_number }}`, `$BUILD_TAG`).
-- **If the webhook lives in a different workspace than the workflow or project you expected to fire**, the trigger will return `404` because the URL path's `workspaceSlug` does not match. Create a webhook in the same workspace as the target resource.
+- **If the webhook lives in a different workspace than the workflow or project you expected to fire**, the trigger will return `404` or `403` because the webhook is bound to the workspace that owns its target resource. Create a webhook in the same workspace as the target resource.
 
 ## Related
 

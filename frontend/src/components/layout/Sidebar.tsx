@@ -80,7 +80,6 @@ export function Sidebar() {
   const searchQuery = useSidebarStore((s) => s.searchQuery);
   const closeTab = useTabStore((s) => s.closeTab);
   const fetchWorkflows = useSidebarStore((s) => s.fetchWorkflows);
-  const fetchProjects = useSidebarStore((s) => s.fetchProjects);
   const workflowVersion = useSidebarStore((s) => s.workflowVersion);
   const projectVersion = useSidebarStore((s) => s.projectVersion);
   const refreshAll = useSidebarStore((s) => s.refreshAll);
@@ -102,17 +101,38 @@ export function Sidebar() {
     void useEnvironmentStore.getState().fetchEnvironments(workspaceId);
   }, [isScopeReady, workspaceId]);
 
+  // Refresh the CURRENT tab when a mutation signals a change. Routing through
+  // refreshAll(nav) means the projects tab refetches projects + all workflows
+  // (incl. project-attached), so newly added/assigned workflows show up. Read
+  // the nav fresh so these don't re-run merely on tab switch.
   useEffect(() => {
     if (workflowVersion > 0) {
-      void fetchWorkflows(0);
+      void refreshAll(useNavigationStore.getState().selectedNavVal);
     }
-  }, [workflowVersion, fetchWorkflows]);
+  }, [workflowVersion, refreshAll]);
 
   useEffect(() => {
     if (projectVersion > 0) {
-      void fetchProjects();
+      void refreshAll(useNavigationStore.getState().selectedNavVal);
     }
-  }, [projectVersion, fetchProjects]);
+  }, [projectVersion, refreshAll]);
+
+  // Auto-refresh when the user returns to the tab/window after it was hidden
+  // or unfocused — data may have changed elsewhere while they were away.
+  useEffect(() => {
+    const refreshOnReturn = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshAll(useNavigationStore.getState().selectedNavVal);
+      const wsId = useSidebarStore.getState().activeWorkspaceId;
+      if (wsId) void useEnvironmentStore.getState().fetchEnvironments(wsId);
+    };
+    window.addEventListener("focus", refreshOnReturn);
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => {
+      window.removeEventListener("focus", refreshOnReturn);
+      document.removeEventListener("visibilitychange", refreshOnReturn);
+    };
+  }, [refreshAll]);
 
   handleScrollRef.current = () => {
     if (scrollContainerRef.current && selectedNav === "workflows") {

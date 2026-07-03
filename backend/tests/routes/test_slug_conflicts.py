@@ -287,6 +287,10 @@ class TestTeamSlugConflicts:
         )
         with (
             patch(
+                "app.services.team_service.require_org_owner",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
                 "app.services.team_service.TeamRepository.get_by_slug",
                 new=AsyncMock(return_value=existing_team),
             ),
@@ -296,6 +300,7 @@ class TestTeamSlugConflicts:
                     "org-1",
                     name="Backend 2",
                     slug="backend",
+                    description=None,
                     actor=_make_user(),
                 )
             assert exc_info.value.status_code == 409

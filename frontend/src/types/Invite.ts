@@ -4,6 +4,6 @@ export interface Invite {
   role: string;
   token?: string;
   expiresAt: string;
-  createdAt: string;
+  createdAt?: string;
   invitedBy: string;
 }

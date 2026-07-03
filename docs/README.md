@@ -8,7 +8,7 @@ APIWeave 2.0 is a GitHub-style multi-tenant platform. Every user gets a personal
 
 APIWeave ships with two operating models selected by `DEPLOYMENT_MODE` in `backend/.env`. **`multi_tenant`** (the default) is the full SSO + invites + organizations model described above, intended for hosted SaaS and team installs. **`single_user`** is a zero-configuration self-hosting mode for a single operator — no OAuth, no sessions, no logins; the canvas loads immediately with a synthetic owner. See the [Authentication guide](operations/authentication.md#deployment-mode) for the contract and the switching procedure.
 
-If you have used the 1.0 release, the things that changed are spelled out in the [2.0 changelog entry](../CHANGELOG.md). The short version: collections are now projects, the global `isActive` environment flag is gone, runtime secret input is gone, and the flat `/api/*` routes are replaced by slug-based scoped paths.
+If you have used the 1.0 release, the things that changed are spelled out in the [2.0 changelog entry](../CHANGELOG.md). The short version: collections are now projects, the global `isActive` environment flag is gone, runtime secret input is gone, and tenant-owned resources are scope-bound. The browser uses slug routes, while the current HTTP API is mostly ID-based (`/api/workspaces/{workspace_id}`, `/api/scopes/{scope_type}/{scope_id}`, and scope-bound flat webhook/run helpers); use the live Swagger UI for exact paths.
 
 ## Prerequisites
 

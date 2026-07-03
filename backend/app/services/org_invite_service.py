@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.repositories.org_invite_repository import OrgInviteRepository
 from app.repositories.organization_repository import OrganizationRepository
+from app.services import entitlements
 from app.services.audit_service import append_event
 from app.services.org_service import require_org_member
 
@@ -80,6 +81,9 @@ async def create_org_invite(
             detail="An active invite already exists for this email",
         )
 
+    # Billing seam: a new invite consumes a seat. Allow-all until billing is on.
+    await entitlements.require_can_add_org_member(org_id)
+
     since = datetime.now(UTC) - timedelta(hours=RATE_LIMIT_WINDOW_HOURS)
     recent_count = await OrgInviteRepository.count_recent_by_org(org_id, since)
     if recent_count >= RATE_LIMIT_MAX_INVITES:
@@ -117,6 +121,19 @@ async def create_org_invite(
         context={"email": normalized_email, "role": role},
     )
 
+    # Deliver as a magic link (org invite = magic link): clicking it signs the
+    # invitee in and auto-accepts. Best-effort — never fail invite creation on a
+    # mail error, and no-op when EMAIL_LOGIN is off / SMTP unconfigured.
+    try:
+        org = await OrganizationRepository.get_by_id(org_id)
+        from app.services import email_auth_service
+
+        await email_auth_service.send_org_invite_link(
+            normalized_email, org.name if org else "the organization"
+        )
+    except Exception:
+        logger.warning("Failed to send org-invite email for %s", normalized_email, exc_info=True)
+
     return OrgInviteCreateResponse(
         inviteId=invite.inviteId,
         orgId=org_id,
@@ -125,6 +142,85 @@ async def create_org_invite(
         token=raw_token,
         expires_at=expires_at,
     )
+
+
+async def resend_org_invite(
+    org_id: str,
+    invite_id: str,
+    *,
+    actor: User,
+) -> OrgInviteCreateResponse:
+    """Resend a pending org invite by rotating its token.
+
+    Implemented as cancel-old + create-new so it reuses create_org_invite's
+    validation (rate limit, role checks, audit) and returns a fresh raw token
+    for the UI to surface (and for SMTP delivery once wired). The old token is
+    invalidated. Owner authorization is enforced at the route.
+    """
+    await require_org_member(org_id, actor.userId)
+
+    invite = await OrgInviteRepository.get_by_id(invite_id)
+    if not invite or invite.orgId != org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found")
+    if invite.consumed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invite has already been accepted and cannot be resent",
+        )
+
+    email = invite.email
+    role = invite.role
+    # Remove the old invite so create_org_invite's active-invite guard passes
+    # and the old token is invalidated.
+    await OrgInviteRepository.cancel(invite_id)
+
+    await append_event(
+        actor="user",
+        actor_id=actor.userId,
+        action="org.invite.resent",
+        scope="org",
+        scope_id=org_id,
+        resource_type="org_invite",
+        resource_id=invite_id,
+        context={"email": email},
+    )
+
+    return await create_org_invite(org_id, email=email, role=role, actor=actor)
+
+
+async def accept_pending_invites_for_user(user: User) -> int:
+    """Accept all active org invites addressed to the user's verified email.
+
+    Used by the magic-link sign-in flow: clicking the emailed link proves
+    ownership of the invited address, so any pending org invite(s) for that
+    email are accepted (the user is added to each org). Idempotent — already-a-
+    member orgs are skipped. Returns the number of invites accepted.
+    """
+    email = user.verified_email.lower()
+    invites = await OrgInviteRepository.list_active_by_email(email)
+    accepted = 0
+    for invite in invites:
+        existing = await OrganizationRepository.get_member(invite.orgId, user.userId)
+        if existing is None:
+            await OrganizationRepository.add_member(
+                member_id=f"om-{uuid.uuid4().hex[:12]}",
+                org_id=invite.orgId,
+                user_id=user.userId,
+                role=invite.role,
+            )
+            accepted += 1
+        await OrgInviteRepository.consume(invite.inviteId)
+        await append_event(
+            actor="user",
+            actor_id=user.userId,
+            action="org.invite.accepted",
+            scope="org",
+            scope_id=invite.orgId,
+            resource_type="org_invite",
+            resource_id=invite.inviteId,
+            context={"email": email, "role": invite.role, "via": "magic_link"},
+        )
+    return accepted
 
 
 async def list_org_invites(org_id: str) -> list[OrgInviteResponse]:

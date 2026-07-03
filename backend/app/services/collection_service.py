@@ -110,10 +110,10 @@ async def export_collection(collection_id: str, include_environment: bool = True
         for env_id in environment_ids:
             env = await EnvironmentRepository.get_by_id(env_id)
             if env:
-                secret_refs: list[str] = []
+                env_secret_refs: list[str] = []
                 sanitized_vars = sanitize_secrets_in_dict(
                     env.variables if env.variables else {},
-                    secret_refs,
+                    env_secret_refs,
                     f"environments.{env_id}.variables",
                 )
                 env_dict = env.model_dump(by_alias=True)
@@ -229,8 +229,6 @@ async def import_collection(
 
     imported_workflows = 0
     imported_environments = 0
-    secret_refs: list[str] = []
-
     for env_data in environments_data:
         env_id = env_data.get("environmentId")
         if environment_mapping and env_id in environment_mapping:

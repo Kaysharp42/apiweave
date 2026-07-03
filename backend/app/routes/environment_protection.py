@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.repositories.service_token_repository import ServiceTokenRepository
 from app.services import environment_protection_service as svc
+from app.services import run_service
 from app.services.environment_protection_service import (
     ApprovalNotFoundError,
     ApprovalNotPendingError,
@@ -132,6 +133,44 @@ async def approve_pending_run(
                 detail=f"Approval {approval_id} not found for environment {environment_id}",
             )
         result = await svc.approve_run(approval_id, user.userId)
+        # Resume-on-approval: start the held run now that the gate has cleared.
+        await run_service.resume_approved_run(approval.runId)
+        return PendingApprovalResponse.model_validate(result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _handle_service_error(exc)
+        raise  # unreachable
+
+
+@router.post(
+    "/api/workspaces/{workspace_id}/environments/{environment_id}"
+    "/approvals/{approval_id}/reject",
+    response_model=PendingApprovalResponse,
+)
+async def reject_pending_run(
+    workspace_id: str,
+    environment_id: str,
+    approval_id: str,
+    _body: ApprovalActionRequest | None = None,
+    user: User = Depends(get_current_active_user),
+) -> PendingApprovalResponse:
+    """Reject a pending run as a required reviewer; the held run is cancelled."""
+    try:
+        approval = await svc.get_pending_approval(approval_id)
+        if approval.workspaceId != workspace_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Approval {approval_id} not found in workspace {workspace_id}",
+            )
+        if approval.environmentId != environment_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Approval {approval_id} not found for environment {environment_id}",
+            )
+        result = await svc.reject_run(approval_id, user.userId)
+        # Cancel-on-reject: the held run never executes.
+        await run_service.cancel_pending_run(approval.runId)
         return PendingApprovalResponse.model_validate(result)
     except HTTPException:
         raise
@@ -183,6 +222,8 @@ async def bypass_protection(
             )
 
         result = await svc.bypass_protection(approval_id, token_id, body.reason)
+        # Bypass clears the gate — start the held run.
+        await run_service.resume_approved_run(approval.runId)
         return PendingApprovalResponse.model_validate(result)
     except HTTPException:
         raise

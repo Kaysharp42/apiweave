@@ -45,11 +45,11 @@ test("InviteAdminPage is admin-gated with hasPermission check", () => {
   );
 });
 
-test("InviteAdminPage lists pending invites from GET /api/auth/invites", () => {
+test("InviteAdminPage lists pending invites from GET /api/invites", () => {
   const hookContent = readHook("useInvites.ts");
   assert.ok(
-    hookContent.includes("/api/auth/invites"),
-    "useInvites must fetch from /api/auth/invites",
+    hookContent.includes("/api/invites"),
+    "useInvites must fetch from /api/invites",
   );
   assert.ok(
     hookContent.includes("authenticatedJson"),
@@ -130,15 +130,15 @@ test("InviteAdminPage shows non-admin access denied message", () => {
 
 // ── useInvites hook tests ────────────────────────────────────────────────────
 
-test("useInvites hook creates invite via POST /api/auth/invites", () => {
+test("useInvites hook creates invite via POST /api/invites", () => {
   const content = readHook("useInvites.ts");
   assert.ok(
-    content.includes("method: 'POST'"),
+    content.includes('method: "POST"') || content.includes("method: 'POST'"),
     "Must use POST method for creating invites",
   );
   assert.ok(
-    content.includes("email") && content.includes("roles"),
-    "Must send email and roles in request body",
+    content.includes("email") && content.includes("role"),
+    "Must send email and role in request body",
   );
 });
 
@@ -149,7 +149,8 @@ test("useInvites hook revokes invite via DELETE /api/invites/:id", () => {
     "Must call DELETE /api/invites/{id} for revoking",
   );
   assert.ok(
-    content.includes("method: 'DELETE'"),
+    content.includes('method: "DELETE"') ||
+      content.includes("method: 'DELETE'"),
     "Must use DELETE method for revoking",
   );
 });
@@ -179,7 +180,9 @@ test("Invite type has required fields", () => {
 test("Invite type is exported from types/index.ts", () => {
   const indexContent = readFileSync(join(TYPES_DIR, "index.ts"), "utf-8");
   assert.ok(
-    indexContent.includes("Invite") && indexContent.includes("'./Invite'"),
+    indexContent.includes("Invite") &&
+      (indexContent.includes('"./Invite"') ||
+        indexContent.includes("'./Invite'")),
     "Invite type must be exported from types/index.ts",
   );
 });

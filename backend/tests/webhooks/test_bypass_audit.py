@@ -141,6 +141,7 @@ class TestWebhookBypassAudit:
             ),
             patch("app.routes.webhooks._get_protection", return_value=protection_mock),
             patch("app.routes.webhooks.bypass_protection", new_callable=AsyncMock) as mock_bypass,
+            patch("app.routes.webhooks.reject_gate_record", new=AsyncMock()),
             patch("app.routes.webhooks.audit_service") as mock_audit,
             patch("app.routes.webhooks.webhook_runner") as mock_runner,
         ):
@@ -160,5 +161,7 @@ class TestWebhookBypassAudit:
                 headers={"X-Webhook-Token": "bypass-token"},
             )
 
-        assert response.status_code == 202
+        # Token not in allowlist → bypass not attempted, and the protected
+        # environment denies the webhook run (no human to approve a machine trigger).
+        assert response.status_code == 403
         mock_bypass.assert_not_awaited()

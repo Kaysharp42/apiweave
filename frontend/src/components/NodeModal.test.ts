@@ -31,7 +31,7 @@ const badgeSource = readFileSync(
 test("NodeModal uses the Modal molecule for focus trapping and Escape key handling", () => {
   assert.match(
     nodeModalShellSource,
-    /import \{ Modal \} from '\.\.\/molecules\/Modal'/,
+    /import \{ Modal \} from ["']\.\.\/molecules\/Modal["']/,
   );
   assert.match(nodeModalShellSource, /<Modal/);
   assert.match(nodeModalShellSource, /isOpen=\{open\}/);
@@ -41,39 +41,45 @@ test("NodeModal uses the Modal molecule for focus trapping and Escape key handli
 });
 
 test("NodeModal delegates HTTP request config to HTTPRequestConfigPanel", () => {
-  assert.match(nodeModalSource, /import \{ HTTPRequestConfigPanel/);
+  assert.match(nodeModalSource, /import \{[\s\S]*?HTTPRequestConfigPanel/);
   assert.match(nodeModalSource, /<HTTPRequestConfigPanel/);
 });
 
 test("NodeModal delegates HTTP output to HttpRequestOutputPanel", () => {
-  assert.match(nodeModalSource, /import \{.*HttpRequestOutputPanel/);
+  assert.match(nodeModalSource, /import \{[\s\S]*?HttpRequestOutputPanel/);
   assert.match(nodeModalSource, /<HttpRequestOutputPanel/);
 });
 
 test("NodeModal delegates non-HTTP output to NodeOutputPanel", () => {
-  assert.match(nodeModalSource, /import \{.*NodeOutputPanel/);
+  assert.match(nodeModalSource, /import \{[\s\S]*?NodeOutputPanel/);
   assert.match(nodeModalSource, /<NodeOutputPanel/);
 });
 
 test("NodeModal delegates assertion config to AssertionConfigPanel", () => {
-  assert.match(nodeModalSource, /import \{.*AssertionConfigPanel/);
+  assert.match(nodeModalSource, /import \{[\s\S]*?AssertionConfigPanel/);
   assert.match(nodeModalSource, /<AssertionConfigPanel/);
 });
 
 test("NodeModal delegates delay config to DelayConfigPanel", () => {
-  assert.match(nodeModalSource, /import \{.*DelayConfigPanel/);
+  assert.match(nodeModalSource, /import \{[\s\S]*?DelayConfigPanel/);
   assert.match(nodeModalSource, /<DelayConfigPanel/);
 });
 
 test("NodeModal delegates merge config to MergeConfigPanel", () => {
-  assert.match(nodeModalSource, /import \{.*MergeConfigPanel/);
+  assert.match(nodeModalSource, /import \{[\s\S]*?MergeConfigPanel/);
   assert.match(nodeModalSource, /<MergeConfigPanel/);
 });
 
 test("NodeModal exposes HTTP request sections and request bar controls", () => {
-  assert.match(nodeModalSource, /\{ key: 'params', label: 'Params'/);
-  assert.match(nodeModalSource, /\{ key: 'settings', label: 'Settings'/);
-  assert.match(httpRequestConfigSource, /<FormField label="Params"/);
+  assert.match(
+    nodeModalSource,
+    /\{ key: ["']params["'], label: ["']Params["']/,
+  );
+  assert.match(
+    nodeModalSource,
+    /\{ key: ["']settings["'], label: ["']Settings["']/,
+  );
+  assert.match(httpRequestConfigSource, /<FormField[\s\S]*?label="Params"/);
   assert.match(nodeModalSource, /HTTP_METHODS\.map\(\(method\)/);
   assert.match(nodeModalSource, /aria-label="Request URL"/);
 });
@@ -83,7 +89,7 @@ test("HTTPRequestConfigPanel updates HTTP method button selection through React 
   assert.match(nodeModalSource, /patchHttpConfig\(\{ method \}\)/);
   assert.match(
     nodeModalSource,
-    /variant=\{httpConfig\.method === method \? 'primary' : 'ghost'\}/,
+    /variant=\{httpConfig\.method === method \? ["']primary["'] : ["']ghost["']\}/,
   );
 });
 
@@ -98,10 +104,13 @@ test("HTTPRequestConfigPanel keeps request parameter, header, cookie, and body e
 test("HTTPRequestConfigPanel uses the BeautifyButton request body editor", () => {
   assert.match(
     httpRequestConfigSource,
-    /import \{ BeautifyButton \} from '\.\.\/molecules\/BeautifyButton'/,
+    /import \{ BeautifyButton \} from ["']\.\.\/molecules\/BeautifyButton["']/,
   );
   assert.match(httpRequestConfigSource, /<BeautifyButton/);
-  assert.match(httpRequestConfigSource, /value=\{draftConfig\.body \|\| ''\}/);
+  assert.match(
+    httpRequestConfigSource,
+    /value=\{draftConfig\.body \|\| ["']["']\}/,
+  );
   assert.match(
     httpRequestConfigSource,
     /onChange=\{\(body\) => updateConfig\(\{ body \}\)\}/,
@@ -122,7 +131,7 @@ test("NodeModal restores the compact node name section", () => {
 test("HttpRequestOutputPanel mounts ResponseInspector when output exists", () => {
   assert.match(
     httpRequestOutputSource,
-    /if \(!output \|\| node\.type !== 'http-request'\) \{/,
+    /if \(!output \|\| node\.type !== ["']http-request["']\) \{/,
   );
   assert.match(httpRequestOutputSource, /<ResponseInspector/);
   assert.match(httpRequestOutputSource, /response=\{response\}/);
@@ -148,7 +157,7 @@ test("NodeModal keeps the output column shrinkable for scrollable inspectors", (
 test("Output panels preserve empty state contract when execution output is missing", () => {
   assert.match(
     httpRequestOutputSource,
-    /if \(!output \|\| node\.type !== 'http-request'\) \{/,
+    /if \(!output \|\| node\.type !== ["']http-request["']\) \{/,
   );
   assert.match(nodeOutputSource, /\{isEmptyOutput\(output\) \? \(/);
   assert.match(httpRequestOutputSource, /Execute this node to view data/);

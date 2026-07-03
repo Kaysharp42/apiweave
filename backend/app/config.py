@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     MONGODB_DB_NAME: str
 
     ALLOWED_ORIGINS: str
+    TRUSTED_HOSTS: str = "localhost,127.0.0.1"
 
     API_KEY_HEADER: str = "Authorization"
 
@@ -59,6 +60,16 @@ class Settings(BaseSettings):
     APPROVED_DOMAINS: str = ""
     SETUP_MODE_ENABLED: bool = True
 
+    # Passwordless email magic-link sign-in (multi_tenant only). Requires SMTP.
+    EMAIL_LOGIN_ENABLED: bool = False
+    # Who may obtain a new account. "invite_only": existing users + pending
+    # invites only (self-host default). "open": anyone whose email passes the
+    # approved-domains policy may sign up (e.g. public hosted with approved
+    # domains set). Approved-domains is always enforced when enabled, in both
+    # modes. Magic-link TTL in minutes.
+    REGISTRATION_MODE: Literal["invite_only", "open"] = "invite_only"
+    EMAIL_LOGIN_TOKEN_TTL_MINUTES: int = 15
+
     # Deployment mode:
     #   - "single_user":  self-hosted, no OAuth. A synthetic owner User is
     #     auto-created on first request and used for every API call. No
@@ -68,6 +79,23 @@ class Settings(BaseSettings):
     #     CSRF + invites + orgs are all active. This is the historical
     #     behavior and the default.
     DEPLOYMENT_MODE: Literal["single_user", "multi_tenant"] = "multi_tenant"
+
+    # Billing (Phase 4). When False (default) entitlement checks allow
+    # everything — orgs/workspaces/invites are unrestricted. Phase 4 wires
+    # plan/seat/quota logic behind this single flag (see services/entitlements.py).
+    BILLING_ENABLED: bool = False
+
+    # Stripe (Phase 4). Keys come from deployment secrets / .env — never the repo.
+    # Price IDs are the recurring monthly prices created in the Stripe account
+    # (Individual = pay-what-you-want custom amount; Team = $5/seat).
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRICE_INDIVIDUAL: str = ""
+    STRIPE_PRICE_TEAM: str = ""
+    # Where Stripe Checkout/Portal return the user (frontend origin).
+    BILLING_SUCCESS_URL: str = "/settings/billing?status=success"
+    BILLING_CANCEL_URL: str = "/settings/billing?status=cancel"
 
     # Security
     BLOCK_PRIVATE_NETWORKS: bool = True
@@ -103,9 +131,14 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     SMTP_FROM_ADDRESS: str | None = None
     SMTP_TLS: bool = True
+    SMTP_USE_SSL: bool = False
+    SMTP_TLS_VERIFY: bool = True
 
     def get_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    def get_trusted_hosts_list(self) -> list[str]:
+        return [host.strip() for host in self.TRUSTED_HOSTS.split(",") if host.strip()]
 
     def get_rate_limiter_backend(self) -> str:
         return self.RATE_LIMITER_BACKEND
@@ -159,18 +192,15 @@ class Settings(BaseSettings):
         """
         if self.ALLOW_LOOPBACK:
             return True
-        return (
-            self.DEPLOYMENT_MODE == "single_user"
-            and self.APP_ENV.lower() == "development"
-        )
+        return self.DEPLOYMENT_MODE == "single_user" and self.APP_ENV.lower() == "development"
 
     def get_session_cookie_secure(self) -> bool:
         if self.APP_ENV.lower() == "development":
             return False
         return self.SESSION_COOKIE_SECURE
 
-    def get_session_cookie_samesite(self) -> str:
-        return self.SESSION_COOKIE_SAMESITE
+    def get_session_cookie_samesite(self) -> Literal["lax", "strict", "none"]:
+        return self.SESSION_COOKIE_SAMESITE  # type: ignore[return-value]
 
     @model_validator(mode="after")
     def validate_auth_configuration(self) -> "Settings":
@@ -324,4 +354,4 @@ class Settings(BaseSettings):
     )
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]  # pydantic-settings reads required fields from env

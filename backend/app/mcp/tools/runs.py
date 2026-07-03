@@ -252,12 +252,34 @@ async def workflow_run(
     return _workflow_run_response_from_dict(result)
 
 
+async def _assert_workflow_in_scope(workflow_id: str) -> None:
+    """Raise ValueError unless workflow_id belongs to the token's scope.
+
+    The run read/cancel tools previously checked only run.workflowId == the
+    supplied workflow_id (a consistency check, not a scope check), so a token
+    scoped to one workspace could read or cancel another tenant's runs by id.
+    Binds the workflow to the token scope exactly as workflow_run does.
+    """
+    from app.services.scoped_workflow_service import get_scoped_workflow
+
+    scope = require_scope()
+    try:
+        await get_scoped_workflow(
+            workspace_id=scope.scope_id,
+            workflow_id=workflow_id,
+            actor_user_id=scope.actor_id,
+        )
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+
+
 async def run_get_status(
     workflow_id: Annotated[str, Field(description="Workflow ID that owns the run.")],
     run_id: Annotated[str, Field(description="Run ID to poll.")],
 ) -> RunStatusResponse:
     """Get run status and compact node status summaries."""
     await ensure_mcp_database()
+    await _assert_workflow_in_scope(workflow_id)
     try:
         run = await svc_get_run(run_id)
     except ValueError as exc:
@@ -273,6 +295,7 @@ async def run_get_results(
 ) -> RunResultsResponse:
     """Get a human-readable payload-free run results summary."""
     await ensure_mcp_database()
+    await _assert_workflow_in_scope(workflow_id)
     try:
         results = await svc_get_run_results(run_id)
     except ValueError as exc:
@@ -309,6 +332,7 @@ async def run_get_node_result(
 ) -> RunNodeResultResponse:
     """Fetch the full result for one node. Secret-like values are redacted."""
     await ensure_mcp_database()
+    await _assert_workflow_in_scope(workflow_id)
     try:
         node_result = await svc_get_node_result(
             run_id,
@@ -351,6 +375,7 @@ async def run_latest_failed(
 ) -> RunLatestFailedResponse:
     """Get latest failed run metadata and failed nodes for resume flows."""
     await ensure_mcp_database()
+    await _assert_workflow_in_scope(workflow_id)
     try:
         result = await svc_get_latest_failed_run(workflow_id)
     except ValueError as exc:
@@ -390,6 +415,11 @@ async def run_list(
 ) -> RunListResponse:
     """List runs scoped to the authenticated workspace."""
     await ensure_mcp_database()
+    # workflow_id is required and must be in scope — without it svc_list_runs
+    # would return runs across all tenants.
+    if not workflow_id:
+        raise ValueError("workflow_id is required")
+    await _assert_workflow_in_scope(workflow_id)
     runs = await svc_list_runs(
         workflow_id=workflow_id,
         status_filter=status_filter,
@@ -421,6 +451,12 @@ async def run_cancel(
 ) -> RunCancelResponse:
     """Cancel a pending or running workflow execution."""
     await ensure_mcp_database()
+    # run_cancel takes only run_id; bind scope via the run's workflow.
+    try:
+        run = await svc_get_run(run_id)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    await _assert_workflow_in_scope(run.workflowId)
     try:
         result = await svc_cancel_run(run_id)
     except ValueError as exc:

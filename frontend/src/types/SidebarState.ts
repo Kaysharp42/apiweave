@@ -18,7 +18,7 @@ export interface SidebarState {
     skip?: number,
     append?: boolean,
     limit?: number,
-    endpoint?: string,
+    includeAttached?: boolean,
   ) => Promise<void>;
   fetchCollections: () => Promise<void>;
   refreshAll: (selectedNav: string) => Promise<void>;

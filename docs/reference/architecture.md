@@ -30,7 +30,7 @@ The diagram shows the components that make up APIWeave 2.0 and the paths a reque
 
 **Frontend** is a React single-page app built on the ReactFlow canvas library. It hosts the visual workflow editor, the variables and environments panels, the org and workspace switcher, the secrets page, the protection panel, and the audit log viewer. The frontend never talks to the database directly; everything flows through the backend's scoped REST API.
 
-**Backend** is a FastAPI service. It serves the scoped REST API at `/api/orgs/{orgSlug}/...`, `/api/users/me/...`, and `/api/workspaces/{workspaceSlug}/...`, mounts the MCP server at `/mcp`, validates scoped service tokens, and stores organizations, workspaces, projects, workflows, runs, environments, secrets, protection, and audit events in the database.
+**Backend** is a FastAPI service. It serves the scope-bound REST API under `/api/*` (currently mostly ID-based: `/api/workspaces/{workspaceId}/...`, `/api/scopes/{scopeType}/{scopeId}/...`, `/api/orgs/{orgId}/environments`, plus scoped flat run/webhook helpers), mounts the MCP server at `/mcp`, validates scoped service tokens, and stores organizations, workspaces, projects, workflows, runs, environments, secrets, protection, and audit events in the database.
 
 **Worker** is a Python async process. It polls the database for runs that are waiting to execute, then drives each run through the node graph against the selected environment and the resolved secret set. The worker uses the same execution engine the backend uses for synchronous runs, so behavior stays consistent regardless of who started the run.
 
@@ -112,7 +112,7 @@ Large response payloads are stored in a separate object store so they don't bloa
 
 APIWeave exposes three surfaces for tools and pipelines:
 
-- **REST API** at `/api/*` for the frontend and for first-party integrations. Browser callers authenticate through an SSO session and a CSRF token. Machine callers authenticate with a scoped service token. The path shape is `/api/orgs/{orgSlug}/workspaces/{workspaceSlug}/...` for workspace resources and `/api/users/me/...` for personal resources.
+- **REST API** at `/api/*` for the frontend and for first-party integrations. Browser callers authenticate through an SSO session and a CSRF token. Machine callers authenticate with a scoped service token. Workspace resources currently use workspace ids in paths such as `/api/workspaces/{workspaceId}/...`; secrets and service tokens use `/api/scopes/{scopeType}/{scopeId}/...`.
 - **MCP** at `/mcp` for AI coding agents such as Claude, Cursor, and opencode. Authentication is by scoped service token, and every tool operates against an explicit scope. Read and export tools redact persisted secrets in their responses.
 - **Scoped webhooks** for CI/CD systems like GitHub Actions, GitLab CI, and Jenkins. Authentication is by scoped service token bound to a workspace.
 

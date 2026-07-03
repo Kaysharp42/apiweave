@@ -92,6 +92,7 @@ describe("useScopeContext", () => {
       availableWorkspaces: [],
       currentRole: null,
       switchTo: vi.fn(),
+      refresh: vi.fn(),
     });
     mockUseAuth.mockReturnValue({ user: null });
 
@@ -113,6 +114,7 @@ describe("useScopeContext", () => {
       availableWorkspaces: [],
       currentRole: null,
       switchTo: vi.fn(),
+      refresh: vi.fn(),
     });
     mockUseAuth.mockReturnValue({ user: null });
 
@@ -131,6 +133,7 @@ describe("useScopeContext", () => {
       availableWorkspaces: [],
       currentRole: "owner",
       switchTo: vi.fn(),
+      refresh: vi.fn(),
     });
     mockUseAuth.mockReturnValue({ user: mockUser });
 
@@ -153,6 +156,7 @@ describe("useScopeContext", () => {
       availableWorkspaces: [],
       currentRole: "write",
       switchTo: vi.fn(),
+      refresh: vi.fn(),
     });
     mockUseAuth.mockReturnValue({ user: mockUser });
 
@@ -175,6 +179,7 @@ describe("useScopeContext", () => {
       availableWorkspaces: [],
       currentRole: null,
       switchTo: vi.fn(),
+      refresh: vi.fn(),
     });
     mockUseAuth.mockReturnValue({ user: mockUser });
 
@@ -194,6 +199,7 @@ describe("useScopeContext", () => {
       availableWorkspaces: [],
       currentRole: "owner",
       switchTo: vi.fn(),
+      refresh: vi.fn(),
     });
     mockUseAuth.mockReturnValue({ user: null });
 

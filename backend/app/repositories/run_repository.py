@@ -122,6 +122,21 @@ class RunRepository:
         return result.deleted_count if result else 0
 
     @staticmethod
+    async def prune_workflow_runs(workflow_id: str, keep_latest: int) -> int:
+        """Keep only the newest `keep_latest` runs for a workflow; delete older
+        ones. Used to enforce the Free-tier "last run only" history limit.
+        Returns the number deleted."""
+        stale = (
+            await Run.find(Run.workflowId == workflow_id)
+            .sort(-Run.createdAt)
+            .skip(keep_latest)
+            .to_list()
+        )
+        for run in stale:
+            await run.delete()
+        return len(stale)
+
+    @staticmethod
     async def get_recent_runs(limit: int = 10) -> list[Run]:
         """Get most recent runs across all workflows"""
         return await Run.find_all().sort(-Run.createdAt).limit(limit).to_list()

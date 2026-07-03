@@ -254,6 +254,7 @@ async def test_webhook_bypass_not_in_allowlist_denied():
         ),
         patch("app.routes.webhooks._get_protection", return_value=protection_mock),
         patch("app.routes.webhooks.bypass_protection", new_callable=AsyncMock) as mock_bypass,
+        patch("app.routes.webhooks.reject_gate_record", new=AsyncMock()),
         patch("app.routes.webhooks.audit_service") as mock_audit,
         patch("app.routes.webhooks.webhook_runner") as mock_runner,
     ):
@@ -273,5 +274,6 @@ async def test_webhook_bypass_not_in_allowlist_denied():
             headers={"X-Webhook-Token": "correct-token"},
         )
 
-    assert response.status_code == 202
+    # Token not in allowlist → bypass not attempted; protected env denies the run.
+    assert response.status_code == 403
     mock_bypass.assert_not_awaited()

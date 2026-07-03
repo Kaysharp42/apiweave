@@ -16,6 +16,12 @@
       "headers": {
         "Authorization": "Bearer YOUR_MCP_API_KEY"
       }
+    },
+    "codebase-memory-mcp": {
+      "type": "local",
+      "command": [
+        "codebase-memory-mcp"
+      ]
     }
   }
 }

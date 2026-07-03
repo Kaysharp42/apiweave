@@ -128,7 +128,7 @@ describe("Task 10: No plaintext/ciphertext in UI", () => {
     const content = fs.readFileSync(editorPath, "utf-8");
 
     // Must clear value after encryption
-    expect(content).toContain("setValue('')");
+    expect(content).toMatch(/setValue\(["']["']\)/);
     // Must use password input type
     expect(content).toContain('type="password"');
   });

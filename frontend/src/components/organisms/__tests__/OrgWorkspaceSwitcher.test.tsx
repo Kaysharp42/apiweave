@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { OrgWorkspaceSwitcher } from "../OrgWorkspaceSwitcher";
 import type { WorkspaceContextValue, WorkspaceEntry } from "../../../types";
 import type { Organization } from "../../../types/Organization";
@@ -11,6 +12,25 @@ import type { Workspace } from "../../../types/Workspace";
 // ---------------------------------------------------------------------------
 
 const mockSwitchTo = vi.fn();
+const mockRefresh = vi.fn<() => Promise<void>>();
+const mockAuthenticatedJson = vi.hoisted(() => vi.fn());
+const authState = vi.hoisted(() => ({ isSingleUser: false }));
+
+vi.mock("../../../auth/useAuth", () => ({
+  useAuth: () => ({ isSingleUser: authState.isSingleUser }),
+}));
+
+vi.mock("../../../utils/authenticatedApi", () => ({
+  authenticatedJson: (...args: unknown[]) => mockAuthenticatedJson(...args),
+}));
+
+vi.mock("../../../hooks/useBillingConfig", () => ({
+  useBillingConfig: () => ({ billingEnabled: false, publishableKey: "" }),
+}));
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 
 const defaultContext: WorkspaceContextValue = {
   orgs: [],
@@ -19,6 +39,7 @@ const defaultContext: WorkspaceContextValue = {
   currentWorkspace: null,
   currentRole: null,
   switchTo: mockSwitchTo,
+  refresh: mockRefresh,
   isLoading: false,
 };
 
@@ -28,6 +49,14 @@ vi.mock("../../../contexts/WorkspaceContext", () => ({
 
 function setContext(overrides: Partial<WorkspaceContextValue>): void {
   Object.assign(defaultContext, overrides);
+}
+
+function renderSwitcher() {
+  return render(
+    <MemoryRouter>
+      <OrgWorkspaceSwitcher />
+    </MemoryRouter>,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -79,19 +108,23 @@ function makeEntry(
 describe("OrgWorkspaceSwitcher", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAuthenticatedJson.mockReset();
+    mockRefresh.mockResolvedValue(undefined);
+    authState.isSingleUser = false;
     setContext({
       orgs: [],
       availableWorkspaces: [],
       currentOrg: null,
       currentWorkspace: null,
       currentRole: null,
+      refresh: mockRefresh,
       isLoading: false,
     });
   });
 
   it("shows loading skeleton when isLoading is true", () => {
     setContext({ isLoading: true });
-    const { container } = render(<OrgWorkspaceSwitcher />);
+    const { container } = renderSwitcher();
     expect(container.querySelector(".animate-pulse")).toBeInTheDocument();
   });
 
@@ -101,7 +134,7 @@ describe("OrgWorkspaceSwitcher", () => {
       availableWorkspaces: [makeEntry(null, personalWs)],
       currentWorkspace: personalWs,
     });
-    render(<OrgWorkspaceSwitcher />);
+    renderSwitcher();
     expect(screen.getByLabelText("Switch workspace")).toBeInTheDocument();
     expect(screen.getByText("Personal")).toBeInTheDocument();
   });
@@ -113,7 +146,7 @@ describe("OrgWorkspaceSwitcher", () => {
       currentOrg: org,
       currentWorkspace: ws,
     });
-    render(<OrgWorkspaceSwitcher />);
+    renderSwitcher();
     expect(screen.getByText("Acme Corp / Production")).toBeInTheDocument();
   });
 
@@ -134,7 +167,7 @@ describe("OrgWorkspaceSwitcher", () => {
       currentWorkspace: personalWs,
     });
 
-    render(<OrgWorkspaceSwitcher />);
+    renderSwitcher();
     await user.click(screen.getByLabelText("Switch workspace"));
 
     await waitFor(() => {
@@ -163,7 +196,7 @@ describe("OrgWorkspaceSwitcher", () => {
       currentWorkspace: personalWs,
     });
 
-    render(<OrgWorkspaceSwitcher />);
+    renderSwitcher();
     await user.click(screen.getByLabelText("Switch workspace"));
 
     await waitFor(() => {
@@ -184,7 +217,7 @@ describe("OrgWorkspaceSwitcher", () => {
       currentWorkspace: personalWs,
     });
 
-    render(<OrgWorkspaceSwitcher />);
+    renderSwitcher();
     await user.click(screen.getByLabelText("Switch workspace"));
 
     await waitFor(() => {
@@ -202,7 +235,7 @@ describe("OrgWorkspaceSwitcher", () => {
     const user = userEvent.setup();
     setContext({ availableWorkspaces: [] });
 
-    render(<OrgWorkspaceSwitcher />);
+    renderSwitcher();
     await user.click(screen.getByLabelText("Switch workspace"));
 
     await waitFor(() => {
@@ -218,7 +251,7 @@ describe("OrgWorkspaceSwitcher", () => {
       currentWorkspace: personalWs,
     });
 
-    render(<OrgWorkspaceSwitcher />);
+    renderSwitcher();
     await user.click(screen.getByLabelText("Switch workspace"));
 
     await waitFor(() => {
@@ -226,5 +259,80 @@ describe("OrgWorkspaceSwitcher", () => {
       expect(options).toHaveLength(1);
       expect(options[0]).toHaveAttribute("aria-selected", "true");
     });
+  });
+
+  it("shows organization creation in multi-tenant mode", async () => {
+    const user = userEvent.setup();
+    const personalWs = makeWorkspace({ isPersonal: true });
+    setContext({
+      availableWorkspaces: [makeEntry(null, personalWs)],
+      currentWorkspace: personalWs,
+    });
+
+    renderSwitcher();
+    await user.click(screen.getByLabelText("Switch workspace"));
+
+    expect(
+      screen.getByRole("button", { name: "Create organization" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Manage organizations" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides organization creation in single-user mode", async () => {
+    const user = userEvent.setup();
+    authState.isSingleUser = true;
+    const personalWs = makeWorkspace({ isPersonal: true });
+    setContext({
+      availableWorkspaces: [makeEntry(null, personalWs)],
+      currentWorkspace: personalWs,
+    });
+
+    renderSwitcher();
+    await user.click(screen.getByLabelText("Switch workspace"));
+
+    expect(
+      screen.queryByRole("button", { name: "Create organization" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("creates an organization from the switcher", async () => {
+    const user = userEvent.setup();
+    const personalWs = makeWorkspace({ isPersonal: true });
+    const createdOrg = makeOrg({
+      orgId: "org-42",
+      slug: "org_42_labs",
+      name: "42 Labs",
+    });
+    mockAuthenticatedJson.mockResolvedValue(createdOrg);
+    setContext({
+      availableWorkspaces: [makeEntry(null, personalWs)],
+      currentWorkspace: personalWs,
+    });
+
+    renderSwitcher();
+    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(
+      screen.getByRole("button", { name: "Create organization" }),
+    );
+    await user.type(screen.getByPlaceholderText("Acme QA"), "42 Labs");
+    await user.click(
+      screen.getByRole("button", { name: "Create organization" }),
+    );
+
+    await waitFor(() => expect(mockAuthenticatedJson).toHaveBeenCalled());
+    expect(mockAuthenticatedJson).toHaveBeenCalledWith(
+      expect.stringContaining("/api/orgs"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "42 Labs",
+          slug: "org_42_labs",
+          description: null,
+        }),
+      }),
+    );
+    expect(mockRefresh).toHaveBeenCalled();
   });
 });

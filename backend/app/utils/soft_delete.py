@@ -52,7 +52,9 @@ class SoftDeleteMixin:
         """
         self.deleted_at = datetime.now(UTC)
         self.deleted_by = by_user_id
-        await self.save()
+        # Bypass the soft-delete guard in save() — this is the legitimate write
+        # that marks the document deleted, so persist via the parent directly.
+        await super().save()  # type: ignore[misc, no-any-return]
 
     async def restore(self) -> None:
         """Restore a previously soft-deleted document.

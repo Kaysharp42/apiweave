@@ -11,7 +11,15 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from app.services.safe_http import SafeUrlError, validate_url
+import httpx
+
+from app.services.safe_http import (
+    MAX_REDIRECT_HOPS,
+    SafeUrlError,
+    assert_host_resolves_safe,
+    resolve_and_pin_ip,
+    validate_url,
+)
 from app.services.secret_utils import detect_secrets_in_value
 
 logger = logging.getLogger(__name__)
@@ -599,6 +607,31 @@ def _generate_example_from_schema(schema: dict[str, Any], openapi_data: dict[str
     return _gen(schema, openapi_data)
 
 
+class _SSRFSafeTransport(httpx.AsyncHTTPTransport):
+    """httpx transport that pins each connection to a validated resolved IP.
+
+    Resolves the request host, rejects it if any address is in a blocked
+    network, then connects to the approved IP while preserving the ``Host``
+    header and TLS SNI/cert hostname (via the ``sni_hostname`` extension). This
+    closes the DNS-rebinding gap a validate-then-connect check leaves open:
+    httpx connects to the exact IP we validated instead of re-resolving, so an
+    attacker-controlled low-TTL name cannot flip to a private/metadata address
+    between the check and the connect. Dev-allowed hosts and literal IPs are
+    passed through unchanged (``resolve_and_pin_ip`` returns None / the same IP).
+    """
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        pinned_ip = resolve_and_pin_ip(host)
+        if pinned_ip is None or pinned_ip == host:
+            return await super().handle_async_request(request)
+        port = request.url.port
+        request.headers["host"] = host if port is None else f"{host}:{port}"
+        request.extensions = {**request.extensions, "sni_hostname": host}
+        request.url = request.url.copy_with(host=pinned_ip)
+        return await super().handle_async_request(request)
+
+
 async def fetch_openapi_from_url(
     url: str,
     base_url: str = "",
@@ -611,8 +644,6 @@ async def fetch_openapi_from_url(
     api_title, source_url, warnings.
     """
     import asyncio
-
-    import httpx
 
     from app.utils.openapi_import_limits import (
         DEFAULT_FETCH_CONCURRENCY,
@@ -714,6 +745,33 @@ async def fetch_openapi_from_url(
                 candidates.append(candidate)
         return candidates
 
+    async def _safe_get(
+        client: httpx.AsyncClient,
+        target_url: str,
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        """GET with SSRF-safe manual redirect following.
+
+        The client has ``follow_redirects=False``; every hop (the initial URL
+        and each ``Location``) is validated and DNS-resolved against the block
+        policy before connecting, so a redirect to an internal/metadata host
+        cannot bypass validation the way httpx auto-redirects did. The client's
+        _SSRFSafeTransport additionally pins each connection to the validated
+        IP, so DNS rebinding between this check and the connect is closed too.
+        """
+        current = target_url
+        for _hop in range(MAX_REDIRECT_HOPS + 1):
+            validate_url(current)
+            assert_host_resolves_safe(httpx.URL(current).host)
+            response = await client.get(current, headers=headers)
+            if not (300 <= response.status_code < 400):
+                return response
+            location = response.headers.get("location")
+            if not location:
+                return response
+            current = str(httpx.URL(current).join(location))
+        raise SafeUrlError(f"Too many redirects (>{MAX_REDIRECT_HOPS}) — last URL: {current}")
+
     async def _get_with_localhost_fallback(
         client: httpx.AsyncClient,
         target_url: str,
@@ -722,15 +780,14 @@ async def fetch_openapi_from_url(
         original_error: Exception | None = None
         for candidate in _fetch_url_candidates(target_url):
             try:
-                validate_url(candidate)
-                return await client.get(candidate, headers=headers)
+                return await _safe_get(client, candidate, headers)
             except httpx.RequestError as exc:
                 if candidate == target_url:
                     original_error = exc
                 continue
         if original_error:
             raise original_error
-        return await client.get(target_url, headers=headers)
+        return await _safe_get(client, target_url, headers)
 
     async def _discover_from_swagger_ui(
         client: httpx.AsyncClient,
@@ -806,8 +863,14 @@ async def fetch_openapi_from_url(
         deduped = select_primary_definition(_dedupe_definitions(definitions), primary_name)
         return {"definitions": deduped, "primaryName": primary_name}
 
+    # follow_redirects=False: redirects are followed manually in _safe_get so
+    # each hop passes SSRF validation (httpx auto-redirects skipped it).
+    # _SSRFSafeTransport pins every connection to a validated resolved IP,
+    # closing the DNS-rebinding window between validation and connect.
     async with httpx.AsyncClient(
-        timeout=DEFAULT_FETCH_TIMEOUT_SECONDS, follow_redirects=True
+        timeout=DEFAULT_FETCH_TIMEOUT_SECONDS,
+        follow_redirects=False,
+        transport=_SSRFSafeTransport(),
     ) as client:
         initial_response = await _get_with_localhost_fallback(
             client,

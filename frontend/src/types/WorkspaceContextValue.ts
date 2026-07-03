@@ -22,6 +22,7 @@ export interface WorkspaceContextValue {
   currentRole: string | null;
   /** Navigate to a different org/workspace by slug pair. */
   switchTo: (orgSlug: string, workspaceSlug: string) => void;
+  refresh: () => Promise<void>;
   /** Whether the context is still loading data. */
   isLoading: boolean;
 }

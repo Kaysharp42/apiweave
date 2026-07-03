@@ -5,6 +5,16 @@ import LoginPage from "../pages/LoginPage";
 import type { ProviderDisplay } from "../types";
 import { Github, Gitlab } from "lucide-react";
 
+const { mockAuthenticatedJson } = vi.hoisted(() => ({
+  mockAuthenticatedJson: vi.fn(),
+}));
+vi.mock("../utils/authenticatedApi", () => ({
+  authenticatedJson: (
+    url: string,
+    options?: RequestInit,
+  ): Promise<{ message: string }> => mockAuthenticatedJson(url, options),
+}));
+
 // Mock useAuth
 const mockLogin = vi.fn();
 vi.mock("../auth/useAuth", () => ({
@@ -82,13 +92,15 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    expect(screen.getByTestId("empty-state")).toBeInTheDocument();
     expect(
-      screen.getByText("No sign-in providers configured"),
+      screen.getByText(/No OAuth providers configured/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /continue with/i }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /send sign-in link/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders loading spinner while fetching providers", () => {
@@ -164,6 +176,36 @@ describe("LoginPage", () => {
     await user.click(githubButton);
 
     expect(mockLogin).toHaveBeenCalledWith("github");
+  });
+
+  it("requests an email magic link when the email form is submitted", async () => {
+    const user = userEvent.setup();
+    mockAuthenticatedJson.mockResolvedValue({
+      message:
+        "If an account exists for that email, a sign-in link has been sent.",
+    });
+    mockUseOAuthProviders.mockReturnValue({
+      providers: [],
+      loading: false,
+      error: null,
+    });
+
+    render(<LoginPage />);
+
+    await user.type(screen.getByLabelText(/email/i), "dev@example.com");
+    await user.click(
+      screen.getByRole("button", { name: /send sign-in link/i }),
+    );
+
+    expect(mockAuthenticatedJson).toHaveBeenCalledWith(
+      expect.stringContaining("/api/auth/email/request"),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "dev@example.com" }),
+      },
+    );
+    expect(screen.getByText(/sign-in link has been sent/i)).toBeInTheDocument();
   });
 
   it("renders all four providers when available", () => {

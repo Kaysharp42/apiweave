@@ -141,7 +141,7 @@ describe("WebhookManager CI/CD snippets", () => {
   it("Snippets use environment variable placeholders, not actual secret values", () => {
     // The disclaimer text must be present
     expect(source).toMatch(
-      /Snippets use environment variable\s+placeholders\s*--\s*never actual secret values/s,
+      /Snippets use\s+environment variable\s+placeholders\s*--\s*never actual secret values/s,
     );
   });
 });

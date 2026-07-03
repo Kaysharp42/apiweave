@@ -26,6 +26,8 @@ import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
 import { WorkspaceTokensPage } from "./pages/WorkspaceTokensPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import OrgSettingsPage from "./pages/OrgSettingsPage";
+import BillingPage from "./pages/BillingPage";
+import OrganizationsPage from "./pages/OrganizationsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PaletteProvider } from "./contexts/PaletteContext";
@@ -411,10 +413,34 @@ function App() {
                 }
               />
               <Route
+                path="/organizations"
+                element={
+                  <WorkspacePageShell>
+                    <OrganizationsPage />
+                  </WorkspacePageShell>
+                }
+              />
+              <Route
+                path="/organizations/:orgSlug/settings"
+                element={
+                  <WorkspacePageShell>
+                    <OrgSettingsPage />
+                  </WorkspacePageShell>
+                }
+              />
+              <Route
                 path="/settings/account"
                 element={
                   <WorkspacePageShell>
                     <AccountSettingsPage />
+                  </WorkspacePageShell>
+                }
+              />
+              <Route
+                path="/settings/billing"
+                element={
+                  <WorkspacePageShell>
+                    <BillingPage />
                   </WorkspacePageShell>
                 }
               />

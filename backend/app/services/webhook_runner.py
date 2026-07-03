@@ -103,6 +103,13 @@ class WebhookRunner:
                 )
                 return existing.run_id
 
+        # Billing seam: enforce the plan's daily webhook-run quota (no-op when
+        # the plan is unlimited / billing off).
+        if delivery.workspace_id:
+            from app.services import entitlements
+
+            await entitlements.require_webhook_run_allowed(delivery.workspace_id)
+
         masked_payload = mask_secrets_structural(delivery.payload, [])
         triggered_at = datetime.now(UTC)
 
@@ -117,6 +124,12 @@ class WebhookRunner:
                 actor_id=delivery.actor_id,
                 workspace_id=delivery.workspace_id,
             )
+            if delivery.workspace_id:
+                from app.services import entitlements
+
+                await entitlements.enforce_run_history_retention(
+                    delivery.workspace_id, delivery.resource_id
+                )
         elif delivery.resource_type == "collection":
             run_id = f"crun-{uuid.uuid4().hex[:12]}"
             collection = await CollectionRepository.get_by_id(delivery.resource_id)
@@ -236,6 +249,21 @@ class WebhookRunner:
             self.logger.error(
                 "Unknown resource_type=%s for run=%s", delivery.resource_type, item.run_id
             )
+            return
+
+        # Billing seam: Free tier doesn't persist webhook logs — drop it now that
+        # the run has used it. Best-effort: never fail the run over log cleanup.
+        if delivery.workspace_id:
+            try:
+                from app.services import entitlements
+
+                await entitlements.enforce_webhook_log_retention(
+                    delivery.workspace_id, delivery.webhook_log_id
+                )
+            except Exception:
+                self.logger.warning(
+                    "Webhook-log retention cleanup failed for run=%s", item.run_id, exc_info=True
+                )
 
     async def _dispatch_workflow(self, item: _QueueItem) -> None:
         """Execute a single workflow run."""

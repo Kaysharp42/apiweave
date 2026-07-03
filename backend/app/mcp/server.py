@@ -106,6 +106,9 @@ def register_resources() -> None:
     global _resources_registered
     if _resources_registered:
         return
+    # ponytail: registration is guard-idempotent; silence the duplicate-resource
+    # warning that FastMCP logs during intentional re-imports / hot reload / tests.
+    mcp_server._resource_manager.warn_on_duplicate_resources = False
     from app.mcp.resources.docs import register_doc_resources
     from app.mcp.resources.environments import register_environment_resources
     from app.mcp.resources.runs import register_run_resources
@@ -125,6 +128,7 @@ def register_prompts() -> None:
     global _prompts_registered
     if _prompts_registered:
         return
+    mcp_server._prompt_manager.warn_on_duplicate_prompts = False
     from app.mcp.prompts.debug import register_debug_prompts
     from app.mcp.prompts.workflow import register_workflow_prompts
 

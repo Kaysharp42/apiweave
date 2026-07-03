@@ -14,8 +14,9 @@ function toInvite(r: InviteResponse): Invite {
     email: r.email,
     role: r.role_preset,
     expiresAt: r.expires_at,
-    createdAt: r.created_at,
+    ...(r.created_at ? { createdAt: r.created_at } : {}),
     invitedBy: r.created_by,
+    ...(r.invite_url ? { token: r.invite_url } : {}),
   };
 }
 
@@ -33,7 +34,7 @@ export function useInvites() {
     try {
       setLoading(true);
       const data = await authenticatedJson<InviteResponse[]>(
-        `${API_BASE_URL}/api/auth/invites`,
+        `${API_BASE_URL}/api/invites`,
       );
       const now = new Date();
       const pending = data
@@ -55,11 +56,11 @@ export function useInvites() {
     async (email: string, role: string): Promise<CreateInviteResult | null> => {
       try {
         const response = await authenticatedJson<InviteResponse>(
-          `${API_BASE_URL}/api/auth/invites`,
+          `${API_BASE_URL}/api/invites`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, roles: [role] }),
+            body: JSON.stringify({ email, role }),
           },
         );
 
@@ -69,9 +70,9 @@ export function useInvites() {
         const result: CreateInviteResult = { invite };
 
         // If SMTP is not configured the backend returns the link directly
-        if (response.invite_url) {
+        if (response.warning && response.invite_url) {
           result.link = response.invite_url;
-          result.warning = "email not sent";
+          result.warning = response.warning;
         }
 
         toast.success("Invite created successfully");

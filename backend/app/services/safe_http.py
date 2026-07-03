@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import socket
 import ssl
 from typing import Any
 from urllib.parse import urlparse
 
 import aiohttp
+from aiohttp.abc import AbstractResolver
 
 from app.config import settings
 
@@ -52,10 +54,18 @@ BLOCKED_NETWORKS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
 
 # Loopback subset — surgically opt-in via settings.get_allow_loopback().
 # RFC1918, link-local, and metadata stay blocked regardless of this set.
-LOOPBACK_NETWORKS: frozenset[ipaddress.IPv4Network | ipaddress.IPv6Network] = frozenset({
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("::1/128"),
-})
+LOOPBACK_NETWORKS: frozenset[ipaddress.IPv4Network | ipaddress.IPv6Network] = frozenset(
+    {
+        ipaddress.ip_network("127.0.0.0/8"),
+        ipaddress.ip_network("::1/128"),
+    }
+)
+
+# Hostnames permitted to resolve into otherwise-blocked (private) space, but
+# ONLY when loopback is opted in (single-user dev). host.docker.internal maps a
+# containerized backend to its host machine; blocking its private resolution
+# would break local self-hosting. Never honored in production.
+DEV_ALLOWED_HOSTS: frozenset[str] = frozenset({"host.docker.internal"})
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -83,6 +93,86 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if settings.get_allow_loopback() and any(ip in net for net in LOOPBACK_NETWORKS):
         return False
     return any(ip in net for net in BLOCKED_NETWORKS)
+
+
+def _is_dev_allowed_host(host: str) -> bool:
+    """Return True if *host* is a dev-only host allowed to resolve privately.
+
+    Gated on ``settings.get_allow_loopback()`` so production (loopback off)
+    never honors it.
+    """
+    return settings.get_allow_loopback() and host.lower() in DEV_ALLOWED_HOSTS
+
+
+def _assert_resolved_ip_allowed(host: str, addr: str) -> None:
+    """Raise :class:`SafeUrlError` if resolved *addr* is in a blocked network."""
+    try:
+        ip = ipaddress.ip_address(addr.split("%", 1)[0])  # strip any zone id
+    except ValueError as exc:
+        raise SafeUrlError(f"Host {host!r} resolved to unparseable address {addr!r}") from exc
+    if _is_blocked_ip(ip):
+        raise SafeUrlError(f"Host {host!r} resolves to blocked address {addr}")
+
+
+class _SafeResolver(AbstractResolver):
+    """aiohttp resolver that refuses hosts resolving to blocked networks.
+
+    aiohttp connects to exactly the addresses this returns, so validating them
+    here closes the validate-vs-connect gap (DNS rebinding): a hostname that
+    resolves to a private/loopback/link-local/metadata IP is refused before any
+    socket opens — for the initial request and every redirect hop, since the
+    whole chain shares one connector. If *any* resolved address is blocked the
+    host is rejected, so a mixed public+private answer cannot be exploited.
+    """
+
+    def __init__(self) -> None:
+        self._inner = aiohttp.ThreadedResolver()
+
+    async def resolve(
+        self, host: str, port: int = 0, family: socket.AddressFamily = socket.AF_INET
+    ) -> list[Any]:
+        infos = await self._inner.resolve(host, port, family)
+        if not _is_dev_allowed_host(host):
+            for info in infos:
+                _assert_resolved_ip_allowed(host, str(info["host"]))
+        return infos
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+
+def resolve_and_pin_ip(host: str) -> str | None:
+    """Resolve *host*, reject it if any address is blocked, and return one
+    approved IP to pin the connection to.
+
+    Returns ``None`` for dev-allowed hosts (skip pinning) and for hosts that
+    cannot be resolved (not an SSRF risk — let the caller's client surface the
+    connection error). Raises :class:`SafeUrlError` if *any* resolved address
+    is in a blocked network, so a mixed public+private DNS answer can't be
+    exploited. Callers that connect to the returned IP (instead of re-resolving)
+    close the validate-vs-connect gap for non-aiohttp clients (e.g. httpx).
+    """
+    if not host:
+        raise SafeUrlError("Missing host")
+    if _is_dev_allowed_host(host):
+        return None
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return None
+    addresses = [str(info[4][0]) for info in infos]
+    for addr in addresses:
+        _assert_resolved_ip_allowed(host, addr)
+    return addresses[0] if addresses else None
+
+
+def assert_host_resolves_safe(host: str) -> None:
+    """Resolve *host* and raise :class:`SafeUrlError` if any address is blocked.
+
+    Thin wrapper over :func:`resolve_and_pin_ip` for call-sites that only need
+    the guard, not the pinned address.
+    """
+    resolve_and_pin_ip(host)
 
 
 def _host_in_approved_domains(host: str) -> bool:
@@ -134,8 +224,9 @@ def is_safe_url(url: str, *, allow_redirects: bool = True) -> bool:
         if _is_blocked_ip(ip):
             return False
     except ValueError:
-        # Not a literal IP — it's a domain name.  DNS-level rebinding is
-        # mitigated at the HTTP-wrapper layer (re-validate on each redirect).
+        # Not a literal IP — it's a domain name. This pure check can't resolve
+        # it; the connect-time enforcement (_SafeResolver / assert_host_resolves_safe)
+        # rejects hostnames that resolve into blocked networks.
         pass
 
     return True
@@ -226,7 +317,7 @@ async def safe_request(
     # connection reuse across hops and lets the caller read the body of
     # the final response.
     session_cookie_jar = aiohttp.CookieJar(unsafe=False)
-    connector = aiohttp.TCPConnector(ssl=ssl_context)
+    connector = aiohttp.TCPConnector(ssl=ssl_context, resolver=_SafeResolver())
     session = aiohttp.ClientSession(
         connector=connector,
         cookie_jar=session_cookie_jar,
@@ -293,7 +384,7 @@ async def safe_get(url: str, **kwargs: Any) -> tuple[aiohttp.ClientResponse, aio
     kwargs.setdefault("allow_redirects", False)
     timeout = kwargs.pop("timeout", 30.0)
     client_timeout = aiohttp.ClientTimeout(total=timeout)
-    connector = aiohttp.TCPConnector()
+    connector = aiohttp.TCPConnector(resolver=_SafeResolver())
     session = aiohttp.ClientSession(connector=connector, timeout=client_timeout)
     try:
         response = await session.get(url, **kwargs)
@@ -314,7 +405,7 @@ async def safe_post(
     kwargs.setdefault("allow_redirects", False)
     timeout = kwargs.pop("timeout", 30.0)
     client_timeout = aiohttp.ClientTimeout(total=timeout)
-    connector = aiohttp.TCPConnector()
+    connector = aiohttp.TCPConnector(resolver=_SafeResolver())
     session = aiohttp.ClientSession(connector=connector, timeout=client_timeout)
     try:
         response = await session.post(url, **kwargs)

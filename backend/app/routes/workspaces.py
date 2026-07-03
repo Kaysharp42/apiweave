@@ -487,14 +487,21 @@ async def remove_workflow_from_project(
 async def list_workflows(
     workspace_id: str,
     project_id: str | None = Query(None),
+    include_attached: bool = Query(False),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
-    """List workflows in a workspace, optionally filtered by project."""
+    """List workflows in a workspace. By default excludes project-attached
+    workflows; pass include_attached=true (Projects view) to get all."""
     try:
         return await scoped_workflow_service.list_scoped_workflows(
-            workspace_id, current_user.userId, project_id=project_id, skip=skip, limit=limit
+            workspace_id,
+            current_user.userId,
+            project_id=project_id,
+            skip=skip,
+            limit=limit,
+            include_attached=include_attached,
         )
     except ResourceNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

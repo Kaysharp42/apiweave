@@ -509,25 +509,37 @@ class TestRequireScopedPermissionDependency:
         assert response.status_code == 403
         assert "workflows:read" in response.json()["detail"]
 
-    def test_allows_when_workspace_role_grants_permission(self) -> None:
+    def test_allows_when_workspace_role_grants_permission(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from types import SimpleNamespace
+
+        from app.repositories.organization_repository import OrganizationRepository
+        from app.repositories.outside_collaborator_repository import (
+            OutsideCollaboratorRepository,
+        )
+        from app.repositories.workspace_repository import WorkspaceRepository
 
         app = FastAPI()
 
-        ws_membership = SimpleNamespace(workspace_id="test", role=WorkspaceRole.WRITE)
+        # New contract (roadmap P1.1): scoped roles are hydrated from the
+        # membership collections keyed by userId, not read off the User doc.
+        async def none(*args: object, **kwargs: object) -> None:
+            return None
+
+        async def ws_member(workspace_id: str, user_id: str) -> object:
+            return SimpleNamespace(role=WorkspaceRole.WRITE)
+
+        monkeypatch.setattr(WorkspaceRepository, "get_by_id", none)
+        monkeypatch.setattr(WorkspaceRepository, "get_member", ws_member)
+        monkeypatch.setattr(OrganizationRepository, "get_by_id", none)
+        monkeypatch.setattr(OrganizationRepository, "get_by_slug", none)
+        monkeypatch.setattr(OutsideCollaboratorRepository, "get_permissions_for_workspace", none)
 
         async def get_test_user() -> SimpleNamespace:
-            return SimpleNamespace(
-                roles=[],
-                permissions=[],
-                org_memberships=[],
-                workspace_memberships=[ws_membership],
-                team_memberships=[],
-                outside_collaborator_grants=[],
-                service_token_scope=None,
-            )
+            return SimpleNamespace(userId="user-1", roles=[], permissions=[])
 
-        @app.get("/orgs/{org_slug}/workspaces/{workspace_slug}/workflows")
+        @app.get("/orgs/{org_slug}/workspaces/{workspace_id}/workflows")
         async def list_workflows(
             user=require_scoped_permission("workflows", "read"),
         ) -> dict[str, bool]:

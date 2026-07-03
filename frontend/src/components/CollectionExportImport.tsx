@@ -1,4 +1,10 @@
-import { useState, useRef, type DragEvent, type ChangeEvent } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  type DragEvent,
+  type ChangeEvent,
+} from "react";
 import useSidebarStore from "../stores/SidebarStore";
 import {
   X,
@@ -123,7 +129,7 @@ export function CollectionExportImport({
   mode = "export",
   onImportSuccess = () => {},
 }: CollectionExportImportProps) {
-  const { workspaceId, isReady } = useScopeContext();
+  const { workspaceId } = useScopeContext();
   const [selectedTab, setActiveTab] = useState<TabId | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<MessageState | null>(null);
@@ -135,7 +141,11 @@ export function CollectionExportImport({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [createNewProject, setCreateNewProject] = useState<boolean>(true);
   const [newProjectName, setNewProjectName] = useState<string>("");
-  const [projects, setProjects] = useState<ProjectWithWorkflowCount[]>([]);
+  // Source projects from the SidebarStore — the same workspace-scoped list
+  // that renders the sidebar. The modal's own fetch used a different
+  // workspaceId source (useScopeContext) and could come back empty.
+  // No filtering: the current project is a valid import target.
+  const projects = useSidebarStore((s) => s.projects);
   const [selectedTargetProject, setSelectedTargetProject] = useState<
     string | null
   >(null);
@@ -167,23 +177,14 @@ export function CollectionExportImport({
     return "An unknown error occurred";
   };
 
-  const fetchProjects = async (): Promise<void> => {
-    if (!isReady || !workspaceId) return;
-    try {
-      const response = await authenticatedFetch(projectsUrl(workspaceId));
-      if (response.ok) {
-        const data: { projects: ProjectWithWorkflowCount[] } =
-          await response.json();
-        const filtered = data.projects.filter(
-          (project) =>
-            (project.projectId ?? project.collectionId) !== projectId,
-        );
-        setProjects(filtered);
-      }
-    } catch (error) {
-      console.error("Error fetching projects:", error);
-    }
-  };
+  // Refresh the shared project list whenever the modal opens, via the store's
+  // activeWorkspaceId-scoped fetch — the same path that loads the sidebar.
+  // When opened from a specific project, pre-select it as the import target.
+  useEffect(() => {
+    if (!isOpen) return;
+    void useSidebarStore.getState().fetchProjects();
+    if (projectId) setSelectedTargetProject(projectId);
+  }, [isOpen, projectId]);
 
   const handleExport = async (): Promise<void> => {
     if (!workspaceId || !projectId) {
@@ -818,7 +819,6 @@ export function CollectionExportImport({
               setActiveTab("import-collection");
               setMessage(null);
               setValidation(null);
-              void fetchProjects();
             }}
             className={tabButtonClasses("import-collection")}
           >

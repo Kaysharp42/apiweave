@@ -300,6 +300,20 @@ async def cancel_invite(
     return await org_invite_service.cancel_org_invite(org.orgId, invite_id, actor=current_user)
 
 
+@router.post(
+    "/{org_slug}/invites/{invite_id}/resend",
+    response_model=OrgInviteCreateResponse,
+)
+async def resend_invite(
+    org_slug: str,
+    invite_id: str,
+    current_user: User = Depends(get_current_active_user),
+) -> OrgInviteCreateResponse:
+    org = await org_service.get_org(org_slug)
+    await org_service.require_org_owner(org.orgId, current_user.userId)
+    return await org_invite_service.resend_org_invite(org.orgId, invite_id, actor=current_user)
+
+
 # ---------------------------------------------------------------------------
 # Teams
 # ---------------------------------------------------------------------------

@@ -108,7 +108,7 @@ def _make_invite_response(
         role=role,
         invitedBy="user-1",
         createdAt=now,
-        expiresAt=now + timedelta(days=7),
+        expires_at=now + timedelta(days=7),
         consumed=False,
         consumedAt=None,
     )
@@ -672,13 +672,13 @@ class TestOutsideCollaboratorFlows:
 
     def test_add_collaborator(self) -> None:
         now = datetime.now(UTC)
-        collab = SimpleNamespace(
-            collaboratorId="oc-1",
-            workspaceId="ws-1",
-            userId="user-2",
-            role="read",
-            createdAt=now,
-        )
+        collab = {
+            "collaboratorId": "oc-1",
+            "workspaceId": "ws-1",
+            "userId": "user-2",
+            "role": "read",
+            "createdAt": now,
+        }
         with patch(
             "app.routes.workspaces.workspace_service.add_outside_collaborator",
             new=AsyncMock(return_value={"collaborator": collab}),

@@ -91,6 +91,7 @@ async def test_create_project_returns_project_dto():
             new=AsyncMock(return_value=project),
         ),
         patch("app.services.audit_service.append_event", new=AsyncMock()),
+        patch("app.services.entitlements.require_can_create_project", new=AsyncMock()),
     ):
         result = await project_service.create_project(
             name="New Project",

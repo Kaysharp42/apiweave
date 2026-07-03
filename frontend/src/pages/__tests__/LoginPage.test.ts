@@ -108,10 +108,7 @@ function assertProviderPageSource(
 ): void {
   const content = readPage(fileName);
 
-  assertIncludes(
-    content,
-    "authenticatedFetch(`${API_BASE_URL}/api/auth/providers`)",
-  );
+  assertIncludes(content, "/api/auth/providers");
   assertIncludes(content, "getEnabledProviders");
   assertIncludes(content, "Unable to load sign-in options");
   assertIncludes(content, emptyMessage);
@@ -230,7 +227,14 @@ test("LoginPage shows loading state while provider request is pending", async ()
 });
 
 test("LoginPage source keeps provider visibility UI and loading/error states", () => {
-  assertOAuthHookPageSource("LoginPage.tsx", "No sign-in providers configured");
+  assertOAuthHookPageSource("LoginPage.tsx", "No OAuth providers configured");
+});
+
+test("LoginPage posts email sign-in requests to the magic-link endpoint", () => {
+  const content = readPage("LoginPage.tsx");
+  assertIncludes(content, "/api/auth/email/request");
+  assertIncludes(content, "Send sign-in link");
+  assertIncludes(content, "EmailLoginResponse");
 });
 
 test("SetupPage source keeps provider visibility UI and loading/error states", () => {

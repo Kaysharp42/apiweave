@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from app.models import Run, Workflow, WorkflowCreate, WorkflowUpdate
+from app.models import Edge, Node, Run, Workflow, WorkflowCreate, WorkflowUpdate
 from app.repositories.run_repository import RunRepository
 from app.repositories.workflow_repository import WorkflowRepository
 from app.repositories.workspace_repository import WorkspaceRepository
@@ -165,6 +165,80 @@ async def update_scoped_workflow(
     return _workflow_to_response(updated)
 
 
+def _edge_id(source: str, target: str, handle: str | None) -> str:
+    suffix = f"-{handle}" if handle else ""
+    return f"edge_{source}-{target}{suffix}"
+
+
+async def add_node_to_scoped_workflow(
+    workspace_id: str,
+    workflow_id: str,
+    node: Node,
+    actor_user_id: str,
+    after: str | None = None,
+    before: str | None = None,
+    source_handle: str | None = None,
+    edge_label: str | None = None,
+    splice: bool = True,
+) -> dict[str, Any]:
+    """
+    Add a single node to a workflow and wire it to its neighbours, without
+    resending the whole graph. Optionally splices the node onto an existing
+    ``after -> before`` edge.
+
+    ponytail: read-modify-write, no optimistic-lock. Fine for interactive
+    agent edits; add a version check if concurrent writers ever conflict.
+    """
+    ws = await WorkspaceRepository.get_by_id(workspace_id)
+    if not ws:
+        raise ResourceNotFoundError(f"Workspace {workspace_id} not found")
+
+    await _assert_workspace_access(ws, actor_user_id)
+
+    workflow = await WorkflowRepository.get_by_id_in_workspace(workflow_id, workspace_id)
+    if not workflow:
+        raise ResourceNotFoundError(f"Workflow {workflow_id} not found in workspace")
+
+    node_ids = {n.nodeId for n in workflow.nodes}
+    if node.nodeId in node_ids:
+        raise ValueError(f"Node '{node.nodeId}' already exists in workflow")
+    for ref, name in ((after, "after"), (before, "before")):
+        if ref is not None and ref not in node_ids:
+            raise ValueError(f"{name} node '{ref}' not found in workflow")
+
+    nodes = [*workflow.nodes, node]
+    edges = list(workflow.edges)
+
+    # Inserting between two directly-connected nodes: drop the old direct edge.
+    if splice and after is not None and before is not None:
+        edges = [e for e in edges if not (e.source == after and e.target == before)]
+
+    if after is not None:
+        edges.append(
+            Edge(
+                edgeId=_edge_id(after, node.nodeId, source_handle),
+                source=after,
+                target=node.nodeId,
+                sourceHandle=source_handle,
+                label=edge_label,
+            )
+        )
+    if before is not None:
+        edges.append(
+            Edge(
+                edgeId=_edge_id(node.nodeId, before, None),
+                source=node.nodeId,
+                target=before,
+            )
+        )
+
+    updated = await WorkflowRepository.update(workflow_id, WorkflowUpdate(nodes=nodes, edges=edges))
+    if not updated:
+        raise ResourceNotFoundError(f"Workflow {workflow_id} not found")
+
+    return _workflow_to_response(updated)
+
+
 async def delete_scoped_workflow(
     workspace_id: str,
     workflow_id: str,
@@ -207,9 +281,15 @@ async def list_scoped_workflows(
     project_id: str | None = None,
     skip: int = 0,
     limit: int = 20,
+    include_attached: bool = False,
 ) -> dict[str, Any]:
     """
-    List workflows in a workspace, optionally filtered by project.
+    List workflows in a workspace.
+
+    - project_id set: only that project's workflows.
+    - include_attached=True (Projects view): every workflow, so the UI can
+      group them under projects.
+    - default (Workflows tab): only workflows not attached to a project.
     """
     ws = await WorkspaceRepository.get_by_id(workspace_id)
     if not ws:
@@ -222,7 +302,9 @@ async def list_scoped_workflows(
             workspace_id, project_id, skip, limit
         )
     else:
-        workflows, total = await WorkflowRepository.list_by_workspace(workspace_id, skip, limit)
+        workflows, total = await WorkflowRepository.list_by_workspace(
+            workspace_id, skip, limit, include_attached=include_attached
+        )
 
     return {
         "workflows": [_workflow_to_response(wf) for wf in workflows],

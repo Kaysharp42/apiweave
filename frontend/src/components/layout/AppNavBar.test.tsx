@@ -11,9 +11,16 @@ vi.mock("../../contexts/WorkspaceContext", () => ({
   }),
 }));
 
+const authState = vi.hoisted(() => ({
+  isSingleUser: true,
+  canInvite: false,
+}));
+
 vi.mock("../../auth/useAuth", () => ({
   useAuth: () => ({
-    isSingleUser: true,
+    isSingleUser: authState.isSingleUser,
+    hasPermission: (perm: string) =>
+      perm === "users:invite" ? authState.canInvite : false,
   }),
 }));
 
@@ -25,11 +32,11 @@ function LocationProbe() {
 describe("AppNavBar settings navigation", () => {
   beforeEach(() => {
     localStorage.clear();
+    authState.isSingleUser = true;
+    authState.canInvite = false;
   });
 
-  it("routes Settings to workspace environments in single_user mode", async () => {
-    const user = userEvent.setup();
-
+  function renderNav() {
     render(
       <MemoryRouter initialEntries={["/personal/personal/workflows"]}>
         <Routes>
@@ -45,11 +52,43 @@ describe("AppNavBar settings navigation", () => {
         </Routes>
       </MemoryRouter>,
     );
+  }
+
+  it("routes Settings to workspace environments in single_user mode", async () => {
+    const user = userEvent.setup();
+    renderNav();
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
 
     expect(screen.getByTestId("location-probe").textContent).toBe(
       "/personal/personal/settings/environments",
+    );
+  });
+
+  it("routes Settings to workspace settings (not the admin page) for a non-admin in multi_tenant mode", async () => {
+    authState.isSingleUser = false;
+    authState.canInvite = false;
+    const user = userEvent.setup();
+    renderNav();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+
+    // Must NOT land on /settings/users (AdminRoute would bounce → workflows).
+    expect(screen.getByTestId("location-probe").textContent).toBe(
+      "/personal/personal/settings/environments",
+    );
+  });
+
+  it("routes Settings to the admin page for an admin in multi_tenant mode", async () => {
+    authState.isSingleUser = false;
+    authState.canInvite = true;
+    const user = userEvent.setup();
+    renderNav();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(screen.getByTestId("location-probe").textContent).toBe(
+      "/settings/users",
     );
   });
 });

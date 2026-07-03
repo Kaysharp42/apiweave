@@ -112,7 +112,7 @@ The tool groups are:
 - **Invites**: list, create, resend, cancel.
 - **Outside Collaborators**: list, add, remove.
 - **Workspaces**: list, get, create, update, list members.
-- **Workflows**: list, get, create, update, delete, export, import, import dry-run, run, resume, list runs, get run status, get run results, get run node result, cancel run.
+- **Workflows**: list, get, create, update, add node, delete, export, import, import dry-run, run, resume, list runs, get run status, get run results, get run node result, cancel run.
 - **Projects**: list, get, create, update, delete, list workflows, add workflow, remove workflow, reorder workflows, export, import, import dry-run, run.
 - **Environments**: list, get, create, update, delete, list allowed workspaces, add allowed workspace, remove allowed workspace.
 - **Environment Protection**: get, update, list approvals, approve, deny.
@@ -278,6 +278,15 @@ These are end-to-end playbooks an agent can follow without further prompting. Th
 5. Call `workflow_run` with the workflow id and the selected environment id. The run is bound to the calling token's actor for the audit log.
 6. Call `run_get_status` to poll. Honor the `polling_hint` interval in the response.
 7. When the run reaches a terminal state, call `run_get_results` for a summary, then `run_get_node_result` for the full payload of any node that needs inspection.
+
+### Add a Node to an Existing Workflow
+
+Use `workflow_add_node` for incremental edits instead of resending the whole graph through `workflow_update`. `workflow_update` replaces the entire `nodes`/`edges` arrays, so on a large workflow a single addition means re-transmitting everything (and risks wiping nodes you forgot to include).
+
+1. Call `workflow_add_node` with the workflow id and the new `node` (`{nodeId, type, config, position, label}`).
+2. Pass `after` (the predecessor nodeId) and/or `before` (the successor nodeId) to auto-wire the edges. If `after` and `before` are already directly connected, the new node is spliced between them and the old direct edge is removed (`splice=true`, the default).
+3. For branching sources, pass `source_handle` (`"pass"` / `"fail"`) so the incoming edge leaves the correct handle of an assertion or condition node; use `edge_label` to label it.
+4. The response is the full updated workflow detail, with secrets redacted like `workflow_get`.
 
 ### Provision a New Secret
 

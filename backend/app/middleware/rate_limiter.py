@@ -5,8 +5,11 @@ Prevents abuse by limiting requests per webhook
 
 import time
 from collections import defaultdict
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
+
+from app.config import settings
 
 
 class RateLimiter:
@@ -94,16 +97,67 @@ class RateLimiter:
 _rate_limiter = RateLimiter()
 
 
+async def _check_rate_limit_mongodb(
+    key: str, max_requests: int, window_seconds: int
+) -> tuple[bool, int, int]:
+    """Shared fixed-window limiter backed by MongoDB (atomic across instances).
+
+    Atomically increments the per-(key, window) counter and decides from the
+    resulting count, so concurrent requests across API instances share one
+    effective limit. Returns (allowed, remaining, reset_time).
+    """
+    from beanie.odm.operators.update.general import Inc
+
+    from app.models import RateLimitCounter
+
+    now = int(time.time())
+    window_start = now - (now % window_seconds)
+    reset_time = window_start + window_seconds
+
+    # Atomic increment-or-create for this (key, window). On insert the counter
+    # starts at 1; on a matching window it is incremented. Re-read for the count
+    # (a concurrent increment from another instance only makes us stricter, which
+    # is the safe direction for a limiter).
+    await RateLimitCounter.find_one(
+        RateLimitCounter.key == key,
+        RateLimitCounter.windowStart == window_start,
+    ).upsert(
+        Inc({RateLimitCounter.hits: 1}),
+        on_insert=RateLimitCounter(
+            key=key,
+            windowStart=window_start,
+            hits=1,
+            expires_at=datetime.fromtimestamp(reset_time + window_seconds, tz=UTC),
+        ),
+    )
+    doc = await RateLimitCounter.find_one(
+        RateLimitCounter.key == key,
+        RateLimitCounter.windowStart == window_start,
+    )
+    count = doc.hits if doc else 1
+    allowed = count <= max_requests
+    remaining = max(0, max_requests - count)
+    return allowed, remaining, reset_time
+
+
 async def check_webhook_rate_limit(webhook_id: str, max_requests_per_hour: int = 100) -> int:
     """
     FastAPI dependency for webhook rate limiting.
 
     Returns remaining request count for downstream header generation.
-    Raises HTTPException if rate limit exceeded.
+    Raises HTTPException if rate limit exceeded. The backend (process-local
+    memory vs. shared MongoDB) is selected by RATE_LIMITER_BACKEND.
     """
-    allowed, remaining, reset_time = _rate_limiter.check_rate_limit(
-        webhook_id=webhook_id, max_requests=max_requests_per_hour, window_seconds=3600
-    )
+    if settings.get_rate_limiter_backend() == "mongodb":
+        allowed, remaining, reset_time = await _check_rate_limit_mongodb(
+            key=f"webhook:{webhook_id}",
+            max_requests=max_requests_per_hour,
+            window_seconds=3600,
+        )
+    else:
+        allowed, remaining, reset_time = _rate_limiter.check_rate_limit(
+            webhook_id=webhook_id, max_requests=max_requests_per_hour, window_seconds=3600
+        )
 
     if not allowed:
         raise HTTPException(

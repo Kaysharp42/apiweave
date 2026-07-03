@@ -277,4 +277,4 @@ def serialize_document_for_export(document: Any) -> dict[str, Any]:
     serialized = document.model_dump(by_alias=True)
     serialized.pop("_id", None)
     serialized.pop("id", None)
-    return serialized
+    return dict(serialized)

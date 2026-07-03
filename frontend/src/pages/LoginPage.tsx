@@ -1,13 +1,18 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
-import { AlertTriangle, Shield } from "lucide-react";
+import { AlertTriangle, Mail, Shield } from "lucide-react";
 import { useAuth } from "../auth/useAuth";
+import { Button } from "../components/atoms/Button";
+import { Input } from "../components/atoms/Input";
 import { Spinner } from "../components/atoms/Spinner";
 import { EmptyState } from "../components/molecules/EmptyState";
 import { SplitAuthLayout } from "../components/auth/SplitAuthLayout";
 import { AuthInteractiveHero } from "../components/auth/AuthInteractiveHero";
 import { OAuthButton } from "../components/OAuthButton";
 import { useOAuthProviders } from "../hooks/useOAuthProviders";
+import { authenticatedJson } from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/api";
+import type { EmailLoginResponse } from "../types";
 
 export default function LoginPage() {
   const { login, status } = useAuth();
@@ -22,6 +27,10 @@ export default function LoginPage() {
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(
     null,
   );
+  const [email, setEmail] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailMessage, setEmailMessage] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   if (status === "loading") {
     return (
@@ -38,6 +47,36 @@ export default function LoginPage() {
   const handleProviderClick = (providerId: string) => {
     setLoadingProviderId(providerId);
     login(providerId);
+  };
+
+  const handleEmailSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setEmailError("Email is required");
+      return;
+    }
+
+    setEmailSending(true);
+    setEmailError(null);
+    setEmailMessage(null);
+    try {
+      const response = await authenticatedJson<EmailLoginResponse>(
+        `${API_BASE_URL}/api/auth/email/request`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: trimmedEmail }),
+        },
+      );
+      setEmailMessage(response.message);
+    } catch (err) {
+      setEmailError(
+        err instanceof Error ? err.message : "Failed to send sign-in link",
+      );
+    } finally {
+      setEmailSending(false);
+    }
   };
 
   return (
@@ -57,6 +96,41 @@ export default function LoginPage() {
           {error && (
             <div className="border border-status-error/30 bg-status-error/5 text-status-error dark:text-[var(--aw-status-error)] text-sm px-4 py-3 rounded-sm">
               {error}
+            </div>
+          )}
+
+          <form onSubmit={handleEmailSubmit} className="flex flex-col gap-3">
+            <Input
+              type="email"
+              label="Email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              disabled={emailSending}
+              {...(emailError ? { error: emailError } : {})}
+            />
+            <Button
+              type="submit"
+              fullWidth
+              loading={emailSending}
+              icon={<Mail className="w-4 h-4" aria-hidden="true" />}
+            >
+              Send sign-in link
+            </Button>
+            {emailMessage && (
+              <p className="rounded-sm border border-status-success/30 bg-status-success/5 px-3 py-2 text-sm text-status-success dark:text-[var(--aw-status-success)]">
+                {emailMessage}
+              </p>
+            )}
+          </form>
+
+          {!loadingProviders && !fetchError && providers.length > 0 && (
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-border dark:bg-border-dark" />
+              <span className="font-mono text-[10px] uppercase text-text-muted dark:text-text-muted-dark">
+                or
+              </span>
+              <div className="h-px flex-1 bg-border dark:bg-border-dark" />
             </div>
           )}
 
@@ -86,16 +160,11 @@ export default function LoginPage() {
           )}
 
           {!loadingProviders && !fetchError && providers.length === 0 && (
-            <EmptyState
-              icon={
-                <Shield
-                  className="w-10 h-10 text-status-warning"
-                  strokeWidth={1.5}
-                />
-              }
-              title="No sign-in providers configured"
-              description="Contact your administrator to enable authentication providers."
-            />
+            <p className="flex items-center gap-2 rounded-sm border border-border bg-surface-overlay px-3 py-2 text-sm text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
+              <Shield className="h-4 w-4 text-status-warning" />
+              No OAuth providers configured. Use email sign-in or contact your
+              administrator.
+            </p>
           )}
 
           {!loadingProviders &&
