@@ -11,8 +11,9 @@ RUN npm install
 # Copy source
 COPY . .
 
+RUN npm run build
+
 # Expose port
 EXPOSE 3000
 
-# Start dev server
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "prod"]

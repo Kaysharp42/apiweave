@@ -2,9 +2,9 @@ import { Github, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Tippy from "@tippyjs/react";
 import { IconButton } from "../atoms/IconButton";
 import useNavigationStore from "../../stores/NavigationStore";
-import { version as appVersion } from "../../../package.json";
 
 export function MainFooter() {
+  const appVersion = import.meta.env.VITE_APP_VERSION ?? "0.0.0";
   const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
   const toggleNavBarCollapse = useNavigationStore(
     (state) => state.toggleNavBarCollapse,

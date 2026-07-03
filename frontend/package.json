@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "VITE_APP_VERSION=$(node -p 'require(\"./package.json\").version') vite",
     "build": "vite build",
     "preview": "vite preview",
+    "prod": "vite preview --port 3000 --host",
     "test": "vitest run",
     "test:ui": "vitest run",
     "lint": "eslint .",

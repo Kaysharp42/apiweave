@@ -77,9 +77,6 @@ services:
       - FRONTEND_ALLOWED_HOST=${FRONTEND_ALLOWED_HOST:-apiweave.kaysharp.com}
     depends_on:
       - backend
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
 
 volumes:
   mongodb_data:
