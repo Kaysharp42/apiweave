@@ -5,21 +5,12 @@
   "identifier": "com.kaysharp.apiweave",
   "build": {
     "frontendDist": "../../frontend/dist",
-    "beforeDevCommand": "npm --prefix ../frontend run build",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "cd ../frontend && npx vite",
     "beforeBuildCommand": "npm --prefix ../frontend run build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "APIWeave",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 960,
-        "minHeight": 600,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
@@ -27,6 +18,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "binaries/apiweave-backend",
+      "binaries/apiweave-worker",
+      "binaries/mongod"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -1,0 +1,14 @@
+{
+  "name": "apiweave-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tauri shell for the APIWeave desktop app",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
