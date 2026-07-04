@@ -17,8 +17,7 @@ import { EmptyState } from "./molecules/EmptyState";
 import type { MCPConfig } from "../types/MCPConfig";
 import type { MCPTool } from "../types/MCPTool";
 import { authenticatedFetch } from "../utils/authenticatedApi";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+import API_BASE_URL from "../utils/api";
 
 type TabKey = "status" | "tools" | "resources" | "prompts" | "connect";
 
