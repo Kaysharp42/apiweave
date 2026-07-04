@@ -25,26 +25,6 @@ services:
       - ./backend/app:/app/app
       - ./backend/artifacts:/app/artifacts
 
-  mcp-stdio:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: apiweave-mcp-stdio
-    command: python mcp_stdio.py
-    env_file:
-      - ./backend/.env
-    environment:
-      - MONGODB_URL=mongodb://mongodb:27017
-      - MONGODB_DB_NAME=apiweave
-      - MCP_HTTP_ENABLED=false
-    depends_on:
-      - mongodb
-      - backend
-    volumes:
-      - ./backend/app:/app/app
-      - ./backend/artifacts:/app/artifacts
-      - ./backend/mcp_stdio.py:/app/mcp_stdio.py
-
   worker:
     build:
       context: ./backend
