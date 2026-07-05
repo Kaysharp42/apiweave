@@ -147,6 +147,11 @@ export class RunRepository {
   /**
    * Port of `RunRepository.update_status`: stamps `startedAt` on first
    * transition to running and `completedAt`/`duration` on any terminal state.
+   *
+   * Field-level write (decision #6b): touches only the status/timestamp columns
+   * and patches `duration`/`error` into the metadata blob — it never rewrites
+   * `node_statuses_json`/`extracted_variables_json`, so per-node progress patched
+   * by {@link appendNodeStatus} is never clobbered by a status transition.
    */
   public updateStatus(runId: string, status: Run["status"], error?: string): Run | undefined {
     const existing = this.getById(runId)
@@ -159,15 +164,37 @@ export class RunRepository {
     const completedAt = terminal ? now : existing.completedAt ?? null
     const duration =
       terminal && startedAt != null ? Date.parse(completedAt ?? now) - Date.parse(startedAt) : existing.duration ?? null
-    this.writeRun({
-      ...existing,
-      status,
-      error: error ?? existing.error ?? null,
-      startedAt,
-      completedAt,
-      duration,
-    })
+    this.store.set(
+      "UPDATE runs SET status = ?, startedAt = ?, completedAt = ?, " +
+        "response_metadata_json = json_set(response_metadata_json, '$.duration', ?, '$.error', ?) WHERE id = ?",
+      [status, startedAt, completedAt, duration, error ?? existing.error ?? null, runId],
+    )
     return this.getById(runId)
+  }
+
+  /**
+   * JSON-patch one node's status entry into `node_statuses_json` (decision #6b):
+   * a targeted `json_set` on that single column, NOT a whole-row replace. The
+   * executor (Task 14) calls this per node completion; concurrent status/variable
+   * writes never race on the whole row.
+   */
+  public appendNodeStatus(runId: string, nodeId: string, entry: JsonValue): void {
+    this.store.set("UPDATE runs SET node_statuses_json = json_set(node_statuses_json, ?, json(?)) WHERE id = ?", [
+      `$.${JSON.stringify(nodeId)}`,
+      toJson(entry),
+      runId,
+    ])
+  }
+
+  /**
+   * Merge extracted variables into `extracted_variables_json` via `json_patch`
+   * (RFC 7386 object merge) — targeted column write, whole row untouched.
+   */
+  public mergeExtractedVariables(runId: string, variables: Record<string, JsonValue>): void {
+    this.store.set("UPDATE runs SET extracted_variables_json = json_patch(extracted_variables_json, json(?)) WHERE id = ?", [
+      toJson(variables),
+      runId,
+    ])
   }
 
   public updateResults(runId: string, results: readonly RunResult[]): Run | undefined {
