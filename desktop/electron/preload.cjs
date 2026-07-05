@@ -10,8 +10,8 @@ const runtime = arg
   ? JSON.parse(Buffer.from(arg.slice("--apiweave-runtime=".length), "base64").toString())
   : {};
 
-// Same shape the old Tauri init script injected, so utils/api.ts and the
-// desktop-detection gates keep working unchanged.
+// utils/api.ts and the desktop-detection gates read this synchronously to
+// resolve the backend base URL and switch into desktop mode.
 contextBridge.exposeInMainWorld("__APIWEAVE_RUNTIME__", runtime);
 
 contextBridge.exposeInMainWorld("__APIWEAVE_DESKTOP__", {

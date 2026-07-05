@@ -1,5 +1,5 @@
-// Sidecar orchestration for the Electron desktop shell — the Node port of the
-// old src-tauri/sidecars.rs. At launch we allocate OS-assigned loopback ports,
+// Sidecar orchestration for the Electron desktop shell.
+// At launch we allocate OS-assigned loopback ports,
 // then spawn mongod, the FastAPI backend (uvicorn) and the worker as child
 // processes bound to those ports. Each Child is pushed onto a shared array the
 // main process kills on exit. boot() is async (it blocks ~15s waiting for

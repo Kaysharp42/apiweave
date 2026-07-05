@@ -1,4 +1,4 @@
-// Electron main process — the desktop shell that replaced the Tauri Rust shell.
+// Electron main process — the cross-platform desktop shell.
 // It creates a frameless window (the frontend draws its own TitleBar), serves
 // the built React app over an app:// custom protocol (so absolute asset paths
 // and client-side routing work), and orchestrates the local sidecars
