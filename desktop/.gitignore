@@ -2,4 +2,7 @@ node_modules/
 
 # PyInstaller work/output; frozen sidecars are staged by build-desktop-sidecars, not committed
 .pyi/
-src-tauri/binaries/
+resources/sidecars/
+
+# electron-builder output
+release/

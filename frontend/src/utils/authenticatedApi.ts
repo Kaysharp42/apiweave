@@ -54,6 +54,16 @@ export async function authenticatedFetch(
   // Ensure we never accidentally send an admin key
   headers.delete("Authorization");
 
+  // Desktop shell: unlock the loopback backend. Only the Electron renderer gets
+  // the injected token, so a browser hitting the same port is rejected. No-op on web.
+  const uiToken =
+    typeof window !== "undefined"
+      ? window.__APIWEAVE_RUNTIME__?.uiToken
+      : undefined;
+  if (uiToken) {
+    headers.set("X-Desktop-Token", uiToken);
+  }
+
   return fetch(url, {
     ...options,
     method,

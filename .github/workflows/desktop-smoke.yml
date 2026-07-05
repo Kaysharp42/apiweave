@@ -1,10 +1,7 @@
-# Phase 1 render smoke test for the Tauri desktop shell.
-# The local sandbox (Debian 12, webkit2gtk 2.50.6) couldn't confirm the webview
-# actually renders the embedded SPA — the custom-protocol handler failed to
-# intercept and WebKit showed a "Connection refused" error page instead.
-# This job builds against a Tauri-supported webkit2gtk (Ubuntu 22.04's 4.1),
-# launches the app headless under Xvfb, and screenshots the window so we can
-# confirm the APIWeave canvas renders (and not the WebKit error page).
+# Render smoke test for the Electron desktop shell. Builds the frontend, then
+# launches the shell headless under Xvfb (no sidecars) and asserts the renderer
+# loads the embedded SPA — see desktop/smoke.cjs. Catches a broken app://
+# protocol handler or preload before they ship.
 name: Desktop render smoke
 
 on:
@@ -28,76 +25,28 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # frontendDist (../../frontend/dist) must exist before cargo build embeds it.
+      # The non-packaged shell serves frontend/dist over app://, so build it first.
       - name: Build frontend
         working-directory: frontend
         run: |
           npm ci
           npm run build
 
-      - name: Install Tauri + Xvfb system deps
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm ci
+
+      - name: Install Xvfb + Electron runtime libs
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            librsvg2-dev \
-            libayatana-appindicator3-dev \
-            patchelf \
             xvfb \
-            dbus-x11 \
-            imagemagick \
-            x11-utils
+            libnss3 \
+            libatk-bridge2.0-0 \
+            libgtk-3-0 \
+            libgbm1 \
+            libasound2
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/src-tauri
-
-      # tauri-build validates the externalBin resources exist at compile time.
-      # This is a render-only test (APIWEAVE_SKIP_SIDECARS below), so empty
-      # placeholders are enough to satisfy the check without freezing real ones.
-      - name: Stage placeholder sidecars
-        run: |
-          mkdir -p desktop/src-tauri/binaries
-          triple=$(rustc -Vv | sed -n 's/^host: //p')
-          for n in apiweave-backend apiweave-worker mongod; do
-            touch "desktop/src-tauri/binaries/$n-$triple"
-          done
-
-      # Plain cargo build (no bundling) — enough to launch the webview.
-      - name: Build desktop shell
-        working-directory: desktop/src-tauri
-        run: cargo build
-
-      - name: Launch headless and screenshot
-        run: |
-          set -euo pipefail
-          export APP_BIN="$PWD/desktop/src-tauri/target/debug/app"
-          export SHOT="$PWD/desktop-render.png"
-          # Render the shell without spawning mongod/backend/worker.
-          export APIWEAVE_SKIP_SIDECARS=1
-          test -x "$APP_BIN"
-          # Inner script is single-quoted: $APP_BIN/$SHOT expand in the inner
-          # bash, which inherits them from the exported environment.
-          xvfb-run -a --server-args="-screen 0 1280x800x24" \
-            dbus-run-session -- bash -euo pipefail -c '
-              "$APP_BIN" &
-              APP_PID=$!
-              # give WebKit time to load the custom-protocol assets and paint
-              sleep 25
-              echo "--- mapped windows ---"
-              xwininfo -root -tree | grep -i apiweave || echo "no APIWeave window title found"
-              import -window root "$SHOT"
-              kill "$APP_PID" 2>/dev/null || true
-            '
-          test -s desktop-render.png
-          echo "Screenshot bytes: $(stat -c%s desktop-render.png)"
-          identify desktop-render.png || true
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-render-screenshot
-          path: desktop-render.png
-          if-no-files-found: error
+      - name: Launch headless and assert render
+        working-directory: desktop
+        run: xvfb-run -a --server-args="-screen 0 1280x800x24" node smoke.cjs

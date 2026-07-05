@@ -6,6 +6,18 @@
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────
+   Desktop shell — reserve the custom title bar's height (h-8 = 2rem) from the
+   viewport so pages sized with h-screen / min-h-screen don't overflow under it.
+   Scoped to .desktop-shell (set on <html> only in the Electron build).
+   ────────────────────────────────────────────── */
+.desktop-shell .h-screen {
+  height: calc(100vh - 2rem);
+}
+.desktop-shell .min-h-screen {
+  min-height: calc(100vh - 2rem);
+}
+
+/* ──────────────────────────────────────────────
    React Flow — Token-Based Dark Mode Overrides
    ────────────────────────────────────────────── */
 

@@ -79,7 +79,7 @@ export function MainHeader() {
         </IconButton>
 
         <img
-          src="/public/apiweave.png"
+          src="/apiweave.png"
           alt="APIWeave Logo"
           className="h-7 w-7 rounded object-cover"
         />

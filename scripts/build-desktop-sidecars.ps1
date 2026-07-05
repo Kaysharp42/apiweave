@@ -1,6 +1,7 @@
 # Freeze the backend + worker into standalone sidecar binaries and stage a
-# pinned mongod, all named for Tauri's externalBin convention
-# (<name>-<target-triple>.exe) into desktop/src-tauri/binaries/.
+# pinned mongod into desktop/resources/sidecars/, which electron-builder bundles
+# as extraResources (see desktop/package.json). sidecars.cjs runs these when
+# APIWEAVE_SIDECAR_DIR is set (packaged builds).
 #
 # PyInstaller can't cross-compile, so this runs natively per OS (here: Windows).
 # Verify a frozen binary with:  <binary> --check   (imports the full app, exits 0)
@@ -10,12 +11,9 @@ $ErrorActionPreference = 'Stop'
 $repo    = Split-Path -Parent $PSScriptRoot
 $backend = Join-Path $repo 'backend'
 $sidecar = Join-Path $repo 'desktop/sidecar'
-$binDir  = Join-Path $repo 'desktop/src-tauri/binaries'
+$binDir  = Join-Path $repo 'desktop/resources/sidecars'
 $work    = Join-Path $repo 'desktop/.pyi'
 New-Item -ItemType Directory -Force $binDir, $work | Out-Null
-
-# Target triple Tauri expects in the sidecar filename.
-$triple = (rustc -Vv | Select-String '^host:').ToString().Split(' ')[1]
 
 $py = Join-Path $backend 'venv/Scripts/python.exe'
 if (-not (Test-Path $py)) {
@@ -46,15 +44,22 @@ function Freeze($name, $entry, $extraArgs) {
         --collect-submodules motor `
         @extraArgs `
         (Join-Path $sidecar $entry)
-    Copy-Item "$work/dist/$name.exe" (Join-Path $binDir "$name-$triple.exe") -Force
+    Copy-Item "$work/dist/$name.exe" (Join-Path $binDir "$name.exe") -Force
 }
 
 # uvicorn loads its protocol implementations dynamically → needs --collect-all.
 Freeze 'apiweave-backend' 'apiweave_backend.py' @('--collect-all', 'uvicorn')
 Freeze 'apiweave-worker'  'apiweave_worker.py'  @()
 
+# Prove each frozen bundle imports the full app graph (catches a missing hidden
+# import before it ships). --check supplies throwaway config env itself.
+foreach ($bin in 'apiweave-backend', 'apiweave-worker') {
+    & (Join-Path $binDir "$bin.exe") --check
+    if ($LASTEXITCODE -ne 0) { throw "$bin failed --check: frozen bundle is missing imports" }
+}
+
 # --- mongod: fetch + pin (not frozen) --------------------------------------
-$mongoOut = Join-Path $binDir "mongod-$triple.exe"
+$mongoOut = Join-Path $binDir 'mongod.exe'
 if (Test-Path $mongoOut) {
     Write-Host "mongod already staged: $mongoOut"
 } else {

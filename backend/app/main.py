@@ -3,6 +3,7 @@ APIWeave - Visual API Test Workflows Made Simple
 Main FastAPI application entry point
 """
 
+import hmac
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -85,6 +86,7 @@ app.add_middleware(
         "X-Webhook-Signature",
         "X-Webhook-Timestamp",
         "X-CSRF-Token",
+        "X-Desktop-Token",
         "Idempotency-Key",
     ],
 )
@@ -170,6 +172,46 @@ if settings.MCP_ENABLED and settings.MCP_HTTP_ENABLED:
     mcp_streamable_http.add_middleware(MCPCORSMiddleware)
     app.mount("/mcp", mcp_streamable_http)
     logger.info("MCP Streamable HTTP mounted at /mcp")
+
+
+def desktop_request_allowed(
+    method: str, path: str, provided_token: str, expected_token: str
+) -> bool:
+    """Decide whether a request may pass the desktop-shell token gate.
+
+    No-op (always allowed) when ``expected_token`` is empty. Otherwise every
+    request needs a matching token EXCEPT CORS preflight, /health (boot gate),
+    and the /mcp mount (external MCP clients reach it; it enforces its own auth).
+    """
+    if not expected_token:
+        return True
+    if method == "OPTIONS" or path == "/health" or path == "/mcp" or path.startswith("/mcp/"):
+        return True
+    return hmac.compare_digest(provided_token, expected_token)
+
+
+@app.middleware("http")
+async def desktop_token_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Gate every request behind the desktop shell's per-launch token.
+
+    Added last so it's the outermost layer (runs first), rejecting browser /
+    external requests before any auth or CSRF logic.
+    """
+    if not desktop_request_allowed(
+        request.method,
+        request.url.path,
+        request.headers.get("X-Desktop-Token", ""),
+        settings.DESKTOP_UI_TOKEN,
+    ):
+        return Response(
+            status_code=403,
+            content='{"detail":"Forbidden"}',
+            media_type="application/json",
+        )
+    return await call_next(request)
 
 
 @app.get("/")

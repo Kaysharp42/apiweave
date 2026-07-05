@@ -1,43 +1,32 @@
-# Build/run the APIWeave desktop (Tauri) app on Windows.
-#   .\scripts\desktop.ps1          # dev: live Vite dev server (HMR) + hot Rust reload
-#   .\scripts\desktop.ps1 build    # produce the .msi/.exe installer
-# dev serves the frontend from the Vite dev server (devUrl in tauri.conf.json) so
-# frontend edits hot-reload; build compiles the static frontend bundle first.
-# Start the backend/worker/mongod yourself for now (Phase 1/2 wires sidecars in).
+# Build/run the APIWeave desktop (Electron) app on Windows.
+#   .\scripts\desktop.ps1          # dev: Vite dev server (HMR) + the Electron shell
+#   .\scripts\desktop.ps1 build    # freeze sidecars + build the NSIS installer
+#
+# The shell spawns mongod/backend/worker itself (sidecars.cjs). Dev needs the
+# backend venv (backend/venv) and mongod on PATH; packaged builds bundle a
+# frozen backend/worker + pinned mongod (see build-desktop-sidecars.ps1).
 param([ValidateSet('dev', 'build')][string]$Command = 'dev')
 $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $PSScriptRoot
-Set-Location (Join-Path $repo 'desktop')
+$desktop = Join-Path $repo 'desktop'
+$frontend = Join-Path $repo 'frontend'
 
-# Tauri CLI is a devDependency; install it on first run.
-if (-not (Test-Path node_modules)) { npm install }
+if (-not (Test-Path (Join-Path $desktop 'node_modules'))) { npm --prefix $desktop install }
 
-# The MSVC target needs link.exe + a LIB that includes the Windows SDK.
-# Always (re)activate the VS Developer environment rather than skipping when
-# link.exe already exists: a stale LIB from an earlier activation (or a link.exe
-# inherited from conda/PATH) would otherwise be reused, and the linker fails with
-# "cannot open input file 'kernel32.lib'". Activation rebuilds LIB from scratch,
-# so running it every time is safe and idempotent.
-$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-if (-not (Test-Path $vswhere)) {
-    throw "Visual Studio Installer not found. Install VS Build Tools with the 'Desktop development with C++' workload."
+if ($Command -eq 'dev') {
+    # Vite dev server in the background for HMR; the shell loads it via
+    # APIWEAVE_DEV_SERVER. Kill Vite when the shell exits.
+    $vite = Start-Process npm -ArgumentList 'run', 'dev' -WorkingDirectory $frontend -PassThru
+    try {
+        $env:APIWEAVE_DEV_SERVER = 'http://localhost:3000'
+        Start-Sleep -Seconds 4  # let Vite bind :3000 before the shell loads it
+        npm --prefix $desktop start
+    } finally {
+        if ($vite -and -not $vite.HasExited) { Stop-Process -Id $vite.Id -Force -ErrorAction SilentlyContinue }
+    }
+} else {
+    & (Join-Path $PSScriptRoot 'build-desktop-sidecars.ps1')
+    npm --prefix $frontend run build
+    npm --prefix $desktop run build
 }
-$vsPath = & $vswhere -latest -products * `
-    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-    -property installationPath
-if (-not $vsPath) {
-    throw "No VS install with the C++ toolset found. Add the 'Desktop development with C++' workload."
-}
-Import-Module (Join-Path $vsPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
-Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation `
-    -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
-Set-Location (Join-Path $repo 'desktop')  # dev shell can move us; go back
-
-# Fail with one clear line if the SDK libs still aren't on LIB, instead of a
-# 400-line linker error deep inside the cargo build.
-if (-not ($env:LIB -split ';' | Where-Object { $_ -and (Test-Path (Join-Path $_ 'kernel32.lib')) })) {
-    throw "Windows SDK libs not on LIB after activating VS (WindowsSDKVersion=$env:WindowsSDKVersion). Install/repair the Windows 11 SDK (Desktop C++) in Visual Studio."
-}
-
-npx tauri $Command

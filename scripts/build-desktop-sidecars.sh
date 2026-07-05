@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Freeze the backend + worker into standalone sidecar binaries and stage a
-# pinned mongod, all named for Tauri's externalBin convention
-# (<name>-<target-triple>) into desktop/src-tauri/binaries/.
+# pinned mongod into desktop/resources/sidecars/, which electron-builder bundles
+# as extraResources (see desktop/package.json). sidecars.cjs runs these when
+# APIWEAVE_SIDECAR_DIR is set (packaged builds).
 #
 # PyInstaller can't cross-compile, so this runs natively per OS (Linux/macOS).
 # Verify a frozen binary with:  <binary> --check   (imports the full app, exits 0)
@@ -11,11 +12,10 @@ MONGOD_VERSION="${MONGOD_VERSION:-7.0.14}"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 backend="$repo/backend"
 sidecar="$repo/desktop/sidecar"
-bin_dir="$repo/desktop/src-tauri/binaries"
+bin_dir="$repo/desktop/resources/sidecars"
 work="$repo/desktop/.pyi"
 mkdir -p "$bin_dir" "$work"
 
-triple="$(rustc -Vv | sed -n 's/^host: //p')"
 py="$backend/venv/bin/python"
 [ -x "$py" ] || py="python3"
 "$py" -m pip install --quiet --disable-pip-version-check pyinstaller
@@ -40,15 +40,21 @@ freeze() {
     --collect-submodules motor \
     "$@" \
     "$sidecar/$entry"
-  cp "$work/dist/$name" "$bin_dir/$name-$triple"
+  cp "$work/dist/$name" "$bin_dir/$name"
 }
 
 # uvicorn loads its protocol implementations dynamically → needs --collect-all.
 freeze apiweave-backend apiweave_backend.py --collect-all uvicorn
 freeze apiweave-worker  apiweave_worker.py
 
+# Prove each frozen bundle imports the full app graph (catches a missing hidden
+# import before it ships). --check supplies throwaway config env itself.
+for bin in apiweave-backend apiweave-worker; do
+  "$bin_dir/$bin" --check || { echo "$bin failed --check: frozen bundle is missing imports" >&2; exit 1; }
+done
+
 # --- mongod: fetch + pin (not frozen) --------------------------------------
-mongo_out="$bin_dir/mongod-$triple"
+mongo_out="$bin_dir/mongod"
 if [ -f "$mongo_out" ]; then
   echo "mongod already staged: $mongo_out"
 else

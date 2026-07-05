@@ -364,7 +364,18 @@ function App() {
         <AuthProvider>
           <Router>
             <Routes>
-              <Route path="/" element={<LandingPage />} />
+              {/* Desktop skips the marketing landing page — no login needed
+                  (single-user backend), so go straight to the workspace. */}
+              <Route
+                path="/"
+                element={
+                  window.__APIWEAVE_RUNTIME__?.apiUrl ? (
+                    <Navigate to="/app" replace />
+                  ) : (
+                    <LandingPage />
+                  )
+                }
+              />
               <Route
                 path="/app"
                 element={

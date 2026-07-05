@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     #     behavior and the default.
     DEPLOYMENT_MODE: Literal["single_user", "multi_tenant"] = "multi_tenant"
 
+    # Desktop shell lockdown. When set (the Electron shell generates a random
+    # token per launch and injects it into the webview), every request must carry a
+    # matching X-Desktop-Token header EXCEPT the MCP mount and /health. This
+    # stops a browser or other local process from using the loopback backend
+    # while single_user mode has auth disabled — only the desktop UI knows the
+    # token, and /mcp stays open for external MCP clients. Empty = no gate (web/
+    # Docker deployments).
+    DESKTOP_UI_TOKEN: str = ""
+
     # Billing (Phase 4). When False (default) entitlement checks allow
     # everything — orgs/workspaces/invites are unrestricted. Phase 4 wires
     # plan/seat/quota logic behind this single flag (see services/entitlements.py).

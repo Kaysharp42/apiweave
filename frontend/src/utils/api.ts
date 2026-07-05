@@ -8,9 +8,19 @@ declare global {
     readonly env: ImportMetaEnv;
   }
   interface Window {
-    // Injected by the Tauri desktop shell before any bundled JS runs; carries
-    // the backend's dynamically-allocated loopback port. Absent in web/Docker builds.
-    __APIWEAVE_RUNTIME__?: { apiUrl?: string };
+    // Injected by the Electron desktop shell's preload before any bundled JS
+    // runs; carries the backend's dynamically-allocated loopback port and the
+    // per-launch token that unlocks the backend (sent as X-Desktop-Token — the
+    // backend rejects requests without it). Absent in web/Docker builds.
+    __APIWEAVE_RUNTIME__?: { apiUrl?: string; uiToken?: string };
+    // Frameless-window controls exposed by the Electron preload; drives the
+    // custom TitleBar. Absent in web/Docker builds.
+    __APIWEAVE_DESKTOP__?: {
+      minimize: () => void;
+      toggleMaximize: () => void;
+      close: () => void;
+      onMaximizeChange: (cb: (maximized: boolean) => void) => () => void;
+    };
   }
 }
 

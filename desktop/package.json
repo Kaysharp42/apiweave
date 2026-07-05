@@ -2,13 +2,31 @@
   "name": "apiweave-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Tauri shell for the APIWeave desktop app",
+  "description": "Electron shell for the APIWeave desktop app",
+  "main": "electron/main.cjs",
   "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build",
-    "tauri": "tauri"
+    "dev": "electron .",
+    "start": "electron .",
+    "build": "electron-builder"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.kaysharp.apiweave",
+    "productName": "APIWeave",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": ["electron/**/*"],
+    "extraResources": [
+      { "from": "../frontend/dist", "to": "frontend" },
+      { "from": "resources/sidecars", "to": "sidecars" }
+    ],
+    "win": { "target": ["nsis"] },
+    "linux": { "target": ["AppImage", "deb", "pacman"], "category": "Development" },
+    "mac": { "target": ["dmg"] }
   }
 }
