@@ -12,12 +12,15 @@ $backend = Join-Path $repo 'backend'
 $sidecar = Join-Path $repo 'desktop/sidecar'
 $binDir  = Join-Path $repo 'desktop/src-tauri/binaries'
 $work    = Join-Path $repo 'desktop/.pyi'
-New-Item -ItemType Directory -Force $binDir | Out-Null
+New-Item -ItemType Directory -Force $binDir, $work | Out-Null
 
 # Target triple Tauri expects in the sidecar filename.
 $triple = (rustc -Vv | Select-String '^host:').ToString().Split(' ')[1]
 
 $py = Join-Path $backend 'venv/Scripts/python.exe'
+if (-not (Test-Path $py)) {
+    throw "Backend venv not found at $py. Create it first: python -m venv backend/venv; backend/venv/Scripts/python.exe -m pip install -e backend"
+}
 & $py -m pip install --quiet --disable-pip-version-check pyinstaller
 
 # Let `--collect-submodules app` import app.* during analysis (config.Settings

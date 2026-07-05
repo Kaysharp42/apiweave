@@ -13,7 +13,7 @@ backend="$repo/backend"
 sidecar="$repo/desktop/sidecar"
 bin_dir="$repo/desktop/src-tauri/binaries"
 work="$repo/desktop/.pyi"
-mkdir -p "$bin_dir"
+mkdir -p "$bin_dir" "$work"
 
 triple="$(rustc -Vv | sed -n 's/^host: //p')"
 py="$backend/venv/bin/python"

@@ -159,17 +159,30 @@ fn random_key() -> String {
 /// stored secret undecryptable.
 fn load_or_create_secrets(dir: &Path) -> io::Result<Secrets> {
     let path = dir.join("runtime-secrets.json");
-    if let Ok(bytes) = std::fs::read(&path) {
-        if let Ok(secrets) = serde_json::from_slice::<Secrets>(&bytes) {
-            return Ok(secrets);
+    match std::fs::read(&path) {
+        Ok(bytes) => serde_json::from_slice::<Secrets>(&bytes).map_err(|e| {
+            // Only a genuinely-missing file is "first run". A corrupt/unparseable
+            // file must NOT be silently overwritten with fresh keys — that would
+            // permanently orphan every secret already encrypted under the old key.
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "{} is unreadable ({e}); refusing to regenerate keys and orphan stored secrets — restore or delete the file",
+                    path.display()
+                ),
+            )
+        }),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            let secrets = Secrets {
+                secret_key: random_key(),
+                secret_encryption_key: random_key(),
+            };
+            std::fs::write(&path, serde_json::to_vec_pretty(&secrets)?)?;
+            Ok(secrets)
         }
+        // Transient errors (permission denied, I/O) — surface, don't clobber.
+        Err(e) => Err(e),
     }
-    let secrets = Secrets {
-        secret_key: random_key(),
-        secret_encryption_key: random_key(),
-    };
-    std::fs::write(&path, serde_json::to_vec_pretty(&secrets)?)?;
-    Ok(secrets)
 }
 
 // --- spawning ---------------------------------------------------------------
@@ -233,9 +246,14 @@ fn spawn_backend(
     Ok(())
 }
 
-fn spawn_worker(secrets: &Secrets, mongo_port: u16, children: &Mutex<Vec<Child>>) -> Result<(), String> {
+fn spawn_worker(
+    secrets: &Secrets,
+    mongo_port: u16,
+    backend_port: u16,
+    children: &Mutex<Vec<Child>>,
+) -> Result<(), String> {
     let mut cmd = worker_command();
-    apply_backend_env(&mut cmd, secrets, mongo_port, 0);
+    apply_backend_env(&mut cmd, secrets, mongo_port, backend_port);
     let child = cmd
         .spawn()
         .map_err(|e| format!("failed to launch worker: {e}"))?;
@@ -260,6 +278,6 @@ pub fn boot(
 
     let mongo_port = spawn_mongod(&dbpath, children)?;
     spawn_backend(&secrets, mongo_port, backend_port, children)?;
-    spawn_worker(&secrets, mongo_port, children)?;
+    spawn_worker(&secrets, mongo_port, backend_port, children)?;
     Ok(())
 }
