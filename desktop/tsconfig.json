@@ -18,6 +18,6 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["electron/**/*.ts", "core/*/index.ts"],
+  "include": ["electron/**/*.ts", "core/*/index.ts", "core/id.ts", "core/services-locator.ts"],
   "exclude": ["node_modules", "dist", "release"]
 }
