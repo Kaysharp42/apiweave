@@ -87,3 +87,29 @@ jobs:
             desktop/release/*.deb
             desktop/release/*.pacman
           if-no-files-found: error
+
+  # Attach every OS's installer to the GitHub Release for the tag, so users
+  # download from the release page (not the buried per-run artifacts). One job,
+  # so there's no race to create the release.
+  publish:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Publish installers to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(find dist -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.pacman' \))
+          echo "$files"
+          [ -n "$files" ] || { echo "no installers built" >&2; exit 1; }
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "APIWeave Desktop $GITHUB_REF_NAME" \
+            --notes "Automated desktop build (unsigned). Install notes: see the README 'Desktop App' section." \
+            $files \
+          || gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber $files
