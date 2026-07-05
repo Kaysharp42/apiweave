@@ -16,3 +16,9 @@ export type Contract = Record<ContractAction, ContractSchemaEntry>
 export type ContractInput<Entry extends ContractSchemaEntry> = z.infer<Entry["input"]>
 export type ContractOutput<Entry extends ContractSchemaEntry> = z.infer<Entry["output"]>
 export type { ContractError, ContractErrorCode, ContractResult } from "./errors"
+export {
+  createApiweaveClient,
+  type ApiweaveClient,
+  type ClientMethod,
+  type InvokeFn,
+} from "./client"

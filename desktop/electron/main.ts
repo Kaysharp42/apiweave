@@ -1,6 +1,12 @@
 import { app, BrowserWindow, ipcMain, net, protocol } from "electron"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
+
+// The single request channel. Handlers are registered onto it in Task 13; until
+// then every `apiweave:invoke` call returns a not_found envelope, which is the
+// correct answer while the GUI is intentionally offline (Waves 1–3).
+const ipcRouter = new IpcRouter()
 
 const DEV_SERVER_URL = "http://localhost:5173"
 
@@ -101,6 +107,8 @@ if (!hasSingleInstanceLock) {
   })
 
   app.whenReady().then(() => {
+    attachIpcRouter(ipcMain, ipcRouter)
+
     protocol.handle("app", (request) => {
       let pathname = decodeURIComponent(new URL(request.url).pathname)
 
