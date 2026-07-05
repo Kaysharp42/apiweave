@@ -1,0 +1,14 @@
+{
+  "name": "max-size-placeholder",
+  "source": "Python cryptography + PyNaCl capture on 2026-07-05",
+  "plaintextSize": 256,
+  "note": "Legacy Python code does not define a max secret size; this is a deterministic 256-byte placeholder vector for Task 7 expansion.",
+  "masterKeySha256Base64": "ayqWOX3muYms08l7v/JBBRQbPzuevr9IA4bJxrfSduo=",
+  "kekId": "kek-task-4",
+  "wrappedDekBase64": "AAECAwQFBgcICQoLKEEYBpqgGXtbzBf72LrGmtVyfTiI2Wh2Eq_x-7c876HVhI-fCohrjZuM3Ytd3d_C",
+  "secretNonceBase64": "EBESExQVFhcYGRod",
+  "plaintextBase64": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eA==",
+  "aes256GcmCiphertextBase64": "EcUhtz60eQkNe41y7sAg1Ot2Ei9vdKP2QFSzVWPt5ulTv3EUeISs5+Ew0wImK/jxnsdmzXM63u9cR+xTcdtIVFtJuD1usU2jD7ssigNwoVfkMCQpr4HcCuXu2uL7F8kIgP04UCJCBoLoIuB4DzSdYFQT+Zi/QMNR6j2LBngM1fSj/RZE9C6TpS5idGeMU6cB86X7aeP6QXwUG+2/B9fyDNeVsgVmFhGeNg0fMOBCLPj84bqz699bwDWP2c01qskxCKrfyCQ6vxF8/+/7ZapWlhIExBpFFcHBIz95dKgLnrvHUY1OKeI1tuZyNU3sL+t95VuNLwqOojLdvZFaBh/44x9cGPzd94pCQSNql99QiQg=",
+  "sealedBoxPublicKeyBase64": "pwgOpq0YnT2Vk8BnIHznZ/4alXYiIkNNxIvzCyX3MzQ=",
+  "sealedBoxCiphertextBase64": "awvlaKh9ErApZUqUPW7JbPd2UGSWpDZw5yDwcCUPyRoeeOlcyYsUgcbM1YfnMIJHRBPOIFOwttuLah2lazY3GHg87GABKplkqKpG/PyZ2KoQxOKYgtWK6dOWPmz9VzUErEVoDg+gtpKU2UHh3JtVfNablX5jBEDOKdL+R2Hq9+ERwOc4/A/S1yBX0kaQcUUenfVWEUZRHfpsbEniDxSmWyzBKAuhEFatpCFTQbFwOKC0V5MIzy0GLi49K1041Vw95phko08VfRRi3d0bpX8eBN+3DIvy3eNDzAuxUiCiuGEzBtTPSF05gw+x76dkHw6ntCUNIRtvRZm+6uVBGryrlMgzCd/oduRJTAwd047zSRx6dWBYPIEZuT9S0bajH6pSHIw5nPvWdM2hNPT6Ti9Kpg=="
+}

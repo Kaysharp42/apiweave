@@ -1,0 +1,17 @@
+{
+  "name": "single-http",
+  "seed": "0xDEADBEEF",
+  "clock": "2026-01-02T03:04:05.000Z",
+  "httpTapeRefs": ["http/single-http-get.json"],
+  "workflow": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      { "id": "http_1", "type": "httpRequest", "config": { "method": "GET", "url": "/single" } },
+      { "id": "end", "type": "end" }
+    ],
+    "edges": [
+      { "source": "start", "target": "http_1" },
+      { "source": "http_1", "target": "end" }
+    ]
+  }
+}

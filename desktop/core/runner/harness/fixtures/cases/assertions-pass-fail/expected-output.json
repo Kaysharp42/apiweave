@@ -1,0 +1,19 @@
+{
+  "caseName": "assertions-pass-fail",
+  "status": "failed",
+  "startedAt": "2026-01-02T03:04:05.000Z",
+  "seed": "0xFEEDFACE",
+  "nodeStatuses": {
+    "start": "passed",
+    "http_status": "passed",
+    "assertion_pass": "passed",
+    "assertion_fail": "failed"
+  },
+  "extractedVariables": {},
+  "outputs": {
+    "assertion_fail": {
+      "passed": false,
+      "message": "Expected body.count to equal 4"
+    }
+  }
+}

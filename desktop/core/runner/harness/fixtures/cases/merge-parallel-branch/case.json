@@ -1,0 +1,22 @@
+{
+  "name": "merge-parallel-branch",
+  "seed": "0xBADC0DE",
+  "clock": "2026-01-02T03:04:05.000Z",
+  "httpTapeRefs": ["http/merge-left.json", "http/merge-right.json"],
+  "workflow": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      { "id": "left", "type": "httpRequest", "config": { "method": "GET", "url": "/merge/left" } },
+      { "id": "right", "type": "httpRequest", "config": { "method": "GET", "url": "/merge/right" } },
+      { "id": "merge", "type": "merge" },
+      { "id": "end", "type": "end" }
+    ],
+    "edges": [
+      { "source": "start", "target": "left" },
+      { "source": "start", "target": "right" },
+      { "source": "left", "target": "merge" },
+      { "source": "right", "target": "merge" },
+      { "source": "merge", "target": "end" }
+    ]
+  }
+}

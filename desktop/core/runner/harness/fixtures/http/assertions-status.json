@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/assertions/status"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "healthy": true,
+      "count": 3
+    }
+  }
+}

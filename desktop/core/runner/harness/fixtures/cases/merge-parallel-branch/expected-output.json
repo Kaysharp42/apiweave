@@ -1,0 +1,23 @@
+{
+  "caseName": "merge-parallel-branch",
+  "status": "passed",
+  "startedAt": "2026-01-02T03:04:05.000Z",
+  "seed": "0xBADC0DE",
+  "nodeStatuses": {
+    "start": "passed",
+    "left": "passed",
+    "right": "passed",
+    "merge": "passed",
+    "end": "passed"
+  },
+  "extractedVariables": {
+    "left": "ready",
+    "right": "ready"
+  },
+  "outputs": {
+    "merge": {
+      "branches": ["left", "right"],
+      "status": "joined"
+    }
+  }
+}

@@ -5,15 +5,31 @@
   "description": "Electron shell for the APIWeave desktop app",
   "author": "Kaysharp42 <kaysharp42@users.noreply.github.com>",
   "homepage": "https://github.com/Kaysharp42/apiweave",
-  "main": "electron/main.cjs",
+  "main": "dist/desktop/main.js",
   "scripts": {
-    "dev": "electron .",
+    "dev": "npm run dev:electron",
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "parity": "node core/runner/harness/run-parity.mjs",
+    "parity:capture": "node core/runner/harness/run-parity.mjs --capture",
+    "dev:electron": "npm run build:electron && electron .",
+    "build:electron": "node esbuild.config.cjs",
+    "typecheck:desktop": "tsc --noEmit",
+    "test:desktop": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.23.0",
+    "better-sqlite3": "^12.6.0",
+    "libsodium-wrappers": "^0.8.4",
+    "undici": "^7.16.0",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.27.2",
+    "typescript": "^6.0.3",
+    "vitest": "^2.1.8"
   },
   "build": {
     "appId": "com.kaysharp.apiweave",
@@ -22,13 +38,35 @@
       "output": "release",
       "buildResources": "build"
     },
-    "files": ["electron/**/*"],
-    "extraResources": [
-      { "from": "../frontend/dist", "to": "frontend" },
-      { "from": "resources/sidecars", "to": "sidecars" }
+    "files": [
+      "dist/desktop/**/*"
     ],
-    "win": { "target": ["nsis"] },
-    "linux": { "target": ["AppImage", "deb", "pacman"], "category": "Development" },
-    "mac": { "target": ["dmg"] }
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "pacman"
+      ],
+      "category": "Development"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    }
   }
 }

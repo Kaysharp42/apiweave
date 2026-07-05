@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/single",
+    "headers": {
+      "x-api-key": "fixture-key"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "ok": true,
+      "message": "single"
+    }
+  }
+}

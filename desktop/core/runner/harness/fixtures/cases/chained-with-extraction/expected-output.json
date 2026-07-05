@@ -1,0 +1,25 @@
+{
+  "caseName": "chained-with-extraction",
+  "status": "passed",
+  "startedAt": "2026-01-02T03:04:05.000Z",
+  "seed": "0x12345678",
+  "nodeStatuses": {
+    "start": "passed",
+    "get_user": "passed",
+    "get_profile": "passed",
+    "end": "passed"
+  },
+  "extractedVariables": {
+    "userId": 42,
+    "token": "user-token-42"
+  },
+  "outputs": {
+    "get_profile": {
+      "status": 200,
+      "body": {
+        "name": "Ada",
+        "plan": "pro"
+      }
+    }
+  }
+}

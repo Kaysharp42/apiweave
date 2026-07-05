@@ -1,0 +1,21 @@
+{
+  "caseName": "single-http",
+  "status": "passed",
+  "startedAt": "2026-01-02T03:04:05.000Z",
+  "seed": "0xDEADBEEF",
+  "nodeStatuses": {
+    "start": "passed",
+    "http_1": "passed",
+    "end": "passed"
+  },
+  "extractedVariables": {},
+  "outputs": {
+    "http_1": {
+      "status": 200,
+      "body": {
+        "ok": true,
+        "message": "single"
+      }
+    }
+  }
+}

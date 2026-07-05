@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/profiles/42",
+    "headers": {
+      "authorization": "Bearer user-token-42"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "name": "Ada",
+      "plan": "pro"
+    }
+  }
+}
