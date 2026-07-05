@@ -1,6 +1,11 @@
 import dns from "node:dns/promises"
-import { BlockList as NodeBlockList, isIP, type AddressType } from "node:net"
-import { fetch } from "undici"
+import type { LookupAddress } from "node:dns"
+import { BlockList as NodeBlockList, isIP } from "node:net"
+import { fetch, Headers, type RequestInit, type Response } from "undici"
+
+// @types/node dropped the exported `AddressType` alias; net.BlockList's
+// IPVersion parameter is the lowercase pair.
+type AddressType = "ipv4" | "ipv6"
 
 /**
  * Safe HTTP utility for SSRF prevention.
@@ -53,7 +58,7 @@ export type SafeHttpOptions = {
   readonly approvedDomains?: readonly string[]
   readonly maxRedirectHops?: number
   readonly fetchImpl?: typeof fetch
-  readonly dnsLookup?: (host: string) => Promise<readonly dns.LookupAddress[]>
+  readonly dnsLookup?: (host: string) => Promise<readonly LookupAddress[]>
   readonly timeoutMs?: number
 }
 
@@ -146,7 +151,7 @@ export class SafeHttp {
   public async resolveAndPinIp(host: string): Promise<string | null> {
     if (!host) throw new SafeUrlError("Missing host")
     if (this.isDevAllowedHost(host)) return null
-    let infos: dns.LookupAddress[]
+    let infos: LookupAddress[]
     try {
       infos = [...(await this.dnsLookup!.call(null, host))]
     } catch {
@@ -205,8 +210,8 @@ export class SafeHttp {
 
   // -------------------- Internals --------------------
 
-  private isBlockedIp(address: string, family: AddressType): boolean {
-    const type: AddressType = family === 6 ? "IPv6" : "IPv4"
+  private isBlockedIp(address: string, family: 4 | 6): boolean {
+    const type: AddressType = family === 6 ? "ipv6" : "ipv4"
     if (this.allowLoopback && this.loopbackList.check(address, type)) return false
     return this.blocklist.check(address, type)
   }
@@ -224,8 +229,8 @@ export class SafeHttp {
 
 function buildBlocklist(v4: readonly (readonly [string, number])[], v6: readonly (readonly [string, number])[]): NodeBlockList {
   const list = new NodeBlockList()
-  for (const [addr, prefix] of v4) list.addSubnet(addr, prefix, "IPv4")
-  for (const [addr, prefix] of v6) list.addSubnet(addr, prefix, "IPv6")
+  for (const [addr, prefix] of v4) list.addSubnet(addr, prefix, "ipv4")
+  for (const [addr, prefix] of v6) list.addSubnet(addr, prefix, "ipv6")
   return list
 }
 

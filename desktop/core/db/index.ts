@@ -1,6 +1,7 @@
 export { initDatabase, openDatabase } from "./connection"
 export { readMigrations, runMigrations } from "./migrations"
 export { SyncStore, ThreadStore } from "./kvstore"
+export { SIDE_TABLE_THRESHOLD_BYTES } from "./constants"
 export type { InitDatabaseOptions, InitializedDatabase } from "./connection"
 export type { KVStore } from "./kvstore"
 export type { Database, RunResult, SqliteParameters, SqliteRow, SqliteValue } from "./sqlite-types"
