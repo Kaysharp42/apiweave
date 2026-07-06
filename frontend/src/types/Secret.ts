@@ -14,8 +14,4 @@ export interface Secret {
 }
 
 /** Valid scope types for scoped secrets. */
-export type SecretScopeType =
-  | "user"
-  | "organization"
-  | "workspace"
-  | "environment";
+export type SecretScopeType = "workspace" | "environment";
