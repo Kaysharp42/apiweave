@@ -2,11 +2,20 @@ import { app, BrowserWindow, ipcMain, net, protocol } from "electron"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
+import { emitRunProgress } from "../core/ipc/register"
+import { initDatabase, type InitializedDatabase } from "../core/db"
+import { RunRepository, WorkflowRepository } from "../core/repositories"
+import { RunScheduler, SafeHttp, DynamicFunctions } from "../core/runner"
+import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 
 // The single request channel. Handlers are registered onto it in Task 13; until
 // then every `apiweave:invoke` call returns a not_found envelope, which is the
 // correct answer while the GUI is intentionally offline (Waves 1–3).
 const ipcRouter = new IpcRouter()
+
+let database: InitializedDatabase | null = null
+let scheduler: RunScheduler | null = null
+let isQuitting = false
 
 const DEV_SERVER_URL = "http://localhost:5173"
 
@@ -107,6 +116,33 @@ if (!hasSingleInstanceLock) {
   })
 
   app.whenReady().then(() => {
+    database = initDatabase({ userDataPath: app.getPath("userData") })
+
+    const runs = new RunRepository(database.kvStore)
+    const workflows = new WorkflowRepository(database.kvStore)
+    const clock = new WallClockProvider()
+    const rng = new CryptoRandomProvider()
+    const http = new SafeHttp({ allowLoopback: true })
+    const functions = new DynamicFunctions(clock, rng)
+    scheduler = new RunScheduler({
+      runs,
+      workflows,
+      http,
+      functions,
+      clock,
+      rng,
+      emitProgress: (_runId, event) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          emitRunProgress(mainWindow.webContents, event)
+        }
+      },
+    })
+
+    const interrupted = scheduler.reconcileOnStartup()
+    if (interrupted > 0) {
+      console.info(`[bootstrap] reconciled ${interrupted} stuck run(s) to interrupted`)
+    }
+
     attachIpcRouter(ipcMain, ipcRouter)
 
     protocol.handle("app", (request) => {
@@ -131,4 +167,22 @@ if (!hasSingleInstanceLock) {
 
 app.on("window-all-closed", () => {
   app.quit()
+})
+
+app.on("before-quit", (event) => {
+  if (isQuitting) return
+  isQuitting = true
+
+  if (scheduler && scheduler.getActiveCount() > 0) {
+    event.preventDefault()
+    void scheduler.shutdown(2000).finally(() => {
+      database?.close()
+      database = null
+      app.quit()
+    })
+    return
+  }
+
+  database?.close()
+  database = null
 })

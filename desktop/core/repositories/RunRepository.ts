@@ -135,6 +135,17 @@ export class RunRepository {
     return row === undefined ? undefined : rowToRun(row)
   }
 
+  /**
+   * All runs still in a non-terminal state (`pending` or `running`), oldest
+   * first. The scheduler's `reconcileOnStartup` marks each as `interrupted` —
+   * never auto-resumes (decision: re-run is the user's choice).
+   */
+  public listNonTerminal(): readonly Run[] {
+    return this.store
+      .query<RunRow>(`SELECT ${COLUMNS} FROM runs WHERE status IN ('pending', 'running') ORDER BY createdAt ASC, id ASC`)
+      .map(rowToRun)
+  }
+
   public update(runId: string, patch: RunUpdate): Run | undefined {
     const existing = this.getById(runId)
     if (existing === undefined) {

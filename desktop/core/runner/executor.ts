@@ -104,6 +104,7 @@ export class WorkflowExecutor {
   private readonly branchResults = new Map<string, ReadonlyArray<readonly [string, NodeResult]>>()
   private currentBranchContext: ReadonlyArray<readonly [string, NodeResult]> = []
   private readonly mergeCompleted = new Set<string>()
+  private activeRunId = "harness"
 
   public constructor(private readonly deps: ExecutorDeps) {}
 
@@ -114,6 +115,7 @@ export class WorkflowExecutor {
     seed?: string,
   ): Promise<ExecutorOutput> {
     const startedAt = this.deps.clock.isoNow()
+    this.activeRunId = options.runId ?? "harness"
 
     if (workflow.variables) {
       for (const [key, value] of Object.entries(workflow.variables)) {
@@ -1026,7 +1028,7 @@ export class WorkflowExecutor {
     if (this.deps.emitProgress) {
       this.deps.emitProgress({
         kind: "node.completed",
-        runId: "harness",
+        runId: this.activeRunId,
         nodeId,
         status,
         variables: { ...this.workflowVariables },
