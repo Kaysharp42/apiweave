@@ -245,9 +245,6 @@ export type { SecretBinding } from "./SecretBinding";
 export type { ServiceToken } from "./ServiceToken";
 export type { ServiceTokenCreateResponse } from "./ServiceTokenCreateResponse";
 export type { PublicKey } from "./PublicKey";
-export type { Team } from "./Team";
-export type { TeamMember } from "./TeamMember";
-export type { TeamPermissionGrant } from "./TeamPermissionGrant";
 export type { CreateWorkspaceModalProps } from "./CreateWorkspaceModalProps";
 export type { OutsideCollaborator, WorkspaceRole } from "./OutsideCollaborator";
 export type {

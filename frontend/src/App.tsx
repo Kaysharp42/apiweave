@@ -27,10 +27,8 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { useAuth } from "./auth/useAuth";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
-import { apiweave, authenticatedJson } from "./utils/apiweaveClient";
-import API_BASE_URL from "./utils/apiweaveClient";
+import { apiweave } from "./utils/apiweaveClient";
 import { isDesktopShell } from "./utils/isDesktopShell";
-import type { Workspace } from "./types/Workspace";
 import type { WorkspacePageShellProps } from "./types/WorkspacePageShellProps";
 
 const STORAGE_PREFIX = "apiweave:v1:";
@@ -112,14 +110,12 @@ function DefaultWorkspaceRedirect() {
     let cancelled = false;
 
     (async () => {
-      const response = await authenticatedJson<{ workspaces: Workspace[]; total: number }>(
-        `${API_BASE_URL}/api/workspaces`,
-      );
+      const workspaces = await apiweave.workspaces.list();
       if (cancelled) return;
 
       const workspace =
-        response.workspaces.find((entry) => entry.isPersonal) ??
-        response.workspaces[0];
+        workspaces.find((entry) => entry.isPersonal) ??
+        workspaces[0];
       if (!workspace) {
         if (isDesktopShell()) {
           await apiweave.workspaces.create({

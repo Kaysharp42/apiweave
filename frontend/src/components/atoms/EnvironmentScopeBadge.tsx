@@ -10,7 +10,6 @@ const SCOPE_CONFIG: Record<
   { label: string; icon: typeof User; variant: "primary" | "info" | "success" }
 > = {
   user: { label: "User", icon: User, variant: "info" },
-  organization: { label: "Organization", icon: Layers, variant: "primary" },
   workspace: { label: "Workspace", icon: Layers, variant: "success" },
 };
 

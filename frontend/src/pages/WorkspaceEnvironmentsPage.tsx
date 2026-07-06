@@ -189,9 +189,7 @@ export default function WorkspaceEnvironmentsPage() {
       const endpoint =
         selectedEnv.scopeType === "workspace"
           ? `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}`
-          : selectedEnv.scopeType === "organization"
-            ? `/api/orgs/${selectedEnv.scopeId}/environments/${selectedEnv.environmentId}`
-            : `/api/users/${selectedEnv.scopeId}/environments/${selectedEnv.environmentId}`;
+          : `/api/users/${selectedEnv.scopeId}/environments/${selectedEnv.environmentId}`;
 
       await authenticatedJson<ScopedEnvironment>(endpoint, {
         method: "PUT",
@@ -226,9 +224,7 @@ export default function WorkspaceEnvironmentsPage() {
       const endpoint =
         env.scopeType === "workspace"
           ? `/api/workspaces/${workspaceId}/environments/${env.environmentId}`
-          : env.scopeType === "organization"
-            ? `/api/orgs/${env.scopeId}/environments/${env.environmentId}`
-            : `/api/users/${env.scopeId}/environments/${env.environmentId}`;
+          : `/api/users/${env.scopeId}/environments/${env.environmentId}`;
 
       await authenticatedJson(endpoint, { method: "DELETE" });
       if (selectedEnv?.environmentId === env.environmentId) {
@@ -442,7 +438,7 @@ export default function WorkspaceEnvironmentsPage() {
             onCancel={() => setViewMode("list")}
             submitting={saving}
             availableWorkspaces={orgWorkspaces}
-            showAllowedWorkspaces={selectedEnv.scopeType === "organization"}
+            showAllowedWorkspaces={false}
           />
         )}
 
