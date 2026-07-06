@@ -61,6 +61,11 @@ export class IpcRouter {
     this.handlers.set(id, registration as unknown as StoredHandler)
   }
 
+  /** Registered `{domain}.{action}` keys — used by the route-reconciliation test. */
+  keys(): readonly string[] {
+    return [...this.handlers.keys()]
+  }
+
   async dispatch(request: InvokeRequest): Promise<ContractResult<unknown>> {
     const handler = this.handlers.get(key(request.domain, request.action))
     if (handler === undefined) {
