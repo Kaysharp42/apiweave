@@ -19,8 +19,8 @@ describe("database migrations", () => {
     const db = openTempDatabase()
     try {
       const store = db.kvStore
-      expect(db.schemaVersion).toBe(1)
-      expect(db.database.pragma("user_version", { simple: true })).toBe(1)
+      expect(db.schemaVersion).toBe(2)
+      expect(db.database.pragma("user_version", { simple: true })).toBe(2)
       expect(tableNames(store)).toEqual([
         "collections",
         "environments",
@@ -68,7 +68,7 @@ describe("database migrations", () => {
 
       const secondOpen = initDatabase({ databasePath: db.databasePath })
       try {
-        expect(secondOpen.schemaVersion).toBe(1)
+        expect(secondOpen.schemaVersion).toBe(2)
       } finally {
         secondOpen.close()
       }
@@ -129,7 +129,7 @@ describe("database migrations", () => {
       db.database.pragma("user_version = 99")
 
       expect(() => initDatabase({ databasePath: db.databasePath })).toThrow(
-        "migration not found: database user_version 99 is newer than current 1",
+        "migration not found: database user_version 99 is newer than current 2",
       )
       const workflow = store.get("SELECT id, name FROM workflows WHERE id = ?", ["workflow-1"])
       expect(workflow).toMatchObject({ id: "workflow-1", name: "Before unknown migration" })
@@ -155,7 +155,7 @@ describe("database migrations", () => {
     const recovered = initDatabase({ databasePath: path.join(tempRoot, "bad.db"), migrationsPath: path.join(__dirname, "..", "migrations") })
     try {
       expect(recovered.kvStore.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", ["migration_probe"])).toBeUndefined()
-      expect(recovered.schemaVersion).toBe(1)
+      expect(recovered.schemaVersion).toBe(2)
     } finally {
       recovered.close()
     }

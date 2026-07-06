@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   BrowserRouter as Router,
+  HashRouter,
   Routes,
   Route,
   Navigate,
@@ -26,8 +27,9 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { useAuth } from "./auth/useAuth";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
-import { authenticatedJson } from "./utils/apiweaveClient";
+import { apiweave, authenticatedJson } from "./utils/apiweaveClient";
 import API_BASE_URL from "./utils/apiweaveClient";
+import { isDesktopShell } from "./utils/isDesktopShell";
 import type { Workspace } from "./types/Workspace";
 import type { Organization } from "./types/Organization";
 import type { WorkspacePageShellProps } from "./types/WorkspacePageShellProps";
@@ -123,6 +125,15 @@ function DefaultWorkspaceRedirect() {
         response.workspaces.find((entry) => entry.isPersonal) ??
         response.workspaces[0];
       if (!workspace) {
+        if (isDesktopShell()) {
+          await apiweave.workspaces.create({
+            name: "Personal",
+            slug: "personal",
+            isPersonal: true,
+          });
+          setTargetPath("/personal/workflows");
+          return;
+        }
         setTargetPath("/setup");
         return;
       }
@@ -276,19 +287,20 @@ function App() {
     () => ({ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }),
     [darkMode, autoSaveEnabled],
   );
+  const RouterComponent = isDesktopShell() ? HashRouter : Router;
 
   return (
     <AppContext.Provider value={appContextValue}>
       <PaletteProvider>
         <AuthProvider>
-          <Router>
+          <RouterComponent>
             <Routes>
               {/* Desktop skips the marketing landing page — no login needed
                   (single-user backend), so go straight to the workspace. */}
               <Route
                 path="/"
                 element={
-                  window.__APIWEAVE_RUNTIME__?.apiUrl ? (
+                  isDesktopShell() ? (
                     <Navigate to="/app" replace />
                   ) : (
                     <LandingPage />
@@ -401,7 +413,7 @@ function App() {
                 }
               />
             </Routes>
-          </Router>
+          </RouterComponent>
         </AuthProvider>
         <Toast />
       </PaletteProvider>

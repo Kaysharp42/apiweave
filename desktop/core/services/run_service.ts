@@ -9,6 +9,23 @@ import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
+ * The run-execution seam. The in-process {@link RunScheduler} satisfies it
+ * structurally; injecting it (rather than importing the scheduler here) keeps the
+ * heavy executor/http graph out of the service and its unit tests. When absent,
+ * `createRun` just persists a pending row and `cancel` marks it cancelled — the
+ * behaviour the field-level-write tests rely on.
+ */
+export interface RunTrigger {
+  enqueue(request: {
+    workspaceId: string
+    workflowId: string
+    variables?: Readonly<Record<string, unknown>>
+    startNodeIds?: readonly string[]
+  }): string
+  cancel(runId: string): boolean
+}
+
+/**
  * Workspace-scoped run history + the field-level write surface the executor
  * drives. Ported from Python `run_service`.
  *
@@ -26,10 +43,23 @@ export class RunService {
     private readonly syncProvider: SyncProvider,
     private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
+    private readonly trigger?: RunTrigger,
   ) {}
 
   async createRun(workspaceId: string, input: Omit<RunCreate, "workspaceId">): Promise<Run> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "run", RESOURCE_WORKFLOWS)
+    if (this.trigger !== undefined) {
+      // The scheduler creates the run row (status pending→running) and starts
+      // execution; re-read it to return the freshly-scheduled run.
+      // ponytail: selectedEnvironmentId is not forwarded — environment-variable
+      // resolution during a run isn't wired in the executor yet (pre-existing).
+      const runId = this.trigger.enqueue({
+        workspaceId,
+        workflowId: input.workflowId,
+        ...(input.variables ? { variables: input.variables } : {}),
+      })
+      return this.mustGet(workspaceId, runId)
+    }
     return this.runs.create({ ...input, workspaceId })
   }
 
@@ -61,6 +91,11 @@ export class RunService {
   async cancel(workspaceId: string, runId: string): Promise<Run> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "cancel", RESOURCE_RUNS)
     this.mustGet(workspaceId, runId)
+    // Abort a live/queued run at the scheduler (the executor stops at its next
+    // checkpoint and emits run.finished); then mark the row cancelled. For a run
+    // the scheduler doesn't track (already terminal, or no scheduler), this write
+    // is the whole cancel.
+    this.trigger?.cancel(runId)
     const updated = this.runs.updateStatus(runId, "cancelled")
     if (updated === undefined) throw new NotFoundError(`run ${runId} not found`)
     await this.syncProvider.push()

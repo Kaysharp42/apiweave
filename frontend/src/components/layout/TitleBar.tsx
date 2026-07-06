@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Minus, Square, Copy, X } from "lucide-react";
+import { isDesktopShell } from "../../utils/isDesktopShell";
 
 // Custom window chrome for the desktop app. The native title bar is disabled
 // (frame:false in desktop/electron/main.cjs) so this bar matches the app design
@@ -7,11 +8,6 @@ import { Minus, Square, Copy, X } from "lucide-react";
 // `-webkit-app-region` CSS; the right buttons drive the window over IPC
 // (window.__APIWEAVE_DESKTOP__, exposed by the preload).
 //
-// Renders null on web/Docker — gated on the shell's injected runtime, same
-// signal BootGate uses.
-const isDesktop = (): boolean =>
-  typeof window !== "undefined" && Boolean(window.__APIWEAVE_RUNTIME__?.apiUrl);
-
 // Electron drag regions are CSS, not an attribute; WebkitAppRegion isn't in the
 // standard CSSProperties type, so the casts are expected.
 const dragStyle = { WebkitAppRegion: "drag" } as React.CSSProperties;
@@ -54,7 +50,7 @@ export function TitleBar() {
     return desktop.onMaximizeChange(setMaximized);
   }, []);
 
-  if (!isDesktop()) return null;
+  if (!isDesktopShell()) return null;
 
   const desktop = window.__APIWEAVE_DESKTOP__;
 

@@ -498,6 +498,32 @@ const readPath = (
 const segment = (parts: readonly string[], index: number): string =>
   decodeURIComponent(parts[index] ?? "");
 
+type WorkspaceCreateInput = Pick<Workspace, "name"> &
+  Partial<Pick<Workspace, "slug" | "description" | "isPersonal">>;
+
+function workspaceCreateInput(payload: unknown): WorkspaceCreateInput {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "name" in payload &&
+    typeof payload.name === "string"
+  ) {
+    return {
+      name: payload.name,
+      ...("slug" in payload && typeof payload.slug === "string"
+        ? { slug: payload.slug }
+        : {}),
+      ...("description" in payload && typeof payload.description === "string"
+        ? { description: payload.description }
+        : {}),
+      ...("isPersonal" in payload && typeof payload.isPersonal === "boolean"
+        ? { isPersonal: payload.isPersonal }
+        : {}),
+    };
+  }
+  return { name: "Personal" };
+}
+
 export async function authenticatedFetch(
   input: string | URL | Request,
   options: AuthenticatedRequestInit = {},
@@ -566,6 +592,16 @@ export async function authenticatedFetch(
     }
 
     if (parts[0] === "api" && parts[1] === "workspaces") {
+      if (parts.length === 2 && method === "GET") {
+        const workspaces = await apiweave.workspaces.list();
+        return ok({ workspaces, total: workspaces.length });
+      }
+      if (parts.length === 2 && method === "POST") {
+        return ok(
+          await apiweave.workspaces.create(workspaceCreateInput(payload)),
+        );
+      }
+
       const workspaceId = segment(parts, 2);
       if (parts[3] === "workflows") {
         if (parts.length === 4 && method === "GET") {

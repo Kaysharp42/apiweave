@@ -12,6 +12,7 @@ import type { DeploymentMode } from "../types/DeploymentMode";
 import { authenticatedFetch, authenticatedJson } from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
 import type { AuthContextValue } from "../types";
+import { isDesktopShell } from "../utils/isDesktopShell";
 
 // ---------------------------------------------------------------------------
 // Context shape
@@ -27,15 +28,38 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+const LOCAL_DESKTOP_USER: User = {
+  userId: "usr-single-user-owner",
+  verified_email: "local@apiweave.desktop",
+  display_name: "Local owner",
+  avatar_url: null,
+  roles: ["admin"],
+  permissions: ["*"],
+  oauth_accounts: [],
+  is_setup_complete: true,
+  created_at: "2026-01-01T00:00:00.000Z",
+};
+
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<User | null>(null);
-  const [status, setStatus] = useState<AuthStatus>("loading");
+  const [user, setUser] = useState<User | null>(() =>
+    isDesktopShell() ? LOCAL_DESKTOP_USER : null,
+  );
+  const [status, setStatus] = useState<AuthStatus>(() =>
+    isDesktopShell() ? "authenticated" : "loading",
+  );
   const [error, setError] = useState<string | null>(null);
-  const [deploymentMode, setDeploymentMode] =
-    useState<DeploymentMode>("multi_tenant");
-  const [modeLoaded, setModeLoaded] = useState(false);
+  const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>(() =>
+    isDesktopShell() ? "single_user" : "multi_tenant",
+  );
+  const [modeLoaded, setModeLoaded] = useState(() => isDesktopShell());
 
   const fetchMe = useCallback(async () => {
+    if (isDesktopShell()) {
+      setUser(LOCAL_DESKTOP_USER);
+      setStatus("authenticated");
+      setError(null);
+      return;
+    }
     setStatus("loading");
     setError(null);
     try {
@@ -56,6 +80,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const fetchMode = useCallback(async () => {
+    if (isDesktopShell()) {
+      setDeploymentMode("single_user");
+      setModeLoaded(true);
+      return;
+    }
     try {
       const mode = await authenticatedJson<{ mode: DeploymentMode }>(
         `${API_BASE_URL}/api/auth/mode`,
@@ -83,6 +112,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const logout = useCallback(async () => {
+    if (isDesktopShell()) {
+      setUser(LOCAL_DESKTOP_USER);
+      setStatus("authenticated");
+      setError(null);
+      return;
+    }
     try {
       await authenticatedFetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",

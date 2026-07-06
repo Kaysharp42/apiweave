@@ -1,4 +1,17 @@
 const esbuild = require("esbuild")
+const fs = require("node:fs")
+const path = require("node:path")
+
+// The migration runner reads *.sql from `__dirname/migrations` at runtime (see
+// core/db/migrations.ts#defaultMigrationsPath). esbuild only bundles JS, so copy
+// the SQL next to the bundled main.js — `__dirname` is dist/desktop there (and in
+// the packaged app), and electron-builder's `files: dist/desktop/**` ships them.
+function copyMigrations() {
+  const src = path.join(__dirname, "core", "db", "migrations")
+  const dest = path.join(__dirname, "dist", "desktop", "migrations")
+  fs.rmSync(dest, { recursive: true, force: true })
+  fs.cpSync(src, dest, { recursive: true })
+}
 
 const common = {
   bundle: true,
@@ -21,7 +34,9 @@ Promise.all([
     entryPoints: ["electron/preload.ts"],
     outfile: "dist/desktop/preload.js",
   }),
-]).catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+])
+  .then(copyMigrations)
+  .catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })

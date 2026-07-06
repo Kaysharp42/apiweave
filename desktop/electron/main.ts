@@ -3,16 +3,37 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
 import { emitRunProgress } from "../core/ipc/register"
+import { registerAllHandlers, type HandlerDeps } from "../core/ipc/handlers"
 import { initDatabase, type InitializedDatabase } from "../core/db"
-import { RunRepository, WorkflowRepository } from "../core/repositories"
+import {
+  CollectionRepository,
+  EnvironmentRepository,
+  RunRepository,
+  SecretRepository,
+  WorkflowRepository,
+  WorkspaceRepository,
+} from "../core/repositories"
+import {
+  ScopeResolver,
+  type ScopeExistence,
+  WorkspaceService,
+  CollectionService,
+  WorkflowService,
+  EnvironmentService,
+  RunService,
+  SecretService,
+  ProjectExportService,
+} from "../core/services"
+import { LocalOwnerProvider } from "../core/auth"
+import { LocalOnlySyncProvider } from "../core/sync"
 import { RunScheduler, SafeHttp, DynamicFunctions } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
 import type { McpStatus } from "../../shared/types/McpStatus"
 
-// The single request channel. Handlers are registered onto it in Task 13; until
-// then every `apiweave:invoke` call returns a not_found envelope, which is the
-// correct answer while the GUI is intentionally offline (Waves 1–3).
+// The single request channel. The composition root (whenReady) constructs the
+// services and calls registerAllHandlers onto it before attaching; the MCP host
+// exposes the same router as a second transport.
 const ipcRouter = new IpcRouter()
 
 let database: InitializedDatabase | null = null
@@ -20,7 +41,8 @@ let scheduler: RunScheduler | null = null
 let mcpHost: McpHost | null = null
 let isQuitting = false
 
-const DEV_SERVER_URL = "http://localhost:5173"
+// Optional Vite dev server (frontend `npm run dev`) — port 3000 per frontend/vite.config.
+const DEV_SERVER_URL = "http://localhost:3000"
 
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("ozone-platform-hint", "auto")
@@ -84,7 +106,8 @@ async function createWindow(): Promise<void> {
   })
 
   try {
-    const rendererUrl = app.isPackaged ? "app://local/" : DEV_SERVER_URL
+    const serveStatic = app.isPackaged || process.env["APIWEAVE_USE_VITE"] !== "1"
+    const rendererUrl = serveStatic ? "app://local/" : DEV_SERVER_URL
     await win.loadURL(rendererUrl)
     console.info(`[renderer] loaded ${rendererUrl}`)
   } catch (error) {
@@ -121,8 +144,15 @@ if (!hasSingleInstanceLock) {
   app.whenReady().then(() => {
     database = initDatabase({ userDataPath: app.getPath("userData") })
 
-    const runs = new RunRepository(database.kvStore)
+    // Repositories — the only DB touchpoint.
+    const workspaces = new WorkspaceRepository(database.kvStore)
     const workflows = new WorkflowRepository(database.kvStore)
+    const runs = new RunRepository(database.kvStore)
+    const environments = new EnvironmentRepository(database.kvStore)
+    const collections = new CollectionRepository(database.kvStore)
+    const secretStore = new SecretRepository(database.kvStore)
+
+    // Runner: in-process scheduler drives the executor.
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
     const http = new SafeHttp({ allowLoopback: true })
@@ -145,6 +175,37 @@ if (!hasSingleInstanceLock) {
     if (interrupted > 0) {
       console.info(`[bootstrap] reconciled ${interrupted} stuck run(s) to interrupted`)
     }
+
+    // Auth + sync seams: single-owner always-allow, local-only no-op.
+    const existence: ScopeExistence = {
+      workspaceExists: (id) => workspaces.getById(id) !== undefined,
+      environmentExists: (id) => environments.getById(id) !== undefined,
+    }
+    const scopeResolver = new ScopeResolver(existence)
+    const permissions = new LocalOwnerProvider()
+    const sync = new LocalOnlySyncProvider()
+
+    // Services over the scoped repos; RunService drives the scheduler so
+    // runs.create actually executes and runs.cancel aborts a live run.
+    const deps: HandlerDeps = {
+      workspaces: new WorkspaceService(workspaces, sync, scopeResolver),
+      collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
+      workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
+      environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
+      runs: new RunService(runs, sync, permissions, scopeResolver, scheduler),
+      secrets: new SecretService(secretStore, sync, permissions, scopeResolver),
+      projects: new ProjectExportService(
+        collections,
+        workflows,
+        environments,
+        sync,
+        permissions,
+        scopeResolver,
+        secretStore,
+        () => clock.isoNow(),
+      ),
+    }
+    registerAllHandlers(ipcRouter, deps)
 
     attachIpcRouter(ipcMain, ipcRouter)
 

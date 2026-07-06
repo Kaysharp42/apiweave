@@ -9,10 +9,33 @@ export type InvokeRequest = {
   readonly payload: unknown
 }
 
+/**
+ * Bridge the zod-inferred handler types to the service-layer domain types under
+ * `exactOptionalPropertyTypes` + readonly aggregates. Runtime behaviour is
+ * unchanged (dispatch still zod-validates both ends); these only widen what the
+ * handler author may pass/return so the two type worlds meet without per-call casts.
+ *
+ * - {@link CleanInput}: zod `.optional()` infers `p?: T | undefined`, but a service
+ *   param (`Partial<Pick<…>>`) rejects an *explicit* `undefined`. Drop it.
+ * - {@link ReadonlyResult}: services return readonly arrays/aggregates; zod infers
+ *   mutable ones. A readonly value is a fine return — widen the target to accept it.
+ */
+type CleanInput<T> = T extends readonly unknown[] | Uint8Array
+  ? T
+  : T extends object
+    ? { [K in keyof T]: CleanInput<Exclude<T[K], undefined>> }
+    : T
+
+type ReadonlyResult<T> = T extends (infer U)[]
+  ? readonly ReadonlyResult<U>[]
+  : T extends object
+    ? { readonly [K in keyof T]: ReadonlyResult<T[K]> }
+    : T
+
 export type HandlerRegistration<I extends z.ZodType, O extends z.ZodType> = {
   readonly input: I
   readonly output: O
-  readonly handle: (input: z.infer<I>) => Promise<z.infer<O>> | z.infer<O>
+  readonly handle: (input: CleanInput<z.infer<I>>) => Promise<ReadonlyResult<z.infer<O>>> | ReadonlyResult<z.infer<O>>
 }
 
 /** A registered handler, read-only. Lets a second transport (MCP) reuse the same input schema + handler. */

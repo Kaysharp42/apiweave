@@ -7,11 +7,12 @@ import { TitleBar } from "./components/layout/TitleBar";
 import "./index.css";
 // @ts-expect-error - CSS module type declaration handled by Vite
 import "tippy.js/dist/tippy.css";
+import { isDesktopShell } from "./utils/isDesktopShell";
 
 // The desktop shell (frameless window) draws its own title bar and reserves
 // its height from the viewport via the .desktop-shell CSS in index.css. Web/
 // Docker builds have no injected runtime, so this is a no-op there.
-const isDesktop = Boolean(window.__APIWEAVE_RUNTIME__?.apiUrl);
+const isDesktop = isDesktopShell();
 if (isDesktop) document.documentElement.classList.add("desktop-shell");
 
 const tree = (
