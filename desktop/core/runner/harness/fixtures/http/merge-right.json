@@ -1,10 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "/merge/right",
-    "headers": {
-      "x-branch": "right"
-    }
+    "url": "/merge/right"
   },
   "response": {
     "status": 200,

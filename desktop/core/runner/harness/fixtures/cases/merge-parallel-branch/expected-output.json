@@ -15,6 +15,18 @@
     "right": "ready"
   },
   "outputs": {
+    "left": {
+      "status": 200,
+      "body": {
+        "left": "ready"
+      }
+    },
+    "right": {
+      "status": 200,
+      "body": {
+        "right": "ready"
+      }
+    },
     "merge": {
       "branches": ["left", "right"],
       "status": "joined"

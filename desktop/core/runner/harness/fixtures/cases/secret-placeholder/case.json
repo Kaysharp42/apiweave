@@ -3,6 +3,7 @@
   "seed": "0xC0FFEE",
   "clock": "2026-01-02T03:04:05.000Z",
   "httpTapeRefs": ["http/secret-placeholder.json"],
+  "secrets": { "apiKey": "<SECRET>" },
   "workflow": {
     "nodes": [
       { "id": "start", "type": "start" },

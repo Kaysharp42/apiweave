@@ -14,6 +14,13 @@
     "token": "user-token-42"
   },
   "outputs": {
+    "get_user": {
+      "status": 200,
+      "body": {
+        "id": 42,
+        "token": "user-token-42"
+      }
+    },
     "get_profile": {
       "status": 200,
       "body": {

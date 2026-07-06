@@ -6,7 +6,7 @@
   "workflow": {
     "nodes": [
       { "id": "start", "type": "start" },
-      { "id": "get_user", "type": "httpRequest", "config": { "method": "GET", "url": "/users/42" } },
+      { "id": "get_user", "type": "httpRequest", "config": { "method": "GET", "url": "/users/42", "extractors": { "userId": "body.id", "token": "body.token" } } },
       { "id": "get_profile", "type": "httpRequest", "config": { "method": "GET", "url": "/profiles/42", "headers": "Authorization=Bearer {{variables.token}}" } },
       { "id": "end", "type": "end" }
     ],

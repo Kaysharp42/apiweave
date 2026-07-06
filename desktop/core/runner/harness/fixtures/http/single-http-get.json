@@ -1,10 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "/single",
-    "headers": {
-      "x-api-key": "fixture-key"
-    }
+    "url": "/single"
   },
   "response": {
     "status": 200,

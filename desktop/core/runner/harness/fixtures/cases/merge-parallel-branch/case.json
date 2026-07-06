@@ -6,8 +6,8 @@
   "workflow": {
     "nodes": [
       { "id": "start", "type": "start" },
-      { "id": "left", "type": "httpRequest", "config": { "method": "GET", "url": "/merge/left" } },
-      { "id": "right", "type": "httpRequest", "config": { "method": "GET", "url": "/merge/right" } },
+      { "id": "left", "type": "httpRequest", "config": { "method": "GET", "url": "/merge/left", "extractors": { "left": "body.left" } } },
+      { "id": "right", "type": "httpRequest", "config": { "method": "GET", "url": "/merge/right", "extractors": { "right": "body.right" } } },
       { "id": "merge", "type": "merge" },
       { "id": "end", "type": "end" }
     ],

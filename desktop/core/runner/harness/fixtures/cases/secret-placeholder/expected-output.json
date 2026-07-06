@@ -12,14 +12,6 @@
   "outputs": {
     "send_secret": {
       "status": 202,
-      "request": {
-        "headers": {
-          "authorization": "Bearer <SECRET>"
-        },
-        "body": {
-          "token": "<SECRET>"
-        }
-      },
       "body": {
         "accepted": true
       }

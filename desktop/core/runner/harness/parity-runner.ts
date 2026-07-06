@@ -1,9 +1,12 @@
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { WorkflowExecutor, type WorkflowGraph, type WorkflowNode, type WorkflowEdge } from "../executor";
 import { HarnessError } from "./harness-error";
 import { diffJson, isRecord, type JsonValue, parseJsonValue } from "./json-utils";
 import { type HttpFixturePair, MockHttpServer } from "./mock-server";
-import { FixedClockProvider, SeededRandomProvider } from "./providers";
+import { FixedClockProvider, SeededRandomProvider, WallClockProvider, CryptoRandomProvider } from "./providers";
+import { DynamicFunctions } from "../dynamic_functions";
+import { SafeHttp } from "../safe_http";
 
 type CaseFixture = {
   readonly name: string;
@@ -12,6 +15,7 @@ type CaseFixture = {
   readonly workflow: JsonValue;
   readonly httpTapeRefs: readonly string[];
   readonly expectedOutput: JsonValue;
+  readonly secrets?: Readonly<Record<string, string>>;
 };
 
 type CaseResult = {
@@ -39,7 +43,7 @@ async function main(): Promise<void> {
     const results: CaseResult[] = [];
     for (const fixture of cases) {
       await exerciseTapes(fixture, server.baseUrl());
-      const actual = runStubExecutor(fixture);
+      const actual = await runRealExecutor(fixture, server.baseUrl());
       const mismatches = diffJson(fixture.expectedOutput, actual, "$");
       const passed = mismatches.length === 0;
       results.push({ name: fixture.name, passed, mismatches });
@@ -102,6 +106,9 @@ function parseCase(value: unknown, expectedOutput: unknown, path: string): CaseF
   if (!Array.isArray(value.httpTapeRefs) || !value.httpTapeRefs.every((item) => typeof item === "string")) {
     throw new HarnessError("fixture_validation", `Validation error in ${path}: httpTapeRefs must be string[]`);
   }
+  const secrets = value.secrets !== undefined && isRecord(value.secrets)
+    ? Object.fromEntries(Object.entries(value.secrets).filter(([, v]) => typeof v === "string")) as Record<string, string>
+    : undefined;
   return {
     name: value.name,
     seed: value.seed,
@@ -109,6 +116,7 @@ function parseCase(value: unknown, expectedOutput: unknown, path: string): CaseF
     workflow: parseJsonValue(value.workflow, path) ?? null,
     httpTapeRefs: value.httpTapeRefs,
     expectedOutput: parseJsonValue(expectedOutput, join(dirname(path), "expected-output.json")) ?? null,
+    secrets,
   };
 }
 
@@ -129,26 +137,87 @@ async function exerciseTapes(fixture: CaseFixture, baseUrl: string): Promise<voi
   }
 }
 
-function runStubExecutor(fixture: CaseFixture): JsonValue {
-  new FixedClockProvider(fixture.clock).isoNow();
-  new SeededRandomProvider(fixture.seed).next();
-  if (process.env.PARITY_INJECT_MISMATCH === fixture.name) {
-    return injectMismatch(fixture.expectedOutput);
+function normalizeWorkflow(raw: JsonValue): WorkflowGraph {
+  if (!isRecord(raw)) {
+    throw new HarnessError("fixture_validation", "workflow must be an object");
   }
-  return fixture.expectedOutput;
+  const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];
+  const rawEdges = Array.isArray(raw.edges) ? raw.edges : [];
+
+  const typeMap: Record<string, WorkflowNode["type"]> = {
+    httpRequest: "http-request",
+    "http-request": "http-request",
+    assertion: "assertion",
+    delay: "delay",
+    merge: "merge",
+    start: "start",
+    end: "end",
+  };
+
+  const nodes: WorkflowNode[] = rawNodes.map((rawNode: unknown) => {
+    if (!isRecord(rawNode)) {
+      throw new HarnessError("fixture_validation", "workflow node must be an object");
+    }
+    const nodeId = (typeof rawNode.id === "string" ? rawNode.id : rawNode.nodeId) as string;
+    if (!nodeId || typeof nodeId !== "string") {
+      throw new HarnessError("fixture_validation", "workflow node must have id or nodeId");
+    }
+    const rawType = typeof rawNode.type === "string" ? rawNode.type : "start";
+    const type = typeMap[rawType] ?? "start";
+    const config = isRecord(rawNode.config) ? rawNode.config as Record<string, unknown> : undefined;
+    return { nodeId, type, config };
+  });
+
+  const edges: WorkflowEdge[] = rawEdges.map((rawEdge: unknown, idx: number) => {
+    if (!isRecord(rawEdge)) {
+      throw new HarnessError("fixture_validation", "workflow edge must be an object");
+    }
+    return {
+      edgeId: typeof rawEdge.edgeId === "string" ? rawEdge.edgeId : `e${idx}`,
+      source: String(rawEdge.source ?? ""),
+      target: String(rawEdge.target ?? ""),
+      sourceHandle: typeof rawEdge.sourceHandle === "string" ? rawEdge.sourceHandle : null,
+      targetHandle: typeof rawEdge.targetHandle === "string" ? rawEdge.targetHandle : null,
+    };
+  });
+
+  return { nodes, edges };
 }
 
-function injectMismatch(value: JsonValue): JsonValue {
-  if (!isRecord(value)) {
-    return value;
+async function runRealExecutor(fixture: CaseFixture, baseUrl: string): Promise<JsonValue> {
+  const clock = new FixedClockProvider(fixture.clock);
+  const rng = new SeededRandomProvider(fixture.seed);
+  const http = new SafeHttp({ allowLoopback: true });
+  const functions = new DynamicFunctions(clock, rng);
+
+  const executor = new WorkflowExecutor({
+    clock,
+    rng,
+    http,
+    functions,
+    baseUrl,
+    secrets: fixture.secrets,
+  });
+
+  const workflow = normalizeWorkflow(fixture.workflow);
+  const output = await executor.executeWorkflow(workflow, {}, fixture.name, fixture.seed);
+
+  // Convert to JsonValue for diff comparison
+  return toJsonValue(output);
+}
+
+function toJsonValue(value: unknown): JsonValue {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.map((item) => toJsonValue(item));
+  if (typeof value === "object") {
+    const out: Record<string, JsonValue> = {};
+    for (const [key, val] of Object.entries(value)) {
+      out[key] = toJsonValue(val);
+    }
+    return out;
   }
-  return {
-    ...value,
-    nodeStatuses: {
-      ...(isRecord(value.nodeStatuses) ? value.nodeStatuses : {}),
-      assertion_fail: "passed",
-    },
-  };
+  return null;
 }
 
 function report(results: readonly CaseResult[]): void {
