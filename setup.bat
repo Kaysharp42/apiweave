@@ -1,26 +1,51 @@
-# Complete Setup for APIWeave
+# Setup APIWeave Desktop (single-process Electron)
 @echo off
 echo ========================================
-echo   APIWeave - Complete Setup
+echo   APIWeave - Setup
 echo ========================================
 echo.
 
-REM Setup Backend
-call setup-backend.bat
+REM Check Node.js 20+
+where node >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Node.js not found. Install Node.js 20+ from https://nodejs.org
+    pause
+    exit /b 1
+)
+for /f "tokens=1" %%v in ('node -v') do set NODE_VER=%%v
+echo Node.js %NODE_VER% detected
+
+echo.
+echo Installing frontend dependencies...
+cd /d "%~dp0frontend"
+call npm install
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Frontend npm install failed
+    pause
+    exit /b 1
+)
+
+echo.
+echo Installing desktop dependencies...
+cd /d "%~dp0desktop"
+call npm install
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Desktop npm install failed
+    pause
+    exit /b 1
+)
+
+echo.
+echo Rebuilding native modules for Electron...
+call npm run rebuild:electron
+if %ERRORLEVEL% neq 0 (
+    echo WARNING: electron-rebuild failed (may need Visual Studio Build Tools)
+)
 
 echo.
 echo ========================================
-
-REM Setup Frontend
-call setup-frontend.bat
-
+echo Setup complete!
 echo.
-echo ========================================
-echo.
-echo Setup Complete!
-echo.
-echo Next steps:
-echo 1. Make sure MongoDB is installed and running
-echo 2. Run: start-dev.bat
+echo Run: start-dev.bat
 echo.
 pause

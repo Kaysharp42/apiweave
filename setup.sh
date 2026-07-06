@@ -1,34 +1,39 @@
 #!/usr/bin/env bash
+# Setup APIWeave Desktop (single-process Electron)
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo "========================================"
-echo "  APIWeave - Complete Setup (Linux)"
-echo "========================================="
-echo
-
-# Try to call setup-backend.sh and setup-frontend.sh if they exist
-if [ -x ./setup-backend.sh ]; then
-  echo "Running backend setup..."
-  ./setup-backend.sh
-else
-  echo "Note: ./setup-backend.sh not found or not executable. Please run backend setup manually if needed."
-fi
-
-echo
-if [ -x ./setup-frontend.sh ]; then
-  echo "Running frontend setup..."
-  ./setup-frontend.sh
-else
-  echo "Note: ./setup-frontend.sh not found or not executable. Please run frontend setup manually (e.g. cd frontend && npm install)."
-fi
-
-echo
+echo "  APIWeave - Setup"
 echo "========================================"
 echo
-echo "Setup Complete!"
+
+# Check Node.js 20+
+if ! command -v node &>/dev/null; then
+  echo "ERROR: Node.js not found. Install Node.js 20+ from https://nodejs.org"
+  exit 1
+fi
+NODE_VER=$(node -v)
+echo "Node.js $NODE_VER detected"
 echo
-echo "Next steps:"
-echo "1. Make sure MongoDB is installed and running (see /data/db or your distro's service)."
-echo "2. Run: ./start-dev.sh"
+
+echo "Installing frontend dependencies..."
+cd "$ROOT_DIR/frontend"
+npm install
+
 echo
-exit 0
+echo "Installing desktop dependencies..."
+cd "$ROOT_DIR/desktop"
+npm install
+
+echo
+echo "Rebuilding native modules for Electron..."
+npm run rebuild:electron || echo "WARNING: electron-rebuild failed (may need Visual Studio Build Tools / build-essential)"
+
+echo
+echo "========================================"
+echo "Setup complete!"
+echo
+echo "Run: ./start-dev.sh"
+echo
