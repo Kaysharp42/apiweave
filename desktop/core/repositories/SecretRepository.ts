@@ -1,5 +1,5 @@
 import type { KVStore, SqliteRow } from "../db"
-import type { SecretWriteStore, SecretUpsert } from "../services/secret_service"
+import type { SecretWriteStore, SecretUpsert } from "../secrets/SecretStore"
 import type { SecretMetadata, SecretScopeType } from "../secrets/scoped_secret_resolver"
 import { generateId } from "../id"
 import { mustExist } from "./helpers"

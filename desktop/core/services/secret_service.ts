@@ -10,35 +10,9 @@ import {
   type SecretScopeChain,
   type SecretScopeType,
 } from "../secrets/scoped_secret_resolver"
+import type { SecretWriteStore, SecretUpsert } from "../secrets/SecretStore"
 import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
-
-/**
- * Sealed secret material handed to {@link SecretService.set}. The value is ALREADY
- * sealed by the client (per-scope sealed box, Task 7) — the service never sees
- * plaintext. `sealed` is opaque bytes the store persists verbatim.
- */
-export interface SecretUpsert {
-  readonly name: string
-  readonly scopeType: SecretScopeType
-  readonly scopeId: string
-  readonly keyId: string
-  readonly sealed: Uint8Array
-  readonly label?: string
-}
-
-/**
- * Write seam for stored secrets. Extends the metadata-read store with the small
- * mutation surface the service needs. The concrete SQLite-backed implementation
- * is wired at the repository layer (Task 6/13); tests pass a fake. Implementations
- * MUST persist `sealed` opaquely and MUST NEVER return it (or any plaintext) from
- * a read method — the metadata contract carries no secret material.
- */
-export interface SecretWriteStore extends SecretMetadataStore {
-  put(input: SecretUpsert): SecretMetadata | Promise<SecretMetadata>
-  remove(scopeType: SecretScopeType, scopeId: string, name: string): boolean | Promise<boolean>
-  listByScope(scopeType: SecretScopeType, scopeId: string): SecretMetadata[] | Promise<SecretMetadata[]>
-}
 
 /**
  * Secret service surface — write-only at every layer. Ported from the local

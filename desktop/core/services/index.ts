@@ -8,7 +8,7 @@ export { RunService } from "./run_service"
 export { WorkspaceService } from "./workspace_service"
 export type { WorkspaceCreateInput } from "./workspace_service"
 export { SecretService } from "./secret_service"
-export type { SecretUpsert, SecretWriteStore } from "./secret_service"
+export type { SecretUpsert, SecretWriteStore } from "../secrets/SecretStore"
 export { ProjectExportService, SCHEMA_VERSION } from "./project_export_service"
 export type {
   ProjectBundle,
