@@ -6,16 +6,10 @@
  * callers should not fire scoped requests until isReady is true.
  */
 export interface ScopeContext {
-  /** Resolved current workspace ID, or null when not loaded. */
   workspaceId: string | null;
-  /** Resolved current workspace slug, or null when not loaded. */
   workspaceSlug: string | null;
-  /** Current organization ID, or null when on personal workspace. */
-  orgId: string | null;
-  /** Current organization slug, or null when on personal workspace or not loaded. */
-  orgSlug: string | null;
-  /** Authenticated user ID, or null when not logged in. */
+  orgId: null;
+  orgSlug: null;
   userId: string | null;
-  /** True when WorkspaceContext has finished loading and scope is resolvable. */
   isReady: boolean;
 }

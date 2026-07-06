@@ -3,8 +3,7 @@ export type EnvironmentScopeType = "user" | "organization" | "workspace";
 
 /**
  * Scoped environment — replaces the legacy Environment type.
- * Each environment belongs to a user, organization, or workspace scope.
- * Organization environments can restrict access via allowedWorkspaceIds.
+ * Each environment belongs to a user or workspace scope.
  * Each workspace has exactly one default environment (isDefault=true).
  */
 export interface ScopedEnvironment {

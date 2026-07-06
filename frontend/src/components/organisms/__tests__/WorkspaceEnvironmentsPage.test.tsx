@@ -26,7 +26,6 @@ describe("WorkspaceEnvironmentsPage", () => {
 
   it("renders scope-grouped environment lists", () => {
     expect(source).toContain('title="Workspace Environments"');
-    expect(source).toContain('title="Organization Environments"');
     expect(source).toContain('title="User Environments"');
   });
 

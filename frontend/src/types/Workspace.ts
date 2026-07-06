@@ -3,9 +3,8 @@ export interface Workspace {
   slug: string;
   name: string;
   description: string | null;
-  ownerType: "user" | "organization";
+  ownerType: "user";
   ownerUserId: string | null;
-  orgId: string | null;
   isPersonal: boolean;
   createdAt: string;
   updatedAt: string;

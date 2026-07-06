@@ -1,4 +1,4 @@
-import { User, Building2, Layers, Star } from "lucide-react";
+import { User, Layers, Star } from "lucide-react";
 import { Badge } from "../atoms/Badge";
 import type {
   EnvironmentScopeBadgeProps,
@@ -10,7 +10,7 @@ const SCOPE_CONFIG: Record<
   { label: string; icon: typeof User; variant: "primary" | "info" | "success" }
 > = {
   user: { label: "User", icon: User, variant: "info" },
-  organization: { label: "Org", icon: Building2, variant: "primary" },
+  organization: { label: "Organization", icon: Layers, variant: "primary" },
   workspace: { label: "Workspace", icon: Layers, variant: "success" },
 };
 

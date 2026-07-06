@@ -31,7 +31,6 @@ import { apiweave, authenticatedJson } from "./utils/apiweaveClient";
 import API_BASE_URL from "./utils/apiweaveClient";
 import { isDesktopShell } from "./utils/isDesktopShell";
 import type { Workspace } from "./types/Workspace";
-import type { Organization } from "./types/Organization";
 import type { WorkspacePageShellProps } from "./types/WorkspacePageShellProps";
 
 const STORAGE_PREFIX = "apiweave:v1:";
@@ -113,12 +112,9 @@ function DefaultWorkspaceRedirect() {
     let cancelled = false;
 
     (async () => {
-      const [orgs, response] = await Promise.all([
-        authenticatedJson<Organization[]>(`${API_BASE_URL}/api/orgs`),
-        authenticatedJson<{ workspaces: Workspace[]; total: number }>(
-          `${API_BASE_URL}/api/workspaces`,
-        ),
-      ]);
+      const response = await authenticatedJson<{ workspaces: Workspace[]; total: number }>(
+        `${API_BASE_URL}/api/workspaces`,
+      );
       if (cancelled) return;
 
       const workspace =
@@ -138,17 +134,7 @@ function DefaultWorkspaceRedirect() {
         return;
       }
 
-      if (workspace.isPersonal) {
-        setTargetPath(`/${workspace.slug}/workflows`);
-        return;
-      }
-
-      const orgSlug = orgs.find((org) => org.orgId === workspace.orgId)?.slug;
-      if (!orgSlug) {
-        setTargetPath("/app");
-        return;
-      }
-      setTargetPath(`/${orgSlug}/${workspace.slug}/workflows`);
+      setTargetPath(`/${workspace.slug}/workflows`);
     })().catch(() => {
       if (!cancelled) setTargetPath("/app");
     });

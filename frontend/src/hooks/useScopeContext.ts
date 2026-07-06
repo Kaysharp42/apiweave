@@ -5,7 +5,7 @@ import type { ScopeContext } from "../types";
 
 /**
  * useScopeContext — derive current scope identifiers from the existing
- * WorkspaceContext (org/workspace) and AuthContext (user).
+ * WorkspaceContext (workspace) and AuthContext (user).
  *
  * Returns `{ isReady: false }` while WorkspaceContext is still loading,
  * so callers can gate scoped API requests behind `isReady`.
@@ -13,7 +13,6 @@ import type { ScopeContext } from "../types";
 export function useScopeContext(): ScopeContext {
   const {
     currentWorkspace,
-    currentOrg,
     isLoading: workspaceLoading,
   } = useWorkspace();
   const { user } = useAuth();
@@ -23,8 +22,8 @@ export function useScopeContext(): ScopeContext {
       return {
         workspaceId: null,
         workspaceSlug: null,
-        orgId: null,
-        orgSlug: null,
+        orgId: null as null,
+        orgSlug: null as null,
         userId: user?.userId ?? null,
         isReady: false,
       };
@@ -33,10 +32,10 @@ export function useScopeContext(): ScopeContext {
     return {
       workspaceId: currentWorkspace.workspaceId,
       workspaceSlug: currentWorkspace.slug,
-      orgId: currentOrg?.orgId ?? null,
-      orgSlug: currentOrg?.slug ?? null,
+      orgId: null as null,
+      orgSlug: null as null,
       userId: user?.userId ?? null,
       isReady: true,
     };
-  }, [currentWorkspace, currentOrg, workspaceLoading, user?.userId]);
+  }, [currentWorkspace, workspaceLoading, user?.userId]);
 }

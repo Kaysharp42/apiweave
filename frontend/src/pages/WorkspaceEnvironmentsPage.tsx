@@ -45,7 +45,6 @@ export default function WorkspaceEnvironmentsPage() {
   const storeIsLoading = useEnvironmentStore((s) => s.isLoading);
 
   const userEnvs = environments.filter((e) => e.scopeType === "user");
-  const orgEnvs = environments.filter((e) => e.scopeType === "organization");
   const workspaceEnvs = environments.filter((e) => e.scopeType === "workspace");
 
   const [orgWorkspaces, setOrgWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -492,23 +491,6 @@ export default function WorkspaceEnvironmentsPage() {
                 onDuplicate={handleDuplicateEnv}
                 selectedId={selectedEnv?.environmentId}
               />
-
-              {/* Organization environments */}
-              {orgId && (
-                <ScopedEnvironmentList
-                  environments={orgEnvs}
-                  scopeType="organization"
-                  title="Organization Environments"
-                  onSelect={handleSelectEnv}
-                  onEdit={(env) => {
-                    setSelectedEnv(env);
-                    setViewMode("edit");
-                  }}
-                  onDelete={handleDeleteEnv}
-                  onDuplicate={handleDuplicateEnv}
-                  selectedId={selectedEnv?.environmentId}
-                />
-              )}
 
               {/* User environments */}
               <ScopedEnvironmentList

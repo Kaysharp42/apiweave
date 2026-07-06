@@ -4,19 +4,17 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { ChevronDown, Building2, User, Plus, ListTree } from "lucide-react";
+import { ChevronDown, User, Plus, ListTree } from "lucide-react";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useAuth } from "../../auth/useAuth";
 import { Button } from "../atoms/Button";
 import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
-import { CreateOrganizationModal } from "./CreateOrganizationModal";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
-import type { Organization, Workspace } from "../../types";
+import type { Workspace } from "../../types";
 
 export function OrgWorkspaceSwitcher() {
   const {
     availableWorkspaces,
-    currentOrg,
     currentWorkspace,
     refresh,
     switchTo,
@@ -24,13 +22,11 @@ export function OrgWorkspaceSwitcher() {
   } = useWorkspace();
   const { isSingleUser } = useAuth();
   const [open, setOpen] = useState(false);
-  const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  // Close on outside click / Escape
   useEffect(() => {
     if (!open) return undefined;
 
@@ -87,25 +83,16 @@ export function OrgWorkspaceSwitcher() {
   };
 
   const handleSelect = (entry: WorkspaceEntry) => {
-    const orgSlug = entry.org?.slug ?? "personal";
-    switchTo(orgSlug, entry.workspace.slug);
+    switchTo(entry.workspace.slug);
     setOpen(false);
     triggerRef.current?.focus();
   };
 
-  const handleOrgCreated = async (
-    _organization: Organization,
-  ): Promise<void> => {
-    await refresh();
-  };
-
-  // New workspace is created in the current context: under the active org, or
-  // personal when none is selected. After creating, switch into it.
   const handleWorkspaceCreated = async (
     workspace: Workspace,
   ): Promise<void> => {
     await refresh();
-    switchTo(currentOrg?.slug ?? "personal", workspace.slug);
+    switchTo(workspace.slug);
   };
 
   const handleItemKeyDown = (
@@ -137,40 +124,16 @@ export function OrgWorkspaceSwitcher() {
     );
   }
 
-  // Separate personal and org workspaces
   const personalWorkspace = availableWorkspaces.find(
     (e) => e.workspace.isPersonal,
   );
-  const orgEntries = availableWorkspaces.filter((e) => !e.workspace.isPersonal);
+  const otherWorkspaces = availableWorkspaces.filter((e) => !e.workspace.isPersonal);
 
-  // Group org entries by org
-  const orgGroups = new Map<
-    string,
-    { orgName: string; entries: WorkspaceEntry[] }
-  >();
-  for (const entry of orgEntries) {
-    const orgId = entry.org?.orgId ?? "unknown";
-    const group = orgGroups.get(orgId);
-    if (group) {
-      group.entries.push(entry);
-    } else {
-      orgGroups.set(orgId, {
-        orgName: entry.org?.name ?? "Unknown Org",
-        entries: [entry],
-      });
-    }
-  }
-
-  // Build flat list for keyboard navigation
   const flatList: WorkspaceEntry[] = [];
   if (personalWorkspace) flatList.push(personalWorkspace);
-  for (const group of orgGroups.values()) {
-    flatList.push(...group.entries);
-  }
+  flatList.push(...otherWorkspaces);
 
-  const displayLabel = currentOrg
-    ? `${currentOrg.name} / ${currentWorkspace?.name ?? "..."}`
-    : (currentWorkspace?.name ?? "Personal");
+  const displayLabel = currentWorkspace?.name ?? "Personal";
 
   return (
     <div className="relative" ref={wrapperRef}>
@@ -202,15 +165,13 @@ export function OrgWorkspaceSwitcher() {
           </div>
 
           <div className="max-h-80 overflow-y-auto py-1">
-            {/* Personal workspace */}
             {personalWorkspace && (
               <WorkspaceItem
                 entry={personalWorkspace}
                 index={0}
                 isActive={
-                  !currentOrg &&
                   currentWorkspace?.workspaceId ===
-                    personalWorkspace.workspace.workspaceId
+                  personalWorkspace.workspace.workspaceId
                 }
                 icon={<User className="w-4 h-4 flex-shrink-0" />}
                 onSelect={handleSelect}
@@ -221,49 +182,26 @@ export function OrgWorkspaceSwitcher() {
               />
             )}
 
-            {/* Org workspaces */}
-            {(() => {
-              const orgGroupEntries = Array.from(orgGroups.entries());
-              const startIndex = personalWorkspace ? 1 : 0;
-              let cumulativeIndex = startIndex;
-
-              return orgGroupEntries.map(([orgId, group]) => {
-                const groupStartIndex = cumulativeIndex;
-                cumulativeIndex += group.entries.length;
-
-                return (
-                  <div key={orgId}>
-                    <div className="px-3 pt-2 pb-1">
-                      <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
-                        <Building2 className="w-3 h-3" />
-                        {group.orgName}
-                      </span>
-                    </div>
-                    {group.entries.map((entry, entryIndex) => {
-                      const flatIndex = groupStartIndex + entryIndex;
-                      return (
-                        <WorkspaceItem
-                          key={entry.workspace.workspaceId}
-                          entry={entry}
-                          index={flatIndex}
-                          isActive={
-                            currentOrg?.orgId === entry.org?.orgId &&
-                            currentWorkspace?.workspaceId ===
-                              entry.workspace.workspaceId
-                          }
-                          icon={<Building2 className="w-4 h-4 flex-shrink-0" />}
-                          onSelect={handleSelect}
-                          onKeyDown={handleItemKeyDown}
-                          itemRef={(el) => {
-                            menuItemRefs.current[flatIndex] = el;
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                );
-              });
-            })()}
+            {otherWorkspaces.map((entry, index) => {
+              const flatIndex = personalWorkspace ? index + 1 : index;
+              return (
+                <WorkspaceItem
+                  key={entry.workspace.workspaceId}
+                  entry={entry}
+                  index={flatIndex}
+                  isActive={
+                    currentWorkspace?.workspaceId ===
+                    entry.workspace.workspaceId
+                  }
+                  icon={<User className="w-4 h-4 flex-shrink-0" />}
+                  onSelect={handleSelect}
+                  onKeyDown={handleItemKeyDown}
+                  itemRef={(el) => {
+                    menuItemRefs.current[flatIndex] = el;
+                  }}
+                />
+              );
+            })}
 
             {flatList.length === 0 && (
               <div className="px-3 py-6 text-center text-xs text-text-muted dark:text-text-muted-dark">
@@ -286,20 +224,6 @@ export function OrgWorkspaceSwitcher() {
                 }}
               >
                 New workspace
-                {currentOrg ? ` in ${currentOrg.name}` : ""}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                fullWidth
-                className="justify-start text-xs"
-                icon={<Plus className="h-4 w-4" aria-hidden="true" />}
-                onClick={() => {
-                  setOpen(false);
-                  setCreateOrgOpen(true);
-                }}
-              >
-                Create organization
               </Button>
               <Button
                 variant="ghost"
@@ -309,36 +233,23 @@ export function OrgWorkspaceSwitcher() {
                 icon={<ListTree className="h-4 w-4" aria-hidden="true" />}
                 onClick={() => {
                   setOpen(false);
-                  setOpen(false);
                 }}
               >
-                Manage organizations
+                Manage workspaces
               </Button>
             </div>
           )}
         </div>
       )}
 
-      <CreateOrganizationModal
-        isOpen={createOrgOpen}
-        onClose={() => setCreateOrgOpen(false)}
-        onCreated={handleOrgCreated}
-      />
-
       <CreateWorkspaceModal
         isOpen={createWsOpen}
         onClose={() => setCreateWsOpen(false)}
-        orgId={currentOrg?.orgId ?? null}
-        orgName={currentOrg?.name ?? ""}
         onCreated={handleWorkspaceCreated}
       />
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// WorkspaceItem — single row in the dropdown
-// ---------------------------------------------------------------------------
 
 interface WorkspaceItemProps {
   entry: WorkspaceEntry;
@@ -389,11 +300,6 @@ function WorkspaceItem({
         <div className="truncate text-sm font-medium">
           {entry.workspace.name}
         </div>
-        {entry.org && (
-          <div className="truncate text-[11px] text-text-muted dark:text-text-muted-dark">
-            {entry.org.name}
-          </div>
-        )}
       </div>
       {isActive && (
         <span className="flex h-2 w-2 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />

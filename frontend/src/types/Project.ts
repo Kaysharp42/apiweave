@@ -24,10 +24,6 @@ export interface Project {
   continueOnFail?: boolean;
   /** ID of the workspace this project belongs to. */
   workspaceId?: string;
-  /** ID of the org that owns this project (null for personal). */
-  orgId?: string;
-  /** Owner type: "user" or "organization". */
-  ownerType?: string;
   createdAt: string;
   updatedAt: string;
 }
