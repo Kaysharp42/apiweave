@@ -1,305 +1,158 @@
 # Installation
 
-*Get APIWeave 2.0 running on Windows or macOS/Linux. Pick the one-shot quick start, the manual path, or Docker Compose, then run the destructive database reset that the unreleased 2.0 line requires before you start.*
+*Get APIWeave running on Windows, macOS, or Linux. The desktop app is a single self-contained installer — no Python, no MongoDB, no Docker, no separate backend, no exposed ports.*
 
 ## Prerequisites
 
-Install these on your machine before any path below works.
+- A supported operating system:
+  - **Windows**: Windows 10 or newer (x64).
+  - **macOS**: macOS 11 (Big Sur) or newer (Intel and Apple Silicon).
+  - **Linux**: a current distro with glibc 2.31+ (Ubuntu 20.04+, Debian 11+, Fedora 33+). For the AppImage, FUSE 2 must be installed; on Arch, prefer the `.pacman` package.
+- About 500 MB of free disk space for the installer and the local SQLite database.
+- A network connection on first launch (the desktop app does not phone home afterwards; the database and the secret store stay on your machine).
 
-- Python 3.13 or newer. The backend uses 3.13+ syntax and type features.
-- Node.js 20 or newer, plus npm. The frontend uses Vite 5 and React 18.
-- MongoDB 7 or newer, running locally on port 27017, or a connection string to MongoDB Atlas.
-- Git, to clone the repository.
+For contributors who want to build the desktop app from source: Node.js 20+ and npm. The build itself is `scripts/desktop.ps1 build` on Windows, `scripts/desktop.sh build` on Linux/macOS. See the [Developer Guide](../../AGENTS.md) for the full dev workflow.
 
-Hardware: roughly 4 GB of free RAM and 5 GB of disk for the Python virtualenv, `node_modules`, and MongoDB data files.
+## Download the Installer
 
-Pick the path that matches your machine. If you want zero configuration on your host, skip to [Docker Compose](#docker-compose). If you want to edit code and see live reload, use [Quick Start](#quick-start) or [Manual Installation](#manual-installation).
+Grab the latest installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases). Three artifact types are published per release:
 
-## Destructive Database Reset
+- **Windows**: `APIWeave Setup <version>.exe` (NSIS per-user installer).
+- **macOS**: `APIWeave-<version>.dmg`.
+- **Linux**: `APIWeave-<version>.AppImage`, `apiweave-desktop_<version>_amd64.deb`, and `apiweave-desktop-<version>.pacman`. Pick the one that matches your distro.
 
-> **Read this before any other step in the install guide.** APIWeave 2.0 has not yet shipped a stable public release. The 2.0 model (personal and organization workspaces, scoped environments, scoped secrets, projects, scoped service tokens) is a hard cut from the 1.0 line, and the supported upgrade path is to wipe the database and start over.
+## Windows
 
-Concretely, the 2.0 install requires:
+1. Double-click the installer. The installer is per-user and does not require administrator rights.
+2. Choose an install location if the default does not fit.
+3. Wait for the install to complete. A Start menu entry is added under **APIWeave**.
+4. Launch APIWeave from the Start menu.
 
-- A clean MongoDB database with no 1.0 collections (`workflows`, `environments`, `collections`, `webhooks`, `runs`, `collection_runs`, `webhook_logs`).
-- No carryover of `Environment.isActive`, no carryover of `runtime_secrets`, no carryover of the flat `/api/environments`, `/api/collections`, `/api/workflows`, `/api/webhooks`, or `/api/runs` paths.
-- No carryover of 1.0 webhook credentials, the global `MCP_API_KEY`, or any pre-2.0 service token.
+The installer and binaries are unsigned, so SmartScreen may warn on first launch. Click **More info → Run anyway**.
 
-If you are upgrading from a 1.0 instance, drop the database before installing. The commands are in [Drop the Database](#drop-the-database) below. If this is a fresh install on a new database, the destructive reset is a no-op and you can move on to the install path of your choice.
+## macOS
 
-This is intentional. The application is unreleased, so there is no production data to preserve, and the destructive reset lets the new model land without a compatibility shim.
-
-## Single-User Mode (Recommended for Self-Hosting)
-
-If you are installing APIWeave for yourself — a local evaluation, a side project, a private tool for one operator — set `DEPLOYMENT_MODE=single_user` in `backend/.env` and skip the entire OAuth and session block. The backend creates a synthetic owner on the first request, auto-creates your personal workspace, and serves the canvas with no login screen.
-
-```env
-# backend/.env
-DEPLOYMENT_MODE=single_user
-MONGODB_URL=mongodb://localhost:27017
-MONGODB_DATABASE=apiweave
-APP_ENV=development
-BASE_URL=http://localhost:8000
-PUBLIC_BASE_URL=http://localhost:8000
-ALLOWED_ORIGINS=http://localhost:3000
-```
-
-You do **not** need to configure:
-
-- Any `OAUTH_*` client id or secret
-- `SESSION_SECRET_KEY`
-- `CSRF_ENABLED`
-- `APPROVED_DOMAINS`
-- `SETUP_MODE_ENABLED`
-
-The full per-mode contract, switching procedure, and operational rules are in the [Authentication guide — Deployment Mode](../operations/authentication.md#deployment-mode). If you are installing APIWeave for a team, or to host as a multi-tenant SaaS, leave `DEPLOYMENT_MODE` at its default (`multi_tenant`) and configure OAuth instead.
-
-## Quick Start
-
-The one-shot scripts create the Python virtualenv, install Python and npm dependencies, and copy `.env.example` to `.env` for both services. Run them once, then start the dev stack.
-
-Windows (PowerShell or Command Prompt):
-
-```bat
-setup.bat
-start-dev.bat
-```
-
-macOS/Linux:
-
-```bash
-chmod +x setup.sh start-dev.sh
-./setup.sh
-./start-dev.sh
-```
-
-What the scripts do:
-
-- `setup.bat` and `setup.sh` chain `setup-backend.*` and `setup-frontend.*`. The backend step creates `backend/venv`, runs `pip install -e ".[dev]"`, and copies `backend/.env.example` to `backend/.env`. The frontend step runs `npm install` in `frontend/` and copies `frontend/.env.example` to `frontend/.env`.
-- `start-dev.bat` and `start-dev.sh` start MongoDB if it is not already running, then open a separate window for the backend API, the worker, the MCP stdio server, and the frontend dev server.
-
-To stop everything, run `stop-dev.bat` (Windows) or `./stop-dev.sh` (macOS/Linux). The stop script closes the windows the start script opened.
-
-## Manual Installation
-
-Use this path if you want full control over each step, or if the quick start script fails on your platform.
-
-### Backend
-
-Windows (PowerShell):
-
-```powershell
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install --upgrade pip
-pip install -e ".[dev]"
-copy .env.example .env
-```
-
-macOS/Linux:
-
-```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install -e ".[dev]"
-cp .env.example .env
-```
-
-The editable install (`-e .`) means source changes in `backend/app/` show up on the next server reload, with no reinstall.
-
-### Frontend
-
-Windows:
-
-```bat
-cd frontend
-npm install
-copy .env.example .env
-```
-
-macOS/Linux:
-
-```bash
-cd frontend
-npm install
-cp .env.example .env
-```
-
-### MongoDB
-
-Pick one of these three options.
-
-Local install on Windows, using winget (run PowerShell as Administrator):
-
-```powershell
-winget install MongoDB.Server
-```
-
-The default data directory is `C:\data\db`. If the installer put the binaries elsewhere, add the `bin` folder to your system `PATH`.
-
-Local install on macOS, using Homebrew:
-
-```bash
-brew tap mongodb/brew
-brew install mongodb-community@7.0
-brew services start mongodb-community@7.0
-```
-
-Local install on Debian or Ubuntu, using the official apt repository:
-
-```bash
-sudo apt-get install -y mongodb-org
-sudo systemctl start mongod
-```
-
-If you do not want MongoDB on your machine, create a free cluster at [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) and paste the connection string into `MONGODB_URL` in `backend/.env`. The connection string must end with the database name:
-
-```env
-MONGODB_URL=mongodb+srv://user:pass@cluster0.example.net/apiweave
-```
-
-### Drop the Database
-
-Before starting the backend for the first time, drop the database so the 2.0 model can take effect. The `apiweave` database in the [Environment Variables Reference](../reference/environment-variables.md) is the default. The destructive command is the same on every platform:
-
-```bash
-mongosh --eval "db.getSiblingDB('apiweave').dropDatabase()" mongodb://localhost:27017
-```
-
-If you are using MongoDB Atlas, open the cluster, select the `apiweave` database, and choose **Drop Database** from the context menu. If you are using Docker Compose, the database lives on the named volume and is wiped with `docker compose down -v` before the first `up`.
-
-The drop is safe on a fresh install. The drop is destructive on a 1.0 install, and that is the point. There is no automatic 1.0 to 2.0 upgrade because the 2.0 model is a hard cut.
-
-## Bootstrap on First Sign-In
-
-When the backend starts for the first time against a clean database, the first user to sign in becomes the per-instance owner and gets a personal workspace auto-created at the slug `personal`. The owner can then create the first organization from the org switcher, invite teammates, and create organization-owned workspaces.
-
-The bootstrap flow:
-
-1. The first sign-in lands at `https://your-host/`. The login page accepts any configured SSO provider.
-2. After the OAuth callback, the backend creates the user, the per-instance owner role, and a personal workspace.
-3. The frontend redirects to `/personal/workflows`, the workflows list of the new personal workspace.
-4. The owner opens the org switcher, creates the first organization, and uses it to create the first organization-owned workspace.
-
-`SETUP_MODE_ENABLED` (default `true`) gates the first-admin bootstrap: in `multi_tenant` mode the first verified sign-in on an empty database becomes the per-instance owner, after which the backend auto-disables setup mode. Set `SETUP_MODE_ENABLED=false` once the owner exists — production startup checks reject `true`. There is exactly one owner per instance. (In `single_user` mode the flag is ignored; the synthetic owner is bootstrapped on first request.)
-
-## Docker Compose
-
-Docker Compose runs MongoDB, the backend, the worker, the MCP stdio helper, and the frontend in containers, with hot-reload mounts for the source code. Use this path when you want identical behavior across machines, or when you cannot install Python 3.13 or MongoDB locally.
-
-From the project root:
-
-```bash
-docker compose down -v
-docker compose up -d --build
-docker compose ps
-```
-
-The first `down -v` is the destructive database reset for Compose. It removes the named MongoDB volume so the 2.0 model can take effect. The compose file lives at the project root and defines the services the install needs. The first build takes a few minutes; later builds are fast because of layer caching.
-
-Follow logs for one service:
-
-```bash
-docker compose logs -f backend
-```
-
-Stop and remove the containers while keeping the MongoDB data volume:
-
-```bash
-docker compose down
-```
-
-Wipe the MongoDB data volume too (the destructive reset):
-
-```bash
-docker compose down -v
-```
-
-## Configuration
-
-Both services read a `.env` file at startup. The setup scripts copy `.env.example` to `.env` for you. Edit the values you need; the defaults work for local development.
-
-### backend/.env
-
-Minimum values to confirm:
-
-```env
-APP_ENV=development
-BASE_URL=http://localhost:8000
-FRONTEND_URL=http://localhost:3000
-MONGODB_URL=mongodb://localhost:27017
-MONGODB_DB_NAME=apiweave
-ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-SECRET_KEY=change-me-in-development
-```
-
-For OAuth login (GitHub, GitLab, Google, Microsoft), fill in the `*_CLIENT_ID` and `*_CLIENT_SECRET` variables. The first successful SSO login becomes the per-instance owner when no users exist. Production deployment values live in the [Authentication Setup](../operations/authentication.md) guide; do not reuse development secrets in production.
-
-### frontend/.env
-
-Two variables, both pointing at the backend:
-
-```env
-VITE_API_URL=http://localhost:8000
-VITE_API_WEAVE_URL=http://localhost:8000
-```
-
-These are baked into the JavaScript bundle at build time. If you change a `VITE_*` value, restart `npm run dev` or run `npm run build` to pick it up. A dev-server restart is not enough on its own.
-
-## Verify Installation
-
-Run these checks in order. Each one confirms a layer of the stack is reachable.
-
-1. Confirm the backend health endpoint:
-
+1. Open the `.dmg` and drag **APIWeave** to **Applications**.
+2. The build is unsigned and un-notarized, so the first launch is blocked by Gatekeeper. Right-click the app in **Applications** and choose **Open**, or clear the quarantine flag with:
    ```bash
-   curl http://localhost:8000/health
+   xattr -dr com.apple.quarantine /Applications/APIWeave.app
    ```
+3. Launch APIWeave from **Applications** or Spotlight.
 
-   Expected response: `{"status":"ok"}` or similar JSON with a `status` field. If you get connection refused, the backend is not running yet. Re-run `start-dev` or check the backend window for stack traces.
+## Linux
 
-2. Confirm the OpenAPI docs load:
+Three install paths. Pick what fits your distro.
 
-   Open `http://localhost:8000/docs` in a browser. The route groups under `/api/` are scoped: look for `/api/orgs/{orgSlug}/...` and `/api/users/me/...` instead of the flat paths from 1.0.
+**AppImage** (portable, runs anywhere):
 
-3. Confirm the frontend responds:
+```bash
+chmod +x APIWeave-<version>.AppImage
+./APIWeave-<version>.AppImage
+```
 
-   Open `http://localhost:3000` in a browser. The login page should render. After sign-in, the redirect lands on `/personal/workflows`, the workflows list of the new personal workspace.
+If FUSE 2 is missing (common on Arch), install it (`sudo pacman -S fuse2`) or run the AppImage without FUSE:
 
-4. Confirm MongoDB is reachable from your shell:
+```bash
+./APIWeave-<version>.AppImage --appimage-extract-and-run
+```
 
-   ```bash
-   mongosh --eval "db.runCommand({ ping: 1 })" mongodb://localhost:27017/apiweave
-   ```
+**Debian / Ubuntu**:
 
-   Expected response: `{ ok: 1 }`. If you use the legacy `mongo` shell, the command is the same; only the binary name differs.
+```bash
+sudo apt install ./apiweave-desktop_<version>_amd64.deb
+```
 
-5. Confirm the worker is alive (Docker or manual):
+**Arch / Manjaro**:
 
-   ```bash
-   docker compose logs worker | tail -20
-   ```
+```bash
+sudo pacman -U apiweave-desktop-<version>.pacman
+```
 
-   Look for a line that says the worker started and is polling for runs. In a manual setup, the equivalent line appears in the Worker window opened by `start-dev`.
+On Arch + Hyprland, the app requests native Wayland automatically (`ozone-platform-hint=auto`), so it runs directly on Hyprland with no XWayland. If a compositor quirk forces XWayland, launch with an explicit override: `apiweave --ozone-platform=wayland` (or `--ozone-platform=x11` to force XWayland).
 
-If all five checks pass, your installation is good. Sign in, complete the first-owner bootstrap, and build your first workflow in your personal workspace.
+## First Launch
+
+When APIWeave opens for the first time:
+
+- The app creates its data directory under the OS-standard user data path:
+  - **Windows**: `%APPDATA%\APIWeave`
+  - **macOS**: `~/Library/Application Support/APIWeave`
+  - **Linux**: `~/.config/APIWeave`
+- A single SQLite database (`apiweave.db`) is created in that directory and migrations are applied.
+- The keyfile for the encrypted secret store is generated and written to the data directory. Treat this file like a private key: if you copy it elsewhere, the secret store follows it. If you delete it, the secret store is gone for good.
+- The app lands directly on the workflows list. There is no login screen.
+
+## Optional: Enable the Local MCP Bridge
+
+The local MCP bridge is opt-in. To enable it for a local AI agent:
+
+1. Open the **Settings** panel in the app (the gear icon in the header).
+2. Toggle **Enable MCP bridge**.
+3. The app binds a loopback HTTP server on `127.0.0.1` and writes a static per-install token to a file in the data directory. The **MCP** panel in the app shows the URL and the token; point your local agent at the URL with the token. See [MCP Integration](../features/mcp-integration.md) for setup recipes.
+
+If you do not enable the MCP bridge, nothing is listening on any port. The desktop app has no exposed network surface by default.
+
+## Build from Source (Contributors)
+
+If you are working on APIWeave itself, build the desktop installer from source.
+
+```bash
+# Clone the repository
+git clone https://github.com/Kaysharp42/apiweave.git
+cd apiweave
+
+# Install the renderer dependencies
+cd frontend && npm install && cd ..
+
+# Install the desktop dependencies
+cd desktop && npm install && cd ..
+
+# Build the installer
+# Windows (PowerShell):
+scripts/desktop.ps1 build
+# macOS / Linux:
+./scripts/desktop.sh build
+```
+
+The installer lands in `desktop/release/`. For day-to-day development, run `cd desktop && npm run dev:electron` instead. It builds the renderer, bundles the main process, and launches Electron pointed at the dev renderer. Hot reload happens in the renderer; the main process restarts on rebuild.
+
+## Verify the Install
+
+A quick checklist after first launch:
+
+1. The window opens at the workflows list. No login screen.
+2. The data directory was created and contains `apiweave.db` and `keyfile`.
+3. **Settings → About** shows the version you installed.
+4. (Optional) Toggle the MCP bridge in **Settings** and confirm the **MCP** panel shows a `127.0.0.1` URL and a token.
+
+## Where Things Live
+
+| What | Where |
+|------|-------|
+| Database (SQLite) | `<userData>/apiweave.db` |
+| Secret keyfile | `<userData>/keyfile` |
+| MCP token (when enabled) | `<userData>/mcp.token` |
+| Run artifacts (JUnit, HTML) | `<userData>/artifacts/` |
+| App logs (renderer + main) | The terminal that launched Electron, or the OS console |
+
+`<userData>` is the OS-standard user data path for the app:
+
+- **Windows**: `%APPDATA%\APIWeave`
+- **macOS**: `~/Library/Application Support/APIWeave`
+- **Linux**: `~/.config/APIWeave`
 
 ## Next Steps
 
-Move on to [Your First Workflow](first-workflow.md) for a 5-minute tour of the canvas in your personal workspace. If you would rather read the building blocks first, [Concepts](concepts.md) defines every term you will see in the rest of the docs.
+Move on to [Your First Workflow](first-workflow.md) for a 5-minute tour of the canvas. If you would rather read the building blocks first, [Concepts](concepts.md) defines every term you will see in the rest of the docs.
 
 ## Troubleshooting
 
-- **If `setup.bat` reports `'python' is not recognized`**, Python 3.13 is not on `PATH`. Reinstall Python from python.org and tick "Add Python to PATH" in the first installer screen, or use the Microsoft Store install on Windows 11.
-- **If `start-dev.bat` says `mongod: command not found`**, the MongoDB `bin` directory is not on `PATH`. Add `C:\Program Files\MongoDB\Server\7.0\bin` (or wherever the installer placed it) to your system `PATH`, or start `mongod` manually with `--dbpath C:\data\db` in a separate terminal.
-- **If the frontend shows "Network Error" or a CORS error in the browser console**, the backend is not running, or `ALLOWED_ORIGINS` in `backend/.env` does not include `http://localhost:3000`. Edit `.env`, restart the backend, and refresh the page.
-- **If port 8000 or port 3000 is already in use**, another app is holding the port. Stop that app, or change the port: pass `--port 8001` to `uvicorn` for the backend, and edit `VITE_API_URL` in `frontend/.env` plus the dev-server port in `frontend/vite.config.js` to match.
-- **If Docker Compose fails with "port is already allocated"**, an old container or host process is still on 27017, 8000, or 3000. Run `docker compose down -v` then `docker compose up -d --build` again. The `-v` flag is also how you wipe the 2.0 database.
-- **If the first sign-in lands on a blank page or 404s on `/personal/workflows`**, the database was not dropped before the backend started. Run the destructive reset in [Drop the Database](#drop-the-database), restart the backend, and sign in again. The first user becomes the owner and the personal workspace is created on that first sign-in.
-- **If you are migrating from a 1.0 install**, the 2.0 install will not detect the old collections and may fail to start. Drop the database before running the 2.0 backend, recreate the schema, and re-onboard from the bootstrap flow.
+- **If the Windows installer is blocked by SmartScreen**, click **More info → Run anyway**. The binaries are unsigned.
+- **If macOS Gatekeeper blocks the first launch**, right-click the app in **Applications** and choose **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
+- **If the Linux AppImage fails with a FUSE error** (common on Arch), install FUSE 2 (`sudo pacman -S fuse2`) or run with `--appimage-extract-and-run`. The `.pacman` package has no such requirement.
+- **If the app opens to a blank window**, your GPU driver may not be compatible with the renderer's WebGL canvas. Launch with `apiweave --disable-gpu` to use the software rasterizer.
+- **If the data directory is read-only**, the OS user account does not have write permission to the user data path. Check the OS-level permission on the path and the disk's free space.
+- **If the MCP bridge refuses to start**, another process is already bound to the chosen loopback port. Change the port in the MCP settings, or stop the conflicting process.
 
 ## Related
 
@@ -307,4 +160,4 @@ Move on to [Your First Workflow](first-workflow.md) for a 5-minute tour of the c
 - [Concepts](concepts.md)
 - [Workflows and Nodes](../features/workflows-and-nodes.md)
 - [Environment Variables Reference](../reference/environment-variables.md)
-- [Changelog](../../CHANGELOG.md) for the full 2.0 surface.
+- [Changelog](../../CHANGELOG.md) for the desktop transition.

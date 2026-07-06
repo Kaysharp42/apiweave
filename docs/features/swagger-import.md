@@ -1,13 +1,13 @@
 # Swagger and OpenAPI Import
 
-*How to turn an OpenAPI or Swagger document into reusable request templates inside a workspace on APIWeave 2.0. Covers the environment-linked sync that keeps templates fresh as the spec evolves, the one-time file import for ad-hoc projects, the warning badge for stale nodes, the scope of the environment that holds the URL, and the versions the importer accepts.*
+*How to turn an OpenAPI or Swagger document into reusable request templates on the APIWeave canvas. Covers the environment-linked sync that keeps templates fresh as the spec evolves, the one-time file import for ad-hoc projects, and the warning badge for stale nodes.*
 
 ## Prerequisites
 
-- [Concepts](../getting-started/concepts.md), especially the Environment, Workspace, and Workflow definitions.
-- [Environments and Secrets](environments-and-secrets.md), because the Swagger URL lives on a scoped environment document.
+- [Concepts](../getting-started/concepts.md), especially the Environment, Workflow definitions.
+- [Environments and Secrets](environments-and-secrets.md), because the Swagger URL lives on an environment document.
 - [Workflows and Nodes](workflows-and-nodes.md) so the HTTP Request node and the Add Nodes panel are familiar.
-- A working APIWeave 2.0 instance, a workspace, and at least one environment visible to the workspace. See [Installation](../getting-started/installation.md) if you have not set it up yet.
+- A working APIWeave desktop app, with at least one environment. See [Installation](../getting-started/installation.md) if you have not set it up yet.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ APIWeave gives you two ways to get endpoints from an OpenAPI or Swagger document
 
 | Path | Best when | What it does |
 | --- | --- | --- |
-| **Path A: Environment-Linked Sync** | The API definition changes often and you want the templates on the canvas to stay in step with the spec. | The Swagger URL is pinned on a scoped environment. The canvas toolbar has a **Refresh** action that re-fetches the document and refreshes the imported group for the current workspace. |
+| **Path A: Environment-Linked Sync** | The API definition changes often and you want the templates on the canvas to stay in step with the spec. | The Swagger URL is pinned on an environment. The canvas toolbar has a **Refresh** action that re-fetches the document and refreshes the imported group. |
 | **Path B: One-Time File Import** | You have a local `.json` or `.yaml` spec file and just want to drop a batch of templates onto the canvas for a one-off workflow. | The **Import** panel accepts a file, shows a preview, and adds the endpoints to the Add Nodes palette. There is no ongoing sync. |
 
 Path A is the recommended default for any API you keep touching. Path B is the right tool for a quick prototype, a one-shot migration, or a spec that lives only on your laptop.
@@ -40,9 +40,9 @@ The environment-linked path keeps the template set in sync with a remote spec. T
 
 ### Step 1: Set the Swagger URL on an Environment
 
-The Swagger URL is a field on a scoped environment document, not a workflow setting. That choice is what makes it possible to swap the spec per stage (staging spec on one environment, production spec on another) without touching the canvas. The environment can be a workspace environment, an organization environment that the workspace allowlists, or a user personal environment bound to the workspace.
+The Swagger URL is a field on an environment document, not a workflow setting. That choice is what makes it possible to swap the spec per stage (staging spec on one environment, production spec on another) without touching the canvas.
 
-1. Open the **Environments** page for the scope you want to use. The URL shape is one of the three scope prefixes documented in [Environments and Secrets](environments-and-secrets.md).
+1. Open the **Environments** page from the header.
 2. Create a new environment or open the one you want to attach the spec to.
 3. Find the **OpenAPI/Swagger URL** field and paste the spec URL. Both of these URL shapes are accepted:
 
@@ -55,24 +55,24 @@ The Swagger URL is a field on a scoped environment document, not a workflow sett
 
 4. Save the environment.
 
-The URL must be reachable from the APIWeave backend, not just from your browser. If the backend runs behind a private network, the spec has to be on a host the backend can reach. See [Environments and Secrets](environments-and-secrets.md#openapiswagger-url) for the field's full context.
+The URL must be reachable from the desktop app's main process, not just from your browser. If the app runs behind a private network, the spec has to be on a host the main process can reach. See [Environments and Secrets](environments-and-secrets.md#openapiswagger-url) for the field's full context.
 
 ### Step 2: Select the Environment and Refresh
 
 Now switch to the canvas and pull the spec into the Add Nodes panel.
 
 1. Open the workflow you want to add endpoints to (or create a new one).
-2. In the canvas toolbar, open the environment selector and pick the environment you just configured. The selector lists the environments visible to the current workspace.
+2. In the canvas toolbar, open the environment selector and pick the environment you just configured. The selector lists every environment in the local database.
 3. Click **Refresh** in the toolbar. The importer fetches the document, parses the operations, and adds an imported group to the Add Nodes panel.
 
-The imported group is labeled `Swagger: <Environment Name>` so you can tell at a glance which spec the templates came from. Repeat the click whenever the spec changes upstream; the group is regenerated each time. The imported templates are visible only inside the workspace you are in.
+The imported group is labeled `Swagger: <Environment Name>` so you can tell at a glance which spec the templates came from. Repeat the click whenever the spec changes upstream; the group is regenerated each time.
 
 ### Step 3: Drag Imported Requests to the Canvas
 
 1. Open the **Add Nodes** panel (the plus button at the bottom-right of the canvas).
 2. Find the `Swagger: <Environment Name>` group.
 3. Drag an HTTP Request template onto the canvas. Each template comes pre-filled with the method, URL, parameters, and body shape from the operation in the spec.
-4. Double-click the node to adjust headers, body, timeouts, or extractors. Placeholders like `{{env.BASE_URL}}` and `{{secrets.API_KEY}}` work in every field, so the imported request is usable against your selected environment with no further wiring. The secret placeholder resolves through the override chain documented in [Placeholders Reference](../reference/placeholders.md#secret-override-chain).
+4. Double-click the node to adjust headers, body, timeouts, or extractors. Placeholders like `{{env.BASE_URL}}` and `{{secrets.API_KEY}}` work in every field, so the imported request is usable against your selected environment with no further wiring. The secret placeholder resolves through the local scope chain documented in [Placeholders Reference](../reference/placeholders.md#the-scope-chain).
 
 Imported templates are a starting point, not a finished node. Treat them the same as any other HTTP Request node: configure auth, plug in extractors, and attach assertions where the contract matters.
 
@@ -102,7 +102,7 @@ Use the file path when you have a spec on disk and do not need ongoing sync.
 5. Optionally pick a server URL, filter by tags, or enable sanitization for the request body.
 6. Click **Add to Nodes**. The endpoints are added to the Add Nodes panel as a new palette group.
 
-The group added by Path B is local to the workflow inside the current workspace. It does not depend on any environment, does not refresh, and does not generate `Check API` badges. If the spec on disk changes, run the import again.
+The group added by Path B is local to the workflow. It does not depend on any environment, does not refresh, and does not generate `Check API` badges. If the spec on disk changes, run the import again.
 
 ## Multi-Definition Swagger UI
 
@@ -130,7 +130,7 @@ The importer also handles both `.json` and `.yaml` documents and accepts URLs th
 
 - **If Refresh reports "Select an environment before refreshing Swagger"**, open the environment selector in the canvas toolbar and pick one. The importer needs an environment to read the Swagger URL from.
 - **If Refresh reports "Environment has no Swagger/OpenAPI URL"**, open the Environment Manager, edit the active environment, and paste the spec URL into the **OpenAPI/Swagger URL** field. See [Environments and Secrets](environments-and-secrets.md#openapiswagger-url) for the exact field.
-- **If Refresh reports "Failed to fetch Swagger URL"**, confirm the URL starts with `http://` or `https://`, that the APIWeave backend can reach the host (not just your browser), and that the host is not on a private network the backend blocks. If a Swagger UI URL fails, try the direct spec URL for the same service.
+- **If Refresh reports "Failed to fetch Swagger URL"**, confirm the URL starts with `http://` or `https://`, that the desktop app can reach the host (not just your browser), and that the host is not on a private network the runner blocks. If a Swagger UI URL fails, try the direct spec URL for the same service.
 - **If only some endpoints import from a multi-definition Swagger UI**, one of the definitions is failing while the others succeed. Keep the successful imports, then point the environment's URL at the failing definition's direct spec URL to isolate it.
 - **If a `Check API` badge stays on a node after a refresh**, the importer found a real drift between the node and the refreshed spec. Open the badge for the mismatch reason and either bring the node in line with the spec or accept the drift intentionally.
 - **If Path B's Preview shows zero operations**, the file is not a valid OpenAPI 3.x or Swagger 2.0 document. Open the file and confirm the top-level keys (`openapi` for 3.x, `swagger: "2.0"` for 2.0) are present.
@@ -140,4 +140,3 @@ The importer also handles both `.json` and `.yaml` documents and accepts URLs th
 - [Environments and Secrets](environments-and-secrets.md) for the per-environment Swagger URL field and environment management.
 - [Workflows and Nodes](workflows-and-nodes.md) for the HTTP Request node and the Add Nodes panel that imported requests land in.
 - [Concepts](../getting-started/concepts.md) for the Environment, Variable, and Workflow terms used throughout this guide.
-- [Troubleshooting](../operations/troubleshooting.md) for the central FAQ when an issue is not import-specific.

@@ -2,56 +2,31 @@
 
 Visual API Test Story Builder. Build, run, and inspect API test workflows on a canvas.
 
-## What Is APIWeave 2.0?
+## What Is APIWeave?
 
-APIWeave is a self-hostable, open-source workspace for visual API testing. You assemble test workflows on a ReactFlow canvas from drag-and-drop nodes (HTTP request, assertion, delay, merge, start, end), chain requests with extracted variables and dynamic functions, run them against a scoped environment, and inspect results node by node. Projects group workflows into ordered runs. Scoped environments and scoped secrets live at user, organization, workspace, or environment scopes, and `{{secrets.NAME}}` resolves through a GitHub-like override chain. Scoped service tokens drive webhooks and the MCP server.
+APIWeave is a local-first, open-source desktop app for visual API testing. You assemble test workflows on a ReactFlow canvas from drag-and-drop nodes (HTTP request, assertion, delay, merge, start, end), chain requests with extracted variables and dynamic functions, run them against an environment, and inspect results node by node. Projects group workflows into ordered runs. Environments and secrets live on your machine, encrypted at rest. Webhooks and the MCP server are not part of the desktop app — you run the workflow from the UI or from a local agent.
 
-APIWeave 2.0 is the first release tracked as a stable public surface. The 2.0 install requires a clean database; see the [Installation](docs/getting-started/installation.md#destructive-database-reset) guide for the destructive reset that the unreleased app expects.
+APIWeave ships as a single-process Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
 
 ## Quick Start
 
-Prerequisites: Python 3.13+, Node.js 20+, MongoDB 7+.
+**Recommended for most users:** download the installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases). The installer puts a self-contained app on your machine. No Python, no Node, no database, no Docker.
 
-Windows:
-
-```bash
-setup.bat
-start-dev.bat
-```
-
-macOS / Linux:
-
-```bash
-./setup.sh
-./start-dev.sh
-```
-
-Open `http://localhost:3000` in a browser. The frontend is on port 3000, the backend API on port 8000, the OpenAPI docs on `/docs`, and MongoDB on 27017. Sign in through your configured SSO provider; the first sign-in becomes the per-instance owner and lands you in your personal workspace. Run `stop-dev.bat` or `./stop-dev.sh` to shut everything down.
-
-### Self-hosting without SSO
-
-For local evaluation and single-operator self-hosting, set `DEPLOYMENT_MODE=single_user` in `backend/.env`. The backend creates a synthetic owner on the first request and serves the canvas with no login screen, no OAuth configuration, and no session secrets. See the [Authentication guide](docs/operations/authentication.md#deployment-mode) for the full contract.
+**For contributors:** clone the repo, install the desktop and frontend dependencies, and run the dev shell. See the [Developer Guide](AGENTS.md) for the dev workflow.
 
 ## Desktop App
 
-APIWeave also ships as a self-contained desktop app (Electron). It bundles the
-backend, worker, and a local MongoDB and runs them on private loopback ports — no
-Docker, no separate services, no ports to expose. Download the installer for your
-OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases),
-or build it locally with `scripts/desktop.ps1 build` (Windows) / `scripts/desktop.sh build` (Linux/macOS).
+APIWeave ships as a self-contained Electron app. The app is single-process: the renderer (the React UI), the main process (the Node.js execution engine), the embedded SQLite store, and the optional local MCP bridge all run inside one process, talking to each other over Electron IPC. No external services. No open ports on your network. No telemetry.
+
+Download the installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases), or build it locally with `scripts/desktop.ps1 build` (Windows) or `scripts/desktop.sh build` (Linux/macOS).
 
 ### Windows
 
-Run `APIWeave Setup <version>.exe`. It installs per-user (no admin prompt) and
-adds a Start-menu entry. The installer and binaries are unsigned, so SmartScreen
-may warn on first launch — choose **More info → Run anyway**.
+Run `APIWeave Setup <version>.exe`. It installs per-user (no admin prompt) and adds a Start-menu entry. The installer and binaries are unsigned, so SmartScreen may warn on first launch — choose **More info → Run anyway**.
 
 ### macOS
 
-Open `APIWeave-<version>.dmg` and drag APIWeave to Applications. The build is
-unsigned/un-notarized, so the first launch is blocked by Gatekeeper: right-click
-the app → **Open**, or clear the quarantine flag with
-`xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
+Open `APIWeave-<version>.dmg` and drag APIWeave to Applications. The build is unsigned/un-notarized, so the first launch is blocked by Gatekeeper: right-click the app → **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
 
 ### Linux
 
@@ -61,62 +36,48 @@ Three artifacts are published; pick what fits your distro:
 - **`.deb`** — Debian/Ubuntu: `sudo apt install ./apiweave-desktop_<version>_amd64.deb`.
 - **`.pacman`** — Arch/Manjaro: `sudo pacman -U apiweave-desktop-<version>.pacman`.
 
-**Arch Linux + Hyprland (Wayland).** The app requests native Wayland
-automatically (`ozone-platform-hint=auto`), so it runs directly on Hyprland with
-no XWayland. Two Arch-specific notes:
+**Arch Linux + Hyprland (Wayland).** The app requests native Wayland automatically (`ozone-platform-hint=auto`), so it runs directly on Hyprland with no XWayland. Two Arch-specific notes:
 
-- The **AppImage** needs FUSE 2 (`sudo pacman -S fuse2`), or run it with
-  `./APIWeave-<version>.AppImage --appimage-extract-and-run`. The **`.pacman`**
-  package has no such requirement — prefer it on Arch.
-- If a compositor quirk forces XWayland, launch with an explicit override:
-  `apiweave --ozone-platform=wayland` (or `--ozone-platform=x11` to force XWayland).
+- The **AppImage** needs FUSE 2 (`sudo pacman -S fuse2`), or run it with `./APIWeave-<version>.AppImage --appimage-extract-and-run`. The **`.pacman`** package has no such requirement — prefer it on Arch.
+- If a compositor quirk forces XWayland, launch with an explicit override: `apiweave --ozone-platform=wayland` (or `--ozone-platform=x11` to force XWayland).
 
-The Linux binaries are built on Ubuntu (older glibc), so they run on Arch's newer
-glibc without issue.
+The Linux binaries are built on Ubuntu (older glibc), so they run on Arch's newer glibc without issue.
 
 ## Features
 
 The feature guides are the deep reference for everything you can do in APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
 
-- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the six node types, toolbar actions, resume after a failed run, and the workspace context every workflow lives in.
-- [Variables and Extractors](docs/features/variables-and-extractors.md): the four placeholder namespaces, the secret override chain, and how to pull values from responses.
-- [Projects](docs/features/projects.md): workspace-scoped ordered groups of workflows, project runs, and `.awecollection` v2 export and import (references only).
-- [Environments and Secrets](docs/features/environments-and-secrets.md): scoped environments, the Libsodium write-only secret model, the metadata-only display, the override chain, and the fact that runtime secret input is removed.
-- [Webhooks](docs/features/webhooks.md): workspace-scoped webhooks, token and HMAC auth, idempotency, rate limiting, and CI/CD integration.
-- [MCP Integration](docs/features/mcp-integration.md): scoped service tokens, both transports, and the rebuilt scoped tool surface.
-- [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates inside a workspace.
+- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the six node types, toolbar actions, resume after a failed run.
+- [Variables and Extractors](docs/features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
+- [Projects](docs/features/projects.md): ordered groups of workflows, project runs, and `.awecollection` v2 export and import (references only).
+- [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, the encrypted secret store, and the metadata-only display.
+- [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
+- [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
 
 ## Documentation
 
-The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the operations, reference, and feature indexes. Start there for install paths, the destructive database reset, the first-workflow tutorial, and the central FAQ.
+The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths, the first-workflow tutorial, and the central FAQ.
 
-## Operations
-
-The operations guides cover production posture: authentication, security, encryption, deployment, environment protection, audit, and the central FAQ.
-
-- [Authentication](docs/operations/authentication.md): SSO model, per-instance owner bootstrap, organization and workspace context, session policy.
-- [Security](docs/operations/security.md): production security model, scoped trust boundaries, CSRF and CORS, secret masking, and the pre-launch checklist.
-- [Encryption](docs/operations/encryption.md): per-scope Libsodium keypairs, write-only sealed-box ingress, master KEK, and keyring rotation.
-- [Deployment](docs/operations/deployment.md): self-hosting, the destructive database reset on upgrade, the four runtime components, pre-production checklist.
-- [Environment Protection](docs/operations/environment-protection.md): required reviewers, self-approval, and the trusted-token bypass.
-- [Audit Log](docs/operations/audit.md): the append-only event log, filters, and the JSON export.
+There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine.
 
 ## Tech Stack
 
-- Frontend: React 18, ReactFlow 11, Vite 5, Tailwind CSS 3, Zustand 5.
-- Backend: Python 3.13, FastAPI, Beanie ODM on MongoDB 7 (via Motor).
-- Secrets: per-scope Libsodium sealed-box ingress plus AES-256-GCM envelope at rest, write-only through every layer.
-- Execution: an in-process `WorkflowExecutor` plus an optional separate worker for horizontal scale.
-- Reporting: JUnit XML and HTML run artifacts.
+- Frontend (renderer): React 18, ReactFlow 11, Vite 5, Tailwind CSS 3, Zustand 5, TypeScript strict.
+- Desktop shell: Electron 33, esbuild, electron-builder.
+- Local store: better-sqlite3 (embedded SQLite, single file).
+- IPC: a typed handler registry in the main process. The same handlers back the local MCP HTTP bridge on the loopback interface.
+- Secrets: Libsodium sealed-box write-only ingress plus envelope encryption at rest. No plaintext on the wire, no read API for stored values.
+- Execution: an in-process `RunScheduler` driven by IPC events streamed to the renderer.
 
 ## Project Layout
 
 ```text
 apiweave/
-  backend/   FastAPI API, Beanie models, repositories, worker, MCP server
-  frontend/  React app, ReactFlow canvas, contexts, components
-  docs/      User-facing documentation (the hub and all guides)
-  progress/  Internal implementation notes and history
+  frontend/   React app, ReactFlow canvas, contexts, components
+  desktop/    Electron main process, IPC handlers, repositories, runner, MCP bridge
+  docs/       User-facing documentation (the hub and all guides)
+  progress/   Internal implementation notes and history
+  shared/     Cross-process TypeScript types
 ```
 
 ## License
@@ -125,8 +86,8 @@ MIT. See [LICENSE](LICENSE).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branching, commit style, and the pull-request flow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branching, commit style, and the pull-request flow. The developer workflow lives in [AGENTS.md](AGENTS.md).
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the post-2.0 plan. For historical releases, see [CHANGELOG.md](CHANGELOG.md).
+See [ROADMAP.md](ROADMAP.md) for what's next. For historical releases, see [CHANGELOG.md](CHANGELOG.md).

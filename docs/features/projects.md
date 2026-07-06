@@ -1,12 +1,11 @@
 # Projects
 
-*Group workflows so they run in a defined order, share a failure policy, and travel together as a single portable bundle. This doc covers the project lifecycle in APIWeave 2.0: create, fill, order, run, export, import, and re-validate. Projects replace the 1.0 collection concept.*
+*Group workflows so they run in a defined order, share a failure policy, and travel together as a single portable bundle. This doc covers the project lifecycle in APIWeave: create, fill, order, run, export, import, and re-validate.*
 
 ## Prerequisites
 
 - At least one saved workflow. See [Workflows and Nodes](workflows-and-nodes.md).
 - Familiarity with the `continueOnFail` per-workflow toggle, covered in [Variables, Extractors, and JSON Editor](variables-and-extractors.md) and revisited below.
-- A workspace to host the project. Personal workspace is fine for solo work, organization-owned workspace for team projects. See [Concepts](../getting-started/concepts.md#workspace).
 
 ## Table of Contents
 
@@ -17,7 +16,7 @@
 - [Reordering Workflows](#reordering-workflows)
 - [continueOnFail per Workflow](#continueonfail-per-workflow)
 - [Project Run Behavior](#project-run-behavior)
-- [Export and Import (.awecollection v2)](#export-and-import-awecollection-v2)
+- [Export and Import (.awecollection)](#export-and-import-awecollection)
 - [Dry-Run Validation](#dry-run-validation)
 - [References Only (No Secrets in Bundles)](#references-only-no-secrets-in-bundles)
 - [Troubleshooting](#troubleshooting)
@@ -25,31 +24,30 @@
 
 ## What is a Project
 
-A project is a workspace-scoped, named, ordered list of workflows plus a per-workflow `continueOnFail` flag. Every project belongs to exactly one workspace. A workspace can hold any number of projects, and a project can hold any number of workflows. When you run a project, APIWeave walks the workflow list top to bottom against the environment you select and produces a single project run record that contains the result of every workflow in the group.
+A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. A project can hold any number of workflows. When you run a project, APIWeave walks the workflow list top to bottom against the environment you select and produces a single project run record that contains the result of every workflow in the group.
 
 ```text
-Workspace: acme/checkout-api
-  Project: "Checkout API"
-    1. Auth        (workflow)  continueOnFail: false
-    2. Add to cart (workflow)  continueOnFail: false
-    3. Pay         (workflow)  continueOnFail: true
+Project: "Checkout API"
+  1. Auth        (workflow)  continueOnFail: false
+  2. Add to cart (workflow)  continueOnFail: false
+  3. Pay         (workflow)  continueOnFail: true
 ```
 
-Projects are the unit of export and import. The `.awecollection` v2 file bundles every workflow in the project, plus the project metadata and environment references, in one portable archive. The bundle carries references only, never secret values, ciphertext, or per-scope private keys.
+Projects are the unit of export and import. The `.awecollection` file bundles every workflow in the project, plus the project metadata and environment references, in one portable archive. The bundle carries references only, never secret values, ciphertext, or per-scope private keys.
 
 ## Use Cases
 
 Projects map directly to how teams organize test work. Three common patterns:
 
 - **Feature grouping**: every workflow that covers the same feature area lives in one project. A "Checkout API" project contains the auth, cart, payment, and receipt workflows for checkout.
-- **Release cycles**: group the smoke and regression workflows you want to run for a release. A "Release 2.4" project runs the same workflows in the same order on staging and production.
-- **Team or service ownership**: assign one project per service boundary or owning team inside a workspace. CI can then target the project for that service without running unrelated workflows.
+- **Release cycles**: group the smoke and regression workflows you want to run for a release. A "Release 2.4" project runs the same workflows in the same order against staging and production environments.
+- **Team or service ownership**: assign one project per service boundary. You can then target the project for that service without running unrelated workflows.
 
 A workflow can belong to at most one project at a time. If you need parallel groupings, duplicate the workflow and assign the copies to different projects.
 
 ## Creating a Project
 
-1. Open the projects list for the workspace you want to use. The URL is `/:orgSlug/:workspaceSlug/projects` for an organization-owned workspace or `/personal/projects` for your personal workspace.
+1. Open the projects list from the sidebar.
 2. Click **Create project**.
 3. Fill in a name, optional description, and choose a color tag.
 4. Save.
@@ -71,18 +69,18 @@ Workflows are attached from the workflow side, not from the project side. Two wa
 
 1. Open the workflow on the canvas.
 2. Open the right-side panel and switch to **Settings**.
-3. In the **Project** field, pick a project from the dropdown. The dropdown lists the projects in the current workspace.
+3. In the **Project** field, pick a project from the dropdown. The dropdown lists the projects on your machine.
 4. Save. The workflow now appears in that project's workflow list.
 
 **From the project settings**:
 
 1. Open the project in the project settings page.
-2. Click **Add workflow** and pick from the workflows in the current workspace that are not yet assigned.
+2. Click **Add workflow** and pick from the workflows that are not yet assigned.
 3. The workflow joins the project with `continueOnFail = false` by default. Adjust the per-row flag afterwards.
 
 To remove a workflow from a project, return to the workflow's Settings panel and set **Project** back to `None`, or use **Remove** in the project settings.
 
-A workflow can only belong to one project inside a workspace. Reassigning it to a different project removes it from the first.
+A workflow can only belong to one project. Reassigning it to a different project removes it from the first.
 
 ## Reordering Workflows
 
@@ -132,15 +130,13 @@ A project run executes workflows sequentially in the configured order. Disabled 
 5. Otherwise, advances to the next enabled workflow.
 6. Repeats until the list is exhausted or a stop condition fires.
 
-If the environment is protected, the run queues behind approvals before the first workflow starts. See [Environment Protection](../operations/environment-protection.md).
-
 Variable and secret state does not pass between workflows by default. If a downstream workflow needs a value produced by an earlier one, extract it into a workflow variable, promote it to an environment variable, or duplicate the value into a static variable.
 
-## Export and Import (.awecollection v2)
+## Export and Import (.awecollection)
 
-Projects travel as `.awecollection` v2 files. The file is a JSON archive with three sections:
+Projects travel as `.awecollection` files. The file is a JSON archive with three sections:
 
-- **Project metadata**: name, description, color, owner workspace, and workflow order.
+- **Project metadata**: name, description, color, and workflow order.
 - **Workflows**: every workflow attached to the project, in order, with nodes, edges, variables, and per-workflow settings.
 - **Environment references**: identifiers of the environments the project depends on, plus the public key fingerprints the destination instance needs to re-create the secret bindings. No values, no ciphertext, no private keys.
 
@@ -152,13 +148,13 @@ To export:
 
 To import:
 
-1. Open the projects list for the target workspace.
+1. Open the projects list from the sidebar.
 2. Click **Import project**.
 3. Pick the `.awecollection` file.
 4. Review the workflow list and the environment references.
 5. Click **Import** to commit, or **Dry run** first (see below).
 
-Imports always create new workflow records; existing workflows in the target workspace are not overwritten. If the import references an environment that exists in the target workspace, the import re-uses it. If the referenced environment is missing, the import creates an empty environment shell with the same name and slug and you fill in the variables and secrets through the normal flows.
+Imports always create new workflow records; existing workflows are not overwritten. If the import references an environment that already exists, the import re-uses it. If the referenced environment is missing, the import creates an empty environment shell with the same name and you fill in the variables and secrets through the normal flows.
 
 ## Dry-Run Validation
 
@@ -171,20 +167,19 @@ Import plan for "Checkout API.awecollection":
   + Create workflow: Auth        (new)
   + Create workflow: Add to cart (new)
   + Create workflow: Pay         (new)
-  + Reference environment: "Staging"  (matches existing env in workspace)
-  ! Conflict: workflow "Pay" already exists in target workspace (will create copy "Pay (2)")
+  + Reference environment: "Staging"  (matches existing env)
+  ! Conflict: workflow "Pay" already exists (will create copy "Pay (2)")
 ```
 
 If the dry-run shows only `+` lines, the import is clean and you can proceed. If it shows `!` lines, decide whether to import-as-copy or cancel and rename the workflows in the source bundle first.
 
 ## References Only (No Secrets in Bundles)
 
-The `.awecollection` v2 schema exports references only. The bundle does not carry:
+The `.awecollection` schema exports references only. The bundle does not carry:
 
 - Secret values, in any form.
 - Sealed-box ciphertext, because the destination instance has its own scope keypairs.
 - Per-scope private keys. The destination instance derives its own keypair per scope on first secret write.
-- Service token values or hashes.
 
 Concretely, the bundle looks like this for the secret side:
 
@@ -201,24 +196,21 @@ Concretely, the bundle looks like this for the secret side:
 }
 ```
 
-The fingerprint tells the destination operator which scope the key should live in. The operator re-creates the value through the Libsodium write flow on the destination instance. After import, every `{{secrets.NAME}}` placeholder will resolve to nothing until you re-enter the value in the destination workspace.
+The fingerprint tells the destination operator which scope the key should live in. The operator re-creates the value through the Libsodium write flow on the destination instance. After import, every `{{secrets.NAME}}` placeholder will resolve to nothing until you re-enter the value in the destination environment.
 
-This is intentional. The destination instance has its own Libsodium keypairs and its own envelope encryption key, and shipping ciphertext across would not help. The bundle is a portable shape, not a portable vault.
+This is intentional. Each instance has its own Libsodium keypairs and its own envelope encryption key, and shipping ciphertext across would not help. The bundle is a portable shape, not a portable vault.
 
 ## Troubleshooting
 
 - **If a workflow shows as "locked" inside a project and you cannot delete it from the project list**, open the workflow's Settings panel and set **Project** to `None`. Save. The workflow detaches and the project row disappears.
 - **If the project runs in the wrong order after a drag-and-drop edit**, click **Save order** in the project settings. Drag-and-drop updates the list in memory but does not persist until you save. Reload the page to confirm the new order.
-- **If secrets are missing after import**, open the Secrets page for the destination workspace and add each referenced key through the Libsodium write flow. The `.awecollection` v2 bundle references the secret names and scopes but never the values.
+- **If secrets are missing after import**, open **Secrets** for the destination environment and add each referenced key through the Libsodium write flow. The `.awecollection` bundle references the secret names and scopes but never the values.
 - **If a project run stops at the first failure but you expected it to continue**, check the per-row `continueOnFail` flag for the failing workflow in the project settings. The default is `false`, which stops the project.
-- **If an imported workflow fails with `workflow not found` errors when another workflow references it**, the bundle exported with a stale internal ID. Re-export the project from the source workspace, then re-import.
-- **If an import dry-run reports a 1.0 `.awecollection` schema**, the bundle is from the 1.0 line and is not supported by 2.0. Re-export from a 2.0 source workspace to get the v2 schema.
+- **If an imported workflow fails with `workflow not found` errors when another workflow references it**, the bundle exported with a stale internal ID. Re-export the project from the source instance, then re-import.
 
 ## Related
 
 - [Workflows and Nodes](workflows-and-nodes.md)
 - [Variables, Extractors, and JSON Editor](variables-and-extractors.md)
-- [Webhook Quick Start](webhooks.md)
 - [Concepts: Project](../getting-started/concepts.md#project)
-- [Concepts: Workspace](../getting-started/concepts.md#workspace)
 - [Concepts: Environment](../getting-started/concepts.md#environment)

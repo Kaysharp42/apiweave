@@ -135,7 +135,7 @@ N/A.
   python -c "import secrets; print(secrets.token_urlsafe(32))"
   ```
 
-  This design is intentionally future-proofed for profiles and workspaces: adding workspace-scoped keypairs and workspace-scoped KEKs is a `scope_id` or `kek_id` routing change without changing `{{secrets.X}}` workflow syntax. See `docs/operations/encryption.md` for the full model and migration path.
+  This design is intentionally future-proofed for profiles and workspaces: adding workspace-scoped keypairs and workspace-scoped KEKs is a `scope_id` or `kek_id` routing change without changing `{{secrets.X}}` workflow syntax. See `docs/features/environments-and-secrets.md` for the current local-encrypted-store model.
 
 ## Pre-1.0 (alpha and beta)
 

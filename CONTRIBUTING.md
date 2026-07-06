@@ -10,9 +10,11 @@ A good bug report includes:
 
 - Steps to reproduce, in order
 - What you expected to happen
-- What actually happened (error text, screenshots, relevant logs from `backend/logs/`)
-- Your environment: OS, Python version, Node version, MongoDB version
+- What actually happened (error text, screenshots, the renderer DevTools console output)
+- Your environment: OS, Node version, desktop app version
 - Whether the issue is consistent or intermittent
+
+For desktop-side bugs, also include the contents of the main process log (the terminal that launched Electron, or your OS console). For renderer-side bugs, the DevTools console and the Network tab are usually enough.
 
 ## Security Issues
 
@@ -26,7 +28,7 @@ Open a GitHub Issue with the `enhancement` label. Describe the problem you are t
 
 ## Pull Requests
 
-Open a pull request against the `main` branch. For development setup, scripts, lint, test, and build commands, see `apiweave-context.md` at the repo root. That file is the single source of truth for the development workflow and is updated as the project evolves; this page does not duplicate it.
+Open a pull request against the `main` branch. For development setup, scripts, lint, test, and build commands, see `apiweave-context.md` and `AGENTS.md` at the repo root. Those files are the single source of truth for the development workflow and are updated as the project evolves; this page does not duplicate them.
 
 Before opening a PR:
 
@@ -45,5 +47,4 @@ Participation is governed by the Contributor Covenant. Read the full text at [co
 
 - [Project README](README.md)
 - [Documentation Hub](docs/README.md)
-- [Security Guide](docs/operations/security.md)
-- [FAQ and Troubleshooting](docs/operations/troubleshooting.md)
+- [AGENTS.md](AGENTS.md) — developer workflow

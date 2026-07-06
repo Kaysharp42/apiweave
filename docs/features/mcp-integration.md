@@ -1,20 +1,20 @@
 # MCP Integration
 
-*APIWeave 2.0's Model Context Protocol (MCP) server, the bridge that lets AI coding agents drive workflows, projects, environments, secrets, service tokens, and audit through a single machine-to-machine protocol. Covers both supported transports, the rebuilt scoped tool surface, setup recipes for five major agents, and the scoped service token that every tool requires.*
+*APIWeave's local Model Context Protocol (MCP) server: the loopback HTTP bridge that lets AI coding agents on the same machine drive workflows, projects, environments, secrets, and runs through a single machine-to-machine protocol. Covers the bridge setup, the per-install static token, the tool surface, and setup recipes for five major agents.*
 
 ## Prerequisites
 
-- [Installation](../getting-started/installation.md) so the backend and MongoDB are running.
-- [Concepts](../getting-started/concepts.md) for the vocabulary of workspaces, projects, environments, secrets, and service tokens.
+- [Installation](../getting-started/installation.md) so the desktop app is running.
+- [Concepts](../getting-started/concepts.md) for the vocabulary of projects, workflows, environments, secrets, and runs.
 - [Architecture](../reference/architecture.md) for the place MCP occupies in the system.
-- A scoped service token. See [Service Tokens](../operations/service-tokens.md) once that doc lands, or create one in the workspace or organization settings.
+- The MCP bridge is opt-in. Enable it in **Settings → Enable MCP bridge**. The bridge binds to `127.0.0.1` and listens on a port chosen by the app. The **MCP** panel in the app shows the URL and the static token; the same token is written to a file in the user data directory so agents can pick it up automatically.
 
 ## Table of Contents
 
 - [What is MCP](#what-is-mcp)
-- [Transports: stdio vs Streamable HTTP](#transports-stdio-vs-streamable-http)
+- [Loopback HTTP Transport](#loopback-http-transport)
 - [Quick Start](#quick-start)
-- [Scoped Service Tokens](#scoped-service-tokens)
+- [Per-Install Static Token](#per-install-static-token)
 - [Tool Inventory](#tool-inventory)
 - [Setup for Major Agents](#setup-for-major-agents)
   - [Claude Desktop](#claude-desktop)
@@ -22,9 +22,7 @@
   - [VS Code](#vs-code)
   - [opencode](#opencode)
   - [Codex](#codex)
-- [Streamable HTTP Authentication](#streamable-http-authentication)
 - [Secret Policy](#secret-policy)
-- [MCP Import Security](#mcp-import-security)
 - [Agent Workflow Examples](#agent-workflow-examples)
 - [Troubleshooting](#troubleshooting)
 
@@ -32,138 +30,74 @@
 
 The Model Context Protocol (MCP) is an open standard for connecting AI agents to the tools and data of an application. The agent speaks the protocol, and the application exposes its capabilities as a set of named **tools** (actions), **resources** (read-only context), and **prompts** (guided templates).
 
-APIWeave 2.0 runs an MCP server so agents such as Claude, Cursor, VS Code, opencode, and Codex can manage workflows, run them, read results, and import specifications without driving the browser. The server uses the official MCP Python SDK with FastMCP, and both transports call the same shared service layer, so behavior stays consistent with the REST API and the frontend.
+The desktop app runs an MCP server so agents such as Claude, Cursor, VS Code, opencode, and Codex can manage workflows, run them, read results, and import specifications without driving the browser. The server is bound to `127.0.0.1` only; nothing is exposed to the network. The server uses the official MCP TypeScript SDK and calls the same IPC handler registry that the renderer uses, so behavior is consistent with the app's UI.
 
-Why expose MCP at all? Because agents that already understand API testing benefit from a structured surface that hides transport quirks, paginates results, scopes every call to an explicit org or workspace, and never echoes back a secret it should not have seen.
+Why expose MCP at all? Because agents that already understand API testing benefit from a structured surface that hides transport quirks, paginates results, and never echoes back a secret it should not have seen.
 
-## Transports: stdio vs Streamable HTTP
+## Loopback HTTP Transport
 
-APIWeave supports two MCP transports. Pick the one that matches where the agent runs.
+The desktop app exposes a single MCP transport: **loopback HTTP** on `127.0.0.1`. There is no `stdio` transport in the desktop app and no Streamable HTTP across the network. The desktop app has no exposed network surface by default.
 
 | Transport | Use case | Authentication |
 | --- | --- | --- |
-| **stdio** | Local agents launched as subprocesses (Claude Desktop, Codex CLI) | None. Process boundary is the trust boundary. |
-| **Streamable HTTP** | IDE extensions, remote agents, browser-based agents, any caller that can reach `/mcp` over HTTP | Scoped service token + Origin validation |
+| **Loopback HTTP** | Local AI agents on the same machine | Static per-install token in `Authorization: Bearer …` |
 
-**stdio** is the simplest setup. The agent starts `python mcp_stdio.py` as a child process, talks to it over standard input and output, and the process exits when the agent quits. The Python process loads `.env` from the `backend` directory and then registers every tool before handling the first request.
-
-**Streamable HTTP** mounts the MCP server at `/mcp` on the FastAPI app. Any HTTP-capable agent connects to `http://localhost:8000/mcp` (or your deployed URL), sends `Authorization: Bearer <scoped-service-token>`, and gets the same tools over JSON-RPC. This is the only choice for remote or multi-user deployments.
+The bridge is opt-in. Until you enable it in **Settings**, nothing is listening on any port. The app picks a free loopback port on first enable; the **MCP** panel in the app shows the URL and the static token, and the same token is written to the user data directory for tools that prefer to read it.
 
 ## Quick Start
 
-Add the following settings to `backend/.env`, then restart the backend:
+1. Open the desktop app.
+2. Open **Settings** and toggle **Enable MCP bridge**.
+3. Open the **MCP** panel. Note the URL (`http://127.0.0.1:<port>/mcp`) and the static token.
+4. Point your local agent at the URL with the token in the `Authorization` header.
 
-```env
-# Enable the MCP server module
-MCP_ENABLED=true
+That's it. The tool list the agent sees is the same set the app exposes to itself. There is no separate "admin" tool list; what the app can do, the agent can do.
 
-# Enable the Streamable HTTP transport (set to false for stdio-only)
-MCP_HTTP_ENABLED=true
+## Per-Install Static Token
 
-# Comma-separated origins allowed to call the HTTP transport
-MCP_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-```
+The MCP bridge authenticates with a static per-install token. The token is generated when the bridge is first enabled and stored in a file in the user data directory (`mcp.token` on most platforms; the app shows the exact path in the **MCP** panel). The token is not rotated automatically. To rotate, click **Rotate token** in the **MCP** panel; the old token stops working immediately and the new token is written to disk.
 
-The bearer token for HTTP MCP is no longer a global `MCP_API_KEY`. Create a scoped service token in the workspace or organization settings, then paste the token into the agent's configuration.
-
-**Run the stdio server** (for local agents):
-
-```bash
-cd backend
-python mcp_stdio.py
-```
-
-**Run the HTTP server** (mounted on the FastAPI app):
-
-```bash
-cd backend
-uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-The MCP endpoint is then reachable at `http://localhost:8000/mcp`.
-
-## Scoped Service Tokens
-
-Every MCP tool now requires a scoped service token. The token is bound to an organization or workspace, carries an explicit permission set, and can be revoked, rotated, or narrowed without reissuing unrelated tokens. The raw token value is shown once at creation time and never again.
-
-Common token shapes:
-
-| Scope | Typical permissions | Typical agent |
-|-------|---------------------|----------------|
-| Organization | `orgs.read`, `orgs.members.read`, `orgs.audit.read` | Read-only org administrator agent |
-| Workspace (read) | `workflows.read`, `runs.read`, `audit.read` | Code-review helper that pulls run history |
-| Workspace (read + run) | `workflows.read`, `runs.read`, `runs.write`, `audit.read` | CI helper that triggers a workflow on demand |
-| Workspace (write) | `workflows.read`, `workflows.write`, `secrets.read.metadata`, `secrets.write`, `audit.read` | Provisioning agent that creates workflows and stores secrets |
-
-A token's permissions are a hard list. There is no "wildcard" or "admin" permission that grants everything. If a tool needs a permission the token does not have, the call returns `403 Forbidden` with the missing permission in the response body.
-
-The 1.0 flow that used a global `MCP_API_KEY` plus an `MCP_ALLOW_SECRET_WRITES` flag is gone. Secret writes require an explicit `secrets.write` permission on a scoped service token. There is no global toggle.
+There is no per-agent permission model. The desktop app has a single local user. Anyone on the same machine who can read the token file can drive the app. Treat the token like a private key: keep the file readable only by your user account, and rotate it if you suspect it leaked.
 
 ## Tool Inventory
 
-The MCP server in 2.0 ships a rebuilt scoped tool surface. Every tool operates against an explicit scope (org, workspace, or environment) and accepts a scoped service token. Read and export tools redact persisted secrets at the response layer. Runtime secret input is removed. The full tool list is regenerated from the registered tools at every backend start; refer to the running server's `tools/list` for the authoritative count.
+The MCP server exposes the same set of operations the renderer's IPC channel exposes. Tools are grouped by resource:
 
-The tool groups are:
-
-- **Server Info**: `server_info`.
-- **Organizations**: list, get, create, update.
-- **Teams**: list, get, create, update, delete, list members, add member, remove member, list permission grants, grant permission, revoke permission.
-- **Org Members**: list, get, update role, remove.
-- **Invites**: list, create, resend, cancel.
-- **Outside Collaborators**: list, add, remove.
-- **Workspaces**: list, get, create, update, list members.
+- **Server info**: `server_info`.
 - **Workflows**: list, get, create, update, add node, delete, export, import, import dry-run, run, resume, list runs, get run status, get run results, get run node result, cancel run.
 - **Projects**: list, get, create, update, delete, list workflows, add workflow, remove workflow, reorder workflows, export, import, import dry-run, run.
-- **Environments**: list, get, create, update, delete, list allowed workspaces, add allowed workspace, remove allowed workspace.
-- **Environment Protection**: get, update, list approvals, approve, deny.
-- **Secrets**: list (metadata only), get (metadata only), write (sealed box), rotate (sealed box), delete, get public key, list override flags.
-- **Service Tokens**: list, get, create, rotate, narrow, revoke.
-- **Webhooks**: list, get, create, update, delete, regenerate credentials, get logs.
-- **Audit**: list events, export events.
-- **Imports**: `import_openapi_url`, `import_openapi`, `import_openapi_dry_run`, `import_har`, `import_har_dry_run`, `import_curl`.
+- **Environments**: list, get, create, update, delete.
+- **Secrets**: list (metadata only), get (metadata only), write (sealed box), rotate (sealed box), delete, get public key.
+- **Runs**: get status, get results, get node result, list, cancel, latest failed.
 
-The complete per-tool schema is in the running server's `tools/list` response and the MCP tool inventory. Treat the per-tool signature as the source of truth; this list changes as the surface evolves.
+The complete per-tool schema is in the running server's `tools/list` response. Treat the per-tool signature as the source of truth; this list changes as the surface evolves.
 
 ## Setup for Major Agents
 
-The configuration snippet for each agent follows. Replace `/path/to/apiweave/backend` with the absolute path to the `backend` directory on your machine, and replace `YOUR_SCOPED_SERVICE_TOKEN` with the value of a token you created in the workspace or organization settings. Use stdio for a local agent that can run subprocesses, and Streamable HTTP for anything else.
+The configuration snippet for each agent follows. Replace `http://127.0.0.1:<port>/mcp` with the URL the **MCP** panel shows, and replace `YOUR_MCP_TOKEN` with the per-install token from the same panel.
 
 ### Claude Desktop
 
-Open Claude Desktop, go to **Settings -> Developer -> Edit Config**, and add the stdio entry:
+Open Claude Desktop, go to **Settings → Developer → Edit Config**, and add the URL entry:
 
 ```json
 {
   "mcpServers": {
     "apiweave": {
-      "command": "python",
-      "args": ["mcp_stdio.py"],
-      "cwd": "/path/to/apiweave/backend"
-    }
-  }
-}
-```
-
-For Streamable HTTP, use a URL entry instead:
-
-```json
-{
-  "mcpServers": {
-    "apiweave": {
-      "url": "http://localhost:8000/mcp",
+      "url": "http://127.0.0.1:<port>/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_SCOPED_SERVICE_TOKEN"
+        "Authorization": "Bearer YOUR_MCP_TOKEN"
       }
     }
   }
 }
 ```
 
-Restart Claude Desktop. The apiweave server appears in the tool picker with every tool that the token's permission set allows.
+Restart Claude Desktop. The `apiweave` server appears in the tool picker with every tool the app exposes.
 
 ### Cursor
 
-Open **Cursor -> Settings -> Features -> MCP**, click **Add new global MCP server**, and paste the same JSON shape used for Claude Desktop. Cursor supports both `command` (stdio) and `url` (HTTP) entries. The server name `apiweave` shows up under the tool menu once Cursor finishes loading.
+Open **Cursor → Settings → Features → MCP**, click **Add new global MCP server**, and paste the same JSON shape used for Claude Desktop. Cursor supports URL entries. The server name `apiweave` shows up under the tool menu once Cursor finishes loading.
 
 ### VS Code
 
@@ -173,16 +107,17 @@ Create `.vscode/mcp.json` in your workspace root:
 {
   "servers": {
     "apiweave": {
-      "type": "stdio",
-      "command": "python",
-      "args": ["mcp_stdio.py"],
-      "cwd": "${workspaceFolder}/backend"
+      "type": "http",
+      "url": "http://127.0.0.1:<port>/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_TOKEN"
+      }
     }
   }
 }
 ```
 
-For Streamable HTTP, switch to a URL entry and add the bearer header. The GitHub Copilot Chat extension in VS Code reads the same file. If you do not want a workspace file, set `chat.mcp.discovery.enabled: true` in your user `settings.json` and put the configuration in your user MCP store.
+The GitHub Copilot Chat extension in VS Code reads the same file. If you do not want a workspace file, put the configuration in your user MCP store.
 
 ### opencode
 
@@ -192,78 +127,50 @@ Add the following block to `opencode.json` or `opencode.jsonc` at the project ro
 {
   "mcp": {
     "apiweave": {
-      "type": "stdio",
-      "command": "python",
-      "args": ["mcp_stdio.py"],
-      "cwd": "${workspaceFolder}/backend"
+      "type": "http",
+      "url": "http://127.0.0.1:<port>/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_TOKEN"
+      }
     }
   }
 }
 ```
 
-For Streamable HTTP, switch the type to `http`, set `url` to your MCP endpoint, and add the `Authorization` header. opencode inherits the scoped service token from the environment, so a header template that reads `${env.APIWEAVE_MCP_TOKEN}` works as well.
+opencode also supports reading the token from an environment variable through a header template like `${env.APIWEAVE_MCP_TOKEN}`.
 
 ### Codex
 
 Codex uses TOML. The configuration file is `~/.codex/config.toml` (user) or `.codex/config.toml` (project). Add a server with the CLI:
 
 ```bash
-# stdio
-codex mcp add apiweave --cwd /path/to/apiweave/backend -- python mcp_stdio.py
-
-# Streamable HTTP
-codex mcp add apiweave --url http://localhost:8000/mcp --bearer-token-env-var APIWEAVE_MCP_TOKEN
+codex mcp add apiweave --url http://127.0.0.1:<port>/mcp --bearer-token-env-var APIWEAVE_MCP_TOKEN
 ```
 
 Or write the file directly:
 
 ```toml
 [mcp_servers.apiweave]
-command = "python"
-args = ["mcp_stdio.py"]
-cwd = "/path/to/apiweave/backend"
+url = "http://127.0.0.1:<port>/mcp"
+bearer_token_env_var = "APIWEAVE_MCP_TOKEN"
 enabled = true
 ```
 
-The `APIWEAVE_MCP_TOKEN` environment variable holds your scoped service token. Optional `enabled_tools` and `disabled_tools` lists give you a per-agent allow or deny list. Use them to give read-only agents only the read tools.
-
-## Streamable HTTP Authentication
-
-The HTTP transport is machine-to-machine scoped service token authentication. It is intentionally separate from the human SSO session, CSRF cookies, and browser permissions used by the frontend. Do not use a service token as a user login, and do not put a service token in frontend code.
-
-When `MCP_HTTP_ENABLED=true`:
-
-- Every request to `/mcp` must carry `Authorization: Bearer <scoped-service-token>`.
-- The `Origin` header is validated against the comma-separated list in `MCP_ALLOWED_ORIGINS`. A missing or unmatched origin returns 403.
-- A request with no token, an unknown token, an expired token, or a revoked token returns 401.
-- A request whose token does not have the permission for the called tool returns 403 with the missing permission in the response body.
-- The `Host` header is checked against a trusted host list (DNS rebinding protection) that is derived automatically from `MCP_ALLOWED_ORIGINS` — each origin's hostname is accepted on any port. Override with `MCP_ALLOWED_HOSTS` only if the backend is served on a host that doesn't appear in the origin list.
-
-Production deployments must set `MCP_ALLOWED_ORIGINS` to the exact origins the agent will call from, generate tokens with the narrowest permission set that still works, and rotate or revoke tokens on agent retirements.
+The `APIWEAVE_MCP_TOKEN` environment variable holds your per-install token. Optional `enabled_tools` and `disabled_tools` lists give you a per-agent allow or deny list.
 
 ## Secret Policy
 
-MCP enforces strict secret handling at the service layer:
+The MCP bridge enforces the same secret handling the rest of the app enforces:
 
 | Operation | Secret behavior |
 | --- | --- |
 | **Read tools** (`workflow_get`, environment list, project export, and similar) | Persisted secrets are redacted to `<SECRET>`. The metadata-only display shows name, scope, key id, and last update. |
-| **Export tools** (`workflow_export`, `project_export`) | Secrets are not exported. The `.awecollection` v2 bundle carries references only. |
-| **`workflow_run` and `project_run`** | The runner resolves secrets through the override chain at run time. The runtime does not accept a plaintext secret value, and the response does not echo back a stored value. |
-| **Write tools** (`secrets_write`, `secrets_rotate`) | The payload must be a Libsodium sealed box encrypted against the scope's public key. The backend rejects plaintext or wrong-key ciphertext. |
-| **Import tools** | Secret-like values in workflow or project content are sanitized during import. The destination workspace's secret references are created through the same sealed-box flow. |
+| **Export tools** (`workflow_export`, `project_export`) | Secrets are not exported. The `.awecollection` bundle carries references only. |
+| **`workflow_run` and `project_run`** | The runner resolves secrets through the local scope chain at run time. The runtime does not accept a plaintext secret value, and the response does not echo back a stored value. |
+| **Write tools** (`secrets_write`, `secrets_rotate`) | The payload must be a Libsodium sealed box encrypted against the scope's public key. The main process rejects plaintext or wrong-key ciphertext. |
+| **Import tools** | Secret-like values in workflow or project content are sanitized during import. The destination environment's secret references are created through the same sealed-box flow. |
 
 Values matching patterns like `sk-`, `key_`, `secret`, `password`, `token`, and `api_key` are detected in tool responses and redacted. The detection logic lives in the secret detection service. If you see what looks like a real secret in an MCP response, treat it as a bug and add the pattern to the detector.
-
-## MCP Import Security
-
-MCP import tools inherit SSRF protection from the service layer. When `import_openapi_url` or `import_har` reaches out to fetch a spec, the request is routed through the same approval gate that the REST API uses.
-
-- Private IP ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, IPv6 link-local, and similar) are blocked when `BLOCK_PRIVATE_NETWORKS=true` (the default).
-- Hostnames must resolve to a public IP, or the host must appear in the `APPROVED_DOMAINS` list with `APPROVED_DOMAINS_ENABLED=true`.
-- The redirect chain is followed, but each hop is re-checked against the approval gate.
-
-If your agent needs to import a spec from an internal service, publish the spec through a public-facing proxy, or add the host to `APPROVED_DOMAINS` and restart the backend. The agent cannot override the gate from the MCP call.
 
 ## Agent Workflow Examples
 
@@ -271,13 +178,14 @@ These are end-to-end playbooks an agent can follow without further prompting. Th
 
 ### Create and Run a Workflow
 
-1. Call `workspace_list` (or `server_info` to confirm the token scope) to verify the agent can see the right workspace.
-2. Call `import_openapi_url` with the spec URL to discover endpoints.
-3. Call `workflow_create` with the discovered nodes, edges, and variables.
-4. Call `environment_list` to find the right environment for the run, or rely on the workspace's default environment.
-5. Call `workflow_run` with the workflow id and the selected environment id. The run is bound to the calling token's actor for the audit log.
-6. Call `run_get_status` to poll. Honor the `polling_hint` interval in the response.
-7. When the run reaches a terminal state, call `run_get_results` for a summary, then `run_get_node_result` for the full payload of any node that needs inspection.
+1. Call `server_info` to confirm the bridge is reachable and the token is accepted.
+2. Call `workflow_list` to see the existing workflows.
+3. Call `import_openapi_url` with the spec URL to discover endpoints.
+4. Call `workflow_create` with the discovered nodes, edges, and variables.
+5. Call `environment_list` to find the right environment for the run, or rely on the default.
+6. Call `workflow_run` with the workflow id and the selected environment id.
+7. Call `run_get_status` to poll. Honor the polling hint interval in the response.
+8. When the run reaches a terminal state, call `run_get_results` for a summary, then `run_get_node_result` for the full payload of any node that needs inspection.
 
 ### Add a Node to an Existing Workflow
 
@@ -290,10 +198,10 @@ Use `workflow_add_node` for incremental edits instead of resending the whole gra
 
 ### Provision a New Secret
 
-1. Call `secrets_get_public_key` for the target scope (organization, workspace, or environment) to fetch the scope's public key.
+1. Call `secrets_get_public_key` for the target scope (workspace or environment) to fetch the scope's public key.
 2. Encrypt the secret value with a Libsodium sealed box in the agent runtime.
 3. Call `secrets_write` with the scope id, the secret name, and the sealed-box ciphertext.
-4. The response returns metadata only. The plaintext never appears in the response, in the audit log, or in any subsequent tool output.
+4. The response returns metadata only. The plaintext never appears in the response or in any subsequent tool output.
 
 ### Resume a Failed Workflow
 
@@ -309,19 +217,16 @@ Use `workflow_add_node` for incremental edits instead of resending the whole gra
 
 ## Troubleshooting
 
-- **If the stdio server prints nothing and the agent times out**, the `.env` file was not found. The `cwd` in the agent config must point at the `backend` directory, or `PYTHONPATH` must include it. Logs go to stderr, not stdout, so a missing `.env` will not crash the process.
-- **If `tools/list` returns zero tools**, the registration call did not run before the server accepted the first request. Restart the agent, and confirm `MCP_ENABLED=true` in `.env`. For HTTP, restart the FastAPI process after editing `.env`.
-- **If HTTP requests get a 401 response**, the bearer token is missing, expired, or revoked. Confirm the agent config has `Bearer YOUR_SCOPED_SERVICE_TOKEN` and that the token is current in the workspace or organization settings.
-- **If HTTP requests get a 403 response**, the `Origin` header is not in `MCP_ALLOWED_ORIGINS`, or the token does not have the required permission. Add the agent's origin to the list and restart the backend, or narrow the token's permission set to the tools the agent actually needs.
-- **If a secret write returns 422 with a key-mismatch error**, the scope's public key rotated between the call to `secrets_get_public_key` and the call to `secrets_write`. Refetch the public key and retry. The error response carries the new public key for an automatic retry.
-- **If a tool call fails with a database error**, MongoDB is not running or `MONGODB_URL` is wrong. Verify the connection from the backend container, not just from your shell.
-- **If a secret value appears in a tool response**, the value did not match the detection patterns. Open `secret_utils.py`, add the pattern that catches it, and reopen an issue. Do not paste the secret into a public channel.
-- **If an import from a private URL fails with a network error**, the approval gate is blocking it. Either publish the spec through a public proxy, or add the host to `APPROVED_DOMAINS` and restart the backend.
+- **If the agent cannot reach the bridge**, confirm the desktop app is running, the bridge is enabled in **Settings**, and the URL matches the one shown in the **MCP** panel. The app must be running for the bridge to be reachable.
+- **If HTTP requests get a 401 response**, the bearer token is missing or rotated. Open the **MCP** panel, copy the current token, and update the agent config. If the token file on disk is out of sync, click **Rotate token** in the panel to issue a fresh one.
+- **If `tools/list` returns zero tools**, the bridge is enabled but no IPC handlers are registered. Restart the desktop app. If the issue persists, the app may be running an old build; reinstall.
+- **If a secret write returns a key-mismatch error**, the scope's public key rotated between the call to `secrets_get_public_key` and the call to `secrets_write`. Refetch the public key and retry.
+- **If a tool call fails with a database error**, the SQLite database is locked by another process. Quit any other instance of the app, or use a tool that opens the database read-only.
+- **If a secret value appears in a tool response**, the value did not match the detection patterns. Open `secret_utils.ts`, add the pattern that catches it, and reopen an issue. Do not paste the secret into a public channel.
+- **If an import from a private URL fails with a network error**, the runner's SSRF block rejected the target. Use a public spec URL, or set up an environment variable in the desktop app to allow the host.
 
 ## Related
 
 - [Architecture](../reference/architecture.md) for where MCP fits in the request lifecycle.
-- [Concepts](../getting-started/concepts.md) for the workspace, project, environment, secret, and service token vocabulary used by the tool descriptions.
-- [Webhooks](webhooks.md) for the human-triggered counterpart of the MCP `webhook_*` tools.
+- [Concepts](../getting-started/concepts.md) for the project, environment, secret, and run vocabulary used by the tool descriptions.
 - [Environments and Secrets](environments-and-secrets.md) for how the persisted secret model that MCP redaction protects actually works.
-- [Audit Log](../operations/audit.md) for the events that every MCP tool writes.

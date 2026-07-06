@@ -7,11 +7,14 @@
 
 ## Project Overview
 
-**APIWeave** is a Visual API Test Story Builder — a web application for creating, managing, and running API testing workflows visually. It consists of:
+**APIWeave** is a Visual API Test Story Builder — a single-process Electron desktop app for creating, managing, and running API testing workflows visually. It consists of:
 
-- **Frontend**: React + TypeScript + Tailwind CSS + DaisyUI + ReactFlow (workflow canvas)
-- **Backend**: Python FastAPI (not covered by this context)
-- **Architecture**: Atomic Design (atoms → molecules → organisms → layout → pages)
+- **Renderer**: React + TypeScript + Tailwind CSS + DaisyUI + ReactFlow (workflow canvas)
+- **Main process**: Electron + TypeScript + better-sqlite3 (workflow execution, IPC handlers, local store)
+- **Local MCP bridge**: loopback HTTP server on `127.0.0.1`, opt-in, exposes the IPC handler registry as a second transport
+- **Architecture (renderer)**: Atomic Design (atoms → molecules → organisms → layout → pages)
+
+There is no separate backend, no MongoDB, no FastAPI, no worker. Everything is on your machine.
 
 ---
 
@@ -47,12 +50,12 @@ frontend/src/
     organisms/        — CanvasToolbar, TabBar, KeyboardShortcutsHelp (complex UI sections)
     layout/           — MainLayout, Sidebar, MainHeader, Workspace (page structure)
     nodes/            — HTTPRequestNode, AssertionNode, etc. (ReactFlow nodes)
-  hooks/              — Custom React hooks (useWorkflowPolling, useKeyboardShortcuts)
-  stores/             — Zustand stores (SidebarStore, TabStore, CanvasStore)
+  hooks/              — Custom React hooks
+  stores/             — Zustand stores
   contexts/           — React contexts (WorkflowContext, PaletteContext)
   pages/              — Page components (Home, WorkflowEditor)
-  utils/              — Utility functions (api helpers, formatters)
-  constants/          — Constant values (AppNavBar config)
+  utils/              — Utility functions
+  constants/          — Constant values
   styles/             — CSS files (base.css, design tokens)
 ```
 
@@ -117,6 +120,11 @@ After EVERY phase of work:
 4. Run production build: `cd frontend && npm run build`
 5. All must pass before committing
 
+For desktop-side changes:
+1. Run `cd desktop && npm run typecheck:desktop`
+2. Run `cd desktop && npm run test:desktop`
+3. Run `cd desktop && npm run build`
+
 ### 8. Commit Requirements
 After EVERY phase:
 1. Stage only source code changes
@@ -151,7 +159,7 @@ After EVERY phase:
 
 ### Button System
 | Variant | Description | Usage |
-|---------|-------------|-------|
+|---------|------------|-------|
 | `primary` | Filled with shadow | Main actions, CTAs |
 | `secondary` | Outlined with tint | Secondary actions |
 | `ghost` | Minimal, hover only | Tertiary actions, icons |
@@ -225,13 +233,15 @@ After EVERY phase:
 3. Follow atomic design structure — put components in the right layer
 4. Use design tokens — never hardcoded colors
 5. Write tests alongside components
+6. For desktop-side changes: keep all SQLite access inside `desktop/core/repositories/`, register new operations through `desktop/core/ipc/handlers/`, never bypass the IPC handler registry
 
 ### After Each Phase
-1. Run `tsc --noEmit` — zero type errors required
-2. Run `npm run lint` — zero lint errors required
-3. Run `npm run build` — successful build required
-4. Run `npm test` — all tests passing required
-5. Commit with phase-specific message (excluding `todo.md`, `progress/`)
+1. Run `cd frontend && npx tsc --noEmit` — zero type errors required
+2. Run `cd frontend && npm run lint` — zero lint errors required
+3. Run `cd frontend && npm run build` — successful build required
+4. Run `cd frontend && npm test` — all tests passing required
+5. Run `cd desktop && npm run typecheck:desktop` and `cd desktop && npm run test:desktop`
+6. Commit with phase-specific message (excluding `todo.md`, `progress/`)
 
 ### Phase 10 Lessons Learned
 - TypeScript migration is not complete while `.js` tests remain under `frontend/src`; tests are part of the strict source tree and must be migrated alongside production files.
@@ -251,69 +261,42 @@ These files MUST NEVER be included in commits:
 
 ## MCP Architecture
 
-APIWeave exposes an MCP (Model Context Protocol) server so AI agents can manage workflows, environments, collections, and executions programmatically.
+APIWeave exposes a local MCP (Model Context Protocol) server so AI agents on the same machine can drive the desktop app.
 
-### Transport Strategy
+### Transport
 
 | Transport | Use Case | Entry Point |
 |-----------|----------|-------------|
-| **stdio** | Local CLI/desktop agents | `backend/mcp_stdio.py` |
-| **Streamable HTTP** | IDE/browser/remote agents | Mounted at `/mcp` in `backend/app/main.py` |
+| **Loopback HTTP** | Local AI agents on the same machine | `desktop/core/mcp/host.ts` |
+
+The server is bound to `127.0.0.1` only. It is opt-in (a setting in the desktop app) and authenticates with a static per-install token written to a file under the user's app data directory. There is no `stdio` transport in the desktop app; loopback HTTP is the single MCP entry point. There is no Streamable HTTP across the network — the desktop app has no exposed ports.
 
 ### File Structure
 
 ```
-backend/
-  app/
-    mcp/
-      __init__.py
-      server.py              FastMCP server instance and tool registration
-      transport.py           stdio and Streamable HTTP helpers
-      auth.py                Streamable HTTP auth and Origin checks
-      database.py            Lazy database initialization for stdio
-      schemas/               Pydantic input/output models
-      tools/                 Thin MCP adapters grouped by resource
-    services/
-      workflow_service.py    Workflow CRUD, export/import orchestration
-      run_service.py         Run creation, status, results, cancellation
-      environment_service.py Environment CRUD with secret-safe DTOs
-      collection_service.py  Collection CRUD and workflow membership
-      import_service.py      OpenAPI, HAR, curl parsing/import workflows
-      secret_utils.py        Secret detection and sanitization helpers
-  mcp_stdio.py               Standalone stdio entry point
+desktop/core/mcp/
+  host.ts        HTTP server bound to 127.0.0.1
+  bridge.ts      Maps MCP tool calls to IPC handler invocations
+  server.ts      MCP server setup
+  token-file.ts  Static token, written to a per-install file
+  tools.ts       Tool inventory
 ```
 
 ### Architecture Rules
 
-- MCP tools MUST NOT call FastAPI route functions directly
-- MCP tools MUST NOT make HTTP calls back into the same backend
-- Shared business logic belongs in `backend/app/services/`
-- Both FastAPI routes and MCP tools call the same service functions
-- Secrets are NEVER returned by MCP read/export tools
-- Runtime secrets are accepted only for `workflow_run` and are never persisted
-- Stdio transport MUST NOT write non-MCP data to stdout
-
-### Tool Inventory
-
-| Domain | Tools |
-|--------|-------|
-| Server Info | `server_info` |
-| Workflows | `workflow_list`, `workflow_get`, `workflow_create`, `workflow_update`, `workflow_export`, `workflow_import`, `workflow_import_dry_run`, `workflow_delete`, `workflow_attach_collection`, `workflow_set_environment` |
-| Environments | `environment_list`, `environment_get_active`, `environment_create`, `environment_get`, `environment_update`, `environment_delete`, `environment_activate` |
-| Collections | `collection_list`, `collection_list_workflows`, `collection_create`, `collection_get`, `collection_update`, `collection_delete`, `collection_export`, `collection_import`, `collection_import_dry_run`, `collection_add_workflow`, `collection_remove_workflow` |
-| Runs | `workflow_run`, `run_get_status`, `run_get_results`, `run_get_node_result`, `run_latest_failed`, `run_list`, `run_cancel` |
-| Imports | `import_openapi_url`, `import_openapi`, `import_openapi_dry_run`, `import_har`, `import_har_dry_run`, `import_curl` |
-
-**Total: 42 tools**
+- The MCP bridge mounts the same IPC handler registry that the renderer uses. There is one source of truth for server-side operations.
+- The MCP bridge MUST NOT call any HTTP endpoint. It calls IPC handlers directly.
+- Both the renderer and the MCP bridge go through the same service layer. The MCP bridge never has its own service implementations.
+- Secrets are NEVER returned by MCP read tools. Read and export tools redact persisted secrets at the response layer.
+- The token file is rewritten on every install. The static token is the only auth surface.
 
 ### Testing/Verification Baseline
 
 After MCP changes:
-1. Run backend tests: `cd backend && python -m pytest`
-2. Run type checks: `cd backend && python -m mypy app`
-3. Run lint checks: `cd backend && python -m ruff check app tests`
-4. Test stdio manually with MCP Inspector or a minimal Python MCP client
-5. Test Streamable HTTP manually when `MCP_HTTP_ENABLED=true`
+1. Run desktop tests: `cd desktop && npm run test:desktop`
+2. Run type check: `cd desktop && npm run typecheck:desktop`
+3. Run desktop build: `cd desktop && npm run build`
+4. Enable the MCP bridge in the app settings, point an MCP client at the loopback URL, and confirm the tool picker shows the expected tool list.
 
 ---
 
@@ -333,3 +316,11 @@ After MCP changes:
 - **Mousetrap** — keyboard shortcuts
 - **Tippy.js** — tooltips
 - **Axios** — HTTP client
+- **Electron** 33 — desktop shell
+- **better-sqlite3** 12 — embedded local store
+- **libsodium-wrappers** — sealed-box secret encryption
+- **esbuild** — main process bundler
+- **electron-builder** — installer packaging
+- **@modelcontextprotocol/sdk** — local MCP server
+- **zod** — runtime schema validation
+- **undici** — outbound HTTP for the runner's safe_http
