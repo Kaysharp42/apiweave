@@ -105,40 +105,64 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 function DefaultWorkspaceRedirect() {
   const [targetPath, setTargetPath] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      const workspaces = await apiweave.workspaces.list();
-      if (cancelled) return;
+      try {
+        const workspaces = await apiweave.workspaces.list();
+        if (cancelled) return;
 
-      const workspace =
-        workspaces.find((entry) => entry.isPersonal) ??
-        workspaces[0];
-      if (!workspace) {
-        if (isDesktopShell()) {
-          await apiweave.workspaces.create({
-            name: "Personal",
-            slug: "personal",
-            isPersonal: true,
-          });
-          setTargetPath("/personal/workflows");
+        const workspace =
+          workspaces.find((entry) => entry.isPersonal) ??
+          workspaces[0];
+        if (!workspace) {
+          if (isDesktopShell()) {
+            await apiweave.workspaces.create({
+              name: "Personal",
+              slug: "personal",
+              isPersonal: true,
+            });
+            setTargetPath("/personal/workflows");
+            return;
+          }
+          setTargetPath("/setup");
           return;
         }
-        setTargetPath("/setup");
-        return;
-      }
 
-      setTargetPath(`/${workspace.slug}/workflows`);
-    })().catch(() => {
-      if (!cancelled) setTargetPath("/app");
-    });
+        setTargetPath(`/${workspace.slug}/workflows`);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load workspaces. Please restart the app.",
+          );
+        }
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
   }, []);
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+            Failed to load workspace
+          </h1>
+          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
+            {error}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (targetPath) {
     return <Navigate to={targetPath} replace />;
