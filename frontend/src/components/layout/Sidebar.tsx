@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../auth/useAuth";
 import { toast } from "sonner";
 import CollectionManager from "../CollectionManager";
 import WebhookManager from "../WebhookManager";
@@ -85,7 +84,6 @@ export function Sidebar() {
   const refreshAll = useSidebarStore((s) => s.refreshAll);
   const setIsLoadingMore = useSidebarStore((s) => s.setIsLoadingMore);
   const setActiveWorkspaceId = useSidebarStore((s) => s.setActiveWorkspaceId);
-  const { hasPermission } = useAuth();
   const navigate = useNavigate();
 
   // Workspace context — scope sidebar data to the active workspace
@@ -507,7 +505,6 @@ export function Sidebar() {
           {selectedNav === "mcp" && <MCPManager className="h-full" />}
           {selectedNav === "settings" && (
             <SettingsContent
-              hasPermission={hasPermission}
               onNavigate={(path: string) => navigate(path)}
               onSwitchNav={(section) => setNavState(section)}
             />

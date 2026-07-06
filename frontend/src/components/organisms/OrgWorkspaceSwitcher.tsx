@@ -5,14 +5,12 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { ChevronDown, Building2, User, Plus, ListTree } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useAuth } from "../../auth/useAuth";
 import { Button } from "../atoms/Button";
 import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
 import { CreateOrganizationModal } from "./CreateOrganizationModal";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
-import { useBillingConfig } from "../../hooks/useBillingConfig";
 import type { Organization, Workspace } from "../../types";
 
 export function OrgWorkspaceSwitcher() {
@@ -25,8 +23,6 @@ export function OrgWorkspaceSwitcher() {
     isLoading,
   } = useWorkspace();
   const { isSingleUser } = useAuth();
-  const billing = useBillingConfig();
-  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [createWsOpen, setCreateWsOpen] = useState(false);
@@ -101,7 +97,6 @@ export function OrgWorkspaceSwitcher() {
     _organization: Organization,
   ): Promise<void> => {
     await refresh();
-    navigate("/organizations");
   };
 
   // New workspace is created in the current context: under the active org, or
@@ -301,13 +296,7 @@ export function OrgWorkspaceSwitcher() {
                 icon={<Plus className="h-4 w-4" aria-hidden="true" />}
                 onClick={() => {
                   setOpen(false);
-                  // Billing on: orgs require Teams — go to checkout, not the
-                  // direct-create modal (which would 402).
-                  if (billing?.billingEnabled) {
-                    navigate("/settings/billing");
-                  } else {
-                    setCreateOrgOpen(true);
-                  }
+                  setCreateOrgOpen(true);
                 }}
               >
                 Create organization
@@ -320,7 +309,7 @@ export function OrgWorkspaceSwitcher() {
                 icon={<ListTree className="h-4 w-4" aria-hidden="true" />}
                 onClick={() => {
                   setOpen(false);
-                  navigate("/organizations");
+                  setOpen(false);
                 }}
               >
                 Manage organizations

@@ -5,8 +5,4 @@
  * workflows (e.g. /organizations was missing and reverted on landing).
  */
 export const isSettingsRoute = (pathname: string): boolean =>
-  pathname.includes("/settings/") ||
-  pathname.endsWith("/settings") ||
-  pathname === "/audit" ||
-  pathname === "/organizations" ||
-  pathname.startsWith("/organizations/");
+  pathname.includes("/settings/") || pathname.endsWith("/settings");

@@ -14,20 +14,9 @@ import {
 } from "react-router-dom";
 import Home from "./pages/Home";
 import LandingPage from "./pages/LandingPage";
-import LoginPage from "./pages/LoginPage";
 import SetupPage from "./pages/SetupPage";
-import InvitePage from "./pages/InvitePage";
-import AdminUsersPage from "./pages/AdminUsersPage";
-import AdminDomainsPage from "./pages/AdminDomainsPage";
-import AccountSettingsPage from "./pages/AccountSettingsPage";
-import InviteAdminPage from "./pages/InviteAdminPage";
-import AuditPage from "./pages/AuditPage";
 import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
-import { WorkspaceTokensPage } from "./pages/WorkspaceTokensPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
-import OrgSettingsPage from "./pages/OrgSettingsPage";
-import BillingPage from "./pages/BillingPage";
-import OrganizationsPage from "./pages/OrganizationsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PaletteProvider } from "./contexts/PaletteContext";
@@ -35,7 +24,6 @@ import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import { Toast } from "./components/atoms/Toast";
 import { AuthProvider } from "./auth/AuthProvider";
 import { useAuth } from "./auth/useAuth";
-import { AdminRoute } from "./auth/AdminRoute";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import { authenticatedJson } from "./utils/apiweaveClient";
@@ -110,7 +98,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   }
 
   if (status === "unauthenticated") {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/app" replace />;
   }
 
   return <>{children}</>;
@@ -146,12 +134,12 @@ function DefaultWorkspaceRedirect() {
 
       const orgSlug = orgs.find((org) => org.orgId === workspace.orgId)?.slug;
       if (!orgSlug) {
-        setTargetPath("/login");
+        setTargetPath("/app");
         return;
       }
       setTargetPath(`/${orgSlug}/${workspace.slug}/workflows`);
     })().catch(() => {
-      if (!cancelled) setTargetPath("/login");
+      if (!cancelled) setTargetPath("/app");
     });
 
     return () => {
@@ -167,32 +155,6 @@ function DefaultWorkspaceRedirect() {
     <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
       <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// AdminPageShell — wraps admin pages in the full app layout
-// ---------------------------------------------------------------------------
-
-function AdminPageShell({ children }: { children: ReactNode }) {
-  const setNavState = useNavigationStore((state) => state.setNavState);
-  const hasSet = useRef(false);
-
-  useEffect(() => {
-    if (!hasSet.current) {
-      setNavState("settings");
-      hasSet.current = true;
-    }
-  }, [setNavState]);
-
-  return (
-    <AdminRoute>
-      <WorkspaceProvider>
-        <div className="relative flex flex-col h-screen font-sans text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised">
-          <MainLayout>{children}</MainLayout>
-        </div>
-      </WorkspaceProvider>
-    </AdminRoute>
   );
 }
 
@@ -224,49 +186,6 @@ function WorkspacePageShell({
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
-
-function LoginEntry() {
-  const { status, isSingleUser, isAuthenticated, modeLoaded, error } =
-    useAuth();
-
-  if (status === "loading" || !modeLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
-        <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
-      </div>
-    );
-  }
-
-  // In single-user mode there is no login page — but only redirect to /app
-  // once we have a confirmed authenticated user. Redirecting before /me
-  // resolves (or while /me failed) causes a Navigate ping-pong with
-  // ProtectedRoute.
-  if (isSingleUser) {
-    if (isAuthenticated) {
-      return <Navigate to="/app" replace />;
-    }
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
-            Auth bootstrap failed
-          </h1>
-          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
-            Single-user mode requires <code>/api/auth/me</code> to succeed. The
-            backend did not return a user.
-          </p>
-          {error !== null && (
-            <p className="mt-3 text-xs font-mono text-text-tertiary dark:text-text-tertiary-dark break-words">
-              {error}
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return <LoginPage />;
-}
 
 function SetupEntry() {
   const { status, isSingleUser, isAuthenticated, modeLoaded, error } =
@@ -384,9 +303,8 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route path="/login" element={<LoginEntry />} />
+              <Route path="/login" element={<Navigate to="/app" replace />} />
               <Route path="/setup" element={<SetupEntry />} />
-              <Route path="/invite/:token" element={<InvitePage />} />
               <Route
                 path="/personal/workflows/:workflowId"
                 element={
@@ -408,70 +326,6 @@ function App() {
                 }
               />
               <Route
-                path="/settings/users"
-                element={
-                  <AdminPageShell>
-                    <AdminUsersPage />
-                  </AdminPageShell>
-                }
-              />
-              <Route
-                path="/settings/domains"
-                element={
-                  <AdminPageShell>
-                    <AdminDomainsPage />
-                  </AdminPageShell>
-                }
-              />
-              <Route
-                path="/organizations"
-                element={
-                  <WorkspacePageShell>
-                    <OrganizationsPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
-                path="/organizations/:orgSlug/settings"
-                element={
-                  <WorkspacePageShell>
-                    <OrgSettingsPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
-                path="/settings/account"
-                element={
-                  <WorkspacePageShell>
-                    <AccountSettingsPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
-                path="/settings/billing"
-                element={
-                  <WorkspacePageShell>
-                    <BillingPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
-                path="/settings/invites"
-                element={
-                  <AdminPageShell>
-                    <InviteAdminPage />
-                  </AdminPageShell>
-                }
-              />
-              <Route
-                path="/audit"
-                element={
-                  <WorkspacePageShell>
-                    <AuditPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
                 path="/:orgSlug/:workspaceSlug/settings/secrets"
                 element={
                   <WorkspacePageShell>
@@ -480,26 +334,10 @@ function App() {
                 }
               />
               <Route
-                path="/:orgSlug/:workspaceSlug/settings/tokens"
-                element={
-                  <WorkspacePageShell>
-                    <WorkspaceTokensPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
                 path="/:orgSlug/:workspaceSlug/settings/environments"
                 element={
                   <WorkspacePageShell>
                     <WorkspaceEnvironmentsPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/settings/org"
-                element={
-                  <WorkspacePageShell>
-                    <OrgSettingsPage />
                   </WorkspacePageShell>
                 }
               />

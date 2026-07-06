@@ -4,8 +4,8 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { BadgeCheck, LogOut, Settings, Shield } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { BadgeCheck, LogOut } from "lucide-react";
 import { useAuth } from "../../auth/useAuth";
 import { Button } from "../atoms/Button";
 import {
@@ -15,7 +15,7 @@ import {
 } from "./accountMenuUtils";
 
 export function AccountMenu() {
-  const { user, isAuthenticated, logout, hasPermission } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
@@ -24,8 +24,6 @@ export function AccountMenu() {
   const menuItemRefs = useRef<
     Array<HTMLAnchorElement | HTMLButtonElement | null>
   >([]);
-
-  const isAdmin = hasPermission("users:invite");
 
   useEffect(() => {
     setAvatarFailed(false);
@@ -111,7 +109,7 @@ export function AccountMenu() {
   const handleLogout = async () => {
     closeMenu();
     await logout();
-    navigate("/login", { replace: true });
+    navigate("/app", { replace: true });
   };
 
   return (
@@ -187,39 +185,10 @@ export function AccountMenu() {
             </div>
           </div>
 
-          {isAdmin && (
-            <div className="border-b border-border py-1 dark:border-border-dark">
-              <Link
-                to="/settings/users"
-                role="menuitem"
-                onClick={() => closeMenu()}
-                ref={(element) => {
-                  menuItemRefs.current[0] = element;
-                }}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-overlay focus:bg-surface-overlay focus:outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px] dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay dark:focus:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
-              >
-                <Shield className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
-                User Management
-              </Link>
-              <Link
-                to="/settings/domains"
-                role="menuitem"
-                onClick={() => closeMenu()}
-                ref={(element) => {
-                  menuItemRefs.current[1] = element;
-                }}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-overlay focus:bg-surface-overlay focus:outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px] dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay dark:focus:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
-              >
-                <Settings className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
-                Domain & SSO Settings
-              </Link>
-            </div>
-          )}
-
           <div className="py-1">
             <Button
               ref={(element) => {
-                menuItemRefs.current[isAdmin ? 2 : 0] = element;
+                menuItemRefs.current[0] = element;
               }}
               role="menuitem"
               variant="ghost"
