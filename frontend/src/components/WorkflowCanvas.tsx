@@ -231,6 +231,7 @@ export function WorkflowCanvas({
   const {
     isRunning,
     runWorkflow,
+    cancelRun,
     runFromLastFailed,
     runAllFailed,
     runFromFailedNodes,
@@ -962,6 +963,7 @@ export function WorkflowCanvas({
         }}
         onImport={() => setShowImportToNodes(true)}
         onRun={runWorkflow}
+        onCancel={cancelRun}
         onRunFromLastFailed={runFromLastFailed}
         onRunAllFailed={runAllFailed}
         onRunFromFailedNode={(nodeId) => {

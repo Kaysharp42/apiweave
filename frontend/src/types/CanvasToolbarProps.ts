@@ -4,6 +4,7 @@ export interface CanvasToolbarProps {
   onJsonEditor: () => void;
   onImport: () => void;
   onRun: () => void;
+  onCancel?: () => void;
   onRunFromLastFailed?: () => void;
   onRunAllFailed?: () => void;
   onRunFromFailedNode?: (nodeId: string) => void;

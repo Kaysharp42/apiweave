@@ -3,6 +3,7 @@ import {
   Save,
   History,
   Play,
+  Square,
   Code,
   Upload,
   Loader2,
@@ -26,6 +27,7 @@ export function CanvasToolbar({
   onJsonEditor,
   onImport,
   onRun,
+  onCancel,
   onRunFromLastFailed,
   onRunAllFailed,
   onRunFromFailedNode,
@@ -143,18 +145,22 @@ export function CanvasToolbar({
           variant="primary"
           intent={isRunning ? "warning" : "default"}
           size="sm"
-          onClick={onRun}
-          disabled={isRunning}
+          onClick={isRunning && onCancel ? onCancel : onRun}
+          disabled={isRunning && !onCancel}
           className="rounded-r-none h-8 whitespace-nowrap font-semibold border-r border-surface-raised/30 dark:border-surface-dark-raised/30"
           icon={
             isRunning ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              onCancel ? (
+                <Square className="w-4 h-4" />
+              ) : (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              )
             ) : (
               <Play className="w-4 h-4" />
             )
           }
         >
-          {isRunning ? "Running…" : "Run"}
+          {isRunning ? (onCancel ? "Cancel" : "Running…") : "Run"}
         </Button>
 
         <IconButton

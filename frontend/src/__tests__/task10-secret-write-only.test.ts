@@ -190,14 +190,15 @@ describe("Task 10: No secrets in run request body", () => {
     expect(content).not.toMatch(/runtimeSecrets/);
   });
 
-  it("run payload only contains resume option (no secret fields)", () => {
+  it("run is triggered via the IPC client with no secret fields", () => {
     const pollingPath = path.join(SRC_DIR, "hooks", "useWorkflowPolling.ts");
     const content = fs.readFileSync(pollingPath, "utf-8");
 
-    // The payload construction should only have 'resume' as a possible key
-    expect(content).toContain("payload.resume");
-    // And should NOT have secrets-related keys
+    // The run is triggered through the typed IPC client, not an HTTP body.
+    expect(content).toContain("apiweave.runs.create");
+    // And carries no secret material.
     expect(content).not.toMatch(/payload\.(secrets|runtime_secrets|secret)/);
+    expect(content).not.toMatch(/secrets:/);
   });
 });
 

@@ -8,16 +8,22 @@ import {
 } from "react";
 import { toast } from "sonner";
 import type { Node } from "reactflow";
-import { authenticatedFetch } from "../utils/apiweaveClient";
-import {
-  workflowRunUrl,
-  workflowRunStatusUrl,
-  workflowLatestFailedUrl,
-} from "../utils/apiweaveClient";
+import { apiweave, onRunProgress, IpcError } from "../utils/apiweaveClient";
+import type { RunProgressEvent } from "../../../shared/types/RunProgressEvent";
+
+/** The canvas colours nodes by `executionStatus` in {running, success, error}
+ * (see WorkflowCanvas). Normalise both vocabularies onto that: the runner
+ * stream speaks passed/failed, historical `runs.get` results speak
+ * success/error — everything else passes through unchanged. */
+function canvasStatus(status: string): string {
+  if (status === "passed") return "success";
+  if (status === "failed") return "error";
+  return status;
+}
 
 interface NodeStatusUpdate {
   status: string;
-  result: unknown;
+  result?: unknown;
 }
 
 interface NodeStatuses {
@@ -29,28 +35,26 @@ function selectiveNodeUpdate(
   nodeStatuses: NodeStatuses,
 ): Node[] {
   return currentNodes.map((node) => {
-    const nodeStatus = nodeStatuses[node.id];
-    if (!nodeStatus) return node;
+    const update = nodeStatuses[node.id];
+    if (!update) return node;
 
-    const currentStatus = (node.data as Record<string, unknown>)
-      ?.executionStatus;
-    const currentResult = (node.data as Record<string, unknown>)
-      ?.executionResult;
-
+    const mapped = canvasStatus(update.status);
+    const data = node.data as Record<string, unknown>;
     if (
-      currentStatus === nodeStatus.status &&
-      currentResult === nodeStatus.result
+      data?.executionStatus === mapped &&
+      (update.result === undefined || data?.executionResult === update.result)
     ) {
       return node;
     }
 
-    const result = nodeStatus.result;
     return {
       ...node,
       data: {
-        ...(node.data as Record<string, unknown>),
-        executionStatus: nodeStatus.status,
-        executionResult: result,
+        ...data,
+        executionStatus: mapped,
+        ...(update.result !== undefined
+          ? { executionResult: update.result }
+          : {}),
         executionTimestamp: Date.now(),
       },
     };
@@ -86,6 +90,7 @@ interface UseWorkflowPollingResult {
   isRunning: boolean;
   currentRunId: string | null;
   runWorkflow: () => Promise<void>;
+  cancelRun: () => Promise<void>;
   runFromLastFailed: () => Promise<void>;
   runAllFailed: () => void;
   runFromFailedNodes: (
@@ -103,6 +108,13 @@ interface UseWorkflowPollingResult {
   loadHistoricalRun: (run: { runId: string }) => Promise<void>;
 }
 
+/**
+ * Drives a workflow run and streams its progress into the canvas over the
+ * per-run IPC topic (`onRunProgress`) — no HTTP, no `setInterval` polling.
+ * Each `node.completed` event repaints one node; the terminal `run.finished`
+ * event stops the stream and hydrates per-node results from a single
+ * `runs.get`. (Task 20; replaces the old adaptive-poll loop.)
+ */
 export default function useWorkflowPolling({
   workspaceId,
   workflowId,
@@ -118,7 +130,8 @@ export default function useWorkflowPolling({
     runId: string | null;
     failedNodes: FailedNodeOption[];
   } | null>(null);
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const currentRunIdRef = useRef<string | null>(null);
   const latestFailedRunRef = useRef<{
     runId: string | null;
     failedNodes: FailedNodeOption[];
@@ -133,6 +146,11 @@ export default function useWorkflowPolling({
     [latestFailedRun],
   );
 
+  const stopStream = useCallback(() => {
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
+  }, []);
+
   const refreshLatestFailedRun = useCallback(async () => {
     if (!workspaceId || !workflowId) {
       latestFailedRunRef.current = null;
@@ -142,36 +160,23 @@ export default function useWorkflowPolling({
 
     setIsResumeLoading(true);
     try {
-      const response = await authenticatedFetch(
-        workflowLatestFailedUrl(workspaceId, workflowId),
-      );
-      if (!response.ok) {
+      const run = await apiweave.runs.getLatestFailed(workspaceId, workflowId);
+      if (!run) {
         latestFailedRunRef.current = null;
         setLatestFailedRun(null);
         return { runId: null, failedNodes: [] };
       }
 
-      const data = (await response.json()) as {
-        hasFailedRun?: boolean;
-        runId?: string;
-        failedNodes?: { nodeId: string; label?: string; type: string }[];
-      };
-      if (!data?.hasFailedRun) {
-        latestFailedRunRef.current = null;
-        setLatestFailedRun(null);
-        return { runId: null, failedNodes: [] };
-      }
-
-      const failedNodes = (data.failedNodes ?? []).map((node) => ({
-        nodeId: node.nodeId,
-        label: node.label ?? node.nodeId,
-        type: node.type,
+      const failedNodes = (run.failedNodes ?? []).map((nodeId) => ({
+        nodeId,
+        label: nodeId,
+        type: "unknown",
       }));
 
-      const nextLatest = { runId: data.runId ?? null, failedNodes };
+      const nextLatest = { runId: run.runId, failedNodes };
       latestFailedRunRef.current = nextLatest;
       setLatestFailedRun(nextLatest);
-      return { runId: data.runId ?? null, failedNodes };
+      return { runId: run.runId, failedNodes };
     } catch {
       latestFailedRunRef.current = null;
       setLatestFailedRun(null);
@@ -181,8 +186,49 @@ export default function useWorkflowPolling({
     }
   }, [workspaceId, workflowId]);
 
+  /** Pull the finished run once and paint per-node request/response detail that
+   * the lightweight event stream intentionally omits. */
+  const hydrateRunResults = useCallback(
+    async (runId: string) => {
+      if (!workspaceId) return;
+      try {
+        const run = await apiweave.runs.get(workspaceId, runId);
+        const statuses: NodeStatuses = {};
+        for (const result of run.results ?? []) {
+          statuses[result.nodeId] = {
+            status: result.status,
+            result,
+          };
+        }
+        setNodes((nds) => selectiveNodeUpdate(nds, statuses));
+      } catch {
+        // ignore — the canvas keeps the streamed statuses
+      }
+    },
+    [workspaceId, setNodes],
+  );
+
+  const handleEvent = useCallback(
+    (event: RunProgressEvent) => {
+      if (event.kind === "node.completed") {
+        setNodes((nds) =>
+          selectiveNodeUpdate(nds, {
+            [event.nodeId]: { status: event.status },
+          }),
+        );
+        return;
+      }
+      // run.finished
+      stopStream();
+      setIsRunning(false);
+      void hydrateRunResults(event.runId);
+      void refreshLatestFailedRun();
+    },
+    [setNodes, stopStream, hydrateRunResults, refreshLatestFailedRun],
+  );
+
   const executeWorkflow = useCallback(
-    async (runOptions: RunOptions = {}) => {
+    async (_runOptions: RunOptions = {}) => {
       if (!workspaceId || !workflowId) return;
 
       const invalidSummary: { nodeId: string; missing: string[] }[] = [];
@@ -279,6 +325,7 @@ export default function useWorkflowPolling({
       }
 
       try {
+        stopStream();
         setNodes((nds) =>
           nds.map((node) => ({
             ...node,
@@ -296,82 +343,26 @@ export default function useWorkflowPolling({
             ? selectedEnvironment.trim()
             : null;
 
-        const url = workflowRunUrl(workspaceId, workflowId, runEnvId);
-
-        const payload: Record<string, unknown> = {};
-        if (runOptions.resume) {
-          payload.resume = runOptions.resume;
-        }
-
-        const response = await authenticatedFetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body:
-            Object.keys(payload).length > 0 ? JSON.stringify(payload) : null,
+        // ponytail: resume (run-from-failed) is not forwarded — `runs.create`'s
+        // input schema is .strict() and the scheduler's resume path isn't wired
+        // yet, so this triggers a full run. Restore once the composition-root
+        // enqueue handler + resume plumbing land (deferred Task 13/21 wiring).
+        const run = await apiweave.runs.create({
+          workspaceId,
+          workflowId,
+          ...(runEnvId ? { selectedEnvironmentId: runEnvId } : {}),
         });
 
-        if (response.ok) {
-          const result = (await response.json()) as { runId: string };
-          setCurrentRunId(result.runId);
-          setIsRunning(true);
-
-          let pollAttempts = 0;
-          const maxInitialAttempts = 20;
-
-          const pollForStatus = async () => {
-            try {
-              const statusResponse = await authenticatedFetch(
-                workflowRunStatusUrl(workspaceId, workflowId, result.runId),
-              );
-              if (statusResponse.ok) {
-                const runData = (await statusResponse.json()) as {
-                  nodeStatuses?: NodeStatuses;
-                  status?: string;
-                };
-
-                if (runData.nodeStatuses) {
-                  setNodes((nds) =>
-                    selectiveNodeUpdate(nds, runData.nodeStatuses ?? {}),
-                  );
-                }
-
-                if (
-                  runData.status === "completed" ||
-                  runData.status === "failed"
-                ) {
-                  if (pollIntervalRef.current)
-                    clearInterval(pollIntervalRef.current);
-                  setIsRunning(false);
-                  refreshLatestFailedRun();
-                }
-              }
-            } catch {
-              // ignore poll error
-            }
-          };
-
-          const fastPollInterval = setInterval(() => {
-            pollForStatus();
-            pollAttempts++;
-            if (pollAttempts >= maxInitialAttempts) {
-              clearInterval(fastPollInterval);
-              pollIntervalRef.current = setInterval(pollForStatus, 1000);
-            }
-          }, 100);
-
-          pollIntervalRef.current = fastPollInterval;
-        } else {
-          let detail = `Failed to run workflow (${response.status})`;
-          try {
-            const body = (await response.json()) as { detail?: string };
-            detail = body?.detail ?? detail;
-          } catch {
-            // ignore
-          }
-          toast.error(detail);
-        }
-      } catch {
-        toast.error("Failed to trigger workflow run");
+        setCurrentRunId(run.runId);
+        currentRunIdRef.current = run.runId;
+        setIsRunning(true);
+        unsubscribeRef.current = onRunProgress(run.runId, handleEvent);
+      } catch (error) {
+        const detail =
+          error instanceof IpcError
+            ? error.message
+            : "Failed to trigger workflow run";
+        toast.error(detail);
       }
     },
     [
@@ -381,7 +372,8 @@ export default function useWorkflowPolling({
       selectedEnvironment,
       nodes,
       reactFlowInstanceRef,
-      refreshLatestFailedRun,
+      stopStream,
+      handleEvent,
     ],
   );
 
@@ -389,6 +381,19 @@ export default function useWorkflowPolling({
     if (!workspaceId || !workflowId) return;
     executeWorkflow({});
   }, [workspaceId, workflowId, executeWorkflow]);
+
+  const cancelRun = useCallback(async () => {
+    const runId = currentRunIdRef.current;
+    if (!workspaceId || !runId) return;
+    try {
+      await apiweave.runs.cancel(workspaceId, runId);
+      // The scheduler emits run.finished on cancel, which stops the stream.
+    } catch (error) {
+      const detail =
+        error instanceof IpcError ? error.message : "Failed to cancel run";
+      toast.error(detail);
+    }
+  }, [workspaceId]);
 
   const runFromFailedNodes = useCallback(
     (nodeIds: string[], sourceRunId: string, mode = "single") => {
@@ -457,21 +462,14 @@ export default function useWorkflowPolling({
     async (run: { runId: string }) => {
       if (!workspaceId || !workflowId) return;
       try {
-        const response = await authenticatedFetch(
-          workflowRunStatusUrl(workspaceId, workflowId, run.runId),
-        );
-        if (response.ok) {
-          const fullRunData = (await response.json()) as {
-            nodeStatuses?: NodeStatuses;
-            runId?: string;
-          };
-          if (fullRunData.nodeStatuses) {
-            setNodes((nds) =>
-              selectiveNodeUpdate(nds, fullRunData.nodeStatuses ?? {}),
-            );
-          }
-          setCurrentRunId(fullRunData.runId ?? null);
+        const fullRun = await apiweave.runs.get(workspaceId, run.runId);
+        const statuses: NodeStatuses = {};
+        for (const result of fullRun.results ?? []) {
+          statuses[result.nodeId] = { status: result.status, result };
         }
+        setNodes((nds) => selectiveNodeUpdate(nds, statuses));
+        setCurrentRunId(fullRun.runId);
+        currentRunIdRef.current = fullRun.runId;
       } catch {
         // ignore
       }
@@ -483,17 +481,13 @@ export default function useWorkflowPolling({
     void refreshLatestFailedRun();
   }, [refreshLatestFailedRun]);
 
-  useEffect(
-    () => () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    },
-    [],
-  );
+  useEffect(() => () => stopStream(), [stopStream]);
 
   return {
     isRunning,
     currentRunId,
     runWorkflow,
+    cancelRun,
     runFromLastFailed,
     runAllFailed,
     runFromFailedNodes,

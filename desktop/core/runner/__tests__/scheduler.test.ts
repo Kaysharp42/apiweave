@@ -166,7 +166,7 @@ describe("RunScheduler", () => {
   })
 
   describe("event emission", () => {
-    it("emits node.completed events with the real runId", async () => {
+    it("emits node.completed events plus a terminal run.finished, all with the real runId", async () => {
       const ws = seedWorkspace()
       const wf = seedWorkflow(ws)
       const events: RunProgressEvent[] = []
@@ -180,12 +180,41 @@ describe("RunScheduler", () => {
 
       expect(events.length).toBeGreaterThan(0)
       expect(events.every((e) => e.runId === runId)).toBe(true)
-      expect(events.some((e) => e.nodeId === "start")).toBe(true)
-      expect(events.some((e) => e.nodeId === "end")).toBe(true)
+
+      const nodeEvents = events.filter((e) => e.kind === "node.completed")
+      expect(nodeEvents.some((e) => e.nodeId === "start")).toBe(true)
+      expect(nodeEvents.some((e) => e.nodeId === "end")).toBe(true)
+
+      // Terminal event fires exactly once, last, carrying the run's final status.
+      const finished = events.filter((e) => e.kind === "run.finished")
+      expect(finished).toHaveLength(1)
+      expect(finished[0]?.status).toBe("completed")
+      expect(events[events.length - 1]?.kind).toBe("run.finished")
 
       const run = runs.getById(runId)
       expect(run?.nodeStatuses).toBeDefined()
       expect(Object.keys(run?.nodeStatuses ?? {}).length).toBeGreaterThan(0)
+    })
+
+    it("emits a terminal run.finished whose status matches the persisted run status", async () => {
+      // Cancellation is racy (the executor may finish before the abort lands, as
+      // the mid-execution cancel test above documents). The robust invariant is
+      // that the terminal event's status is exactly the run's final DB status.
+      const ws = seedWorkspace()
+      const wf = seedWorkflow(ws, 2000)
+      const events: RunProgressEvent[] = []
+      const scheduler = makeScheduler({
+        emitProgress: (_runId, event) => events.push(event),
+      })
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      scheduler.cancel(runId)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      const finished = events.filter((e) => e.kind === "run.finished")
+      expect(finished).toHaveLength(1)
+      expect(finished[0]?.status).toBe(runs.getById(runId)?.status)
     })
   })
 

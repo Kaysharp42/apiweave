@@ -157,11 +157,14 @@ export class RunScheduler {
         status,
         status === "failed" ? "Workflow execution failed" : undefined,
       )
+      this.emitFinished(runId, status)
     } catch (error) {
       if (controller.signal.aborted) {
         this.deps.runs.updateStatus(runId, "cancelled")
+        this.emitFinished(runId, "cancelled")
       } else {
         this.deps.runs.updateStatus(runId, "failed", String(error))
+        this.emitFinished(runId, "failed")
       }
     } finally {
       this.activeRuns.delete(runId)
@@ -169,10 +172,15 @@ export class RunScheduler {
     }
   }
 
+  private emitFinished(runId: string, status: "completed" | "failed" | "cancelled" | "interrupted"): void {
+    this.deps.emitProgress?.(runId, { kind: "run.finished", runId, status })
+  }
+
   private handleProgress(runId: string, event: RunProgressEvent): void {
-    if (this.deps.emitProgress) {
-      this.deps.emitProgress(runId, event)
-    }
+    // The executor only ever hands us node events; the terminal event is emitted
+    // separately by emitFinished. Narrow so appendNodeStatus stays node-only.
+    if (event.kind !== "node.completed") return
+    this.deps.emitProgress?.(runId, event)
     this.deps.runs.appendNodeStatus(runId, event.nodeId, {
       status: event.status,
       variables: event.variables as JsonValue,
