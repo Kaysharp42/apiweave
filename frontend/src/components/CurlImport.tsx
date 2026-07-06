@@ -12,9 +12,9 @@ import useCanvasStore from "../stores/CanvasStore";
 import { Button } from "./atoms/Button";
 import { TextArea } from "./atoms/TextArea";
 import { IconButton } from "./atoms/IconButton";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { workflowsUrl, workflowImportCurlUrl } from "../utils/scopedApi";
+import { workflowsUrl, workflowImportCurlUrl } from "../utils/apiweaveClient";
 
 interface Workflow {
   workflowId: string;

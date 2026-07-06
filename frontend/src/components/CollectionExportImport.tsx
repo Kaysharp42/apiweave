@@ -30,9 +30,9 @@ import {
   projectImportUrl,
   projectsUrl,
   workflowsUrl,
-} from "../utils/scopedApi";
+} from "../utils/apiweaveClient";
 import type { Project } from "../types/Project";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 
 type ProjectWithWorkflowCount = Project;
 

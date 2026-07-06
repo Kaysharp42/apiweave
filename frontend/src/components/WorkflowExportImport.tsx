@@ -13,12 +13,12 @@ import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { Modal } from "./molecules/Modal";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import {
   workflowExportUrl,
   workflowImportUrl,
   workflowImportDryRunUrl,
-} from "../utils/scopedApi";
+} from "../utils/apiweaveClient";
 import type { WorkflowExportImportTab } from "../types/WorkflowExportImportTab";
 import type { WorkflowExportImportProps } from "../types/WorkflowExportImportProps";
 import type { DryRunResult } from "../types/DryRunResult";

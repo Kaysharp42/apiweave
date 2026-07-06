@@ -9,8 +9,8 @@ import {
 } from "react";
 import { usePalette } from "./PaletteContext";
 import useSidebarStore from "../stores/SidebarStore";
-import { authenticatedFetch } from "../utils/authenticatedApi";
-import { projectsUrl } from "../utils/scopedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
+import { projectsUrl } from "../utils/apiweaveClient";
 
 interface WorkflowVariables {
   [key: string]: unknown;

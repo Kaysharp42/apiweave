@@ -3,10 +3,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WebhookManager } from "../components/WebhookManager";
 import type { Webhook } from "../types/Webhook";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import { toast } from "sonner";
 
-vi.mock("../utils/authenticatedApi", () => ({
+vi.mock("../utils/apiweaveClient", async (importOriginal) => ({
+  ...((await importOriginal()) as object),
   authenticatedFetch: vi.fn(),
 }));
 

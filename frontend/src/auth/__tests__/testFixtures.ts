@@ -124,31 +124,58 @@ interface MockFetchHandle {
   restore: () => void;
 }
 
+type TestIpcGlobal = typeof globalThis & {
+  __APIWEAVE_IPC__?: {
+    readonly invoke: (
+      domain: string,
+      action: string,
+      payload: unknown,
+    ) => Promise<unknown>;
+    readonly onRunProgress: () => () => void;
+  };
+};
+
 /**
  * Replaces globalThis.fetch with a function that returns a fixed response
  * for `/api/auth/me` and passes all other requests through to the original.
  */
 function _mockAuthMe(status: number, body: unknown): MockFetchHandle {
-  const originalFetch = globalThis.fetch;
-
-  globalThis.fetch = async (
-    input: RequestInfo | URL,
-    init: RequestInit = {},
-  ): Promise<Response> => {
-    const url = String(input);
-    if (url.includes("/api/auth/me")) {
-      return new Response(JSON.stringify(body), {
-        status,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    // Pass through all other requests to the original fetch
-    return originalFetch(input, init);
+  const target = globalThis as TestIpcGlobal;
+  const originalIpc = target.__APIWEAVE_IPC__;
+  const originalWindowIpc = window.__APIWEAVE_IPC__;
+  target.__APIWEAVE_IPC__ = {
+    invoke: async (domain: string, action: string) => {
+      if (domain === "auth" && action === "me") {
+        return status >= 200 && status < 300
+          ? { ok: true, data: body }
+          : {
+              ok: false,
+              error: {
+                code: "denied",
+                message: `${status} Not authenticated`,
+                details: { status },
+              },
+            };
+      }
+      return (
+        originalIpc?.invoke(domain, action, {}) ?? {
+          ok: false,
+          error: { code: "not_found", message: "not found" },
+        }
+      );
+    },
+    onRunProgress: () => () => undefined,
   };
+  window.__APIWEAVE_IPC__ = target.__APIWEAVE_IPC__ as NonNullable<
+    Window["__APIWEAVE_IPC__"]
+  >;
 
   return {
     restore: () => {
-      globalThis.fetch = originalFetch;
+      if (originalIpc) target.__APIWEAVE_IPC__ = originalIpc;
+      else delete target.__APIWEAVE_IPC__;
+      if (originalWindowIpc) window.__APIWEAVE_IPC__ = originalWindowIpc;
+      else delete window.__APIWEAVE_IPC__;
     },
   };
 }
@@ -158,25 +185,27 @@ function _mockAuthMe(status: number, body: unknown): MockFetchHandle {
  * for `/api/auth/mode` and passes all other requests through to the original.
  */
 function _mockAuthMode(mode: DeploymentMode): MockFetchHandle {
-  const originalFetch = globalThis.fetch;
-
-  globalThis.fetch = async (
-    input: RequestInfo | URL,
-    init: RequestInit = {},
-  ): Promise<Response> => {
-    const url = String(input);
-    if (url.includes("/api/auth/mode")) {
-      return new Response(JSON.stringify({ mode }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    return originalFetch(input, init);
+  const target = globalThis as TestIpcGlobal;
+  const originalIpc = target.__APIWEAVE_IPC__;
+  const originalWindowIpc = window.__APIWEAVE_IPC__;
+  target.__APIWEAVE_IPC__ = {
+    invoke: async (domain: string, action: string) => {
+      if (domain === "auth" && action === "mode")
+        return { ok: true, data: { mode } };
+      return { ok: false, error: { code: "not_found", message: "not found" } };
+    },
+    onRunProgress: () => () => undefined,
   };
+  window.__APIWEAVE_IPC__ = target.__APIWEAVE_IPC__ as NonNullable<
+    Window["__APIWEAVE_IPC__"]
+  >;
 
   return {
     restore: () => {
-      globalThis.fetch = originalFetch;
+      if (originalIpc) target.__APIWEAVE_IPC__ = originalIpc;
+      else delete target.__APIWEAVE_IPC__;
+      if (originalWindowIpc) window.__APIWEAVE_IPC__ = originalWindowIpc;
+      else delete window.__APIWEAVE_IPC__;
     },
   };
 }

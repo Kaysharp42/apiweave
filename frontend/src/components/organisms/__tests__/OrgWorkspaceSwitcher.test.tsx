@@ -20,7 +20,8 @@ vi.mock("../../../auth/useAuth", () => ({
   useAuth: () => ({ isSingleUser: authState.isSingleUser }),
 }));
 
-vi.mock("../../../utils/authenticatedApi", () => ({
+vi.mock("../../../utils/apiweaveClient", () => ({
+  default: "ipc://apiweave",
   authenticatedJson: (...args: unknown[]) => mockAuthenticatedJson(...args),
 }));
 

@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import API_BASE_URL from "../utils/api";
+import API_BASE_URL from "../utils/apiweaveClient";
 import {
   workflowRunUrl,
   workflowRunsListUrl,
@@ -20,7 +20,7 @@ import {
   workflowRunStatusUrl,
   workflowNodeResultUrl,
   workflowDetailUrl,
-} from "../utils/scopedApi";
+} from "../utils/apiweaveClient";
 
 const SRC_DIR = path.resolve(__dirname, "..");
 

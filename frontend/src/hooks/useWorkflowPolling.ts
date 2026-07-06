@@ -8,12 +8,12 @@ import {
 } from "react";
 import { toast } from "sonner";
 import type { Node } from "reactflow";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import {
   workflowRunUrl,
   workflowRunStatusUrl,
   workflowLatestFailedUrl,
-} from "../utils/scopedApi";
+} from "../utils/apiweaveClient";
 
 interface NodeStatusUpdate {
   status: string;

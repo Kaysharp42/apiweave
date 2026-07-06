@@ -19,7 +19,7 @@ import { Button } from "./atoms/Button";
 import { Input } from "./atoms/Input";
 import { IconButton } from "./atoms/IconButton";
 import { Badge } from "./atoms/Badge";
-import API_BASE_URL from "../utils/api";
+import API_BASE_URL from "../utils/apiweaveClient";
 import {
   workflowsUrl,
   projectsUrl,
@@ -30,11 +30,11 @@ import {
   webhookDetailUrl,
   webhookRegenerateUrl,
   webhookLogsUrl,
-} from "../utils/scopedApi";
+} from "../utils/apiweaveClient";
 import type { Workflow } from "../types/Workflow";
 import type { Collection } from "../types/Collection";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import { WebhookCiCdExamples } from "./WebhookCiCdExamples";
 import type { Webhook } from "../types/Webhook";
 import type { WebhookCredentials } from "../types/WebhookCredentials";

@@ -14,8 +14,8 @@ import {
   type ProviderDisplay,
 } from "../auth/providerConfig";
 import type { ProviderInfo } from "../types/ProviderInfo";
-import API_BASE_URL from "../utils/api";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/apiweaveClient";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 
 export default function InvitePage() {
   const { login, status } = useAuth();

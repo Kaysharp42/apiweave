@@ -3,8 +3,8 @@ import { Modal } from "../molecules/Modal";
 import { FormField } from "../molecules/FormField";
 import { Input } from "../atoms/Input";
 import { Button } from "../atoms/Button";
-import { authenticatedJson } from "../../utils/authenticatedApi";
-import API_BASE_URL from "../../utils/api";
+import { authenticatedJson } from "../../utils/apiweaveClient";
+import API_BASE_URL from "../../utils/apiweaveClient";
 import type { InviteResponse, InviteUserModalProps } from "../../types";
 import { toast } from "sonner";
 

@@ -5,8 +5,8 @@ import { Input } from "./atoms/Input";
 import { FormField } from "./molecules/FormField";
 import { Spinner } from "./atoms/Spinner";
 import { encryptSecretValue } from "../utils/encryptSecretValue";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import type { PublicKey, SecretScopeType } from "../types";
 
 export interface SecretFormProps {

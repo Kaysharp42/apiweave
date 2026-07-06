@@ -5,8 +5,8 @@ import { EmptyState } from "./molecules/EmptyState";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
 import { ScopeBadge } from "./ScopeBadge";
 import { SecretOverrideIndicator } from "./SecretOverrideIndicator";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import type { Secret, SecretScopeType } from "../types";
 
 export interface ScopedSecretListProps {

@@ -9,44 +9,52 @@ import { test } from "vitest";
 import assert from "node:assert/strict";
 
 // ---------------------------------------------------------------------------
-// Minimal fetch mock
 // ---------------------------------------------------------------------------
 
 interface CapturedRequest {
-  url: string;
-  init: RequestInit & { headers: Record<string, string> };
+  domain: string;
+  action: string;
+  payload: unknown;
 }
+
+type TestIpcBridge = NonNullable<Window["__APIWEAVE_IPC__"]>;
+type TestGlobal = typeof globalThis & { __APIWEAVE_IPC__?: TestIpcBridge };
 
 function mockFetch(
   statusCode = 200,
   body: unknown = {},
 ): { calls: CapturedRequest[]; restore: () => void } {
   const calls: CapturedRequest[] = [];
-  const originalFetch = globalThis.fetch;
+  const originalWindowIpc = window.__APIWEAVE_IPC__;
+  const globalTarget = globalThis as TestGlobal;
+  const originalGlobalIpc = globalTarget.__APIWEAVE_IPC__;
 
-  globalThis.fetch = async (
-    input: RequestInfo | URL,
-    init: RequestInit = {},
-  ): Promise<Response> => {
-    const headers: Record<string, string> = {};
-    if (init.headers instanceof Headers) {
-      init.headers.forEach((value, key) => {
-        headers[key] = value;
-      });
-    } else if (init.headers && typeof init.headers === "object") {
-      Object.assign(headers, init.headers);
-    }
-    calls.push({ url: String(input), init: { ...init, headers } });
-    return new Response(JSON.stringify(body), {
-      status: statusCode,
-      headers: { "Content-Type": "application/json" },
-    });
+  const bridge: TestIpcBridge = {
+    invoke: async (domain, action, payload) => {
+      calls.push({ domain, action, payload });
+      if (statusCode >= 200 && statusCode < 300)
+        return { ok: true, data: body };
+      return {
+        ok: false,
+        error: {
+          code: "denied",
+          message: `${statusCode} Not authenticated`,
+          details: { status: statusCode },
+        },
+      };
+    },
+    onRunProgress: () => () => undefined,
   };
+  window.__APIWEAVE_IPC__ = bridge;
+  globalTarget.__APIWEAVE_IPC__ = bridge;
 
   return {
     calls,
     restore: () => {
-      globalThis.fetch = originalFetch;
+      if (originalWindowIpc) window.__APIWEAVE_IPC__ = originalWindowIpc;
+      else delete window.__APIWEAVE_IPC__;
+      if (originalGlobalIpc) globalTarget.__APIWEAVE_IPC__ = originalGlobalIpc;
+      else delete globalTarget.__APIWEAVE_IPC__;
     },
   };
 }
@@ -56,7 +64,7 @@ function mockFetch(
 // ---------------------------------------------------------------------------
 
 const { authenticatedFetch, authenticatedJson } = await import(
-  "../utils/authenticatedApi.ts"
+  "../utils/apiweaveClient.ts"
 );
 
 // ---------------------------------------------------------------------------
@@ -82,11 +90,11 @@ test("unauthenticated: /api/auth/me 401 results in unauthenticated status", asyn
   }
 });
 
-test("unauthenticated: fetch to /api/auth/me always uses credentials: include", async () => {
+test("unauthenticated: /api/auth/me goes through auth.me IPC", async () => {
   const { calls, restore } = mockFetch(401, { detail: "Not authenticated" });
   try {
     await authenticatedFetch("/api/auth/me");
-    assert.equal(calls[0]!.init.credentials, "include");
+    assert.deepEqual(calls[0], { domain: "auth", action: "me", payload: {} });
   } finally {
     restore();
   }
@@ -124,12 +132,15 @@ test("profile hydration: /api/auth/me 200 returns user profile", async () => {
 // Logout
 // ---------------------------------------------------------------------------
 
-test("logout: POST /api/auth/logout uses credentials: include", async () => {
+test("logout: POST /api/auth/logout goes through auth.logout IPC", async () => {
   const { calls, restore } = mockFetch(200, {});
   try {
     await authenticatedFetch("/api/auth/logout", { method: "POST" });
-    assert.equal(calls[0]!.init.credentials, "include");
-    assert.equal(calls[0]!.init.method, "POST");
+    assert.deepEqual(calls[0], {
+      domain: "auth",
+      action: "logout",
+      payload: {},
+    });
   } finally {
     restore();
   }

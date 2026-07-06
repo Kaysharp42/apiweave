@@ -1,10 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { usePalette } from "../contexts/PaletteContext";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import { buildSwaggerRefreshSummary } from "../utils/swaggerRefreshSummary";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { workflowImportOpenapiRemoteUrl } from "../utils/scopedApi";
+import { workflowImportOpenapiRemoteUrl } from "../utils/apiweaveClient";
 import type { Node } from "reactflow";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";

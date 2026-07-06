@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import API_BASE_URL from "../utils/api";
+import API_BASE_URL from "../utils/apiweaveClient";
 import {
   workflowUrl,
   workflowsUrl,
@@ -9,7 +9,7 @@ import {
   projectImportUrl,
   secretsUrl,
   personalWorkflowsUrl,
-} from "../utils/scopedApi";
+} from "../utils/apiweaveClient";
 
 describe("scopedApi", () => {
   describe("workflowsUrl", () => {

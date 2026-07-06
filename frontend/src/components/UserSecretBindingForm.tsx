@@ -3,8 +3,8 @@ import { Link2, Unlink } from "lucide-react";
 import { Button } from "./atoms/Button";
 import { EmptyState } from "./molecules/EmptyState";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import type { Secret, SecretBinding } from "../types";
 
 export interface UserSecretBindingFormProps {

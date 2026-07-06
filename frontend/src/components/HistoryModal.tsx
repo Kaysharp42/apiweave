@@ -19,8 +19,8 @@ import {
   Timer,
   Zap,
 } from "lucide-react";
-import { authenticatedFetch } from "../utils/authenticatedApi";
-import { workflowRunsListUrl } from "../utils/scopedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
+import { workflowRunsListUrl } from "../utils/apiweaveClient";
 import type { RunRecord, HistoryModalProps } from "../types";
 
 interface PaginationInfo {

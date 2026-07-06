@@ -6,11 +6,11 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import API_BASE_URL from "../utils/api";
+import API_BASE_URL from "../utils/apiweaveClient";
 import { Sidebar } from "../components/layout/Sidebar";
 import useSidebarStore from "../stores/SidebarStore";
 import useTabStore from "../stores/TabStore";
-import { requestWorkflowDeletion } from "../utils/sidebarDeletion";
+import { requestWorkflowDeletion } from "../utils/apiweaveClient";
 import type {
   ConfirmDialogProps,
   PromptDialogProps,
@@ -18,7 +18,7 @@ import type {
   Workflow,
   WorkflowListProps,
 } from "../types";
-import type { authenticatedFetch } from "../utils/authenticatedApi";
+type TestIpcBridge = NonNullable<Window["__APIWEAVE_IPC__"]>;
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -273,21 +273,24 @@ describe("sidebar scoped workflow API migration", () => {
   });
 
   it("deletes workflows through scoped workspace routes", async () => {
-    const fetchImpl = vi.fn<typeof authenticatedFetch>(async () =>
-      responseJson({ deleted: true }),
-    );
+    const invoke = vi.fn<TestIpcBridge["invoke"]>().mockResolvedValue({
+      ok: true,
+      data: null,
+    });
+    window.__APIWEAVE_IPC__ = {
+      invoke,
+      onRunProgress: () => () => undefined,
+    };
 
     const result = await requestWorkflowDeletion({
       target: { workflowId: "wf-delete" },
-      apiBaseUrl: API_BASE_URL,
       workspaceId: "ws-1",
-      fetchImpl,
     });
 
     expect(result).toEqual({ deleted: true, workflowId: "wf-delete" });
-    expect(fetchImpl).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/workspaces/ws-1/workflows/wf-delete`,
-      { method: "DELETE" },
-    );
+    expect(invoke).toHaveBeenCalledWith("workflows", "delete", {
+      workspaceId: "ws-1",
+      workflowId: "wf-delete",
+    });
   });
 });

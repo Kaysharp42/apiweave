@@ -10,8 +10,8 @@ import { SplitAuthLayout } from "../components/auth/SplitAuthLayout";
 import { AuthInteractiveHero } from "../components/auth/AuthInteractiveHero";
 import { OAuthButton } from "../components/OAuthButton";
 import { useOAuthProviders } from "../hooks/useOAuthProviders";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import type { EmailLoginResponse } from "../types";
 
 export default function LoginPage() {

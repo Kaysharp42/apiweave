@@ -11,8 +11,8 @@ import { InviteRow } from "../molecules/InviteRow";
 import {
   authenticatedJson,
   authenticatedFetch,
-} from "../../utils/authenticatedApi";
-import API_BASE_URL from "../../utils/api";
+} from "../../utils/apiweaveClient";
+import API_BASE_URL from "../../utils/apiweaveClient";
 import type { OrgInvite, OrgInviteCreate, OrgRole } from "../../types";
 import { toast } from "sonner";
 

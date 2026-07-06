@@ -10,10 +10,25 @@ const setRuntime = (apiUrl?: string): void => {
   }
 };
 
+const setIpc = (enabled: boolean): void => {
+  if (!enabled) {
+    delete window.__APIWEAVE_IPC__;
+    return;
+  }
+  window.__APIWEAVE_IPC__ = {
+    invoke: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    onRunProgress: vi.fn().mockReturnValue(() => undefined),
+  };
+};
+
 describe("BootGate", () => {
-  beforeEach(() => setRuntime(undefined));
+  beforeEach(() => {
+    setRuntime(undefined);
+    setIpc(false);
+  });
   afterEach(() => {
     setRuntime(undefined);
+    setIpc(false);
     vi.unstubAllGlobals();
   });
 
@@ -31,13 +46,9 @@ describe("BootGate", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("shows the boot screen while the desktop backend is still starting", () => {
+  it("renders children when the desktop IPC bridge is available", () => {
     setRuntime("http://127.0.0.1:9999");
-    // never resolves → stays in booting phase
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => new Promise(() => {})),
-    );
+    setIpc(true);
 
     render(
       <BootGate>
@@ -45,13 +56,14 @@ describe("BootGate", () => {
       </BootGate>,
     );
 
-    expect(screen.getByText("Starting APIWeave…")).toBeInTheDocument();
-    expect(screen.queryByText("canvas")).not.toBeInTheDocument();
+    expect(screen.getByText("canvas")).toBeInTheDocument();
   });
 
-  it("reveals the app once the backend reports healthy", async () => {
+  it("does not poll HTTP health in desktop mode", async () => {
     setRuntime("http://127.0.0.1:9999");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    setIpc(true);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
 
     render(
       <BootGate>
@@ -60,5 +72,6 @@ describe("BootGate", () => {
     );
 
     expect(await screen.findByText("canvas")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

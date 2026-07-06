@@ -14,8 +14,8 @@ import type {
   WorkspaceContextValue,
   WorkspaceEntry,
 } from "../types/WorkspaceContextValue";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 
 // ---------------------------------------------------------------------------
 // Context

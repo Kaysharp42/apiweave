@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Mail, Copy, Trash2, Plus } from "lucide-react";
 import { useAuth } from "../auth/useAuth";
 import { useInvites } from "../hooks/useInvites";
-import { copyInviteLink } from "../utils/authenticatedApi";
+import { copyInviteLink } from "../utils/apiweaveClient";
 import { Button } from "../components/atoms/Button";
 import { Spinner } from "../components/atoms/Spinner";
 import { Input } from "../components/atoms/Input";

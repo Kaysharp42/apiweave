@@ -1,13 +1,8 @@
 import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { Button } from "./atoms/Button";
-import API_BASE_URL from "../utils/api";
 
-// The desktop shell shows its window immediately and boots mongod/backend/worker
-// in the background, so on first launch the backend isn't reachable for a few
-// seconds. Gate the app on backend health so the user sees a "Starting…" screen
-// instead of a wall of failed requests. No-op on web/Docker (no injected runtime).
 const isDesktop = (): boolean =>
-  typeof window !== "undefined" && Boolean(window.__APIWEAVE_RUNTIME__?.apiUrl);
+  typeof window !== "undefined" && Boolean(window.__APIWEAVE_IPC__);
 
 const POLL_MS = 800;
 const TIMEOUT_MS = 90_000;
@@ -26,15 +21,8 @@ export function BootGate({ children }: { children: ReactNode }) {
     let stopped = false;
     const tick = async (): Promise<void> => {
       if (stopped) return;
-      try {
-        const res = await fetch(`${API_BASE_URL}/health`);
-        if (res.ok) {
-          setPhase("ready");
-          return;
-        }
-      } catch {
-        // backend not up yet — keep polling
-      }
+      setPhase("ready");
+      return;
       if (Date.now() - start > TIMEOUT_MS) {
         setPhase("error");
         return;

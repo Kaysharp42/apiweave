@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import API_BASE_URL from "../utils/api";
+import API_BASE_URL from "../utils/apiweaveClient";
 import { CollectionManager } from "../components/CollectionManager";
 import { CollectionExportImport } from "../components/CollectionExportImport";
 import type { ScopeContext } from "../types";
@@ -30,7 +30,20 @@ vi.mock("../hooks/useScopeContext", () => ({
   useScopeContext: () => mockScope,
 }));
 
-vi.mock("../utils/authenticatedApi", () => ({
+vi.mock("../utils/apiweaveClient", () => ({
+  default: "ipc://apiweave",
+  projectsUrl: (workspaceId: string, projectId?: string) =>
+    `ipc://apiweave/api/workspaces/${workspaceId}/projects${projectId ? `/${projectId}` : ""}`,
+  projectExportUrl: (
+    workspaceId: string,
+    projectId: string,
+    includeEnvironment = true,
+  ) =>
+    `ipc://apiweave/api/workspaces/${workspaceId}/projects/${projectId}/export?include_environment=${includeEnvironment}`,
+  workflowsUrl: (workspaceId: string) =>
+    `ipc://apiweave/api/workspaces/${workspaceId}/workflows?skip=0&limit=20`,
+  workflowsCreateInProjectUrl: (workspaceId: string, projectId: string) =>
+    `ipc://apiweave/api/workspaces/${workspaceId}/workflows?skip=0&limit=20&project_id=${projectId}`,
   authenticatedFetch: authenticatedFetchMock,
 }));
 

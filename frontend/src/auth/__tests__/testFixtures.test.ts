@@ -25,7 +25,7 @@ import {
   FIXTURE_VIEWER_USER_ID,
 } from "./testFixtures.ts";
 
-const { authenticatedJson } = await import("../../utils/authenticatedApi.ts");
+const { authenticatedJson } = await import("../../utils/apiweaveClient.ts");
 
 // ---------------------------------------------------------------------------
 // mockUnauthenticated

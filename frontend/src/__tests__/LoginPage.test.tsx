@@ -8,7 +8,8 @@ import { Github, Gitlab } from "lucide-react";
 const { mockAuthenticatedJson } = vi.hoisted(() => ({
   mockAuthenticatedJson: vi.fn(),
 }));
-vi.mock("../utils/authenticatedApi", () => ({
+vi.mock("../utils/apiweaveClient", () => ({
+  default: "ipc://apiweave",
   authenticatedJson: (
     url: string,
     options?: RequestInit,

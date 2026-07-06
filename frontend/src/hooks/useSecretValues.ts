@@ -9,8 +9,8 @@
  */
 
 import { useCallback } from "react";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import { secretsUrl, publicKeyUrl } from "../utils/scopedApi";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import { secretsUrl, publicKeyUrl } from "../utils/apiweaveClient";
 import type {
   EncryptedSecretValue,
   PublicKey,

@@ -6,8 +6,8 @@ import { Panel } from "../components/molecules/Panel";
 import { AuditEventTable } from "../components/audit/AuditEventTable";
 import { AuditFilters } from "../components/audit/AuditFilters";
 import { AuditJsonExportButton } from "../components/audit/AuditJsonExportButton";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import type {
   AuditEvent,
   AuditEventFilter,

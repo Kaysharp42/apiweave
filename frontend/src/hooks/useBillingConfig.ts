@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 
 interface BillingConfig {
   billingEnabled: boolean;

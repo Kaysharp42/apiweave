@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { ProviderDisplay } from "../types";
 import type { ProviderInfo } from "../types";
 import { getEnabledProviders } from "../auth/providerConfig";
-import API_BASE_URL from "../utils/api";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/apiweaveClient";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 
 interface UseOAuthProvidersReturn {
   providers: ProviderDisplay[];

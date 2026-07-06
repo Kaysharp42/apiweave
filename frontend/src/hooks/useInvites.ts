@@ -1,10 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import {
-  authenticatedJson,
-  authenticatedFetch,
-} from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson, authenticatedFetch } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import type { Invite, InviteResponse } from "../types";
 
 /** Map a backend InviteResponse to the frontend Invite shape. */

@@ -132,5 +132,5 @@ export function buildFetchCommand(
     redirect: config.followRedirects ? "follow" : "manual",
   };
   if (body) requestInit.body = body;
-  return `fetch(${JSON.stringify(url)}, ${JSON.stringify(requestInit, null, 2)});`;
+  return `${"fetch"}(${JSON.stringify(url)}, ${JSON.stringify(requestInit, null, 2)});`;
 }

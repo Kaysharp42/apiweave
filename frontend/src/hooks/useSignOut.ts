@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { authenticatedFetch } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedFetch } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import { useAuth } from "../auth/useAuth";
 
 interface UseSignOutReturn {

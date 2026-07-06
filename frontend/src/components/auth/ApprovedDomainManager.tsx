@@ -8,8 +8,8 @@ import { Panel } from "../molecules/Panel";
 import {
   authenticatedJson,
   authenticatedFetch,
-} from "../../utils/authenticatedApi";
-import API_BASE_URL from "../../utils/api";
+} from "../../utils/apiweaveClient";
+import API_BASE_URL from "../../utils/apiweaveClient";
 import type { ApprovedDomain } from "../../types";
 import { toast } from "sonner";
 import { Globe, Trash2 } from "lucide-react";

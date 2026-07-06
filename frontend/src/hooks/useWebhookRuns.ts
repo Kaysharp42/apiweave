@@ -2,8 +2,8 @@ import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import type { Webhook } from "../types/Webhook";
 import type { WebhookRun } from "../types/WebhookRun";
-import { authenticatedFetch } from "../utils/authenticatedApi";
-import { webhookLogsUrl } from "../utils/scopedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
+import { webhookLogsUrl } from "../utils/apiweaveClient";
 
 interface UseWebhookRunsResult {
   triggerTestDelivery: (webhook: Webhook) => Promise<void>;

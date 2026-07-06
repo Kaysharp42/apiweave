@@ -31,8 +31,8 @@ import type { WorkspaceProps } from "../../types/WorkspaceProps";
 import type { WorkspaceTab } from "../../types/WorkspaceTab";
 import type { TabItem } from "../../types/TabItem";
 import type { Workflow } from "../../types/Workflow";
-import { authenticatedFetch } from "../../utils/authenticatedApi";
-import { environmentsUrl, workflowsUrl } from "../../utils/scopedApi";
+import { authenticatedFetch } from "../../utils/apiweaveClient";
+import { environmentsUrl, workflowsUrl } from "../../utils/apiweaveClient";
 import { toast } from "sonner";
 
 const panelTabs: TabItem[] = [

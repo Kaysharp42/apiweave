@@ -14,8 +14,8 @@ import {
   getEnabledProviders,
   type ProviderDisplay,
 } from "../auth/providerConfig";
-import API_BASE_URL from "../utils/api";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import API_BASE_URL from "../utils/apiweaveClient";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 
 export default function SetupPage() {
   const { login, status } = useAuth();

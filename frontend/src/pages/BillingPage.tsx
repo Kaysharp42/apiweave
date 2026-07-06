@@ -12,8 +12,8 @@ import { Button } from "../components/atoms/Button";
 import { Input } from "../components/atoms/Input";
 import { FormField } from "../components/molecules/FormField";
 import { useAuth } from "../auth/useAuth";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 
 interface MyBilling {
   plan: string;

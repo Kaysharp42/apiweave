@@ -56,7 +56,7 @@ import {
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
 import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
-import { workflowDetailUrl } from "../utils/scopedApi";
+import { workflowDetailUrl } from "../utils/apiweaveClient";
 import { autoLayout } from "../utils/autoLayout";
 import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
@@ -64,7 +64,7 @@ import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasProps } from "../types/WorkflowCanvasProps";
 import type { WorkflowJsonData } from "../types/WorkflowJsonData";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import useEnvironmentStore, {
   getSelectedEnvironment,
 } from "../stores/EnvironmentStore";

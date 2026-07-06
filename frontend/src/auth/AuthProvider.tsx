@@ -9,11 +9,8 @@ import {
 import type { User } from "../types/User";
 import type { AuthStatus } from "../types/AuthState";
 import type { DeploymentMode } from "../types/DeploymentMode";
-import {
-  authenticatedFetch,
-  authenticatedJson,
-} from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedFetch, authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import type { AuthContextValue } from "../types";
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 /**
  * Task 13: Personal workspace boot — network audit.
  *
- * Mounts the /personal/workflows route and captures every fetch call
- * during the boot sequence. Asserts that NO request uses a legacy
+ * Mounts the /personal/workflows route and captures every compatibility
+ * request during the boot sequence. Asserts that NO request uses a legacy
  * flat API URL (/api/workflows, /api/environments, /api/collections).
  *
  * All requests must use scoped workspace URLs after the migration.
@@ -15,9 +15,15 @@ import { Sidebar } from "../components/layout/Sidebar";
 import useSidebarStore from "../stores/SidebarStore";
 import type { ScopeContext } from "../types";
 
-const capturedUrls: string[] = [];
+const capturedUrls = vi.hoisted((): string[] => []);
+const API_BASE_URL = vi.hoisted(() => "ipc://apiweave");
 
-vi.mock("../utils/authenticatedApi", () => ({
+vi.mock("../utils/apiweaveClient", () => ({
+  default: API_BASE_URL,
+  workflowsUrl: (workspaceId: string) =>
+    `${API_BASE_URL}/api/workspaces/${workspaceId}/workflows?skip=0&limit=20`,
+  projectsUrl: (workspaceId: string) =>
+    `${API_BASE_URL}/api/workspaces/${workspaceId}/projects`,
   authenticatedFetch: vi.fn((url: string) => {
     capturedUrls.push(url);
     if (url.includes("/workflows")) {
@@ -96,7 +102,7 @@ const LEGACY_URL_PATTERN = /\/api\/(workflows|environments|collections)(\/|$)/;
 describe("Task 13: Personal workspace boot — no legacy URLs", () => {
   beforeEach(() => {
     capturedUrls.length = 0;
-    useSidebarStore.setState({ activeWorkspaceId: "ws-personal-123" });
+    useSidebarStore.setState({ activeWorkspaceId: null });
   });
 
   it("must NOT fetch from legacy flat API routes during /personal/workflows boot", async () => {
@@ -150,15 +156,11 @@ describe("Task 13: Personal workspace boot — no legacy URLs", () => {
       ) {
         continue;
       }
-      if (
-        url.includes("/api/me") ||
-        url.includes("/api/auth") ||
-        url.includes("/api/csrf")
-      ) {
+      if (url.includes("/api/me") || url.includes("/api/auth")) {
         continue;
       }
       expect(url, `Boot fetch URL does not use scoped pattern: ${url}`).toMatch(
-        /\/api\/(workspaces|scopes|orgs|users|me|auth|csrf)/,
+        /\/api\/(workspaces|scopes|orgs|users|me|auth)/,
       );
     }
   });

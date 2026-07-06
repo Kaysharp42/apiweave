@@ -5,8 +5,8 @@ import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
 import { Modal } from "../molecules/Modal";
 import { FormField } from "../molecules/FormField";
-import { authenticatedJson } from "../../utils/authenticatedApi";
-import API_BASE_URL from "../../utils/api";
+import { authenticatedJson } from "../../utils/apiweaveClient";
+import API_BASE_URL from "../../utils/apiweaveClient";
 import type { CreateWorkspaceModalProps, Workspace } from "../../types";
 
 // Workspace slugs use hyphens (backend SLUG_PATTERN: start/end alphanumeric,

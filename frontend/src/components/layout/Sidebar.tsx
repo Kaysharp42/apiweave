@@ -19,19 +19,19 @@ import useTabStore from "../../stores/TabStore";
 import {
   requestProjectDeletion,
   requestWorkflowDeletion,
-} from "../../utils/sidebarDeletion";
+} from "../../utils/apiweaveClient";
 import type { Workflow } from "../../types/Workflow";
 import type { Project } from "../../types/Project";
-import { authenticatedFetch } from "../../utils/authenticatedApi";
+import { authenticatedFetch } from "../../utils/apiweaveClient";
 import useNavigationStore from "../../stores/NavigationStore";
-import API_BASE_URL from "../../utils/api";
+import API_BASE_URL from "../../utils/apiweaveClient";
 import { useScopeContext } from "../../hooks/useScopeContext";
 import {
   workflowUrl,
   workflowsUrl,
   workflowsCreateInProjectUrl,
   projectWorkflowAssignUrl,
-} from "../../utils/scopedApi";
+} from "../../utils/apiweaveClient";
 
 export function Sidebar() {
   const selectedNav = useNavigationStore((s) => s.selectedNavVal);

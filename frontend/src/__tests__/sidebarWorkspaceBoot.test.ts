@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import useSidebarStore from "../stores/SidebarStore";
-import API_BASE_URL from "../utils/api";
+import API_BASE_URL from "../utils/apiweaveClient";
 
 function responseJson(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

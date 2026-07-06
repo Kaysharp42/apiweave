@@ -12,8 +12,8 @@ import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import { Input } from "./atoms/Input";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { authenticatedFetch } from "../utils/authenticatedApi";
-import { workflowImportHarUrl } from "../utils/scopedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
+import { workflowImportHarUrl } from "../utils/apiweaveClient";
 
 interface HARPreviewEntry {
   method: string;

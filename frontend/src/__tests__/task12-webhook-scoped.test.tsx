@@ -8,11 +8,11 @@ import {
   webhookDetailUrl,
   webhookRegenerateUrl,
   webhookLogsUrl,
-} from "../utils/scopedApi";
-import API_BASE_URL from "../utils/api";
+} from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 
 describe("Task 12: Webhook, MCP, and script legacy caller migration", () => {
-  describe("scopedApi webhook URL builders", () => {
+  describe("apiweaveClient webhook URL builders", () => {
     it("webhooksForWorkflowUrl builds correct URL", () => {
       expect(webhooksForWorkflowUrl("wf-1")).toBe(
         `${API_BASE_URL}/api/webhooks/workflows/wf-1`,
@@ -132,12 +132,12 @@ describe("Task 12: Webhook, MCP, and script legacy caller migration", () => {
       expect(matches).toHaveLength(0);
     });
 
-    it("WebhookManager.tsx imports from scopedApi", () => {
+    it("WebhookManager.tsx imports from apiweaveClient", () => {
       const source = readFileSync(
         resolve(componentDir, "WebhookManager.tsx"),
         "utf-8",
       );
-      expect(source).toContain("scopedApi");
+      expect(source).toContain("apiweaveClient");
     });
 
     it("WebhookManager.tsx uses useScopeContext", () => {
@@ -148,12 +148,12 @@ describe("Task 12: Webhook, MCP, and script legacy caller migration", () => {
       expect(source).toContain("useScopeContext");
     });
 
-    it("useWebhookRuns.ts imports from scopedApi", () => {
+    it("useWebhookRuns.ts imports from apiweaveClient", () => {
       const source = readFileSync(
         resolve(hooksDir, "useWebhookRuns.ts"),
         "utf-8",
       );
-      expect(source).toContain("scopedApi");
+      expect(source).toContain("apiweaveClient");
     });
 
     it("useWebhookRuns.ts does not contain inline /api/webhooks URLs", () => {

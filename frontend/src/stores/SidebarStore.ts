@@ -3,8 +3,8 @@ import type { Workflow } from "../types/Workflow";
 import type { Collection } from "../types/Collection";
 import type { Project } from "../types/Project";
 import type { PaginationState } from "../types/PaginationState";
-import { authenticatedFetch } from "../utils/authenticatedApi";
-import { projectsUrl, workflowsUrl } from "../utils/scopedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
+import { projectsUrl, workflowsUrl } from "../utils/apiweaveClient";
 
 interface PaginatedWorkflowResponse {
   workflows: Workflow[];

@@ -10,15 +10,15 @@ import {
   workflowImportCurlUrl,
   workflowImportOpenapiUrlUrl,
   workflowImportOpenapiRemoteUrl,
-} from "../utils/scopedApi";
-import API_BASE_URL from "../utils/api";
+} from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 
 // ---------------------------------------------------------------------------
 // (a) OpenAPI dry-run uses scoped route
 // ---------------------------------------------------------------------------
 
 describe("Task 11: Import panels and Swagger refresh migration", () => {
-  describe("scopedApi URL builders for import/export", () => {
+  describe("apiweaveClient URL builders for import/export", () => {
     it("workflowImportOpenapiUrl builds scoped dry-run URL", () => {
       const url = workflowImportOpenapiUrl("ws-1", true);
       expect(url).toBe(
@@ -140,9 +140,9 @@ describe("Task 11: Import panels and Swagger refresh migration", () => {
         expect(realLegacy).toHaveLength(0);
       });
 
-      it(`${fileName} imports from scopedApi`, () => {
+      it(`${fileName} imports from apiweaveClient`, () => {
         const source = readFileSync(filePath, "utf-8");
-        expect(source).toContain("scopedApi");
+        expect(source).toContain("apiweaveClient");
       });
 
       it(`${fileName} uses useScopeContext`, () => {

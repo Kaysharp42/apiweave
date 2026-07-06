@@ -17,12 +17,12 @@ import { Toggle } from "./atoms/Toggle";
 import { Spinner } from "./atoms/Spinner";
 import { Input } from "./atoms/Input";
 import { EmptyState } from "./molecules/EmptyState";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
 import {
   projectWorkflowAssignUrl,
   projectWorkflowRemoveUrl,
-} from "../utils/scopedApi";
+} from "../utils/apiweaveClient";
 
 type BackgroundColor = string;
 

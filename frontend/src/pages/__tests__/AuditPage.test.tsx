@@ -10,12 +10,11 @@ import type { AuditEvent, AuditEventListResponse } from "../../types";
 const mockAuthenticatedJson = vi.fn();
 const mockAuthenticatedFetch = vi.fn();
 
-vi.mock("../../utils/authenticatedApi", () => ({
+vi.mock("../../utils/apiweaveClient", () => ({
+  default: "ipc://apiweave",
   authenticatedJson: (...args: unknown[]) => mockAuthenticatedJson(...args),
   authenticatedFetch: (...args: unknown[]) => mockAuthenticatedFetch(...args),
 }));
-
-vi.mock("../../utils/api", () => ({ default: "http://localhost:8000" }));
 
 // ---------------------------------------------------------------------------
 // Helpers

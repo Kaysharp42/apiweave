@@ -8,15 +8,12 @@ import { Spinner } from "../components/atoms/Spinner";
 import { EmptyState } from "../components/molecules/EmptyState";
 import { PromptDialog } from "../components/molecules/PromptDialog";
 import { useWorkspace } from "../contexts/WorkspaceContext";
-import {
-  authenticatedJson,
-  authenticatedFetch,
-} from "../utils/authenticatedApi";
+import { authenticatedJson, authenticatedFetch } from "../utils/apiweaveClient";
 import {
   workflowsCreateInProjectUrl,
   projectWorkflowAssignUrl,
-} from "../utils/scopedApi";
-import API_BASE_URL from "../utils/api";
+} from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import { toast } from "sonner";
 import type { Project } from "../types/Project";
 import type { Workflow } from "../types/Workflow";

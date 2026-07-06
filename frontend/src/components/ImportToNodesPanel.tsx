@@ -17,12 +17,12 @@ import { usePalette } from "../contexts/PaletteContext";
 import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import { TextArea } from "./atoms/TextArea";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
 import {
   workflowTemplatesUrl,
   workflowImportFormatUrl,
-} from "../utils/scopedApi";
+} from "../utils/apiweaveClient";
 
 interface MessageState {
   type: "success" | "error";

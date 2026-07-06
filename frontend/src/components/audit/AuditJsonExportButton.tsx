@@ -1,7 +1,7 @@
 import { Download } from "lucide-react";
 import { Button } from "../atoms/Button";
-import { authenticatedFetch } from "../../utils/authenticatedApi";
-import API_BASE_URL from "../../utils/api";
+import { authenticatedFetch } from "../../utils/apiweaveClient";
+import API_BASE_URL from "../../utils/apiweaveClient";
 import type { AuditEventFilter } from "../../types";
 
 interface AuditJsonExportButtonProps {

@@ -16,8 +16,8 @@ import { PanelTabs } from "./molecules/PanelTabs";
 import { EmptyState } from "./molecules/EmptyState";
 import type { MCPConfig } from "../types/MCPConfig";
 import type { MCPTool } from "../types/MCPTool";
-import { authenticatedFetch } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedFetch } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 
 type TabKey = "status" | "tools" | "resources" | "prompts" | "connect";
 

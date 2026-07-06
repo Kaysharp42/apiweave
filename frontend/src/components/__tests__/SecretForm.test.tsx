@@ -9,11 +9,10 @@ import { SecretForm } from "../SecretForm";
 
 const mockAuthenticatedJson = vi.fn();
 
-vi.mock("../../utils/authenticatedApi", () => ({
+vi.mock("../../utils/apiweaveClient", () => ({
+  default: "ipc://apiweave",
   authenticatedJson: (...args: unknown[]) => mockAuthenticatedJson(...args),
 }));
-
-vi.mock("../../utils/api", () => ({ default: "http://localhost:8000" }));
 
 vi.mock("../../utils/encryptSecretValue", () => ({
   encryptSecretValue: vi.fn().mockResolvedValue("ZW5jcnlwdGVkLXZhbHVl"),

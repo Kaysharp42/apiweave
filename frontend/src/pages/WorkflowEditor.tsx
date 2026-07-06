@@ -4,9 +4,9 @@ import { toast } from "sonner";
 import WorkflowCanvas from "../components/WorkflowCanvas";
 import { Spinner } from "../components/atoms/Spinner";
 import type { WorkflowCanvasWorkflow } from "../types/WorkflowCanvasWorkflow";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { workflowUrl } from "../utils/scopedApi";
+import { workflowUrl } from "../utils/apiweaveClient";
 
 interface Workflow extends WorkflowCanvasWorkflow {
   id: string;

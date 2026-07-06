@@ -9,8 +9,8 @@ import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import {
   authenticatedJson,
   authenticatedFetch,
-} from "../../utils/authenticatedApi";
-import API_BASE_URL from "../../utils/api";
+} from "../../utils/apiweaveClient";
+import API_BASE_URL from "../../utils/apiweaveClient";
 import type { OrgMember, OrgRole } from "../../types";
 import { toast } from "sonner";
 

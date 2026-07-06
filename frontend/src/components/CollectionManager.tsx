@@ -35,10 +35,10 @@ import {
   projectsUrl,
   workflowsUrl,
   workflowsCreateInProjectUrl,
-} from "../utils/scopedApi";
+} from "../utils/apiweaveClient";
 import type { Project } from "../types/Project";
 import type { Workflow } from "../types/Workflow";
-import { authenticatedFetch } from "../utils/authenticatedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
 
 interface ExtendedProject extends Project {
   color?: string;

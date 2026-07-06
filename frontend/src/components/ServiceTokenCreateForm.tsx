@@ -4,8 +4,8 @@ import { Button } from "./atoms/Button";
 import { Input } from "./atoms/Input";
 import { FormField } from "./molecules/FormField";
 import { Spinner } from "./atoms/Spinner";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import type { ServiceTokenCreateResponse } from "../types";
 
 export interface ServiceTokenCreateFormProps {

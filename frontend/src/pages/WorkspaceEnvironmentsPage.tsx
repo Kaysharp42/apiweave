@@ -11,11 +11,8 @@ import { EnvironmentForm } from "../components/organisms/EnvironmentForm";
 import { EnvironmentProtectionPanel } from "../components/organisms/EnvironmentProtectionPanel";
 import { PendingApprovalsList } from "../components/organisms/PendingApprovalsList";
 import { ProtectionSummary } from "../components/organisms/ProtectionSummary";
-import {
-  authenticatedJson,
-  authenticatedFetch,
-} from "../utils/authenticatedApi";
-import * as scopedApi from "../utils/scopedApi";
+import { authenticatedJson, authenticatedFetch } from "../utils/apiweaveClient";
+import * as scopedApi from "../utils/apiweaveClient";
 import { useAuth } from "../auth/useAuth";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import useEnvironmentStore from "../stores/EnvironmentStore";

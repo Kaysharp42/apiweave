@@ -7,8 +7,8 @@ import { EmptyState } from "./molecules/EmptyState";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
 import { Modal } from "./molecules/Modal";
 import { TokenValueDisplay } from "./TokenValueDisplay";
-import { authenticatedJson } from "../utils/authenticatedApi";
-import API_BASE_URL from "../utils/api";
+import { authenticatedJson } from "../utils/apiweaveClient";
+import API_BASE_URL from "../utils/apiweaveClient";
 import type { ServiceToken } from "../types";
 
 export interface ServiceTokenListProps {

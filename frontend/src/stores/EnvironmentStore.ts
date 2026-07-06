@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
-import { authenticatedFetch } from "../utils/authenticatedApi";
-import * as scopedApi from "../utils/scopedApi";
+import { authenticatedFetch } from "../utils/apiweaveClient";
+import * as scopedApi from "../utils/apiweaveClient";
 
 interface EnvironmentState {
   environments: ScopedEnvironment[];
