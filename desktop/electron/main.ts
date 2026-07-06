@@ -7,6 +7,8 @@ import { initDatabase, type InitializedDatabase } from "../core/db"
 import { RunRepository, WorkflowRepository } from "../core/repositories"
 import { RunScheduler, SafeHttp, DynamicFunctions } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
+import { McpHost } from "../core/mcp"
+import type { McpStatus } from "../../shared/types/McpStatus"
 
 // The single request channel. Handlers are registered onto it in Task 13; until
 // then every `apiweave:invoke` call returns a not_found envelope, which is the
@@ -15,6 +17,7 @@ const ipcRouter = new IpcRouter()
 
 let database: InitializedDatabase | null = null
 let scheduler: RunScheduler | null = null
+let mcpHost: McpHost | null = null
 let isQuitting = false
 
 const DEV_SERVER_URL = "http://localhost:5173"
@@ -145,6 +148,29 @@ if (!hasSingleInstanceLock) {
 
     attachIpcRouter(ipcMain, ipcRouter)
 
+    // MCP server control (opt-in, off by default). The host exposes the SAME
+    // `ipcRouter` as a second (loopback-HTTP) transport, so its tool surface is
+    // whatever handlers are registered on the router — no separate tool stack.
+    // ponytail: enabled-state is not persisted across restarts (decision #5:
+    // off by default); the per-install token IS persisted, so re-enabling reuses it.
+    const mcpTokenPath = path.join(app.getPath("userData"), "mcp-token")
+    const mcpStatus = (): McpStatus => ({
+      running: mcpHost?.isRunning() ?? false,
+      config: mcpHost?.getConfig() ?? null,
+    })
+    ipcMain.handle("mcp:getStatus", () => mcpStatus())
+    ipcMain.handle("mcp:enable", async () => {
+      if (mcpHost === null) {
+        mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+      }
+      await mcpHost.start()
+      return mcpStatus()
+    })
+    ipcMain.handle("mcp:disable", async () => {
+      await mcpHost?.stop()
+      return mcpStatus()
+    })
+
     protocol.handle("app", (request) => {
       let pathname = decodeURIComponent(new URL(request.url).pathname)
 
@@ -172,6 +198,9 @@ app.on("window-all-closed", () => {
 app.on("before-quit", (event) => {
   if (isQuitting) return
   isQuitting = true
+
+  void mcpHost?.stop()
+  mcpHost = null
 
   if (scheduler && scheduler.getActiveCount() > 0) {
     event.preventDefault()

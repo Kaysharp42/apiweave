@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron"
 import type { ContractResult } from "../../shared/contract/errors"
 import type { RunProgressEvent } from "../../shared/types/RunProgressEvent"
+import type { McpStatus } from "../../shared/types/McpStatus"
 import { INVOKE_CHANNEL, runProgressChannel } from "../core/ipc/channels"
 
 /**
@@ -50,3 +51,18 @@ const desktopBridge: DesktopBridge = {
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_DESKTOP__", desktopBridge)
+
+/** Opt-in MCP server controls for the Setup-MCP dialog. */
+type McpBridge = {
+  readonly getStatus: () => Promise<McpStatus>
+  readonly enable: () => Promise<McpStatus>
+  readonly disable: () => Promise<McpStatus>
+}
+
+const mcpBridge: McpBridge = {
+  getStatus: () => ipcRenderer.invoke("mcp:getStatus") as Promise<McpStatus>,
+  enable: () => ipcRenderer.invoke("mcp:enable") as Promise<McpStatus>,
+  disable: () => ipcRenderer.invoke("mcp:disable") as Promise<McpStatus>,
+}
+
+contextBridge.exposeInMainWorld("__APIWEAVE_MCP__", mcpBridge)

@@ -15,7 +15,10 @@ export type HandlerRegistration<I extends z.ZodType, O extends z.ZodType> = {
   readonly handle: (input: z.infer<I>) => Promise<z.infer<O>> | z.infer<O>
 }
 
-type StoredHandler = HandlerRegistration<z.ZodType, z.ZodType>
+/** A registered handler, read-only. Lets a second transport (MCP) reuse the same input schema + handler. */
+export type RegisteredHandler = HandlerRegistration<z.ZodType, z.ZodType>
+
+type StoredHandler = RegisteredHandler
 
 function key(domain: string, action: string): string {
   return `${domain}.${action}`
@@ -64,6 +67,13 @@ export class IpcRouter {
   /** Registered `{domain}.{action}` keys — used by the route-reconciliation test. */
   keys(): readonly string[] {
     return [...this.handlers.keys()]
+  }
+
+  /** The registration for a `{domain}.{action}`, or undefined. The MCP bridge reads
+   * the input schema from here; execution still goes through {@link dispatch} so the
+   * validate → handle → validate path is shared, not forked. */
+  getRegistration(domain: string, action: string): RegisteredHandler | undefined {
+    return this.handlers.get(key(domain, action))
   }
 
   async dispatch(request: InvokeRequest): Promise<ContractResult<unknown>> {

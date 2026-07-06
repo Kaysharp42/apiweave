@@ -2,8 +2,8 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022", "DOM"],
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
     "ignoreDeprecations": "6.0",
     "strict": true,
     "noImplicitAny": true,

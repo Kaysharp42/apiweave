@@ -4,6 +4,7 @@ import type {
   ContractResult,
 } from "../../../shared/contract/errors";
 import type { RunProgressEvent } from "../../../shared/types/RunProgressEvent";
+import type { McpStatus } from "../../../shared/types/McpStatus";
 import type { AuthenticatedRequestInit } from "../types";
 import type { Collection } from "../types/Collection";
 import type { DryRunResult } from "../types/DryRunResult";
@@ -44,10 +45,17 @@ type DesktopBridge = {
   ) => () => void;
 };
 
+type McpBridge = {
+  readonly getStatus: () => Promise<McpStatus>;
+  readonly enable: () => Promise<McpStatus>;
+  readonly disable: () => Promise<McpStatus>;
+};
+
 declare global {
   interface Window {
     __APIWEAVE_IPC__?: IpcBridge;
     __APIWEAVE_DESKTOP__?: DesktopBridge;
+    __APIWEAVE_MCP__?: McpBridge;
     __APIWEAVE_RUNTIME__?: {
       readonly apiUrl?: string;
       readonly uiToken?: string;
@@ -66,6 +74,7 @@ declare global {
 type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_IPC__?: IpcBridge;
   __APIWEAVE_DESKTOP__?: DesktopBridge;
+  __APIWEAVE_MCP__?: McpBridge;
 };
 
 type ListResult<T> = { readonly items: readonly T[]; readonly total: number };
@@ -415,6 +424,25 @@ export const desktop = {
   close: () => getDesktopBridge()?.close(),
   onMaximizeChange: (callback: (isMaximized: boolean) => void) =>
     getDesktopBridge()?.onMaximizeChange(callback) ?? (() => undefined),
+} as const;
+
+function getMcpBridge(): McpBridge | undefined {
+  return globalThis.window?.__APIWEAVE_MCP__ ?? globalApiweave.__APIWEAVE_MCP__;
+}
+
+/** Controls for the opt-in loopback MCP server (Setup-MCP dialog). Returns null
+ * status when the bridge is absent (e.g. web preview outside Electron). */
+export const mcp = {
+  isAvailable: (): boolean => getMcpBridge() !== undefined,
+  getStatus: (): Promise<McpStatus> =>
+    getMcpBridge()?.getStatus() ??
+    Promise.resolve({ running: false, config: null }),
+  enable: (): Promise<McpStatus> =>
+    getMcpBridge()?.enable() ??
+    Promise.resolve({ running: false, config: null }),
+  disable: (): Promise<McpStatus> =>
+    getMcpBridge()?.disable() ??
+    Promise.resolve({ running: false, config: null }),
 } as const;
 
 export const API_BASE_URL = "ipc://apiweave";
