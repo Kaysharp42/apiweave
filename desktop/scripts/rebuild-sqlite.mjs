@@ -34,8 +34,29 @@ if (target === "electron") {
 console.log(`[rebuild-sqlite] better-sqlite3 for ${target} (${args.join(" ")})`)
 // prebuild-install silently no-ops when a build already exists; remove it so the
 // fetch always installs the binary for the requested runtime.
-const binaryPath = path.join(bsDir, "build", "Release", "better_sqlite3.node")
-fs.rmSync(path.join(bsDir, "build"), { recursive: true, force: true })
+const buildDir = path.join(bsDir, "build")
+const binaryPath = path.join(buildDir, "Release", "better_sqlite3.node")
+
+// Windows file locking: retry deletion with exponential backoff
+if (fs.existsSync(buildDir)) {
+  const maxRetries = 3
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      fs.rmSync(buildDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+      break
+    } catch (err) {
+      if (attempt === maxRetries - 1) {
+        console.error(`[rebuild-sqlite] failed to remove build directory after ${maxRetries} attempts`)
+        console.error(`[rebuild-sqlite] try closing all Electron/Node processes and deleting manually:`)
+        console.error(`[rebuild-sqlite]   rmdir /s /q "${buildDir}"`)
+        throw err
+      }
+      const delay = 200 * Math.pow(2, attempt)
+      console.log(`[rebuild-sqlite] build directory locked, retrying in ${delay}ms...`)
+      execFileSync(process.execPath, ["-e", `setTimeout(() => {}, ${delay})`])
+    }
+  }
+}
 execFileSync(process.execPath, [prebuildBin, ...args], { cwd: bsDir, stdio: "inherit" })
 
 // Verify the installed ABI. This script runs under Node, so a `node`-target build

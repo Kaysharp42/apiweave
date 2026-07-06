@@ -9,8 +9,16 @@ const path = require("node:path")
 function copyMigrations() {
   const src = path.join(__dirname, "core", "db", "migrations")
   const dest = path.join(__dirname, "dist", "desktop", "migrations")
-  fs.rmSync(dest, { recursive: true, force: true })
-  fs.cpSync(src, dest, { recursive: true })
+  // Windows file locking: try to remove, but if locked just overwrite contents
+  if (fs.existsSync(dest)) {
+    try {
+      fs.rmSync(dest, { recursive: true, force: true })
+    } catch {
+      // Directory locked — overwrite files in place instead
+      console.log("[copyMigrations] build dir locked, overwriting in place")
+    }
+  }
+  fs.cpSync(src, dest, { recursive: true, force: true })
 }
 
 const common = {
