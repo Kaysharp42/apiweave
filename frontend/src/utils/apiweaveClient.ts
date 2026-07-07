@@ -6,8 +6,9 @@ import type {
 import type { RunProgressEvent } from "../../../shared/types/RunProgressEvent";
 import type { McpStatus } from "../../../shared/types/McpStatus";
 import type { AuthenticatedRequestInit } from "../types";
-import type { Collection } from "../types/Collection";
+import type { Project } from "../types/Project";
 import type { DryRunResult } from "../types/DryRunResult";
+import type { ImportResult } from "../types/ImportResult";
 import type { Run } from "../types/Run";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { Workflow } from "../types/Workflow";
@@ -86,7 +87,7 @@ type WorkflowPatch = Partial<
 >;
 type CollectionPatch = Partial<
   Omit<
-    Collection,
+    Project,
     "workspaceId" | "collectionId" | "rev" | "createdAt" | "updatedAt"
   >
 >;
@@ -181,53 +182,6 @@ export const apiweave = {
     delete: (workspaceId: string) =>
       invoke<null>("workspaces", "delete", { workspaceId }),
   },
-  collections: {
-    create: (
-      input: { readonly workspaceId: string } & Partial<Collection> &
-        Pick<Collection, "name">,
-    ) => invoke<Collection>("collections", "create", input),
-    get: (workspaceId: string, collectionId: string) =>
-      invoke<Collection>("collections", "get", { workspaceId, collectionId }),
-    list: (workspaceId: string) =>
-      invoke<ListResult<Collection>>("collections", "list", { workspaceId }),
-    update: (
-      workspaceId: string,
-      collectionId: string,
-      patch: CollectionPatch,
-    ) =>
-      invoke<Collection>("collections", "update", {
-        workspaceId,
-        collectionId,
-        ...patch,
-      }),
-    delete: (workspaceId: string, collectionId: string) =>
-      invoke<null>("collections", "delete", { workspaceId, collectionId }),
-    addWorkflow: (
-      workspaceId: string,
-      collectionId: string,
-      workflowId: string,
-    ) =>
-      invoke<Workflow>("collections", "addWorkflow", {
-        workspaceId,
-        collectionId,
-        workflowId,
-      }),
-    removeWorkflow: (
-      workspaceId: string,
-      collectionId: string,
-      workflowId: string,
-    ) =>
-      invoke<Workflow>("collections", "removeWorkflow", {
-        workspaceId,
-        collectionId,
-        workflowId,
-      }),
-    listWorkflows: (workspaceId: string, collectionId: string) =>
-      invoke<readonly Workflow[]>("collections", "listWorkflows", {
-        workspaceId,
-        collectionId,
-      }),
-  },
   workflows: {
     create: (
       input: { readonly workspaceId: string } & WorkflowPatch &
@@ -268,6 +222,18 @@ export const apiweave = {
         workflowId,
         environmentId,
       }),
+    import: (
+      workspaceId: string,
+      bundle: unknown,
+      createMissingEnvironments?: boolean,
+    ) =>
+      invoke<ImportResult>("workflows", "import", {
+        workspaceId,
+        bundle,
+        createMissingEnvironments,
+      }),
+    dryRun: (workspaceId: string, bundle: unknown) =>
+      invoke<DryRunResult>("workflows", "dryRun", { workspaceId, bundle }),
   },
   environments: {
     create: (
@@ -391,6 +357,51 @@ export const apiweave = {
       }),
   },
   projects: {
+    create: (
+      input: { readonly workspaceId: string } & Partial<Project> &
+        Pick<Project, "name">,
+    ) => invoke<Project>("projects", "create", input),
+    get: (workspaceId: string, collectionId: string) =>
+      invoke<Project>("projects", "get", { workspaceId, collectionId }),
+    list: (workspaceId: string) =>
+      invoke<ListResult<Project>>("projects", "list", { workspaceId }),
+    update: (
+      workspaceId: string,
+      collectionId: string,
+      patch: CollectionPatch,
+    ) =>
+      invoke<Project>("projects", "update", {
+        workspaceId,
+        collectionId,
+        ...patch,
+      }),
+    delete: (workspaceId: string, collectionId: string) =>
+      invoke<null>("projects", "delete", { workspaceId, collectionId }),
+    addWorkflow: (
+      workspaceId: string,
+      collectionId: string,
+      workflowId: string,
+    ) =>
+      invoke<Workflow>("projects", "addWorkflow", {
+        workspaceId,
+        collectionId,
+        workflowId,
+      }),
+    removeWorkflow: (
+      workspaceId: string,
+      collectionId: string,
+      workflowId: string,
+    ) =>
+      invoke<Workflow>("projects", "removeWorkflow", {
+        workspaceId,
+        collectionId,
+        workflowId,
+      }),
+    listWorkflows: (workspaceId: string, collectionId: string) =>
+      invoke<readonly Workflow[]>("projects", "listWorkflows", {
+        workspaceId,
+        collectionId,
+      }),
     export: (workspaceId: string, projectId: string) =>
       invoke<ProjectBundle>("projects", "export", { workspaceId, projectId }),
     import: (workspaceId: string, bundle: ProjectBundle) =>
@@ -623,10 +634,15 @@ export async function authenticatedFetch(
           );
           return ok(workflow);
         }
-        if (parts[4] === "import")
-          return fail(
-            new IpcError("not_found", "Workflow import IPC is not registered"),
+        if (parts[4] === "import") {
+          const body = (payload ?? {}) as { bundle?: unknown };
+          const bundle = body.bundle ?? body;
+          return ok(
+            parts[5] === "dry-run"
+              ? await apiweave.workflows.dryRun(workspaceId, bundle)
+              : await apiweave.workflows.import(workspaceId, bundle),
           );
+        }
         const workflowId = segment(parts, 4);
         if (parts.length === 5 && method === "GET")
           return ok(await apiweave.workflows.get(workspaceId, workflowId));
@@ -695,14 +711,14 @@ export async function authenticatedFetch(
 
       if (parts[3] === "projects") {
         if (parts.length === 4 && method === "GET") {
-          const data = await apiweave.collections.list(workspaceId);
+          const data = await apiweave.projects.list(workspaceId);
           return ok({ projects: data.items, total: data.total });
         }
         if (parts.length === 4 && method === "POST") {
           const body = (payload ?? {}) as CollectionPatch &
-            Pick<Collection, "name">;
+            Pick<Project, "name">;
           return ok(
-            await apiweave.collections.create({ workspaceId, ...body }),
+            await apiweave.projects.create({ workspaceId, ...body }),
           );
         }
         if (parts[4] === "import") {
@@ -715,10 +731,10 @@ export async function authenticatedFetch(
         }
         const projectId = segment(parts, 4);
         if (parts.length === 5 && method === "GET")
-          return ok(await apiweave.collections.get(workspaceId, projectId));
+          return ok(await apiweave.projects.get(workspaceId, projectId));
         if (parts.length === 5 && ["PUT", "PATCH"].includes(method)) {
           return ok(
-            await apiweave.collections.update(
+            await apiweave.projects.update(
               workspaceId,
               projectId,
               (payload ?? {}) as CollectionPatch,
@@ -726,7 +742,7 @@ export async function authenticatedFetch(
           );
         }
         if (parts.length === 5 && method === "DELETE") {
-          await apiweave.collections.delete(workspaceId, projectId);
+          await apiweave.projects.delete(workspaceId, projectId);
           return noContent();
         }
         if (parts[5] === "export" && method === "GET")
@@ -735,7 +751,7 @@ export async function authenticatedFetch(
           const workflowId = segment(parts, 6);
           if (parts[7] === "assign")
             return ok(
-              await apiweave.collections.addWorkflow(
+              await apiweave.projects.addWorkflow(
                 workspaceId,
                 projectId,
                 workflowId,
@@ -743,7 +759,7 @@ export async function authenticatedFetch(
             );
           if (method === "DELETE")
             return ok(
-              await apiweave.collections.removeWorkflow(
+              await apiweave.projects.removeWorkflow(
                 workspaceId,
                 projectId,
                 workflowId,
@@ -1015,6 +1031,6 @@ export async function requestProjectDeletion({
 }: DeletionRequest): Promise<DeletionResult> {
   if (!target?.projectId) return { deleted: false, reason: "missing-target" };
   if (!workspaceId) return { deleted: false, reason: "missing-workspace" };
-  await apiweave.collections.delete(workspaceId, target.projectId);
+  await apiweave.projects.delete(workspaceId, target.projectId);
   return { deleted: true, projectId: target.projectId };
 }

@@ -1,0 +1,867 @@
+{
+  "workflow": {
+    "workflowId": "411cf377-3727-4b79-b6ec-9d7f54f9759e",
+    "name": "Actor Module - Full CRUD (JOINED Inheritance)",
+    "description": "Complete CRUD tests for refactored Actor module with JOINED inheritance. Covers MoralPerson, NaturalPerson, ManagementCompany subclass CRUD + base Actor CRUD + sub-entities (addresses, contacts, bank accounts, roles, billing params).",
+    "nodes": [
+      {
+        "nodeId": "start",
+        "type": "start",
+        "label": null,
+        "position": {
+          "x": 0,
+          "y": 44
+        },
+        "config": {}
+      },
+      {
+        "nodeId": "login",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 320,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"email\":\"{{env.AUTH_EMAIL}}\",\"password\":\"{{env.AUTH_PASSWORD}}\"}",
+          "extractors": {
+            "token": "<SECRET>"
+          },
+          "headers": {
+            "Accept": "*/*",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/auth/authenticate"
+        }
+      },
+      {
+        "nodeId": "create-moral-person",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 780,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"first_name\":\"Test\",\"last_name\":\"MoralPerson {{randomString(6)}}\",\"vat\":\"FR12345678901\",\"registration_date\":\"2024-01-15\",\"company_creation_date\":\"2020-06-01\",\"register_type\":\"RCS\",\"register_number\":\"123456789\",\"tax_reference\":\"TAX-{{randomNumeric(6)}}\",\"activity_code\":\"01.25Z\",\"legal_category_code\":\"8410\",\"phase_code\":\"INI\",\"milestone_code\":\"OUVERT\",\"role_code\":\"FOURN\",\"national_identity\":\"NAT-{{randomNumeric(9)}}\",\"external_reference\":\"EXT-{{randomString(8)}}\",\"registration_country_code\":\"FR\"}",
+          "extractors": {
+            "moralPersonId": "response.body.data.id",
+            "moralPersonRef": "response.body.data.reference"
+          },
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/actors/moral-persons"
+        }
+      },
+      {
+        "nodeId": "list-moral-persons",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 1240,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/moral-persons"
+        }
+      },
+      {
+        "nodeId": "get-moral-person-by-ref",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 1700,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/moral-persons/reference/{{variables.moralPersonRef}}"
+        }
+      },
+      {
+        "nodeId": "update-moral-person",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 2160,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"first_name\":\"Updated\",\"last_name\":\"MoralPerson {{randomString(6)}}\",\"vat\":\"FR98765432109\",\"registration_date\":\"2024-02-20\",\"company_creation_date\":\"2020-06-01\",\"register_type\":\"RCS\",\"register_number\":\"987654321\",\"tax_reference\":\"TAX-{{randomNumeric(6)}}\",\"activity_code\":\"06.10Z\",\"legal_category_code\":\"5710\",\"phase_code\":\"INI\",\"milestone_code\":\"OUVERT\",\"role_code\":\"FOURN\",\"national_identity\":\"NAT-{{randomNumeric(9)}}\",\"external_reference\":\"EXT-{{randomString(8)}}\",\"registration_country_code\":\"FR\"}",
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "PUT",
+          "url": "{{env.BASE_URL}}/actors/moral-persons/{{variables.moralPersonRef}}"
+        }
+      },
+      {
+        "nodeId": "create-natural-person",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 2620,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"first_name\":\"Jean\",\"last_name\":\"Dupont\",\"title\":\"Mr\",\"gender\":\"MALE\",\"nationality\":\"FR\",\"identity_type\":\"PASSPORT\",\"birth_country_code\":\"FR\",\"city\":\"Paris\",\"postal_code\":\"75001\",\"birth_date\":\"1990-05-15\",\"marital_status\":\"SINGLE\",\"matrimonial_regime\":\"SEPARATION_PROPERTY\",\"dependent_children_count\":0,\"housing_status\":\"TENANT\",\"occupancy_duration\":24,\"monthly_rent\":850.50,\"ownership_status\":\"FULL_OWNER\",\"professional_status\":\"EMPLOYED\",\"employer_name\":\"Acme Corp\",\"job_title\":\"Developer\",\"job_seniority\":36,\"contract_type\":\"CDI\",\"monthly_income\":5000.0,\"currency_code\":\"EUR\",\"income_type\":\"NET\",\"phase_code\":\"INI\",\"milestone_code\":\"OUVERT\",\"role_code\":\"FOURN\",\"national_identity\":\"NAT-{{randomNumeric(9)}}\",\"external_reference\":\"EXT-{{randomString(8)}}\"}",
+          "extractors": {
+            "naturalPersonId": "response.body.data.id",
+            "naturalPersonRef": "response.body.data.reference"
+          },
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/actors/natural-persons"
+        }
+      },
+      {
+        "nodeId": "list-natural-persons",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 3080,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/natural-persons"
+        }
+      },
+      {
+        "nodeId": "update-natural-person",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 3540,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"first_name\":\"Pierre\",\"last_name\":\"Martin\",\"title\":\"Mr\",\"gender\":\"MALE\",\"nationality\":\"FR\",\"identity_type\":\"PASSPORT\",\"birth_country_code\":\"FR\",\"city\":\"Lyon\",\"postal_code\":\"69001\",\"birth_date\":\"1985-03-20\",\"marital_status\":\"MARRIED\",\"matrimonial_regime\":\"LEGAL_COMMUNITY\",\"dependent_children_count\":2,\"housing_status\":\"OWNER\",\"occupancy_duration\":60,\"monthly_rent\":0,\"ownership_status\":\"FULL_OWNER\",\"professional_status\":\"EMPLOYED\",\"employer_name\":\"Tech Inc\",\"job_title\":\"Senior Dev\",\"job_seniority\":60,\"contract_type\":\"CDI\",\"monthly_income\":7000.0,\"currency_code\":\"EUR\",\"income_type\":\"NET\",\"phase_code\":\"INI\",\"milestone_code\":\"OUVERT\",\"role_code\":\"FOURN\",\"national_identity\":\"NAT-{{randomNumeric(9)}}\",\"external_reference\":\"EXT-{{randomString(8)}}\"}",
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "PUT",
+          "url": "{{env.BASE_URL}}/actors/natural-persons/{{variables.naturalPersonRef}}"
+        }
+      },
+      {
+        "nodeId": "create-management-company",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 4000,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"first_name\":\"MGMT\",\"last_name\":\"Test Management Co {{randomString(6)}}\",\"vat\":\"FR55555555555\",\"registration_date\":\"2023-01-01\",\"company_creation_date\":\"2019-12-31\",\"register_type\":\"RCS\",\"register_number\":\"555555555\",\"tax_reference\":\"TAX-{{randomNumeric(6)}}\",\"activity_code\":\"01.25Z\",\"legal_category_code\":\"8410\",\"phase_code\":\"INI\",\"milestone_code\":\"OUVERT\",\"role_code\":\"RENT\",\"national_identity\":\"NAT-{{randomNumeric(9)}}\",\"external_reference\":\"EXT-{{randomString(8)}}\",\"registration_country_code\":\"FR\"}",
+          "extractors": {
+            "mgmtCompanyId": "response.body.data.id",
+            "mgmtCompanyRef": "response.body.data.reference"
+          },
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/actors/management-companies"
+        }
+      },
+      {
+        "nodeId": "list-management-companies",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 4460,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/management-companies"
+        }
+      },
+      {
+        "nodeId": "update-management-company",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 4920,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"first_name\":\"UPD-MGMT\",\"last_name\":\"Updated Mgmt Co\",\"vat\":\"FR66666666666\",\"registration_date\":\"2023-06-15\",\"company_creation_date\":\"2019-12-31\",\"register_type\":\"RCS\",\"register_number\":\"666666666\",\"tax_reference\":\"TAX-{{randomNumeric(6)}}\",\"activity_code\":\"06.10Z\",\"legal_category_code\":\"5710\",\"phase_code\":\"INI\",\"milestone_code\":\"OUVERT\",\"role_code\":\"RENT\",\"national_identity\":\"NAT-{{randomNumeric(9)}}\",\"external_reference\":\"EXT-{{randomString(8)}}\",\"registration_country_code\":\"FR\"}",
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "PUT",
+          "url": "{{env.BASE_URL}}/actors/management-companies/{{variables.mgmtCompanyRef}}"
+        }
+      },
+      {
+        "nodeId": "create-business-profile",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 5380,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"code\":\"CODE\",\"Calendar\":\"CalendarEUR\",\"national_Issuer_Number\":\"123456789\",\"Issuer_Number_Internal_Transfer\":\"987654321\",\"ICS\":\"ICS123\",\"minimum_due_date\":30,\"Logo\":\"logo.png\",\"FICP_grouping_code\":\"FICP001\",\"tax_system\":\"FR\"}",
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/actors/{{variables.mgmtCompanyId}}/business-profile"
+        }
+      },
+      {
+        "nodeId": "list-businesses",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 5840,
+          "y": 13
+        },
+        "config": {
+          "continueOnFail": true,
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/{{variables.mgmtCompanyId}}/business-profile"
+        }
+      },
+      {
+        "nodeId": "list-actors",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 6300,
+          "y": 26
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors"
+        }
+      },
+      {
+        "nodeId": "get-actor-by-id",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 6719,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}"
+        }
+      },
+      {
+        "nodeId": "get-actor-by-ref",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 7179,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/reference/{{variables.moralPersonRef}}"
+        }
+      },
+      {
+        "nodeId": "create-address",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 7639,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"city\":\"Paris\",\"zip_code\":\"75001\",\"number\":\"1\",\"road_type\":\"Rue\",\"subsidiary\":false,\"headquarter\":true,\"is_billing\":true,\"is_delivery\":true,\"physical_address\":{\"street_name\":\"Test Street\"}}",
+          "extractors": {
+            "addressId": "response.body.data.id"
+          },
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}/addresses"
+        }
+      },
+      {
+        "nodeId": "list-addresses",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 8099,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}/addresses"
+        }
+      },
+      {
+        "nodeId": "get-billing-addresses",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 8559,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}/addresses/billing"
+        }
+      },
+      {
+        "nodeId": "create-contact",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 9019,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"first_name\":\"Contact\",\"last_name\":\"Person\",\"title\":\"Mr\"}",
+          "extractors": {
+            "contactId": "response.body.data.id"
+          },
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}/contacts"
+        }
+      },
+      {
+        "nodeId": "list-contacts",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 9479,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}/contacts"
+        }
+      },
+      {
+        "nodeId": "create-bank-account",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 9939,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"iban\":\"FR7630006000011234567890189\",\"account_number\":\"{{randomNumeric(11)}}\",\"country_code\":\"FR\",\"title\":\"Test Account\",\"bank_code\":\"30006\",\"branch_code\":\"00001\",\"replacement\":false,\"is_principal\":true,\"iban_key\":\"89\",\"rib_key\":\"06\"}",
+          "extractors": {
+            "bankAccountId": "response.body.data.id"
+          },
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonRef}}/bank-accounts"
+        }
+      },
+      {
+        "nodeId": "list-bank-accounts",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 10399,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}/bank-accounts"
+        }
+      },
+      {
+        "nodeId": "get-principal-bank-account",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 10859,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonRef}}/bank-accounts/principal"
+        }
+      },
+      {
+        "nodeId": "list-actor-roles",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 11319,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}/roles"
+        }
+      },
+      {
+        "nodeId": "create-role",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 11779,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"role_code\":\"CLIENT\",\"is_principal\":false}",
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}/roles"
+        }
+      },
+      {
+        "nodeId": "create-billing-params",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 12239,
+          "y": 0
+        },
+        "config": {
+          "body": "{\"invoice_delivery_mode\":\"EMAIL\",\"notes\":\"Test billing params\"}",
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>",
+            "Content-Type": "application/json"
+          },
+          "method": "POST",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonRef}}/roles/CLIENT/billing-parameters"
+        }
+      },
+      {
+        "nodeId": "list-billing-params",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 12699,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "GET",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonRef}}/roles/CLIENT/billing-parameters"
+        }
+      },
+      {
+        "nodeId": "delete-actor",
+        "type": "http-request",
+        "label": null,
+        "position": {
+          "x": 13159,
+          "y": 13
+        },
+        "config": {
+          "headers": {
+            "Accept": "application/json",
+            "Authorization": "<SECRET>"
+          },
+          "method": "DELETE",
+          "url": "{{env.BASE_URL}}/actors/{{variables.moralPersonId}}"
+        }
+      },
+      {
+        "nodeId": "end",
+        "type": "end",
+        "label": null,
+        "position": {
+          "x": 13619,
+          "y": 44
+        },
+        "config": {}
+      }
+    ],
+    "edges": [
+      {
+        "edgeId": "e-start-login",
+        "source": "start",
+        "target": "login",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-login-create-mp",
+        "source": "login",
+        "target": "create-moral-person",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-create-mp-list-mp",
+        "source": "create-moral-person",
+        "target": "list-moral-persons",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-mp-get-mp-ref",
+        "source": "list-moral-persons",
+        "target": "get-moral-person-by-ref",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-get-mp-ref-update-mp",
+        "source": "get-moral-person-by-ref",
+        "target": "update-moral-person",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-update-mp-create-np",
+        "source": "update-moral-person",
+        "target": "create-natural-person",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-create-np-list-np",
+        "source": "create-natural-person",
+        "target": "list-natural-persons",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-np-update-np",
+        "source": "list-natural-persons",
+        "target": "update-natural-person",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-update-np-create-mc",
+        "source": "update-natural-person",
+        "target": "create-management-company",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-create-mc-list-mc",
+        "source": "create-management-company",
+        "target": "list-management-companies",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-mc-update-mc",
+        "source": "list-management-companies",
+        "target": "update-management-company",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-update-mc-create-biz",
+        "source": "update-management-company",
+        "target": "create-business-profile",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-create-biz-list-biz",
+        "source": "create-business-profile",
+        "target": "list-businesses",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-biz-list-actors",
+        "source": "list-businesses",
+        "target": "list-actors",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-actors-get-id",
+        "source": "list-actors",
+        "target": "get-actor-by-id",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-get-id-get-ref",
+        "source": "get-actor-by-id",
+        "target": "get-actor-by-ref",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-get-ref-create-addr",
+        "source": "get-actor-by-ref",
+        "target": "create-address",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-create-addr-list-addr",
+        "source": "create-address",
+        "target": "list-addresses",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-addr-billing",
+        "source": "list-addresses",
+        "target": "get-billing-addresses",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-billing-create-contact",
+        "source": "get-billing-addresses",
+        "target": "create-contact",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-create-contact-list",
+        "source": "create-contact",
+        "target": "list-contacts",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-contact-create-bank",
+        "source": "list-contacts",
+        "target": "create-bank-account",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-create-bank-list-bank",
+        "source": "create-bank-account",
+        "target": "list-bank-accounts",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-bank-principal",
+        "source": "list-bank-accounts",
+        "target": "get-principal-bank-account",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-principal-list-roles",
+        "source": "get-principal-bank-account",
+        "target": "list-actor-roles",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-roles-create",
+        "source": "list-actor-roles",
+        "target": "create-role",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-create-role-billing",
+        "source": "create-role",
+        "target": "create-billing-params",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-billing-list",
+        "source": "create-billing-params",
+        "target": "list-billing-params",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-list-billing-delete",
+        "source": "list-billing-params",
+        "target": "delete-actor",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      },
+      {
+        "edgeId": "e-delete-end",
+        "source": "delete-actor",
+        "target": "end",
+        "sourceHandle": null,
+        "targetHandle": null,
+        "label": null
+      }
+    ],
+    "variables": {},
+    "tags": [
+      "actor",
+      "crud",
+      "smoke-test"
+    ],
+    "collectionId": null,
+    "selectedEnvironmentId": null,
+    "environmentId": null,
+    "nodeTemplates": [],
+    "workspaceId": "ws-daeea4978d6f",
+    "orgId": null,
+    "ownerType": "user",
+    "createdAt": "2026-06-24T14:50:44.767000",
+    "updatedAt": "2026-07-03T11:16:09.420000",
+    "version": 1
+  },
+  "environments": [],
+  "secretReferences": [
+    "nodes.login.config.extractors.token",
+    "nodes.create-moral-person.config.headers.Authorization",
+    "nodes.list-moral-persons.config.headers.Authorization",
+    "nodes.get-moral-person-by-ref.config.headers.Authorization",
+    "nodes.update-moral-person.config.headers.Authorization",
+    "nodes.create-natural-person.config.headers.Authorization",
+    "nodes.list-natural-persons.config.headers.Authorization",
+    "nodes.update-natural-person.config.headers.Authorization",
+    "nodes.create-management-company.config.headers.Authorization",
+    "nodes.list-management-companies.config.headers.Authorization",
+    "nodes.update-management-company.config.headers.Authorization",
+    "nodes.create-business-profile.config.headers.Authorization",
+    "nodes.list-businesses.config.headers.Authorization",
+    "nodes.list-actors.config.headers.Authorization",
+    "nodes.get-actor-by-id.config.headers.Authorization",
+    "nodes.get-actor-by-ref.config.headers.Authorization",
+    "nodes.create-address.config.headers.Authorization",
+    "nodes.list-addresses.config.headers.Authorization",
+    "nodes.get-billing-addresses.config.headers.Authorization",
+    "nodes.create-contact.config.headers.Authorization",
+    "nodes.list-contacts.config.headers.Authorization",
+    "nodes.create-bank-account.config.headers.Authorization",
+    "nodes.list-bank-accounts.config.headers.Authorization",
+    "nodes.get-principal-bank-account.config.headers.Authorization",
+    "nodes.list-actor-roles.config.headers.Authorization",
+    "nodes.create-role.config.headers.Authorization",
+    "nodes.create-billing-params.config.headers.Authorization",
+    "nodes.list-billing-params.config.headers.Authorization",
+    "nodes.delete-actor.config.headers.Authorization"
+  ],
+  "metadata": {
+    "exportedAt": "2026-07-03T11:16:50.757309+00:00",
+    "apiweaveVersion": "0.1.0",
+    "sourceHost": null
+  }
+}

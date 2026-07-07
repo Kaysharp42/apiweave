@@ -1,11 +1,11 @@
 import type { Workflow } from "./Workflow";
-import type { Collection } from "./Collection";
+import type { Project } from "./Project";
 import type { ScopedEnvironment } from "./ScopedEnvironment";
 import type { PaginationState } from "./PaginationState";
 
 export interface WorkflowListProps {
   workflows: Workflow[];
-  collections: Collection[];
+  collections: Project[];
   environments: ScopedEnvironment[];
   selectedWorkflowId: string | null;
   isRefreshing: boolean;

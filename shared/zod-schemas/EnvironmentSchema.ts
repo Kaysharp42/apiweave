@@ -13,6 +13,8 @@ export const EnvironmentSchema = z
     variables: z.record(z.string(), JsonValueSchema).default({}),
     secrets: z.record(z.string(), JsonValueSchema).default({}),
     isDefault: z.boolean().default(false),
+    scopeType: z.enum(["workspace", "user"]).default("workspace"),
+    scopeId: z.string().min(1),
     rev: RevisionSchema,
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,

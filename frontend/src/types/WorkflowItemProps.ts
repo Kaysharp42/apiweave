@@ -1,11 +1,11 @@
 import type { Workflow } from "./Workflow";
-import type { Collection } from "./Collection";
+import type { Project } from "./Project";
 import type { ScopedEnvironment } from "./ScopedEnvironment";
 
 export interface WorkflowItemProps {
   workflow: Workflow;
   isActive: boolean;
-  collections: Collection[];
+  collections: Project[];
   environments: ScopedEnvironment[];
   onWorkflowClick: (workflow: Workflow) => void;
   onExportWorkflow: (workflow: Workflow) => void;

@@ -16,6 +16,25 @@ interface EnvironmentState {
   setDefaultEnv: (envId: string) => void;
 }
 
+function normalizeScopedEnvironment(raw: Partial<ScopedEnvironment>): ScopedEnvironment {
+  const env: ScopedEnvironment = {
+    environmentId: raw.environmentId ?? "",
+    name: raw.name ?? "",
+    variables: (raw.variables ?? {}) as Record<string, string>,
+    secrets: raw.secrets ?? {},
+    scopeType: raw.scopeType ?? "workspace",
+    scopeId: raw.scopeId ?? "",
+    isDefault: raw.isDefault ?? false,
+    allowedWorkspaceIds: raw.allowedWorkspaceIds ?? [],
+    createdAt: raw.createdAt ?? "",
+    updatedAt: raw.updatedAt ?? "",
+  };
+  if (raw.description !== undefined) env.description = raw.description;
+  if (raw.swaggerDocUrl !== undefined) env.swaggerDocUrl = raw.swaggerDocUrl;
+  if (raw.ownerType !== undefined) env.ownerType = raw.ownerType;
+  return env;
+}
+
 const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
   environments: [],
   selectedEnvironmentByWorkflow: {},
@@ -34,8 +53,12 @@ const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
         scopedApi.environmentsUrl(workspaceId, "all-accessible"),
       );
       if (response.ok) {
-        const data: ScopedEnvironment[] = await response.json();
-        set({ environments: data });
+        const data = (await response.json()) as
+          | ScopedEnvironment[]
+          | { environments: ScopedEnvironment[]; total: number };
+        const rawList = Array.isArray(data) ? data : (data.environments ?? []);
+        const environments = rawList.map(normalizeScopedEnvironment);
+        set({ environments });
       }
     } catch {
       /* silent */

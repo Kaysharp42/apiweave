@@ -114,10 +114,10 @@ export function Workspace(_props: WorkspaceProps) {
         environmentsUrl(workspaceId, "all-accessible", orgId),
       );
       if (response.ok) {
-        const envs = (await response.json()) as Array<{
-          environmentId: string;
-          name: string;
-        }>;
+        const data = (await response.json()) as
+          | { environments: Array<{ environmentId: string; name: string }> }
+          | Array<{ environmentId: string; name: string }>;
+        const envs = Array.isArray(data) ? data : (data.environments ?? []);
         const namesMap: Record<string, string> = {};
         envs.forEach((env) => {
           namesMap[env.environmentId] = env.name;

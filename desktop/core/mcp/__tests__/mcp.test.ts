@@ -212,7 +212,7 @@ describe("MCP bridge — inherited secret masking holds across read/export tools
       keyId: "k1",
       sealed: new TextEncoder().encode(PLAINTEXT),
     })
-    const collection = await dispatchOk<{ collectionId: string }>("collections", "create", {
+    const collection = await dispatchOk<{ collectionId: string }>("projects", "create", {
       workspaceId: workspace.workspaceId,
       name: "Col",
     })

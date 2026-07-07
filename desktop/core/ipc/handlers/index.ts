@@ -1,7 +1,6 @@
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { registerWorkspaceHandlers } from "./workspaces"
-import { registerCollectionHandlers } from "./collections"
 import { registerWorkflowHandlers } from "./workflows"
 import { registerEnvironmentHandlers } from "./environments"
 import { registerRunHandlers } from "./runs"
@@ -18,7 +17,6 @@ export type { HandlerDeps } from "./common"
  */
 export function registerAllHandlers(router: IpcRouter, deps: HandlerDeps): void {
   registerWorkspaceHandlers(router, deps)
-  registerCollectionHandlers(router, deps)
   registerWorkflowHandlers(router, deps)
   registerEnvironmentHandlers(router, deps)
   registerRunHandlers(router, deps)

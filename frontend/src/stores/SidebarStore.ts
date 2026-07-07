@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import type { Workflow } from "../types/Workflow";
-import type { Collection } from "../types/Collection";
 import type { Project } from "../types/Project";
 import type { PaginationState } from "../types/PaginationState";
 import { authenticatedFetch } from "../utils/apiweaveClient";
@@ -18,7 +17,7 @@ interface ProjectListResponse {
 
 interface SidebarState {
   workflows: Workflow[];
-  collections: Collection[];
+  collections: Project[];
   /** Workspace-scoped projects (fetched from /api/workspaces/{id}/projects). */
   projects: Project[];
   pagination: PaginationState;
@@ -125,6 +124,12 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
           isLoadingMore: false,
           isRefreshing: false,
         });
+      } else {
+        console.error(
+          "SidebarStore: workflows fetch returned non-OK status",
+          response.status,
+        );
+        set({ isLoadingMore: false, isRefreshing: false });
       }
     } catch (err) {
       console.error("SidebarStore: error fetching workflows", err);
@@ -142,7 +147,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
       const response = await authenticatedFetch(projectsUrl(activeWorkspaceId));
       if (response.ok) {
         const data = (await response.json()) as {
-          projects: Collection[];
+          projects: Project[];
           total: number;
         };
         set({ collections: data.projects, isRefreshing: false });

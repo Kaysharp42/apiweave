@@ -1,10 +1,10 @@
 import type { Workflow } from "./Workflow";
-import type { Collection } from "./Collection";
+import type { Project } from "./Project";
 import type { PaginationState } from "./PaginationState";
 
 export interface SidebarState {
   workflows: Workflow[];
-  collections: Collection[];
+  collections: Project[];
   pagination: PaginationState;
   isRefreshing: boolean;
   isLoadingMore: boolean;

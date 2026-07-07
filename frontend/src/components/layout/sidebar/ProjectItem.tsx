@@ -14,7 +14,7 @@ import { SidebarAction } from "./SidebarAction";
 import { WorkflowItem } from "./WorkflowItem";
 import { getSidebarItemLabel } from "../../../utils/sidebarItemLabel";
 import type { ProjectItemProps } from "../../../types";
-import type { Collection } from "../../../types/Collection";
+import type { Project } from "../../../types/Project";
 
 export function ProjectItem({
   project,
@@ -119,7 +119,7 @@ export function ProjectItem({
                 projects.map((p) => ({
                   collectionId: p.projectId ?? p.collectionId,
                   name: p.name,
-                })) as Collection[]
+                })) as Project[]
               }
               environments={environments}
               onWorkflowClick={onWorkflowClick}

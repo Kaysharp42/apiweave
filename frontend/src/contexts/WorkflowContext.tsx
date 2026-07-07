@@ -11,6 +11,7 @@ import { usePalette } from "./PaletteContext";
 import useSidebarStore from "../stores/SidebarStore";
 import { authenticatedFetch } from "../utils/apiweaveClient";
 import { projectsUrl } from "../utils/apiweaveClient";
+import type { Project } from "../types/Project";
 
 interface WorkflowVariables {
   [key: string]: unknown;
@@ -20,19 +21,14 @@ interface WorkflowSettings {
   [key: string]: unknown;
 }
 
-interface Collection {
-  collectionId: string;
-  [key: string]: unknown;
-}
-
 interface WorkflowContextValue {
   workflowId: string | undefined;
   variables: WorkflowVariables;
   settings: WorkflowSettings;
-  collections: Collection[];
+  collections: Project[];
   isLoadingCollections: boolean;
   currentCollectionId: string | null;
-  currentCollection: Collection | null;
+  currentCollection: Project | null;
   setVariables: React.Dispatch<React.SetStateAction<WorkflowVariables>>;
   setSettings: React.Dispatch<React.SetStateAction<WorkflowSettings>>;
   setCurrentCollectionId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -114,7 +110,7 @@ export const WorkflowProvider = ({
   type WorkflowState = {
     variables: WorkflowVariables;
     settings: WorkflowSettings;
-    collections: Collection[];
+    collections: Project[];
     isLoadingCollections: boolean;
     currentCollectionId: string | null;
   };
@@ -122,7 +118,7 @@ export const WorkflowProvider = ({
   type WorkflowAction =
     | { type: "set-variables"; value: WorkflowVariables }
     | { type: "set-settings"; value: WorkflowSettings }
-    | { type: "set-collections"; value: Collection[] }
+    | { type: "set-collections"; value: Project[] }
     | { type: "set-loading-collections"; value: boolean }
     | { type: "set-current-collection-id"; value: string | null }
     | { type: "update-variable"; varName: string; varValue: unknown }
@@ -224,7 +220,7 @@ export const WorkflowProvider = ({
       const response = await authenticatedFetch(projectsUrl(workspaceId));
       if (response.ok) {
         const data = (await response.json()) as {
-          projects: Collection[];
+          projects: Project[];
           total: number;
         };
         dispatch({ type: "set-collections", value: data.projects });

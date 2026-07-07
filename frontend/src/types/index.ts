@@ -47,7 +47,6 @@ export type { AssertionOperator } from "./AssertionOperator";
 export type { DelayConfig } from "./DelayConfig";
 export type { MergeConfig } from "./MergeConfig";
 export type { Variable } from "./Variable";
-export type { Collection } from "./Collection";
 export type { Run } from "./Run";
 export type { RunStatus } from "./RunStatus";
 export type { RunResult } from "./RunResult";
