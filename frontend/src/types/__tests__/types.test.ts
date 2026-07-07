@@ -20,7 +20,7 @@ import type {
   RunStatus,
   Variable,
   ScopedEnvironment,
-  Collection,
+  Project,
   Run,
   RunResult,
   KeyValue,
@@ -168,10 +168,11 @@ const _mockEnvironment: ScopedEnvironment = {
 // Collection type tests
 // ============================================================
 
-const _mockCollection: Collection = {
+const _mockCollection: Project = {
   id: "col-1",
   collectionId: "col-1",
   name: "API Tests",
+  workflowCount: 2,
   workflowIds: ["wf-1", "wf-2"],
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",

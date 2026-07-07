@@ -11,11 +11,13 @@ export type EnvironmentUpdate = Partial<
   Pick<Environment, "name" | "description" | "swaggerDocUrl" | "variables" | "secrets" | "isDefault">
 >
 
-const COLUMNS = "id, workspace_id, name, variables_json, settings_json, rev, createdAt, updatedAt"
+const COLUMNS = "id, workspace_id, scopeType, scopeId, name, variables_json, settings_json, rev, createdAt, updatedAt"
 
 interface EnvironmentRow extends SqliteRow {
   readonly id: string
   readonly workspace_id: string
+  readonly scopeType: string
+  readonly scopeId: string
   readonly name: string
   readonly variables_json: string
   readonly settings_json: string
@@ -122,6 +124,8 @@ function rowToEnvironment(row: EnvironmentRow): Environment {
   return {
     environmentId: row.id,
     workspaceId: row.workspace_id,
+    scopeType: row.scopeType as "workspace" | "user",
+    scopeId: row.scopeId,
     name: row.name,
     description: settings.description,
     swaggerDocUrl: settings.swaggerDocUrl,

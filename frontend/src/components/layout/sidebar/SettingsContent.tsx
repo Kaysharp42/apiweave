@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FolderKanban, Key, Globe, Plug } from "lucide-react";
+import { useParams } from "react-router-dom";
 import type { SettingsContentProps } from "../../../types";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { McpSetupModal } from "../../organisms/McpSetupModal";
@@ -13,10 +14,11 @@ export function SettingsContent({
   onSwitchNav,
 }: SettingsContentProps) {
   const { currentOrg, currentWorkspace } = useWorkspace();
+  const params = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
   const [mcpOpen, setMcpOpen] = useState(false);
 
-  const orgSlug = currentOrg?.slug ?? "personal";
-  const workspaceSlug = currentWorkspace?.slug ?? "workflows";
+  const orgSlug = currentOrg?.slug ?? params.orgSlug ?? "personal";
+  const workspaceSlug = currentWorkspace?.slug ?? params.workspaceSlug ?? "personal";
   const wsBase = `/${orgSlug}/${workspaceSlug}`;
 
   const settingItemClass = [

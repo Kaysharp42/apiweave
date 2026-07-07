@@ -32,7 +32,7 @@ import {
   webhookLogsUrl,
 } from "../utils/apiweaveClient";
 import type { Workflow } from "../types/Workflow";
-import type { Collection } from "../types/Collection";
+import type { Project } from "../types/Project";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import { authenticatedFetch } from "../utils/apiweaveClient";
 import { WebhookCiCdExamples } from "./WebhookCiCdExamples";
@@ -57,7 +57,7 @@ export function WebhookManager() {
   const scope = useScopeContext();
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [collections, setCollections] = useState<Collection[]>([]);
+  const [collections, setCollections] = useState<Project[]>([]);
   const [environments, setEnvironments] = useState<ScopedEnvironment[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -127,7 +127,7 @@ export function WebhookManager() {
       const res = await authenticatedFetch(projectsUrl(scope.workspaceId));
       if (res.ok) {
         const d = await res.json();
-        const list: Collection[] = (d.projects || []) as Collection[];
+        const list: Project[] = (d.projects || []) as Project[];
         setCollections(list);
         return list;
       }
@@ -157,7 +157,7 @@ export function WebhookManager() {
 
   const fetchAllWebhooksWithData = async (
     wfList: Workflow[],
-    colList: Collection[],
+    colList: Project[],
   ) => {
     try {
       const [workflowWebhookGroups, collectionWebhookGroups] =

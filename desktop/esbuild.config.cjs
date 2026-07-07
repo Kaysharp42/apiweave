@@ -23,7 +23,10 @@ function copyMigrations() {
 
 const common = {
   bundle: true,
-  external: ["better-sqlite3", "electron"],
+  // ponytail: zod v4 ships ESM-first + crypto/WASM deps that break under cjs
+  // bundling — desktop already declares it as a runtime dep, so externalize.
+  // libsodium-wrappers is prebuilt WASM; same story.
+  external: ["better-sqlite3", "electron", "zod", "libsodium-wrappers"],
   format: "cjs",
   logLevel: "info",
   platform: "node",

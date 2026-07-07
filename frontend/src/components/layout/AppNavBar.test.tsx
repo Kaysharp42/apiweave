@@ -4,10 +4,15 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AppNavBar } from "./AppNavBar";
 
+const workspaceContext = vi.hoisted(() => ({
+  currentOrg: { slug: "personal" },
+  currentWorkspace: { slug: "personal" } as { slug: string } | null,
+}));
+
 vi.mock("../../contexts/WorkspaceContext", () => ({
   useWorkspace: () => ({
-    currentOrg: { slug: "personal" },
-    currentWorkspace: { slug: "personal" },
+    currentOrg: workspaceContext.currentOrg,
+    currentWorkspace: workspaceContext.currentWorkspace,
   }),
 }));
 
@@ -41,8 +46,63 @@ describe("AppNavBar settings navigation", () => {
     );
   }
 
+  it("leaves settings using the route workspace slug while context is still loading", async () => {
+    const user = userEvent.setup();
+    workspaceContext.currentWorkspace = null;
+    render(
+      <MemoryRouter initialEntries={["/personal/personal/settings/environments"]}>
+        <Routes>
+          <Route
+            path="*"
+            element={
+              <>
+                <AppNavBar />
+                <LocationProbe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Workflows" }));
+
+    expect(screen.getByTestId("location-probe").textContent).toBe(
+      "/personal/personal/workflows",
+    );
+    workspaceContext.currentWorkspace = { slug: "personal" };
+  });
+
+  it("opens MCP from settings without falling onto the malformed workflows slug", async () => {
+    const user = userEvent.setup();
+    workspaceContext.currentWorkspace = null;
+    render(
+      <MemoryRouter initialEntries={["/personal/personal/settings/environments"]}>
+        <Routes>
+          <Route
+            path="*"
+            element={
+              <>
+                <AppNavBar />
+                <LocationProbe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "MCP" }));
+
+    expect(screen.getByTestId("location-probe").textContent).toBe(
+      "/personal/personal/workflows",
+    );
+    workspaceContext.currentWorkspace = { slug: "personal" };
+  });
+
   it("routes Settings to workspace environments", async () => {
     const user = userEvent.setup();
+    workspaceContext.currentWorkspace = { slug: "personal" };
     renderNav();
 
     await user.click(screen.getByRole("button", { name: "Settings" }));

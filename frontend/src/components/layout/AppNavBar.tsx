@@ -75,7 +75,10 @@ export function AppNavBar() {
   );
   const { currentOrg, currentWorkspace } = useWorkspace();
   const isOnSettingsRoute = isSettingsRoute(location.pathname);
-  const wsSettingsPath = `/${currentOrg?.slug ?? orgSlug ?? "personal"}/${currentWorkspace?.slug ?? workspaceSlug ?? "personal"}/settings/environments`;
+  const resolvedOrgSlug = currentOrg?.slug ?? orgSlug ?? "personal";
+  const resolvedWorkspaceSlug =
+    currentWorkspace?.slug ?? workspaceSlug ?? "personal";
+  const wsSettingsPath = `/${resolvedOrgSlug}/${resolvedWorkspaceSlug}/settings/environments`;
   const settingsPath = wsSettingsPath;
 
   return (
@@ -108,9 +111,7 @@ export function AppNavBar() {
                 if (id === "settings") {
                   if (!isOnSettingsRoute) navigate(settingsPath);
                 } else if (isOnSettingsRoute) {
-                  const orgSlug = currentOrg?.slug ?? "personal";
-                  const wsSlug = currentWorkspace?.slug ?? "workflows";
-                  navigate(`/${orgSlug}/${wsSlug}/workflows`);
+                  navigate(`/${resolvedOrgSlug}/${resolvedWorkspaceSlug}/workflows`);
                 }
               }}
               disabled={disabled}

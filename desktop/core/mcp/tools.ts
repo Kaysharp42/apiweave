@@ -38,15 +38,15 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   { domain: "workflows", action: "attachToCollection", description: "Attach or detach a workflow to a collection." },
   { domain: "workflows", action: "setEnvironment", description: "Set or clear the selected environment for a workflow." },
 
-  // Collections (projects)
-  { domain: "collections", action: "list", description: "List collections in a workspace." },
-  { domain: "collections", action: "get", description: "Get a collection by id." },
-  { domain: "collections", action: "create", description: "Create a collection." },
-  { domain: "collections", action: "update", description: "Update a collection." },
-  { domain: "collections", action: "delete", description: "Delete an empty collection." },
-  { domain: "collections", action: "addWorkflow", description: "Add a workflow to a collection." },
-  { domain: "collections", action: "removeWorkflow", description: "Remove a workflow from a collection." },
-  { domain: "collections", action: "listWorkflows", description: "List workflows in a collection." },
+  // Projects
+  { domain: "projects", action: "list", description: "List projects in a workspace." },
+  { domain: "projects", action: "get", description: "Get a project by id." },
+  { domain: "projects", action: "create", description: "Create a project." },
+  { domain: "projects", action: "update", description: "Update a project." },
+  { domain: "projects", action: "delete", description: "Delete an empty project." },
+  { domain: "projects", action: "addWorkflow", description: "Add a workflow to a project." },
+  { domain: "projects", action: "removeWorkflow", description: "Remove a workflow from a project." },
+  { domain: "projects", action: "listWorkflows", description: "List workflows in a project." },
 
   // Environments
   { domain: "environments", action: "list", description: "List environments in a workspace." },

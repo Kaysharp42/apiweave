@@ -151,7 +151,7 @@ describe("IPC handlers — dispatch envelope + authorize + validate (QA: task-13
 
   it("maps a delete-conflict to the conflict code", async () => {
     const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
-    const collection = await ok<{ collectionId: string }>("collections", "create", {
+    const collection = await ok<{ collectionId: string }>("projects", "create", {
       workspaceId: workspace.workspaceId,
       name: "Col",
     })
@@ -159,13 +159,13 @@ describe("IPC handlers — dispatch envelope + authorize + validate (QA: task-13
       workspaceId: workspace.workspaceId,
       name: "wf",
     })
-    await ok("collections", "addWorkflow", {
+    await ok("projects", "addWorkflow", {
       workspaceId: workspace.workspaceId,
       collectionId: collection.collectionId,
       workflowId: workflow.workflowId,
     })
     const res = await router.dispatch({
-      domain: "collections",
+      domain: "projects",
       action: "delete",
       payload: { workspaceId: workspace.workspaceId, collectionId: collection.collectionId },
     })

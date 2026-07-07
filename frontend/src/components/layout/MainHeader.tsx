@@ -57,7 +57,7 @@ export function MainHeader() {
   const selectedEnvironmentName = selectedEnvironment?.name ?? "No Environment";
   const manageOrgSlug = currentOrg?.slug ?? orgSlug ?? "personal";
   const manageWorkspaceSlug =
-    currentWorkspace?.slug ?? workspaceSlug ?? "workflows";
+    currentWorkspace?.slug ?? workspaceSlug ?? "personal";
   const manageEnvironmentsPath = `/${manageOrgSlug}/${manageWorkspaceSlug}/settings/environments`;
 
   const handleEnvironmentSelect = (envId: string) => {

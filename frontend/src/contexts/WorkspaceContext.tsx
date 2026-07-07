@@ -24,7 +24,7 @@ interface WorkspaceProviderProps {
 
 export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
   const navigate = useNavigate();
-  const params = useParams<{ workspaceSlug?: string }>();
+  const params = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [memberships, setMemberships] = useState<Map<string, string>>(
@@ -97,11 +97,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     if (!params.workspaceSlug) {
       return workspaces.find((ws) => ws.isPersonal) ?? null;
     }
-    return (
-      workspaces.find(
-        (ws) => ws.slug === params.workspaceSlug && ws.isPersonal,
-      ) ?? null
-    );
+    return workspaces.find((ws) => ws.slug === params.workspaceSlug) ?? null;
   }, [workspaces, params.workspaceSlug]);
 
   const currentRole = useMemo<string | null>(() => {
@@ -111,9 +107,11 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
 
   const switchTo = useCallback(
     (workspaceSlug: string) => {
-      navigate(`/${workspaceSlug}/workflows`, { replace: false });
+      navigate(`/${params.orgSlug ?? "personal"}/${workspaceSlug}/workflows`, {
+        replace: false,
+      });
     },
-    [navigate],
+    [navigate, params.orgSlug],
   );
 
   const value = useMemo<WorkspaceContextValue>(
