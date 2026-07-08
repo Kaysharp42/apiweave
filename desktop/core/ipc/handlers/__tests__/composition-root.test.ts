@@ -60,7 +60,7 @@ beforeEach(() => {
   const rng = new SeededRandomProvider("0xABCD1234")
   const http = new SafeHttp({ allowLoopback: true })
   const functions = new DynamicFunctions(clock, rng)
-  scheduler = new RunScheduler({ runs, workflows, http, functions, clock, rng })
+  scheduler = new RunScheduler({ runs, workflows, environments, http, functions, clock, rng })
 
   const deps: HandlerDeps = {
     workspaces: new WorkspaceService(workspaces, sync, scopeResolver),
@@ -68,7 +68,7 @@ beforeEach(() => {
     workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
     runs: new RunService(runs, sync, permissions, scopeResolver, scheduler),
-    secrets: new SecretService(secretStore, sync, permissions, scopeResolver),
+    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, new Uint8Array(32)),
     projects: new ProjectExportService(
       collections,
       workflows,

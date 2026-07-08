@@ -177,6 +177,7 @@ export const createInspectorResponse = (
   const status =
     getNumberValue(output, "statusCode") ??
     getNumberValue(output, "status") ??
+    getNumberValue(nestedResponse, "statusCode") ??
     getNumberValue(nestedResponse, "status") ??
     0;
   const responseTime =

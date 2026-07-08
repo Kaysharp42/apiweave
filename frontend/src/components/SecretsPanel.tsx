@@ -24,6 +24,7 @@ export default function SecretsPanel({
   const environmentId = environment?.environmentId ?? "";
   const scopeType: SecretScopeType = "environment";
   const scopeId = environmentId;
+  const workspaceId = environment?.scopeType === "workspace" ? environment.scopeId : undefined;
 
   const refreshKeys = useCallback(() => {
     if (environment?.secrets) {
@@ -44,7 +45,7 @@ export default function SecretsPanel({
     async (secretName: string) => {
       setUnsetting(secretName);
       try {
-        await deleteScopedSecret(scopeType, scopeId, secretName);
+        await deleteScopedSecret(scopeType, scopeId, secretName, workspaceId);
         setSecretKeys((prev) => prev.filter((k) => k !== secretName));
         toast.success(`Secret "${secretName}" removed`);
         onSecretsChange?.(environment?.secrets ?? {}).catch(() => {});
@@ -55,7 +56,7 @@ export default function SecretsPanel({
         setUnsetting(null);
       }
     },
-    [scopeId, onSecretsChange, environment?.secrets],
+    [scopeId, workspaceId, onSecretsChange, environment?.secrets],
   );
 
   const hasKeys = secretKeys.length > 0;
@@ -148,6 +149,7 @@ export default function SecretsPanel({
           isOpen={!!editingKey}
           scopeType={scopeType}
           scopeId={scopeId}
+          {...(workspaceId ? { workspaceId } : {})}
           secretName={editingKey}
           onClose={() => setEditingKey(null)}
           onSuccess={handleEditorSuccess}

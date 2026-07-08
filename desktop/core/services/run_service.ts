@@ -20,6 +20,7 @@ export interface RunTrigger {
     workspaceId: string
     workflowId: string
     variables?: Readonly<Record<string, unknown>>
+    selectedEnvironmentId?: string | null
     startNodeIds?: readonly string[]
   }): string
   cancel(runId: string): boolean
@@ -51,12 +52,11 @@ export class RunService {
     if (this.trigger !== undefined) {
       // The scheduler creates the run row (status pending→running) and starts
       // execution; re-read it to return the freshly-scheduled run.
-      // ponytail: selectedEnvironmentId is not forwarded — environment-variable
-      // resolution during a run isn't wired in the executor yet (pre-existing).
       const runId = this.trigger.enqueue({
         workspaceId,
         workflowId: input.workflowId,
         ...(input.variables ? { variables: input.variables } : {}),
+        ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
       })
       return this.mustGet(workspaceId, runId)
     }

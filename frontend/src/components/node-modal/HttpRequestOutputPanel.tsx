@@ -44,6 +44,12 @@ export function HttpRequestOutputPanel({
     ? createInspectorMetadata(output, response)
     : undefined;
   const rawBody = output ? getRawBody(output) : undefined;
+  const errorText =
+    typeof output?.error === "string"
+      ? output.error
+      : typeof output?.message === "string"
+        ? output.message
+        : undefined;
   const statusCode = response?.status;
   const durationLabel = formatNodeOutputDuration(
     metadata?.responseTimeMs ?? getNumberValue(output ?? undefined, "duration"),
@@ -127,6 +133,11 @@ export function HttpRequestOutputPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden bg-surface p-4 dark:bg-surface-dark">
+        {errorText && (
+          <div className="mb-3 rounded-sm border border-status-error bg-[var(--aw-status-error)]/5 p-3 text-sm text-status-error dark:text-status-error-dark">
+            <span className="font-semibold">Error:</span> {errorText}
+          </div>
+        )}
         <ResponseInspector
           response={response}
           filterQuery={filterQuery}

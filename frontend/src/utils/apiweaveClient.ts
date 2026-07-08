@@ -114,6 +114,11 @@ type ResolvedSecret = {
   readonly metadata: SecretMetadata;
   readonly resolvedScope: SecretScopeType;
 };
+type SecretPublicKey = {
+  readonly keyId: string;
+  readonly publicKey: string;
+  readonly algorithm: "libsodium-sealed-box";
+};
 
 export class IpcError extends Error {
   readonly code: ContractErrorCode;
@@ -327,6 +332,16 @@ export const apiweave = {
       readonly sealed: Uint8Array;
       readonly label?: string;
     }) => invoke<SecretMetadata>("secrets", "set", input),
+    publicKey: (
+      workspaceId: string,
+      scopeType: SecretScopeType,
+      scopeId: string,
+    ) =>
+      invoke<SecretPublicKey>("secrets", "publicKey", {
+        workspaceId,
+        scopeType,
+        scopeId,
+      }),
     list: (workspaceId: string, scopeType: SecretScopeType, scopeId: string) =>
       invoke<readonly SecretMetadata[]>("secrets", "list", {
         workspaceId,
@@ -533,6 +548,12 @@ function workspaceCreateInput(payload: unknown): WorkspaceCreateInput {
     };
   }
   return { name: "Personal" };
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
 }
 
 export async function authenticatedFetch(
@@ -769,18 +790,54 @@ export async function authenticatedFetch(
       }
 
       if (parts[3] === "environments") {
-        if (method === "GET") {
+        if (parts.length === 4 && method === "GET") {
           const data = await apiweave.environments.list(workspaceId);
           return ok({ environments: data.items, total: data.total });
         }
-        if (method === "POST") {
+        if (parts.length === 4 && method === "POST") {
           const body = (payload ?? {}) as EnvironmentPatch &
             Pick<Environment, "name">;
           return ok(
             await apiweave.environments.create({ workspaceId, ...body }),
           );
         }
+        if (parts[4] === "all-accessible" && method === "GET") {
+          const data = await apiweave.environments.list(workspaceId);
+          return ok({ environments: data.items, total: data.total });
+        }
+        const environmentId = segment(parts, 4);
+        if (parts.length === 5 && method === "GET") {
+          return ok(await apiweave.environments.get(workspaceId, environmentId));
+        }
+        if (parts.length === 5 && ["PUT", "PATCH"].includes(method)) {
+          return ok(
+            await apiweave.environments.update(
+              workspaceId,
+              environmentId,
+              (payload ?? {}) as EnvironmentPatch,
+            ),
+          );
+        }
+        if (parts.length === 5 && method === "DELETE") {
+          await apiweave.environments.delete(workspaceId, environmentId);
+          return noContent();
+        }
       }
+    }
+
+    if (
+      parts[0] === "api" &&
+      parts[1] === "secrets" &&
+      parts[2] === "public-key" &&
+      method === "GET"
+    ) {
+      const scopeType = params.get("scope") as SecretScopeType | null;
+      const scopeId = params.get("id");
+      if ((scopeType !== "workspace" && scopeType !== "environment") || !scopeId) {
+        return fail(new IpcError("validation", "missing secret scope"));
+      }
+      const workspaceId = scopeType === "workspace" ? scopeId : (params.get("workspaceId") ?? "default");
+      return ok(await apiweave.secrets.publicKey(workspaceId, scopeType, scopeId));
     }
 
     if (parts[0] === "api" && parts[1] === "scopes" && parts[4] === "secrets") {
@@ -790,8 +847,36 @@ export async function authenticatedFetch(
         scopeType === "workspace"
           ? scopeId
           : (params.get("workspaceId") ?? "default");
-      if (method === "GET" && parts.length === 5)
-        return ok(await apiweave.secrets.list(workspaceId, scopeType, scopeId));
+      if (method === "GET" && parts.length === 5) {
+        const secrets = await apiweave.secrets.list(
+          workspaceId,
+          scopeType,
+          scopeId,
+        );
+        return ok({ secrets, total: secrets.length });
+      }
+      if ((method === "POST" && parts.length === 5) || (["PUT", "PATCH"].includes(method) && parts[5])) {
+        const body = (payload ?? {}) as {
+          readonly name?: unknown;
+          readonly ciphertext?: unknown;
+          readonly keyId?: unknown;
+          readonly label?: unknown;
+        };
+        if (typeof body.name !== "string" || typeof body.ciphertext !== "string" || typeof body.keyId !== "string") {
+          return fail(new IpcError("validation", "missing secret payload"));
+        }
+        return ok(
+          await apiweave.secrets.set({
+            workspaceId,
+            name: body.name,
+            scopeType,
+            scopeId,
+            keyId: body.keyId,
+            sealed: base64ToBytes(body.ciphertext),
+            ...(typeof body.label === "string" ? { label: body.label } : {}),
+          }),
+        );
+      }
       if (method === "DELETE" && parts[5]) {
         await apiweave.secrets.delete(
           workspaceId,
@@ -982,12 +1067,12 @@ export function environmentsUrl(
     : base;
 }
 export const secretsUrl = (
-  params: { readonly scopeType: string; readonly scopeId: string },
+  params: { readonly scopeType: string; readonly scopeId: string; readonly workspaceId?: string },
   secretId?: string,
 ): string =>
-  `${API_BASE_URL}/api/scopes/${encodeURIComponent(params.scopeType)}/${encodeURIComponent(params.scopeId)}/secrets${secretId ? `/${encodeURIComponent(secretId)}` : ""}`;
-export const publicKeyUrl = (scopeType: string, scopeId: string): string =>
-  `${API_BASE_URL}/api/secrets/public-key?scope=${encodeURIComponent(scopeType)}&id=${encodeURIComponent(scopeId)}`;
+  `${API_BASE_URL}/api/scopes/${encodeURIComponent(params.scopeType)}/${encodeURIComponent(params.scopeId)}/secrets${secretId ? `/${encodeURIComponent(secretId)}` : ""}${params.workspaceId ? `?workspaceId=${encodeURIComponent(params.workspaceId)}` : ""}`;
+export const publicKeyUrl = (scopeType: string, scopeId: string, workspaceId?: string): string =>
+  `${API_BASE_URL}/api/secrets/public-key?scope=${encodeURIComponent(scopeType)}&id=${encodeURIComponent(scopeId)}${workspaceId ? `&workspaceId=${encodeURIComponent(workspaceId)}` : ""}`;
 export const webhooksForWorkflowUrl = (resourceId: string): string =>
   `${API_BASE_URL}/api/webhooks/workflows/${encodeURIComponent(resourceId)}`;
 export const webhooksForProjectUrl = (resourceId: string): string =>

@@ -3,6 +3,7 @@ import type { RunProgressEvent } from "../../../shared/types/RunProgressEvent"
 import type { JsonValue } from "../../../shared/types/JsonValue"
 import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
+import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
 import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
@@ -13,12 +14,15 @@ const DEFAULT_CONCURRENCY_CAP = 4
 export interface SchedulerDeps {
   readonly runs: RunRepository
   readonly workflows: WorkflowRepository
+  readonly environments?: EnvironmentRepository
   readonly http: SafeHttp
   readonly functions: DynamicFunctions
   readonly clock: ClockProvider
   readonly rng: RngProvider
   readonly emitProgress?: (runId: string, event: RunProgressEvent) => void
   readonly concurrencyCap?: number
+  /** Trusted runtime secret resolver — opens sealed boxes down the env > workspace chain. */
+  readonly resolveSecret?: (name: string, chain: { environmentId?: string; workspaceId?: string }) => Promise<string | null>
 }
 
 export interface EnqueueRequest {
@@ -26,6 +30,7 @@ export interface EnqueueRequest {
   readonly workflowId: string
   readonly startNodeIds?: readonly string[]
   readonly variables?: Readonly<Record<string, unknown>>
+  readonly selectedEnvironmentId?: string | null
 }
 
 /**
@@ -61,6 +66,7 @@ export class RunScheduler {
       workflowId: request.workflowId,
       status: "pending",
       ...(request.variables ? { variables: request.variables as Record<string, JsonValue> } : {}),
+      ...(request.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: request.selectedEnvironmentId } : {}),
     })
     this.queue.push(run.runId)
     void this.drain()
@@ -136,11 +142,19 @@ export class RunScheduler {
         ...(run.variables ? { variables: run.variables as Record<string, unknown> } : {}),
       }
 
+      const selectedEnvironmentId = run.selectedEnvironmentId ?? workflow.selectedEnvironmentId ?? null
+      const environment = selectedEnvironmentId ? this.deps.environments?.getById(selectedEnvironmentId) : undefined
+      if (selectedEnvironmentId && (environment === undefined || environment.workspaceId !== run.workspaceId)) {
+        throw new Error(`environment ${selectedEnvironmentId} not found for run ${runId}`)
+      }
+
       const executorDeps: ExecutorDeps = {
         clock: this.deps.clock,
         rng: this.deps.rng,
         http: this.deps.http,
         functions: this.deps.functions,
+        ...(environment ? { environmentVariables: environment.variables as Record<string, unknown> } : {}),
+        ...(await this.resolveRunSecrets(graph, selectedEnvironmentId, run.workspaceId)),
         emitProgress: (event) => this.handleProgress(runId, event),
       }
 
@@ -150,6 +164,8 @@ export class RunScheduler {
         cancelSignal: controller.signal,
         ...(run.resumeFromNodeIds ? { startNodeIds: run.resumeFromNodeIds } : {}),
       })
+
+      this.deps.runs.updateResults(runId, output.results)
 
       const status: Run["status"] = output.status === "passed" ? "completed" : "failed"
       this.deps.runs.updateStatus(
@@ -176,6 +192,42 @@ export class RunScheduler {
     this.deps.emitProgress?.(runId, { kind: "run.finished", runId, status })
   }
 
+  /**
+   * Scan the workflow graph for `{{secrets.NAME}}` references, resolve each down
+   * the env > workspace chain, and return a name -> plaintext map for the executor.
+   * Returns nothing when no resolver is wired or no references exist.
+   */
+  private async resolveRunSecrets(
+    graph: WorkflowGraph,
+    environmentId: string | null,
+    workspaceId: string,
+  ): Promise<{ secrets?: Record<string, string> }> {
+    const resolver = this.deps.resolveSecret
+    if (!resolver) return {}
+
+    const names = new Set<string>()
+    const pattern = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+    for (const node of graph.nodes) {
+      const config = node.config
+      if (!config) continue
+      for (const value of collectStrings(config)) {
+        let m: RegExpExecArray | null
+        while ((m = pattern.exec(value)) !== null) {
+          names.add(m[1]!)
+        }
+      }
+    }
+    if (names.size === 0) return {}
+
+    const chain = { ...(environmentId ? { environmentId } : {}), workspaceId }
+    const secrets: Record<string, string> = {}
+    for (const name of names) {
+      const plaintext = await resolver(name, chain)
+      if (plaintext !== null) secrets[name] = plaintext
+    }
+    return { secrets }
+  }
+
   private handleProgress(runId: string, event: RunProgressEvent): void {
     // The executor only ever hands us node events; the terminal event is emitted
     // separately by emitFinished. Narrow so appendNodeStatus stays node-only.
@@ -184,6 +236,19 @@ export class RunScheduler {
     this.deps.runs.appendNodeStatus(runId, event.nodeId, {
       status: event.status,
       variables: event.variables as JsonValue,
+      ...(event.error ? { error: event.error } : {}),
+      ...(event.message ? { message: event.message } : {}),
+      ...(event.statusCode !== undefined ? { statusCode: event.statusCode } : {}),
     })
   }
+}
+
+/** Recursively collect every string value within a node config (mirrors Python _iter_config_values). */
+function collectStrings(obj: unknown): string[] {
+  if (typeof obj === "string") return [obj]
+  if (Array.isArray(obj)) return obj.flatMap(collectStrings)
+  if (obj !== null && typeof obj === "object") {
+    return Object.values(obj).flatMap(collectStrings)
+  }
+  return []
 }

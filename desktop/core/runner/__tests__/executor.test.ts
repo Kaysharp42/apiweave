@@ -239,5 +239,32 @@ describe("WorkflowExecutor", () => {
       expect(events.some((e) => e.nodeId === "start")).toBe(true)
       expect(events.some((e) => e.nodeId === "end")).toBe(true)
     })
+
+    it("emits the node error message when execution fails", async () => {
+      const events: Array<{ nodeId: string; status: string; error?: string }> = []
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "http_1", type: "http-request", config: {} },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }
+      const executor = new WorkflowExecutor({
+        ...makeDeps(),
+        emitProgress: (event) => {
+          if (event.kind === "node.completed") {
+            events.push({ nodeId: event.nodeId, status: event.status, error: event.error })
+          }
+        },
+      })
+
+      await expect(executor.executeWorkflow(workflow)).rejects.toThrow("URL is required for HTTP request")
+
+      expect(events).toContainEqual({
+        nodeId: "http_1",
+        status: "failed",
+        error: "Error: URL is required for HTTP request",
+      })
+    })
   })
 })

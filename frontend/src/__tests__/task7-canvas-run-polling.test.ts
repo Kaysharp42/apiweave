@@ -54,7 +54,7 @@ describe("Task 20: run progress streams over IPC events", () => {
       {
         nodeId: "http_1",
         status: "passed",
-        response: { statusCode: 200 },
+        response: { statusCode: 200, body: { ok: true } },
       },
     ],
     failedNodes: [],
@@ -150,6 +150,30 @@ describe("Task 20: run progress streams over IPC events", () => {
     expect(node?.data?.["executionStatus"]).toBe("running");
   });
 
+  it("(b2) a failed node.completed event paints the error detail", async () => {
+    const { result } = mount();
+    await act(async () => {
+      await result.current.runWorkflow();
+    });
+
+    act(() => {
+      captured.cb?.({
+        kind: "node.completed",
+        runId: "run-1",
+        nodeId: "http_1",
+        status: "failed",
+        variables: {},
+        error: "URL is required for HTTP request",
+      });
+    });
+
+    const node = nodesBox.nodes.find((n) => n.id === "http_1");
+    expect(node?.data?.["executionStatus"]).toBe("error");
+    expect(node?.data?.["executionResult"]).toEqual({
+      error: "URL is required for HTTP request",
+    });
+  });
+
   it("(c) the terminal run.finished event stops the stream and clears isRunning", async () => {
     const { result } = mount();
     await act(async () => {
@@ -172,7 +196,10 @@ describe("Task 20: run progress streams over IPC events", () => {
     // hydrateRunResults pulled the finished run and painted the node result
     const node = nodesBox.nodes.find((n) => n.id === "http_1");
     expect(node?.data?.["executionStatus"]).toBe("success"); // passed → success
-    expect(node?.data?.["executionResult"]).toBeDefined();
+    expect(node?.data?.["executionResult"]).toMatchObject({
+      statusCode: 200,
+      body: { ok: true },
+    });
   });
 
   it("(d) cancelRun routes through runs.cancel", async () => {

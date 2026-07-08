@@ -9,6 +9,7 @@ import type { SecretScopeType } from "./Secret";
 export interface EncryptedSecretValue {
   scopeType: SecretScopeType;
   scopeId: string;
+  workspaceId?: string;
   name: string;
   ciphertext: string;
   keyId: string;

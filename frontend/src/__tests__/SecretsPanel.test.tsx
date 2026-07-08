@@ -42,7 +42,7 @@ const makeEnv = (secrets?: Record<string, string>): ScopedEnvironment => ({
   name: "Test Environment",
   variables: {},
   scopeType: "workspace",
-  scopeId: "env-1",
+  scopeId: "ws-1",
   isDefault: false,
   allowedWorkspaceIds: [],
   createdAt: "2026-01-01T00:00:00Z",
@@ -172,6 +172,32 @@ describe("SecretsPanel", () => {
         "environment",
         "env-1",
         "API_KEY",
+        "ws-1",
+      );
+    });
+  });
+
+  it("passes workspace id when saving an environment secret value", async () => {
+    const { fetchScopedPublicKey, postScopedEncryptedSecret } = await import("../hooks/useSecretValues");
+    const user = userEvent.setup();
+
+    render(
+      <SecretsPanel
+        isOpen={true}
+        environment={makeEnv({ API_KEY: "" })}
+        onSecretsChange={onSecretsChange}
+        onClose={onClose}
+      />,
+    );
+
+    await user.click(screen.getByText("Set value"));
+    await user.type(screen.getByPlaceholderText(/Enter value for API_KEY/), "secret-value");
+    await user.click(screen.getByText("Save encrypted"));
+
+    await waitFor(() => {
+      expect(fetchScopedPublicKey).toHaveBeenCalledWith("environment", "env-1", "ws-1");
+      expect(postScopedEncryptedSecret).toHaveBeenCalledWith(
+        expect.objectContaining({ scopeType: "environment", scopeId: "env-1", workspaceId: "ws-1" }),
       );
     });
   });

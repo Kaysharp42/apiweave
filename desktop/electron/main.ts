@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
 import { emitRunProgress } from "../core/ipc/register"
 import { registerAllHandlers, type HandlerDeps } from "../core/ipc/handlers"
+import { canonicalizeExistingWorkflows } from "../core/db/canonicalize_existing_workflows"
 import { initDatabase, type InitializedDatabase } from "../core/db"
 import {
   CollectionRepository,
@@ -13,6 +14,7 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../core/repositories"
+import { createKeyfile, readKeyfile, keyfileExists } from "../core/secrets/keyfile"
 import {
   ScopeResolver,
   type ScopeExistence,
@@ -143,6 +145,16 @@ if (!hasSingleInstanceLock) {
 
   app.whenReady().then(() => {
     database = initDatabase({ userDataPath: app.getPath("userData") })
+    // One-shot in-place rewrite: any workflow row persisted before the
+    // strict canonical-node schema landed is rewritten so its http-request
+    // KV fields (headers/cookies/queryParams/pathVariables) become
+    // `KeyValuePair[]`. Idempotent — rows already canonical are skipped, so
+    // running on every startup costs only the graph_json read of (tens to
+    // hundreds of) workflow rows.
+    const canonicalised = canonicalizeExistingWorkflows(database.kvStore)
+    if (canonicalised > 0) {
+      console.info(`[bootstrap] canonicalised ${canonicalised} workflow graph(s) to KeyValuePair[] form`)
+    }
 
     // Repositories — the only DB touchpoint.
     const workspaces = new WorkspaceRepository(database.kvStore)
@@ -152,6 +164,22 @@ if (!hasSingleInstanceLock) {
     const collections = new CollectionRepository(database.kvStore)
     const secretStore = new SecretRepository(database.kvStore)
 
+    // Auth + sync seams: single-owner always-allow, local-only no-op.
+    const existence: ScopeExistence = {
+      workspaceExists: (id) => workspaces.getById(id) !== undefined,
+      environmentExists: (id) => environments.getById(id) !== undefined,
+    }
+    const scopeResolver = new ScopeResolver(existence)
+    const permissions = new LocalOwnerProvider()
+    const sync = new LocalOnlySyncProvider()
+
+    // Keyfile: the persisted master KEK that deterministically derives the
+    // sealed-box private seed. Seeded once on first run; read thereafter. Lose
+    // it and every stored secret is orphaned (intentional — never auto-regenerate).
+    const keyfilePath = path.join(app.getPath("userData"), "keyfile.json")
+    const keyfile = keyfileExists(keyfilePath) ? readKeyfile(keyfilePath) : createKeyfile(keyfilePath)
+    const secretService = new SecretService(secretStore, sync, permissions, scopeResolver, keyfile.masterKek)
+
     // Runner: in-process scheduler drives the executor.
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
@@ -160,10 +188,12 @@ if (!hasSingleInstanceLock) {
     scheduler = new RunScheduler({
       runs,
       workflows,
+      environments,
       http,
       functions,
       clock,
       rng,
+      resolveSecret: (name, chain) => secretService.resolvePlaintext(name, chain),
       emitProgress: (_runId, event) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           emitRunProgress(mainWindow.webContents, event)
@@ -176,15 +206,6 @@ if (!hasSingleInstanceLock) {
       console.info(`[bootstrap] reconciled ${interrupted} stuck run(s) to interrupted`)
     }
 
-    // Auth + sync seams: single-owner always-allow, local-only no-op.
-    const existence: ScopeExistence = {
-      workspaceExists: (id) => workspaces.getById(id) !== undefined,
-      environmentExists: (id) => environments.getById(id) !== undefined,
-    }
-    const scopeResolver = new ScopeResolver(existence)
-    const permissions = new LocalOwnerProvider()
-    const sync = new LocalOnlySyncProvider()
-
     // Services over the scoped repos; RunService drives the scheduler so
     // runs.create actually executes and runs.cancel aborts a live run.
     const deps: HandlerDeps = {
@@ -193,7 +214,7 @@ if (!hasSingleInstanceLock) {
       workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
       environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
       runs: new RunService(runs, sync, permissions, scopeResolver, scheduler),
-      secrets: new SecretService(secretStore, sync, permissions, scopeResolver),
+      secrets: secretService,
       projects: new ProjectExportService(
         collections,
         workflows,

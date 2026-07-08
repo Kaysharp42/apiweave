@@ -4,10 +4,10 @@ import type { Node, XYPosition } from "reactflow";
 interface NodeConfig {
   method?: string;
   url?: string;
-  queryParams?: string;
-  pathVariables?: string;
-  headers?: string;
-  cookies?: string;
+  queryParams?: unknown[];
+  pathVariables?: unknown[];
+  headers?: unknown[];
+  cookies?: unknown[];
   body?: string;
   timeout?: number;
   assertions?: unknown[];
@@ -22,10 +22,10 @@ function getDefaultConfig(type: string): NodeConfig {
       return {
         method: "GET",
         url: "",
-        queryParams: "",
-        pathVariables: "",
-        headers: "",
-        cookies: "",
+        queryParams: [],
+        pathVariables: [],
+        headers: [],
+        cookies: [],
         body: "",
         timeout: 30,
       };

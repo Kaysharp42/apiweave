@@ -1,10 +1,7 @@
 import { z } from "zod"
-import { RunnerNodeStatusSchema } from "./RunnerNodeStatusSchema"
 
-export const EndNodeDataSchema = z
-  .object({
-    label: z.string().optional(),
-    executionStatus: RunnerNodeStatusSchema.optional(),
-    config: z.object({}).strict().optional(),
-  })
-  .strict()
+/**
+ * Per-node CONFIG schema for `type: "end"` nodes. See
+ * {@link StartNodeDataSchema}.
+ */
+export const EndNodeDataSchema = z.object({}).strict()

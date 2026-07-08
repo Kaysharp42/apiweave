@@ -78,7 +78,7 @@ beforeEach(() => {
     workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
     runs: new RunService(runs, sync, permissions, scopeResolver),
-    secrets: new SecretService(secretStore, sync, permissions, scopeResolver),
+    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, new Uint8Array(32)),
     projects: new ProjectExportService(
       collections,
       workflows,
@@ -175,6 +175,21 @@ describe("IPC handlers — dispatch envelope + authorize + validate (QA: task-13
 
 describe("IPC handlers — no secret plaintext in read responses (QA: task-13-handler-no-secret-leak)", () => {
   const PLAINTEXT = "super-secret-value-1234"
+
+  it("returns a scope public key for write-only secret ingress", async () => {
+    const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const publicKey = await ok<{ keyId: string; publicKey: string; algorithm: string }>("secrets", "publicKey", {
+      workspaceId: workspace.workspaceId,
+      scopeType: "workspace",
+      scopeId: workspace.workspaceId,
+    })
+
+    expect(publicKey).toMatchObject({
+      keyId: `sealed-box:workspace:${workspace.workspaceId}`,
+      algorithm: "libsodium-sealed-box",
+    })
+    expect(Buffer.from(publicKey.publicKey, "base64")).toHaveLength(32)
+  })
 
   it("workflows.get, environments.list, and secrets.list never surface secret plaintext or sealed bytes", async () => {
     const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })

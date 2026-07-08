@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
-import { RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
+import { EnvironmentRepository, RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { RunScheduler, type SchedulerDeps } from "../scheduler"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
@@ -14,6 +14,7 @@ let db: InitializedDatabase
 let workspaces: WorkspaceRepository
 let workflows: WorkflowRepository
 let runs: RunRepository
+let environments: EnvironmentRepository
 let activeScheduler: RunScheduler | null = null
 
 beforeEach(() => {
@@ -21,6 +22,7 @@ beforeEach(() => {
   workspaces = new WorkspaceRepository(db.kvStore)
   workflows = new WorkflowRepository(db.kvStore)
   runs = new RunRepository(db.kvStore)
+  environments = new EnvironmentRepository(db.kvStore)
   activeScheduler = null
 })
 
@@ -37,7 +39,7 @@ function makeScheduler(overrides: Partial<SchedulerDeps> = {}): RunScheduler {
   const rng = new SeededRandomProvider("0xDEADBEEF")
   const http = new SafeHttp({ allowLoopback: true })
   const functions = new DynamicFunctions(clock, rng)
-  const s = new RunScheduler({ runs, workflows, http, functions, clock, rng, ...overrides })
+  const s = new RunScheduler({ runs, workflows, environments, http, functions, clock, rng, ...overrides })
   activeScheduler = s
   return s
 }
@@ -81,6 +83,111 @@ describe("RunScheduler", () => {
       const run = runs.getById(runId)
       expect(run?.status).toBe("completed")
       expect(scheduler.getActiveCount()).toBe(0)
+    })
+
+    it("substitutes selected environment variables in HTTP request URLs", async () => {
+      const ws = seedWorkspace()
+      const env = environments.create({
+        workspaceId: ws,
+        name: "dev",
+        variables: { BASE_URL: "http://169.254.169.254" },
+      })
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "env-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: { method: "GET", url: "{{env.BASE_URL}}/auth/authenticate" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }).workflowId
+      const events: RunProgressEvent[] = []
+      const scheduler = makeScheduler({
+        emitProgress: (_runId, event) => events.push(event),
+      })
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId, selectedEnvironmentId: env.environmentId })
+
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      const failed = events.find(
+        (event) => event.kind === "node.completed" && event.nodeId === "http_1" && event.status === "failed",
+      )
+      expect(failed).toBeDefined()
+      expect(failed?.error).not.toContain("{{env.BASE_URL}}")
+      expect(failed?.error).toContain("http://169.254.169.254/auth/authenticate")
+      expect(runs.getById(runId)?.results[0]).toMatchObject({
+        nodeId: "http_1",
+        status: "failed",
+        error: "SSRF blocked: URL blocked by safety policy: http://169.254.169.254/auth/authenticate",
+        request: { url: "http://169.254.169.254/auth/authenticate" },
+      })
+    })
+
+    it("resolves {{secrets.*}} through the runtime resolver and substitutes plaintext into the outgoing request", async () => {
+      const ws = seedWorkspace()
+      // The renderer seals against the scope public key (publicKeyFromSeed(seed));
+      // the runtime opens with the same seed. Mirror that contract here.
+      const seed = new Uint8Array(32).fill(7)
+      const sealedBox = await import("../../secrets/sealed_box")
+      const publicKey = await sealedBox.publicKeyFromSeed(seed)
+      const sealedBody = await sealedBox.seal("local-secret-value", publicKey)
+
+      // Local server (loopback allowed by SafeHttp) captures the actual outbound body.
+      const { createServer } = await import("node:http")
+      let receivedBody = ""
+      const server = createServer((req, res) => {
+        let data = ""
+        req.on("data", (c) => (data += c))
+        req.on("end", () => {
+          receivedBody = data
+          res.statusCode = 200
+          res.end("{}")
+        })
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "secret-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: {
+              method: "POST",
+              url: `http://127.0.0.1:${port}/login`,
+              body: JSON.stringify({ password: "{{secrets.kyra_admin_pass}}" }),
+            },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }).workflowId
+
+      const scheduler = makeScheduler({
+        resolveSecret: async (name) => {
+          if (name !== "kyra_admin_pass") return null
+          return sealedBox.openSealedBox(sealedBody, seed)
+        },
+      })
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 400))
+
+      server.close()
+      const result = runs.getById(runId)?.results[0]
+      expect(result).toMatchObject({ nodeId: "http_1", status: "passed" })
+      // The secret must be substituted as plaintext into the request body.
+      expect(receivedBody).toBe('{"password":"local-secret-value"}')
+      expect(receivedBody).not.toContain("{{secrets.kyra_admin_pass}}")
     })
   })
 

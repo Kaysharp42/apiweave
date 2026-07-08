@@ -1,17 +1,16 @@
 import { z } from "zod"
 import { AssertionItemSchema } from "./AssertionItemSchema"
-import { RunnerNodeStatusSchema } from "./RunnerNodeStatusSchema"
 
+/**
+ * Per-node CONFIG schema for `type: "assertion"` nodes.
+ *
+ * Runtime canvas state (`label`, `executionStatus`, `invalid`) lives on the
+ * renderer's `WorkflowCanvasNodeData` and is intentionally absent from the
+ * persisted workflow definition. See {@link HTTPNodeDataSchema} for the
+ * rationale on dropping the legacy double-nested `config.config` wrapper.
+ */
 export const AssertionNodeDataSchema = z
   .object({
-    label: z.string().optional(),
-    executionStatus: RunnerNodeStatusSchema.optional(),
-    config: z
-      .object({
-        assertions: z.array(AssertionItemSchema).optional(),
-      })
-      .strict()
-      .optional(),
-    invalid: z.boolean().optional(),
+    assertions: z.array(AssertionItemSchema).optional(),
   })
   .strict()

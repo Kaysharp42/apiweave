@@ -705,7 +705,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   }}
                   rows={2}
                   placeholder={"page=1\nlimit=10"}
-                  value={data.config?.queryParams ?? ""}
+                  value={stringifyKeyValuePairs(data.config?.queryParams)}
                   onChange={(e) =>
                     updateNodeData("queryParams", e.target.value)
                   }
@@ -733,7 +733,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   }}
                   rows={2}
                   placeholder={"userId={{prev.response.body.id}}"}
-                  value={data.config?.pathVariables ?? ""}
+                  value={stringifyKeyValuePairs(data.config?.pathVariables)}
                   onChange={(e) =>
                     updateNodeData("pathVariables", e.target.value)
                   }

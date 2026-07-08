@@ -21,6 +21,14 @@ const ResolvedSecretSchema = z
   .object({ metadata: SecretMetadataSchema, resolvedScope: scopeType })
   .strict()
 
+const SecretPublicKeySchema = z
+  .object({
+    keyId: z.string().min(1),
+    publicKey: z.string().min(1),
+    algorithm: z.literal("libsodium-sealed-box"),
+  })
+  .strict()
+
 const scopeInput = z.object({ workspaceId: ws, scopeType, scopeId: z.string().min(1) }).strict()
 
 export function registerSecretHandlers(router: IpcRouter, deps: HandlerDeps): void {
@@ -40,6 +48,12 @@ export function registerSecretHandlers(router: IpcRouter, deps: HandlerDeps): vo
       .strict(),
     output: SecretMetadataSchema,
     handle: ({ workspaceId, ...input }) => secrets.set(workspaceId, input),
+  })
+
+  router.register("secrets", "publicKey", {
+    input: scopeInput,
+    output: SecretPublicKeySchema,
+    handle: (i) => secrets.publicKey(i.workspaceId, i.scopeType, i.scopeId),
   })
 
   router.register("secrets", "list", {

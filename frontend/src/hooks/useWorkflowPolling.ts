@@ -30,6 +30,44 @@ interface NodeStatuses {
   [nodeId: string]: NodeStatusUpdate;
 }
 
+// ponytail: closed whitelist (error/message/statusCode only) — intentional tiny failure summary for the streamed node.completed event. If the runner starts emitting more fields here, expand this; live-finish path uses resultFromRunResult (full data).
+function resultFromStatusEntry(entry: unknown): unknown | undefined {
+  if (typeof entry !== "object" || entry === null) return undefined;
+  const data = entry as Record<string, unknown>;
+  const error = typeof data.error === "string" ? data.error : undefined;
+  const message = typeof data.message === "string" ? data.message : undefined;
+  const statusCode =
+    typeof data.statusCode === "number" ? data.statusCode : undefined;
+  if (!error && !message && statusCode === undefined) return undefined;
+
+  return {
+    ...(error ? { error } : {}),
+    ...(message ? { message } : {}),
+    ...(statusCode !== undefined ? { statusCode } : {}),
+  };
+}
+
+function resultFromRunResult(result: unknown): unknown {
+  if (typeof result !== "object" || result === null) return result;
+  const data = result as Record<string, unknown>;
+  const response =
+    typeof data.response === "object" && data.response !== null
+      ? (data.response as Record<string, unknown>)
+      : undefined;
+  const statusCode =
+    typeof response?.statusCode === "number"
+      ? response.statusCode
+      : typeof response?.status === "number"
+        ? response.status
+        : undefined;
+
+  return {
+    ...data,
+    ...(response ?? {}),
+    ...(statusCode !== undefined ? { statusCode } : {}),
+  };
+}
+
 function selectiveNodeUpdate(
   currentNodes: Node[],
   nodeStatuses: NodeStatuses,
@@ -194,10 +232,25 @@ export default function useWorkflowPolling({
       try {
         const run = await apiweave.runs.get(workspaceId, runId);
         const statuses: NodeStatuses = {};
+        for (const [nodeId, entry] of Object.entries(run.nodeStatuses ?? {})) {
+          if (typeof entry === "string") {
+            statuses[nodeId] = { status: entry };
+            continue;
+          }
+          if (typeof entry === "object" && entry !== null) {
+            const status = (entry as Record<string, unknown>).status;
+            if (typeof status === "string") {
+              statuses[nodeId] = {
+                status,
+                result: resultFromStatusEntry(entry),
+              };
+            }
+          }
+        }
         for (const result of run.results ?? []) {
           statuses[result.nodeId] = {
             status: result.status,
-            result,
+            result: resultFromRunResult(result),
           };
         }
         setNodes((nds) => selectiveNodeUpdate(nds, statuses));
@@ -213,7 +266,10 @@ export default function useWorkflowPolling({
       if (event.kind === "node.completed") {
         setNodes((nds) =>
           selectiveNodeUpdate(nds, {
-            [event.nodeId]: { status: event.status },
+            [event.nodeId]: {
+              status: event.status,
+              result: resultFromStatusEntry(event),
+            },
           }),
         );
         return;
@@ -465,7 +521,7 @@ export default function useWorkflowPolling({
         const fullRun = await apiweave.runs.get(workspaceId, run.runId);
         const statuses: NodeStatuses = {};
         for (const result of fullRun.results ?? []) {
-          statuses[result.nodeId] = { status: result.status, result };
+          statuses[result.nodeId] = { status: result.status, result: resultFromRunResult(result) };
         }
         setNodes((nds) => selectiveNodeUpdate(nds, statuses));
         setCurrentRunId(fullRun.runId);

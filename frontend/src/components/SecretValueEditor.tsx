@@ -15,6 +15,7 @@ export interface SecretValueEditorProps {
   isOpen: boolean;
   scopeType: SecretScopeType;
   scopeId: string;
+  workspaceId?: string;
   secretName: string;
   /** Optional existing secret ID for update mode. */
   secretId?: string;
@@ -26,6 +27,7 @@ export default function SecretValueEditor({
   isOpen,
   scopeType,
   scopeId,
+  workspaceId,
   secretName,
   onClose,
   onSuccess,
@@ -43,6 +45,7 @@ export default function SecretValueEditor({
       const publicKeyInfo: PublicKey = await fetchScopedPublicKey(
         scopeType,
         scopeId,
+        workspaceId,
       );
       setFetchingKey(false);
 
@@ -58,6 +61,7 @@ export default function SecretValueEditor({
       await postScopedEncryptedSecret({
         scopeType,
         scopeId,
+        ...(workspaceId ? { workspaceId } : {}),
         name: secretName,
         ciphertext,
         keyId: publicKeyInfo.keyId,
@@ -73,7 +77,7 @@ export default function SecretValueEditor({
       setSubmitting(false);
       setFetchingKey(false);
     }
-  }, [value, scopeType, scopeId, secretName, onClose, onSuccess]);
+  }, [value, scopeType, scopeId, workspaceId, secretName, onClose, onSuccess]);
 
   const handleClose = useCallback(() => {
     setValue("");

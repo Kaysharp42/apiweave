@@ -1,6 +1,7 @@
 import type { NodeStatus } from "./NodeStatus";
 import type { HttpMethod } from "./HttpMethod";
 import type { FileUpload } from "./FileUpload";
+import type { KeyValuePair } from "./KeyValuePair";
 import type { SchemaWarning } from "./SchemaWarning";
 
 export interface HTTPRequestNodeData {
@@ -20,10 +21,10 @@ export interface HTTPRequestNodeData {
   config?: {
     method?: HttpMethod;
     url?: string;
-    queryParams?: string;
-    pathVariables?: string;
-    headers?: string;
-    cookies?: string;
+    queryParams?: string | KeyValuePair[];
+    pathVariables?: string | KeyValuePair[];
+    headers?: string | KeyValuePair[];
+    cookies?: string | KeyValuePair[];
     body?: string;
     bodyType?: "json" | "form-data" | "raw" | "none";
     timeout?: number;

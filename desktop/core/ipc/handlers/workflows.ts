@@ -5,17 +5,27 @@ import {
   WorkflowEdgeSchema,
   JsonValueSchema,
 } from "../../../../shared/zod-schemas"
+import { canonicalizeNodeConfig } from "../../repositories/helpers"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { listResult } from "./common"
 
 const ws = z.string().min(1)
 
+// The repo canonicalises legacy KV shapes (string/Record) to KeyValuePair[],
+// but only AFTER router.dispatch validates against the strict schema — so a
+// workflow with legacy headers fails validation before that runs. Lift here,
+// on the raw request, so create/update accept the same forms the repo does.
+const canonicalNodes = z.preprocess(
+  (value) => (Array.isArray(value) ? value.map((node) => canonicalizeNodeConfig(node)) : value),
+  z.array(WorkflowNodeSchema),
+)
+
 /** Fields a client may set on create/update — server-managed columns (id/rev/timestamps) excluded. */
 const mutableFields = {
   name: z.string().min(1),
   description: z.string().nullable().optional(),
-  nodes: z.array(WorkflowNodeSchema).optional(),
+  nodes: canonicalNodes.optional(),
   edges: z.array(WorkflowEdgeSchema).optional(),
   variables: z.record(z.string(), JsonValueSchema).optional(),
   tags: z.array(z.string()).optional(),

@@ -4,7 +4,13 @@ import type { WorkflowEdge } from "../../../shared/types/WorkflowEdge"
 import type { WorkflowNode } from "../../../shared/types/WorkflowNode"
 import type { JsonValue } from "../../../shared/types/JsonValue"
 import { generateId } from "../id"
-import { mustExist, parseJson, slugify, toJson } from "./helpers"
+import {
+  canonicalizeWorkflowGraph,
+  mustExist,
+  parseJson,
+  slugify,
+  toJson,
+} from "./helpers"
 
 export type WorkflowCreate = Pick<Workflow, "workspaceId" | "name"> &
   Partial<
@@ -54,7 +60,7 @@ export class WorkflowRepository {
 
   public create(input: WorkflowCreate): Workflow {
     const id = generateId()
-    const graph: WorkflowGraph = { nodes: input.nodes ?? [], edges: input.edges ?? [] }
+    const graph = canonicalWorkflow({ nodes: input.nodes ?? [], edges: input.edges ?? [] })
     const settings: WorkflowSettings = {
       description: input.description ?? null,
       tags: input.tags ?? [],
@@ -120,7 +126,7 @@ export class WorkflowRepository {
       return undefined
     }
     const merged: Workflow = { ...existing, ...patch }
-    const graph: WorkflowGraph = { nodes: merged.nodes, edges: merged.edges }
+    const graph = canonicalWorkflow({ nodes: merged.nodes, edges: merged.edges })
     const settings: WorkflowSettings = {
       description: merged.description ?? null,
       tags: merged.tags,
@@ -138,6 +144,20 @@ export class WorkflowRepository {
   public delete(workflowId: string): boolean {
     return this.store.delete("DELETE FROM workflows WHERE id = ?", [workflowId]).changes > 0
   }
+}
+
+// Trust boundary: the import path (ProjectExportService.importProject) and
+// any future MCP/CLI write route arrives here with a graph that the lenient
+// `BundleInputSchema` allowed through as `z.array(z.unknown())`. The IPC
+// `workflows.create`/`workflows.update` handlers validate `nodes` against the
+// strict `WorkflowNodeSchema` before reaching the service, but imports do
+// not — so the repository itself enforces canonical `KeyValuePair[]` shape
+// on every http-request node's KV fields before persisting. This keeps the
+// strict schema honest: zod output validation can only succeed if the data
+// was canonical when written, so we canonicalise here rather than relax the
+// schema or scatter tolerant reads through the runner.
+function canonicalWorkflow(graph: WorkflowGraph): WorkflowGraph {
+  return canonicalizeWorkflowGraph(graph as unknown as JsonValue) as unknown as WorkflowGraph
 }
 
 function rowToWorkflow(row: WorkflowRow): Workflow {

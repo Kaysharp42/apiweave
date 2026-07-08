@@ -4,6 +4,8 @@ import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError } from "./safe_http"
 import type { RunProgressEvent } from "../../../shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "../../../shared/types/RunnerNodeStatus"
+import type { RunResult } from "../../../shared/types/RunResult"
+import type { JsonValue } from "../../../shared/types/JsonValue"
 
 /**
  * Workflow executor — ported from `backend/app/runner/executor.py`.
@@ -44,6 +46,7 @@ export interface ExecutorDeps {
   readonly functions: DynamicFunctions
   readonly baseUrl?: string
   readonly secrets?: Readonly<Record<string, string>>
+  readonly environmentVariables?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: RunProgressEvent) => void
 }
 
@@ -80,6 +83,7 @@ export interface ExecutorOutput {
   readonly nodeStatuses: Readonly<Record<string, RunnerNodeStatus>>
   readonly extractedVariables: Readonly<Record<string, unknown>>
   readonly outputs: Readonly<Record<string, unknown>>
+  readonly results: readonly RunResult[]
 }
 
 // -------------------- Internal sentinel --------------------
@@ -96,7 +100,7 @@ class StopBranch extends Error {
 export class WorkflowExecutor {
   private readonly results = new Map<string, NodeResult>()
   private readonly workflowVariables: Record<string, unknown> = {}
-  private readonly environmentVariables: Record<string, string> = {}
+  private readonly environmentVariables: Record<string, unknown>
   private readonly nodeStatuses = new Map<string, RunnerNodeStatus>()
   private readonly failedNodes = new Set<string>()
   private hasFailures = false
@@ -106,7 +110,9 @@ export class WorkflowExecutor {
   private readonly mergeCompleted = new Set<string>()
   private activeRunId = "harness"
 
-  public constructor(private readonly deps: ExecutorDeps) {}
+  public constructor(private readonly deps: ExecutorDeps) {
+    this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
+  }
 
   public async executeWorkflow(
     workflow: WorkflowGraph,
@@ -418,7 +424,9 @@ export class WorkflowExecutor {
     const config = node.config ?? {}
     const method = (config["method"] as string | undefined) ?? "GET"
     let url = (config["url"] as string | undefined) ?? ""
-    const headersField = config["headers"] as string | undefined
+    const headersField = config["headers"] as
+      | ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }>
+      | undefined
     const body = config["body"] as string | Record<string, unknown> | undefined
     const timeout = (config["timeout"] as number | undefined) ?? 30
 
@@ -983,47 +991,34 @@ export class WorkflowExecutor {
 
   // -------------------- Key-value field normalization --------------------
 
-  private normalizeKeyValueField(value: unknown): Record<string, string> {
-    if (!value || value === "") return {}
-
-    if (typeof value === "string") {
-      const result: Record<string, string> = {}
-      for (const line of value.split("\n")) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        const eqIdx = trimmed.indexOf("=")
-        const colonIdx = trimmed.indexOf(":")
-        let sepIdx = -1
-        if (eqIdx >= 0 && (colonIdx < 0 || eqIdx < colonIdx)) sepIdx = eqIdx
-        else if (colonIdx >= 0) sepIdx = colonIdx
-        if (sepIdx < 0) continue
-        const key = trimmed.slice(0, sepIdx).trim()
-        const val = trimmed.slice(sepIdx + 1).trim()
-        result[key] = this.substituteVariables(val)
-      }
-      return result
+  private normalizeKeyValueField(
+    pairs:
+      | ReadonlyArray<{
+          readonly key: string
+          readonly value: string
+          readonly active?: boolean
+        }>
+      | undefined,
+  ): Record<string, string> {
+    const result: Record<string, string> = {}
+    if (!pairs) return result
+    for (const entry of pairs) {
+      if (entry === null || typeof entry !== "object") continue
+      if (entry.active === false) continue
+      const key = entry.key
+      if (key === undefined || key === null || key === "") continue
+      result[String(key)] = this.substituteVariables(String(entry.value ?? ""))
     }
-
-    if (Array.isArray(value)) {
-      const result: Record<string, string> = {}
-      for (const entry of value) {
-        if (typeof entry !== "object" || entry === null) continue
-        const e = entry as Record<string, unknown>
-        if (e["active"] === false) continue
-        const key = e["key"]
-        if (key === undefined || key === null) continue
-        const rawValue = (e["value"] as string | undefined) ?? ""
-        result[String(key)] = this.substituteVariables(String(rawValue))
-      }
-      return result
-    }
-
-    return {}
+    return result
   }
 
   // -------------------- Status tracking --------------------
 
-  private updateNodeStatus(nodeId: string, status: RunnerNodeStatus, _result?: NodeResult): void {
+  private updateNodeStatus(nodeId: string, status: RunnerNodeStatus, result?: NodeResult): void {
+    const error = typeof result?.error === "string" ? result.error : undefined
+    const message = typeof result?.message === "string" ? result.message : undefined
+    const statusCode = typeof result?.statusCode === "number" ? result.statusCode : undefined
+
     this.nodeStatuses.set(nodeId, status)
     if (this.deps.emitProgress) {
       this.deps.emitProgress({
@@ -1032,6 +1027,9 @@ export class WorkflowExecutor {
         nodeId,
         status,
         variables: { ...this.workflowVariables },
+        ...(status === "failed" && error ? { error } : {}),
+        ...(status === "failed" && message ? { message } : {}),
+        ...(status === "failed" && statusCode !== undefined ? { statusCode } : {}),
       })
     }
   }
@@ -1050,6 +1048,7 @@ export class WorkflowExecutor {
       nodeStatuses: Object.fromEntries(this.nodeStatuses),
       extractedVariables: { ...this.workflowVariables },
       outputs: this.buildOutputs(),
+      results: this.buildRunResults(),
     }
     if (caseName !== undefined && seed !== undefined) {
       return { ...result, caseName, seed }
@@ -1061,6 +1060,30 @@ export class WorkflowExecutor {
       return { ...result, seed }
     }
     return result
+  }
+
+  private buildRunResults(): RunResult[] {
+    const results: RunResult[] = []
+    for (const [nodeId, result] of this.results.entries()) {
+      const status = this.nodeStatuses.get(nodeId) ?? (result.status === "success" ? "passed" : "failed")
+      results.push({
+        nodeId,
+        status,
+        duration: Math.max(0, Math.round(typeof result.duration === "number" ? result.duration : 0)),
+        request: {
+          ...(typeof result["method"] === "string" ? { method: result["method"] } : {}),
+          ...(typeof result["url"] === "string" ? { url: result["url"] } : {}),
+        },
+        response: toJsonValue(result.response ?? {
+          ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
+          ...(result.headers !== undefined ? { headers: result.headers } : {}),
+          ...(result.body !== undefined ? { body: result.body } : {}),
+        }),
+        error: typeof result.error === "string" ? result.error : null,
+        assertions: result.type === "assertion" ? [toJsonValue({ message: result.message, outcome: result.assertionOutcome })] : null,
+      })
+    }
+    return results
   }
 
   private buildOutputs(): Record<string, unknown> {
@@ -1079,4 +1102,9 @@ export class WorkflowExecutor {
     }
     return outputs
   }
+}
+
+function toJsonValue(value: unknown): JsonValue {
+  if (value === undefined) return null
+  return JSON.parse(JSON.stringify(value)) as JsonValue
 }

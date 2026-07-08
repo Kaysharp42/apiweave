@@ -18,6 +18,12 @@ import type {
   SecretMetadata,
 } from "../types";
 
+const scopedParams = (
+  scopeType: SecretScopeType,
+  scopeId: string,
+  workspaceId?: string,
+) => ({ scopeType, scopeId, ...(workspaceId ? { workspaceId } : {}) });
+
 /**
  * Fetch the scope's sealed-box public key.
  * Called lazily when the value editor modal opens.
@@ -25,8 +31,9 @@ import type {
 export async function fetchScopedPublicKey(
   scopeType: SecretScopeType,
   scopeId: string,
+  workspaceId?: string,
 ): Promise<PublicKey> {
-  return authenticatedJson<PublicKey>(publicKeyUrl(scopeType, scopeId));
+  return authenticatedJson<PublicKey>(publicKeyUrl(scopeType, scopeId, workspaceId));
 }
 
 /**
@@ -37,7 +44,7 @@ export async function postScopedEncryptedSecret(
   payload: EncryptedSecretValue,
 ): Promise<SecretMetadata> {
   return authenticatedJson<SecretMetadata>(
-    secretsUrl({ scopeType: payload.scopeType, scopeId: payload.scopeId }),
+    secretsUrl(scopedParams(payload.scopeType, payload.scopeId, payload.workspaceId)),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -57,8 +64,9 @@ export async function deleteScopedSecret(
   scopeType: SecretScopeType,
   scopeId: string,
   secretId: string,
+  workspaceId?: string,
 ): Promise<void> {
-  await authenticatedJson(secretsUrl({ scopeType, scopeId }, secretId), {
+  await authenticatedJson(secretsUrl(scopedParams(scopeType, scopeId, workspaceId), secretId), {
     method: "DELETE",
   });
 }
@@ -70,11 +78,12 @@ export async function deleteScopedSecret(
 export async function listScopedSecrets(
   scopeType: SecretScopeType,
   scopeId: string,
+  workspaceId?: string,
 ): Promise<SecretMetadata[]> {
   const response = await authenticatedJson<{
     secrets: SecretMetadata[];
     total: number;
-  }>(secretsUrl({ scopeType, scopeId }));
+  }>(secretsUrl(scopedParams(scopeType, scopeId, workspaceId)));
   return response.secrets;
 }
 
@@ -84,6 +93,7 @@ export async function listScopedSecrets(
 export function useSecretValues(
   scopeType: SecretScopeType,
   scopeId: string | undefined,
+  workspaceId?: string,
 ) {
   const setSecretValue = useCallback(async (payload: EncryptedSecretValue) => {
     await postScopedEncryptedSecret(payload);
@@ -92,20 +102,20 @@ export function useSecretValues(
   const removeSecretValue = useCallback(
     async (secretId: string) => {
       if (!scopeId) throw new Error("No active scope");
-      await deleteScopedSecret(scopeType, scopeId, secretId);
+      await deleteScopedSecret(scopeType, scopeId, secretId, workspaceId);
     },
-    [scopeType, scopeId],
+    [scopeType, scopeId, workspaceId],
   );
 
   const getPublicKey = useCallback(async () => {
     if (!scopeId) throw new Error("No active scope");
-    return fetchScopedPublicKey(scopeType, scopeId);
-  }, [scopeType, scopeId]);
+    return fetchScopedPublicKey(scopeType, scopeId, workspaceId);
+  }, [scopeType, scopeId, workspaceId]);
 
   const listSecrets = useCallback(async () => {
     if (!scopeId) throw new Error("No active scope");
-    return listScopedSecrets(scopeType, scopeId);
-  }, [scopeType, scopeId]);
+    return listScopedSecrets(scopeType, scopeId, workspaceId);
+  }, [scopeType, scopeId, workspaceId]);
 
   return { setSecretValue, removeSecretValue, getPublicKey, listSecrets };
 }

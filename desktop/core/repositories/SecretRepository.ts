@@ -81,6 +81,21 @@ export class SecretRepository implements SecretWriteStore {
     return row === undefined ? null : rowToMetadata(row)
   }
 
+  /**
+   * Trusted main-process read of the sealed ciphertext for a secret. This is the
+   * ONLY read path for secret material — it backs runtime substitution, never a
+   * user-facing API. The renderer seals against the scope's public key; the
+   * runtime opens the box with the matching private seed (see SecretService).
+   */
+  public getCiphertext(scopeType: SecretScopeType, scopeId: string, name: string): Uint8Array | null {
+    const row = this.store.get<{ sealed: Buffer }>(
+      `SELECT sealed FROM secrets_metadata WHERE scopeType = ? AND scopeId = ? AND key = ?`,
+      [scopeType, scopeId, name],
+    )
+    if (row === undefined || row.sealed === undefined || row.sealed === null) return null
+    return new Uint8Array(row.sealed)
+  }
+
   private getById(id: string): SecretMetadata | undefined {
     const row = this.store.get<SecretRow>(`SELECT ${COLUMNS} FROM secrets_metadata WHERE id = ?`, [id])
     return row === undefined ? undefined : rowToMetadata(row)

@@ -25,4 +25,7 @@ export interface SecretWriteStore extends SecretMetadataStore {
   put(input: SecretUpsert): SecretMetadata | Promise<SecretMetadata>
   remove(scopeType: SecretScopeType, scopeId: string, name: string): boolean | Promise<boolean>
   listByScope(scopeType: SecretScopeType, scopeId: string): SecretMetadata[] | Promise<SecretMetadata[]>
+  // Trusted runtime read of the sealed ciphertext. Backs executor substitution only;
+  // never exposed to a read API. See SecretRepository.getCiphertext.
+  getCiphertext(scopeType: SecretScopeType, scopeId: string, name: string): Uint8Array | null | Promise<Uint8Array | null>
 }

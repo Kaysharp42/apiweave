@@ -1,44 +1,31 @@
 import { z } from "zod"
+import { AuthConfigSchema } from "./AuthConfigSchema"
 import { FileUploadSchema } from "./FileUploadSchema"
+import { FormDataEntrySchema } from "./FormDataEntrySchema"
 import { HttpMethodSchema } from "./HttpMethodSchema"
-import { JsonValueSchema } from "./JsonValueSchema"
-import { RunnerNodeStatusSchema } from "./RunnerNodeStatusSchema"
+import { KeyValuePairSchema } from "./KeyValuePairSchema"
+import { UrlEncodedEntrySchema } from "./UrlEncodedEntrySchema"
 
 export const HTTPNodeDataSchema = z
   .object({
-    label: z.string().optional(),
-    executionStatus: RunnerNodeStatusSchema.optional(),
-    executionResult: z
-      .object({
-        body: JsonValueSchema.optional(),
-        statusCode: z.number().int().optional(),
-        duration: z.number().int().nonnegative().optional(),
-        responseTimeMs: z.number().int().nonnegative().optional(),
-        responseSizeBytes: z.number().int().nonnegative().optional(),
-        contentType: z.string().optional(),
-        bodyFormat: z.string().optional(),
-        cookies: z.record(z.string(), z.string()).optional(),
-        error: z.string().optional(),
-      })
-      .strict()
+    method: HttpMethodSchema.optional(),
+    url: z.string().optional(),
+    queryParams: z.array(KeyValuePairSchema).optional(),
+    pathVariables: z.array(KeyValuePairSchema).optional(),
+    headers: z.array(KeyValuePairSchema).optional(),
+    cookies: z.array(KeyValuePairSchema).optional(),
+    body: z.string().optional(),
+    bodyType: z
+      .enum(["none", "json", "raw", "form-data", "x-www-form-urlencoded", "binary"])
       .optional(),
-    config: z
-      .object({
-        method: HttpMethodSchema.optional(),
-        url: z.string().optional(),
-        queryParams: z.string().optional(),
-        pathVariables: z.string().optional(),
-        headers: z.string().optional(),
-        cookies: z.string().optional(),
-        body: z.string().optional(),
-        bodyType: z.enum(["json", "form-data", "raw", "none"]).optional(),
-        timeout: z.number().int().positive().optional(),
-        followRedirects: z.boolean().optional(),
-        extractors: z.record(z.string(), z.string()).optional(),
-        fileUploads: z.array(FileUploadSchema).optional(),
-      })
-      .strict()
-      .optional(),
-    branchCount: z.number().int().nonnegative().optional(),
+    timeout: z.number().int().positive().optional(),
+    followRedirects: z.boolean().optional(),
+    sslVerify: z.boolean().optional(),
+    continueOnFail: z.boolean().optional(),
+    extractors: z.record(z.string(), z.string()).optional(),
+    fileUploads: z.array(FileUploadSchema).optional(),
+    auth: AuthConfigSchema.optional(),
+    formDataEntries: z.array(FormDataEntrySchema).optional(),
+    urlEncodedEntries: z.array(UrlEncodedEntrySchema).optional(),
   })
   .strict()
