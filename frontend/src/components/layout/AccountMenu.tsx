@@ -5,7 +5,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { BadgeCheck, LogOut } from "lucide-react";
+import { BadgeCheck, Cloud, HardDrive, LogOut, ShieldCheck } from "lucide-react";
 import { useAuth } from "../../auth/useAuth";
 import { Button } from "../atoms/Button";
 import {
@@ -145,13 +145,23 @@ export function AccountMenu() {
 
       {open && (
         <div
-          className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
+          className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
           role="menu"
           aria-label="Account actions"
         >
-          <div className="border-b border-border px-4 py-3 dark:border-border-dark">
+          <div className="bg-surface-overlay/60 px-4 py-4 dark:bg-surface-dark-overlay/40">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-raised px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark">
+                <HardDrive className="h-3 w-3 text-primary dark:text-primary-light" />
+                Local profile
+              </span>
+              <span className="text-[11px] text-text-muted dark:text-text-muted-dark">
+                Cloud not linked
+              </span>
+            </div>
+
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 dark:bg-primary-light/10">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-primary/20 bg-primary/10 shadow-inner dark:border-primary-light/20 dark:bg-primary-light/10">
                 {avatarVisible ? (
                   <img
                     src={user.avatar_url ?? undefined}
@@ -171,21 +181,44 @@ export function AccountMenu() {
                 <div className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
                   {displayName}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-xs text-text-secondary dark:text-text-secondary-dark">
+                <div className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary dark:text-text-secondary-dark">
                   <CheckCircleLine />
-                  <span className="truncate">Verified email</span>
+                  <span className="truncate">Verified local identity</span>
                 </div>
-                <div className="truncate text-xs text-text-muted dark:text-text-muted-dark">
+                <div className="mt-0.5 truncate font-mono text-[11px] text-text-muted dark:text-text-muted-dark">
                   {user.verified_email}
-                </div>
-                <div className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
-                  {roleSummary}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="py-1">
+          <div className="space-y-2 border-y border-border px-4 py-3 dark:border-border-dark">
+            <div className="flex items-start gap-3 rounded-lg bg-surface-overlay px-3 py-2 dark:bg-surface-dark-overlay">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-status-success dark:text-status-success-dark" />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">
+                  {roleSummary}
+                </div>
+                <div className="text-[11px] text-text-secondary dark:text-text-secondary-dark">
+                  Workflows, secrets, and runs stay on this device.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-lg border border-dashed border-border px-3 py-2 dark:border-border-dark">
+              <Cloud className="mt-0.5 h-4 w-4 shrink-0 text-primary dark:text-primary-light" />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">
+                  Cloud sync ready
+                </div>
+                <div className="text-[11px] text-text-secondary dark:text-text-secondary-dark">
+                  Link an APIWeave Cloud account here when sync launches.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-2">
             <Button
               ref={(element) => {
                 menuItemRefs.current[0] = element;
@@ -195,10 +228,10 @@ export function AccountMenu() {
               intent="error"
               size="sm"
               onClick={() => void handleLogout()}
-              className="w-full justify-start rounded-none px-4 py-2 text-sm"
+              className="w-full justify-start rounded-lg px-3 py-2 text-sm"
             >
-              <LogOut className="w-4 h-4" />
-              Sign out
+              <LogOut className="h-4 w-4" />
+              Sign out of local profile
             </Button>
           </div>
         </div>
