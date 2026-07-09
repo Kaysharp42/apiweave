@@ -16,8 +16,7 @@ import { PanelTabs } from "./molecules/PanelTabs";
 import { EmptyState } from "./molecules/EmptyState";
 import type { MCPConfig } from "../types/MCPConfig";
 import type { MCPTool } from "../types/MCPTool";
-import { authenticatedFetch } from "../utils/apiweaveClient";
-import API_BASE_URL from "../utils/apiweaveClient";
+import { mcp } from "../utils/apiweaveClient";
 
 type TabKey = "status" | "tools" | "resources" | "prompts" | "connect";
 
@@ -136,7 +135,7 @@ function MCPContent({
             </div>
             {!config.httpEnabled && (
               <p className="text-xs text-text-muted dark:text-text-muted-dark">
-                Enable HTTP transport in backend .env to test connection.
+                Enable the local MCP server to test the connection.
               </p>
             )}
           </div>
@@ -215,20 +214,12 @@ function MCPContent({
               Stdio Configuration
             </h4>
             <p className="text-xs text-text-secondary dark:text-text-secondary-dark mb-2">
-              For local agents (Claude Desktop, Cursor, opencode)
+              For local agents without native HTTP support (Claude Desktop,
+              Cursor, opencode). Bridges stdio to the loopback endpoint.
             </p>
             <div className="relative">
               <pre className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
-                {`{
-  "mcp": {
-    "apiweave": {
-      "type": "stdio",
-      "command": "python",
-      "args": ["mcp_stdio.py"],
-      "cwd": "/path/to/apiweave/backend"
-    }
-  }
-}`}
+                {`npx mcp-remote ${config.baseUrl || "http://127.0.0.1:47271/mcp"} --header "Authorization: Bearer ${config.token || "YOUR_TOKEN"}"`}
               </pre>
             </div>
           </div>
@@ -240,17 +231,18 @@ function MCPContent({
               HTTP Configuration
             </h4>
             <p className="text-xs text-text-secondary dark:text-text-secondary-dark mb-2">
-              For remote agents (requires MCP_HTTP_ENABLED=true)
+              For agents that speak MCP over HTTP. Loopback-only; the
+              per-install token is required on every request.
             </p>
             <div className="relative">
               <pre className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
                 {`{
-  "mcp": {
+  "mcpServers": {
     "apiweave": {
       "type": "http",
-      "url": "${config.baseUrl || "http://localhost:8000"}/mcp",
+      "url": "${config.baseUrl || "http://127.0.0.1:47271/mcp"}",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_API_KEY"
+        "Authorization": "Bearer ${config.token || "YOUR_TOKEN"}"
       }
     }
   }
@@ -268,7 +260,7 @@ function MCPContent({
             <div className="space-y-2">
               <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3">
                 <code className="text-xs font-mono text-text-primary dark:text-text-primary-dark">
-                  codex mcp add apiweave -- python mcp_stdio.py
+                  codex mcp add apiweave -- npx mcp-remote {config.baseUrl || "http://127.0.0.1:47271/mcp"} --header "Authorization: Bearer {config.token || "YOUR_TOKEN"}"
                 </code>
                 <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
                   OpenAI Codex CLI
@@ -309,21 +301,27 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
     setLoading(true);
     setError(null);
     try {
-      const response = await authenticatedFetch(
-        `${API_BASE_URL}/api/mcp/config`,
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setConfig(data);
-      } else if (response.status === 404) {
-        setError(
-          "MCP endpoint not found. Ensure MCP_ENABLED=true in backend .env",
-        );
-      } else {
-        setError("Failed to fetch MCP configuration");
+      if (!mcp.isAvailable()) {
+        setError("The MCP server is only available in the desktop app.");
+        return;
       }
+      const [status, tools] = await Promise.all([
+        mcp.getStatus(),
+        mcp.listTools(),
+      ]);
+      setConfig({
+        enabled: status.running,
+        httpEnabled: status.running,
+        baseUrl: status.config?.url ?? "",
+        apiKeyConfigured: status.config?.token != null,
+        token: status.config?.token ?? "",
+        toolCount: tools.length,
+        resourceCount: 0,
+        promptCount: 0,
+        tools: [...tools],
+      });
     } catch {
-      setError("Cannot connect to backend. Is the server running?");
+      setError("Failed to load MCP server status.");
     } finally {
       setLoading(false);
     }
@@ -336,12 +334,18 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
   const testConnection = async () => {
     setTesting(true);
     setTestResult(null);
+    if (!config?.baseUrl) {
+      setTestResult("error");
+      setTesting(false);
+      return;
+    }
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/mcp`, {
+      const response = await fetch(config.baseUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json, text/event-stream",
+          Authorization: `Bearer ${config.token}`,
         },
         body: JSON.stringify({
           jsonrpc: "2.0",

@@ -5,6 +5,7 @@ import type {
 } from "../../../shared/contract/errors";
 import type { RunProgressEvent } from "../../../shared/types/RunProgressEvent";
 import type { McpStatus } from "../../../shared/types/McpStatus";
+import type { MCPTool } from "../../../shared/types/MCPTool";
 import type { AuthenticatedRequestInit } from "../types";
 import type { Project } from "../types/Project";
 import type { DryRunResult } from "../types/DryRunResult";
@@ -50,6 +51,7 @@ type McpBridge = {
   readonly getStatus: () => Promise<McpStatus>;
   readonly enable: () => Promise<McpStatus>;
   readonly disable: () => Promise<McpStatus>;
+  readonly listTools: () => Promise<readonly MCPTool[]>;
 };
 
 declare global {
@@ -469,6 +471,8 @@ export const mcp = {
   disable: (): Promise<McpStatus> =>
     getMcpBridge()?.disable() ??
     Promise.resolve({ running: false, config: null }),
+  listTools: (): Promise<readonly MCPTool[]> =>
+    getMcpBridge()?.listTools() ?? Promise.resolve([]),
 } as const;
 
 export const API_BASE_URL = "ipc://apiweave";

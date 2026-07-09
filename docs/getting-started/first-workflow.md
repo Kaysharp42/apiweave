@@ -33,7 +33,7 @@ A simple login flow looks like this on the canvas:
 Once you have the happy path running, store a real API key in the local encrypted secret store and reference it in a second workflow. This is the canonical secret flow.
 
 1. Open the **Secrets** page from the header.
-2. Click **Add secret**, pick the **Workspace** scope, and enter a name like `HTTPBIN_AUTH`.
+2. Click **Add secret**, pick the **User** scope (your local store), and enter a name like `HTTPBIN_AUTH`.
 3. The page shows the scope's public key fingerprint. The renderer encrypts the value against that public key with a Libsodium sealed box before the write request leaves.
 4. Submit. The page now shows metadata only (name, scope, key id, last update), never the value or ciphertext.
 5. Drop a second HTTP Request node on the canvas, point it at `https://httpbin.org/headers`, and add a header `Authorization: Bearer {{secrets.HTTPBIN_AUTH}}`. Run it. The header reaches the upstream service with the decrypted value, and the value never appears in the run history because the masking layer scrubs it before persistence.

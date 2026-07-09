@@ -191,7 +191,7 @@ The copy and paste shortcuts are context-aware. When the cursor is inside a text
 - **If a node never runs**, the canvas has no edge from an upstream node into its input handle. Drag a connection from the previous node's output handle to this node's input handle.
 - **If the Run dropdown only shows plain Run** and no resume options, the latest run succeeded. Resume actions are hidden on success. Use **Run** for a fresh execution, or introduce a failure to bring them back.
 - **If Run from failed replays too much of the workflow**, the failed node sits upstream of nodes whose results you wanted to keep. Re-run the whole flow, or split the workflow so the failing call is isolated.
-- **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in any scope in the chain. Open **Secrets** for the selected environment or the workspace, add the key through the Libsodium write flow, and re-run.
+- **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in any scope in the chain. Open **Secrets** for the selected environment or your user store, add the key through the Libsodium write flow, and re-run.
 - **If paste drops a node on top of the source**, copy and paste are canvas-only; click on the canvas first so the focus is not in a text field.
 
 ## Related

@@ -70,6 +70,7 @@ export function Sidebar() {
   const handleScrollRef = useRef<() => void>(() => {});
 
   const workflows = useSidebarStore((s) => s.workflows);
+  const allWorkflows = useSidebarStore((s) => s.allWorkflows);
   const projects = useSidebarStore((s) => s.projects);
   const collections = useSidebarStore((s) => s.collections);
   const environments = useEnvironmentStore((s) => s.environments);
@@ -438,10 +439,13 @@ export function Sidebar() {
         />
 
         <div className="flex-1 overflow-hidden">
-          {selectedNav === "workflows" && (
-            <div className="h-full flex flex-col">
-              <div
-                ref={scrollContainerRef}
+          <div
+            className={`h-full flex flex-col ${
+              selectedNav === "workflows" ? "" : "hidden"
+            }`}
+          >
+            <div
+              ref={scrollContainerRef}
                 className={[
                   "flex-1 overflow-y-auto overflow-x-hidden transition-opacity duration-300",
                   isRefreshing ? "opacity-50" : "opacity-100",
@@ -467,17 +471,16 @@ export function Sidebar() {
                 />
               </div>
             </div>
-          )}
-          {selectedNav === "projects" && (
-            <div
-              className={[
-                "h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity duration-300 motion-reduce:transition-none",
-                isRefreshing ? "opacity-50" : "opacity-100",
-              ].join(" ")}
-            >
+          <div
+            className={[
+              "h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity duration-300 motion-reduce:transition-none",
+              isRefreshing ? "opacity-50" : "opacity-100",
+              selectedNav === "projects" ? "" : "hidden",
+            ].join(" ")}
+          >
               <ProjectList
                 projects={filteredProjects}
-                workflows={workflows}
+                workflows={allWorkflows}
                 environments={environments}
                 selectedWorkflowId={selectedWorkflowId}
                 isRefreshing={isRefreshing}
@@ -500,7 +503,6 @@ export function Sidebar() {
                 onAssignWorkflowToProject={handleAssignWorkflowToProject}
               />
             </div>
-          )}
           {selectedNav === "webhooks" && <WebhookManager />}
           {selectedNav === "mcp" && <MCPManager className="h-full" />}
           {selectedNav === "settings" && (

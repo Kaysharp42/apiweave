@@ -44,7 +44,7 @@ The renderer never calls services directly. Every renderer call routes through a
 
 ## Common Patterns
 
-**Authentication.** There is no per-call auth between the renderer and the main process. The preload script is the only bridge: the renderer cannot call arbitrary Node.js APIs. The MCP bridge uses a static per-install token; see [MCP Integration](../features/mcp-integration.md).
+**Authentication.** There is no per-call auth between the renderer and the main process. The preload script is the only bridge: the renderer cannot call arbitrary Node.js APIs. The desktop app is single-user on this machine; orgs and teams are a local organizing layer, and multi-user auth across machines is a future feature that arrives with an optional login system. The MCP bridge uses a static per-install token; see [MCP Integration](../features/mcp-integration.md).
 
 **Error format.** Every error returns a JSON shape: `{"error": {"code": "string", "message": "string", "details": {...}}}`. Status codes follow REST conventions (400 for bad input, 404 for missing, 409 for conflicts, 422 for validation failures, 500 for server errors).
 

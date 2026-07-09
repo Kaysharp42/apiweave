@@ -1,4 +1,1 @@
-export type MCPTool = {
-  name: string;
-  description: string;
-};
+export type { MCPTool } from "../../../shared/types/MCPTool";

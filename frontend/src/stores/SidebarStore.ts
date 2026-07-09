@@ -17,6 +17,7 @@ interface ProjectListResponse {
 
 interface SidebarState {
   workflows: Workflow[];
+  allWorkflows: Workflow[];
   collections: Project[];
   /** Workspace-scoped projects (fetched from /api/workspaces/{id}/projects). */
   projects: Project[];
@@ -40,6 +41,7 @@ interface SidebarState {
     limit?: number,
     includeAttached?: boolean,
   ) => Promise<void>;
+  fetchAllWorkflows: (skip?: number, append?: boolean) => Promise<void>;
   fetchCollections: () => Promise<void>;
   fetchProjects: () => Promise<void>;
   refreshAll: (selectedNav: string) => Promise<void>;
@@ -50,6 +52,7 @@ interface SidebarState {
 
 const useSidebarStore = create<SidebarState>()((set, get) => ({
   workflows: [],
+  allWorkflows: [],
   collections: [],
   projects: [],
 
@@ -81,6 +84,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
     set({
       activeWorkspaceId: workspaceId,
       workflows: [],
+      allWorkflows: [],
       projects: [],
       pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
     });
@@ -175,14 +179,39 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
   refreshAll: async (selectedNav: string) => {
     set({ isRefreshing: true });
-    const { fetchWorkflows, fetchProjects } = get();
+    const { fetchWorkflows, fetchProjects, fetchAllWorkflows } = get();
     if (selectedNav === "workflows") {
       await fetchWorkflows(0);
     } else if (selectedNav === "projects") {
       await fetchProjects();
-      // Projects view groups workflows under projects — needs attached ones too.
-      await fetchWorkflows(0, false, 100, true);
+      await fetchAllWorkflows(0);
     } else {
+      set({ isRefreshing: false });
+    }
+  },
+
+  fetchAllWorkflows: async (skip = 0, append = false) => {
+    const { activeWorkspaceId } = get();
+    if (!activeWorkspaceId) {
+      set({ isRefreshing: false });
+      return;
+    }
+    try {
+      const response = await authenticatedFetch(
+        workflowsUrl(activeWorkspaceId, { skip, limit: 100, includeAttached: true }),
+      );
+      if (response.ok) {
+        const data: PaginatedWorkflowResponse = await response.json();
+        const prev = get().allWorkflows;
+        const next = append
+          ? [...prev, ...data.workflows]
+          : data.workflows;
+        set({ allWorkflows: next, isRefreshing: false });
+      } else {
+        set({ isRefreshing: false });
+      }
+    } catch (err) {
+      console.error("SidebarStore: error fetching workflows", err);
       set({ isRefreshing: false });
     }
   },

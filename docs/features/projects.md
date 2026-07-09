@@ -189,7 +189,7 @@ Concretely, the bundle looks like this for the secret side:
   "secretReferences": [
     {
       "name": "API_KEY",
-      "scope": "workspace",
+      "scope": "user",
       "publicKeyFingerprint": "fp:abc123"
     }
   ]

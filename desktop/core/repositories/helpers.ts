@@ -181,16 +181,18 @@ export const CANONICAL_KV_FIELDS: readonly KvField[] = KV_FIELDS
  * graph reference when no node changed; otherwise a shallow clone with the
  * touched nodes replaced. Pure — no JSON round-trip, so callers writing the
  * result can `JSON.stringify` with their own codec. */
-export function canonicalizeWorkflowGraph(graph: JsonValue): JsonValue {
-  if (!isPlainObject(graph)) return graph
+export function canonicalizeWorkflowGraph(graph: unknown): JsonValue {
+  if (!isPlainObject(graph)) return graph as JsonValue
   const nodes = (graph as { nodes?: unknown }).nodes
-  if (!Array.isArray(nodes)) return graph
+  if (!Array.isArray(nodes)) return graph as JsonValue
 
   let changed = false
-  const nextNodes = nodes.map((node) => {
-    const normalised = canonicalizeNodeConfig(node)
+  const nextNodes: JsonValue[] = nodes.map((node) => {
+    const normalised = canonicalizeNodeConfig(node) as JsonValue
     if (normalised !== node) changed = true
     return normalised
   })
-  return changed ? { ...(graph as Record<string, unknown>), nodes: nextNodes } : graph
+  return changed
+    ? ({ ...(graph as Record<string, unknown>), nodes: nextNodes } as JsonValue)
+    : (graph as JsonValue)
 }

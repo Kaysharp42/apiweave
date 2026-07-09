@@ -4,6 +4,7 @@ import type { PaginationState } from "./PaginationState";
 
 export interface SidebarState {
   workflows: Workflow[];
+  allWorkflows: Workflow[];
   collections: Project[];
   pagination: PaginationState;
   isRefreshing: boolean;
@@ -20,6 +21,7 @@ export interface SidebarState {
     limit?: number,
     includeAttached?: boolean,
   ) => Promise<void>;
+  fetchAllWorkflows: (skip?: number, append?: boolean) => Promise<void>;
   fetchCollections: () => Promise<void>;
   refreshAll: (selectedNav: string) => Promise<void>;
   setIsRefreshing: (v: boolean) => void;

@@ -5,6 +5,7 @@ export type MCPConfig = {
   httpEnabled: boolean;
   baseUrl: string;
   apiKeyConfigured: boolean;
+  token: string;
   toolCount: number;
   resourceCount: number;
   promptCount: number;

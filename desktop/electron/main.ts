@@ -31,7 +31,9 @@ import { LocalOnlySyncProvider } from "../core/sync"
 import { RunScheduler, SafeHttp, DynamicFunctions } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
+import { MCP_TOOLS, toolName } from "../core/mcp/tools"
 import type { McpStatus } from "../../shared/types/McpStatus"
+import type { MCPTool } from "../../shared/types/MCPTool"
 
 // The single request channel. The composition root (whenReady) constructs the
 // services and calls registerAllHandlers onto it before attaching; the MCP host
@@ -230,28 +232,60 @@ if (!hasSingleInstanceLock) {
 
     attachIpcRouter(ipcMain, ipcRouter)
 
-    // MCP server control (opt-in, off by default). The host exposes the SAME
-    // `ipcRouter` as a second (loopback-HTTP) transport, so its tool surface is
-    // whatever handlers are registered on the router — no separate tool stack.
-    // ponytail: enabled-state is not persisted across restarts (decision #5:
-    // off by default); the per-install token IS persisted, so re-enabling reuses it.
+    // MCP server control. Off until enabled, but the user's choice is persisted
+    // (app_settings.mcp_enabled) so it auto-starts on the next launch. The host
+    // exposes the SAME `ipcRouter` as a second (loopback-HTTP) transport, so its
+    // tool surface is whatever handlers are registered on the router — no
+    // separate tool stack. The per-install token is already persisted, so
+    // re-enabling reuses it.
     const mcpTokenPath = path.join(app.getPath("userData"), "mcp-token")
     const mcpStatus = (): McpStatus => ({
       running: mcpHost?.isRunning() ?? false,
       config: mcpHost?.getConfig() ?? null,
     })
+    const readMcpEnabled = (): boolean => {
+      if (database === null) return false
+      const row = database.kvStore.get<{ value: string }>(
+        "SELECT value FROM app_settings WHERE key = 'mcp.enabled'",
+      )
+      return row?.value === "true"
+    }
+    const writeMcpEnabled = (enabled: boolean): void => {
+      if (database === null) return
+      database.kvStore.set(
+        "INSERT INTO app_settings (key, value) VALUES ('mcp.enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [enabled ? "true" : "false"],
+      )
+    }
     ipcMain.handle("mcp:getStatus", () => mcpStatus())
     ipcMain.handle("mcp:enable", async () => {
       if (mcpHost === null) {
         mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
       }
       await mcpHost.start()
+      writeMcpEnabled(true)
       return mcpStatus()
     })
     ipcMain.handle("mcp:disable", async () => {
       await mcpHost?.stop()
+      writeMcpEnabled(false)
       return mcpStatus()
     })
+    ipcMain.handle("mcp:listTools", (): readonly MCPTool[] =>
+      MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
+    )
+
+    // Restore the user's persisted MCP choice on launch.
+    if (readMcpEnabled()) {
+      mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+      void mcpHost
+        .start()
+        .then(() => console.info("[mcp] auto-started local MCP server from persisted setting"))
+        .catch((error: unknown) => {
+          console.error(`[mcp] auto-start failed: ${error instanceof Error ? error.message : String(error)}`)
+          mcpHost = null
+        })
+    }
 
     protocol.handle("app", (request) => {
       let pathname = decodeURIComponent(new URL(request.url).pathname)

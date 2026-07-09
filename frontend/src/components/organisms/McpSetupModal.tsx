@@ -74,8 +74,9 @@ export function McpSetupModal({ isOpen, onClose }: McpSetupModalProps) {
             </p>
             <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
               Lets an MCP client (Claude, Cursor, …) drive your workflows over a
-              loopback-only HTTP endpoint. Off by default; a per-install token
-              is required on every request. Secrets are never exposed.
+              loopback-only HTTP endpoint.               Off until you enable it; your choice is remembered across
+              restarts. A per-install token is required on every request.
+              Secrets are never exposed.
             </p>
           </div>
           <Toggle

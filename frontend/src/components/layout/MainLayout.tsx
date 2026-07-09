@@ -30,6 +30,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const location = useLocation();
   const refreshAll = useSidebarStore((state) => state.refreshAll);
   const resetPagination = useSidebarStore((state) => state.resetPagination);
+  const activeWorkspaceId = useSidebarStore((state) => state.activeWorkspaceId);
 
   useEffect(() => {
     const workspaceId = useSidebarStore.getState().activeWorkspaceId;
@@ -48,13 +49,18 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, [location.pathname, navigationSelectedValue, setNavState]);
 
   useEffect(() => {
+    const { workflows, allWorkflows } = useSidebarStore.getState();
     if (navigationSelectedValue === "workflows") {
-      resetPagination();
-      void refreshAll(navigationSelectedValue);
+      if (workflows.length === 0) {
+        resetPagination();
+        void refreshAll("workflows");
+      }
     } else if (navigationSelectedValue === "projects") {
-      void refreshAll(navigationSelectedValue);
+      if (allWorkflows.length === 0) {
+        void refreshAll("projects");
+      }
     }
-  }, [navigationSelectedValue, refreshAll, resetPagination]);
+  }, [navigationSelectedValue, activeWorkspaceId, refreshAll, resetPagination]);
 
   // Close mobile sidebar on Escape
   useEffect(() => {

@@ -4,11 +4,13 @@
 
 ## What APIWeave Looks Like
 
-APIWeave is a local-first desktop app. There is no server to run, no cloud account to create, no login screen, no deployment to plan. You download the installer, run it, and the app opens straight into the canvas. Everything — workflows, environments, secrets, run history — lives on your machine in a single SQLite database under your user data directory. There is no multi-tenant model and no shared state with other users.
+APIWeave is a local-first desktop app. There is no server to run, no cloud account to create, no login screen, no deployment to plan. You download the installer, run it, and the app opens straight into the canvas. Everything — workflows, environments, secrets, run history — lives on your machine in a single SQLite database under your user data directory.
+
+Work is organized locally into **orgs and teams**: an org is the top-level container for your APIWeave work, and a team is a group inside an org that shares workflows, environments, and projects. Today orgs and teams organize work on *this machine* — they are a local structure, not a cloud account. Cloud sync across users and multi-user collaboration are a future feature that turns on only when an optional login system is added later; until then, everything stays local and single-user on your computer.
 
 There is no SSO, no webhooks, and no remote trigger. You run a workflow by clicking **Run** in the app, by scheduling it locally, or by having a local AI agent drive the app through the loopback MCP bridge.
 
-If you have used an earlier web build of APIWeave, the things that changed are spelled out in the [changelog](../CHANGELOG.md). The short version: no more login, no more hosted backend, no more webhooks, no more public ports. The canvas, the variables, the environments, the projects, the secret store, and the MCP integration are all the same shape they were before.
+If you have used an earlier web build of APIWeave, the things that changed are spelled out in the [changelog](../CHANGELOG.md). The short version: no login required, no hosted backend, no webhooks, no public ports. The canvas, the variables, the environments, the projects, the secret store, and the MCP integration are all the same shape they were before. (A future optional login will enable cloud sync and team collaboration across machines — see above — but it is not required to use the app today.)
 
 ## Prerequisites
 

@@ -57,7 +57,7 @@ That's it. The tool list the agent sees is the same set the app exposes to itsel
 
 The MCP bridge authenticates with a static per-install token. The token is generated when the bridge is first enabled and stored in a file in the user data directory (`mcp.token` on most platforms; the app shows the exact path in the **MCP** panel). The token is not rotated automatically. To rotate, click **Rotate token** in the **MCP** panel; the old token stops working immediately and the new token is written to disk.
 
-There is no per-agent permission model. The desktop app has a single local user. Anyone on the same machine who can read the token file can drive the app. Treat the token like a private key: keep the file readable only by your user account, and rotate it if you suspect it leaked.
+There is no per-agent permission model. The desktop app is single-user on this machine; orgs and teams organize work locally, and cross-user permissions arrive later with the future login-gated sync. Anyone on the same machine who can read the token file can drive the app. Treat the token like a private key: keep the file readable only by your user account, and rotate it if you suspect it leaked.
 
 ## Tool Inventory
 
@@ -198,7 +198,7 @@ Use `workflow_add_node` for incremental edits instead of resending the whole gra
 
 ### Provision a New Secret
 
-1. Call `secrets_get_public_key` for the target scope (workspace or environment) to fetch the scope's public key.
+1. Call `secrets_get_public_key` for the target scope (user or environment) to fetch the scope's public key.
 2. Encrypt the secret value with a Libsodium sealed box in the agent runtime.
 3. Call `secrets_write` with the scope id, the secret name, and the sealed-box ciphertext.
 4. The response returns metadata only. The plaintext never appears in the response or in any subsequent tool output.

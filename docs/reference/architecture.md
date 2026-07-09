@@ -40,24 +40,24 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 **Runner** is the in-process execution engine. The `RunScheduler` claims pending runs, the `WorkflowExecutor` walks the node graph, `safe_http` makes the outbound HTTP calls with SSRF guards, and `dynamic_functions` evaluates the placeholder functions. Progress is streamed back to the renderer over IPC as the run advances.
 
-**Encrypted secret store** is a tightly scoped layer inside the main process. It accepts Libsodium sealed-box submissions on the write path, unwraps them with the scope's private key, and re-encrypts the plaintext under a per-install keyfile. On the read path, it resolves the local scope chain (selected environment, then workspace) and returns decrypted values only to the runtime that needs them. The masking layer scrubs the value before any persistence. The secret store has no read API for stored values that can be reached by a user.
+**Encrypted secret store** is a tightly scoped layer inside the main process. It accepts Libsodium sealed-box submissions on the write path, unwraps them with the scope's private key, and re-encrypts the plaintext under a per-install keyfile. On the read path, it resolves the local scope chain (selected environment, then the user's local store) and returns decrypted values only to the runtime that needs them. The masking layer scrubs the value before any persistence. The secret store has no read API for stored values that can be reached by a user. Secret values are per-user and never synced, even when teams share config.
 
 **Local MCP bridge** is an opt-in loopback HTTP server bound to `127.0.0.1`. It exposes the IPC handler registry as a second transport, so local AI agents on the same machine can drive the app. The bridge uses a static per-install token for auth. The bridge is off by default; until you enable it, nothing is listening on any port.
 
 ## Resource Model
 
-APIWeave is a single-user, local-first app built around six resource types. Every resource lives in the local SQLite database. There are no other scopes.
+APIWeave is a local-first app built around six resource types, organized into orgs and teams. Every resource lives in the local SQLite database on your machine. An **org** is the top-level container for your work; a **team** is a group inside an org that shares workflows, environments, and projects. Today orgs and teams are a local structure — cloud sync and cross-user collaboration are a future feature that activates when an optional login system is added.
 
 | Resource | Visible to | Owner |
 |----------|-----------|-------|
-| Project | The local user | The local user |
-| Workflow | The local user | The project it belongs to |
-| Environment | The local user | The local user |
-| Secret (workspace) | Every workflow | The local user |
+| Project | Your team (locally) | The team it belongs to |
+| Workflow | Your team (locally) | The project it belongs to |
+| Environment | Your team (locally) | The team |
+| Secret (user) | The workflows you run | You (per-user, never synced) |
 | Secret (environment) | Workflows that select the environment | The environment |
-| Run | The local user | The workflow or project that produced it |
+| Run | You | The workflow or project that produced it |
 
-There are no organizations, no teams, no outside collaborators, no invites, no service tokens, and no audit log. The desktop app has no multi-tenant model and no shared state with other users.
+Secrets are the one resource that is never shared: even when teams sync later, each user keeps their own secret values locally. There are no outside collaborators, no invites, no service tokens, and no audit log yet — those arrive with the future login-gated sync. The desktop app has no multi-tenant cloud model today; it is single-user on this machine.
 
 ## Data Flow
 
@@ -77,7 +77,7 @@ A local AI agent calling through the MCP bridge follows the same path. The agent
 A single node execution follows a predictable lifecycle inside the engine:
 
 - **Resolve scope**: confirm the workflow, the selected environment, and the variables.
-- **Resolve secrets**: walk the scope chain (environment, then workspace) for each `{{secrets.NAME}}` placeholder. The resolved values never leave the runtime path.
+- **Resolve secrets**: walk the scope chain (environment, then your local user store) for each `{{secrets.NAME}}` placeholder. The resolved values never leave the runtime path.
 - **Resolve placeholders**: substitute variables, environment variables, previous node results, and dynamic functions in the node's configuration.
 - **Execute**: perform the node's action (an HTTP call, a delay, an assertion check, and so on).
 - **Extract**: capture values from the response into workflow variables for downstream nodes.

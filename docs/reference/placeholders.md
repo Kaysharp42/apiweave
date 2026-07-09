@@ -40,7 +40,7 @@ All placeholders work in any request field: URL, method, query parameters, heade
 | `env.*`       | `{{env.BASE_URL}}`                   | the selected environment                                     |
 | `variables.*` | `{{variables.token}}`                | workflow variable (manual or extracted)                      |
 | `prev.*`      | `{{prev.response.body.id}}`          | previous node result (`prev[0]` after a merge)               |
-| `secrets.*`   | `{{secrets.API_KEY}}`                | the local scope chain (env > workspace)                      |
+| `secrets.*`   | `{{secrets.API_KEY}}`        | the local scope chain (env > user)                       |
 | functions     | `{{uuid()}}`                         | dynamic helper (uuid, timestamp, randomString, etc.)         |
 
 The four data namespaces are tried in a fixed order. See [Substitution Order](#substitution-order) for the exact sequence.
@@ -113,9 +113,11 @@ Secret values are submitted through a Libsodium sealed box encrypted against the
 The runner resolves `{{secrets.NAME}}` through a fixed local chain. The first scope that declares the key wins.
 
 1. The selected environment's secret store.
-2. The workspace secret store.
+2. Your local user secret store.
 
-The chain lives entirely in the local SQLite database and the encrypted secret store. There are no other scopes. The chain is read-only. A user who can write a workspace secret cannot write the same key as an environment secret; the environment editor is the only path to the environment scope. The chain exists to let a workspace set a default and let a specific environment override it for one deployment.
+The chain lives entirely in the local SQLite database and the encrypted secret store. There are no other scopes. The chain is read-only. A user who can write a user secret cannot write the same key as an environment secret; the environment editor is the only path to the environment scope. The chain exists to let a user set a default and let a specific environment override it for one deployment.
+
+Teams share workflow, environment, and project config, but they do **not** share secret values. Each user keeps their own secrets in their local user store, so a `{{secrets.NAME}}` placeholder resolves to that user's value regardless of which team the workflow belongs to. Secrets are never synced, even when team sync ships later.
 
 When a secret overrides a same-named secret at the broader scope, the secret's metadata shows an `isOverride` flag and the scope it shadows. The UI surfaces this on the secret detail page so the operator knows the broader value is no longer effective in that scope.
 
@@ -171,7 +173,7 @@ These are the patterns that show up most often in failing runs. Each one is a co
 - **Wrong JSONPath on an extractor or `prev.*` reference.** A field name with a typo, a case mismatch, or a missing `[0]` on an array returns nothing. Fix: inspect the actual response body, copy the exact key, and remember that arrays are zero-based.
 - **Using `prev.*` across a Merge without an index.** After a Merge, `{{prev.response.body.id}}` is ambiguous because there are multiple branches. Fix: use `{{prev[0].response.body.id}}` or `{{prev[1].response.body.id}}` and confirm the index from the run results.
 - **Referencing a variable before it is defined.** A node uses `{{variables.userId}}` before any earlier node extracted `userId`. Fix: move the dependent node downstream of the extractor, or define the variable in the Variables panel before the run starts.
-- **Using a secret that is not declared in any scope.** `{{secrets.API_KEY}}` resolves to an empty string when no scope in the chain has the key. Fix: open **Secrets** for the right scope (environment or workspace), add the key through the Libsodium write flow, and re-run. Plaintext values cannot be added by paste, prompt, or import.
+- **Using a secret that is not declared in any scope.** `{{secrets.API_KEY}}` resolves to an empty string when no scope in the chain has the key. Fix: open **Secrets** for the right scope (environment or user), add the key through the Libsodium write flow, and re-run. Plaintext values cannot be added by paste, prompt, or import.
 - **Reading a secret value back through the UI.** The metadata-only display is the only surface. The plaintext is never returned by any IPC channel or MCP tool. Treat any tool that claims to return a plaintext value as a security bug.
 - **Editing JSON manually and breaking the structure.** A missing comma or quote in a request body makes the whole field invalid JSON, and every placeholder in that field comes back unresolved. Fix: use the JSON editor's validation feedback, apply small edits, and re-run.
 
