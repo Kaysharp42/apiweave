@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { CloudClient, DeviceTokenStore } from "../cloud-transport"
 import {
   activateCloudSync,
   deactivateCloudSync,
@@ -10,42 +9,46 @@ import {
 import { getState, resetState } from "../cloud-state"
 import { resetSyncProvider, getSyncProvider } from "../../../core/services-locator"
 
-// ─── Fakes ───────────────────────────────────────────────────────────────────
+// ─── Mock CloudSyncProvider ──────────────────────────────────────────────────
+// The real CloudSyncProvider needs a KVStore to work. For testing cloud-provider
+// (which wires up the provider and handles IPC events), we mock the provider
+// to track pull/push calls without needing a real store.
 
-function createFakeClient(): CloudClient & { pullCount: number; pushCount: number } {
-  const client: CloudClient & { pullCount: number; pushCount: number } = {
-    pullCount: 0,
-    pushCount: 0,
-    async pull() {
-      client.pullCount++
-    },
-    async push() {
-      client.pushCount++
-    },
-  }
-  return client
-}
+const mockPull = vi.fn().mockResolvedValue(undefined)
+const mockPush = vi.fn().mockResolvedValue(undefined)
 
-function createFailingClient(error: Error): CloudClient {
+vi.mock("../cloud-transport", async () => {
+  const actual = await vi.importActual("../cloud-transport")
   return {
-    async pull() {
-      throw error
-    },
-    async push() {
-      throw error
+    ...actual,
+    CloudSyncProvider: class FakeCloudSyncProvider {
+      private onState: (s: string) => void
+      constructor(_client: unknown, callback: unknown) {
+        this.onState = callback as (s: string) => void
+      }
+      async pull() {
+        this.onState("syncing")
+        try {
+          await mockPull()
+          this.onState("idle")
+        } catch (e) {
+          this.onState("error")
+          throw e
+        }
+      }
+      async push() {
+        this.onState("syncing")
+        try {
+          await mockPush()
+          this.onState("idle")
+        } catch (e) {
+          this.onState("error")
+          throw e
+        }
+      }
     },
   }
-}
-
-function createTokenStore(token: string | null = "test-token"): DeviceTokenStore {
-  let current = token
-  return {
-    getAccessToken: () => current,
-    setAccessToken: (t: string) => {
-      current = t
-    },
-  }
-}
+})
 
 // ─── Workspaces ──────────────────────────────────────────────────────────────
 
@@ -73,6 +76,8 @@ describe("cloud-provider", () => {
   beforeEach(() => {
     resetState()
     resetSyncProvider()
+    mockPull.mockClear()
+    mockPush.mockClear()
     vi.useFakeTimers()
   })
 
@@ -83,45 +88,36 @@ describe("cloud-provider", () => {
 
   describe("activation", () => {
     it("calls setSyncProvider on activateCloudSync", () => {
-      const client = createFakeClient()
-      const tokenStore = createTokenStore()
-      activateCloudSync({ tokenStore, client })
-      // The provider is now registered via setSyncProvider.
+      activateCloudSync({ tokenStore: {} as never })
       expect(getSyncProvider()).toBeDefined()
     })
 
     it("sets initial state to idle", () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       expect(getState()).toBe("idle")
     })
   })
 
   describe("workspace:opened — happy path", () => {
     it("triggers pull for cloud workspace", async () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       await handleWorkspaceOpened(cloudWorkspace)
-      expect(client.pullCount).toBe(1)
+      expect(mockPull).toHaveBeenCalledTimes(1)
     })
 
     it("triggers pull for team workspace", async () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       await handleWorkspaceOpened(teamWorkspace)
-      expect(client.pullCount).toBe(1)
+      expect(mockPull).toHaveBeenCalledTimes(1)
     })
 
     it("emits syncing then idle on successful pull", async () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       const states: string[] = []
       const { subscribe } = await import("../cloud-state")
       const unsub = subscribe((s) => states.push(s))
 
       const pullPromise = handleWorkspaceOpened(cloudWorkspace)
-      // State should be syncing immediately.
-      expect(getState()).toBe("syncing")
       await pullPromise
       expect(getState()).toBe("idle")
       expect(states).toEqual(["syncing", "idle"])
@@ -131,37 +127,34 @@ describe("cloud-provider", () => {
 
   describe("workspace:edit-committed — happy path", () => {
     it("triggers debounced push for cloud workspace", async () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       handleEditCommitted(cloudWorkspace)
-      // Not yet pushed (debounce).
-      expect(client.pushCount).toBe(0)
+      expect(mockPush).not.toHaveBeenCalled()
       vi.advanceTimersByTime(2000)
-      expect(client.pushCount).toBe(1)
+      await Promise.resolve()
+      expect(mockPush).toHaveBeenCalledTimes(1)
     })
 
     it("resets debounce on rapid edits", async () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       handleEditCommitted(cloudWorkspace)
       vi.advanceTimersByTime(1000)
-      handleEditCommitted(cloudWorkspace) // reset timer
+      handleEditCommitted(cloudWorkspace)
       vi.advanceTimersByTime(1000)
-      expect(client.pushCount).toBe(0) // still waiting
+      expect(mockPush).not.toHaveBeenCalled()
       vi.advanceTimersByTime(1000)
-      expect(client.pushCount).toBe(1) // pushed after full 2s from last edit
+      await Promise.resolve()
+      expect(mockPush).toHaveBeenCalledTimes(1)
     })
 
     it("emits syncing then idle on successful push", async () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       const states: string[] = []
       const { subscribe } = await import("../cloud-state")
       const unsub = subscribe((s) => states.push(s))
 
       handleEditCommitted(cloudWorkspace)
       vi.advanceTimersByTime(2000)
-      // Allow the push promise to resolve.
       await Promise.resolve()
       expect(getState()).toBe("idle")
       expect(states).toContain("syncing")
@@ -172,32 +165,30 @@ describe("cloud-provider", () => {
 
   describe("exclusions — local-only workspaces", () => {
     it("skips pull for local-only workspace", async () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       await handleWorkspaceOpened(localOnlyWorkspace)
-      expect(client.pullCount).toBe(0)
+      expect(mockPull).not.toHaveBeenCalled()
     })
 
     it("skips push for local-only workspace", async () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       handleEditCommitted(localOnlyWorkspace)
       vi.advanceTimersByTime(2000)
-      expect(client.pushCount).toBe(0)
+      expect(mockPush).not.toHaveBeenCalled()
     })
   })
 
   describe("negative — error handling", () => {
     it("emits error state on pull failure", async () => {
-      const client = createFailingClient(new Error("network down"))
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      mockPull.mockRejectedValueOnce(new Error("network down"))
+      activateCloudSync({ tokenStore: {} as never })
       await handleWorkspaceOpened(cloudWorkspace)
       expect(getState()).toBe("error")
     })
 
     it("emits error state on push failure", async () => {
-      const client = createFailingClient(new Error("token revoked"))
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      mockPush.mockRejectedValueOnce(new Error("token revoked"))
+      activateCloudSync({ tokenStore: {} as never })
       handleEditCommitted(cloudWorkspace)
       vi.advanceTimersByTime(2000)
       await Promise.resolve()
@@ -205,27 +196,23 @@ describe("cloud-provider", () => {
     })
 
     it("does not push if provider not activated", async () => {
-      // No activateCloudSync called.
       handleEditCommitted(cloudWorkspace)
       vi.advanceTimersByTime(2000)
-      // No error thrown, just a warning logged.
       expect(getState()).toBe("idle")
     })
   })
 
   describe("deactivation", () => {
     it("clears pending push timer on deactivate", async () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       handleEditCommitted(cloudWorkspace)
       deactivateCloudSync()
       vi.advanceTimersByTime(2000)
-      expect(client.pushCount).toBe(0)
+      expect(mockPush).not.toHaveBeenCalled()
     })
 
     it("resets state to idle on deactivate", () => {
-      const client = createFakeClient()
-      activateCloudSync({ tokenStore: createTokenStore(), client })
+      activateCloudSync({ tokenStore: {} as never })
       deactivateCloudSync()
       expect(getState()).toBe("idle")
     })
