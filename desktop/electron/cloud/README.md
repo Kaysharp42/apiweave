@@ -1,67 +1,80 @@
-# Cloud Link — RFC 8252 Desktop Authentication
+# Cloud Sync — Durable Transport
 
-Desktop linking flow for APIWeave Cloud. Opens a system browser to ZITADEL,
-captures the OAuth callback on a random loopback port, exchanges the code for
-tokens, registers the device, and encrypts the refresh token with the existing
-per-installation keyfile.
+Cloud sync transport for APIWeave Cloud. Implements `SyncProvider` with a
+durable outbox, cursor-based pagination, and full-resync protocol.
 
-## Flow
+## Architecture
 
-1. `startDeviceLink()` generates a PKCE S256 verifier and a random state.
-2. Spawns a transient HTTP listener on `127.0.0.1:<random-port>`.
-3. Opens the system browser to the ZITADEL authorize URL with the loopback
-   redirect URI `http://127.0.0.1:<port>/callback`.
-4. User authenticates in the browser; ZITADEL redirects to the callback.
-5. Listener validates the state, extracts the authorization code.
-6. Exchanges the code for tokens at ZITADEL's token endpoint (PKCE verifier).
-7. Verifies the `id_token` using `jose` (local JWKS verification).
-8. Calls the Go API `RegisterDevice` with the access token.
-9. Encrypts the refresh token with the existing keyfile (AES-256-GCM envelope).
-10. Returns the device record and encrypted credentials.
+```
+CloudSyncProvider (SyncProvider)
+  ├─ CloudClient          Connect protocol client (fetch-based)
+  ├─ DeviceTokenStore     Encrypted token storage (keyfile envelope)
+  ├─ CursorStore          Per-workspace sync position (app_settings)
+  └─ Outbox               Durable write-ahead log (cloud_outbox table)
+```
 
-## Security Model
+## Outbox Lifecycle
 
-- **Loopback only**: Listener binds `127.0.0.1` (never `0.0.0.0`, never
-  `localhost`). Port is OS-assigned (ephemeral), never hardcoded.
-- **PKCE mandatory**: S256 challenge method; plain method rejected by ZITADEL.
-- **State validation**: CSRF protection via random state parameter.
-- **One-shot listener**: Accepts exactly one successful callback, then closes.
-- **Timeout**: 5 minutes (configurable). Listener closes on timeout/cancel.
-- **No embedded webview**: Uses `electron.shell.openExternal()` (system browser).
-- **No plaintext tokens**: Refresh token encrypted at rest with the existing
-  keyfile. No new key material is created.
+Writes are enqueued BEFORE the network call (durable enqueue pattern):
 
-## On-Disk Credential Storage
+1. Local edit occurs → `outbox.enqueue(row)` writes to `cloud_outbox` table
+2. `push()` reads pending rows, batches by workspace, calls `PushDeltas`
+3. On `APPLIED` or `DUPLICATE` → `outbox.markApplied(id)` deletes the row
+4. On `CONFLICT` or `REJECTED` → `outbox.markFailed(id)` leaves the row pending
+5. On network error → rows stay pending; next `push()` retries
 
-The refresh token is encrypted using the existing per-installation keyfile
-(`desktop/core/secrets/keyfile.ts`):
+Re-application is idempotent because the server uses `expected_rev` precondition.
 
-1. A fresh 256-bit DEK is generated (`generateDek()`).
-2. The refresh token is encrypted with the DEK (AES-256-GCM).
-3. The DEK is wrapped by the master KEK from the keyfile (`wrapDek()`).
-4. Both the encrypted blob and the wrapped DEK are returned to the caller.
+## Cursor Semantics
 
-The caller persists the encrypted blob and wrapped DEK (e.g., in SQLite or a
-JSON file). The master KEK never leaves the keyfile; the DEK is ephemeral.
+The cursor is the server's ordering authority — NEVER derived from `updatedAt`.
 
-To decrypt on restart: read the keyfile, unwrap the DEK, decrypt the blob.
+- `cloud.cursor.<workspaceId>` — last seen cursor (int64)
+- `cloud.last_rev.<workspaceId>` — last known revision (diagnostics)
+- `cloud.last_full_sync.<workspaceId>` — timestamp of last full snapshot
 
-## Typed Errors
+`pull()` calls `Hello` → if `full_resync_required`, resets cursor and pulls
+from zero. Otherwise, calls `PullChanges(cursor)` and paginates through changes.
 
-- `ErrLinkTimeout` — listener timed out (5 minutes).
-- `ErrLinkStateMismatch` — OAuth state mismatch (CSRF attack).
-- `ErrLinkBadCallback` — invalid callback (missing code/state, OAuth error).
-- `ErrLinkExchangeFailed` — token exchange or device registration failed.
-- `ErrLinkStoreFailed` — keyfile read or encryption failed.
+## Full-Resync Protocol
+
+When the server returns `full_resync_required: true` from `Hello`:
+
+1. Clear the outbox (drop all pending writes)
+2. Reset the cursor for each workspace
+3. Pull all changes from cursor=0
+4. Record the full-sync timestamp
+
+This handles schema migrations, data corruption recovery, and protocol upgrades.
+
+## Forbidden Payload Rejection
+
+The desktop independently rejects payloads with `secrets` or `runs` fields,
+even though the server already filters them. This prevents a compromised cloud
+from pushing secret material or runtime-derived data to the desktop.
+
+## Token Refresh
+
+On `401 Unauthorized`, the transport pauses the push, calls the ZITADEL token
+endpoint with the encrypted refresh token, and retries once. If refresh fails,
+the outbox rows stay pending for the next sync cycle.
+
+## Security
+
+- All log lines redact tokens, codes, secrets, and ciphertext
+- Refresh token encrypted with existing keyfile (no new key material)
+- Forbidden payload check prevents secret material from entering the local store
+- Per-record SQLite transactions ensure atomicity (rollback on error)
 
 ## Testing
 
-Unit tests stub ZITADEL endpoints with `http.createServer` and mock
-`electron.shell.openExternal`. Run with:
-
 ```bash
 cd apiweave/desktop
-npx vitest run electron/cloud/__tests__/link.test.ts
+npx vitest run electron/cloud/__tests__/cloud-transport.test.ts
 ```
 
-Integration tests (Electron + Playwright) are skipped on Windows without xvfb.
+Tests use `nock` to mock the Connect endpoint. Coverage includes:
+
+- Happy path: pull/pull, push, offline-edit-reconnect cycle
+- Negative: network loss, expired token, stale revision, protocol mismatch
+- Forbidden: server-pushed payload with secrets is rejected locally
