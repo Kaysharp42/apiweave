@@ -11,5 +11,6 @@ import { z } from "zod"
 export const DelayNodeDataSchema = z
   .object({
     duration: z.number().int().nonnegative().optional(),
+    continueOnFail: z.boolean().optional(),
   })
   .strict()

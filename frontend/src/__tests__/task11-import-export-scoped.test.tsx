@@ -150,5 +150,11 @@ describe("Task 11: Import panels and Swagger refresh migration", () => {
         expect(source).toContain("useScopeContext");
       });
     }
+
+    it("WorkflowExportImport does not build import/export URLs with an empty workspace fallback", () => {
+      const source = readFileSync(resolve(componentDir, "WorkflowExportImport.tsx"), "utf-8");
+      expect(source).not.toContain("workspaceId || \"\"");
+      expect(source).toContain("resolveWorkspaceId");
+    });
   });
 });

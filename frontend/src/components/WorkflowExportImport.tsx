@@ -13,7 +13,7 @@ import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { Modal } from "./molecules/Modal";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { authenticatedFetch } from "../utils/apiweaveClient";
+import { apiweave, authenticatedFetch } from "../utils/apiweaveClient";
 import {
   workflowExportUrl,
   workflowImportUrl,
@@ -24,6 +24,41 @@ import type { WorkflowExportImportProps } from "../types/WorkflowExportImportPro
 import type { DryRunResult } from "../types/DryRunResult";
 import type { ImportResult } from "../types/ImportResult";
 
+// ponytail: surfaces zod `details` from the IPC validation error so the user
+// sees WHICH field failed, not just "request validation failed".
+function formatImportError(
+  errorData: { readonly detail?: string; readonly details?: unknown },
+  fallback: string,
+): string {
+  const base = (errorData.detail ?? "").trim() || fallback;
+  const details = errorData.details;
+  if (!Array.isArray(details) || details.length === 0) return base;
+  const lines: string[] = [];
+  for (const issue of details) {
+    if (!issue || typeof issue !== "object") continue;
+    const msg = String((issue as { readonly message?: unknown }).message ?? "");
+    const rawPath = (issue as { readonly path?: unknown }).path;
+    if (!Array.isArray(rawPath)) continue;
+    
+    let pathStr = "";
+    for (let i = 0; i < rawPath.length; i++) {
+      const part = rawPath[i];
+      if (i === 0 && part === "bundle") continue;
+      if (typeof part === "number") {
+        pathStr += `[${part}]`;
+      } else {
+        if (pathStr) pathStr += ".";
+        pathStr += String(part);
+      }
+    }
+    
+    const simpleMsg = msg.replace(/^Invalid input:\s*/i, "");
+    
+    if (simpleMsg) lines.push(pathStr ? `${pathStr}: ${simpleMsg}` : simpleMsg);
+  }
+  return lines.length ? `${base} — ${lines.join("; ")}` : base;
+}
+
 export function WorkflowExportImport({
   workflowId,
   workflowName,
@@ -31,8 +66,11 @@ export function WorkflowExportImport({
   onImportSuccess,
   initialTab,
   mode,
+  workspaceId: workspaceIdFallback,
 }: WorkflowExportImportProps) {
   const { workspaceId } = useScopeContext();
+  const [resolvedWorkspaceId, setResolvedWorkspaceId] = useState<string | null>(null);
+  const effectiveWorkspaceId = workspaceId ?? workspaceIdFallback ?? resolvedWorkspaceId;
   const [activeTab, setActiveTab] = useState<WorkflowExportImportTab>(() =>
     resolveWorkflowExportImportInitialTab({ initialTab, mode }),
   );
@@ -45,6 +83,18 @@ export function WorkflowExportImport({
   const [error, setError] = useState<string | null>(null);
   const [createMissingEnvs, setCreateMissingEnvs] = useState<boolean>(true);
 
+  const resolveWorkspaceId = async (): Promise<string> => {
+    if (effectiveWorkspaceId) return effectiveWorkspaceId;
+
+    const workspaces = await apiweave.workspaces.list();
+    const resolvedId =
+      workspaces.find((workspace) => workspace.isPersonal)?.workspaceId ??
+      workspaces[0]?.workspaceId;
+    if (!resolvedId) throw new Error("No workspace is available for import.");
+    setResolvedWorkspaceId(resolvedId);
+    return resolvedId;
+  };
+
   const handleExport = async (): Promise<void> => {
     if (!workflowId) {
       setError("Select a workflow from the list to export.");
@@ -55,8 +105,9 @@ export function WorkflowExportImport({
     setError(null);
 
     try {
+      const targetWorkspaceId = await resolveWorkspaceId();
       const response = await authenticatedFetch(
-        workflowExportUrl(workspaceId || "", workflowId, includeEnvironment),
+        workflowExportUrl(targetWorkspaceId, workflowId, includeEnvironment),
         {
           method: "GET",
           headers: {
@@ -126,9 +177,10 @@ export function WorkflowExportImport({
 
     try {
       const bundle = JSON.parse(importJson);
+      const targetWorkspaceId = await resolveWorkspaceId();
 
       const response = await authenticatedFetch(
-        workflowImportDryRunUrl(workspaceId || ""),
+        workflowImportDryRunUrl(targetWorkspaceId),
         {
           method: "POST",
           headers: {
@@ -140,7 +192,7 @@ export function WorkflowExportImport({
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || "Dry run failed");
+        throw new Error(formatImportError(errorData, "Dry run failed"));
       }
 
       const result = await response.json();
@@ -166,9 +218,10 @@ export function WorkflowExportImport({
 
     try {
       const bundle = JSON.parse(importJson);
+      const targetWorkspaceId = await resolveWorkspaceId();
 
       const response = await authenticatedFetch(
-        workflowImportUrl(workspaceId || ""),
+        workflowImportUrl(targetWorkspaceId),
         {
           method: "POST",
           headers: {
@@ -184,7 +237,7 @@ export function WorkflowExportImport({
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || "Import failed");
+        throw new Error(formatImportError(errorData, "Import failed"));
       }
 
       const result = await response.json();

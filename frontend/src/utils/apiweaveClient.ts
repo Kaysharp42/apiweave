@@ -517,6 +517,20 @@ function parsePayload(options: AuthenticatedRequestInit): unknown {
   }
 }
 
+const readFormFileText = async (
+  options: AuthenticatedRequestInit,
+  field: string,
+): Promise<string> => {
+  if (!(options.body instanceof FormData)) return "";
+  const file = options.body.get(field);
+  return file instanceof File ? file.text() : "";
+};
+
+const parseImportBool = (params: URLSearchParams, name: string): boolean | undefined => {
+  const value = params.get(name);
+  return value === null ? undefined : value === "true";
+};
+
 const readPath = (
   input: string | URL | Request,
 ): { readonly path: string; readonly params: URLSearchParams } => {
@@ -659,13 +673,71 @@ export async function authenticatedFetch(
           );
           return ok(workflow);
         }
+        if (parts[4] === "import" && parts[5] === "openapi" && parts[6] === "url" && ["GET", "POST"].includes(method)) {
+          return ok(
+            await invoke<unknown>("workflows", "importOpenapiUrl", {
+              workspaceId,
+              url: params.get("swagger_url") ?? params.get("url") ?? "",
+              baseUrl: params.get("base_url") ?? undefined,
+              tagFilter: params.get("tag_filter")?.split(",").filter(Boolean),
+              sanitize: parseImportBool(params, "sanitize"),
+              dryRun: parts[7] === "dry-run",
+            }),
+          );
+        }
+        if (parts[4] === "import" && parts[5] === "openapi" && method === "POST") {
+          const spec = await readFormFileText(options, "file");
+          return ok(
+            await invoke<unknown>("workflows", "importOpenapi", {
+              workspaceId,
+              spec,
+              baseUrl: params.get("base_url") ?? undefined,
+              tagFilter: params.get("tag_filter")?.split(",").filter(Boolean),
+              sanitize: parseImportBool(params, "sanitize"),
+              dryRun: parts[6] === "dry-run",
+            }),
+          );
+        }
+        if (parts[4] === "import" && parts[5] === "har" && method === "POST") {
+          const text = await readFormFileText(options, "file");
+          return ok(
+            await invoke<unknown>("workflows", "importHar", {
+              workspaceId,
+              data: JSON.parse(text) as Record<string, unknown>,
+              importMode: params.get("import_mode") ?? undefined,
+              sanitize: parseImportBool(params, "sanitize"),
+              dryRun: parts[6] === "dry-run",
+            }),
+          );
+        }
+        if (parts[4] === "import" && parts[5] === "curl" && method === "POST") {
+          return ok(
+            await invoke<unknown>("workflows", "importCurl", {
+              workspaceId,
+              curlCommand: params.get("curl_command") ?? "",
+              sanitize: parseImportBool(params, "sanitize"),
+              dryRun: parts[6] === "dry-run",
+              workflowId: params.get("workflowId") ?? undefined,
+              collectionId: params.get("collectionId") ?? undefined,
+            }),
+          );
+        }
         if (parts[4] === "import") {
-          const body = (payload ?? {}) as { bundle?: unknown };
+          const body = (payload ?? {}) as {
+            readonly bundle?: unknown;
+            readonly createMissingEnvironments?: boolean;
+            readonly sanitize?: boolean;
+          };
           const bundle = body.bundle ?? body;
           return ok(
             parts[5] === "dry-run"
               ? await apiweave.workflows.dryRun(workspaceId, bundle)
-              : await apiweave.workflows.import(workspaceId, bundle),
+              : await invoke<ImportResult>("workflows", "import", {
+                  workspaceId,
+                  bundle,
+                  createMissingEnvironments: body.createMissingEnvironments,
+                  sanitize: body.sanitize,
+                }),
           );
         }
         const workflowId = segment(parts, 4);

@@ -18,6 +18,7 @@ import { EnvironmentService } from "../../../services/environment_service"
 import { RunService } from "../../../services/run_service"
 import { SecretService, type SecretWriteStore, type SecretUpsert } from "../../../services/secret_service"
 import { ProjectExportService } from "../../../services/project_export_service"
+import { ImportService } from "../../../services/import_service"
 import type { SecretMetadata, SecretScopeType } from "../../../secrets/scoped_secret_resolver"
 import { IpcRouter } from "../../router"
 import { registerAllHandlers, type HandlerDeps } from ".."
@@ -89,6 +90,7 @@ beforeEach(() => {
       secretStore,
       () => "2026-01-01T00:00:00.000Z",
     ),
+    imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver),
   }
   router = new IpcRouter()
   registerAllHandlers(router, deps)

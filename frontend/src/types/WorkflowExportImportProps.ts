@@ -7,4 +7,5 @@ export interface WorkflowExportImportProps {
   onImportSuccess?: (workflowId: string) => void;
   initialTab?: WorkflowExportImportTab;
   mode?: string;
+  workspaceId?: string | null;
 }

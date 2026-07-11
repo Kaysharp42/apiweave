@@ -324,7 +324,7 @@ function App() {
               <Route path="/login" element={<Navigate to="/app" replace />} />
               <Route path="/setup" element={<SetupEntry />} />
               <Route
-                path="/personal/workflows/:workflowId"
+                path="/:workspaceSlug/workflows/:workflowId"
                 element={
                   <ProtectedRoute>
                     <WorkspaceProvider>
@@ -334,7 +334,7 @@ function App() {
                 }
               />
               <Route
-                path="/personal/workflows"
+                path="/:workspaceSlug/workflows"
                 element={
                   <ProtectedRoute>
                     <WorkspaceProvider>

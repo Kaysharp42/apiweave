@@ -6,6 +6,7 @@ import { registerEnvironmentHandlers } from "./environments"
 import { registerRunHandlers } from "./runs"
 import { registerSecretHandlers } from "./secrets"
 import { registerProjectHandlers } from "./projects"
+import { registerImportHandlers } from "./imports"
 
 export type { HandlerDeps } from "./common"
 
@@ -22,4 +23,5 @@ export function registerAllHandlers(router: IpcRouter, deps: HandlerDeps): void 
   registerRunHandlers(router, deps)
   registerSecretHandlers(router, deps)
   registerProjectHandlers(router, deps)
+  registerImportHandlers(router, deps)
 }

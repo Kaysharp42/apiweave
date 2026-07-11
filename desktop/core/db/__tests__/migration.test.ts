@@ -7,6 +7,7 @@ import { LocalOnlySyncProvider } from "../../sync"
 import type { InitializedDatabase, SqliteRow } from "../index"
 
 const tempRoots: string[] = []
+const CURRENT_SCHEMA_VERSION = readMigrations().at(-1)?.version ?? 0
 
 describe("database migrations", () => {
   afterEach(() => {
@@ -19,9 +20,10 @@ describe("database migrations", () => {
     const db = openTempDatabase()
     try {
       const store = db.kvStore
-      expect(db.schemaVersion).toBe(3)
-      expect(db.database.pragma("user_version", { simple: true })).toBe(3)
+      expect(db.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+      expect(db.database.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION)
       expect(tableNames(store)).toEqual([
+        "app_settings",
         "collections",
         "environments",
         "run_responses",
@@ -68,7 +70,7 @@ describe("database migrations", () => {
 
       const secondOpen = initDatabase({ databasePath: db.databasePath })
       try {
-        expect(secondOpen.schemaVersion).toBe(3)
+        expect(secondOpen.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
       } finally {
         secondOpen.close()
       }
@@ -129,7 +131,7 @@ describe("database migrations", () => {
       db.database.pragma("user_version = 99")
 
       expect(() => initDatabase({ databasePath: db.databasePath })).toThrow(
-        "migration not found: database user_version 99 is newer than current 3",
+        `migration not found: database user_version 99 is newer than current ${CURRENT_SCHEMA_VERSION}`,
       )
       const workflow = store.get("SELECT id, name FROM workflows WHERE id = ?", ["workflow-1"])
       expect(workflow).toMatchObject({ id: "workflow-1", name: "Before unknown migration" })
@@ -155,7 +157,7 @@ describe("database migrations", () => {
     const recovered = initDatabase({ databasePath: path.join(tempRoot, "bad.db"), migrationsPath: path.join(__dirname, "..", "migrations") })
     try {
       expect(recovered.kvStore.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", ["migration_probe"])).toBeUndefined()
-      expect(recovered.schemaVersion).toBe(3)
+      expect(recovered.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     } finally {
       recovered.close()
     }

@@ -130,6 +130,7 @@ export function SidebarHeader({
 
   const searchQuery = useSidebarStore((s) => s.searchQuery);
   const setSearchQuery = useSidebarStore((s) => s.setSearchQuery);
+  const activeWorkspaceId = useSidebarStore((s) => s.activeWorkspaceId);
   const { currentWorkspace, currentOrg } = useWorkspace();
 
   const inOrg = Boolean(currentOrg);
@@ -313,6 +314,7 @@ export function SidebarHeader({
 
       {state.showWorkflowImportExport && (
         <WorkflowExportImport
+          workspaceId={currentWorkspace?.workspaceId ?? activeWorkspaceId}
           onClose={() => dispatch({ type: "close-workflow-import-export" })}
           initialTab="import"
           onImportSuccess={() => {

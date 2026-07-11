@@ -12,5 +12,6 @@ import { AssertionItemSchema } from "./AssertionItemSchema"
 export const AssertionNodeDataSchema = z
   .object({
     assertions: z.array(AssertionItemSchema).optional(),
+    continueOnFail: z.boolean().optional(),
   })
   .strict()

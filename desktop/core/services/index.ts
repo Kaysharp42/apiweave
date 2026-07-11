@@ -19,6 +19,7 @@ export type {
 } from "./project_export_service"
 export {
   isSecretKey,
+  detectSecretsInValue,
   sanitizeVariablesForExport,
   extractSecretRefsFromString,
   collectSecretRefs,
@@ -26,3 +27,28 @@ export {
   SECRET_PLACEHOLDER,
 } from "./secret_utils"
 export type { SecretReference } from "./secret_utils"
+export { ImportService } from "./import_service"
+export type {
+  WorkflowBundle,
+  WorkflowImportResult,
+  WorkflowDryRunResult,
+  RemoteOpenApiOptions,
+} from "./import_service"
+export {
+  parseCurlCommands,
+  parseHarData,
+  parseOpenApiSpec,
+  parseSpecText,
+  openApiPreview,
+  harDryRun,
+} from "./import_parsers"
+export type {
+  ImportedNode,
+  ParsedWorkflow,
+  OpenApiParseOptions,
+  HarParseOptions,
+  CurlParseOptions,
+  HarDryRunResult,
+  CurlDryRunResult,
+  OpenApiPreviewData,
+} from "./import_parsers"

@@ -25,6 +25,7 @@ import {
   RunService,
   SecretService,
   ProjectExportService,
+  ImportService,
 } from "../core/services"
 import { LocalOwnerProvider } from "../core/auth"
 import { LocalOnlySyncProvider } from "../core/sync"
@@ -227,6 +228,7 @@ if (!hasSingleInstanceLock) {
         secretStore,
         () => clock.isoNow(),
       ),
+      imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver),
     }
     registerAllHandlers(ipcRouter, deps)
 

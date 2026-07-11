@@ -31,11 +31,21 @@ export class WorkspaceService {
   }
 
   async create(input: WorkspaceCreateInput): Promise<Workspace> {
+    // Idempotent personal workspace: the local owner has exactly one. A first-run
+    // race (or any second `create({isPersonal: true})`) must not spawn a dupe —
+    // the redirect keys off `slug === "personal"` and a second slug (`personal-2`)
+    // isn't routable. better-sqlite3 is sync, so this guard is race-free.
+    const wantPersonal = input.isPersonal ?? true
+    if (wantPersonal) {
+      const existing = this.workspaces.listAll().find((ws) => ws.isPersonal)
+      if (existing !== undefined) return existing
+    }
+
     const created = this.workspaces.create({
       name: input.name,
       slug: this.uniqueSlug(input.slug ?? input.name),
       description: input.description ?? null,
-      isPersonal: input.isPersonal ?? true,
+      isPersonal: wantPersonal,
     })
     await this.syncProvider.push()
     return created

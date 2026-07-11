@@ -14,5 +14,7 @@ export const MergeNodeDataSchema = z
   .object({
     mergeStrategy: z.enum(["all", "any", "first", "conditional"]).optional(),
     conditions: z.array(MergeConditionSchema).optional(),
+    conditionLogic: z.enum(["AND", "OR"]).optional(),
+    continueOnFail: z.boolean().optional(),
   })
   .strict()

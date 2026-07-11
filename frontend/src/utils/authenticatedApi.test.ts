@@ -77,6 +77,51 @@ describe("apiweave IPC legacy transport shim", () => {
     });
   });
 
+  test("workflow import route preserves IPC request wrapper", async () => {
+    const bundle = {
+      workflow: {
+        name: "Imported workflow",
+        nodes: [],
+        edges: [],
+        variables: {},
+      },
+    };
+    const importResult = {
+      workflowId: "wf-1",
+      name: "Imported workflow",
+      nodeCount: 0,
+      edgeCount: 0,
+      secretReferences: [],
+      warnings: [],
+    };
+    const invoke = vi.fn().mockResolvedValue({ ok: true, data: importResult });
+    vi.stubGlobal("__APIWEAVE_IPC__", {
+      invoke,
+      onRunProgress: vi.fn().mockReturnValue(() => undefined),
+    });
+
+    const response = await authenticatedFetch(
+      "ipc://apiweave/api/workspaces/ws-1/workflows/import",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          bundle,
+          createMissingEnvironments: true,
+          sanitize: true,
+        }),
+      },
+    );
+
+    expect(response.ok).toBe(true);
+    await expect(response.json()).resolves.toEqual(importResult);
+    expect(invoke).toHaveBeenCalledWith("workflows", "import", {
+      workspaceId: "ws-1",
+      bundle,
+      createMissingEnvironments: true,
+      sanitize: true,
+    });
+  });
+
   test("copyInviteLink reports unavailable clipboard", async () => {
     vi.stubGlobal("navigator", {});
     await expect(copyInviteLink("https://example.test/invite")).resolves.toBe(
