@@ -19,6 +19,8 @@ import SetupPage from "./pages/SetupPage";
 import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
+import { ConflictDetailPage } from "./pages/cloud/ConflictDetailPage";
+import { ConflictsPage } from "./pages/cloud/ConflictsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PaletteProvider } from "./contexts/PaletteContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
@@ -323,6 +325,26 @@ function App() {
               />
               <Route path="/login" element={<Navigate to="/app" replace />} />
               <Route path="/setup" element={<SetupEntry />} />
+              <Route
+                path="/cloud/conflicts/:conflictId"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <ConflictDetailPage />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/cloud/conflicts"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <ConflictsPage />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/:workspaceSlug/workflows/:workflowId"
                 element={
