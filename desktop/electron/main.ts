@@ -28,13 +28,14 @@ import {
   ImportService,
 } from "../core/services"
 import { LocalOwnerProvider } from "../core/auth"
-import { LocalOnlySyncProvider } from "../core/sync"
+import { LocalOnlySyncProvider, SwitchableSyncProvider } from "../core/sync"
 import { RunScheduler, SafeHttp, DynamicFunctions } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
 import { MCP_TOOLS, toolName } from "../core/mcp/tools"
 import type { McpStatus } from "../../shared/types/McpStatus"
 import type { MCPTool } from "../../shared/types/MCPTool"
+import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 
 // The single request channel. The composition root (whenReady) constructs the
 // services and calls registerAllHandlers onto it before attaching; the MCP host
@@ -174,7 +175,7 @@ if (!hasSingleInstanceLock) {
     }
     const scopeResolver = new ScopeResolver(existence)
     const permissions = new LocalOwnerProvider()
-    const sync = new LocalOnlySyncProvider()
+    const sync = new SwitchableSyncProvider(new LocalOnlySyncProvider())
 
     // Keyfile: the persisted master KEK that deterministically derives the
     // sealed-box private seed. Seeded once on first run; read thereafter. Lose
@@ -182,6 +183,12 @@ if (!hasSingleInstanceLock) {
     const keyfilePath = path.join(app.getPath("userData"), "keyfile.json")
     const keyfile = keyfileExists(keyfilePath) ? readKeyfile(keyfilePath) : createKeyfile(keyfilePath)
     const secretService = new SecretService(secretStore, sync, permissions, scopeResolver, keyfile.masterKek)
+    const cloud = new DesktopCloudSyncControl({
+      store: database.kvStore,
+      keyfilePath,
+      defaults: cloudDefaults(app.getVersion()),
+      setSyncProviderTarget: (provider) => sync.setTarget(provider),
+    })
 
     // Runner: in-process scheduler drives the executor.
     const clock = new WallClockProvider()
@@ -229,6 +236,7 @@ if (!hasSingleInstanceLock) {
         () => clock.isoNow(),
       ),
       imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver),
+      cloud,
     }
     registerAllHandlers(ipcRouter, deps)
 

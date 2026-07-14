@@ -3,6 +3,7 @@ import type { JsonValue } from "../../../shared/types/JsonValue"
 import type { EnvironmentCreate, EnvironmentRepository, EnvironmentUpdate } from "../repositories"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
+import { recordEnvironmentTombstone, recordEnvironmentUpsert } from "../sync/cloud-mutations"
 import { NotFoundError } from "../ipc/errors"
 import { RESOURCE_ENVIRONMENTS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
@@ -20,6 +21,7 @@ export class EnvironmentService {
   async create(workspaceId: string, input: Omit<EnvironmentCreate, "workspaceId">): Promise<Environment> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_ENVIRONMENTS)
     const created = this.environments.create({ ...input, workspaceId })
+    recordEnvironmentUpsert(this.syncProvider, created)
     await this.syncProvider.push()
     return created
   }
@@ -39,13 +41,15 @@ export class EnvironmentService {
     this.mustGet(workspaceId, environmentId)
     const updated = this.environments.update(environmentId, patch)
     if (updated === undefined) throw new NotFoundError(`environment ${environmentId} not found`)
+    recordEnvironmentUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }
 
   async delete(workspaceId: string, environmentId: string): Promise<void> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_ENVIRONMENTS)
-    this.mustGet(workspaceId, environmentId)
+    const existing = this.mustGet(workspaceId, environmentId)
+    recordEnvironmentTombstone(this.syncProvider, existing)
     this.environments.delete(environmentId)
     await this.syncProvider.push()
   }
@@ -60,6 +64,7 @@ export class EnvironmentService {
     this.mustGet(workspaceId, environmentId)
     const updated = this.environments.setVariable(environmentId, name, value)
     if (updated === undefined) throw new NotFoundError(`environment ${environmentId} not found`)
+    recordEnvironmentUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }
@@ -69,6 +74,7 @@ export class EnvironmentService {
     this.mustGet(workspaceId, environmentId)
     const updated = this.environments.deleteVariable(environmentId, name)
     if (updated === undefined) throw new NotFoundError(`environment ${environmentId} not found`)
+    recordEnvironmentUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }

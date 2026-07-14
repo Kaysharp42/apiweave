@@ -8,6 +8,7 @@ import type {
 import type { SecretMetadataStore } from "../secrets/scoped_secret_resolver"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
+import { recordCollectionUpsert, recordEnvironmentUpsert, recordWorkflowUpsert } from "../sync/cloud-mutations"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_COLLECTIONS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
@@ -222,6 +223,7 @@ export class ProjectExportService {
       description: bundle.project?.description ?? null,
       color: bundle.project?.color ?? null,
     })
+    recordCollectionUpsert(this.syncProvider, project)
 
     const envMapping = new Map<string, string>()
     for (const environment of bundle.environments ?? []) {
@@ -233,6 +235,7 @@ export class ProjectExportService {
         variables: environment.variables ?? {},
         secrets: {},
       })
+      recordEnvironmentUpsert(this.syncProvider, created)
       if (environment.environmentId) envMapping.set(environment.environmentId, created.environmentId)
     }
 
@@ -251,7 +254,8 @@ export class ProjectExportService {
         collectionId: project.collectionId,
         selectedEnvironmentId: mappedEnvId ?? null,
       }
-      this.workflows.create(create)
+      const created = this.workflows.create(create)
+      recordWorkflowUpsert(this.syncProvider, created)
       if (oldEnvId && !mappedEnvId) {
         warnings.push(`Environment reference '${oldEnvId}' in workflow '${create.name}' could not be mapped`)
       }

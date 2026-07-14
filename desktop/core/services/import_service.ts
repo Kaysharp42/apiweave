@@ -12,6 +12,7 @@ import type {
 } from "../repositories"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
+import { recordEnvironmentUpsert, recordWorkflowUpsert } from "../sync/cloud-mutations"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_WORKFLOWS, RESOURCE_COLLECTIONS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
@@ -231,6 +232,7 @@ export class ImportService {
           variables: vars,
           secrets: {},
         })
+        recordEnvironmentUpsert(this.syncProvider, created)
         mappedEnvId = created.environmentId
       }
     }
@@ -261,6 +263,7 @@ export class ImportService {
     }
 
     const created = this.workflows.create(create)
+    recordWorkflowUpsert(this.syncProvider, created)
     await this.syncProvider.push()
 
     return {
@@ -457,6 +460,7 @@ export class ImportService {
 
       const updated = this.workflows.update(opts.workflowId, { nodes: mergedNodes, edges: mergedEdges })
       if (!updated) throw new NotFoundError(`workflow ${opts.workflowId} not found`)
+      recordWorkflowUpsert(this.syncProvider, updated)
       await this.syncProvider.push()
       return updated
     }
@@ -479,6 +483,7 @@ export class ImportService {
       ...(opts.collectionId ? { collectionId: opts.collectionId } : {}),
     }
     const created = this.workflows.create(create)
+    recordWorkflowUpsert(this.syncProvider, created)
     await this.syncProvider.push()
     return created
   }
@@ -498,6 +503,7 @@ export class ImportService {
 
     const updated = this.workflows.update(workflowId, { nodeTemplates: merged })
     if (!updated) throw new NotFoundError(`workflow ${workflowId} not found`)
+    recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }

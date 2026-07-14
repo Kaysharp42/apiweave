@@ -11,66 +11,34 @@
  */
 
 import type { KVStore } from "../../core/db"
+import { CloudSyncRepository, type CloudCursorState } from "../../core/repositories"
 
-const KEY_CURSOR = "cloud.cursor."
-const KEY_LAST_REV = "cloud.last_rev."
-const KEY_LAST_FULL_SYNC = "cloud.last_full_sync."
-
-export interface CursorState {
-  readonly cursor: bigint
-  readonly lastRev: bigint
-}
+export type CursorState = CloudCursorState
 
 export class CursorStore {
-  public constructor(private readonly store: KVStore) {}
+  private readonly repository: CloudSyncRepository
+
+  public constructor(store: KVStore | CloudSyncRepository) {
+    this.repository = store instanceof CloudSyncRepository ? store : new CloudSyncRepository(store)
+  }
 
   public get(workspaceId: string): CursorState | undefined {
-    const row = this.store.get<{ value: string }>(
-      "SELECT value FROM app_settings WHERE key = ?",
-      [KEY_CURSOR + workspaceId],
-    )
-    if (row === undefined) {
-      return undefined
-    }
-    const revRow = this.store.get<{ value: string }>(
-      "SELECT value FROM app_settings WHERE key = ?",
-      [KEY_LAST_REV + workspaceId],
-    )
-    return {
-      cursor: BigInt(row.value),
-      lastRev: revRow ? BigInt(revRow.value) : 0n,
-    }
+    return this.repository.getCursor(workspaceId)
   }
 
   public set(workspaceId: string, cursor: bigint, lastRev: bigint): void {
-    this.store.set(
-      "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
-      [KEY_CURSOR + workspaceId, cursor.toString()],
-    )
-    this.store.set(
-      "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
-      [KEY_LAST_REV + workspaceId, lastRev.toString()],
-    )
+    this.repository.setCursor(workspaceId, cursor, lastRev)
   }
 
   public setFullSync(workspaceId: string, timestampMs: number): void {
-    this.store.set(
-      "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
-      [KEY_LAST_FULL_SYNC + workspaceId, timestampMs.toString()],
-    )
+    this.repository.setFullSync(workspaceId, timestampMs)
   }
 
   public getFullSync(workspaceId: string): number | undefined {
-    const row = this.store.get<{ value: string }>(
-      "SELECT value FROM app_settings WHERE key = ?",
-      [KEY_LAST_FULL_SYNC + workspaceId],
-    )
-    return row ? Number(row.value) : undefined
+    return this.repository.getFullSync(workspaceId)
   }
 
   public reset(workspaceId: string): void {
-    this.store.delete("DELETE FROM app_settings WHERE key = ?", [KEY_CURSOR + workspaceId])
-    this.store.delete("DELETE FROM app_settings WHERE key = ?", [KEY_LAST_REV + workspaceId])
-    this.store.delete("DELETE FROM app_settings WHERE key = ?", [KEY_LAST_FULL_SYNC + workspaceId])
+    this.repository.resetCursor(workspaceId)
   }
 }

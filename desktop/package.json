@@ -23,6 +23,7 @@
     "test:desktop": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.12.1",
     "@modelcontextprotocol/sdk": "^1.23.0",
     "better-sqlite3": "^12.6.0",
     "jose": "6.2.3",

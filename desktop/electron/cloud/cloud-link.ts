@@ -21,6 +21,8 @@ import { randomBytes, createHash } from "node:crypto"
 import { shell } from "electron"
 import { readKeyfile, type Keyfile } from "../../core/secrets/keyfile"
 import { encrypt, generateDek, wrapDek, type EncryptedBlob } from "../../core/secrets/crypto"
+import { create } from "@bufbuild/protobuf"
+import { DeviceService, RegisterDeviceRequestSchema, type Device, type RegisterDeviceRequest } from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/device_pb.js"
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -101,6 +103,7 @@ interface TokenResponse {
 const LOOPBACK_HOST = "127.0.0.1"
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 const CALLBACK_PATH = "/callback"
+const METHOD_REGISTER_DEVICE = "RegisterDevice"
 
 // ─── Implementation ──────────────────────────────────────────────────────────
 
@@ -353,7 +356,12 @@ async function registerDevice(
   config: DeviceLinkConfig,
   accessToken: string,
 ): Promise<DeviceRecord> {
-  const endpoint = `${config.apiBaseUrl}/apiweave.v1.DeviceService/RegisterDevice`
+  const endpoint = `${config.apiBaseUrl}/${DeviceService.typeName}/${METHOD_REGISTER_DEVICE}`
+  const request: RegisterDeviceRequest = create(RegisterDeviceRequestSchema, {
+    publicKey: config.devicePublicKey,
+    label: config.deviceLabel,
+    clientVersion: config.clientVersion,
+  })
 
   const response = await fetch(endpoint, {
     method: "POST",
@@ -361,10 +369,11 @@ async function registerDevice(
       "content-type": "application/json",
       authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({
-      publicKey: Buffer.from(config.devicePublicKey).toString("base64"),
-      label: config.deviceLabel,
-      clientVersion: config.clientVersion,
+    body: JSON.stringify(request, (_key, value) => {
+      if (value instanceof Uint8Array) {
+        return Buffer.from(value).toString("base64")
+      }
+      return value
     }),
   })
 
@@ -373,21 +382,35 @@ async function registerDevice(
     throw new ErrLinkExchangeFailed(`Device registration failed: HTTP ${response.status}: ${text}`)
   }
 
-  const device = (await response.json()) as {
-    id: string
-    publicKey: string
-    label: string
-    clientVersion: string
-    createdAt: string
-  }
+  const device = await parseDeviceResponse(response)
 
   return {
     deviceId: device.id,
-    publicKey: Buffer.from(device.publicKey, "base64"),
+    publicKey: device.publicKey,
     label: device.label,
     clientVersion: device.clientVersion,
-    createdAt: device.createdAt,
+    createdAt: timestampToIso(device.createdAt),
   }
+}
+
+async function parseDeviceResponse(response: Response): Promise<Device> {
+  const json = await response.json() as Record<string, unknown>
+  if (typeof json["publicKey"] === "string") {
+    json["publicKey"] = new Uint8Array(Buffer.from(json["publicKey"] as string, "base64"))
+  }
+  return json as Device
+}
+
+function timestampToIso(value: Device["createdAt"] | string): string {
+  if (value === undefined) {
+    return new Date().toISOString()
+  }
+  if (typeof value === "string") {
+    return value
+  }
+  const seconds = Number(value.seconds)
+  const nanos = value.nanos
+  return new Date(seconds * 1000 + Math.floor(nanos / 1_000_000)).toISOString()
 }
 
 function encryptRefreshToken(

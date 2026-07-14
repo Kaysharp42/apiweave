@@ -24,6 +24,11 @@ describe("database migrations", () => {
       expect(db.database.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION)
       expect(tableNames(store)).toEqual([
         "app_settings",
+        "cloud_conflicts",
+        "cloud_devices",
+        "cloud_outbox",
+        "cloud_record_state",
+        "cloud_workspace_bindings",
         "collections",
         "environments",
         "run_responses",

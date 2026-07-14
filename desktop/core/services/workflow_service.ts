@@ -8,6 +8,7 @@ import type {
 } from "../repositories"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
+import { recordWorkflowTombstone, recordWorkflowUpsert } from "../sync/cloud-mutations"
 import { NotFoundError } from "../ipc/errors"
 import { RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
@@ -27,6 +28,7 @@ export class WorkflowService {
   async create(workspaceId: string, input: Omit<WorkflowCreate, "workspaceId">): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_WORKFLOWS)
     const created = this.workflows.create({ ...input, workspaceId })
+    recordWorkflowUpsert(this.syncProvider, created)
     await this.syncProvider.push()
     return created
   }
@@ -49,13 +51,15 @@ export class WorkflowService {
     this.mustGet(workspaceId, workflowId)
     const updated = this.workflows.update(workflowId, patch)
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+    recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }
 
   async delete(workspaceId: string, workflowId: string): Promise<void> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_WORKFLOWS)
-    this.mustGet(workspaceId, workflowId)
+    const existing = this.mustGet(workspaceId, workflowId)
+    recordWorkflowTombstone(this.syncProvider, existing)
     this.workflows.delete(workflowId)
     await this.syncProvider.push()
   }
@@ -76,6 +80,7 @@ export class WorkflowService {
     }
     const updated = this.workflows.update(workflowId, { collectionId })
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+    recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }
@@ -96,6 +101,7 @@ export class WorkflowService {
     }
     const updated = this.workflows.update(workflowId, { selectedEnvironmentId: environmentId })
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+    recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }

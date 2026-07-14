@@ -15,12 +15,14 @@
  * Log lines redact raw tokens, codes, secrets, and ciphertext.
  */
 
-import type { SyncProvider } from "../../core/sync/SyncProvider"
+import type { SyncMutation, SyncProvider } from "../../core/sync/SyncProvider"
 import type { KVStore } from "../../core/db"
+import { CloudSyncRepository, type CloudWorkspaceBinding } from "../../core/repositories"
 import { CloudClient, ErrUnauthorized, DeviceTokenStore, type ChangeEnvelope as ClientChangeEnvelope } from "./cloud-client"
 import { CursorStore } from "./cloud-cursor"
-import { Outbox, type OutboxRow, type OutboxKind, type OutboxOp } from "./cloud-outbox"
+import { Outbox, type OutboxInput, type OutboxRow, type OutboxKind, type OutboxOp } from "./cloud-outbox"
 import { applyToRepositories, RecordKind, ChangeOp, type ChangeEnvelope } from "./cloud-apply"
+import { PushOutcome_Status } from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/sync_service_pb.js"
 
 export { CloudClient, DeviceTokenStore }
 
@@ -37,7 +39,7 @@ const PAGE_SIZE = 100
 const REDACTED = "***REDACTED***"
 
 export interface CloudSyncConfig {
-  readonly workspaceIds: string[]
+  readonly workspaceBindings: readonly CloudWorkspaceBinding[]
   readonly zitadelIssuer: string
   readonly clientId: string
 }
@@ -48,22 +50,27 @@ export class CloudSyncProvider implements SyncProvider {
   private onStateChange?: (state: SyncState) => void
   private tokenStore: DeviceTokenStore | undefined = undefined
   private syncConfig: CloudSyncConfig | undefined = undefined
-  private store: KVStore | undefined = undefined
+  private repository: CloudSyncRepository | undefined = undefined
 
   public constructor(
     private readonly client: CloudClient,
     tokenStoreOrCallback: DeviceTokenStore | ((state: SyncState) => void),
     store?: KVStore,
     config?: CloudSyncConfig,
+    onStateChange?: (state: SyncState) => void,
   ) {
     if (typeof tokenStoreOrCallback === "function") {
       this.onStateChange = tokenStoreOrCallback
     } else {
       this.tokenStore = tokenStoreOrCallback
-      this.store = store
+      if (onStateChange !== undefined) {
+        this.onStateChange = onStateChange
+      }
       if (store) {
-        this.cursorStore = new CursorStore(store)
-        this.outbox = new Outbox(store)
+        const repository = new CloudSyncRepository(store)
+        this.repository = repository
+        this.cursorStore = new CursorStore(repository)
+        this.outbox = new Outbox(repository)
       }
       this.syncConfig = config
     }
@@ -71,7 +78,7 @@ export class CloudSyncProvider implements SyncProvider {
 
   public async pull(): Promise<void> {
     this.onStateChange?.("syncing")
-    if (!this.cursorStore || !this.syncConfig || !this.store) {
+    if (!this.cursorStore || !this.syncConfig || !this.repository) {
       throw new Error("CloudSyncProvider not initialized with store and config")
     }
     try {
@@ -80,17 +87,32 @@ export class CloudSyncProvider implements SyncProvider {
 
       if (hello.fullResyncRequired) {
         await this.fullResync()
+        this.onStateChange?.(this.stateAfterSync())
         return
       }
 
-      for (const workspaceId of this.syncConfig.workspaceIds) {
-        await this.pullWorkspace(workspaceId)
+      for (const binding of this.syncConfig.workspaceBindings) {
+        await this.pullWorkspace(binding)
       }
-      this.onStateChange?.("idle")
+      this.onStateChange?.(this.stateAfterSync())
     } catch (err) {
       this.onStateChange?.("error")
       throw err
     }
+  }
+
+  public recordMutation(mutation: SyncMutation): void {
+    if (!this.outbox || !this.bindingForLocalWorkspace(mutation.workspaceId)) {
+      return
+    }
+    this.outbox.enqueue({
+      workspace_id: mutation.workspaceId,
+      kind: recordKindToOutboxKind(mutation.kind),
+      record_id: mutation.recordId,
+      expected_rev: mutation.expectedRev,
+      op: changeOpToOutboxOp(mutation.op),
+      payload: mutation.payload,
+    })
   }
 
   private async fullResync(): Promise<void> {
@@ -99,31 +121,31 @@ export class CloudSyncProvider implements SyncProvider {
 
     if (!this.syncConfig || !this.cursorStore) return
 
-    for (const workspaceId of this.syncConfig.workspaceIds) {
-      this.cursorStore.reset(workspaceId)
-      await this.pullWorkspace(workspaceId)
-      this.cursorStore.setFullSync(workspaceId, Date.now())
+    for (const binding of this.syncConfig.workspaceBindings) {
+      this.cursorStore.reset(binding.cloudWorkspaceId)
+      await this.pullWorkspace(binding)
+      this.cursorStore.setFullSync(binding.cloudWorkspaceId, Date.now())
     }
   }
 
-  private async pullWorkspace(workspaceId: string): Promise<void> {
-    if (!this.cursorStore || !this.store) return
+  private async pullWorkspace(binding: CloudWorkspaceBinding): Promise<void> {
+    if (!this.cursorStore || !this.repository) return
 
-    const state = this.cursorStore.get(workspaceId)
+    const state = this.cursorStore.get(binding.cloudWorkspaceId)
     let cursor = state?.cursor ?? 0n
 
     let hasMore = true
     while (hasMore) {
-      const response = await this.client.pullChanges(workspaceId, cursor, PAGE_SIZE)
+      const response = await this.client.pullChanges(binding.cloudWorkspaceId, cursor, PAGE_SIZE)
 
       for (const change of response.changes) {
-        this.applyChangeInTransaction(workspaceId, change)
+        this.applyChangeInTransaction(binding, change)
         cursor = change.cursor
       }
 
       if (response.changes.length > 0) {
         const lastRev = response.changes[response.changes.length - 1]?.rev ?? 0n
-        this.cursorStore.set(workspaceId, cursor, lastRev)
+        this.cursorStore.set(binding.cloudWorkspaceId, cursor, lastRev)
       }
 
       hasMore = response.hasMore
@@ -131,22 +153,23 @@ export class CloudSyncProvider implements SyncProvider {
     }
   }
 
-  private applyChangeInTransaction(workspaceId: string, change: ClientChangeEnvelope): void {
-    if (!this.store) return
+  private applyChangeInTransaction(binding: CloudWorkspaceBinding, change: ClientChangeEnvelope): void {
+    if (!this.repository) return
 
+    const deletedAt = timestampToIso(change.deletedAt)
     const envelope: ChangeEnvelope = {
       cursor: change.cursor,
-      workspaceId,
+      workspaceId: binding.workspaceId,
       kind: change.kind,
-      recordId: change.recordId,
+      recordId: change.kind === RecordKind.WORKSPACE ? binding.workspaceId : change.recordId,
       rev: change.rev,
       op: change.op,
       payload: change.payload,
-      ...(change.deletedAt !== undefined && { deletedAt: change.deletedAt }),
+      ...(deletedAt !== undefined && { deletedAt }),
     }
 
-    this.store.transaction(() => {
-      applyToRepositories(this.store!, envelope)
+    this.repository.transaction((repository) => {
+      applyToRepositories(repository, envelope)
     })
   }
 
@@ -158,7 +181,7 @@ export class CloudSyncProvider implements SyncProvider {
     try {
       const pending = this.outbox.listPending(PAGE_SIZE)
       if (pending.length === 0) {
-        this.onStateChange?.("idle")
+        this.onStateChange?.(this.stateAfterSync())
         return
       }
 
@@ -172,61 +195,86 @@ export class CloudSyncProvider implements SyncProvider {
       }
 
       for (const [workspaceId, rows] of byWorkspace) {
-        await this.pushWorkspace(workspaceId, rows)
+        const binding = this.bindingForLocalWorkspace(workspaceId)
+        if (!binding) {
+          for (const row of rows) {
+            this.outbox.markFailed(row.id, "workspace binding unavailable")
+          }
+          throw new Error(`Cloud workspace binding unavailable for local workspace ${workspaceId}`)
+        }
+        await this.pushWorkspace(binding, rows)
       }
-      this.onStateChange?.("idle")
+      this.onStateChange?.(this.stateAfterSync())
     } catch (err) {
       this.onStateChange?.("error")
       throw err
     }
   }
 
-  private async pushWorkspace(workspaceId: string, rows: OutboxRow[]): Promise<void> {
-    const deltas = rows.map((row) => ({
-      workspaceId: row.workspace_id,
+  private async pushWorkspace(binding: CloudWorkspaceBinding, rows: OutboxRow[]): Promise<void> {
+    for (const row of rows) {
+      await this.pushRow(binding, row)
+    }
+  }
+
+  private async pushRow(binding: CloudWorkspaceBinding, row: OutboxRow): Promise<void> {
+    const delta = {
+      workspaceId: binding.cloudWorkspaceId,
       kind: kindToRecordKind(row.kind),
-      recordId: row.record_id,
+      recordId: row.kind === "workspace" ? binding.cloudWorkspaceId : row.record_id,
       expectedRev: BigInt(row.expected_rev),
       payload: row.payload ?? new Uint8Array(),
       op: opToChangeOp(row.op),
-    }))
+    }
 
-    const idempotencyKey = rows[0]?.id ?? ""
-
+    let response
     try {
-      const response = await this.client.pushDeltas(idempotencyKey, deltas)
-
-      for (const outcome of response.outcomes) {
-        const row = rows[outcome.deltaIndex]
-        if (!row) continue
-
-        if (outcome.status === 1 /* APPLIED */ || outcome.status === 4 /* DUPLICATE */) {
-          this.outbox?.markApplied(row.id)
-        } else {
-          this.outbox?.markFailed(row.id, `status=${outcome.status}`)
-        }
-      }
+      response = await this.client.pushDeltas(row.id, [delta])
     } catch (err) {
       if (err instanceof ErrUnauthorized) {
         const refreshed = await this.tryRefreshToken()
         if (refreshed) {
           try {
-            const response = await this.client.pushDeltas(idempotencyKey, deltas)
-            for (const outcome of response.outcomes) {
-              const row = rows[outcome.deltaIndex]
-              if (!row) continue
-              if (outcome.status === 1 || outcome.status === 4) {
-                this.outbox?.markApplied(row.id)
-              } else {
-                this.outbox?.markFailed(row.id, `status=${outcome.status}`)
-              }
-            }
-            return
-          } catch {
+            response = await this.client.pushDeltas(row.id, [delta])
+          } catch (retryError) {
+            this.outbox?.markFailed(row.id, failureReasonForError(retryError))
+            throw retryError
           }
         }
       }
+      if (response === undefined) {
+        this.outbox?.markFailed(row.id, failureReasonForError(err))
+        throw err
+      }
     }
+
+    const outcome = response.outcomes.find((candidate) => candidate.deltaIndex === 0)
+    if (!outcome) {
+      this.outbox?.markFailed(row.id, "missing push outcome")
+      throw new Error("Cloud push response did not contain an outcome for the delta")
+    }
+    if (outcome.status === PushOutcome_Status.APPLIED || outcome.status === PushOutcome_Status.DUPLICATE) {
+      this.outbox?.markApplied(row.id, Number(outcome.newRev))
+    } else if (outcome.status === PushOutcome_Status.CONFLICT && outcome.conflictId.length > 0) {
+      this.repository?.recordPushConflict({
+        conflictId: outcome.conflictId,
+        outboxRow: row,
+        cloudPayload: outcome.winnerPayload ?? new Uint8Array(),
+      })
+    } else {
+      this.outbox?.markFailed(row.id, pushOutcomeFailureReason(outcome))
+    }
+  }
+
+  private stateAfterSync(): SyncState {
+    if (this.outbox.countDeadLetters() > 0) {
+      return "error"
+    }
+    return (this.repository?.countPendingConflicts() ?? 0) > 0 ? "conflict" : "idle"
+  }
+
+  private bindingForLocalWorkspace(workspaceId: string): CloudWorkspaceBinding | undefined {
+    return this.syncConfig?.workspaceBindings.find((binding) => binding.workspaceId === workspaceId)
   }
 
   private async tryRefreshToken(): Promise<boolean> {
@@ -250,7 +298,7 @@ export class CloudSyncProvider implements SyncProvider {
     }
   }
 
-  public enqueue(row: Omit<OutboxRow, "id" | "created_at">): string {
+  public enqueue(row: OutboxInput): string {
     if (!this.outbox) {
       throw new Error("CloudSyncProvider not initialized with store")
     }
@@ -303,4 +351,53 @@ function opToChangeOp(op: OutboxOp): ChangeOp {
     case "upsert": return ChangeOp.UPSERT
     case "tombstone": return ChangeOp.TOMBSTONE
   }
+}
+
+function recordKindToOutboxKind(kind: RecordKind): OutboxKind {
+  switch (kind) {
+    case RecordKind.WORKSPACE: return "workspace"
+    case RecordKind.WORKFLOW: return "workflow"
+    case RecordKind.ENVIRONMENT: return "environment"
+    case RecordKind.PROJECT: return "project"
+    default: throw new Error(`unsupported sync record kind: ${kind}`)
+  }
+}
+
+function changeOpToOutboxOp(op: ChangeOp): OutboxOp {
+  switch (op) {
+    case ChangeOp.UPSERT: return "upsert"
+    case ChangeOp.TOMBSTONE: return "tombstone"
+    default: throw new Error(`unsupported sync change op: ${op}`)
+  }
+}
+
+function timestampToIso(value: ClientChangeEnvelope["deletedAt"]): string | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value === "string") {
+    return value
+  }
+  return new Date(Number(value.seconds) * 1000 + Math.floor(value.nanos / 1_000_000)).toISOString()
+}
+
+function failureReasonForError(error: unknown): string {
+  if (error instanceof ErrUnauthorized) {
+    return "transport error: unauthorized"
+  }
+  return `transport error: ${error instanceof Error ? error.name : "unknown"}`
+}
+
+function pushOutcomeFailureReason(outcome: {
+  readonly status: PushOutcome_Status
+  readonly newRev: bigint
+  readonly rejectionReason: number
+  readonly conflictId: string
+}): string {
+  return [
+    `status=${outcome.status}`,
+    `newRev=${outcome.newRev}`,
+    `rejectionReason=${outcome.rejectionReason}`,
+    ...(outcome.conflictId.length > 0 ? [`conflictId=${outcome.conflictId}`] : []),
+  ].join(" ")
 }

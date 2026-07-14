@@ -8,6 +8,7 @@ import type {
 } from "../repositories"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
+import { recordCollectionTombstone, recordCollectionUpsert, recordWorkflowUpsert } from "../sync/cloud-mutations"
 import { ConflictError, NotFoundError } from "../ipc/errors"
 import { RESOURCE_COLLECTIONS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
@@ -31,6 +32,7 @@ export class CollectionService {
   async create(workspaceId: string, input: Omit<CollectionCreate, "workspaceId">): Promise<Collection> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_COLLECTIONS)
     const created = this.collections.create({ ...input, workspaceId })
+    recordCollectionUpsert(this.syncProvider, this.withCount(created))
     await this.syncProvider.push()
     return created
   }
@@ -51,6 +53,7 @@ export class CollectionService {
     this.mustGet(workspaceId, collectionId)
     const updated = this.collections.update(collectionId, patch)
     if (updated === undefined) throw new NotFoundError(`collection ${collectionId} not found`)
+    recordCollectionUpsert(this.syncProvider, this.withCount(updated))
     await this.syncProvider.push()
     return this.withCount(updated)
   }
@@ -58,11 +61,12 @@ export class CollectionService {
   /** Delete a collection. Refuses (409) while any workflow is still attached. */
   async delete(workspaceId: string, collectionId: string): Promise<void> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_COLLECTIONS)
-    this.mustGet(workspaceId, collectionId)
+    const existing = this.mustGet(workspaceId, collectionId)
     const count = this.workflows.countByCollection(collectionId)
     if (count > 0) {
       throw new ConflictError(`Cannot delete collection. ${count} workflow(s) are still in it.`)
     }
+    recordCollectionTombstone(this.syncProvider, this.withCount(existing))
     this.collections.delete(collectionId)
     await this.syncProvider.push()
   }
@@ -73,6 +77,7 @@ export class CollectionService {
     this.mustGetWorkflow(workspaceId, workflowId)
     const updated = this.workflows.update(workflowId, { collectionId })
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+    recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }
@@ -86,6 +91,7 @@ export class CollectionService {
     }
     const updated = this.workflows.update(workflowId, { collectionId: null })
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+    recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }

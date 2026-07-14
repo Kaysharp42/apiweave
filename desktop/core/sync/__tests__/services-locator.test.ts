@@ -18,6 +18,7 @@ describe("service-locator SyncProvider singleton", () => {
 
   it("setSyncProvider overrides the singleton and removeSyncProvider reseeds it", () => {
     const custom: SyncProvider = {
+      recordMutation() {},
       async pull() {},
       async push() {},
     }

@@ -56,7 +56,7 @@ describe("SyncProvider seam — LocalOnlySyncProvider (QA: task-7-seams)", () =>
     const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(provider)).filter(
       (m) => m !== "constructor",
     )
-    expect(methods.sort()).toEqual(["pull", "push"])
+    expect(methods.sort()).toEqual(["pull", "push", "recordMutation"])
   })
 })
 

@@ -9,3 +9,18 @@ export type { EnvironmentCreate, EnvironmentUpdate } from "./EnvironmentReposito
 export { CollectionRepository } from "./CollectionRepository"
 export type { CollectionCreate, CollectionUpdate } from "./CollectionRepository"
 export { SecretRepository } from "./SecretRepository"
+export { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository, ErrForbiddenCloudPayload, ErrUnknownCloudKind }
+  from "./CloudSyncRepository"
+export type {
+  CloudChangeEnvelope,
+  CloudApplyResult,
+  CloudConflict,
+  CloudConflictWinner,
+  CloudCursorState,
+  CloudOutboxKind,
+  CloudOutboxOp,
+  CloudOutboxRow,
+  CloudWorkspaceBinding,
+  CloudPushConflictInput,
+}
+  from "./CloudSyncRepository"

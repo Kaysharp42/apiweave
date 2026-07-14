@@ -10,6 +10,9 @@
  *     expected_rev INTEGER NOT NULL, -- optimistic concurrency precondition
  *     op TEXT NOT NULL,              -- 'upsert' | 'tombstone'
  *     payload BLOB,                  -- JSON-encoded record payload (null for tombstone)
+ *     retry_count INTEGER NOT NULL,  -- terminal at CLOUD_OUTBOX_MAX_RETRIES
+ *     next_retry_at INTEGER NOT NULL,-- ms epoch, exponential backoff deadline
+ *     failure_reason TEXT,           -- latest redacted transport/server diagnostic
  *     created_at INTEGER NOT NULL    -- ms epoch, for ordering
  *   )
  *
@@ -17,120 +20,60 @@
  *   1. Enqueue(row) — writes to outbox (synchronous, in the same transaction as the local write)
  *   2. push() reads pending rows, sends them to the server
  *   3. MarkApplied(id) — deletes the row on success
- *   4. MarkFailed(id, reason) — leaves the row; next push retries
+ *   4. MarkFailed(id, reason) — leaves the row; retries up to the dead-letter ceiling
  *   5. Clear() — used on full_resync_required (drops all pending rows)
  *
  * Re-application is idempotent because the server uses expected_rev precondition.
  */
 
-import type { KVStore, SqliteRow } from "../../core/db"
-import { generateId } from "../../core/id"
+import type { KVStore } from "../../core/db"
+import { CloudSyncRepository, type CloudOutboxKind, type CloudOutboxOp, type CloudOutboxRow } from "../../core/repositories"
 
-export type OutboxKind = "workspace" | "project" | "workflow" | "environment"
-export type OutboxOp = "upsert" | "tombstone"
+export type OutboxKind = CloudOutboxKind
+export type OutboxOp = CloudOutboxOp
 
-export interface OutboxRow {
-  readonly id: string
-  readonly kind: OutboxKind
-  readonly record_id: string
-  readonly workspace_id: string
-  readonly expected_rev: number
-  readonly op: OutboxOp
-  readonly payload: Uint8Array | null
-  readonly created_at: number
-}
-
-interface OutboxDbRow extends SqliteRow {
-  readonly id: string
-  readonly kind: string
-  readonly record_id: string
-  readonly workspace_id: string
-  readonly expected_rev: number
-  readonly op: string
-  readonly payload: Buffer | null
-  readonly created_at: number
-}
-
-const CREATE_TABLE = `
-CREATE TABLE IF NOT EXISTS cloud_outbox (
-  id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK (kind IN ('workspace', 'project', 'workflow', 'environment')),
-  record_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  expected_rev INTEGER NOT NULL,
-  op TEXT NOT NULL CHECK (op IN ('upsert', 'tombstone')),
-  payload BLOB,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_cloud_outbox_created ON cloud_outbox (created_at);
-`
+export type OutboxRow = CloudOutboxRow
+export type OutboxInput = Omit<
+  OutboxRow,
+  "id" | "created_at" | "retry_count" | "next_retry_at" | "failure_reason"
+>
 
 export class Outbox {
-  private initialized = false
+  private readonly repository: CloudSyncRepository
 
-  public constructor(private readonly store: KVStore) {}
-
-  public ensureTable(): void {
-    if (this.initialized) return
-    this.store.exec(CREATE_TABLE)
-    this.initialized = true
+  public constructor(store: KVStore | CloudSyncRepository) {
+    this.repository = store instanceof CloudSyncRepository ? store : new CloudSyncRepository(store)
   }
 
-  public enqueue(row: Omit<OutboxRow, "id" | "created_at">): string {
-    this.ensureTable()
-    const id = generateId()
-    const createdAt = Date.now()
-    const payloadBuffer = row.payload ? Buffer.from(row.payload) : null
-    this.store.set(
-      "INSERT INTO cloud_outbox (id, kind, record_id, workspace_id, expected_rev, op, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, row.kind, row.record_id, row.workspace_id, row.expected_rev, row.op, payloadBuffer, createdAt],
-    )
-    return id
+  public ensureTable(): void {
+    // Created by 005_cloud_sync.sql. Kept for compatibility with older callers.
+  }
+
+  public enqueue(row: OutboxInput): string {
+    return this.repository.enqueueOutbox(row)
   }
 
   public listPending(limit: number): OutboxRow[] {
-    this.ensureTable()
-    const rows = this.store.query<OutboxDbRow>(
-      "SELECT id, kind, record_id, workspace_id, expected_rev, op, payload, created_at FROM cloud_outbox ORDER BY created_at ASC LIMIT ?",
-      [limit],
-    )
-    return rows.map(dbRowToOutboxRow)
+    return [...this.repository.listPendingOutbox(limit)]
   }
 
-  public markApplied(id: string): void {
-    this.ensureTable()
-    this.store.delete("DELETE FROM cloud_outbox WHERE id = ?", [id])
+  public markApplied(id: string, serverRev: number): void {
+    this.repository.markOutboxApplied(id, serverRev)
   }
 
-  public markFailed(id: string, _reason: string): void {
-    // ponytail: row stays in the outbox for retry. A future version could
-    // increment a retry_count or set a next_retry_at column. For now, the
-    // row is left as-is and the next push() picks it up again.
-    this.ensureTable()
-    // no-op: row stays pending
+  public markFailed(id: string, reason: string): void {
+    this.repository.markOutboxFailed(id, reason)
   }
 
   public clear(): void {
-    this.ensureTable()
-    this.store.delete("DELETE FROM cloud_outbox")
+    this.repository.clearOutbox()
   }
 
   public count(): number {
-    this.ensureTable()
-    const row = this.store.get<{ total: number }>("SELECT COUNT(*) as total FROM cloud_outbox")
-    return row?.total ?? 0
+    return this.repository.countOutbox()
   }
-}
 
-function dbRowToOutboxRow(row: OutboxDbRow): OutboxRow {
-  return {
-    id: row.id,
-    kind: row.kind as OutboxKind,
-    record_id: row.record_id,
-    workspace_id: row.workspace_id,
-    expected_rev: row.expected_rev,
-    op: row.op as OutboxOp,
-    payload: row.payload ? new Uint8Array(row.payload) : null,
-    created_at: row.created_at,
+  public countDeadLetters(): number {
+    return this.repository.countDeadLetterOutbox()
   }
 }

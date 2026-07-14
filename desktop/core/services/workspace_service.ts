@@ -1,6 +1,7 @@
 import type { Workspace } from "../../../shared/types/Workspace"
 import type { WorkspaceRepository, WorkspaceUpdate } from "../repositories"
 import type { SyncProvider } from "../sync/SyncProvider"
+import { recordWorkspaceTombstone, recordWorkspaceUpsert } from "../sync/cloud-mutations"
 import { NotFoundError } from "../ipc/errors"
 import type { ScopeResolver } from "./scope_resolver"
 
@@ -47,6 +48,7 @@ export class WorkspaceService {
       description: input.description ?? null,
       isPersonal: wantPersonal,
     })
+    recordWorkspaceUpsert(this.syncProvider, created)
     await this.syncProvider.push()
     return created
   }
@@ -62,12 +64,16 @@ export class WorkspaceService {
     const next: WorkspaceUpdate = patch.slug ? { ...patch, slug: this.uniqueSlug(patch.slug, workspaceId) } : patch
     const updated = this.workspaces.update(workspaceId, next)
     if (updated === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
+    recordWorkspaceUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }
 
   async delete(workspaceId: string): Promise<void> {
     await this.mustResolve(workspaceId)
+    const existing = this.workspaces.getById(workspaceId)
+    if (existing === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
+    recordWorkspaceTombstone(this.syncProvider, existing)
     this.workspaces.delete(workspaceId)
     await this.syncProvider.push()
   }

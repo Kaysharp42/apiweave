@@ -7,6 +7,7 @@ import type { RunService } from "../../services/run_service"
 import type { SecretService } from "../../services/secret_service"
 import type { ProjectExportService } from "../../services/project_export_service"
 import type { ImportService } from "../../services/import_service"
+import type { CloudSyncControl } from "../../services/cloud_sync_control"
 
 /**
  * The service bundle every handler module registers against. Constructed once at
@@ -23,6 +24,7 @@ export interface HandlerDeps {
   readonly secrets: SecretService
   readonly projects: ProjectExportService
   readonly imports: ImportService
+  readonly cloud?: CloudSyncControl
 }
 
 /** A method taking no payload — the renderer sends `undefined`, so accept it. */
