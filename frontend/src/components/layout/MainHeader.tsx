@@ -72,7 +72,7 @@ export function MainHeader() {
           tooltip="Toggle sidebar"
           size="sm"
           onClick={toggleMobileSidebar}
-          className="lg:hidden flex-shrink-0"
+          className="md:hidden flex-shrink-0"
           aria-label="Toggle sidebar"
         >
           <Menu className="w-4 h-4" />

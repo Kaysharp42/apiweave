@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
+import { Input } from "../atoms/Input";
 import type { KeyValueEditorProps, KeyValuePair } from "../../types";
 
 const EMPTY_PAIRS: KeyValuePair[] = [];
@@ -39,36 +40,38 @@ export function KeyValueEditor({
     <div className={["w-full", className].filter(Boolean).join(" ")}>
       <div className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
         <span className="truncate px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
-          {keyPlaceholder}
+          Name
         </span>
         <span className="truncate px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
-          {valuePlaceholder}
+          Value
         </span>
         <span className="w-8" />
       </div>
 
       {pairs.map((pair, index) => (
         <div
-          key={pair.key}
+          key={`${pair.key}-${index}`}
           className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1"
         >
-          <input
+          <Input
             type="text"
             value={pair.key}
             onChange={(e) => updatePair(index, "key", e.target.value)}
             placeholder={keyPlaceholder}
             readOnly={readOnly}
             aria-label={`${keyPlaceholder} ${index + 1}`}
-            className="h-8 w-full truncate rounded-sm border border-border bg-surface-raised px-2.5 font-mono text-xs text-text-primary placeholder:text-text-muted transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-primary-light"
+            size="sm"
+            className="truncate font-mono text-xs"
           />
-          <input
+          <Input
             type="text"
             value={pair.value}
             onChange={(e) => updatePair(index, "value", e.target.value)}
             placeholder={valuePlaceholder}
             readOnly={readOnly}
             aria-label={`${valuePlaceholder} ${index + 1}`}
-            className="h-8 w-full truncate rounded-sm border border-border bg-surface-raised px-2.5 font-mono text-xs text-text-primary placeholder:text-text-muted transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-primary-light"
+            size="sm"
+            className="truncate font-mono text-xs"
           />
           {!readOnly && (
             <IconButton
@@ -94,7 +97,7 @@ export function KeyValueEditor({
           className="gap-1 mt-1 text-text-secondary dark:text-text-secondary-dark"
         >
           <Plus className="w-4 h-4" />
-          Add
+          Add row
         </Button>
       )}
     </div>

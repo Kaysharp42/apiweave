@@ -13,9 +13,9 @@ import {
   Timer,
 } from "lucide-react";
 import { Badge } from "./atoms/Badge";
-import { Button } from "./atoms/Button";
 import { Input } from "./atoms/Input";
 import { Tooltip } from "./atoms/Tooltip";
+import ButtonSelect from "./ButtonSelect";
 import {
   HTTPRequestConfigPanel,
   HttpRequestOutputPanel,
@@ -39,6 +39,7 @@ import type {
   NodeModalHttpTabKey,
   NodeModalMergeTabKey,
   NodeModalShellTab,
+  SelectOption,
 } from "../types";
 
 const NO_CONFIG_TYPES: NodeModalNodeType[] = ["start", "end"];
@@ -51,6 +52,10 @@ const HTTP_METHODS: HttpMethod[] = [
   "HEAD",
   "OPTIONS",
 ];
+const HTTP_METHOD_OPTIONS: SelectOption[] = HTTP_METHODS.map((method) => ({
+  label: method,
+  value: method,
+}));
 
 const HTTP_TABS: NodeModalShellTab[] = [
   { key: "params", label: "Params", icon: Link2 },
@@ -154,20 +159,15 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
 
   const renderHttpRequestBar = () => (
     <div className="flex w-full min-w-0 items-center gap-2">
-      <div className="flex flex-shrink-0 rounded-sm border border-border bg-surface-overlay p-1 dark:border-border-dark dark:bg-surface-dark-overlay">
-        {HTTP_METHODS.map((method) => (
-          <Button
-            key={method}
-            type="button"
-            size="xs"
-            variant={httpConfig.method === method ? "primary" : "ghost"}
-            onClick={() => patchHttpConfig({ method })}
-            className="font-mono"
-          >
-            {method}
-          </Button>
-        ))}
-      </div>
+      <ButtonSelect
+        options={HTTP_METHOD_OPTIONS}
+        value={httpConfig.method ?? "GET"}
+        onChange={(method) => {
+          if (isHttpMethod(method)) patchHttpConfig({ method });
+        }}
+        buttonClass="flex h-10 w-full cursor-pointer items-center justify-between rounded-sm border border-border bg-surface-overlay px-3 font-mono text-xs font-semibold text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-raised"
+        containerClass="w-28 flex-shrink-0"
+      />
       <Input
         value={httpConfig.url || ""}
         onChange={(event) => patchHttpConfig({ url: event.target.value })}

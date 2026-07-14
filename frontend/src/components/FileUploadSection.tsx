@@ -1,6 +1,12 @@
 import { useState, useCallback, type ChangeEvent } from "react";
-import { Plus, Trash2, Image } from "lucide-react";
+import { FilePlus2, Image, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "./atoms/Button";
+import { IconButton } from "./atoms/IconButton";
+import { Input } from "./atoms/Input";
+import { TextArea } from "./atoms/TextArea";
+import { EmptyState } from "./molecules/EmptyState";
+import { FormField } from "./molecules/FormField";
 import type { FileUpload } from "../types/FileUpload";
 import type { FileUploadSectionProps } from "../types";
 
@@ -89,290 +95,242 @@ export default function FileUploadSection({
   };
 
   return (
-    <div className="border-t border-border dark:border-border-dark pt-2 mt-2">
-      <label className="block text-[10px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5 flex items-center gap-1">
-        File Attachments
-        <span className="text-text-muted dark:text-text-muted-dark font-normal text-[9px]">
-          ({fileUploads.length})
-        </span>
-      </label>
-
-      <div className="space-y-1 mb-2">
-        {fileUploads.length > 0 ? (
-          fileUploads.map((file, idx) => (
-            <div
-              key={`${file.fieldName}-${file.name}`}
-              className="flex gap-1 items-center text-[9px] p-1 bg-surface dark:bg-surface-dark/30 rounded border border-border dark:border-border-dark"
-            >
-              <div className="flex-1">
-                <div className="font-semibold text-text-primary dark:text-text-primary-dark">
-                  {file.name}
-                </div>
-                <div className="text-[8px] text-text-muted dark:text-text-muted-dark">
-                  Type: <span className="font-mono">{file.type}</span> | Field:{" "}
-                  <span className="font-mono">{file.fieldName}</span>
-                </div>
-                {file.description && (
-                  <div className="text-[8px] text-text-muted dark:text-text-muted-dark italic">
-                    {file.description}
-                  </div>
-                )}
-                {file.type === "base64" &&
-                  file.value.startsWith("data:image") && (
-                    <div className="mt-0.5 text-primary dark:text-primary-dark flex items-center gap-1">
-                      <Image className="w-3 h-3" />
-                      Image preview available
-                    </div>
-                  )}
-              </div>
-              <button
-                type="button"
-                className="text-status-error dark:text-status-error hover:text-status-error/80 dark:hover:text-status-error/80 nodrag flex-shrink-0"
-                onClick={() => handleRemoveFile(idx)}
-                title="Delete file"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </div>
-          ))
-        ) : (
-          <div className="text-[9px] text-text-muted dark:text-text-muted-dark italic">
-            No files attached
-          </div>
-        )}
-      </div>
-
-      {!showForm ? (
-        <button
-          type="button"
-          className="w-full px-2 py-1 bg-primary dark:bg-primary/90 hover:bg-primary/90 dark:hover:bg-primary/80 text-white text-[9px] font-semibold rounded nodrag transition-colors flex items-center justify-center gap-1"
-          onClick={() => setShowForm(true)}
+    <div className="space-y-3">
+      {fileUploads.map((file, index) => (
+        <div
+          key={`${file.fieldName}-${file.name}`}
+          className="flex items-center gap-3 rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay"
         >
-          <Plus className="w-3 h-3" />
-          <span>Add File</span>
-        </button>
-      ) : (
-        <div className="space-y-1 p-1.5 bg-surface-overlay dark:bg-surface-dark-overlay rounded border border-dashed border-border dark:border-border-dark">
-          <div>
-            <label
-              htmlFor="file-upload-name"
-              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
-            >
-              File Name (identifier)
-            </label>
-            <input
-              id="file-upload-name"
-              type="text"
-              placeholder="e.g., resume, invoice"
-              className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
-              value={formData.name}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, name: e.target.value }))
-              }
+          <FilePlus2
+            className="h-5 w-5 flex-shrink-0 text-text-muted dark:text-text-muted-dark"
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-text-primary dark:text-text-primary-dark">
+              {file.name}
+            </p>
+            <p className="truncate font-mono text-xs text-text-secondary dark:text-text-secondary-dark">
+              {file.type} · {file.fieldName} · {file.mimeType}
+            </p>
+            {file.description && (
+              <p className="mt-1 text-xs text-text-muted dark:text-text-muted-dark">
+                {file.description}
+              </p>
+            )}
+            {file.type === "base64" &&
+              file.value.startsWith("data:image") && (
+                <p className="mt-1 flex items-center gap-1 text-xs text-primary dark:text-primary-light">
+                  <Image className="h-3.5 w-3.5" aria-hidden="true" />
+                  Image preview available
+                </p>
+              )}
+          </div>
+          <IconButton
+            tooltip={`Remove ${file.name}`}
+            size="xs"
+            variant="ghost"
+            onClick={() => handleRemoveFile(index)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </IconButton>
+        </div>
+      ))}
+
+      {fileUploads.length === 0 && !showForm && (
+        <EmptyState
+          icon={
+            <FilePlus2
+              className="h-10 w-10 text-text-muted dark:text-text-muted-dark"
+              strokeWidth={1.5}
             />
+          }
+          title="No binary file"
+          description="Attach embedded content, a local path, or a workflow variable."
+          action={
+            <Button size="sm" variant="secondary" onClick={() => setShowForm(true)}>
+              <FilePlus2 className="h-4 w-4" />
+              Add file
+            </Button>
+          }
+          className="min-h-80 rounded-sm border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
+        />
+      )}
+
+      {fileUploads.length > 0 && !showForm && (
+        <Button size="sm" variant="secondary" onClick={() => setShowForm(true)}>
+          <FilePlus2 className="h-4 w-4" />
+          Add another file
+        </Button>
+      )}
+
+      {showForm && (
+        <div className="space-y-4 rounded-sm border border-border bg-surface-overlay p-4 dark:border-border-dark dark:bg-surface-dark-overlay">
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="File name" required>
+              <Input
+                value={formData.name}
+                onChange={(event) =>
+                  setFormData((previous) => ({
+                    ...previous,
+                    name: event.target.value,
+                  }))
+                }
+                placeholder="resume"
+              />
+            </FormField>
+            <FormField label="Reference type" required>
+              <select
+                value={formData.type}
+                onChange={(event) => {
+                  setFormData((previous) => ({
+                    ...previous,
+                    type: event.target.value as FileUpload["type"],
+                    value: "",
+                  }));
+                  setPreviewImage(null);
+                }}
+                className="h-10 w-full cursor-pointer rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+              >
+                <option value="base64">Embedded base64</option>
+                <option value="path">Local file path</option>
+                <option value="variable">Variable reference</option>
+              </select>
+            </FormField>
           </div>
 
-          <div>
-            <label
-              htmlFor="file-upload-reference-type"
-              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
-            >
-              Reference Type
-            </label>
-            <select
-              id="file-upload-reference-type"
-              className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
-              value={formData.type}
-              onChange={(e) => {
-                setFormData((prev) => ({
-                  ...prev,
-                  type: e.target.value as FileUpload["type"],
-                  value: "",
-                }));
-                setPreviewImage(null);
-              }}
-            >
-              <option value="base64">Base64 Encoded (Embedded)</option>
-              <option value="path">File Path (Read from disk)</option>
-              <option value="variable">Variable Reference</option>
-            </select>
-          </div>
-
-          <div>
-            <div className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5">
-              {formData.type === "base64" && "Upload File or Paste Base64"}
-              {formData.type === "path" && "File Path"}
-              {formData.type === "variable" && "Variable Reference"}
-            </div>
-            {formData.type === "base64" ? (
-              <div className="space-y-1">
-                <input
+          {formData.type === "base64" ? (
+            <div className="space-y-4">
+              <FormField label="Choose file">
+                <Input
                   type="file"
                   onChange={handleFileSelect}
                   aria-label="Upload base64 file"
-                  className="nodrag w-full text-[9px] border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark rounded px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary"
-                  title="Select a file to upload"
                 />
-                <textarea
-                  aria-label="Paste base64 content"
-                  placeholder="Or paste base64 content here..."
-                  className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                  rows={2}
+              </FormField>
+              <FormField label="Base64 content" required>
+                <TextArea
                   value={formData.value}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, value: e.target.value }))
+                  onChange={(event) =>
+                    setFormData((previous) => ({
+                      ...previous,
+                      value: event.target.value,
+                    }))
                   }
+                  placeholder="Paste base64 content"
+                  rows={4}
+                  className="font-mono"
                 />
-              </div>
-            ) : formData.type === "path" ? (
-              <textarea
-                aria-label="File path"
-                placeholder={`e.g., /uploads/document.pdf\nor {{env.UPLOAD_DIR}}/{{variables.filename}}`}
-                className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                rows={2}
+              </FormField>
+            </div>
+          ) : (
+            <FormField
+              label={formData.type === "path" ? "File path" : "Variable reference"}
+              required
+            >
+              <TextArea
                 value={formData.value}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, value: e.target.value }))
+                onChange={(event) =>
+                  setFormData((previous) => ({
+                    ...previous,
+                    value: event.target.value,
+                  }))
                 }
-              />
-            ) : (
-              <textarea
-                aria-label="Variable reference"
-                placeholder={`e.g., {{variables.filePath}}\nor {{variables.fileContent}}`}
-                className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                rows={2}
-                value={formData.value}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, value: e.target.value }))
+                placeholder={
+                  formData.type === "path"
+                    ? "/uploads/document.pdf"
+                    : "{{variables.filePath}}"
                 }
+                rows={3}
+                className="font-mono"
               />
-            )}
+            </FormField>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="Form field name" required>
+              <Input
+                value={formData.fieldName}
+                onChange={(event) =>
+                  setFormData((previous) => ({
+                    ...previous,
+                    fieldName: event.target.value,
+                  }))
+                }
+                placeholder="file"
+              />
+            </FormField>
+            <FormField label="MIME type">
+              <Input
+                value={formData.mimeType}
+                onChange={(event) =>
+                  setFormData((previous) => ({
+                    ...previous,
+                    mimeType: event.target.value,
+                  }))
+                }
+                placeholder="application/octet-stream"
+                className="font-mono"
+              />
+            </FormField>
           </div>
 
-          <div>
-            <label
-              htmlFor="file-upload-html-field-name"
-              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
-            >
-              HTML Field Name
-            </label>
-            <input
-              id="file-upload-html-field-name"
-              type="text"
-              placeholder="e.g., document, image, attachment"
-              className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
-              value={formData.fieldName}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, fieldName: e.target.value }))
-              }
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="file-upload-mime-type"
-              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
-            >
-              MIME Type
-            </label>
-            <input
-              id="file-upload-mime-type"
-              type="text"
-              placeholder="e.g., application/pdf, image/png"
-              className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
-              value={formData.mimeType}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, mimeType: e.target.value }))
-              }
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="file-upload-description"
-              className="block text-[9px] font-semibold text-text-secondary dark:text-text-primary-dark mb-0.5"
-            >
-              Description (optional)
-            </label>
-            <input
-              id="file-upload-description"
-              type="text"
-              placeholder="e.g., User resume document"
-              className="nodrag w-full px-1.5 py-0.5 border border-border dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder-text-muted rounded text-[9px] focus:outline-none focus:ring-2 focus:ring-primary"
+          <FormField label="Description">
+            <Input
               value={formData.description}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  description: e.target.value,
+              onChange={(event) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  description: event.target.value,
                 }))
               }
+              placeholder="Optional note"
             />
-          </div>
+          </FormField>
 
           {previewImage && (
-            <div className="text-center">
-              <img
-                src={previewImage}
-                alt="Preview"
-                className="max-w-full max-h-20 rounded border border-border dark:border-border-dark mx-auto"
-              />
+            <img
+              src={previewImage}
+              alt="Selected file preview"
+              className="max-h-32 max-w-full rounded-sm border border-border dark:border-border-dark"
+            />
+          )}
+
+          {formData.type === "variable" && Object.keys(variables).length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {Object.keys(variables).map((variableName) => (
+                <Button
+                  key={variableName}
+                  size="xs"
+                  variant="ghost"
+                  onClick={() =>
+                    setFormData((previous) => ({
+                      ...previous,
+                      value: `{{variables.${variableName}}}`,
+                    }))
+                  }
+                >
+                  {`{{variables.${variableName}}}`}
+                </Button>
+              ))}
             </div>
           )}
 
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={handleAddFile}
-              className="flex-1 px-2 py-1 bg-status-success dark:bg-status-success/90 hover:bg-status-success/90 dark:hover:bg-status-success/80 text-white text-[9px] font-semibold rounded nodrag transition-colors"
-            >
-              Add File
-            </button>
-            <button
-              type="button"
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => {
                 setShowForm(false);
                 setFormData(defaultFormData);
                 setPreviewImage(null);
               }}
-              className="flex-1 px-2 py-1 bg-surface dark:bg-surface-dark-raised hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay text-text-primary dark:text-text-primary-dark text-[9px] font-semibold rounded nodrag transition-colors"
             >
               Cancel
-            </button>
+            </Button>
+            <Button size="sm" onClick={handleAddFile}>
+              Add file
+            </Button>
           </div>
-
-          {formData.type === "variable" &&
-            Object.keys(variables).length > 0 && (
-              <div className="text-[8px] text-text-muted dark:text-text-muted-dark p-1 bg-surface dark:bg-surface-dark rounded">
-                <strong>Available variables:</strong>
-                <div className="flex flex-wrap gap-1 mt-0.5">
-                  {Object.keys(variables).map((varName) => (
-                    <button
-                      key={varName}
-                      type="button"
-                      className="bg-surface-raised dark:bg-surface-dark-raised px-1 py-0.5 rounded cursor-pointer hover:bg-primary/20 dark:hover:bg-primary/30"
-                      onClick={() =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          value: `{{variables.${varName}}}`,
-                        }))
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setFormData((prev) => ({
-                            ...prev,
-                            value: `{{variables.${varName}}}`,
-                          }));
-                        }
-                      }}
-                      title="Click to insert"
-                    >
-                      {`{{variables.${varName}}}`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
         </div>
       )}
     </div>

@@ -87,10 +87,10 @@ export function AppNavBar() {
         "relative flex h-full flex-col transition-all duration-300 ease-in-out motion-reduce:transition-none",
         "bg-surface-raised dark:bg-surface-dark-raised",
         "border-r border-border dark:border-border-dark",
-        "w-14 lg:w-auto",
+        "w-14 md:w-auto",
         isNavBarCollapsed
-          ? "lg:w-nav-collapsed lg:min-w-nav-collapsed"
-          : "lg:w-nav-expanded",
+          ? "md:w-nav-collapsed md:min-w-nav-collapsed"
+          : "md:w-nav-expanded",
       ].join(" ")}
       aria-label="Main navigation"
     >
@@ -107,6 +107,8 @@ export function AppNavBar() {
               ].join(" ")}
               onClick={() => {
                 if (disabled) return;
+                // Clicking a nav icon only switches section — it never changes
+                // the collapse state. The Collapse/Expand button owns that.
                 updateNavigationSelectedValue(id as NavSection);
                 if (id === "settings") {
                   if (!isOnSettingsRoute) navigate(settingsPath);
@@ -125,7 +127,7 @@ export function AppNavBar() {
                 className={[
                   "flex w-full items-center gap-3 rounded px-3 py-2.5 transition-colors duration-200 motion-reduce:transition-none",
                   "justify-center",
-                  !isNavBarCollapsed && "lg:justify-start",
+                  !isNavBarCollapsed && "md:justify-start",
                   isSelected
                     ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
                     : "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark",
@@ -142,7 +144,7 @@ export function AppNavBar() {
                   leaveFrom="opacity-100"
                   leaveTo="opacity-0 -translate-x-2 w-0"
                 >
-                  <span className="hidden lg:inline text-xs font-medium whitespace-nowrap overflow-hidden">
+                  <span className="hidden md:inline text-xs font-medium whitespace-nowrap overflow-hidden">
                     {label}
                   </span>
                 </Transition>
@@ -169,7 +171,7 @@ export function AppNavBar() {
         })}
       </div>
 
-      <div className="hidden lg:block">
+      <div className="hidden md:block">
         <IconButton
           tooltip={
             isNavBarCollapsed ? "Expand Navigation" : "Collapse Navigation"

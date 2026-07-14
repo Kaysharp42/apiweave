@@ -9,6 +9,7 @@ import { IconButton } from "../atoms/IconButton";
 import { Input } from "../atoms/Input";
 import { Badge } from "../atoms/Badge";
 import { Modal } from "../molecules/Modal";
+import { PanelTabs } from "../molecules/PanelTabs";
 import { getNodeIcon } from "./nodeModalUtils";
 import type {
   NodeModalRequestBarProps,
@@ -31,54 +32,11 @@ export function NodeModalVerticalTabs({
   onTabChange,
 }: NodeModalVerticalTabsProps) {
   return (
-    <div
-      className="flex w-36 flex-shrink-0 flex-col border-r border-border bg-surface-overlay py-2 dark:border-border-dark dark:bg-surface-dark-overlay max-xl:w-14"
-      role="tablist"
-      aria-label="HTTP request sections"
-    >
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        const isActive = tab.key === activeTab;
-        const tabButton = (
-          <Button
-            key={tab.key}
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => onTabChange(tab.key)}
-            className={[
-              "relative mx-1 justify-start rounded-sm px-3 py-2 font-mono text-xs max-xl:justify-center max-xl:px-2",
-              isActive
-                ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
-                : "text-text-secondary dark:text-text-secondary-dark",
-            ].join(" ")}
-            role="tab"
-            aria-selected={isActive}
-          >
-            <span
-              className={[
-                "absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 bg-primary dark:bg-primary-light",
-                isActive ? "opacity-100" : "opacity-0",
-              ].join(" ")}
-              aria-hidden="true"
-            />
-            <Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-            <span className="truncate max-xl:hidden">{tab.label}</span>
-          </Button>
-        );
-
-        return (
-          <Tippy
-            key={tab.key}
-            content={tab.label}
-            placement="right"
-            delay={[300, 0]}
-          >
-            {tabButton}
-          </Tippy>
-        );
-      })}
-    </div>
+    <PanelTabs
+      tabs={tabs}
+      activeTab={activeTab}
+      onTabChange={onTabChange}
+    />
   );
 }
 
@@ -88,7 +46,7 @@ export function NodeModalResponsePane({
   onHide,
 }: NodeModalResponsePaneProps) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
+    <div className="flex h-full min-h-0 flex-col bg-surface-raised dark:bg-surface-dark-raised">
       <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-surface-overlay px-4 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
         <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wide text-text-primary dark:text-text-primary-dark">
           <Eye
@@ -129,7 +87,9 @@ export function NodeModalShell({
   children,
   responsePane,
 }: NodeModalShellProps) {
-  const [responseCollapsed, setResponseCollapsed] = useState(false);
+  const [responseCollapsed, setResponseCollapsed] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 768,
+  );
   const Icon = getNodeIcon(nodeType);
   const typeLabel = nodeType === "http-request" ? "HTTP Request" : nodeType;
 
@@ -177,13 +137,13 @@ export function NodeModalShell({
 
         <NodeModalRequestBar>{requestBar}</NodeModalRequestBar>
 
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col">
           <NodeModalVerticalTabs
             tabs={tabs}
             activeTab={activeTab}
             onTabChange={onTabChange}
           />
-          <div className="relative min-w-0 flex-1 bg-surface dark:bg-surface-dark">
+          <div className="relative min-h-0 min-w-0 flex-1 bg-surface dark:bg-surface-dark">
             <Allotment className="h-full">
               <Allotment.Pane
                 minSize={360}

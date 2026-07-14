@@ -73,7 +73,7 @@ export function HttpRequestOutputPanel({
 
   if (!output || node.type !== "http-request") {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center bg-surface p-6 dark:bg-surface-dark">
+      <div className="flex h-full min-h-0 items-center justify-center bg-surface-raised p-6 dark:bg-surface-dark-raised">
         <div className="text-center">
           <FileText className="mx-auto mb-4 h-16 w-16 text-text-muted dark:text-text-muted-dark/70" />
           <p className="mb-2 text-sm text-text-muted dark:text-text-muted-dark">

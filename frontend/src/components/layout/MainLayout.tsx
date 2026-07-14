@@ -73,10 +73,14 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mobileSidebarOpen, setMobileSidebarOpen]);
 
-  const collapsedWidth = AppNavBarStyles.collapsedNavBarWidth!.absolute;
-  const expandedPreferred = 450;
-  const expandedMin = 450;
-  const expandedMax = 600;
+  // "Collapse" only shrinks the icon rail (labels hidden); the list panel stays
+  // visible either way. Pane width = rail width + list width.
+  const railCollapsed = AppNavBarStyles.collapsedNavBarWidth!.absolute; // 56
+  const listWidth = 270;
+  const expandedPreferred = 450; // rail 180 + list 270
+  const collapsedPreferred = railCollapsed + listWidth;
+  const paneMin = collapsedPreferred;
+  const paneMax = 600;
 
   return (
     <>
@@ -95,28 +99,28 @@ export function MainLayout({ children }: MainLayoutProps) {
       <HorizontalDivider />
 
       {/* Desktop layout (lg+): Allotment split panes */}
-      <div className="hidden lg:flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
-        <Allotment>
+      <div className="hidden md:flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
+        {/* key forces re-layout on collapse toggle — Allotment only reads
+            preferredSize on mount, so without this the pane keeps its old width. */}
+        <Allotment key={isNavBarCollapsed ? "collapsed" : "expanded"}>
           <Allotment.Pane
             preferredSize={
-              isNavBarCollapsed ? collapsedWidth : expandedPreferred
+              isNavBarCollapsed ? collapsedPreferred : expandedPreferred
             }
-            minSize={isNavBarCollapsed ? collapsedWidth : expandedMin}
-            maxSize={isNavBarCollapsed ? collapsedWidth : expandedMax}
+            minSize={paneMin}
+            maxSize={paneMax}
             snap={false}
           >
             <div className="flex h-full w-full text-xs">
               <nav aria-label="Main navigation">
                 <AppNavBar />
               </nav>
-              {!isNavBarCollapsed && (
-                <aside
-                  className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised"
-                  aria-label="Sidebar"
-                >
-                  <Sidebar />
-                </aside>
-              )}
+              <aside
+                className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised"
+                aria-label="Sidebar"
+              >
+                <Sidebar />
+              </aside>
             </div>
           </Allotment.Pane>
 
@@ -129,7 +133,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       </div>
 
       {/* Mobile layout (< lg): flex with collapsible sidebar overlay */}
-      <div className="flex lg:hidden flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
+      <div className="flex md:hidden flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
         <nav aria-label="Main navigation">
           <AppNavBar />
         </nav>

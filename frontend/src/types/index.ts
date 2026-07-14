@@ -29,6 +29,7 @@ export type { WorkspaceEmptyStateProps } from "./WorkspaceEmptyStateProps";
 export type { SlidePanelProps } from "./SlidePanelProps";
 export type { ResponseInspectorProps } from "./ResponseInspectorProps";
 export type { BeautifyButtonProps } from "./BeautifyButtonProps";
+export type { ExtractorFormProps } from "./ExtractorFormProps";
 export type { SecretsPanelProps } from "./SecretsPanelProps";
 export type { Workflow } from "./Workflow";
 export type { WorkflowNode } from "./WorkflowNode";
