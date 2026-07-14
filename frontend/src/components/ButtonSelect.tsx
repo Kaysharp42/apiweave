@@ -10,6 +10,7 @@ export default function ButtonSelect({
   onChange = () => {},
   placeholder = "Select",
   buttonClass = "",
+  containerClass = "",
 }: ButtonSelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -27,11 +28,19 @@ export default function ButtonSelect({
   const selected = options.find((o) => o.value === value);
 
   return (
-    <div ref={ref} className="relative">
+    <div
+      ref={ref}
+      className={["relative min-w-0", containerClass]
+        .filter(Boolean)
+        .join(" ")}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setOpen(false);
+      }}
+    >
       <button
         type="button"
         onClick={() => setOpen((s) => !s)}
-        className={buttonClass}
+        className={["cursor-pointer", buttonClass].filter(Boolean).join(" ")}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -40,20 +49,25 @@ export default function ButtonSelect({
       </button>
 
       {open && (
-        <ul className="absolute right-0 mt-2 w-56 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark z-50 overflow-auto max-h-56">
+        <ul
+          className="absolute inset-x-0 top-full z-50 mt-1 max-h-56 w-full overflow-auto rounded-sm border border-border bg-surface-raised py-1 shadow-overlay dark:border-border-dark dark:bg-surface-dark-raised"
+          role="listbox"
+        >
           {options.map((opt) => (
-            <li key={opt.value}>
+            <li key={opt.value} role="presentation">
               <button
                 type="button"
                 onClick={() => {
                   onChange(opt.value);
                   setOpen(false);
                 }}
-                className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                className={`w-full cursor-pointer truncate px-3 py-2 text-left text-sm transition-colors ${
                   opt.value === value
                     ? "bg-primary/10 dark:bg-primary-light/10 text-primary dark:text-primary-light font-medium font-mono"
                     : "text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
                 }`}
+                role="option"
+                aria-selected={opt.value === value}
               >
                 {opt.label}
               </button>

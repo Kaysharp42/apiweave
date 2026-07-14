@@ -6,7 +6,6 @@ import FileUploadSection from "../FileUploadSection";
 import type { FileUpload } from "../../types/FileUpload";
 import {
   Puzzle,
-  Plus,
   Trash2,
   CheckCircle,
   ArrowRight,
@@ -20,7 +19,10 @@ import {
   Globe,
 } from "lucide-react";
 import { BeautifyButton } from "../molecules/BeautifyButton";
-import { StatusBadge } from "../molecules/StatusBadge";
+import {
+  ExtractorForm,
+  normalizeExtractorPath,
+} from "../molecules/ExtractorForm";
 import {
   countKeyValuePairs,
   previewBody,
@@ -221,69 +223,6 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-interface ExtractorFormProps {
-  onAdd: (varName: string, varPath: string) => void;
-}
-
-const EXTRACTOR_PATH_PREFIX = "response.body.";
-const normalizeExtractorPath = (path: string): string => {
-  const trimmed = String(path).trim();
-  return trimmed.startsWith("response.")
-    ? trimmed
-    : `${EXTRACTOR_PATH_PREFIX}${trimmed}`;
-};
-
-const ExtractorForm = ({ onAdd }: ExtractorFormProps) => {
-  const [varName, setVarName] = useState("");
-  const [varPath, setVarPath] = useState("");
-
-  const handleAdd = () => {
-    if (varName.trim() && varPath.trim()) {
-      onAdd(varName.trim(), varPath.trim());
-      setVarName("");
-      setVarPath("");
-    }
-  };
-
-  return (
-    <div className="space-y-1 p-1.5 rounded-sm border border-dashed bg-surface-overlay dark:bg-surface-dark-overlay border-border dark:border-border-dark">
-      <input
-        type="text"
-        placeholder="Variable name (e.g., token)"
-        aria-label="Extractor variable name"
-        className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-        value={varName}
-        onChange={(e) => setVarName(e.target.value)}
-      />
-      <div className="flex items-center gap-0 border rounded-sm bg-surface-raised dark:bg-surface-dark-raised border-border dark:border-border-dark focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[var(--aw-focus-ring-offset)]">
-        <span
-          className="nodrag pl-1.5 pr-1 text-[9px] font-mono text-text-muted dark:text-text-muted-dark select-none"
-          aria-hidden="true"
-        >
-          {EXTRACTOR_PATH_PREFIX}
-        </span>
-        <input
-          type="text"
-          placeholder="data.name"
-          aria-label="Extractor path (after response.body.)"
-          className="nodrag w-full px-1.5 py-0.5 border rounded-sm text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-          value={varPath}
-          onChange={(e) => setVarPath(e.target.value)}
-        />
-      </div>
-      <button
-        type="button"
-        onClick={handleAdd}
-        aria-label="Add extractor"
-        className="w-full px-2 py-1 text-surface-raised dark:text-surface-dark-raised text-xs font-semibold rounded-sm nodrag transition-colors flex items-center justify-center gap-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none bg-primary dark:bg-primary-light"
-      >
-        <Plus className="w-3 h-3" />
-        <span>Add Extractor</span>
-      </button>
     </div>
   );
 };
@@ -533,7 +472,6 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
     ? Object.keys(data.config.extractors).length
     : 0;
   const hasBody = data.config?.body && data.config?.method !== "GET";
-  const bodyFormat = data.config?.bodyType ?? "raw";
   const bodyPreview = previewBody(data.config?.body);
 
   const icon = useMemo(
@@ -546,17 +484,9 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
           <Globe className="w-2.5 h-2.5" aria-hidden="true" />
           {method}
         </span>
-        {hasBody && (
-          <StatusBadge
-            status="info"
-            size="xs"
-            label={`body: ${bodyFormat}`}
-            className="nodrag whitespace-nowrap"
-          />
-        )}
       </span>
     ),
-    [bodyFormat, hasBody, method, methodBadgeClass],
+    [method, methodBadgeClass],
   );
 
   const titleExtra = useMemo(

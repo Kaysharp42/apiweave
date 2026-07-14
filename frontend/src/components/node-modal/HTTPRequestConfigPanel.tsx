@@ -11,9 +11,13 @@ import {
   Eye,
   EyeOff,
   File,
+  FilePlus2,
   FileText,
   KeyRound,
   Link2,
+  Plus,
+  Puzzle,
+  Trash2,
   Type,
   type LucideIcon,
 } from "lucide-react";
@@ -27,6 +31,8 @@ import { TextArea } from "../atoms/TextArea";
 import { Toggle } from "../atoms/Toggle";
 import { BeautifyButton } from "../molecules/BeautifyButton";
 import { Card } from "../molecules/Card";
+import { EmptyState } from "../molecules/EmptyState";
+import { ExtractorForm } from "../molecules/ExtractorForm";
 import { FormField } from "../molecules/FormField";
 import { KeyValueEditor } from "../molecules/KeyValueEditor";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
@@ -51,7 +57,7 @@ const AUTH_OPTIONS: SelectOption[] = [
   { label: "API Key", value: "apiKey" },
 ];
 
-const BODY_TYPES: Array<{ label: string; value: HTTPRequestBodyType }> = [
+const BODY_TYPES: SelectOption[] = [
   { label: "None", value: "none" },
   { label: "JSON", value: "json" },
   { label: "Raw", value: "raw" },
@@ -59,6 +65,9 @@ const BODY_TYPES: Array<{ label: string; value: HTTPRequestBodyType }> = [
   { label: "x-www-form-urlencoded", value: "x-www-form-urlencoded" },
   { label: "Binary", value: "binary" },
 ];
+
+const SELECT_BUTTON_CLASS =
+  "flex h-10 w-full cursor-pointer items-center justify-between rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay";
 
 function createCardIcon(Icon: LucideIcon) {
   return function CardIcon({ className }: { className?: string }) {
@@ -69,6 +78,7 @@ function createCardIcon(Icon: LucideIcon) {
 const FileTextCardIcon = createCardIcon(FileText);
 const KeyRoundCardIcon = createCardIcon(KeyRound);
 const Link2CardIcon = createCardIcon(Link2);
+const PuzzleCardIcon = createCardIcon(Puzzle);
 const TypeCardIcon = createCardIcon(Type);
 
 function useDarkMode(): boolean {
@@ -206,7 +216,11 @@ export function HTTPRequestConfigPanel({
   const renderAuth = () => {
     const auth = draftConfig.auth || { type: "none" };
     return (
-      <Card title="Authorization" icon={KeyRoundCardIcon}>
+      <Card
+        title="Authorization"
+        icon={KeyRoundCardIcon}
+        className="overflow-visible"
+      >
         <div className="space-y-4">
           <FormField
             label="Auth type"
@@ -218,7 +232,7 @@ export function HTTPRequestConfigPanel({
               onChange={(value) =>
                 updateAuth({ type: value as AuthConfig["type"] })
               }
-              buttonClass="flex h-10 w-full items-center justify-between rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+              buttonClass={SELECT_BUTTON_CLASS}
             />
           </FormField>
 
@@ -366,164 +380,216 @@ export function HTTPRequestConfigPanel({
     <Card
       title="Request body"
       icon={FileTextCardIcon}
-      className="min-h-[34rem]"
+      className="overflow-visible"
     >
-      <div className="mb-4 flex flex-wrap gap-1 rounded-sm border border-border bg-surface-overlay p-1 dark:border-border-dark dark:bg-surface-dark-overlay">
-        {BODY_TYPES.map((bodyType) => (
-          <Button
-            key={bodyType.value}
-            size="xs"
-            variant={
-              draftConfig.bodyType === bodyType.value ? "primary" : "ghost"
+      <div className="space-y-4">
+        <FormField label="Body type">
+          <ButtonSelect
+            options={BODY_TYPES}
+            value={draftConfig.bodyType ?? "none"}
+            onChange={(bodyType) =>
+              updateConfig({ bodyType: bodyType as HTTPRequestBodyType })
             }
-            onClick={() => updateConfig({ bodyType: bodyType.value })}
-          >
-            {bodyType.label}
-          </Button>
-        ))}
-      </div>
+            buttonClass={SELECT_BUTTON_CLASS}
+          />
+        </FormField>
 
-      {draftConfig.bodyType === "none" && (
-        <div className="rounded-sm border border-dashed border-border bg-surface-overlay p-8 text-center text-sm text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
-          This request will be sent without a body.
-        </div>
-      )}
+        {draftConfig.bodyType === "none" && (
+          <EmptyState
+            title="No request body"
+            description="This request will be sent without a body."
+            className="min-h-96 rounded-sm border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
+          />
+        )}
 
-      {draftConfig.bodyType === "json" && (
-        <FormField
-          label="JSON body"
-          {...(jsonError ? { error: jsonError } : {})}
-        >
-          <div
-            className={[
-              "overflow-hidden rounded-sm border",
-              jsonError
-                ? "border-status-error dark:border-[var(--aw-status-error)]"
-                : "border-border dark:border-border-dark",
-            ].join(" ")}
+        {draftConfig.bodyType === "json" && (
+          <FormField
+            label="JSON body"
+            {...(jsonError ? { error: jsonError } : {})}
           >
-            <div className="flex items-center justify-end border-b border-border bg-surface-overlay px-2 py-1 dark:border-border-dark dark:bg-surface-dark-overlay">
-              <BeautifyButton
-                value={draftConfig.body || ""}
-                onChange={(body) => updateConfig({ body })}
+            <div
+              className={[
+                "overflow-hidden rounded-sm border",
+                jsonError
+                  ? "border-status-error dark:border-[var(--aw-status-error)]"
+                  : "border-border dark:border-border-dark",
+              ].join(" ")}
+            >
+              <div className="flex items-center justify-end border-b border-border bg-surface-overlay px-2 py-1 dark:border-border-dark dark:bg-surface-dark-overlay">
+                <BeautifyButton
+                  value={draftConfig.body || ""}
+                  onChange={(body) => updateConfig({ body })}
+                />
+              </div>
+              <Suspense
+                fallback={
+                  <div className="flex h-96 items-center justify-center text-sm text-text-secondary dark:text-text-secondary-dark">
+                    Loading editor…
+                  </div>
+                }
+              >
+                <MonacoEditor
+                  height="384px"
+                  language="json"
+                  theme={isDarkMode ? "vs-dark" : "light"}
+                  value={draftConfig.body || ""}
+                  onChange={(body) => updateConfig({ body: body || "" })}
+                  options={{
+                    minimap: { enabled: false },
+                    fontFamily: "JetBrains Mono",
+                    scrollBeyondLastLine: false,
+                  }}
+                />
+              </Suspense>
+            </div>
+          </FormField>
+        )}
+
+        {draftConfig.bodyType === "raw" && (
+          <FormField label="Raw body">
+            <TextArea
+              value={draftConfig.body || ""}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                updateConfig({ body: event.target.value })
+              }
+              rows={16}
+              className="h-96 resize-none font-mono"
+            />
+          </FormField>
+        )}
+
+        {draftConfig.bodyType === "form-data" && (
+          <FormDataRows
+            entries={draftConfig.formDataEntries || []}
+            onChange={(formDataEntries) => updateConfig({ formDataEntries })}
+          />
+        )}
+
+        {draftConfig.bodyType === "x-www-form-urlencoded" && (
+          <FormField label="URL encoded fields">
+            <div className="min-h-96">
+              <KeyValueEditor
+                pairs={draftConfig.urlEncodedEntries || []}
+                onChange={(pairs) =>
+                  updateConfig({
+                    urlEncodedEntries: pairs.map(
+                      (pair): UrlEncodedEntry => ({ ...pair, active: true }),
+                    ),
+                  })
+                }
               />
             </div>
-            <Suspense
-              fallback={
-                <div className="h-[400px] p-4 text-sm text-text-secondary dark:text-text-secondary-dark">
-                  Loading editor…
-                </div>
-              }
-            >
-              <MonacoEditor
-                height="400px"
-                language="json"
-                theme={isDarkMode ? "vs-dark" : "light"}
-                value={draftConfig.body || ""}
-                onChange={(body) => updateConfig({ body: body || "" })}
-                options={{
-                  minimap: { enabled: false },
-                  fontFamily: "JetBrains Mono",
-                  scrollBeyondLastLine: false,
-                }}
+          </FormField>
+        )}
+
+        {draftConfig.bodyType === "binary" && (
+          <FormField label="Binary file">
+            <div className="min-h-96">
+              <FileUploadSection
+                fileUploads={draftConfig.fileUploads || []}
+                onUpdate={(fileUploads: FileUpload[]) =>
+                  updateConfig({ fileUploads })
+                }
               />
-            </Suspense>
-          </div>
-        </FormField>
-      )}
-
-      {draftConfig.bodyType === "raw" && (
-        <FormField label="Raw body">
-          <TextArea
-            value={draftConfig.body || ""}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-              updateConfig({ body: event.target.value })
-            }
-            autoResize
-            rows={10}
-            className="font-mono"
-          />
-        </FormField>
-      )}
-
-      {draftConfig.bodyType === "form-data" && (
-        <FormDataRows
-          entries={draftConfig.formDataEntries || []}
-          onChange={(formDataEntries) => updateConfig({ formDataEntries })}
-        />
-      )}
-
-      {draftConfig.bodyType === "x-www-form-urlencoded" && (
-        <FormField label="URL encoded fields">
-          <KeyValueEditor
-            pairs={draftConfig.urlEncodedEntries || []}
-            onChange={(pairs) =>
-              updateConfig({
-                urlEncodedEntries: pairs.map(
-                  (pair): UrlEncodedEntry => ({ ...pair, active: true }),
-                ),
-              })
-            }
-          />
-        </FormField>
-      )}
-
-      {draftConfig.bodyType === "binary" && (
-        <FormField
-          label="Binary file"
-          hint="Use the existing file upload workflow to embed, reference, or source a binary file."
-        >
-          <FileUploadSection
-            fileUploads={draftConfig.fileUploads || []}
-            onUpdate={(fileUploads: FileUpload[]) =>
-              updateConfig({ fileUploads })
-            }
-          />
-        </FormField>
-      )}
+            </div>
+          </FormField>
+        )}
+      </div>
     </Card>
   );
 
   const renderSettings = () => (
-    <Card title="Request settings" icon={TypeCardIcon}>
-      <div className="grid gap-4 md:grid-cols-2">
-        <FormField label="Timeout" hint="Seconds, between 1 and 300.">
-          <Input
-            type="number"
-            min={1}
-            max={300}
-            value={draftConfig.timeout ?? 30}
-            onChange={(event) =>
-              updateConfig({ timeout: Number(event.target.value) || 30 })
-            }
-          />
-        </FormField>
-        <FormField label="Follow redirects">
-          <Toggle
-            checked={draftConfig.followRedirects ?? true}
-            onChange={(event) =>
-              updateConfig({ followRedirects: event.target.checked })
-            }
-          />
-        </FormField>
-        <FormField label="SSL verify">
-          <Toggle
-            checked={draftConfig.sslVerify ?? true}
-            onChange={(event) =>
-              updateConfig({ sslVerify: event.target.checked })
-            }
-          />
-        </FormField>
-        <FormField label="Continue on failure">
-          <Toggle
-            checked={draftConfig.continueOnFail ?? false}
-            onChange={(event) =>
-              updateConfig({ continueOnFail: event.target.checked })
-            }
-          />
-        </FormField>
-      </div>
-    </Card>
+    <div className="space-y-4">
+      <Card title="Request settings" icon={TypeCardIcon}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField label="Timeout" hint="Seconds, between 1 and 300.">
+            <Input
+              type="number"
+              min={1}
+              max={300}
+              value={draftConfig.timeout ?? 30}
+              onChange={(event) =>
+                updateConfig({ timeout: Number(event.target.value) || 30 })
+              }
+            />
+          </FormField>
+          <FormField label="Follow redirects">
+            <Toggle
+              checked={draftConfig.followRedirects ?? true}
+              onChange={(event) =>
+                updateConfig({ followRedirects: event.target.checked })
+              }
+            />
+          </FormField>
+          <FormField label="SSL verify">
+            <Toggle
+              checked={draftConfig.sslVerify ?? true}
+              onChange={(event) =>
+                updateConfig({ sslVerify: event.target.checked })
+              }
+            />
+          </FormField>
+          <FormField label="Continue on failure">
+            <Toggle
+              checked={draftConfig.continueOnFail ?? false}
+              onChange={(event) =>
+                updateConfig({ continueOnFail: event.target.checked })
+              }
+            />
+          </FormField>
+        </div>
+      </Card>
+
+      <Card title="Store response as variables" icon={PuzzleCardIcon}>
+        <div className="mb-3 space-y-2">
+          {Object.entries(draftConfig.extractors || {}).map(
+            ([variableName, responsePath]) => (
+              <div
+                key={variableName}
+                className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-sm border border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay"
+              >
+                <code className="truncate text-xs text-status-success dark:text-status-success-dark">
+                  {variableName}
+                </code>
+                <span className="text-text-muted dark:text-text-muted-dark">
+                  &larr;
+                </span>
+                <code className="truncate text-xs text-status-info dark:text-status-info-dark">
+                  {responsePath}
+                </code>
+                <IconButton
+                  tooltip={`Remove ${variableName}`}
+                  size="xs"
+                  variant="error"
+                  onClick={() => {
+                    const extractors = { ...(draftConfig.extractors || {}) };
+                    delete extractors[variableName];
+                    updateConfig({ extractors });
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </IconButton>
+              </div>
+            ),
+          )}
+          {Object.keys(draftConfig.extractors || {}).length === 0 && (
+            <p className="text-sm text-text-muted dark:text-text-muted-dark">
+              No response variables configured.
+            </p>
+          )}
+        </div>
+        <ExtractorForm
+          onAdd={(variableName, responsePath) =>
+            updateConfig({
+              extractors: {
+                ...(draftConfig.extractors || {}),
+                [variableName]: responsePath,
+              },
+            })
+          }
+        />
+      </Card>
+    </div>
   );
 
   return (
@@ -581,11 +647,24 @@ function FormDataRows({
     );
   return (
     <FormField label="Form-data rows">
-      <div className="space-y-2">
+      <div className="min-h-96 space-y-2">
+        {entries.length === 0 && (
+          <EmptyState
+            icon={
+              <FilePlus2
+                className="h-10 w-10 text-text-muted dark:text-text-muted-dark"
+                strokeWidth={1.5}
+              />
+            }
+            title="No form-data rows"
+            description="Add a text field or file reference to the multipart request."
+            className="rounded-sm border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
+          />
+        )}
         {entries.map((entry, index) => (
           <div
             key={`${entry.key}-${index}`}
-            className="grid gap-2 rounded-sm border border-border bg-surface-overlay p-2 dark:border-border-dark dark:bg-surface-dark-overlay md:grid-cols-[1fr_1fr_auto_auto]"
+            className="grid gap-2 rounded-sm border border-border bg-surface-overlay p-2 dark:border-border-dark dark:bg-surface-dark-overlay md:grid-cols-[1fr_1fr_auto_auto_auto]"
           >
             <Input
               value={entry.key}
@@ -614,15 +693,26 @@ function FormDataRows({
               uncheckedLabel="Text"
             />
             <Toggle
+              label={entry.active ? "Enabled" : "Disabled"}
               checked={entry.active}
               onChange={(event) =>
                 updateEntry(index, { active: event.target.checked })
               }
             />
+            <IconButton
+              tooltip="Remove row"
+              size="xs"
+              variant="ghost"
+              onClick={() =>
+                onChange(entries.filter((_, entryIndex) => entryIndex !== index))
+              }
+            >
+              <Trash2 className="h-4 w-4" />
+            </IconButton>
           </div>
         ))}
         <Button
-          variant="ghost"
+          variant="secondary"
           size="sm"
           onClick={() =>
             onChange([
@@ -631,6 +721,7 @@ function FormDataRows({
             ])
           }
         >
+          <Plus className="h-4 w-4" />
           Add row
         </Button>
       </div>

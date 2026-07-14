@@ -14,6 +14,7 @@ export interface NodeModalHTTPRequestConfig {
   body?: string;
   bodyType?: HTTPRequestBodyType;
   timeout?: number;
+  extractors?: Record<string, string>;
   fileUploads?: FileUpload[];
   auth?: AuthConfig;
   followRedirects?: boolean;

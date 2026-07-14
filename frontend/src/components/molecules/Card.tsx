@@ -31,7 +31,7 @@ export function Card({
 
   return (
     <div
-      className={`overflow-hidden rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised ${className}`}
+      className={`rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised ${className}`}
     >
       {/* Header */}
       {hasHeader && (

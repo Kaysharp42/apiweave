@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { test } from "vitest";
+import { normalizeExtractorPath } from "./molecules/ExtractorForm";
 
 const nodeModalSource = readFileSync(
   join(process.cwd(), "src/components/NodeModal.tsx"),
@@ -80,17 +81,29 @@ test("NodeModal exposes HTTP request sections and request bar controls", () => {
     /\{ key: ["']settings["'], label: ["']Settings["']/,
   );
   assert.match(httpRequestConfigSource, /<FormField[\s\S]*?label="Params"/);
-  assert.match(nodeModalSource, /HTTP_METHODS\.map\(\(method\)/);
+  assert.match(nodeModalSource, /options=\{HTTP_METHOD_OPTIONS\}/);
   assert.match(nodeModalSource, /aria-label="Request URL"/);
 });
 
-test("HTTPRequestConfigPanel updates HTTP method button selection through React state", () => {
+test("HTTPRequestConfigPanel updates HTTP method selection through React state", () => {
   assert.match(nodeModalSource, /const \[httpConfig, setHttpConfig\]/);
   assert.match(nodeModalSource, /patchHttpConfig\(\{ method \}\)/);
+  assert.match(nodeModalSource, /value=\{httpConfig\.method \?\? ["']GET["']\}/);
+});
+
+test("NodeModal uses one horizontal tab pattern for every node type", () => {
   assert.match(
-    nodeModalSource,
-    /variant=\{httpConfig\.method === method \? ["']primary["'] : ["']ghost["']\}/,
+    nodeModalShellSource,
+    /import \{ PanelTabs \} from ["']\.\.\/molecules\/PanelTabs["']/,
   );
+  assert.match(nodeModalShellSource, /<PanelTabs/);
+  assert.doesNotMatch(nodeModalShellSource, /max-xl:w-14/);
+});
+
+test("HTTPRequestConfigPanel uses the shared selector pattern for body type", () => {
+  assert.match(httpRequestConfigSource, /label="Body type"/);
+  assert.match(httpRequestConfigSource, /options=\{BODY_TYPES\}/);
+  assert.doesNotMatch(httpRequestConfigSource, /className="min-h-\[34rem\]"/);
 });
 
 test("HTTPRequestConfigPanel keeps request parameter, header, cookie, and body editors", () => {
@@ -99,6 +112,21 @@ test("HTTPRequestConfigPanel keeps request parameter, header, cookie, and body e
   assert.match(httpRequestConfigSource, /title="Cookies"/);
   assert.match(httpRequestConfigSource, /title="Request body"/);
   assert.match(httpRequestConfigSource, /label="JSON body"/);
+});
+
+test("HTTPRequestConfigPanel exposes response variables in settings", () => {
+  assert.match(httpRequestConfigSource, /title="Store response as variables"/);
+  assert.match(httpRequestConfigSource, /<ExtractorForm/);
+  assert.match(httpRequestConfigSource, /updateConfig\(\{ extractors \}\)/);
+  assert.doesNotMatch(httpRequestConfigSource, /title="File attachments"/);
+});
+
+test("response extractor paths use the runner response shape", () => {
+  assert.equal(normalizeExtractorPath("token"), "response.body.token");
+  assert.equal(
+    normalizeExtractorPath("response.headers.content-type"),
+    "response.headers.content-type",
+  );
 });
 
 test("HTTPRequestConfigPanel uses the BeautifyButton request body editor", () => {

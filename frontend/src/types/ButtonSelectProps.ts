@@ -6,4 +6,5 @@ export interface ButtonSelectProps {
   onChange?: (value: string) => void;
   placeholder?: string;
   buttonClass?: string;
+  containerClass?: string;
 }
