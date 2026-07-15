@@ -9,7 +9,7 @@ import { CloudSyncRepository, type CloudApplyResult, type CloudChangeEnvelope } 
 import {
   ChangeOp,
   RecordKind,
-} from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/sync_service_pb.js"
+} from "@apiweave/proto/apiweave/v1/sync_service_pb"
 
 export { ChangeOp, RecordKind }
 export type ChangeEnvelope = CloudChangeEnvelope

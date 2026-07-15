@@ -14,7 +14,7 @@ import { encrypt, decrypt, generateDek, wrapDek, unwrapDek, type EncryptedBlob }
 import type { KVStore } from "../../core/db"
 import { CloudSyncRepository } from "../../core/repositories"
 import { create } from "@bufbuild/protobuf"
-import { UlidSchema } from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/common_pb.js"
+import { UlidSchema } from "@apiweave/proto/apiweave/v1/common_pb"
 import {
   HelloRequestSchema,
   PullChangesRequestSchema,
@@ -29,7 +29,7 @@ import {
   type PushDelta,
   type PushDeltasRequest,
   type PushDeltasResponse,
-} from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/sync_service_pb.js"
+} from "@apiweave/proto/apiweave/v1/sync_service_pb"
 
 // ─── Device Token Store ──────────────────────────────────────────────────────
 

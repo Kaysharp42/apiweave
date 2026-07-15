@@ -21,7 +21,7 @@ import { shell } from "electron"
 import { readKeyfile } from "../../core/secrets/keyfile"
 import { encrypt, generateDek, wrapDek, type EncryptedBlob } from "../../core/secrets/crypto"
 import { create } from "@bufbuild/protobuf"
-import { DeviceService, RegisterDeviceRequestSchema, type Device, type RegisterDeviceRequest } from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/device_pb.js"
+import { DeviceService, RegisterDeviceRequestSchema, type Device, type RegisterDeviceRequest } from "@apiweave/proto/apiweave/v1/device_pb"
 import { exchangeDesktopSession } from "./cloud-client"
 
 // ─── Errors ──────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import type { KVStore, SqliteRow } from "../db"
 import { generateId } from "../id"
 import { slugify } from "./helpers"
 import { sanitizeCloudSnapshotPayload } from "../sync/cloud-mutations"
-import { ChangeOp, RecordKind } from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/sync_service_pb.js"
+import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 
 export type CloudOutboxKind = "workspace" | "project" | "workflow" | "environment"
 export type CloudOutboxOp = "upsert" | "tombstone"

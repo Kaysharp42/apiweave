@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { JsonValue } from "../../../../shared/types/JsonValue"
 import type { Workflow } from "../../../../shared/types/Workflow"
-import { ChangeOp, RecordKind } from "../../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/sync_service_pb.js"
+import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import { recordWorkflowUpsert } from "../cloud-mutations"
 import type { SyncMutation, SyncProvider } from "../SyncProvider"
 

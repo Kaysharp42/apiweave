@@ -1,4 +1,4 @@
-import { ChangeOp, RecordKind } from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/sync_service_pb.js"
+import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 
 export interface SyncMutation {
   readonly workspaceId: string

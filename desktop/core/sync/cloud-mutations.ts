@@ -4,7 +4,7 @@ import type { JsonValue } from "../../../shared/types/JsonValue"
 import type { Workflow } from "../../../shared/types/Workflow"
 import type { WorkflowNode } from "../../../shared/types/WorkflowNode"
 import type { Workspace } from "../../../shared/types/Workspace"
-import { ChangeOp, RecordKind } from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/sync_service_pb.js"
+import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import { assertNoSecretValues, detectSecretsInValue, isSecretKey } from "../services/secret_utils"
 import type { SyncProvider } from "./SyncProvider"
 
