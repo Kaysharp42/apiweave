@@ -2,8 +2,8 @@
  * Cloud sync transport — implements SyncProvider for cloud-connected workspaces.
  *
  * Lifecycle:
- *   1. pull() — calls Hello; if full_resync_required, clears outbox and
- *      re-syncs from a full snapshot. Otherwise, calls PullChanges(cursor)
+ *   1. pull() — calls Hello; if full_resync_required, preserves the outbox and
+ *      re-syncs from cursor zero. Otherwise, calls PullChanges(cursor)
  *      and applies changes to local repositories.
  *   2. push() — drains the durable outbox, calling PushDeltas with an
  *      idempotency key per outbox row. On 401, pauses push, triggers token
@@ -18,7 +18,13 @@
 import type { SyncMutation, SyncProvider } from "../../core/sync/SyncProvider"
 import type { KVStore } from "../../core/db"
 import { CloudSyncRepository, type CloudWorkspaceBinding } from "../../core/repositories"
-import { CloudClient, ErrUnauthorized, DeviceTokenStore, type ChangeEnvelope as ClientChangeEnvelope } from "./cloud-client"
+import {
+  CloudClient,
+  ErrUnauthorized,
+  DeviceTokenStore,
+  type ChangeEnvelope as ClientChangeEnvelope,
+  type CloudClientConfig,
+} from "./cloud-client"
 import { CursorStore } from "./cloud-cursor"
 import { Outbox, type OutboxInput, type OutboxRow, type OutboxKind, type OutboxOp } from "./cloud-outbox"
 import { applyToRepositories, RecordKind, ChangeOp, type ChangeEnvelope } from "./cloud-apply"
@@ -28,11 +34,11 @@ export { CloudClient, DeviceTokenStore }
 
 export type SyncState = "idle" | "syncing" | "conflict" | "error"
 
-export function createCloudClient(tokenStore: DeviceTokenStore): CloudClient {
-  return new CloudClient(
-    { baseUrl: "https://api.apiweave.cloud", clientVersion: "1.0.0" },
-    tokenStore,
-  )
+export function createCloudClient(tokenStore: DeviceTokenStore, config?: CloudClientConfig): CloudClient {
+  if (config === undefined) {
+    throw new Error("Discovered cloud client configuration is required")
+  }
+  return new CloudClient(config, tokenStore)
 }
 
 const PAGE_SIZE = 100
@@ -116,8 +122,7 @@ export class CloudSyncProvider implements SyncProvider {
   }
 
   private async fullResync(): Promise<void> {
-    this.log("full resync required — clearing outbox and resetting cursors")
-    this.outbox?.clear()
+    this.log("full resync required — preserving outbox and resetting cursors")
 
     if (!this.syncConfig || !this.cursorStore) return
 

@@ -605,7 +605,7 @@ describe("CloudSyncProvider", () => {
   })
 
   describe("full resync", () => {
-    it("clears outbox and resets cursor on full_resync_required", async () => {
+    it("preserves pending and dead-letter outbox rows while resetting the cursor", async () => {
       provider.enqueue({
         kind: "workflow",
         record_id: "workflow-orphan",
@@ -614,6 +614,17 @@ describe("CloudSyncProvider", () => {
         op: "upsert",
         payload: new TextEncoder().encode(JSON.stringify({ name: "Orphan" })),
       })
+      const deadLetterId = provider.enqueue({
+        kind: "workflow",
+        record_id: "workflow-dead-letter",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 1,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: "Dead Letter" })),
+      })
+      store.set("UPDATE cloud_outbox SET retry_count = ? WHERE id = ?", [CLOUD_OUTBOX_MAX_RETRIES, deadLetterId])
+      const repository = new CloudSyncRepository(store)
+      repository.setCursor(WORKSPACE_ID, 99n, 12n)
 
       nock(API_BASE)
         .post("/apiweave.v1.SyncService/Hello")
@@ -634,7 +645,10 @@ describe("CloudSyncProvider", () => {
       await provider.pull()
 
       const outboxCount = store.get<{ total: number }>("SELECT COUNT(*) as total FROM cloud_outbox")
-      expect(outboxCount?.total ?? 0).toBe(0)
+      expect(outboxCount?.total ?? 0).toBe(2)
+      expect(repository.countDeadLetterOutbox()).toBe(1)
+      expect(repository.getCursor(WORKSPACE_ID)).toBeUndefined()
+      expect(repository.getFullSync(WORKSPACE_ID)).toBeTypeOf("number")
     })
   })
 })

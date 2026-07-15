@@ -21,6 +21,7 @@ vi.mock("../cloud-transport", async () => {
   const actual = await vi.importActual("../cloud-transport")
   return {
     ...actual,
+    createCloudClient: vi.fn(() => ({})),
     CloudSyncProvider: class FakeCloudSyncProvider {
       private onState: (s: string) => void
       constructor(_client: unknown, callback: unknown) {

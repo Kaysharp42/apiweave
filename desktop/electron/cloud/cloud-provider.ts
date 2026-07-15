@@ -20,6 +20,7 @@ import {
   type CloudClient,
   type DeviceTokenStore,
 } from "./cloud-transport"
+import type { CloudClientConfig } from "./cloud-client"
 import { setState, getState, subscribe, type SyncStateListener } from "./cloud-state"
 
 // ─── IPC Channels ────────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ export interface WorkspaceRef {
 export interface CloudSyncConfig {
   readonly tokenStore: DeviceTokenStore
   readonly client?: CloudClient // optional: inject for testing
+  readonly clientConfig?: CloudClientConfig
 }
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -63,7 +65,7 @@ let activeProvider: CloudSyncProvider | null = null
  * Returns the provider for testing; production code ignores the return.
  */
 export function activateCloudSync(config: CloudSyncConfig): CloudSyncProvider {
-  const client = config.client ?? createCloudClient(config.tokenStore)
+  const client = config.client ?? createCloudClient(config.tokenStore, config.clientConfig)
   const provider = new CloudSyncProvider(client, (state) => {
     setState(state)
     // ponytail: log redacted state only, never tokens or payloads.

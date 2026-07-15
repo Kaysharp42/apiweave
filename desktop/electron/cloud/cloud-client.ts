@@ -184,11 +184,16 @@ interface DesktopSessionResponse {
   readonly expiresAt: string
 }
 
-export async function exchangeDesktopSession(apiBaseUrl: string, idToken: string): Promise<string> {
+export async function exchangeDesktopSession(
+  apiBaseUrl: string,
+  idToken: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const response = await fetch(`${apiBaseUrl}/desktop/auth/session`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ idToken }),
+    ...(signal !== undefined ? { signal } : {}),
   })
   if (!response.ok) {
     throw new ErrUnauthorized()

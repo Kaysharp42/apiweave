@@ -5,6 +5,19 @@ import type { HandlerDeps } from "./common"
 import { NoInput } from "./common"
 
 const stateSchema = z.enum(["idle", "syncing", "conflict", "error"])
+const workspaceCatalogEntrySchema = z
+  .object({
+    workspaceId: z.string().min(1),
+    workspaceName: z.string().min(1),
+    teamId: z.string().min(1).optional(),
+    teamName: z.string().min(1).optional(),
+    isPersonal: z.boolean(),
+    effectiveRole: z.number().int().min(0).max(5),
+    canPull: z.boolean(),
+    canPush: z.boolean(),
+    canResolveConflicts: z.boolean(),
+  })
+  .strict()
 const statusSchema = z
   .object({
     linked: z.boolean(),
@@ -13,23 +26,20 @@ const statusSchema = z
     deadLetterCount: z.number().int().nonnegative(),
     deviceId: z.string().optional(),
     workspaceIds: z.array(z.string()),
+    workspaceCatalog: z.array(workspaceCatalogEntrySchema),
   })
   .strict()
 
 const linkInput = z
   .object({
-    zitadelIssuer: z.string().url().optional(),
-    desktopClientId: z.string().min(1).optional(),
-    apiBaseUrl: z.string().url().optional(),
     deviceLabel: z.string().min(1).optional(),
-    workspaceIds: z.array(z.string().min(1)).optional(),
   })
   .strict()
 
 const bindWorkspaceInput = z
   .object({
     workspaceId: z.string().min(1),
-    cloudWorkspaceId: z.string().min(1).optional(),
+    cloudWorkspaceId: z.string().min(1),
     teamId: z.string().min(1).nullable().optional(),
     syncMode: z.string().min(1).optional(),
   })

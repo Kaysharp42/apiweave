@@ -8,6 +8,7 @@ import { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository } from "../../../core/rep
 import { createKeyfile } from "../../../core/secrets/keyfile"
 import type { SyncProvider } from "../../../core/sync"
 import { DeviceTokenStore } from "../cloud-client"
+import { ErrLinkCancelled } from "../cloud-link"
 import { DesktopCloudSyncControl } from "../cloud-sync-control"
 
 const WORKSPACE_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
@@ -71,15 +72,22 @@ describe("DesktopCloudSyncControl", () => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ["conflict-1", WORKSPACE_ID, "workflow", "workflow-1", 1, 2, 2, "upsert", "upsert"],
     )
+    repository.setSetting("cloud.public_config", JSON.stringify({
+      version: 1,
+      webBaseUrl: "https://cloud.test",
+      apiBaseUrl: "https://api.test",
+      oidcIssuer: "https://auth.test",
+      desktopClientId: "desktop-test",
+      minimumDesktopVersion: "0.1.0",
+      syncProtocolVersions: [1],
+    }))
 
     let activeProvider: SyncProvider | undefined
     const control = new DesktopCloudSyncControl({
       store,
       keyfilePath,
       defaults: {
-        zitadelIssuer: "https://auth.test",
-        desktopClientId: "desktop-test",
-        apiBaseUrl: "https://api.test",
+        cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
         deviceLabel: "Test Device",
       },
@@ -98,5 +106,27 @@ describe("DesktopCloudSyncControl", () => {
     expect(repository.getCursor(CLOUD_WORKSPACE_ID)).toBeUndefined()
     expect(store.get("SELECT 1 FROM cloud_conflicts LIMIT 1")).toBeUndefined()
     expect(store.get("SELECT 1 FROM cloud_devices LIMIT 1")).toBeUndefined()
+  })
+
+  it("cancels configuration discovery without waiting for OAuth timeout", async () => {
+    const control = new DesktopCloudSyncControl({
+      store,
+      keyfilePath,
+      defaults: {
+        cloudEntryUrl: "https://cloud.test",
+        clientVersion: "1.0.0",
+        deviceLabel: "Test Device",
+      },
+      configClient: async (_entryUrl, signal) => new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+      }),
+      setSyncProviderTarget: () => undefined,
+    })
+
+    const linkPromise = control.link({})
+    control.cancelLink()
+
+    await expect(linkPromise).rejects.toThrow(ErrLinkCancelled)
+    expect(control.status()).toMatchObject({ linked: false, active: false, workspaceCatalog: [] })
   })
 })

@@ -20,8 +20,17 @@ import { randomBytes, createHash } from "node:crypto"
 import { shell } from "electron"
 import { readKeyfile } from "../../core/secrets/keyfile"
 import { encrypt, generateDek, wrapDek, type EncryptedBlob } from "../../core/secrets/crypto"
-import { create } from "@bufbuild/protobuf"
-import { DeviceService, RegisterDeviceRequestSchema, type Device, type RegisterDeviceRequest } from "@apiweave/proto/apiweave/v1/device_pb"
+import { create, fromJson } from "@bufbuild/protobuf"
+import { EmptySchema } from "@bufbuild/protobuf/wkt"
+import {
+  DeviceSchema,
+  DeviceService,
+  RegisterDeviceRequestSchema,
+  SyncWorkspaceListSchema,
+  type Device,
+  type RegisterDeviceRequest,
+  type SyncWorkspace,
+} from "@apiweave/proto/apiweave/v1/device_pb"
 import { exchangeDesktopSession } from "./cloud-client"
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
@@ -61,6 +70,34 @@ export class ErrLinkStoreFailed extends Error {
   }
 }
 
+export class ErrLinkCancelled extends Error {
+  constructor() {
+    super("Device link was cancelled")
+    this.name = "ErrLinkCancelled"
+  }
+}
+
+export class ErrLinkBusy extends Error {
+  constructor() {
+    super("A device link is already in progress")
+    this.name = "ErrLinkBusy"
+  }
+}
+
+export class ErrLinkListenerFailed extends Error {
+  constructor() {
+    super("Could not start the secure local authentication callback")
+    this.name = "ErrLinkListenerFailed"
+  }
+}
+
+export class ErrLinkBrowserFailed extends Error {
+  constructor() {
+    super("Could not open the system browser for authentication")
+    this.name = "ErrLinkBrowserFailed"
+  }
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface DeviceRecord {
@@ -73,10 +110,10 @@ export interface DeviceRecord {
 
 export interface DeviceLinkResult {
   readonly device: DeviceRecord
+  readonly workspaces: readonly SyncWorkspace[]
   readonly encryptedRefreshToken: EncryptedBlob
   readonly wrappedDek: Uint8Array
   readonly accessToken: string
-  readonly idToken: string
 }
 
 export interface DeviceLinkConfig {
@@ -88,6 +125,7 @@ export interface DeviceLinkConfig {
   readonly devicePublicKey: Uint8Array
   readonly clientVersion: string
   readonly timeoutMs?: number
+  readonly signal?: AbortSignal
 }
 
 interface TokenResponse {
@@ -104,10 +142,16 @@ const LOOPBACK_HOST = "127.0.0.1"
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 const CALLBACK_PATH = "/callback"
 const METHOD_REGISTER_DEVICE = "RegisterDevice"
+const METHOD_LIST_SYNC_WORKSPACES = "ListSyncWorkspaces"
 
 // ─── Implementation ──────────────────────────────────────────────────────────
 
-let activeListener: http.Server | null = null
+interface ActiveLink {
+  readonly controller: AbortController
+  listener: http.Server | null
+}
+
+let activeLink: ActiveLink | null = null
 
 /**
  * Start the device link flow. Opens a system browser to the ZITADEL authorize
@@ -118,61 +162,95 @@ let activeListener: http.Server | null = null
  * Returns the device record and encrypted credentials.
  */
 export async function startDeviceLink(config: DeviceLinkConfig): Promise<DeviceLinkResult> {
+  if (activeLink !== null) {
+    throw new ErrLinkBusy()
+  }
+
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
-
-  // Generate PKCE verifier and challenge (S256).
-  const codeVerifier = randomBytes(32).toString("base64url")
-  const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url")
-
-  // Generate state for CSRF protection.
-  const state = randomBytes(16).toString("hex")
-
-  // Spawn transient HTTP listener on random loopback port.
-  const { server, port } = await spawnListener()
-  activeListener = server
+  const controller = new AbortController()
+  const link: ActiveLink = { controller, listener: null }
+  activeLink = link
+  const abortFromCaller = (): void => controller.abort(config.signal?.reason ?? new ErrLinkCancelled())
+  if (config.signal?.aborted === true) {
+    abortFromCaller()
+  } else {
+    config.signal?.addEventListener("abort", abortFromCaller, { once: true })
+  }
+  const timeout = setTimeout(() => controller.abort(new ErrLinkTimeout()), timeoutMs)
 
   try {
+    controller.signal.throwIfAborted()
+    // Generate PKCE verifier and challenge (S256).
+    const codeVerifier = randomBytes(32).toString("base64url")
+    const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url")
+
+    // Generate state for CSRF protection.
+    const state = randomBytes(16).toString("hex")
+
+    // Spawn transient HTTP listener on random loopback port.
+    let listener: { server: http.Server; port: number }
+    try {
+      listener = await spawnListener(controller.signal)
+    } catch {
+      rethrowAbort(controller.signal)
+      throw new ErrLinkListenerFailed()
+    }
+    const { server, port } = listener
+    link.listener = server
+
     // Build authorize URL.
     const redirectUri = `http://${LOOPBACK_HOST}:${port}${CALLBACK_PATH}`
     const authorizeUrl = buildAuthorizeUrl(config, redirectUri, codeChallenge, state)
 
     // Open system browser.
-    await shell.openExternal(authorizeUrl)
+    try {
+      await shell.openExternal(authorizeUrl)
+    } catch {
+      throw new ErrLinkBrowserFailed()
+    }
 
     // Wait for callback with timeout.
-    const callbackResult = await waitForCallback(server, state, timeoutMs)
+    const callbackResult = await waitForCallback(server, state, controller.signal)
 
     // Exchange code for tokens at ZITADEL.
-    const tokens = await exchangeCode(config, callbackResult.code, redirectUri, codeVerifier)
+    const tokens = await exchangeCode(config, callbackResult.code, redirectUri, codeVerifier, controller.signal)
 
     // Verify id_token (using jose for local verification).
-    await verifyIdToken(config, tokens.id_token)
+    await verifyIdToken(config, tokens.id_token, controller.signal)
 
     // Exchange the provider token once; DeviceService and SyncService accept
     // only the resulting opaque APIWeave session.
     let sessionToken: string
     try {
-      sessionToken = await exchangeDesktopSession(config.apiBaseUrl, tokens.id_token)
+      sessionToken = await exchangeDesktopSession(config.apiBaseUrl, tokens.id_token, controller.signal)
     } catch (err) {
+      rethrowAbort(controller.signal)
       throw new ErrLinkExchangeFailed(`Session exchange failed: ${(err as Error).message}`)
     }
 
-    const device = await registerDevice(config, sessionToken)
+    const device = await registerDevice(config, sessionToken, controller.signal)
+    const workspaces = await listSyncWorkspaces(config, sessionToken, controller.signal)
 
     // Encrypt refresh token with existing keyfile.
     const { blob, wrappedDek } = encryptRefreshToken(config, tokens.refresh_token)
 
     return {
       device,
+      workspaces,
       encryptedRefreshToken: blob,
       wrappedDek,
       accessToken: sessionToken,
-      idToken: tokens.id_token,
     }
   } finally {
+    clearTimeout(timeout)
+    config.signal?.removeEventListener("abort", abortFromCaller)
     // Always close the listener.
-    await closeListener(server)
-    activeListener = null
+    if (link.listener !== null) {
+      await closeListener(link.listener)
+    }
+    if (activeLink === link) {
+      activeLink = null
+    }
   }
 }
 
@@ -180,18 +258,26 @@ export async function startDeviceLink(config: DeviceLinkConfig): Promise<DeviceL
  * Cancel an in-progress device link. Closes the listener without resolving.
  */
 export function cancelDeviceLink(): void {
-  if (activeListener) {
-    void closeListener(activeListener)
-    activeListener = null
+  if (activeLink !== null) {
+    activeLink.controller.abort(new ErrLinkCancelled())
+    if (activeLink.listener !== null) {
+      void closeListener(activeLink.listener)
+    }
   }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function spawnListener(): Promise<{ server: http.Server; port: number }> {
+function spawnListener(signal: AbortSignal): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolve, reject) => {
     const server = http.createServer()
+    const onAbort = (): void => {
+      void closeListener(server)
+      reject(signal.reason)
+    }
+    signal.addEventListener("abort", onAbort, { once: true })
     server.listen(0, LOOPBACK_HOST, () => {
+      signal.removeEventListener("abort", onAbort)
       const address = server.address() as AddressInfo | null
       if (!address) {
         server.close()
@@ -200,12 +286,19 @@ function spawnListener(): Promise<{ server: http.Server; port: number }> {
       }
       resolve({ server, port: address.port })
     })
-    server.once("error", reject)
+    server.once("error", (error) => {
+      signal.removeEventListener("abort", onAbort)
+      reject(error)
+    })
   })
 }
 
 function closeListener(server: http.Server): Promise<void> {
   return new Promise((resolve) => {
+    if (!server.listening) {
+      resolve()
+      return
+    }
     server.close(() => resolve())
   })
 }
@@ -236,17 +329,24 @@ interface CallbackResult {
 function waitForCallback(
   server: http.Server,
   expectedState: string,
-  timeoutMs: number,
+  signal: AbortSignal,
 ): Promise<CallbackResult> {
   return new Promise((resolve, reject) => {
     let settled = false
-
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true
-        reject(new ErrLinkTimeout())
+    const settle = (action: () => void): void => {
+      if (settled) {
+        return
       }
-    }, timeoutMs)
+      settled = true
+      signal.removeEventListener("abort", onAbort)
+      action()
+    }
+    const onAbort = (): void => settle(() => reject(signal.reason))
+    signal.addEventListener("abort", onAbort, { once: true })
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
 
     server.on("request", (req, res) => {
       if (settled) {
@@ -265,42 +365,34 @@ function waitForCallback(
       const error = url.searchParams.get("error")
 
       if (error) {
-        settled = true
-        clearTimeout(timeout)
         res.writeHead(400, { "content-type": "text/html" }).end(
           "<html><body><h1>Authentication failed</h1><p>You can close this window.</p></body></html>",
         )
-        reject(new ErrLinkBadCallback(error))
+        settle(() => reject(new ErrLinkBadCallback(error)))
         return
       }
 
       if (!code || !state) {
-        settled = true
-        clearTimeout(timeout)
         res.writeHead(400, { "content-type": "text/html" }).end(
           "<html><body><h1>Invalid callback</h1><p>You can close this window.</p></body></html>",
         )
-        reject(new ErrLinkBadCallback("missing code or state"))
+        settle(() => reject(new ErrLinkBadCallback("missing code or state")))
         return
       }
 
       if (state !== expectedState) {
-        settled = true
-        clearTimeout(timeout)
         res.writeHead(400, { "content-type": "text/html" }).end(
           "<html><body><h1>State mismatch</h1><p>You can close this window.</p></body></html>",
         )
-        reject(new ErrLinkStateMismatch())
+        settle(() => reject(new ErrLinkStateMismatch()))
         return
       }
 
       // Success.
-      settled = true
-      clearTimeout(timeout)
       res.writeHead(200, { "content-type": "text/html" }).end(
         "<html><body><h1>Success!</h1><p>You can close this window and return to the app.</p></body></html>",
       )
-      resolve({ code, state })
+      settle(() => resolve({ code, state }))
     })
   })
 }
@@ -310,6 +402,7 @@ async function exchangeCode(
   code: string,
   redirectUri: string,
   codeVerifier: string,
+  signal: AbortSignal,
 ): Promise<TokenResponse> {
   const tokenEndpoint = `${config.zitadelIssuer}/oauth/v2/token`
 
@@ -321,18 +414,29 @@ async function exchangeCode(
     client_id: config.desktopClientId,
   })
 
-  const response = await fetch(tokenEndpoint, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  })
-
-  if (!response.ok) {
-    const text = await response.text()
-    throw new ErrLinkExchangeFailed(`HTTP ${response.status}: ${text}`)
+  let response: Response
+  try {
+    response = await fetch(tokenEndpoint, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      signal,
+    })
+  } catch {
+    rethrowAbort(signal)
+    throw new ErrLinkExchangeFailed("Token endpoint unavailable")
   }
 
-  const tokens = (await response.json()) as TokenResponse
+  if (!response.ok) {
+    throw new ErrLinkExchangeFailed(`HTTP ${response.status}`)
+  }
+
+  let tokens: TokenResponse
+  try {
+    tokens = (await response.json()) as TokenResponse
+  } catch {
+    throw new ErrLinkExchangeFailed("invalid token response")
+  }
   if (!tokens.access_token || !tokens.id_token || !tokens.refresh_token) {
     throw new ErrLinkExchangeFailed("missing tokens in response")
   }
@@ -340,29 +444,36 @@ async function exchangeCode(
   return tokens
 }
 
-async function verifyIdToken(config: DeviceLinkConfig, idToken: string): Promise<void> {
+async function verifyIdToken(config: DeviceLinkConfig, idToken: string, signal: AbortSignal): Promise<void> {
   // ponytail: local verification with jose. The Go API's auth middleware validates
   // bearer tokens on every request, so this is a belt-and-suspenders check.
   // If a Go API /auth/verify endpoint is added later, prefer that to keep crypto
   // in one place.
-  const { createRemoteJWKSet, jwtVerify } = await import("jose")
+  const { createLocalJWKSet, jwtVerify } = await import("jose")
 
   const jwksUri = `${config.zitadelIssuer}/oauth/v2/keys`
-  const JWKS = createRemoteJWKSet(new URL(jwksUri))
 
   try {
+    const response = await fetch(jwksUri, { headers: { accept: "application/json" }, signal })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const jwks = await response.json() as Parameters<typeof createLocalJWKSet>[0]
+    const JWKS = createLocalJWKSet(jwks)
     await jwtVerify(idToken, JWKS, {
       issuer: config.zitadelIssuer,
       audience: config.desktopClientId,
     })
   } catch (err) {
-    throw new ErrLinkExchangeFailed(`id_token verification failed: ${(err as Error).message}`)
+    rethrowAbort(signal)
+    throw new ErrLinkExchangeFailed("id_token verification failed")
   }
 }
 
 async function registerDevice(
   config: DeviceLinkConfig,
   accessToken: string,
+  signal: AbortSignal,
 ): Promise<DeviceRecord> {
   const endpoint = `${config.apiBaseUrl}/${DeviceService.typeName}/${METHOD_REGISTER_DEVICE}`
   const request: RegisterDeviceRequest = create(RegisterDeviceRequestSchema, {
@@ -371,26 +482,37 @@ async function registerDevice(
     clientVersion: config.clientVersion,
   })
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(request, (_key, value) => {
-      if (value instanceof Uint8Array) {
-        return Buffer.from(value).toString("base64")
-      }
-      return value
-    }),
-  })
-
-  if (!response.ok) {
-    const text = await response.text()
-    throw new ErrLinkExchangeFailed(`Device registration failed: HTTP ${response.status}: ${text}`)
+  let response: Response
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(request, (_key, value) => {
+        if (value instanceof Uint8Array) {
+          return Buffer.from(value).toString("base64")
+        }
+        return value
+      }),
+      signal,
+    })
+  } catch {
+    rethrowAbort(signal)
+    throw new ErrLinkExchangeFailed("Device registration unavailable")
   }
 
-  const device = await parseDeviceResponse(response)
+  if (!response.ok) {
+    throw new ErrLinkExchangeFailed(`Device registration failed: HTTP ${response.status}`)
+  }
+
+  let device: Device
+  try {
+    device = await parseDeviceResponse(response)
+  } catch {
+    throw new ErrLinkExchangeFailed("Invalid device registration response")
+  }
 
   return {
     deviceId: device.id,
@@ -402,11 +524,38 @@ async function registerDevice(
 }
 
 async function parseDeviceResponse(response: Response): Promise<Device> {
-  const json = await response.json() as Record<string, unknown>
-  if (typeof json["publicKey"] === "string") {
-    json["publicKey"] = new Uint8Array(Buffer.from(json["publicKey"] as string, "base64"))
+  return fromJson(DeviceSchema, await response.json())
+}
+
+async function listSyncWorkspaces(
+  config: DeviceLinkConfig,
+  accessToken: string,
+  signal: AbortSignal,
+): Promise<readonly SyncWorkspace[]> {
+  const endpoint = `${config.apiBaseUrl}/${DeviceService.typeName}/${METHOD_LIST_SYNC_WORKSPACES}`
+  let response: Response
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(create(EmptySchema, {})),
+      signal,
+    })
+  } catch {
+    rethrowAbort(signal)
+    throw new ErrLinkExchangeFailed("Workspace catalog unavailable")
   }
-  return json as Device
+  if (!response.ok) {
+    throw new ErrLinkExchangeFailed(`Workspace catalog failed: HTTP ${response.status}`)
+  }
+  try {
+    return fromJson(SyncWorkspaceListSchema, await response.json()).workspaces
+  } catch {
+    throw new ErrLinkExchangeFailed("Invalid workspace catalog response")
+  }
 }
 
 function timestampToIso(value: Device["createdAt"] | string): string {
@@ -433,5 +582,11 @@ function encryptRefreshToken(
     return { blob, wrappedDek }
   } catch (err) {
     throw new ErrLinkStoreFailed(`Failed to encrypt refresh token: ${(err as Error).message}`)
+  }
+}
+
+function rethrowAbort(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw signal.reason
   }
 }

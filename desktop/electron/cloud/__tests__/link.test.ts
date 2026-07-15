@@ -9,6 +9,8 @@ import {
   ErrLinkTimeout,
   ErrLinkStateMismatch,
   ErrLinkBadCallback,
+  ErrLinkBusy,
+  ErrLinkCancelled,
   ErrLinkExchangeFailed,
   type DeviceLinkConfig,
 } from "../cloud-link"
@@ -25,7 +27,7 @@ vi.mock("electron", () => ({
 
 // Mock jose for id_token verification
 vi.mock("jose", () => ({
-  createRemoteJWKSet: vi.fn(() => ({})),
+  createLocalJWKSet: vi.fn(() => ({})),
   jwtVerify: vi.fn(() => Promise.resolve({ payload: {} })),
 }))
 
@@ -61,6 +63,12 @@ function createFakeZitadel(options: FakeZitadelOptions = {}): Promise<{
         return
       }
 
+      if (url.pathname === "/oauth/v2/keys") {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify({ keys: [] }))
+        return
+      }
+
       if (url.pathname === "/desktop/auth/session") {
         res.writeHead(200, { "content-type": "application/json" })
         res.end(JSON.stringify({
@@ -85,6 +93,22 @@ function createFakeZitadel(options: FakeZitadelOptions = {}): Promise<{
             }),
           )
         }
+        return
+      }
+
+      if (url.pathname === "/apiweave.v1.DeviceService/ListSyncWorkspaces") {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify({
+          workspaces: [{
+            workspaceId: "cloud-workspace-123",
+            workspaceName: "Personal",
+            teamId: "",
+            teamName: "",
+            isPersonal: true,
+            effectiveRole: "SYNC_WORKSPACE_ROLE_ADMIN",
+            capabilities: { canPull: true, canPush: true, canResolveConflicts: true },
+          }],
+        }))
         return
       }
 
@@ -164,7 +188,12 @@ describe("cloud-link — happy path", () => {
     expect(result.device.deviceId).toBe("device-123")
     expect(result.device.label).toBe("Test Device")
     expect(result.accessToken).toBe("fake-session-token")
-    expect(result.idToken).toBe("fake-id-token")
+    expect(result.workspaces).toHaveLength(1)
+    expect(result.workspaces[0]).toMatchObject({
+      workspaceId: "cloud-workspace-123",
+      workspaceName: "Personal",
+      isPersonal: true,
+    })
     expect(result.encryptedRefreshToken).toBeDefined()
     expect(result.wrappedDek).toBeDefined()
     expect(result.encryptedRefreshToken.algorithm).toBe("aes-256-gcm")
@@ -364,7 +393,7 @@ describe("cloud-link — negative cases", () => {
     await fakeZitadel.close()
   })
 
-  it("cancelDeviceLink closes the listener without resolving", async () => {
+  it("cancelDeviceLink promptly rejects the active link", async () => {
     const fakeZitadel = await createFakeZitadel()
     const config: DeviceLinkConfig = {
       zitadelIssuer: fakeZitadel.baseUrl,
@@ -382,11 +411,30 @@ describe("cloud-link — negative cases", () => {
     // Cancel immediately.
     cancelDeviceLink()
 
-    // The promise should not resolve (it will hang until timeout or GC).
-    // We can't easily test this without waiting for timeout, so just verify
-    // that cancelDeviceLink doesn't throw.
+    await expect(linkPromise).rejects.toThrow(ErrLinkCancelled)
     expect(() => cancelDeviceLink()).not.toThrow()
 
+    await fakeZitadel.close()
+  })
+
+  it("rejects a concurrent link attempt deterministically", async () => {
+    const fakeZitadel = await createFakeZitadel()
+    const config: DeviceLinkConfig = {
+      zitadelIssuer: fakeZitadel.baseUrl,
+      desktopClientId: "test-client-id",
+      apiBaseUrl: fakeZitadel.baseUrl,
+      keyfilePath,
+      deviceLabel: "Test Device",
+      devicePublicKey: new Uint8Array([1, 2, 3, 4]),
+      clientVersion: "1.0.0",
+    }
+
+    const linkPromise = startDeviceLink(config)
+    await vi.waitFor(() => expect(mockOpenExternal).toHaveBeenCalled(), { timeout: 5000 })
+
+    await expect(startDeviceLink(config)).rejects.toThrow(ErrLinkBusy)
+    cancelDeviceLink()
+    await expect(linkPromise).rejects.toThrow(ErrLinkCancelled)
     await fakeZitadel.close()
   })
 })
