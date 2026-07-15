@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import nock from "nock"
 import { initDatabase, type KVStore, type Database } from "../../../core/db"
 import { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository } from "../../../core/repositories"
-import { createKeyfile } from "../../../core/secrets/keyfile"
+import { encrypt, generateDek, wrapDek } from "../../../core/secrets/crypto"
+import { createKeyfile, readKeyfile } from "../../../core/secrets/keyfile"
 import { CloudSyncProvider } from "../cloud-transport"
 import { CloudClient, DeviceTokenStore } from "../cloud-client"
 import { RecordKind, ChangeOp } from "../cloud-apply"
@@ -98,6 +99,31 @@ describe("CloudSyncProvider", () => {
       expect(store.get("SELECT value FROM app_settings WHERE key = 'cloud.access_token'")).toBeUndefined()
     })
 
+    it("installs encrypted device credentials atomically inside an outer transaction", () => {
+      const repository = new CloudSyncRepository(store)
+      const atomicTokenStore = new DeviceTokenStore(repository, keyfilePath)
+      const transactionSpy = vi.spyOn(repository, "transaction")
+      const dek = generateDek()
+      const masterKek = readKeyfile(keyfilePath).masterKek
+      const encryptedRefresh = encrypt("atomic-refresh", dek, "kek-desktop-link")
+      const wrappedDek = wrapDek(dek, masterKek)
+
+      repository.transaction(() => {
+        atomicTokenStore.setEncryptedTokens("atomic-device", encryptedRefresh, wrappedDek)
+      })
+
+      expect(transactionSpy).toHaveBeenCalledTimes(2)
+      expect(atomicTokenStore.getDeviceId()).toBe("atomic-device")
+      expect(atomicTokenStore.getRefreshToken()).toBe("atomic-refresh")
+
+      expect(() => repository.transaction(() => {
+        atomicTokenStore.setEncryptedTokens("rolled-back-device", encryptedRefresh, wrappedDek)
+        throw new Error("roll back outer link transaction")
+      })).toThrow("roll back outer link transaction")
+      expect(atomicTokenStore.getDeviceId()).toBe("atomic-device")
+      expect(atomicTokenStore.getRefreshToken()).toBe("atomic-refresh")
+    })
+
     it("routes catalog, revoke, resolve, and loser RPCs through the authenticated client", async () => {
       nock(API_BASE)
         .post("/apiweave.v1.DeviceService/ListSyncWorkspaces", {})
@@ -110,7 +136,9 @@ describe("CloudSyncProvider", () => {
             isPersonal: true,
             effectiveRole: "SYNC_WORKSPACE_ROLE_ADMIN",
             capabilities: { canPull: true, canPush: true, canResolveConflicts: true },
+            futureWorkspaceField: "ignored",
           }],
+          futureCatalogField: "ignored",
         })
       nock(API_BASE)
         .post("/apiweave.v1.DeviceService/RevokeDevice", { deviceId: "device-123" })
@@ -124,7 +152,10 @@ describe("CloudSyncProvider", () => {
         .reply(200, {})
       nock(API_BASE)
         .post("/apiweave.v1.SyncService/FetchLoser", { conflictId: "conflict-123" })
-        .reply(200, { loserPayload: Buffer.from("loser-copy").toString("base64") })
+        .reply(200, {
+          loserPayload: Buffer.from("loser-copy").toString("base64"),
+          futureLoserField: "ignored",
+        })
 
       const catalog = await client.listSyncWorkspaces()
       await client.revokeDevice("device-123")
@@ -136,6 +167,33 @@ describe("CloudSyncProvider", () => {
         effectiveRole: 5,
       })
       expect(Buffer.from(loser.loserPayload).toString("utf8")).toBe("loser-copy")
+      expect(nock.isDone()).toBe(true)
+    })
+
+    it("tolerates future protobuf fields and enum values", async () => {
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, {
+          protocolVersion: 1,
+          fullResyncRequired: false,
+          futureHelloField: "ignored",
+        })
+      nock(API_BASE)
+        .post("/apiweave.v1.DeviceService/ListSyncWorkspaces", {})
+        .reply(200, {
+          workspaces: [{
+            workspaceId: CLOUD_WORKSPACE_ID,
+            workspaceName: "Future Role",
+            effectiveRole: "SYNC_WORKSPACE_ROLE_FUTURE",
+            futureWorkspaceField: true,
+          }],
+        })
+
+      const hello = await client.hello()
+      const catalog = await client.listSyncWorkspaces()
+
+      expect(hello.protocolVersion).toBe(1)
+      expect(catalog.workspaces[0]?.effectiveRole).toBe(0)
       expect(nock.isDone()).toBe(true)
     })
 
@@ -170,6 +228,7 @@ describe("CloudSyncProvider", () => {
           protocolVersion: 1,
           serverNow: "2026-07-11T12:00:00Z",
           fullResyncRequired: false,
+          futureHelloField: "ignored",
         })
 
       nock(API_BASE)
@@ -188,11 +247,13 @@ describe("CloudSyncProvider", () => {
                 graph: { nodes: [], edges: [] },
                 variables: {},
               })).toString("base64"),
+              futureChangeField: "ignored",
             },
           ],
           nextCursor: "100",
           hasMore: false,
           serverNow: "2026-07-11T12:00:00Z",
+          futurePullField: "ignored",
         })
 
       await provider.pull()
@@ -228,8 +289,10 @@ describe("CloudSyncProvider", () => {
               newRev: "1",
               rejectionReason: 0,
               conflictId: "",
+              futureOutcomeField: "ignored",
             },
           ],
+          futurePushField: "ignored",
         })
 
       await provider.push()

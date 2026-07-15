@@ -53,6 +53,11 @@ const KEY_ENCRYPTED_REFRESH = "cloud.encrypted_refresh"
 const KEY_WRAPPED_DEK = "cloud.wrapped_dek"
 const LEGACY_KEY_ACCESS_TOKEN = "cloud.access_token"
 
+interface RefreshTokenContext {
+  readonly value: string
+  readonly rotate: (refreshToken: string) => void
+}
+
 export class DeviceTokenStore {
   private readonly repository: CloudSyncRepository
   private sessionToken: string | undefined
@@ -80,6 +85,10 @@ export class DeviceTokenStore {
   }
 
   public getRefreshToken(): string | undefined {
+    return this.loadRefreshToken()?.value
+  }
+
+  public loadRefreshToken(): RefreshTokenContext | undefined {
     const encryptedRefresh = this.repository.getSetting(KEY_ENCRYPTED_REFRESH)
     const wrappedDekValue = this.repository.getSetting(KEY_WRAPPED_DEK)
     if (encryptedRefresh === undefined || wrappedDekValue === undefined) {
@@ -102,7 +111,10 @@ export class DeviceTokenStore {
       kekId: blobJson.kekId,
       algorithm: blobJson.algorithm as "aes-256-gcm",
     }
-    return decrypt(blob, dek)
+    return {
+      value: decrypt(blob, dek),
+      rotate: (refreshToken) => this.setRefreshTokenWithKek(refreshToken, keyfile.masterKek),
+    }
   }
 
   public setTokens(deviceId: string, accessToken: string, refreshToken: string): void {
@@ -119,8 +131,10 @@ export class DeviceTokenStore {
     encryptedRefreshToken: EncryptedBlob,
     wrappedDek: Uint8Array,
   ): void {
-    this.repository.setSetting(KEY_DEVICE_ID, deviceId)
-    persistEncryptedRefreshToken(this.repository, encryptedRefreshToken, wrappedDek)
+    this.repository.transaction((repository) => {
+      repository.setSetting(KEY_DEVICE_ID, deviceId)
+      persistEncryptedRefreshToken(repository, encryptedRefreshToken, wrappedDek)
+    })
   }
 
   public setAccessToken(accessToken: string): void {
@@ -128,7 +142,11 @@ export class DeviceTokenStore {
   }
 
   public setRefreshToken(refreshToken: string): void {
-    const encrypted = this.encryptRefreshToken(refreshToken)
+    this.setRefreshTokenWithKek(refreshToken, readKeyfile(this.keyfilePath).masterKek)
+  }
+
+  private setRefreshTokenWithKek(refreshToken: string, masterKek: Uint8Array): void {
+    const encrypted = this.encryptRefreshToken(refreshToken, masterKek)
     this.repository.transaction((repository) => {
       persistEncryptedRefreshToken(repository, encrypted.blob, encrypted.wrappedDek)
     })
@@ -144,12 +162,14 @@ export class DeviceTokenStore {
     })
   }
 
-  private encryptRefreshToken(refreshToken: string): { blob: EncryptedBlob; wrappedDek: Uint8Array } {
-    const keyfile = readKeyfile(this.keyfilePath)
+  private encryptRefreshToken(
+    refreshToken: string,
+    masterKek = readKeyfile(this.keyfilePath).masterKek,
+  ): { blob: EncryptedBlob; wrappedDek: Uint8Array } {
     const dek = generateDek()
     return {
       blob: encrypt(refreshToken, dek, "kek-desktop-link"),
-      wrappedDek: wrapDek(dek, keyfile.masterKek),
+      wrappedDek: wrapDek(dek, masterKek),
     }
   }
 }
@@ -267,7 +287,7 @@ export class CloudClient {
       METHOD_HELLO,
       toJson(HelloRequestSchema, request),
     )
-    const response = fromJson(HelloResponseSchema, json)
+    const response = fromJson(HelloResponseSchema, json, { ignoreUnknownFields: true })
 
     if (!SUPPORTED_PROTOCOL_VERSIONS.includes(response.protocolVersion)) {
       throw new ErrProtocolMismatch(response.protocolVersion, SUPPORTED_PROTOCOL_VERSIONS)
@@ -288,7 +308,7 @@ export class CloudClient {
       METHOD_PULL_CHANGES,
       toJson(PullChangesRequestSchema, request),
     )
-    return fromJson(PullChangesResponseSchema, json)
+    return fromJson(PullChangesResponseSchema, json, { ignoreUnknownFields: true })
   }
 
   public async pushDeltas(idempotencyKey: string, deltas: CloudPushDelta[]): Promise<PushDeltasResponse> {
@@ -309,7 +329,7 @@ export class CloudClient {
       METHOD_PUSH_DELTAS,
       toJson(PushDeltasRequestSchema, request),
     )
-    return fromJson(PushDeltasResponseSchema, json)
+    return fromJson(PushDeltasResponseSchema, json, { ignoreUnknownFields: true })
   }
 
   public async listSyncWorkspaces(): Promise<SyncWorkspaceList> {
@@ -318,7 +338,7 @@ export class CloudClient {
       METHOD_LIST_SYNC_WORKSPACES,
       toJson(EmptySchema, create(EmptySchema)),
     )
-    return fromJson(SyncWorkspaceListSchema, json)
+    return fromJson(SyncWorkspaceListSchema, json, { ignoreUnknownFields: true })
   }
 
   public async revokeDevice(deviceId: string): Promise<void> {
@@ -350,7 +370,7 @@ export class CloudClient {
       METHOD_FETCH_LOSER,
       toJson(FetchLoserRequestSchema, request),
     )
-    return fromJson(FetchLoserResponseSchema, json)
+    return fromJson(FetchLoserResponseSchema, json, { ignoreUnknownFields: true })
   }
 
   public async refreshSession(): Promise<void> {
@@ -369,14 +389,14 @@ export class CloudClient {
   }
 
   private async refreshSessionOnce(): Promise<void> {
-    const refreshToken = this.tokenStore.getRefreshToken()
-    if (!refreshToken) {
+    const refreshToken = this.tokenStore.loadRefreshToken()
+    if (refreshToken === undefined) {
       throw new ErrUnauthorized()
     }
     const tokenEndpoint = `${this.config.zitadelIssuer}/oauth/v2/token`
     const body = new URLSearchParams({
       grant_type: "refresh_token",
-      refresh_token: refreshToken,
+      refresh_token: refreshToken.value,
       client_id: this.config.clientId,
     })
 
@@ -408,7 +428,7 @@ export class CloudClient {
     // Providers may invalidate the old refresh token as soon as they issue a
     // rotated one. Persist the replacement atomically before session exchange.
     if (tokens.refresh_token) {
-      this.tokenStore.setRefreshToken(tokens.refresh_token)
+      refreshToken.rotate(tokens.refresh_token)
     }
     const sessionToken = await exchangeDesktopSession(this.config.baseUrl, tokens.id_token)
     this.tokenStore.setAccessToken(sessionToken)

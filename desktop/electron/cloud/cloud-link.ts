@@ -518,7 +518,7 @@ async function registerDevice(
 }
 
 async function parseDeviceResponse(response: Response): Promise<Device> {
-  return fromJson(DeviceSchema, await response.json())
+  return fromJson(DeviceSchema, await response.json(), { ignoreUnknownFields: true })
 }
 
 async function listSyncWorkspaces(
@@ -546,7 +546,7 @@ async function listSyncWorkspaces(
     throw new ErrLinkExchangeFailed(`Workspace catalog failed: HTTP ${response.status}`)
   }
   try {
-    return fromJson(SyncWorkspaceListSchema, await response.json()).workspaces
+    return fromJson(SyncWorkspaceListSchema, await response.json(), { ignoreUnknownFields: true }).workspaces
   } catch {
     throw new ErrLinkExchangeFailed("Invalid workspace catalog response")
   }
