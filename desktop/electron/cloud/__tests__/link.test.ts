@@ -36,13 +36,20 @@ interface FakeZitadelOptions {
   registerEndpoint?: (req: http.IncomingMessage, res: http.ServerResponse) => void
 }
 
+interface CapturedRequestBodies {
+  readonly register: string[]
+  readonly catalog: string[]
+}
+
 function createFakeZitadel(options: FakeZitadelOptions = {}): Promise<{
   server: http.Server
   baseUrl: string
+  requestBodies: CapturedRequestBodies
   close: () => Promise<void>
 }> {
   return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
+    const requestBodies: CapturedRequestBodies = { register: [], catalog: [] }
+    const server = http.createServer(async (req, res) => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1")
 
       if (url.pathname === "/oauth/v2/token") {
@@ -82,6 +89,7 @@ function createFakeZitadel(options: FakeZitadelOptions = {}): Promise<{
         if (options.registerEndpoint) {
           options.registerEndpoint(req, res)
         } else {
+          requestBodies.register.push(await readRequestBody(req))
           res.writeHead(200, { "content-type": "application/json" })
           res.end(
             JSON.stringify({
@@ -97,6 +105,7 @@ function createFakeZitadel(options: FakeZitadelOptions = {}): Promise<{
       }
 
       if (url.pathname === "/apiweave.v1.DeviceService/ListSyncWorkspaces") {
+        requestBodies.catalog.push(await readRequestBody(req))
         res.writeHead(200, { "content-type": "application/json" })
         res.end(JSON.stringify({
           workspaces: [{
@@ -121,6 +130,7 @@ function createFakeZitadel(options: FakeZitadelOptions = {}): Promise<{
       resolve({
         server,
         baseUrl,
+        requestBodies,
         close: () => new Promise<void>((r) => server.close(() => r())),
       })
     })
@@ -194,6 +204,12 @@ describe("cloud-link — happy path", () => {
       workspaceName: "Personal",
       isPersonal: true,
     })
+    expect(JSON.parse(fakeZitadel.requestBodies.register[0] ?? "null")).toEqual({
+      publicKey: "AQIDBA==",
+      label: "Test Device",
+      clientVersion: "1.0.0",
+    })
+    expect(fakeZitadel.requestBodies.catalog).toEqual(["{}"])
     expect(result.encryptedRefreshToken).toBeDefined()
     expect(result.wrappedDek).toBeDefined()
     expect(result.encryptedRefreshToken.algorithm).toBe("aes-256-gcm")
@@ -236,6 +252,14 @@ describe("cloud-link — happy path", () => {
     expect(decrypted).toBe("fake-refresh-token")
   })
 })
+
+async function readRequestBody(request: http.IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = []
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks).toString("utf8")
+}
 
 describe("cloud-link — negative cases", () => {
   let tempDir: string

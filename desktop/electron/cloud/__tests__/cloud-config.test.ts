@@ -41,6 +41,13 @@ describe("desktop cloud configuration", () => {
       oidcIssuer: "http://auth.localhost:8081",
     }, "http://127.0.0.1:3000")).toMatchObject({ version: 1 })
 
+    expect(parseDesktopCloudConfig({
+      ...VALID_CONFIG,
+      webBaseUrl: "http://[::1]:3000",
+      apiBaseUrl: "http://[::1]:8080",
+      oidcIssuer: "http://[::1]:8081",
+    }, "http://[::1]:3000")).toMatchObject({ version: 1 })
+
     expect(() => parseDesktopCloudConfig({
       ...VALID_CONFIG,
       apiBaseUrl: "http://api.example.com",

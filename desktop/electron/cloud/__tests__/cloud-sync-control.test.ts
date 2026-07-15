@@ -81,6 +81,15 @@ describe("DesktopCloudSyncControl", () => {
       minimumDesktopVersion: "0.1.0",
       syncProtocolVersions: [1],
     }))
+    repository.setSetting("cloud.workspace_catalog", JSON.stringify([{
+      workspaceId: CLOUD_WORKSPACE_ID,
+      workspaceName: "Cloud Workspace",
+      isPersonal: false,
+      effectiveRole: 5,
+      canPull: true,
+      canPush: true,
+      canResolveConflicts: true,
+    }]))
 
     let activeProvider: SyncProvider | undefined
     const control = new DesktopCloudSyncControl({
@@ -106,6 +115,8 @@ describe("DesktopCloudSyncControl", () => {
     expect(repository.getCursor(CLOUD_WORKSPACE_ID)).toBeUndefined()
     expect(store.get("SELECT 1 FROM cloud_conflicts LIMIT 1")).toBeUndefined()
     expect(store.get("SELECT 1 FROM cloud_devices LIMIT 1")).toBeUndefined()
+    expect(repository.getSetting("cloud.workspace_catalog")).toBeUndefined()
+    expect(repository.getSetting("cloud.public_config")).toBeUndefined()
   })
 
   it("cancels configuration discovery without waiting for OAuth timeout", async () => {

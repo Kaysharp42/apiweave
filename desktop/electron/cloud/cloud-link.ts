@@ -20,8 +20,7 @@ import { randomBytes, createHash } from "node:crypto"
 import { shell } from "electron"
 import { readKeyfile } from "../../core/secrets/keyfile"
 import { encrypt, generateDek, wrapDek, type EncryptedBlob } from "../../core/secrets/crypto"
-import { create, fromJson } from "@bufbuild/protobuf"
-import { EmptySchema } from "@bufbuild/protobuf/wkt"
+import { create, fromJson, toJsonString } from "@bufbuild/protobuf"
 import {
   DeviceSchema,
   DeviceService,
@@ -490,12 +489,7 @@ async function registerDevice(
         "content-type": "application/json",
         authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify(request, (_key, value) => {
-        if (value instanceof Uint8Array) {
-          return Buffer.from(value).toString("base64")
-        }
-        return value
-      }),
+      body: toJsonString(RegisterDeviceRequestSchema, request),
       signal,
     })
   } catch {
@@ -541,7 +535,7 @@ async function listSyncWorkspaces(
         "content-type": "application/json",
         authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify(create(EmptySchema, {})),
+      body: "{}",
       signal,
     })
   } catch {

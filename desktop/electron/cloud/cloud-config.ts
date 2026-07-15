@@ -129,5 +129,6 @@ function isLoopbackHost(hostname: string): boolean {
   return normalized === "localhost"
     || normalized.endsWith(".localhost")
     || normalized === "::1"
+    || normalized === "[::1]"
     || /^127(?:\.\d{1,3}){3}$/.test(normalized)
 }

@@ -133,7 +133,9 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     this.tokenStore.clearTokens()
     this.repository.clearCloudDeviceState()
     this.repository.deleteSetting(KEY_WORKSPACE_CATALOG)
+    this.repository.deleteSetting(KEY_PUBLIC_CONFIG)
     this.activeProvider = null
+    this.activeConfig = null
     this.workspaceCatalog = []
     this.options.setSyncProviderTarget(new LocalOnlySyncProvider())
     setState("idle")
