@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -42,6 +42,12 @@ jobs:
       - name: Install desktop deps
         working-directory: desktop
         run: npm ci
+
+      # electron-builder ships dist/desktop/** but does not compile TS — bundle
+      # the main process (esbuild) first or the installer has no main.js.
+      - name: Bundle main process
+        working-directory: desktop
+        run: npm run build:electron
 
       - name: Package installer (electron-builder)
         working-directory: desktop
