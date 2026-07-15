@@ -6,8 +6,8 @@
  *      re-syncs from cursor zero. Otherwise, calls PullChanges(cursor)
  *      and applies changes to local repositories.
  *   2. push() — drains the durable outbox, calling PushDeltas with an
- *      idempotency key per outbox row. On 401, pauses push, triggers token
- *      refresh, and retries once.
+ *      idempotency key per outbox row. CloudClient centrally refreshes the
+ *      memory-only app session and retries an unauthorized RPC once.
  *
  * All changes are applied inside per-record SQLite transactions. On any
  * error, the transaction rolls back and the outbox row stays pending.
@@ -20,7 +20,6 @@ import type { KVStore } from "../../core/db"
 import { CloudSyncRepository, type CloudWorkspaceBinding } from "../../core/repositories"
 import {
   CloudClient,
-  ErrUnauthorized,
   DeviceTokenStore,
   type ChangeEnvelope as ClientChangeEnvelope,
   type CloudClientConfig,
@@ -46,15 +45,12 @@ const REDACTED = "***REDACTED***"
 
 export interface CloudSyncConfig {
   readonly workspaceBindings: readonly CloudWorkspaceBinding[]
-  readonly zitadelIssuer: string
-  readonly clientId: string
 }
 
 export class CloudSyncProvider implements SyncProvider {
   private cursorStore!: CursorStore
   private outbox!: Outbox
   private onStateChange?: (state: SyncState) => void
-  private tokenStore: DeviceTokenStore | undefined = undefined
   private syncConfig: CloudSyncConfig | undefined = undefined
   private repository: CloudSyncRepository | undefined = undefined
 
@@ -68,7 +64,6 @@ export class CloudSyncProvider implements SyncProvider {
     if (typeof tokenStoreOrCallback === "function") {
       this.onStateChange = tokenStoreOrCallback
     } else {
-      this.tokenStore = tokenStoreOrCallback
       if (onStateChange !== undefined) {
         this.onStateChange = onStateChange
       }
@@ -236,21 +231,8 @@ export class CloudSyncProvider implements SyncProvider {
     try {
       response = await this.client.pushDeltas(row.id, [delta])
     } catch (err) {
-      if (err instanceof ErrUnauthorized) {
-        const refreshed = await this.tryRefreshToken()
-        if (refreshed) {
-          try {
-            response = await this.client.pushDeltas(row.id, [delta])
-          } catch (retryError) {
-            this.outbox?.markFailed(row.id, failureReasonForError(retryError))
-            throw retryError
-          }
-        }
-      }
-      if (response === undefined) {
-        this.outbox?.markFailed(row.id, failureReasonForError(err))
-        throw err
-      }
+      this.outbox?.markFailed(row.id, failureReasonForError(err))
+      throw err
     }
 
     const outcome = response.outcomes.find((candidate) => candidate.deltaIndex === 0)
@@ -280,27 +262,6 @@ export class CloudSyncProvider implements SyncProvider {
 
   private bindingForLocalWorkspace(workspaceId: string): CloudWorkspaceBinding | undefined {
     return this.syncConfig?.workspaceBindings.find((binding) => binding.workspaceId === workspaceId)
-  }
-
-  private async tryRefreshToken(): Promise<boolean> {
-    if (!this.tokenStore || !this.syncConfig) {
-      this.log("token refresh failed — no token store or config")
-      return false
-    }
-    const refreshToken = this.tokenStore.getRefreshToken()
-    if (!refreshToken) {
-      this.log("token refresh failed — no refresh token")
-      return false
-    }
-
-    try {
-      await this.client.refreshSession(refreshToken, this.syncConfig.zitadelIssuer, this.syncConfig.clientId)
-      this.log("token refreshed successfully")
-      return true
-    } catch {
-      this.log("token refresh failed")
-      return false
-    }
   }
 
   public enqueue(row: OutboxInput): string {
@@ -387,9 +348,6 @@ function timestampToIso(value: ClientChangeEnvelope["deletedAt"]): string | unde
 }
 
 function failureReasonForError(error: unknown): string {
-  if (error instanceof ErrUnauthorized) {
-    return "transport error: unauthorized"
-  }
   return `transport error: ${error instanceof Error ? error.name : "unknown"}`
 }
 

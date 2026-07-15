@@ -96,7 +96,6 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         const tokenStore = new DeviceTokenStore(repository, this.options.keyfilePath)
         tokenStore.setEncryptedTokens(
           result.device.deviceId,
-          result.accessToken,
           result.encryptedRefreshToken,
           result.wrappedDek,
         )
@@ -111,6 +110,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         repository.setSetting(KEY_WORKSPACE_CATALOG, JSON.stringify(catalog))
       })
 
+      this.tokenStore.setAccessToken(result.accessToken)
       this.activeConfig = config
       this.workspaceCatalog = catalog
       this.activateIfReady()
@@ -178,13 +178,16 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     }
 
     const client = new CloudClient(
-      { baseUrl: this.activeConfig.apiBaseUrl, clientVersion: this.options.defaults.clientVersion },
+      {
+        baseUrl: this.activeConfig.apiBaseUrl,
+        clientVersion: this.options.defaults.clientVersion,
+        zitadelIssuer: this.activeConfig.oidcIssuer,
+        clientId: this.activeConfig.desktopClientId,
+      },
       this.tokenStore,
     )
     const provider = new CloudSyncProvider(client, this.tokenStore, this.options.store, {
       workspaceBindings,
-      zitadelIssuer: this.activeConfig.oidcIssuer,
-      clientId: this.activeConfig.desktopClientId,
     }, (state) => setState(state))
     this.activeProvider = provider
     this.options.setSyncProviderTarget(provider)

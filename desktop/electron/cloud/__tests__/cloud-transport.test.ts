@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -45,20 +45,24 @@ describe("CloudSyncProvider", () => {
     tokenStore.setTokens("device-123", "access-token-xyz", "refresh-token-abc")
 
     client = new CloudClient(
-      { baseUrl: API_BASE, clientVersion: "1.0.0" },
+      {
+        baseUrl: API_BASE,
+        clientVersion: "1.0.0",
+        zitadelIssuer: ZITADEL_ISSUER,
+        clientId: CLIENT_ID,
+      },
       tokenStore,
     )
 
     provider = new CloudSyncProvider(client, tokenStore, store, {
       workspaceBindings: [{ workspaceId: WORKSPACE_ID, cloudWorkspaceId: WORKSPACE_ID }],
-      zitadelIssuer: ZITADEL_ISSUER,
-      clientId: CLIENT_ID,
     })
 
     nock.disableNetConnect()
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     nock.cleanAll()
     nock.enableNetConnect()
     db.close()
@@ -66,6 +70,75 @@ describe("CloudSyncProvider", () => {
   })
 
   describe("happy path", () => {
+    it("keeps app sessions and plaintext refresh tokens out of SQLite", () => {
+      const sessionCanary = "session-canary-must-stay-in-memory"
+      const refreshCanary = "refresh-canary-must-be-encrypted"
+      tokenStore.setTokens("device-canary", sessionCanary, refreshCanary)
+
+      const settings = store.query<{ key: string; value: string }>(
+        "SELECT key, value FROM app_settings WHERE key LIKE 'cloud.%' ORDER BY key",
+      )
+      const persisted = JSON.stringify(settings)
+      expect(settings.some((setting) => setting.key === "cloud.access_token")).toBe(false)
+      expect(persisted).not.toContain(sessionCanary)
+      expect(persisted).not.toContain(refreshCanary)
+      expect(tokenStore.getAccessToken()).toBe(sessionCanary)
+      expect(tokenStore.getRefreshToken()).toBe(refreshCanary)
+    })
+
+    it("deletes legacy plaintext app sessions when the token store starts", () => {
+      store.set(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+        ["cloud.access_token", "legacy-session-canary"],
+      )
+
+      const restartedStore = new DeviceTokenStore(store, keyfilePath)
+
+      expect(restartedStore.getAccessToken()).toBeUndefined()
+      expect(store.get("SELECT value FROM app_settings WHERE key = 'cloud.access_token'")).toBeUndefined()
+    })
+
+    it("routes catalog, revoke, resolve, and loser RPCs through the authenticated client", async () => {
+      nock(API_BASE)
+        .post("/apiweave.v1.DeviceService/ListSyncWorkspaces", {})
+        .reply(200, {
+          workspaces: [{
+            workspaceId: CLOUD_WORKSPACE_ID,
+            workspaceName: "Personal",
+            teamId: "",
+            teamName: "",
+            isPersonal: true,
+            effectiveRole: "SYNC_WORKSPACE_ROLE_ADMIN",
+            capabilities: { canPull: true, canPush: true, canResolveConflicts: true },
+          }],
+        })
+      nock(API_BASE)
+        .post("/apiweave.v1.DeviceService/RevokeDevice", { deviceId: "device-123" })
+        .reply(200, {})
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/ResolveConflict", {
+          conflictId: "conflict-123",
+          winner: "CONFLICT_WINNER_LOCAL",
+          deviceId: "device-123",
+        })
+        .reply(200, {})
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/FetchLoser", { conflictId: "conflict-123" })
+        .reply(200, { loserPayload: Buffer.from("loser-copy").toString("base64") })
+
+      const catalog = await client.listSyncWorkspaces()
+      await client.revokeDevice("device-123")
+      await client.resolveConflict("conflict-123", "local")
+      const loser = await client.fetchLoser("conflict-123")
+
+      expect(catalog.workspaces[0]).toMatchObject({
+        workspaceId: CLOUD_WORKSPACE_ID,
+        effectiveRole: 5,
+      })
+      expect(Buffer.from(loser.loserPayload).toString("utf8")).toBe("loser-copy")
+      expect(nock.isDone()).toBe(true)
+    })
+
     it("records local mutations into the durable outbox", () => {
       provider.recordMutation({
         workspaceId: WORKSPACE_ID,
@@ -206,8 +279,6 @@ describe("CloudSyncProvider", () => {
     it("maps local workspace IDs to cloud IDs in both transport directions", async () => {
       const mappedProvider = new CloudSyncProvider(client, tokenStore, store, {
         workspaceBindings: [{ workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID }],
-        zitadelIssuer: ZITADEL_ISSUER,
-        clientId: CLIENT_ID,
       })
       mappedProvider.recordMutation({
         workspaceId: WORKSPACE_ID,
@@ -288,6 +359,81 @@ describe("CloudSyncProvider", () => {
       const count = store.get<{ total: number }>("SELECT COUNT(*) as total FROM cloud_outbox")
       expect(count?.total ?? 0).toBe(0)
     })
+
+    it("refreshes during pull after an RPC returns 401", async () => {
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges")
+        .reply(401, { code: "UNAUTHENTICATED" })
+      nock(ZITADEL_ISSUER)
+        .post("/oauth/v2/token")
+        .reply(200, { id_token: "pull-id-token", refresh_token: "pull-rotated-refresh" })
+      nock(API_BASE)
+        .post("/desktop/auth/session", { idToken: "pull-id-token" })
+        .reply(200, { sessionToken: "pull-session-token", expiresAt: "2026-07-12T00:00:00Z" })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges")
+        .reply(200, { changes: [], nextCursor: "0", hasMore: false })
+
+      await provider.pull()
+
+      expect(tokenStore.getAccessToken()).toBe("pull-session-token")
+      expect(tokenStore.getRefreshToken()).toBe("pull-rotated-refresh")
+      expect(nock.isDone()).toBe(true)
+    })
+
+    it("reacquires an app session from encrypted refresh material after restart", async () => {
+      const restartedTokenStore = new DeviceTokenStore(store, keyfilePath)
+      const restartedClient = new CloudClient({
+        baseUrl: API_BASE,
+        clientVersion: "1.0.0",
+        zitadelIssuer: ZITADEL_ISSUER,
+        clientId: CLIENT_ID,
+      }, restartedTokenStore)
+      const restartedProvider = new CloudSyncProvider(restartedClient, restartedTokenStore, store, {
+        workspaceBindings: [{ workspaceId: WORKSPACE_ID, cloudWorkspaceId: WORKSPACE_ID }],
+      })
+      expect(restartedTokenStore.getAccessToken()).toBeUndefined()
+
+      nock(ZITADEL_ISSUER)
+        .post("/oauth/v2/token")
+        .reply(200, { id_token: "restart-id-token" })
+      nock(API_BASE)
+        .post("/desktop/auth/session", { idToken: "restart-id-token" })
+        .reply(200, { sessionToken: "restart-session-token", expiresAt: "2026-07-12T00:00:00Z" })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges")
+        .reply(200, { changes: [], nextCursor: "0", hasMore: false })
+
+      await restartedProvider.pull()
+
+      expect(restartedTokenStore.getAccessToken()).toBe("restart-session-token")
+      expect(nock.isDone()).toBe(true)
+    })
+
+    it("stops after one refresh when the retried RPC is still unauthorized", async () => {
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .times(2)
+        .reply(401, { code: "UNAUTHENTICATED" })
+      nock(ZITADEL_ISSUER)
+        .post("/oauth/v2/token")
+        .once()
+        .reply(200, { id_token: "single-retry-id-token" })
+      nock(API_BASE)
+        .post("/desktop/auth/session", { idToken: "single-retry-id-token" })
+        .once()
+        .reply(200, { sessionToken: "single-retry-session", expiresAt: "2026-07-12T00:00:00Z" })
+
+      await expect(provider.pull()).rejects.toThrow("unauthorized")
+
+      expect(nock.isDone()).toBe(true)
+    })
   })
 
   describe("negative scenarios", () => {
@@ -316,6 +462,7 @@ describe("CloudSyncProvider", () => {
     })
 
     it("refreshes token on 401 and retries", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined)
       provider.enqueue({
         kind: "workflow",
         record_id: "workflow-expired",
@@ -356,6 +503,14 @@ describe("CloudSyncProvider", () => {
 
       const count = store.get<{ total: number }>("SELECT COUNT(*) as total FROM cloud_outbox")
       expect(count?.total ?? 0).toBe(0)
+      expect(tokenStore.getAccessToken()).toBe("new-session-token")
+      expect(tokenStore.getRefreshToken()).toBe("new-refresh-token")
+      expect(JSON.stringify(store.query<{ key: string; value: string }>(
+        "SELECT key, value FROM app_settings WHERE key LIKE 'cloud.%'",
+      ))).not.toContain("new-session-token")
+      const logs = JSON.stringify(logSpy.mock.calls)
+      expect(logs).not.toContain("new-session-token")
+      expect(logs).not.toContain("new-refresh-token")
     })
 
     it("preserves outbox on stale revision conflict", async () => {
@@ -501,8 +656,6 @@ describe("CloudSyncProvider", () => {
       const states: string[] = []
       const conflictProvider = new CloudSyncProvider(client, tokenStore, store, {
         workspaceBindings: [{ workspaceId: WORKSPACE_ID, cloudWorkspaceId: WORKSPACE_ID }],
-        zitadelIssuer: ZITADEL_ISSUER,
-        clientId: CLIENT_ID,
       }, (state) => states.push(state))
 
       nock(API_BASE)
