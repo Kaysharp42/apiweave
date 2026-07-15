@@ -333,9 +333,17 @@ describe("CloudSyncProvider", () => {
         .post("/oauth/v2/token")
         .reply(200, {
           access_token: "new-access-token",
+          id_token: "new-id-token",
           refresh_token: "new-refresh-token",
           token_type: "Bearer",
           expires_in: 3600,
+        })
+
+      nock(API_BASE)
+        .post("/desktop/auth/session", { idToken: "new-id-token" })
+        .reply(200, {
+          sessionToken: "new-session-token",
+          expiresAt: "2026-07-12T00:00:00Z",
         })
 
       nock(API_BASE)

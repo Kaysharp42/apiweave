@@ -179,6 +179,27 @@ export class ErrProtocolMismatch extends Error {
   }
 }
 
+interface DesktopSessionResponse {
+  readonly sessionToken: string
+  readonly expiresAt: string
+}
+
+export async function exchangeDesktopSession(apiBaseUrl: string, idToken: string): Promise<string> {
+  const response = await fetch(`${apiBaseUrl}/desktop/auth/session`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ idToken }),
+  })
+  if (!response.ok) {
+    throw new ErrUnauthorized()
+  }
+  const session = (await response.json()) as DesktopSessionResponse
+  if (!session.sessionToken) {
+    throw new ErrUnauthorized()
+  }
+  return session.sessionToken
+}
+
 const SUPPORTED_PROTOCOL_VERSIONS = [1]
 const METHOD_HELLO = "Hello"
 const METHOD_PULL_CHANGES = "PullChanges"
@@ -230,7 +251,7 @@ export class CloudClient {
     return this.call<PushDeltasResponse>(SyncService.typeName, METHOD_PUSH_DELTAS, request)
   }
 
-  public async refreshAccessToken(refreshToken: string, zitadelIssuer: string, clientId: string): Promise<string> {
+  public async refreshSession(refreshToken: string, zitadelIssuer: string, clientId: string): Promise<string> {
     const tokenEndpoint = `${zitadelIssuer}/oauth/v2/token`
     const body = new URLSearchParams({
       grant_type: "refresh_token",
@@ -248,13 +269,14 @@ export class CloudClient {
       throw new ErrUnauthorized()
     }
 
-    const tokens = (await response.json()) as { access_token: string; refresh_token?: string }
-    if (!tokens.access_token) {
+    const tokens = (await response.json()) as { id_token?: string }
+    if (!tokens.id_token) {
       throw new ErrUnauthorized()
     }
 
-    this.tokenStore.setAccessToken(tokens.access_token)
-    return tokens.access_token
+    const sessionToken = await exchangeDesktopSession(this.config.baseUrl, tokens.id_token)
+    this.tokenStore.setAccessToken(sessionToken)
+    return sessionToken
   }
 
   private async call<T>(serviceName: string, methodName: string, body: unknown): Promise<T> {

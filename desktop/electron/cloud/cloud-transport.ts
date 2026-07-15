@@ -289,7 +289,7 @@ export class CloudSyncProvider implements SyncProvider {
     }
 
     try {
-      await this.client.refreshAccessToken(refreshToken, this.syncConfig.zitadelIssuer, this.syncConfig.clientId)
+      await this.client.refreshSession(refreshToken, this.syncConfig.zitadelIssuer, this.syncConfig.clientId)
       this.log("token refreshed successfully")
       return true
     } catch {

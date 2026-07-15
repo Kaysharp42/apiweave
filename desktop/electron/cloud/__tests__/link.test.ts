@@ -61,6 +61,15 @@ function createFakeZitadel(options: FakeZitadelOptions = {}): Promise<{
         return
       }
 
+      if (url.pathname === "/desktop/auth/session") {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify({
+          sessionToken: "fake-session-token",
+          expiresAt: "2026-07-12T00:00:00Z",
+        }))
+        return
+      }
+
       if (url.pathname === "/apiweave.v1.DeviceService/RegisterDevice") {
         if (options.registerEndpoint) {
           options.registerEndpoint(req, res)
@@ -136,6 +145,7 @@ describe("cloud-link — happy path", () => {
     expect(authorizeUrl).toContain("/oauth/v2/authorize")
     expect(authorizeUrl).toContain("client_id=test-client-id")
     expect(authorizeUrl).toContain("code_challenge_method=S256")
+    expect(authorizeUrl).toContain("offline_access")
 
     const url = new URL(authorizeUrl)
     const redirectUri = url.searchParams.get("redirect_uri")
@@ -153,7 +163,7 @@ describe("cloud-link — happy path", () => {
     // Verify the result.
     expect(result.device.deviceId).toBe("device-123")
     expect(result.device.label).toBe("Test Device")
-    expect(result.accessToken).toBe("fake-access-token")
+    expect(result.accessToken).toBe("fake-session-token")
     expect(result.idToken).toBe("fake-id-token")
     expect(result.encryptedRefreshToken).toBeDefined()
     expect(result.wrappedDek).toBeDefined()

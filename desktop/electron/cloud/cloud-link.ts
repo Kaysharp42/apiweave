@@ -16,13 +16,13 @@
 
 import http from "node:http"
 import type { AddressInfo } from "node:net"
-import { createServer } from "node:net"
 import { randomBytes, createHash } from "node:crypto"
 import { shell } from "electron"
-import { readKeyfile, type Keyfile } from "../../core/secrets/keyfile"
+import { readKeyfile } from "../../core/secrets/keyfile"
 import { encrypt, generateDek, wrapDek, type EncryptedBlob } from "../../core/secrets/crypto"
 import { create } from "@bufbuild/protobuf"
 import { DeviceService, RegisterDeviceRequestSchema, type Device, type RegisterDeviceRequest } from "../../../../apiweave-cloud/apps/web/gen/proto/ts/apiweave/v1/device_pb.js"
+import { exchangeDesktopSession } from "./cloud-client"
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -148,8 +148,16 @@ export async function startDeviceLink(config: DeviceLinkConfig): Promise<DeviceL
     // Verify id_token (using jose for local verification).
     await verifyIdToken(config, tokens.id_token)
 
-    // Register device with Go API.
-    const device = await registerDevice(config, tokens.access_token)
+    // Exchange the provider token once; DeviceService and SyncService accept
+    // only the resulting opaque APIWeave session.
+    let sessionToken: string
+    try {
+      sessionToken = await exchangeDesktopSession(config.apiBaseUrl, tokens.id_token)
+    } catch (err) {
+      throw new ErrLinkExchangeFailed(`Session exchange failed: ${(err as Error).message}`)
+    }
+
+    const device = await registerDevice(config, sessionToken)
 
     // Encrypt refresh token with existing keyfile.
     const { blob, wrappedDek } = encryptRefreshToken(config, tokens.refresh_token)
@@ -158,7 +166,7 @@ export async function startDeviceLink(config: DeviceLinkConfig): Promise<DeviceL
       device,
       encryptedRefreshToken: blob,
       wrappedDek,
-      accessToken: tokens.access_token,
+      accessToken: sessionToken,
       idToken: tokens.id_token,
     }
   } finally {
@@ -212,7 +220,7 @@ function buildAuthorizeUrl(
     client_id: config.desktopClientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "openid profile email",
+    scope: "openid profile email offline_access",
     state,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
