@@ -4,12 +4,14 @@ import type { KVStore } from "../../core/db"
 import { CloudSyncRepository } from "../../core/repositories"
 import { CloudFirstSyncService } from "../../core/services/cloud_first_sync_service"
 import type { SyncProvider } from "../../core/sync"
-import type {
-  CloudBindWorkspaceInput,
-  CloudLinkInput,
-  CloudSyncControl,
-  CloudSyncStatus,
-  CloudWorkspaceCatalogEntry,
+import {
+  CloudUnlinkRequiresConfirmationError,
+  type CloudBindWorkspaceInput,
+  type CloudLinkInput,
+  type CloudSyncControl,
+  type CloudSyncStatus,
+  type CloudUnlinkInput,
+  type CloudWorkspaceCatalogEntry,
 } from "../../core/services/cloud_sync_control"
 import { LocalOnlySyncProvider } from "../../core/sync"
 import { cancelDeviceLink, ErrLinkBusy, ErrLinkCancelled, startDeviceLink } from "./cloud-link"
@@ -131,18 +133,36 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     return this.status()
   }
 
-  public unlink(): CloudSyncStatus {
+  public async unlink(input: CloudUnlinkInput): Promise<CloudSyncStatus> {
     this.linkController?.abort(new ErrLinkCancelled())
     cancelDeviceLink()
     this.activeProvider?.deactivate()
-    this.tokenStore.clearTokens()
-    this.repository.clearCloudDeviceState()
-    this.repository.deleteSetting(KEY_WORKSPACE_CATALOG)
-    this.repository.deleteSetting(KEY_PUBLIC_CONFIG)
     this.activeProvider = null
+    this.options.setSyncProviderTarget(new LocalOnlySyncProvider())
+
+    const deviceId = this.tokenStore.getDeviceId()
+    if (deviceId !== undefined && this.tokenStore.hasTokens()) {
+      try {
+        if (this.activeConfig === null) {
+          throw new Error("Cloud configuration is unavailable")
+        }
+        await this.createClient(this.activeConfig).revokeDevice(deviceId)
+      } catch {
+        if (input.localOnly !== true) {
+          this.activateIfReady()
+          throw new CloudUnlinkRequiresConfirmationError()
+        }
+      }
+    }
+
+    this.repository.transaction((repository) => {
+      this.tokenStore.clearTokens()
+      repository.clearCloudDeviceState()
+      repository.deleteSetting(KEY_WORKSPACE_CATALOG)
+      repository.deleteSetting(KEY_PUBLIC_CONFIG)
+    })
     this.activeConfig = null
     this.workspaceCatalog = []
-    this.options.setSyncProviderTarget(new LocalOnlySyncProvider())
     setState("idle")
     return this.status()
   }
@@ -194,15 +214,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       return
     }
 
-    const client = new CloudClient(
-      {
-        baseUrl: this.activeConfig.apiBaseUrl,
-        clientVersion: this.options.defaults.clientVersion,
-        zitadelIssuer: this.activeConfig.oidcIssuer,
-        clientId: this.activeConfig.desktopClientId,
-      },
-      this.tokenStore,
-    )
+    const client = this.createClient(this.activeConfig)
     const provider = new CloudSyncProvider(client, this.tokenStore, this.options.store, {
       workspaceBindings,
     }, (state) => setState(state))
@@ -220,6 +232,18 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       throw new Error("Cloud sync is not linked to any workspace")
     }
     return this.activeProvider
+  }
+
+  private createClient(config: DesktopCloudConfig): CloudClient {
+    return new CloudClient(
+      {
+        baseUrl: config.apiBaseUrl,
+        clientVersion: this.options.defaults.clientVersion,
+        zitadelIssuer: config.oidcIssuer,
+        clientId: config.desktopClientId,
+      },
+      this.tokenStore,
+    )
   }
 
   private loadPersistedConfig(): DesktopCloudConfig | null {

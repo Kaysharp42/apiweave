@@ -1,8 +1,9 @@
 import { z } from "zod"
 import type { IpcRouter } from "../router"
-import { NotFoundError } from "../errors"
+import { ConflictError, NotFoundError } from "../errors"
 import type { HandlerDeps } from "./common"
 import { NoInput } from "./common"
+import { CloudUnlinkRequiresConfirmationError } from "../../services/cloud_sync_control"
 
 const stateSchema = z.enum(["idle", "syncing", "conflict", "error"])
 const workspaceCatalogEntrySchema = z
@@ -45,6 +46,12 @@ const bindWorkspaceInput = z
   })
   .strict()
 
+const unlinkInput = z
+  .object({
+    localOnly: z.boolean().optional(),
+  })
+  .strict()
+
 export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const control = deps.cloud
 
@@ -67,9 +74,18 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
   })
 
   router.register("cloud", "unlink", {
-    input: NoInput,
+    input: unlinkInput,
     output: statusSchema,
-    handle: () => required(control).unlink(),
+    handle: async (input) => {
+      try {
+        return await required(control).unlink(input)
+      } catch (error) {
+        if (error instanceof CloudUnlinkRequiresConfirmationError) {
+          throw new ConflictError(error.message, { localOnlyConfirmationRequired: true })
+        }
+        throw error
+      }
+    },
   })
 
   router.register("cloud", "bindWorkspace", {

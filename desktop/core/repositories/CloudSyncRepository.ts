@@ -618,6 +618,10 @@ export class CloudSyncRepository {
 
   public clearCloudDeviceState(): void {
     this.store.transaction((store) => {
+      store.set(
+        `UPDATE workspaces SET origin = 'local', syncMode = 'local-only', updatedAt = datetime('now')
+         WHERE id IN (SELECT workspace_id FROM cloud_workspace_bindings)`,
+      )
       store.delete("DELETE FROM cloud_outbox")
       store.delete("DELETE FROM cloud_record_state")
       store.delete("DELETE FROM cloud_conflicts")

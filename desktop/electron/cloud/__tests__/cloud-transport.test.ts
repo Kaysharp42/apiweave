@@ -16,6 +16,8 @@ const ZITADEL_ISSUER = "https://auth.test.apiweave.cloud"
 const CLIENT_ID = "test-client-id"
 const WORKSPACE_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 const CLOUD_WORKSPACE_ID = "01CLOUDWORKSPACE00000000000"
+const SECOND_WORKSPACE_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
+const SECOND_CLOUD_WORKSPACE_ID = "01CLOUDWORKSPACE00000000001"
 
 describe("CloudSyncProvider", () => {
   let db: Database
@@ -1008,6 +1010,143 @@ describe("CloudSyncProvider", () => {
       expect(row?.failure_reason).toBe("transport error: Error")
     })
 
+    it("continues pulling later workspace bindings after one workspace fails", async () => {
+      store.set(
+        "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
+        [SECOND_WORKSPACE_ID, "Second Workspace", "second-workspace", "cloud", "bi-directional", "{}"],
+      )
+      const repository = new CloudSyncRepository(store)
+      repository.upsertWorkspaceBinding({
+        workspaceId: WORKSPACE_ID,
+        cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+        cloudWorkspaceName: "Failing Workspace",
+        syncMode: "bi-directional",
+        deviceId: "device-123",
+        initializationState: "initialized",
+      })
+      repository.upsertWorkspaceBinding({
+        workspaceId: SECOND_WORKSPACE_ID,
+        cloudWorkspaceId: SECOND_CLOUD_WORKSPACE_ID,
+        cloudWorkspaceName: "Healthy Workspace",
+        syncMode: "bi-directional",
+        deviceId: "device-123",
+        initializationState: "initialized",
+      })
+      const isolatedProvider = new CloudSyncProvider(client, tokenStore, store, {
+        workspaceBindings: [
+          { workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID },
+          { workspaceId: SECOND_WORKSPACE_ID, cloudWorkspaceId: SECOND_CLOUD_WORKSPACE_ID },
+        ],
+      })
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges", (body) => {
+          const request = body as { workspaceId?: { value?: string } }
+          return request.workspaceId?.value === CLOUD_WORKSPACE_ID
+        })
+        .reply(503, { code: "UNAVAILABLE" })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges", (body) => {
+          const request = body as { workspaceId?: { value?: string } }
+          return request.workspaceId?.value === SECOND_CLOUD_WORKSPACE_ID
+        })
+        .reply(200, {
+          changes: [{
+            cursor: "1",
+            workspaceId: { value: SECOND_CLOUD_WORKSPACE_ID },
+            kind: RecordKind.WORKFLOW,
+            recordId: "workflow-second-workspace",
+            rev: "1",
+            op: ChangeOp.UPSERT,
+            payload: Buffer.from(JSON.stringify({
+              name: "Pulled Despite Neighbor Failure",
+              nodes: [],
+              edges: [],
+              variables: {},
+            })).toString("base64"),
+          }],
+          nextCursor: "1",
+          hasMore: false,
+        })
+
+      await expect(isolatedProvider.pull()).rejects.toThrow("503")
+
+      expect(store.get<{ workspace_id: string; name: string }>(
+        "SELECT workspace_id, name FROM workflows WHERE id = ?",
+        ["workflow-second-workspace"],
+      )).toEqual({ workspace_id: SECOND_WORKSPACE_ID, name: "Pulled Despite Neighbor Failure" })
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("transport error: Error")
+      expect(repository.getWorkspaceBinding(SECOND_WORKSPACE_ID)?.lastSyncedAt).not.toBeNull()
+      expect(nock.isDone()).toBe(true)
+    })
+
+    it("continues pushing later workspace bindings after one workspace fails", async () => {
+      store.set(
+        "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
+        [SECOND_WORKSPACE_ID, "Second Workspace", "second-workspace", "cloud", "bi-directional", "{}"],
+      )
+      const repository = new CloudSyncRepository(store)
+      for (const binding of [
+        { workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID, name: "Failing Workspace" },
+        { workspaceId: SECOND_WORKSPACE_ID, cloudWorkspaceId: SECOND_CLOUD_WORKSPACE_ID, name: "Healthy Workspace" },
+      ]) {
+        repository.upsertWorkspaceBinding({
+          workspaceId: binding.workspaceId,
+          cloudWorkspaceId: binding.cloudWorkspaceId,
+          cloudWorkspaceName: binding.name,
+          syncMode: "bi-directional",
+          deviceId: "device-123",
+          initializationState: "initialized",
+        })
+        repository.enqueueOutbox({
+          kind: "workflow",
+          record_id: `workflow-${binding.workspaceId}`,
+          workspace_id: binding.workspaceId,
+          expected_rev: 0,
+          op: "upsert",
+          payload: new TextEncoder().encode(JSON.stringify({ name: binding.name })),
+        })
+      }
+      const isolatedProvider = new CloudSyncProvider(client, tokenStore, store, {
+        workspaceBindings: [
+          { workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID },
+          { workspaceId: SECOND_WORKSPACE_ID, cloudWorkspaceId: SECOND_CLOUD_WORKSPACE_ID },
+        ],
+      })
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas", (body) => {
+          const request = body as { deltas?: Array<{ workspaceId?: { value?: string } }> }
+          return request.deltas?.[0]?.workspaceId?.value === CLOUD_WORKSPACE_ID
+        })
+        .replyWithError("first workspace unavailable")
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas", (body) => {
+          const request = body as { deltas?: Array<{ workspaceId?: { value?: string } }> }
+          return request.deltas?.[0]?.workspaceId?.value === SECOND_CLOUD_WORKSPACE_ID
+        })
+        .reply(200, {
+          outcomes: [{ deltaIndex: 0, status: 1, newRev: "1", rejectionReason: 0, conflictId: "" }],
+        })
+
+      await expect(isolatedProvider.push()).rejects.toThrow("first workspace unavailable")
+
+      expect(store.get<{ retry_count: number }>(
+        "SELECT retry_count FROM cloud_outbox WHERE workspace_id = ?",
+        [WORKSPACE_ID],
+      )).toEqual({ retry_count: 1 })
+      expect(store.get(
+        "SELECT 1 FROM cloud_outbox WHERE workspace_id = ?",
+        [SECOND_WORKSPACE_ID],
+      )).toBeUndefined()
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("transport error: Error")
+      expect(repository.getWorkspaceBinding(SECOND_WORKSPACE_ID)?.lastSyncedAt).not.toBeNull()
+      expect(nock.isDone()).toBe(true)
+    })
+
     it("refreshes token on 401 and retries", async () => {
       const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined)
       provider.enqueue({
@@ -1447,6 +1586,60 @@ describe("CloudSyncProvider", () => {
       expect(repository.countDeadLetterOutbox()).toBe(1)
       expect(repository.getCursor(WORKSPACE_ID)).toEqual({ cursor: 0n, lastRev: 0n })
       expect(repository.getFullSync(WORKSPACE_ID)).toBeTypeOf("number")
+    })
+
+    it("continues full resync for healthy workspaces after another workspace fails", async () => {
+      store.set(
+        "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
+        [SECOND_WORKSPACE_ID, "Second Workspace", "second-workspace", "cloud", "bi-directional", "{}"],
+      )
+      const repository = new CloudSyncRepository(store)
+      for (const binding of [
+        { workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID, name: "Failing Workspace" },
+        { workspaceId: SECOND_WORKSPACE_ID, cloudWorkspaceId: SECOND_CLOUD_WORKSPACE_ID, name: "Healthy Workspace" },
+      ]) {
+        repository.upsertWorkspaceBinding({
+          workspaceId: binding.workspaceId,
+          cloudWorkspaceId: binding.cloudWorkspaceId,
+          cloudWorkspaceName: binding.name,
+          syncMode: "bi-directional",
+          deviceId: "device-123",
+          initializationState: "initialized",
+        })
+        repository.setCursor(binding.cloudWorkspaceId, 99n, 12n)
+      }
+      const isolatedProvider = new CloudSyncProvider(client, tokenStore, store, {
+        workspaceBindings: [
+          { workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID },
+          { workspaceId: SECOND_WORKSPACE_ID, cloudWorkspaceId: SECOND_CLOUD_WORKSPACE_ID },
+        ],
+      })
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: true })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges", (body) => {
+          const request = body as { workspaceId?: { value?: string } }
+          return request.workspaceId?.value === CLOUD_WORKSPACE_ID
+        })
+        .reply(503, { code: "UNAVAILABLE" })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges", (body) => {
+          const request = body as { workspaceId?: { value?: string } }
+          return request.workspaceId?.value === SECOND_CLOUD_WORKSPACE_ID
+        })
+        .reply(200, { changes: [], nextCursor: "0", hasMore: false })
+
+      await expect(isolatedProvider.pull()).rejects.toThrow("503")
+
+      expect(repository.getCursor(CLOUD_WORKSPACE_ID)).toBeUndefined()
+      expect(repository.getFullSync(CLOUD_WORKSPACE_ID)).toBeUndefined()
+      expect(repository.getCursor(SECOND_CLOUD_WORKSPACE_ID)).toEqual({ cursor: 0n, lastRev: 0n })
+      expect(repository.getFullSync(SECOND_CLOUD_WORKSPACE_ID)).toBeTypeOf("number")
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("transport error: Error")
+      expect(repository.getWorkspaceBinding(SECOND_WORKSPACE_ID)?.lastSyncedAt).not.toBeNull()
+      expect(nock.isDone()).toBe(true)
     })
   })
 })

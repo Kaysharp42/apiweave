@@ -11,6 +11,7 @@ import type { SyncProvider } from "../../../core/sync"
 import { DeviceTokenStore } from "../cloud-client"
 import { ErrLinkCancelled } from "../cloud-link"
 import { DesktopCloudSyncControl } from "../cloud-sync-control"
+import { CloudUnlinkRequiresConfirmationError } from "../../../core/services/cloud_sync_control"
 
 const WORKSPACE_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 const CLOUD_WORKSPACE_ID = "01CLOUDWORKSPACE00000000000"
@@ -42,7 +43,7 @@ describe("DesktopCloudSyncControl", () => {
     rmSync(tempDir, { recursive: true, force: true })
   })
 
-  it("removes account-scoped outbox, bindings, cursors, and conflict data on unlink", () => {
+  it("revokes the device before removing account-scoped local state on unlink", async () => {
     const repository = new CloudSyncRepository(store)
     const tokenStore = new DeviceTokenStore(repository, keyfilePath)
     tokenStore.setTokens("device-1", "access-token", "refresh-token")
@@ -112,7 +113,17 @@ describe("DesktopCloudSyncControl", () => {
     })
 
     expect(control.status()).toMatchObject({ active: true, state: "error", deadLetterCount: 1 })
-    const status = control.unlink()
+    nock("https://auth.test")
+      .post("/oauth/v2/token")
+      .reply(200, { id_token: "unlink-id-token" })
+    nock("https://api.test")
+      .post("/desktop/auth/session", { idToken: "unlink-id-token" })
+      .reply(200, { sessionToken: "unlink-session", expiresAt: "2026-07-17T00:00:00Z" })
+    nock("https://api.test")
+      .post("/apiweave.v1.DeviceService/RevokeDevice", { deviceId: "device-1" })
+      .reply(200, {})
+
+    const status = await control.unlink({})
 
     expect(activeProvider).toBeDefined()
     expect(status).toMatchObject({ linked: false, active: false, workspaceIds: [] })
@@ -123,6 +134,89 @@ describe("DesktopCloudSyncControl", () => {
     expect(store.get("SELECT 1 FROM cloud_devices LIMIT 1")).toBeUndefined()
     expect(repository.getSetting("cloud.workspace_catalog")).toBeUndefined()
     expect(repository.getSetting("cloud.public_config")).toBeUndefined()
+    expect(store.get<{ origin: string; syncMode: string; name: string }>(
+      "SELECT origin, syncMode, name FROM workspaces WHERE id = ?",
+      [WORKSPACE_ID],
+    )).toEqual({ origin: "local", syncMode: "local-only", name: "Local Workspace" })
+    expect(nock.isDone()).toBe(true)
+  })
+
+  it("preserves local cloud state until an offline disconnect is explicitly confirmed", async () => {
+    const repository = new CloudSyncRepository(store)
+    const tokenStore = new DeviceTokenStore(repository, keyfilePath)
+    tokenStore.setTokens("device-offline", "access-token", "refresh-token")
+    repository.upsertDevice({
+      deviceId: "device-offline",
+      label: "Offline Device",
+      clientVersion: "1.0.0",
+      publicKey: new Uint8Array(32),
+      createdAt: new Date().toISOString(),
+    })
+    repository.upsertWorkspaceBinding({
+      workspaceId: WORKSPACE_ID,
+      cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+      cloudWorkspaceName: "Cloud Workspace",
+      syncMode: "bi-directional",
+      deviceId: "device-offline",
+      initializationState: "initialized",
+    })
+    repository.enqueueOutbox({
+      kind: "workflow",
+      record_id: "workflow-offline",
+      workspace_id: WORKSPACE_ID,
+      expected_rev: 0,
+      op: "upsert",
+      payload: new TextEncoder().encode(JSON.stringify({ name: "Unsynced" })),
+    })
+    repository.setSetting("cloud.public_config", JSON.stringify({
+      version: 1,
+      webBaseUrl: "https://cloud.test",
+      apiBaseUrl: "https://api.test",
+      oidcIssuer: "https://auth.test",
+      desktopClientId: "desktop-test",
+      minimumDesktopVersion: "0.1.0",
+      syncProtocolVersions: [1],
+    }))
+    const control = new DesktopCloudSyncControl({
+      store,
+      keyfilePath,
+      defaults: {
+        cloudEntryUrl: "https://cloud.test",
+        clientVersion: "1.0.0",
+        deviceLabel: "Offline Device",
+      },
+      setSyncProviderTarget: () => undefined,
+    })
+
+    nock("https://auth.test")
+      .post("/oauth/v2/token")
+      .reply(200, { id_token: "offline-unlink-id-token" })
+    nock("https://api.test")
+      .post("/desktop/auth/session", { idToken: "offline-unlink-id-token" })
+      .reply(200, { sessionToken: "offline-unlink-session", expiresAt: "2026-07-17T00:00:00Z" })
+    nock("https://api.test")
+      .post("/apiweave.v1.DeviceService/RevokeDevice", { deviceId: "device-offline" })
+      .replyWithError("offline")
+
+    await expect(control.unlink({})).rejects.toThrow(CloudUnlinkRequiresConfirmationError)
+    expect(tokenStore.hasTokens()).toBe(true)
+    expect(repository.countOutbox()).toBe(1)
+    expect(repository.listWorkspaceBindings()).toHaveLength(1)
+
+    nock("https://api.test")
+      .post("/apiweave.v1.DeviceService/RevokeDevice", { deviceId: "device-offline" })
+      .replyWithError("still offline")
+
+    const status = await control.unlink({ localOnly: true })
+
+    expect(status).toMatchObject({ linked: false, active: false, workspaceIds: [] })
+    expect(repository.countOutbox()).toBe(0)
+    expect(repository.listWorkspaceBindings()).toEqual([])
+    expect(store.get<{ origin: string; syncMode: string }>(
+      "SELECT origin, syncMode FROM workspaces WHERE id = ?",
+      [WORKSPACE_ID],
+    )).toEqual({ origin: "local", syncMode: "local-only" })
+    expect(nock.isDone()).toBe(true)
   })
 
   it("cancels configuration discovery without waiting for OAuth timeout", async () => {
@@ -163,7 +257,7 @@ describe("DesktopCloudSyncControl", () => {
     })
 
     const linkPromise = control.link({})
-    control.unlink()
+    await control.unlink({})
 
     await expect(linkPromise).rejects.toThrow(ErrLinkCancelled)
     expect(control.status()).toMatchObject({ linked: false, active: false })

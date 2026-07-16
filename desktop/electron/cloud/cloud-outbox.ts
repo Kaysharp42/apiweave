@@ -21,7 +21,7 @@
  *   2. push() reads pending rows, sends them to the server
  *   3. MarkApplied(id) — deletes the row on success
  *   4. MarkFailed(id, reason) — leaves the row; retries up to the dead-letter ceiling
- *   5. Clear() — used on full_resync_required (drops all pending rows)
+ *   5. Clear() — reserved for confirmed account cleanup; full resync preserves rows
  *
  * Re-application is idempotent because the server uses expected_rev precondition.
  */

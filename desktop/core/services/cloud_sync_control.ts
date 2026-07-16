@@ -13,6 +13,19 @@ export interface CloudBindWorkspaceInput {
   readonly syncMode?: "push" | "bi-directional"
 }
 
+export interface CloudUnlinkInput {
+  readonly localOnly?: boolean
+}
+
+export class CloudUnlinkRequiresConfirmationError extends Error {
+  public constructor() {
+    super(
+      "Device revocation could not be confirmed. Retry while online or confirm a local-only disconnect; cloud access may remain until revoked from another session.",
+    )
+    this.name = "CloudUnlinkRequiresConfirmationError"
+  }
+}
+
 export interface CloudWorkspaceCatalogEntry {
   readonly workspaceId: string
   readonly workspaceName: string
@@ -39,7 +52,7 @@ export interface CloudSyncControl {
   readonly status: () => CloudSyncStatus
   readonly link: (input: CloudLinkInput) => Promise<CloudSyncStatus>
   readonly cancelLink: () => CloudSyncStatus
-  readonly unlink: () => CloudSyncStatus
+  readonly unlink: (input: CloudUnlinkInput) => Promise<CloudSyncStatus>
   readonly bindWorkspace: (input: CloudBindWorkspaceInput) => Promise<CloudSyncStatus>
   readonly pull: () => Promise<CloudSyncStatus>
   readonly push: () => Promise<CloudSyncStatus>

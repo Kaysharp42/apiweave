@@ -97,16 +97,25 @@ export class CloudSyncProvider implements SyncProvider {
         return
       }
 
+      let firstError: unknown
       for (const configuredBinding of this.syncConfig.workspaceBindings) {
         const binding = this.currentBinding(configuredBinding)
-        if (binding.initializationState === "initialized") {
-          if (binding.syncMode !== "push") {
-            await this.pullWorkspace(binding)
-            this.repository.markBindingSynced(binding.workspaceId)
+        try {
+          if (binding.initializationState === "initialized") {
+            if (binding.syncMode !== "push") {
+              await this.pullWorkspace(binding)
+              this.repository.markBindingSynced(binding.workspaceId)
+            }
+          } else {
+            await this.resumeInitialSync(binding)
           }
-        } else {
-          await this.resumeInitialSync(binding)
+        } catch (error) {
+          this.repository.setBindingError(binding.workspaceId, failureReasonForError(error))
+          firstError ??= error
         }
+      }
+      if (firstError !== undefined) {
+        throw firstError
       }
       this.onStateChange?.(this.stateAfterSync())
     } catch (err) {
@@ -188,21 +197,31 @@ export class CloudSyncProvider implements SyncProvider {
 
     if (!this.syncConfig || !this.cursorStore || !this.repository) return
 
+    let firstError: unknown
     for (const binding of this.syncConfig.workspaceBindings) {
-      const currentBeforePull = this.currentBinding(binding)
-      if (currentBeforePull.initializationState === "initialized" && currentBeforePull.syncMode === "push") {
-        continue
+      try {
+        const currentBeforePull = this.currentBinding(binding)
+        if (currentBeforePull.initializationState === "initialized" && currentBeforePull.syncMode === "push") {
+          continue
+        }
+        this.cursorStore.reset(binding.cloudWorkspaceId)
+        await this.pullWorkspace(binding)
+        if (this.stopped) return
+        const current = this.currentBinding(binding)
+        if (current.initializationState !== "initialized") {
+          this.repository.setBindingInitializationState(binding.workspaceId, "pushing")
+          await this.pushWorkspacePending(current)
+          this.completeInitialSyncIfReady(current)
+        }
+        this.cursorStore.setFullSync(binding.cloudWorkspaceId, Date.now())
+        this.repository.markBindingSynced(binding.workspaceId)
+      } catch (error) {
+        this.repository.setBindingError(binding.workspaceId, failureReasonForError(error))
+        firstError ??= error
       }
-      this.cursorStore.reset(binding.cloudWorkspaceId)
-      await this.pullWorkspace(binding)
-      if (this.stopped) return
-      const current = this.currentBinding(binding)
-      if (current.initializationState !== "initialized") {
-        this.repository.setBindingInitializationState(binding.workspaceId, "pushing")
-        await this.pushWorkspacePending(current)
-        this.completeInitialSyncIfReady(current)
-      }
-      this.cursorStore.setFullSync(binding.cloudWorkspaceId, Date.now())
+    }
+    if (firstError !== undefined) {
+      throw firstError
     }
   }
 
@@ -263,18 +282,27 @@ export class CloudSyncProvider implements SyncProvider {
       throw new Error("CloudSyncProvider not initialized with store")
     }
     try {
+      let firstError: unknown
       for (const configuredBinding of this.syncConfig?.workspaceBindings ?? []) {
         const binding = this.currentBinding(configuredBinding)
-        if (binding.initializationState === "pulling") {
-          await this.client.hello()
-          await this.resumeInitialSync(binding)
-        } else {
-          await this.pushWorkspacePending(binding)
-          if (binding.initializationState !== "initialized") {
-            this.completeInitialSyncIfReady(binding)
+        try {
+          if (binding.initializationState === "pulling") {
+            await this.client.hello()
+            await this.resumeInitialSync(binding)
+          } else {
+            await this.pushWorkspacePending(binding)
+            if (binding.initializationState !== "initialized") {
+              this.completeInitialSyncIfReady(binding)
+            }
+            this.repository?.markBindingSynced(binding.workspaceId)
           }
-          this.repository?.markBindingSynced(binding.workspaceId)
+        } catch (error) {
+          this.repository?.setBindingError(binding.workspaceId, failureReasonForError(error))
+          firstError ??= error
         }
+      }
+      if (firstError !== undefined) {
+        throw firstError
       }
       this.onStateChange?.(this.stateAfterSync())
     } catch (err) {
@@ -306,6 +334,9 @@ export class CloudSyncProvider implements SyncProvider {
       }
       this.log("push", { pendingCount: rows.length })
       await this.pushWorkspace(binding, rows)
+      if (this.stopped) {
+        return
+      }
     }
   }
 

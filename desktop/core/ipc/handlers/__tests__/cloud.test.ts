@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from "vitest"
 import { IpcRouter } from "../../router"
 import { registerCloudHandlers } from "../cloud"
-import type { CloudBindWorkspaceInput, CloudLinkInput, CloudSyncControl, CloudSyncStatus } from "../../../services/cloud_sync_control"
+import {
+  CloudUnlinkRequiresConfirmationError,
+  type CloudBindWorkspaceInput,
+  type CloudLinkInput,
+  type CloudSyncControl,
+  type CloudSyncStatus,
+  type CloudUnlinkInput,
+} from "../../../services/cloud_sync_control"
 
 class FakeCloudSyncControl implements CloudSyncControl {
   public readonly linkSpy = vi.fn<(input: CloudLinkInput) => Promise<CloudSyncStatus>>()
   public readonly bindSpy = vi.fn<(input: CloudBindWorkspaceInput) => Promise<CloudSyncStatus>>()
+  public readonly unlinkSpy = vi.fn<(input: CloudUnlinkInput) => Promise<void>>()
   private current: CloudSyncStatus = {
     linked: false,
     active: false,
@@ -45,7 +53,8 @@ class FakeCloudSyncControl implements CloudSyncControl {
     return this.current
   }
 
-  public unlink(): CloudSyncStatus {
+  public async unlink(input: CloudUnlinkInput): Promise<CloudSyncStatus> {
+    await this.unlinkSpy(input)
     this.current = {
       linked: false,
       active: false,
@@ -120,6 +129,26 @@ describe("cloud IPC handlers", () => {
 
     expect(result).toMatchObject({ ok: false, error: { code: "validation" } })
     expect(cloud.linkSpy).not.toHaveBeenCalled()
+  })
+
+  it("requires explicit confirmation when server revocation cannot be verified", async () => {
+    const cloud = new FakeCloudSyncControl()
+    cloud.unlinkSpy.mockRejectedValueOnce(new CloudUnlinkRequiresConfirmationError())
+    const router = new IpcRouter()
+    registerCloudHandlers(router, { cloud } as never)
+
+    const result = await router.dispatch({ domain: "cloud", action: "unlink", payload: {} })
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "conflict",
+        details: { localOnlyConfirmationRequired: true },
+      },
+    })
+
+    await router.dispatch({ domain: "cloud", action: "unlink", payload: { localOnly: true } })
+    expect(cloud.unlinkSpy).toHaveBeenLastCalledWith({ localOnly: true })
   })
 
   it("fails closed when cloud control is not installed", async () => {
