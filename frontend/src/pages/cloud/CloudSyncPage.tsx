@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
+  ArrowLeft,
   Cloud,
   CloudOff,
   GitCompareArrows,
@@ -173,9 +174,24 @@ export function CloudSyncPage() {
       return cloud.push().catch(() => next);
     }, "Sync started");
 
+  const goBack = useCallback(() => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate("/");
+  }, [navigate]);
+
   const header = (
     <div className="border-b border-border px-6 py-6 dark:border-border-dark">
       <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={goBack}
+          aria-label="Back to app"
+          className="gap-1"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back
+        </Button>
         <Cloud
           className="h-5 w-5 text-text-secondary dark:text-text-secondary-dark"
           aria-hidden="true"

@@ -79,6 +79,34 @@ describe("CloudSyncProvider", () => {
     rmSync(tempDir, { recursive: true, force: true })
   })
 
+  describe("timestamp format regression", () => {
+    // A cloud-applied upsert hitting the ON CONFLICT UPDATE branch must write
+    // updatedAt in ISO-8601 UTC (…T…Z), matching TimestampSchema (z.iso.datetime()).
+    // Regression: the branch previously used SQLite datetime('now')
+    // ("YYYY-MM-DD HH:MM:SS"), which fails validation and broke every workspace/
+    // workflow listing after a first sync applied cloud revisions.
+    const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+
+    it("writes an ISO-8601 updatedAt when applying a cloud upsert to an existing record", () => {
+      const repository = new CloudSyncRepository(store)
+      // WORKSPACE_ID already exists at rev 1 (beforeEach) → this hits ON CONFLICT UPDATE.
+      repository.applyChange({
+        cursor: 1n,
+        workspaceId: WORKSPACE_ID,
+        kind: RecordKind.WORKSPACE,
+        recordId: WORKSPACE_ID,
+        rev: 5n,
+        op: ChangeOp.UPSERT,
+        payload: new TextEncoder().encode(JSON.stringify({ name: "Renamed", slug: "renamed" })),
+      })
+      const rows = store.query<{ updatedAt: string }>(
+        "SELECT updatedAt FROM workspaces WHERE id = ?",
+        [WORKSPACE_ID],
+      )
+      expect(rows[0]?.updatedAt).toMatch(ISO_UTC)
+    })
+  })
+
   describe("happy path", () => {
     it("keeps app sessions and plaintext refresh tokens out of SQLite", () => {
       const sessionCanary = "session-canary-must-stay-in-memory"

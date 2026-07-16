@@ -706,7 +706,7 @@ export class CloudSyncRepository {
         return
       }
       repository.store.set(
-        "UPDATE workspaces SET origin = 'local', syncMode = 'local-only', updatedAt = datetime('now') WHERE id = ?",
+        "UPDATE workspaces SET origin = 'local', syncMode = 'local-only', updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
         [workspaceId],
       )
       repository.store.delete("DELETE FROM cloud_outbox WHERE workspace_id = ?", [workspaceId])
@@ -720,7 +720,7 @@ export class CloudSyncRepository {
   public clearCloudDeviceState(): void {
     this.store.transaction((store) => {
       store.set(
-        `UPDATE workspaces SET origin = 'local', syncMode = 'local-only', updatedAt = datetime('now')
+        `UPDATE workspaces SET origin = 'local', syncMode = 'local-only', updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
          WHERE id IN (SELECT workspace_id FROM cloud_workspace_bindings)`,
       )
       store.delete("DELETE FROM cloud_outbox")
@@ -862,7 +862,7 @@ export class CloudSyncRepository {
     this.store.set(
       `INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, slug = excluded.slug, origin = excluded.origin,
-       syncMode = excluded.syncMode, settings_json = excluded.settings_json, rev = excluded.rev, updatedAt = datetime('now')
+       syncMode = excluded.syncMode, settings_json = excluded.settings_json, rev = excluded.rev, updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        ${force ? "" : "WHERE excluded.rev > workspaces.rev"}`,
       [id, name, slug, origin, syncMode, settingsJson, Number(rev)],
     )
@@ -882,7 +882,7 @@ export class CloudSyncRepository {
       `INSERT INTO collections (id, workspace_id, scopeId, name, slug, workflow_ids_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, scopeId = excluded.scopeId, name = excluded.name,
        slug = excluded.slug, workflow_ids_json = excluded.workflow_ids_json, settings_json = excluded.settings_json,
-       rev = excluded.rev, updatedAt = datetime('now') ${force ? "" : "WHERE excluded.rev > collections.rev"}`,
+       rev = excluded.rev, updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ${force ? "" : "WHERE excluded.rev > collections.rev"}`,
       [id, workspaceId, workspaceId, name, slugify(name, id), workflowOrder, settingsJson, Number(rev)],
     )
   }
@@ -906,7 +906,7 @@ export class CloudSyncRepository {
       `INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, scopeId = excluded.scopeId, name = excluded.name,
        slug = excluded.slug, graph_json = excluded.graph_json, variables_json = excluded.variables_json,
-       settings_json = excluded.settings_json, rev = excluded.rev, updatedAt = datetime('now')
+       settings_json = excluded.settings_json, rev = excluded.rev, updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        ${force ? "" : "WHERE excluded.rev > workflows.rev"}`,
       [id, workspaceId, workspaceId, name, slugify(name, id), graphJson, variablesJson, settingsJson, Number(rev)],
     )
@@ -937,7 +937,7 @@ export class CloudSyncRepository {
       `INSERT INTO environments (id, workspace_id, scopeId, name, slug, variables_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, scopeId = excluded.scopeId, name = excluded.name,
        slug = excluded.slug, variables_json = excluded.variables_json, settings_json = excluded.settings_json,
-       rev = excluded.rev, updatedAt = datetime('now') ${force ? "" : "WHERE excluded.rev > environments.rev"}`,
+       rev = excluded.rev, updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ${force ? "" : "WHERE excluded.rev > environments.rev"}`,
       [id, workspaceId, workspaceId, name, slugify(name, id), variablesJson, settingsJson, Number(rev)],
     )
   }
