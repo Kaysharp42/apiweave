@@ -145,6 +145,65 @@ describe("database migrations", () => {
     }
   })
 
+  it("upgrades existing cloud bindings to initialized state without creating a baseline", () => {
+    const tempRoot = makeTempRoot()
+    const oldMigrationsPath = path.join(tempRoot, "migrations-v5")
+    fs.mkdirSync(oldMigrationsPath)
+    for (const fileName of fs.readdirSync(path.join(__dirname, "..", "migrations"))) {
+      if (/^00[1-5]_.*\.sql$/.test(fileName)) {
+        fs.copyFileSync(
+          path.join(__dirname, "..", "migrations", fileName),
+          path.join(oldMigrationsPath, fileName),
+        )
+      }
+    }
+    const databasePath = path.join(tempRoot, "upgrade.db")
+    const old = initDatabase({ databasePath, migrationsPath: oldMigrationsPath })
+    old.kvStore.set("INSERT INTO workspaces (id, name, slug) VALUES (?, ?, ?)", ["workspace-1", "Local", "local"])
+    old.kvStore.set("INSERT INTO workspaces (id, name, slug, origin, syncMode) VALUES (?, ?, ?, ?, ?)", [
+      "workspace-2",
+      "Duplicate",
+      "duplicate",
+      "cloud",
+      "bi-directional",
+    ])
+    old.kvStore.set(
+      "INSERT INTO cloud_workspace_bindings (workspace_id, cloud_workspace_id, sync_mode) VALUES (?, ?, ?)",
+      ["workspace-1", "cloud-1", "bi-directional"],
+    )
+    old.kvStore.set(
+      "INSERT INTO cloud_workspace_bindings (workspace_id, cloud_workspace_id, sync_mode) VALUES (?, ?, ?)",
+      ["workspace-2", "cloud-1", "bi-directional"],
+    )
+    old.kvStore.set(
+      "INSERT INTO cloud_outbox (id, kind, record_id, workspace_id, expected_rev, op, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["outbox-duplicate", "workflow", "workflow-dirty", "workspace-2", 0, "upsert", Buffer.from("{}"), Date.now()],
+    )
+    old.close()
+
+    const upgraded = initDatabase({ databasePath })
+    try {
+      expect(upgraded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+      expect(upgraded.kvStore.get(
+        "SELECT initialization_state, cloud_workspace_name FROM cloud_workspace_bindings WHERE workspace_id = ?",
+        ["workspace-1"],
+      )).toEqual({ initialization_state: "initialized", cloud_workspace_name: "" })
+      expect(upgraded.kvStore.get<{ total: number }>("SELECT COUNT(*) AS total FROM cloud_outbox")?.total).toBe(1)
+      expect(upgraded.kvStore.get(
+        "SELECT origin, syncMode FROM workspaces WHERE id = ?",
+        ["workspace-2"],
+      )).toEqual({ origin: "local", syncMode: "none" })
+      expect(upgraded.kvStore.get("SELECT 1 FROM cloud_workspace_bindings WHERE workspace_id = ?", ["workspace-2"]))
+        .toBeUndefined()
+      expect(upgraded.kvStore.get("SELECT id FROM cloud_outbox WHERE id = ?", ["outbox-duplicate"]))
+        .toEqual({ id: "outbox-duplicate" })
+      expect(upgraded.kvStore.get("SELECT value FROM app_settings WHERE key = 'cloud.binding_migration_warning'"))
+        .toEqual({ value: "1 duplicate cloud workspace binding(s) were disconnected" })
+    } finally {
+      upgraded.close()
+    }
+  })
+
   it("rolls back a failed migration transaction", () => {
     const tempRoot = makeTempRoot()
     const migrationsPath = path.join(tempRoot, "migrations")

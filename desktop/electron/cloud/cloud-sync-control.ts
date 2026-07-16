@@ -2,6 +2,7 @@ import { createHash, generateKeyPairSync } from "node:crypto"
 import { hostname } from "node:os"
 import type { KVStore } from "../../core/db"
 import { CloudSyncRepository } from "../../core/repositories"
+import { CloudFirstSyncService } from "../../core/services/cloud_first_sync_service"
 import type { SyncProvider } from "../../core/sync"
 import type {
   CloudBindWorkspaceInput,
@@ -44,6 +45,7 @@ const KEY_WORKSPACE_CATALOG = "cloud.workspace_catalog"
 export class DesktopCloudSyncControl implements CloudSyncControl {
   private readonly repository: CloudSyncRepository
   private readonly tokenStore: DeviceTokenStore
+  private readonly firstSyncService: CloudFirstSyncService
   private activeProvider: CloudSyncProvider | null = null
   private activeConfig: DesktopCloudConfig | null
   private workspaceCatalog: readonly CloudWorkspaceCatalogEntry[]
@@ -52,9 +54,10 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   public constructor(private readonly options: DesktopCloudSyncControlOptions) {
     this.repository = new CloudSyncRepository(options.store)
     this.tokenStore = new DeviceTokenStore(this.repository, options.keyfilePath)
+    this.firstSyncService = new CloudFirstSyncService(options.store)
     this.activeConfig = this.loadPersistedConfig()
     this.workspaceCatalog = this.loadWorkspaceCatalog()
-    this.activateIfReady()
+    this.activateIfReady(true)
   }
 
   public status(): CloudSyncStatus {
@@ -129,7 +132,9 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   }
 
   public unlink(): CloudSyncStatus {
+    this.linkController?.abort(new ErrLinkCancelled())
     cancelDeviceLink()
+    this.activeProvider?.deactivate()
     this.tokenStore.clearTokens()
     this.repository.clearCloudDeviceState()
     this.repository.deleteSetting(KEY_WORKSPACE_CATALOG)
@@ -142,20 +147,32 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     return this.status()
   }
 
-  public bindWorkspace(input: CloudBindWorkspaceInput): CloudSyncStatus {
+  public async bindWorkspace(input: CloudBindWorkspaceInput): Promise<CloudSyncStatus> {
     const deviceId = this.tokenStore.getDeviceId()
+    if (deviceId === undefined || !this.tokenStore.hasTokens()) {
+      throw new Error("Cloud account must be linked before binding a workspace")
+    }
     const target = this.workspaceCatalog.find((workspace) => workspace.workspaceId === input.cloudWorkspaceId)
     if (target === undefined) {
       throw new Error("Cloud workspace is not authorized for this account")
     }
-    this.repository.upsertWorkspaceBinding({
+    if (!target.canPull || !target.canPush) {
+      throw new Error("Cloud workspace does not allow the required sync capabilities")
+    }
+    if (input.teamId !== undefined && input.teamId !== null && input.teamId !== target.teamId) {
+      throw new Error("Cloud workspace team metadata does not match the authorized catalog")
+    }
+    const binding = this.firstSyncService.bindAndSnapshot({
       workspaceId: input.workspaceId,
       cloudWorkspaceId: input.cloudWorkspaceId,
-      teamId: input.teamId ?? null,
+      cloudWorkspaceName: target.workspaceName,
+      ...(target.teamId !== undefined ? { teamId: target.teamId } : {}),
+      ...(target.teamName !== undefined ? { teamName: target.teamName } : {}),
       syncMode: input.syncMode ?? "bi-directional",
-      ...(deviceId !== undefined ? { deviceId } : {}),
+      deviceId,
     })
     this.activateIfReady()
+    await this.requireActiveProvider().initializeWorkspace(binding.workspaceId)
     return this.status()
   }
 
@@ -171,7 +188,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     return this.status()
   }
 
-  private activateIfReady(): void {
+  private activateIfReady(resumePending = false): void {
     const workspaceBindings = this.repository.listWorkspaceBindings()
     if (!this.tokenStore.hasTokens() || workspaceBindings.length === 0 || this.activeConfig === null) {
       return
@@ -192,6 +209,9 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     this.activeProvider = provider
     this.options.setSyncProviderTarget(provider)
     setState(this.repository.countDeadLetterOutbox() > 0 ? "error" : "idle")
+    if (resumePending && workspaceBindings.some((binding) => binding.initializationState !== "initialized")) {
+      void provider.resumePendingInitializations().catch(() => undefined)
+    }
   }
 
   private requireActiveProvider(): CloudSyncProvider {

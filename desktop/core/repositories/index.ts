@@ -14,6 +14,7 @@ export { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository, ErrForbiddenCloudPayload
 export type {
   CloudChangeEnvelope,
   CloudApplyResult,
+  CloudBindingInitializationState,
   CloudConflict,
   CloudConflictWinner,
   CloudCursorState,
@@ -21,6 +22,7 @@ export type {
   CloudOutboxOp,
   CloudOutboxRow,
   CloudWorkspaceBinding,
+  CloudWorkspaceBindingUpsert,
   CloudPushConflictInput,
 }
   from "./CloudSyncRepository"

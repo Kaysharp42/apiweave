@@ -10,7 +10,7 @@ export interface CloudBindWorkspaceInput {
   readonly workspaceId: string
   readonly cloudWorkspaceId: string
   readonly teamId?: string | null
-  readonly syncMode?: string
+  readonly syncMode?: "push" | "bi-directional"
 }
 
 export interface CloudWorkspaceCatalogEntry {
@@ -40,7 +40,7 @@ export interface CloudSyncControl {
   readonly link: (input: CloudLinkInput) => Promise<CloudSyncStatus>
   readonly cancelLink: () => CloudSyncStatus
   readonly unlink: () => CloudSyncStatus
-  readonly bindWorkspace: (input: CloudBindWorkspaceInput) => CloudSyncStatus
+  readonly bindWorkspace: (input: CloudBindWorkspaceInput) => Promise<CloudSyncStatus>
   readonly pull: () => Promise<CloudSyncStatus>
   readonly push: () => Promise<CloudSyncStatus>
 }

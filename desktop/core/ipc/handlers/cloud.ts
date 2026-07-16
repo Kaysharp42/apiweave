@@ -41,7 +41,7 @@ const bindWorkspaceInput = z
     workspaceId: z.string().min(1),
     cloudWorkspaceId: z.string().min(1),
     teamId: z.string().min(1).nullable().optional(),
-    syncMode: z.string().min(1).optional(),
+    syncMode: z.enum(["push", "bi-directional"]).optional(),
   })
   .strict()
 

@@ -24,6 +24,7 @@ export interface CloudOutboxRow {
   readonly next_retry_at: number
   readonly failure_reason: string | null
   readonly created_at: number
+  readonly is_baseline: boolean
 }
 
 export interface CloudDeviceUpsert {
@@ -37,14 +38,29 @@ export interface CloudDeviceUpsert {
 export interface CloudWorkspaceBindingUpsert {
   readonly workspaceId: string
   readonly cloudWorkspaceId: string
+  readonly cloudWorkspaceName: string
   readonly teamId?: string | null
+  readonly teamName?: string | null
   readonly syncMode: string
   readonly deviceId?: string
+  readonly initializationState: CloudBindingInitializationState
 }
+
+export type CloudBindingInitializationState = "pulling" | "pushing" | "initialized"
 
 export interface CloudWorkspaceBinding {
   readonly workspaceId: string
   readonly cloudWorkspaceId: string
+  readonly cloudWorkspaceName: string
+  readonly teamId: string | null
+  readonly teamName: string | null
+  readonly syncMode: string
+  readonly deviceId: string | null
+  readonly initializationState: CloudBindingInitializationState
+  readonly boundAt: string
+  readonly lastSyncedAt: string | null
+  readonly initializedAt: string | null
+  readonly lastError: string | null
 }
 
 export interface CloudChangeEnvelope {
@@ -84,6 +100,7 @@ export interface CloudPushConflictInput {
   readonly conflictId: string
   readonly outboxRow: CloudOutboxRow
   readonly cloudPayload: Uint8Array
+  readonly cloudRev: number
 }
 
 interface SettingRow extends SqliteRow {
@@ -102,6 +119,22 @@ interface OutboxDbRow extends SqliteRow {
   readonly next_retry_at: number
   readonly failure_reason: string | null
   readonly created_at: number
+  readonly is_baseline: number
+}
+
+interface CloudWorkspaceBindingDbRow extends SqliteRow {
+  readonly workspace_id: string
+  readonly cloud_workspace_id: string
+  readonly cloud_workspace_name: string
+  readonly team_id: string | null
+  readonly team_name: string | null
+  readonly sync_mode: string
+  readonly device_id: string | null
+  readonly initialization_state: CloudBindingInitializationState
+  readonly boundAt: string
+  readonly lastSyncedAt: string | null
+  readonly initializedAt: string | null
+  readonly last_error: string | null
 }
 
 interface CloudRecordStateRow extends SqliteRow {
@@ -136,6 +169,9 @@ interface CloudConflictDbRow extends SqliteRow {
 const KEY_CURSOR = "cloud.cursor."
 const KEY_LAST_REV = "cloud.last_rev."
 const KEY_LAST_FULL_SYNC = "cloud.last_full_sync."
+const WORKSPACE_BINDING_SELECT = `SELECT workspace_id, cloud_workspace_id, cloud_workspace_name,
+  team_id, team_name, sync_mode, device_id, initialization_state, boundAt, lastSyncedAt,
+  initializedAt, last_error FROM cloud_workspace_bindings`
 
 export const CLOUD_OUTBOX_MAX_RETRIES = 10
 
@@ -204,13 +240,16 @@ export class CloudSyncRepository {
     this.deleteSetting(KEY_LAST_FULL_SYNC + workspaceId)
   }
 
-  public enqueueOutbox(row: Omit<CloudOutboxRow, "id" | "created_at" | "retry_count" | "next_retry_at" | "failure_reason">): string {
+  public enqueueOutbox(
+    row: Omit<CloudOutboxRow, "id" | "created_at" | "retry_count" | "next_retry_at" | "failure_reason" | "is_baseline">
+      & { readonly is_baseline?: boolean },
+  ): string {
     const id = generateId()
     const payloadBuffer = row.payload === null ? null : Buffer.from(row.payload)
     const existingConflictId = this.getRecordState(row.workspace_id, row.kind, row.record_id)?.conflict_id ?? null
     this.store.set(
-      "INSERT INTO cloud_outbox (id, kind, record_id, workspace_id, expected_rev, op, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, row.kind, row.record_id, row.workspace_id, row.expected_rev, row.op, payloadBuffer, Date.now()],
+      "INSERT INTO cloud_outbox (id, kind, record_id, workspace_id, expected_rev, op, payload, created_at, is_baseline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, row.kind, row.record_id, row.workspace_id, row.expected_rev, row.op, payloadBuffer, Date.now(), row.is_baseline ? 1 : 0],
     )
     this.upsertRecordState(row.workspace_id, row.kind, row.record_id, {
       serverRev: row.expected_rev,
@@ -223,13 +262,30 @@ export class CloudSyncRepository {
     return id
   }
 
+  public enqueueBaselineOutbox(
+    row: Omit<CloudOutboxRow, "id" | "created_at" | "retry_count" | "next_retry_at" | "failure_reason" | "is_baseline">,
+  ): string {
+    const existing = this.store.get<{ id: string } & SqliteRow>(
+      "SELECT id FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ? AND is_baseline = 1",
+      [row.workspace_id, row.kind, row.record_id],
+    )
+    return existing?.id ?? this.enqueueOutbox({ ...row, is_baseline: true })
+  }
+
   public listPendingOutbox(limit: number, nowMs = Date.now()): readonly CloudOutboxRow[] {
     return this.store
       .query<OutboxDbRow>(
         `SELECT o.id, o.kind, o.record_id, o.workspace_id, o.expected_rev, o.op, o.payload,
-                o.retry_count, o.next_retry_at, o.failure_reason, o.created_at
+                o.retry_count, o.next_retry_at, o.failure_reason, o.created_at, o.is_baseline
          FROM cloud_outbox o
          WHERE o.retry_count < ? AND o.next_retry_at <= ?
+           AND NOT EXISTS (
+             SELECT 1 FROM cloud_outbox earlier
+             WHERE earlier.workspace_id = o.workspace_id AND earlier.kind = o.kind
+               AND earlier.record_id = o.record_id
+               AND (earlier.created_at < o.created_at
+                 OR (earlier.created_at = o.created_at AND earlier.rowid < o.rowid))
+           )
            AND NOT EXISTS (
              SELECT 1 FROM cloud_record_state s
              WHERE s.workspace_id = o.workspace_id AND s.kind = o.kind
@@ -241,9 +297,38 @@ export class CloudSyncRepository {
       .map(rowToOutboxRow)
   }
 
+  public listPendingOutboxForWorkspace(workspaceId: string, limit: number, nowMs = Date.now()): readonly CloudOutboxRow[] {
+    return this.store
+      .query<OutboxDbRow>(
+        `SELECT o.id, o.kind, o.record_id, o.workspace_id, o.expected_rev, o.op, o.payload,
+                o.retry_count, o.next_retry_at, o.failure_reason, o.created_at, o.is_baseline
+         FROM cloud_outbox o
+         WHERE o.workspace_id = ? AND o.retry_count < ? AND o.next_retry_at <= ?
+           AND NOT EXISTS (
+             SELECT 1 FROM cloud_outbox earlier
+             WHERE earlier.workspace_id = o.workspace_id AND earlier.kind = o.kind
+               AND earlier.record_id = o.record_id
+               AND (earlier.created_at < o.created_at
+                 OR (earlier.created_at = o.created_at AND earlier.rowid < o.rowid))
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM cloud_record_state s
+             WHERE s.workspace_id = o.workspace_id AND s.kind = o.kind
+               AND s.record_id = o.record_id AND s.conflict_id IS NOT NULL
+           )
+         ORDER BY o.created_at ASC, o.rowid ASC LIMIT ?`,
+        [workspaceId, CLOUD_OUTBOX_MAX_RETRIES, nowMs, limit],
+      )
+      .map(rowToOutboxRow)
+  }
+
   public markOutboxApplied(id: string, serverRev: number): void {
+    this.transaction((repository) => repository.markOutboxAppliedInTransaction(id, serverRev))
+  }
+
+  private markOutboxAppliedInTransaction(id: string, serverRev: number): void {
     const applied = this.store.get<OutboxDbRow>(
-      "SELECT id, kind, record_id, workspace_id, expected_rev, op, payload, retry_count, next_retry_at, failure_reason, created_at FROM cloud_outbox WHERE id = ?",
+      "SELECT id, kind, record_id, workspace_id, expected_rev, op, payload, retry_count, next_retry_at, failure_reason, created_at, is_baseline FROM cloud_outbox WHERE id = ?",
       [id],
     )
     this.store.delete("DELETE FROM cloud_outbox WHERE id = ?", [id])
@@ -278,6 +363,30 @@ export class CloudSyncRepository {
 
   public countOutbox(): number {
     return this.store.get<{ total: number } & SqliteRow>("SELECT COUNT(*) as total FROM cloud_outbox")?.total ?? 0
+  }
+
+  public countBaselineOutbox(workspaceId: string): number {
+    return this.store.get<{ total: number } & SqliteRow>(
+      "SELECT COUNT(*) AS total FROM cloud_outbox WHERE workspace_id = ? AND is_baseline = 1",
+      [workspaceId],
+    )?.total ?? 0
+  }
+
+  public expectedRevisionForMutation(
+    workspaceId: string,
+    kind: CloudOutboxKind,
+    recordId: string,
+    fallback: number,
+  ): number {
+    const state = this.getRecordState(workspaceId, kind, recordId)
+    const queued = this.store.get<{ next_rev: number | null } & SqliteRow>(
+      "SELECT MAX(expected_rev + 1) AS next_rev FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ?",
+      [workspaceId, kind, recordId],
+    )?.next_rev
+    if (state === undefined && queued == null) {
+      return fallback
+    }
+    return Math.max(state?.server_rev ?? 0, queued ?? 0)
   }
 
   public countDeadLetterOutbox(): number {
@@ -321,6 +430,10 @@ export class CloudSyncRepository {
     if (conflict === undefined || conflict.status !== "pending") {
       return
     }
+    const queued = this.listOutboxForRecord(conflict.workspaceId, conflict.kind, conflict.recordId)
+    const latestLocal = queued.at(-1)
+    const localPayload = latestLocal?.payload ?? conflict.localPayload
+    const localOp = latestLocal?.op ?? conflict.localOp
 
     this.store.delete(
       "DELETE FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ?",
@@ -328,22 +441,24 @@ export class CloudSyncRepository {
     )
 
     if (winner === "local") {
-      this.applyRecord({
-        cursor: 0n,
-        workspaceId: conflict.workspaceId,
-        kind: cloudKindToRecordKind(conflict.kind),
-        recordId: conflict.recordId,
-        rev: BigInt(conflict.cloudRev + 1),
-        op: outboxOpToChangeOp(conflict.localOp),
-        payload: conflict.localPayload ?? new Uint8Array(),
-      }, true)
+      if (localOp === "tombstone" || this.getLocalRecordRevision(conflict.kind, conflict.recordId) === undefined) {
+        this.applyRecord({
+          cursor: 0n,
+          workspaceId: conflict.workspaceId,
+          kind: cloudKindToRecordKind(conflict.kind),
+          recordId: conflict.recordId,
+          rev: BigInt(conflict.cloudRev + 1),
+          op: outboxOpToChangeOp(localOp),
+          payload: localPayload ?? new Uint8Array(),
+        }, true)
+      }
       this.enqueueOutbox({
         workspace_id: conflict.workspaceId,
         kind: conflict.kind,
         record_id: conflict.recordId,
         expected_rev: conflict.cloudRev,
-        op: conflict.localOp,
-        payload: conflict.localPayload,
+        op: localOp,
+        payload: localPayload,
       })
       this.upsertRecordState(conflict.workspaceId, conflict.kind, conflict.recordId, {
         serverRev: conflict.cloudRev,
@@ -377,8 +492,8 @@ export class CloudSyncRepository {
 
   public recordPushConflict(input: CloudPushConflictInput): void {
     const localPayload = sanitizeNullablePayload(input.outboxRow.payload)
-    const cloudPayload = sanitizeNullablePayload(input.cloudPayload)
-    const cloudRev = payloadRevision(cloudPayload) ?? input.outboxRow.expected_rev + 1
+    const cloudPayload = sanitizeCloudSnapshotPayload(input.cloudPayload)
+    const cloudRev = input.cloudRev > 0 ? input.cloudRev : input.outboxRow.expected_rev + 1
     this.saveConflict({
       conflictId: input.conflictId,
       serverConflictId: input.conflictId,
@@ -391,7 +506,7 @@ export class CloudSyncRepository {
       localRev: input.outboxRow.expected_rev + 1,
       cloudRev,
       localOp: input.outboxRow.op,
-      cloudOp: "upsert",
+      cloudOp: cloudPayload.length === 0 ? "tombstone" : "upsert",
     })
   }
 
@@ -422,14 +537,70 @@ export class CloudSyncRepository {
   public upsertWorkspaceBinding(input: CloudWorkspaceBindingUpsert): void {
     this.store.set(
       `INSERT INTO cloud_workspace_bindings (
-        workspace_id, cloud_workspace_id, team_id, sync_mode, device_id
-      ) VALUES (?, ?, ?, ?, ?)
+        workspace_id, cloud_workspace_id, cloud_workspace_name, team_id, team_name,
+        sync_mode, device_id, initialization_state
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(workspace_id) DO UPDATE SET
         cloud_workspace_id = excluded.cloud_workspace_id,
+        cloud_workspace_name = excluded.cloud_workspace_name,
         team_id = excluded.team_id,
+        team_name = excluded.team_name,
         sync_mode = excluded.sync_mode,
         device_id = excluded.device_id`,
-      [input.workspaceId, input.cloudWorkspaceId, input.teamId ?? null, input.syncMode, input.deviceId ?? null],
+      [
+        input.workspaceId,
+        input.cloudWorkspaceId,
+        input.cloudWorkspaceName,
+        input.teamId ?? null,
+        input.teamName ?? null,
+        input.syncMode,
+        input.deviceId ?? null,
+        input.initializationState,
+      ],
+    )
+  }
+
+  public getWorkspaceBinding(workspaceId: string): CloudWorkspaceBinding | undefined {
+    const row = this.store.get<CloudWorkspaceBindingDbRow>(
+      `${WORKSPACE_BINDING_SELECT} WHERE workspace_id = ?`,
+      [workspaceId],
+    )
+    return row === undefined ? undefined : rowToWorkspaceBinding(row)
+  }
+
+  public getWorkspaceBindingByCloudId(cloudWorkspaceId: string): CloudWorkspaceBinding | undefined {
+    const row = this.store.get<CloudWorkspaceBindingDbRow>(
+      `${WORKSPACE_BINDING_SELECT} WHERE cloud_workspace_id = ?`,
+      [cloudWorkspaceId],
+    )
+    return row === undefined ? undefined : rowToWorkspaceBinding(row)
+  }
+
+  public setBindingInitializationState(
+    workspaceId: string,
+    state: CloudBindingInitializationState,
+    lastError: string | null = null,
+  ): void {
+    const initializedAt = state === "initialized" ? new Date().toISOString() : null
+    this.store.set(
+      `UPDATE cloud_workspace_bindings
+       SET initialization_state = ?, initializedAt = COALESCE(?, initializedAt), last_error = ?
+       WHERE workspace_id = ?`,
+      [state, initializedAt, lastError, workspaceId],
+    )
+  }
+
+  public markBindingSynced(workspaceId: string): void {
+    this.store.set(
+      "UPDATE cloud_workspace_bindings SET lastSyncedAt = ?, last_error = NULL WHERE workspace_id = ?",
+      [new Date().toISOString(), workspaceId],
+    )
+  }
+
+  public setBindingError(workspaceId: string, error: string): void {
+    this.store.set(
+      "UPDATE cloud_workspace_bindings SET last_error = ? WHERE workspace_id = ?",
+      [error.slice(0, 1000), workspaceId],
     )
   }
 
@@ -439,10 +610,10 @@ export class CloudSyncRepository {
 
   public listWorkspaceBindings(): readonly CloudWorkspaceBinding[] {
     return this.store
-      .query<{ workspace_id: string; cloud_workspace_id: string } & SqliteRow>(
-        "SELECT workspace_id, cloud_workspace_id FROM cloud_workspace_bindings ORDER BY boundAt ASC",
+      .query<CloudWorkspaceBindingDbRow>(
+        `${WORKSPACE_BINDING_SELECT} ORDER BY boundAt ASC`,
       )
-      .map((row) => ({ workspaceId: row.workspace_id, cloudWorkspaceId: row.cloud_workspace_id }))
+      .map(rowToWorkspaceBinding)
   }
 
   public clearCloudDeviceState(): void {
@@ -479,6 +650,35 @@ export class CloudSyncRepository {
       return "ignored"
     }
     const pending = this.listOutboxForRecord(change.workspaceId, kind, change.recordId)
+    const baseline = pending.find((row) => row.is_baseline)
+    if (baseline !== undefined) {
+      if (baseline.op === "upsert" && change.op === ChangeOp.UPSERT
+          && payloadsEquivalent(kind, baseline.payload, change.payload)) {
+        this.store.delete("DELETE FROM cloud_outbox WHERE id = ?", [baseline.id])
+        const laterMutations = pending.filter((row) => row.id !== baseline.id)
+        if (laterMutations.length > 0) {
+          this.rebaseOutboxRows(laterMutations, Number(change.rev))
+          const localRev = this.getLocalRecordRevision(kind, change.recordId) ?? Number(change.rev) + laterMutations.length
+          this.upsertRecordState(change.workspaceId, kind, change.recordId, {
+            serverRev: Number(change.rev),
+            localRev,
+            dirty: true,
+            conflictId: null,
+          })
+          return "applied"
+        }
+        this.applyRecord(change, false)
+        this.upsertRecordState(change.workspaceId, kind, change.recordId, {
+          serverRev: Number(change.rev),
+          localRev: Number(change.rev),
+          dirty: false,
+          conflictId: null,
+        })
+        return "applied"
+      }
+      this.recordPullConflict(change, kind, pending)
+      return "conflict"
+    }
     if (pending.some((row) => row.expected_rev < Number(change.rev))) {
       this.recordPullConflict(change, kind, pending)
       return "conflict"
@@ -565,7 +765,7 @@ export class CloudSyncRepository {
 
   private upsertCollection(workspaceId: string, id: string, rev: bigint, payload: Record<string, unknown>, force: boolean): void {
     const name = String(payload["name"] ?? "")
-    const workflowOrder = JSON.stringify(payload["workflowOrder"] ?? [])
+    const workflowOrder = JSON.stringify(normalizeWorkflowOrder(payload["workflowOrderItems"] ?? payload["workflowOrder"]))
     const settingsJson = JSON.stringify({
       projectId: payload["projectId"] ?? null,
       description: payload["description"] ?? null,
@@ -584,7 +784,11 @@ export class CloudSyncRepository {
 
   private upsertWorkflow(workspaceId: string, id: string, rev: bigint, payload: Record<string, unknown>, force: boolean): void {
     const name = String(payload["name"] ?? "")
-    const graphJson = JSON.stringify(payload["graph"] ?? { nodes: [], edges: [] })
+    const legacyGraph = objectProperty(payload, "graph")
+    const graphJson = JSON.stringify({
+      nodes: payload["nodes"] ?? legacyGraph["nodes"] ?? [],
+      edges: payload["edges"] ?? legacyGraph["edges"] ?? [],
+    })
     const variablesJson = JSON.stringify(payload["variables"] ?? {})
     const settingsJson = JSON.stringify({
       description: payload["description"] ?? null,
@@ -606,10 +810,22 @@ export class CloudSyncRepository {
   private upsertEnvironment(workspaceId: string, id: string, rev: bigint, payload: Record<string, unknown>, force: boolean): void {
     const name = String(payload["name"] ?? "")
     const variablesJson = JSON.stringify(payload["variables"] ?? {})
+    const existingSettings = this.store.get<{ settings_json: string } & SqliteRow>(
+      "SELECT settings_json FROM environments WHERE id = ?",
+      [id],
+    )
+    const existingSecrets = existingSettings === undefined
+      ? {}
+      : objectProperty(parsePayload(new TextEncoder().encode(existingSettings.settings_json)), "secrets")
+    const cloudReferences = normalizeSecretReferences(
+      objectProperty(payload, "secrets"),
+      String(payload["scopeType"] ?? "workspace"),
+      workspaceId,
+    )
     const settingsJson = JSON.stringify({
       description: payload["description"] ?? null,
       swaggerDocUrl: payload["swaggerDocUrl"] ?? null,
-      secrets: {},
+      secrets: { ...cloudReferences, ...existingSecrets },
       isDefault: payload["isDefault"] ?? false,
     })
     this.store.set(
@@ -657,11 +873,20 @@ export class CloudSyncRepository {
   private listOutboxForRecord(workspaceId: string, kind: CloudOutboxKind, recordId: string): readonly CloudOutboxRow[] {
     return this.store.query<OutboxDbRow>(
       `SELECT id, kind, record_id, workspace_id, expected_rev, op, payload, retry_count,
-              next_retry_at, failure_reason, created_at
+              next_retry_at, failure_reason, created_at, is_baseline
        FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ?
        ORDER BY created_at ASC, rowid ASC`,
       [workspaceId, kind, recordId],
     ).map(rowToOutboxRow)
+  }
+
+  private rebaseOutboxRows(rows: readonly CloudOutboxRow[], serverRev: number): void {
+    rows.forEach((row, index) => {
+      this.store.set(
+        "UPDATE cloud_outbox SET expected_rev = ? WHERE id = ?",
+        [serverRev + index, row.id],
+      )
+    })
   }
 
   private recordPullConflict(
@@ -748,9 +973,56 @@ function parsePayload(data: Uint8Array): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
+function payloadsEquivalent(kind: CloudOutboxKind, localPayload: Uint8Array | null, cloudPayload: Uint8Array): boolean {
+  if (localPayload === null) {
+    return false
+  }
+  try {
+    return JSON.stringify(normalizeComparablePayload(parsePayload(localPayload), kind))
+      === JSON.stringify(normalizeComparablePayload(parsePayload(cloudPayload), kind))
+  } catch {
+    return false
+  }
+}
+
+function normalizeComparablePayload(value: unknown, kind: CloudOutboxKind, depth = 0): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeComparablePayload(item, kind, depth + 1))
+  }
+  if (value === null || typeof value !== "object") {
+    return value
+  }
+  const record = value as Record<string, unknown>
+  const normalized: Record<string, unknown> = {}
+  const ignored = depth === 0 ? identityAndRevisionFields(kind) : new Set<string>()
+  for (const nestedKey of Object.keys(record).sort()) {
+    if (!ignored.has(nestedKey)) {
+      normalized[nestedKey] = normalizeComparablePayload(record[nestedKey], kind, depth + 1)
+    }
+  }
+  if (depth === 0 && normalized["graph"] === undefined
+      && (normalized["nodes"] !== undefined || normalized["edges"] !== undefined)) {
+    normalized["graph"] = {
+      nodes: normalized["nodes"] ?? [],
+      edges: normalized["edges"] ?? [],
+    }
+    delete normalized["nodes"]
+    delete normalized["edges"]
+  }
+  return normalized
+}
+
+function identityAndRevisionFields(kind: CloudOutboxKind): ReadonlySet<string> {
+  const fields = new Set(["workspaceId", "rev", "createdAt", "updatedAt"])
+  if (kind === "project") fields.add("collectionId")
+  if (kind === "workflow") fields.add("workflowId")
+  if (kind === "environment") fields.add("environmentId")
+  return fields
+}
+
 function validatePayload(payload: Record<string, unknown>): void {
   const secrets = payload["secrets"]
-  if (secrets !== undefined && secrets !== null && typeof secrets === "object" && Object.keys(secrets).length > 0) {
+  if (secrets !== undefined && !isSecretReferenceMap(secrets)) {
     throw new ErrForbiddenCloudPayload("secrets")
   }
 
@@ -758,6 +1030,119 @@ function validatePayload(payload: Record<string, unknown>): void {
   if (Array.isArray(runs) && runs.length > 0) {
     throw new ErrForbiddenCloudPayload("runs")
   }
+  const forbidden = findForbiddenPayloadField(payload)
+  if (forbidden !== undefined) {
+    throw new ErrForbiddenCloudPayload(forbidden)
+  }
+}
+
+function isSecretReferenceMap(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false
+  }
+  return Object.values(value).every((entry) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return false
+    }
+    const reference = (entry as Record<string, unknown>)["reference"]
+    return typeof reference === "string" && reference.length > 0 && Object.keys(entry).length === 1
+  })
+}
+
+function findForbiddenPayloadField(value: unknown, path = ""): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = findForbiddenPayloadField(item, path)
+      if (nested !== undefined) return nested
+    }
+    return undefined
+  }
+  if (value === null || typeof value !== "object") {
+    if (typeof value === "string" && (/\bbearer\s+\S+/i.test(value)
+        || /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/.test(value)
+        || /\b(?:sk|pk)_live_[A-Za-z0-9_-]+\b/i.test(value))) {
+      return path
+    }
+    return undefined
+  }
+  const record = value as Record<string, unknown>
+  const itemKey = record["key"]
+  if (typeof itemKey === "string" && isForbiddenSyncKey(itemKey) && !isEmptyPayloadValue(record["value"])) {
+    return path.length === 0 ? itemKey : `${path}.${itemKey}`
+  }
+  const forbiddenKeys = /^(ciphertext|encryptedPrivateKey|privateKey|accessToken|refreshToken|sessionToken|masterKek|wrappedDek|authorization|set-cookie|session|sessionid|sid|jwt|otp|cvv)$/i
+  for (const [key, nestedValue] of Object.entries(record)) {
+    const nestedPath = path.length === 0 ? key : `${path}.${key}`
+    if (key === "secrets") continue
+    if ((forbiddenKeys.test(key) || isForbiddenSyncKey(key) || key === "body") && !isEmptyPayloadValue(nestedValue)) {
+      return nestedPath
+    }
+    if (key === "value" && path.toLowerCase().includes("cookies") && !isEmptyPayloadValue(nestedValue)) {
+      return nestedPath
+    }
+    const nested = findForbiddenPayloadField(nestedValue, nestedPath)
+    if (nested !== undefined) return nested
+  }
+  return undefined
+}
+
+function isForbiddenSyncKey(key: string): boolean {
+  const normalized = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()
+  return /(?:^|[_-])(token|password|secret|api[_-]?key|private[_-]?key|client[_-]?secret|credential)s?$/.test(normalized)
+    || /^(authorization|cookie|set-cookie|session|sessionid|sid|jwt|otp|cvv)$/.test(normalized)
+}
+
+function isEmptyPayloadValue(value: unknown): boolean {
+  return value === undefined || value === null || value === ""
+    || (Array.isArray(value) && value.length === 0)
+    || (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0)
+}
+
+function objectProperty(value: Record<string, unknown>, key: string): Record<string, unknown> {
+  const property = value[key]
+  return property !== null && typeof property === "object" && !Array.isArray(property)
+    ? property as Record<string, unknown>
+    : {}
+}
+
+function normalizeWorkflowOrder(value: unknown): readonly Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.flatMap((item, index) => {
+    if (typeof item === "string" && item.length > 0) {
+      return [{ workflowId: item, order: index, enabled: true, continueOnFail: true }]
+    }
+    if (item !== null && typeof item === "object" && !Array.isArray(item)
+        && typeof (item as Record<string, unknown>)["workflowId"] === "string") {
+      return [item as Record<string, unknown>]
+    }
+    return []
+  })
+}
+
+function normalizeSecretReferences(
+  references: Record<string, unknown>,
+  scopeType: string,
+  localWorkspaceId: string,
+): Record<string, unknown> {
+  if (scopeType !== "workspace") {
+    return references
+  }
+  return Object.fromEntries(Object.entries(references).map(([name, value]) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return [name, value]
+    }
+    const reference = (value as Record<string, unknown>)["reference"]
+    if (typeof reference !== "string") {
+      return [name, value]
+    }
+    const parts = reference.split(":")
+    return [name, {
+      ...value as Record<string, unknown>,
+      reference: parts.length >= 3 ? `workspace:${localWorkspaceId}:${parts.slice(2).join(":")}` : reference,
+    }]
+  }))
 }
 
 function rowToOutboxRow(row: OutboxDbRow): CloudOutboxRow {
@@ -773,6 +1158,24 @@ function rowToOutboxRow(row: OutboxDbRow): CloudOutboxRow {
     next_retry_at: row.next_retry_at,
     failure_reason: row.failure_reason,
     created_at: row.created_at,
+    is_baseline: row.is_baseline === 1,
+  }
+}
+
+function rowToWorkspaceBinding(row: CloudWorkspaceBindingDbRow): CloudWorkspaceBinding {
+  return {
+    workspaceId: row.workspace_id,
+    cloudWorkspaceId: row.cloud_workspace_id,
+    cloudWorkspaceName: row.cloud_workspace_name,
+    teamId: row.team_id,
+    teamName: row.team_name,
+    syncMode: row.sync_mode,
+    deviceId: row.device_id,
+    initializationState: row.initialization_state,
+    boundAt: row.boundAt,
+    lastSyncedAt: row.lastSyncedAt,
+    initializedAt: row.initializedAt,
+    lastError: row.last_error,
   }
 }
 
@@ -834,18 +1237,6 @@ function sanitizeNullablePayload(payload: Uint8Array | null): Uint8Array | null 
 
 function toBuffer(payload: Uint8Array | null): Buffer | null {
   return payload === null ? null : Buffer.from(payload)
-}
-
-function payloadRevision(payload: Uint8Array | null): number | undefined {
-  if (payload === null || payload.length === 0) {
-    return undefined
-  }
-  try {
-    const rev = parsePayload(payload)["rev"]
-    return typeof rev === "number" && Number.isSafeInteger(rev) && rev >= 0 ? rev : undefined
-  } catch {
-    return undefined
-  }
 }
 
 function tableForKind(kind: CloudOutboxKind): string {

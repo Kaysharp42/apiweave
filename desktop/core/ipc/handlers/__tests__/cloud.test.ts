@@ -5,7 +5,7 @@ import type { CloudBindWorkspaceInput, CloudLinkInput, CloudSyncControl, CloudSy
 
 class FakeCloudSyncControl implements CloudSyncControl {
   public readonly linkSpy = vi.fn<(input: CloudLinkInput) => Promise<CloudSyncStatus>>()
-  public readonly bindSpy = vi.fn<(input: CloudBindWorkspaceInput) => CloudSyncStatus>()
+  public readonly bindSpy = vi.fn<(input: CloudBindWorkspaceInput) => Promise<CloudSyncStatus>>()
   private current: CloudSyncStatus = {
     linked: false,
     active: false,
@@ -57,7 +57,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
     return this.current
   }
 
-  public bindWorkspace(input: CloudBindWorkspaceInput): CloudSyncStatus {
+  public async bindWorkspace(input: CloudBindWorkspaceInput): Promise<CloudSyncStatus> {
     this.current = {
       linked: this.current.linked,
       active: this.current.linked,
@@ -67,7 +67,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
       workspaceIds: [...this.current.workspaceIds, input.cloudWorkspaceId],
       workspaceCatalog: this.current.workspaceCatalog,
     }
-    this.bindSpy(input)
+    await this.bindSpy(input)
     return this.current
   }
 

@@ -35,8 +35,8 @@ export type OutboxOp = CloudOutboxOp
 export type OutboxRow = CloudOutboxRow
 export type OutboxInput = Omit<
   OutboxRow,
-  "id" | "created_at" | "retry_count" | "next_retry_at" | "failure_reason"
->
+  "id" | "created_at" | "retry_count" | "next_retry_at" | "failure_reason" | "is_baseline"
+> & { readonly is_baseline?: boolean }
 
 export class Outbox {
   private readonly repository: CloudSyncRepository

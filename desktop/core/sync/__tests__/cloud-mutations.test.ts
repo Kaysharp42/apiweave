@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import type { JsonValue } from "../../../../shared/types/JsonValue"
+import type { Collection } from "../../../../shared/types/Collection"
 import type { Workflow } from "../../../../shared/types/Workflow"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
-import { recordWorkflowUpsert } from "../cloud-mutations"
+import { recordCollectionUpsert, recordWorkflowUpsert } from "../cloud-mutations"
 import type { SyncMutation, SyncProvider } from "../SyncProvider"
 
 describe("cloud mutation payloads", () => {
@@ -47,7 +48,12 @@ describe("cloud mutation payloads", () => {
       tags: [],
       collectionId: null,
       selectedEnvironmentId: null,
-      nodeTemplates: [],
+      nodeTemplates: [{
+        config: {
+          body: "template-secret-body",
+          headers: [{ key: "Authorization", value: "Bearer template-secret" }],
+        },
+      }],
       rev: 3,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:01.000Z",
@@ -65,9 +71,12 @@ describe("cloud mutation payloads", () => {
       op: ChangeOp.UPSERT,
     })
     const payload = decodePayload(mutation.payload)
+    expect(payload["workflowId"]).toBe("workflow-1")
+    expect(payload["workspaceId"]).toBe("workspace-1")
     expect(payload["variables"]).toEqual({ safeName: "visible", innocuousName: "" })
     expect(JSON.stringify(payload)).not.toContain("secret-value")
     expect(JSON.stringify(payload)).not.toContain("Bearer secret")
+    expect(JSON.stringify(payload)).not.toContain("template-secret")
     const nodes = payload["nodes"]
     expect(Array.isArray(nodes)).toBe(true)
     const httpNode = Array.isArray(nodes) ? nodes.find(isHttpNode) : undefined
@@ -78,6 +87,30 @@ describe("cloud mutation payloads", () => {
       queryParams: [{ key: "filter", value: "" }],
       formDataEntries: [],
     })
+  })
+
+  it("preserves project workflow-order metadata for cloud round trips", () => {
+    const provider = new CapturingSyncProvider()
+    const collection: Collection = {
+      collectionId: "project-1",
+      workspaceId: "workspace-1",
+      projectId: "project-1",
+      name: "Project",
+      description: null,
+      color: null,
+      workflowCount: 1,
+      workflowOrder: [{ workflowId: "workflow-1", order: 2, enabled: false, continueOnFail: false }],
+      continueOnFail: true,
+      rev: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+
+    recordCollectionUpsert(provider, collection)
+
+    const payload = decodePayload(provider.mutations[0]?.payload ?? null)
+    expect(payload["workflowOrder"]).toEqual(["workflow-1"])
+    expect(payload["workflowOrderItems"]).toEqual(collection.workflowOrder)
   })
 })
 

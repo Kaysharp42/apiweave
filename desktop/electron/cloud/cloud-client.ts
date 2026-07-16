@@ -56,11 +56,13 @@ const LEGACY_KEY_ACCESS_TOKEN = "cloud.access_token"
 interface RefreshTokenContext {
   readonly value: string
   readonly rotate: (refreshToken: string) => void
+  readonly setAccessToken: (accessToken: string) => void
 }
 
 export class DeviceTokenStore {
   private readonly repository: CloudSyncRepository
   private sessionToken: string | undefined
+  private generation = 0
 
   public constructor(
     store: KVStore | CloudSyncRepository,
@@ -96,6 +98,8 @@ export class DeviceTokenStore {
     }
 
     const keyfile = readKeyfile(this.keyfilePath)
+    const generation = this.generation
+    const deviceId = this.getDeviceId()
     const wrappedDek = Buffer.from(wrappedDekValue, "base64")
     const dek = unwrapDek(new Uint8Array(wrappedDek), keyfile.masterKek)
 
@@ -113,11 +117,21 @@ export class DeviceTokenStore {
     }
     return {
       value: decrypt(blob, dek),
-      rotate: (refreshToken) => this.setRefreshTokenWithKek(refreshToken, keyfile.masterKek),
+      rotate: (refreshToken) => {
+        if (this.generation === generation && this.getDeviceId() === deviceId) {
+          this.setRefreshTokenWithKek(refreshToken, keyfile.masterKek)
+        }
+      },
+      setAccessToken: (accessToken) => {
+        if (this.generation === generation && this.getDeviceId() === deviceId) {
+          this.sessionToken = accessToken
+        }
+      },
     }
   }
 
   public setTokens(deviceId: string, accessToken: string, refreshToken: string): void {
+    this.generation += 1
     const encrypted = this.encryptRefreshToken(refreshToken)
     this.repository.transaction((repository) => {
       repository.setSetting(KEY_DEVICE_ID, deviceId)
@@ -131,6 +145,7 @@ export class DeviceTokenStore {
     encryptedRefreshToken: EncryptedBlob,
     wrappedDek: Uint8Array,
   ): void {
+    this.generation += 1
     this.repository.transaction((repository) => {
       repository.setSetting(KEY_DEVICE_ID, deviceId)
       persistEncryptedRefreshToken(repository, encryptedRefreshToken, wrappedDek)
@@ -153,6 +168,7 @@ export class DeviceTokenStore {
   }
 
   public clearTokens(): void {
+    this.generation += 1
     this.sessionToken = undefined
     this.repository.transaction((repository) => {
       repository.deleteSetting(KEY_DEVICE_ID)
@@ -431,7 +447,7 @@ export class CloudClient {
       refreshToken.rotate(tokens.refresh_token)
     }
     const sessionToken = await exchangeDesktopSession(this.config.baseUrl, tokens.id_token)
-    this.tokenStore.setAccessToken(sessionToken)
+    refreshToken.setAccessToken(sessionToken)
   }
 
   private async call(serviceName: string, methodName: string, body: JsonValue): Promise<JsonValue> {

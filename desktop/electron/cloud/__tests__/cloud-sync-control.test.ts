@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import nock from "nock"
 import type { Database, KVStore } from "../../../core/db"
 import { initDatabase } from "../../../core/db"
 import { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository } from "../../../core/repositories"
@@ -31,10 +32,13 @@ describe("DesktopCloudSyncControl", () => {
       "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
       [WORKSPACE_ID, "Local Workspace", "local-workspace", "cloud", "bi-directional", "{}"],
     )
+    nock.disableNetConnect()
   })
 
   afterEach(() => {
     db.close()
+    nock.cleanAll()
+    nock.enableNetConnect()
     rmSync(tempDir, { recursive: true, force: true })
   })
 
@@ -52,8 +56,10 @@ describe("DesktopCloudSyncControl", () => {
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+      cloudWorkspaceName: "Cloud Workspace",
       syncMode: "bi-directional",
       deviceId: "device-1",
+      initializationState: "initialized",
     })
     repository.enqueueOutbox({
       kind: "workflow",
@@ -139,5 +145,99 @@ describe("DesktopCloudSyncControl", () => {
 
     await expect(linkPromise).rejects.toThrow(ErrLinkCancelled)
     expect(control.status()).toMatchObject({ linked: false, active: false, workspaceCatalog: [] })
+  })
+
+  it("aborts an in-flight link before clearing account state on unlink", async () => {
+    const control = new DesktopCloudSyncControl({
+      store,
+      keyfilePath,
+      defaults: {
+        cloudEntryUrl: "https://cloud.test",
+        clientVersion: "1.0.0",
+        deviceLabel: "Test Device",
+      },
+      configClient: async (_entryUrl, signal) => new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+      }),
+      setSyncProviderTarget: () => undefined,
+    })
+
+    const linkPromise = control.link({})
+    control.unlink()
+
+    await expect(linkPromise).rejects.toThrow(ErrLinkCancelled)
+    expect(control.status()).toMatchObject({ linked: false, active: false })
+  })
+
+  it("automatically resumes a durable first-sync checkpoint after process restart", async () => {
+    const repository = new CloudSyncRepository(store)
+    const tokenStore = new DeviceTokenStore(repository, keyfilePath)
+    tokenStore.setTokens("device-restart", "old-session", "restart-refresh")
+    repository.upsertDevice({
+      deviceId: "device-restart",
+      label: "Restart Device",
+      clientVersion: "1.0.0",
+      publicKey: new Uint8Array(32),
+      createdAt: new Date().toISOString(),
+    })
+    repository.upsertWorkspaceBinding({
+      workspaceId: WORKSPACE_ID,
+      cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+      cloudWorkspaceName: "Cloud Workspace",
+      syncMode: "bi-directional",
+      deviceId: "device-restart",
+      initializationState: "pulling",
+    })
+    repository.enqueueBaselineOutbox({
+      kind: "workspace",
+      record_id: WORKSPACE_ID,
+      workspace_id: WORKSPACE_ID,
+      expected_rev: 0,
+      op: "upsert",
+      payload: new TextEncoder().encode(JSON.stringify({ name: "Local Workspace" })),
+    })
+    repository.setSetting("cloud.public_config", JSON.stringify({
+      version: 1,
+      webBaseUrl: "https://cloud.test",
+      apiBaseUrl: "https://api.test",
+      oidcIssuer: "https://auth.test",
+      desktopClientId: "desktop-test",
+      minimumDesktopVersion: "0.1.0",
+      syncProtocolVersions: [1],
+    }))
+
+    nock("https://auth.test")
+      .post("/oauth/v2/token")
+      .reply(200, { id_token: "restart-id-token" })
+    nock("https://api.test")
+      .post("/desktop/auth/session", { idToken: "restart-id-token" })
+      .reply(200, { sessionToken: "restart-session", expiresAt: "2026-07-17T00:00:00Z" })
+    nock("https://api.test")
+      .post("/apiweave.v1.SyncService/Hello")
+      .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+    nock("https://api.test")
+      .post("/apiweave.v1.SyncService/PullChanges")
+      .reply(200, { changes: [], nextCursor: "0", hasMore: false })
+    nock("https://api.test")
+      .post("/apiweave.v1.SyncService/PushDeltas")
+      .reply(200, {
+        outcomes: [{ deltaIndex: 0, status: 1, newRev: "1", rejectionReason: 0, conflictId: "" }],
+      })
+
+    new DesktopCloudSyncControl({
+      store,
+      keyfilePath,
+      defaults: {
+        cloudEntryUrl: "https://cloud.test",
+        clientVersion: "1.0.0",
+        deviceLabel: "Restart Device",
+      },
+      setSyncProviderTarget: () => undefined,
+    })
+
+    await expect.poll(() => repository.getWorkspaceBinding(WORKSPACE_ID)?.initializationState)
+      .toBe("initialized")
+    expect(repository.countBaselineOutbox(WORKSPACE_ID)).toBe(0)
+    expect(nock.isDone()).toBe(true)
   })
 })
