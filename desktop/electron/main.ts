@@ -36,6 +36,8 @@ import { MCP_TOOLS, toolName } from "../core/mcp/tools"
 import type { McpStatus } from "../../shared/types/McpStatus"
 import type { MCPTool } from "../../shared/types/MCPTool"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
+import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
+import { CLOUD_STATUS_CHANGED_CHANNEL } from "../core/ipc/channels"
 
 // The single request channel. The composition root (whenReady) constructs the
 // services and calls registerAllHandlers onto it before attaching; the MCP host
@@ -188,6 +190,11 @@ if (!hasSingleInstanceLock) {
       keyfilePath,
       defaults: cloudDefaults(app.getVersion()),
       setSyncProviderTarget: (provider) => sync.setTarget(provider),
+      onStatusChanged: () => {
+        if (mainWindow !== null && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(CLOUD_STATUS_CHANGED_CHANNEL)
+        }
+      },
     })
 
     // Runner: in-process scheduler drives the executor.
@@ -239,6 +246,14 @@ if (!hasSingleInstanceLock) {
       cloud,
     }
     registerAllHandlers(ipcRouter, deps)
+    // Conflict/loser-retrieval IPC lives in a separate bridge (repository-backed
+    // reads plus a server-side resolve for conflicts that have a cloud ID). The
+    // renderer's conflict pages already call cloud.conflict-* — without this the
+    // actions are unregistered.
+    registerConflictUiHandlers(ipcRouter, {
+      store: database.kvStore,
+      syncService: cloud.getConflictResolver(),
+    })
 
     attachIpcRouter(ipcMain, ipcRouter)
 

@@ -21,6 +21,7 @@ import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
 import { ConflictDetailPage } from "./pages/cloud/ConflictDetailPage";
 import { ConflictsPage } from "./pages/cloud/ConflictsPage";
+import { CloudSyncPage } from "./pages/cloud/CloudSyncPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PaletteProvider } from "./contexts/PaletteContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
@@ -341,6 +342,16 @@ function App() {
                   <ProtectedRoute>
                     <WorkspaceProvider>
                       <ConflictsPage />
+                    </WorkspaceProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/cloud/sync"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceProvider>
+                      <CloudSyncPage />
                     </WorkspaceProvider>
                   </ProtectedRoute>
                 }

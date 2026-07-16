@@ -35,6 +35,14 @@ WITH ranked_bindings AS (
 DELETE FROM cloud_workspace_bindings
 WHERE workspace_id IN (SELECT workspace_id FROM ranked_bindings WHERE binding_rank > 1);
 
+UPDATE cloud_outbox
+SET retry_count = 10,
+    next_retry_at = 0,
+    failure_reason = 'cloud workspace binding was disconnected during migration'
+WHERE NOT EXISTS (
+  SELECT 1 FROM cloud_workspace_bindings b WHERE b.workspace_id = cloud_outbox.workspace_id
+);
+
 CREATE UNIQUE INDEX idx_cloud_workspace_bindings_cloud_workspace
   ON cloud_workspace_bindings (cloud_workspace_id);
 

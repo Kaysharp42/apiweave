@@ -986,6 +986,68 @@ describe("CloudSyncProvider", () => {
   })
 
   describe("negative scenarios", () => {
+    it("dead-letters outbox rows outside the configured bindings and still drains healthy workspaces", async () => {
+      store.set(
+        "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
+        [SECOND_WORKSPACE_ID, "Unbound Workspace", "unbound-workspace", "local", "local-only", "{}"],
+      )
+      const orphanId = provider.enqueue({
+        kind: "workflow",
+        record_id: "workflow-unbound",
+        workspace_id: SECOND_WORKSPACE_ID,
+        expected_rev: 0,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: "Unbound" })),
+      })
+      const boundId = provider.enqueue({
+        kind: "workflow",
+        record_id: "workflow-bound",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 0,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: "Bound" })),
+      })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas")
+        .reply(200, {
+          outcomes: [{ deltaIndex: 0, status: 1, newRev: "1", rejectionReason: 0, conflictId: "" }],
+        })
+
+      await expect(provider.push()).rejects.toThrow("1 cloud outbox row(s) have no workspace binding")
+
+      expect(store.get("SELECT 1 FROM cloud_outbox WHERE id = ?", [boundId])).toBeUndefined()
+      expect(store.get<{ retry_count: number; failure_reason: string }>(
+        "SELECT retry_count, failure_reason FROM cloud_outbox WHERE id = ?",
+        [orphanId],
+      )).toEqual({
+        retry_count: CLOUD_OUTBOX_MAX_RETRIES,
+        failure_reason: "cloud workspace binding is unavailable",
+      })
+      expect(nock.isDone()).toBe(true)
+    })
+
+    it("marks malformed legacy payloads failed instead of wedging on the same row", async () => {
+      const outboxId = provider.enqueue({
+        kind: "workflow",
+        record_id: "workflow-malformed",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 0,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify(["legacy-array-payload"])),
+      })
+
+      await expect(provider.push()).rejects.toThrow("Cloud outbox payload must be a JSON object")
+
+      expect(store.get<{ retry_count: number; next_retry_at: number }>(
+        "SELECT retry_count, next_retry_at FROM cloud_outbox WHERE id = ?",
+        [outboxId],
+      )).toMatchObject({ retry_count: 1 })
+      expect(store.get<{ next_retry_at: number }>(
+        "SELECT next_retry_at FROM cloud_outbox WHERE id = ?",
+        [outboxId],
+      )?.next_retry_at ?? 0).toBeGreaterThan(Date.now())
+    })
+
     it("preserves outbox on network loss", async () => {
       provider.enqueue({
         kind: "workflow",
@@ -1007,7 +1069,7 @@ describe("CloudSyncProvider", () => {
       )
       expect(row?.retry_count).toBe(1)
       expect(row?.next_retry_at ?? 0).toBeGreaterThan(Date.now())
-      expect(row?.failure_reason).toBe("transport error: Error")
+      expect(row?.failure_reason).toBe("transport error: ErrCloudOffline")
     })
 
     it("continues pulling later workspace bindings after one workspace fails", async () => {
@@ -1142,7 +1204,7 @@ describe("CloudSyncProvider", () => {
         "SELECT 1 FROM cloud_outbox WHERE workspace_id = ?",
         [SECOND_WORKSPACE_ID],
       )).toBeUndefined()
-      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("transport error: Error")
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("transport error: ErrCloudOffline")
       expect(repository.getWorkspaceBinding(SECOND_WORKSPACE_ID)?.lastSyncedAt).not.toBeNull()
       expect(nock.isDone()).toBe(true)
     })
@@ -1334,6 +1396,51 @@ describe("CloudSyncProvider", () => {
       expect(row?.failure_reason).toContain("conflictId=conflict-1")
       expect(repository.listPendingOutbox(100, Number.MAX_SAFE_INTEGER)).toEqual([])
       expect(repository.countDeadLetterOutbox()).toBe(1)
+      expect(nock.isDone()).toBe(true)
+    })
+
+    it("dead-letters a rejected baseline immediately and completes first-sync state", async () => {
+      const repository = new CloudSyncRepository(store)
+      repository.upsertWorkspaceBinding({
+        workspaceId: WORKSPACE_ID,
+        cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+        cloudWorkspaceName: "Rejected Baseline",
+        syncMode: "bi-directional",
+        deviceId: "device-123",
+        initializationState: "pushing",
+      })
+      const baselineId = repository.enqueueBaselineOutbox({
+        kind: "workflow",
+        record_id: "workflow-rejected-baseline",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 0,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: "Rejected Baseline" })),
+      })
+      const initializingProvider = new CloudSyncProvider(client, tokenStore, store, {
+        workspaceBindings: [{ workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID }],
+      })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas")
+        .reply(200, {
+          outcomes: [{ deltaIndex: 0, status: 3, newRev: "0", rejectionReason: 4, conflictId: "" }],
+        })
+
+      await initializingProvider.push()
+
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)).toMatchObject({
+        initializationState: "initialized",
+        lastError: expect.stringContaining("server rejected mutation"),
+      })
+      expect(repository.countBaselineOutbox(WORKSPACE_ID)).toBe(0)
+      expect(repository.countDeadLetterOutbox(WORKSPACE_ID)).toBe(1)
+      expect(store.get<{ retry_count: number; failure_reason: string }>(
+        "SELECT retry_count, failure_reason FROM cloud_outbox WHERE id = ?",
+        [baselineId],
+      )).toMatchObject({
+        retry_count: CLOUD_OUTBOX_MAX_RETRIES,
+        failure_reason: expect.stringContaining("rejectionReason=4"),
+      })
       expect(nock.isDone()).toBe(true)
     })
 
@@ -1538,6 +1645,60 @@ describe("CloudSyncProvider", () => {
       await expect(provider.pull()).rejects.toThrow("forbidden field")
 
       expect(store.get("SELECT 1 FROM workflows WHERE id = ?", ["workflow-forbidden"])).toBeUndefined()
+    })
+  })
+
+  describe("environment references", () => {
+    it("applies deleted and repointed cloud references while preserving local-only material", () => {
+      store.set(
+        "INSERT INTO environments (id, workspace_id, scopeId, name, slug, variables_json, settings_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+          "environment-references",
+          WORKSPACE_ID,
+          WORKSPACE_ID,
+          "Before Pull",
+          "before-pull",
+          "{}",
+          JSON.stringify({
+            secrets: {
+              REPOINTED: { reference: `workspace:${WORKSPACE_ID}:OLD_NAME` },
+              REMOVED: { reference: `workspace:${WORKSPACE_ID}:REMOVED` },
+              LOCAL_ONLY: { sealed: "local-ciphertext-handle" },
+            },
+          }),
+        ],
+      )
+      const repository = new CloudSyncRepository(store)
+
+      repository.applyChange({
+        cursor: 1n,
+        workspaceId: WORKSPACE_ID,
+        kind: RecordKind.ENVIRONMENT,
+        recordId: "environment-references",
+        rev: 2n,
+        op: ChangeOp.UPSERT,
+        payload: new TextEncoder().encode(JSON.stringify({
+          name: "After Pull",
+          variables: {},
+          scopeType: "workspace",
+          secrets: {
+            REPOINTED: { reference: `workspace:${CLOUD_WORKSPACE_ID}:NEW_NAME` },
+            LOCAL_ONLY: { reference: `workspace:${CLOUD_WORKSPACE_ID}:LOCAL_ONLY` },
+          },
+        })),
+      })
+
+      const settings = JSON.parse(store.get<{ settings_json: string }>(
+        "SELECT settings_json FROM environments WHERE id = ?",
+        ["environment-references"],
+      )?.settings_json ?? "{}") as { secrets?: Record<string, unknown> }
+      expect(settings.secrets).toEqual({
+        REPOINTED: { reference: `workspace:${WORKSPACE_ID}:NEW_NAME` },
+        LOCAL_ONLY: {
+          sealed: "local-ciphertext-handle",
+          reference: `workspace:${WORKSPACE_ID}:LOCAL_ONLY`,
+        },
+      })
     })
   })
 

@@ -151,6 +151,7 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     for (const spec of MCP_TOOLS) {
       expect(spec.domain).not.toBe("webhooks")
       expect(spec.domain).not.toBe("imports")
+      expect(spec.domain).not.toBe("cloud")
     }
   })
 })

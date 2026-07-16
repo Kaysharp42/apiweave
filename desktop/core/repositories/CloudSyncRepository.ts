@@ -35,6 +35,13 @@ export interface CloudDeviceUpsert {
   readonly createdAt: string
 }
 
+export interface CloudDevice {
+  readonly deviceId: string
+  readonly label: string
+  readonly clientVersion: string
+  readonly createdAt: string
+}
+
 export interface CloudWorkspaceBindingUpsert {
   readonly workspaceId: string
   readonly cloudWorkspaceId: string
@@ -135,6 +142,13 @@ interface CloudWorkspaceBindingDbRow extends SqliteRow {
   readonly lastSyncedAt: string | null
   readonly initializedAt: string | null
   readonly last_error: string | null
+}
+
+interface CloudDeviceDbRow extends SqliteRow {
+  readonly device_id: string
+  readonly label: string
+  readonly client_version: string
+  readonly createdAt: string
 }
 
 interface CloudRecordStateRow extends SqliteRow {
@@ -273,37 +287,24 @@ export class CloudSyncRepository {
   }
 
   public listPendingOutbox(limit: number, nowMs = Date.now()): readonly CloudOutboxRow[] {
-    return this.store
-      .query<OutboxDbRow>(
-        `SELECT o.id, o.kind, o.record_id, o.workspace_id, o.expected_rev, o.op, o.payload,
-                o.retry_count, o.next_retry_at, o.failure_reason, o.created_at, o.is_baseline
-         FROM cloud_outbox o
-         WHERE o.retry_count < ? AND o.next_retry_at <= ?
-           AND NOT EXISTS (
-             SELECT 1 FROM cloud_outbox earlier
-             WHERE earlier.workspace_id = o.workspace_id AND earlier.kind = o.kind
-               AND earlier.record_id = o.record_id
-               AND (earlier.created_at < o.created_at
-                 OR (earlier.created_at = o.created_at AND earlier.rowid < o.rowid))
-           )
-           AND NOT EXISTS (
-             SELECT 1 FROM cloud_record_state s
-             WHERE s.workspace_id = o.workspace_id AND s.kind = o.kind
-               AND s.record_id = o.record_id AND s.conflict_id IS NOT NULL
-           )
-         ORDER BY o.created_at ASC LIMIT ?`,
-        [CLOUD_OUTBOX_MAX_RETRIES, nowMs, limit],
-      )
-      .map(rowToOutboxRow)
+    return this.listPendingOutboxRows(undefined, limit, nowMs)
   }
 
   public listPendingOutboxForWorkspace(workspaceId: string, limit: number, nowMs = Date.now()): readonly CloudOutboxRow[] {
+    return this.listPendingOutboxRows(workspaceId, limit, nowMs)
+  }
+
+  private listPendingOutboxRows(workspaceId: string | undefined, limit: number, nowMs: number): readonly CloudOutboxRow[] {
+    const workspaceClause = workspaceId === undefined ? "" : "o.workspace_id = ? AND "
+    const params = workspaceId === undefined
+      ? [CLOUD_OUTBOX_MAX_RETRIES, nowMs, limit]
+      : [workspaceId, CLOUD_OUTBOX_MAX_RETRIES, nowMs, limit]
     return this.store
       .query<OutboxDbRow>(
         `SELECT o.id, o.kind, o.record_id, o.workspace_id, o.expected_rev, o.op, o.payload,
                 o.retry_count, o.next_retry_at, o.failure_reason, o.created_at, o.is_baseline
          FROM cloud_outbox o
-         WHERE o.workspace_id = ? AND o.retry_count < ? AND o.next_retry_at <= ?
+         WHERE ${workspaceClause}o.retry_count < ? AND o.next_retry_at <= ?
            AND NOT EXISTS (
              SELECT 1 FROM cloud_outbox earlier
              WHERE earlier.workspace_id = o.workspace_id AND earlier.kind = o.kind
@@ -317,7 +318,7 @@ export class CloudSyncRepository {
                AND s.record_id = o.record_id AND s.conflict_id IS NOT NULL
            )
          ORDER BY o.created_at ASC, o.rowid ASC LIMIT ?`,
-        [workspaceId, CLOUD_OUTBOX_MAX_RETRIES, nowMs, limit],
+        params,
       )
       .map(rowToOutboxRow)
   }
@@ -357,6 +358,51 @@ export class CloudSyncRepository {
     )
   }
 
+  public markOutboxDeadLetter(id: string, reason: string): void {
+    this.store.set(
+      "UPDATE cloud_outbox SET retry_count = ?, next_retry_at = 0, failure_reason = ? WHERE id = ?",
+      [CLOUD_OUTBOX_MAX_RETRIES, reason.slice(0, 1000), id],
+    )
+  }
+
+  public deadLetterOutboxOutsideWorkspaces(workspaceIds: readonly string[], reason: string): number {
+    const boundClause = workspaceIds.length === 0
+      ? ""
+      : `AND workspace_id NOT IN (${workspaceIds.map(() => "?").join(", ")})`
+    return this.store.set(
+      `UPDATE cloud_outbox
+       SET retry_count = ?, next_retry_at = 0, failure_reason = ?
+       WHERE retry_count < ? ${boundClause}`,
+      [CLOUD_OUTBOX_MAX_RETRIES, reason.slice(0, 1000), CLOUD_OUTBOX_MAX_RETRIES, ...workspaceIds],
+    ).changes
+  }
+
+  /**
+   * Re-queue dead-lettered rows for a workspace: reset the retry counter,
+   * clear the backoff and the recorded failure so the normal push loop picks
+   * them up again. Idempotent on the wire — the server dedups by expected_rev,
+   * so replaying a mutation cannot double-apply. Returns rows re-queued.
+   */
+  public retryDeadLetterOutbox(workspaceId: string): number {
+    return this.store.set(
+      "UPDATE cloud_outbox SET retry_count = 0, next_retry_at = 0, failure_reason = NULL WHERE workspace_id = ? AND retry_count >= ?",
+      [workspaceId, CLOUD_OUTBOX_MAX_RETRIES],
+    ).changes
+  }
+
+  /**
+   * Drop dead-lettered rows for a workspace. This deletes only the queued
+   * mutation, never the local record it describes — the record stays in its
+   * own repository and simply stops trying to sync. Destructive to the queued
+   * push, so callers must confirm first. Returns rows discarded.
+   */
+  public discardDeadLetterOutbox(workspaceId: string): number {
+    return this.store.delete(
+      "DELETE FROM cloud_outbox WHERE workspace_id = ? AND retry_count >= ?",
+      [workspaceId, CLOUD_OUTBOX_MAX_RETRIES],
+    ).changes
+  }
+
   public clearOutbox(): void {
     this.store.delete("DELETE FROM cloud_outbox")
   }
@@ -365,10 +411,18 @@ export class CloudSyncRepository {
     return this.store.get<{ total: number } & SqliteRow>("SELECT COUNT(*) as total FROM cloud_outbox")?.total ?? 0
   }
 
+  public countPendingOutbox(workspaceId?: string): number {
+    const workspaceClause = workspaceId === undefined ? "" : " AND workspace_id = ?"
+    return this.store.get<{ total: number } & SqliteRow>(
+      `SELECT COUNT(*) AS total FROM cloud_outbox WHERE retry_count < ?${workspaceClause}`,
+      workspaceId === undefined ? [CLOUD_OUTBOX_MAX_RETRIES] : [CLOUD_OUTBOX_MAX_RETRIES, workspaceId],
+    )?.total ?? 0
+  }
+
   public countBaselineOutbox(workspaceId: string): number {
     return this.store.get<{ total: number } & SqliteRow>(
-      "SELECT COUNT(*) AS total FROM cloud_outbox WHERE workspace_id = ? AND is_baseline = 1",
-      [workspaceId],
+      "SELECT COUNT(*) AS total FROM cloud_outbox WHERE workspace_id = ? AND is_baseline = 1 AND retry_count < ?",
+      [workspaceId, CLOUD_OUTBOX_MAX_RETRIES],
     )?.total ?? 0
   }
 
@@ -389,16 +443,19 @@ export class CloudSyncRepository {
     return Math.max(state?.server_rev ?? 0, queued ?? 0)
   }
 
-  public countDeadLetterOutbox(): number {
+  public countDeadLetterOutbox(workspaceId?: string): number {
+    const workspaceClause = workspaceId === undefined ? "" : " AND workspace_id = ?"
     return this.store.get<{ total: number } & SqliteRow>(
-      "SELECT COUNT(*) as total FROM cloud_outbox WHERE retry_count >= ?",
-      [CLOUD_OUTBOX_MAX_RETRIES],
+      `SELECT COUNT(*) as total FROM cloud_outbox WHERE retry_count >= ?${workspaceClause}`,
+      workspaceId === undefined ? [CLOUD_OUTBOX_MAX_RETRIES] : [CLOUD_OUTBOX_MAX_RETRIES, workspaceId],
     )?.total ?? 0
   }
 
-  public countPendingConflicts(): number {
+  public countPendingConflicts(workspaceId?: string): number {
+    const workspaceClause = workspaceId === undefined ? "" : " AND workspace_id = ?"
     return this.store.get<{ total: number } & SqliteRow>(
-      "SELECT COUNT(*) AS total FROM cloud_conflicts WHERE status = 'pending'",
+      `SELECT COUNT(*) AS total FROM cloud_conflicts WHERE status = 'pending'${workspaceClause}`,
+      workspaceId === undefined ? [] : [workspaceId],
     )?.total ?? 0
   }
 
@@ -534,6 +591,19 @@ export class CloudSyncRepository {
     )
   }
 
+  public getDevice(deviceId: string): CloudDevice | undefined {
+    const row = this.store.get<CloudDeviceDbRow>(
+      "SELECT device_id, label, client_version, createdAt FROM cloud_devices WHERE device_id = ?",
+      [deviceId],
+    )
+    return row === undefined ? undefined : {
+      deviceId: row.device_id,
+      label: row.label,
+      clientVersion: row.client_version,
+      createdAt: row.createdAt,
+    }
+  }
+
   public upsertWorkspaceBinding(input: CloudWorkspaceBindingUpsert): void {
     this.store.set(
       `INSERT INTO cloud_workspace_bindings (
@@ -592,8 +662,14 @@ export class CloudSyncRepository {
 
   public markBindingSynced(workspaceId: string): void {
     this.store.set(
-      "UPDATE cloud_workspace_bindings SET lastSyncedAt = ?, last_error = NULL WHERE workspace_id = ?",
-      [new Date().toISOString(), workspaceId],
+      `UPDATE cloud_workspace_bindings
+       SET lastSyncedAt = ?,
+           last_error = CASE WHEN EXISTS (
+             SELECT 1 FROM cloud_outbox o
+             WHERE o.workspace_id = cloud_workspace_bindings.workspace_id AND o.retry_count >= ?
+           ) THEN last_error ELSE NULL END
+       WHERE workspace_id = ?`,
+      [new Date().toISOString(), CLOUD_OUTBOX_MAX_RETRIES, workspaceId],
     )
   }
 
@@ -614,6 +690,31 @@ export class CloudSyncRepository {
         `${WORKSPACE_BINDING_SELECT} ORDER BY boundAt ASC`,
       )
       .map(rowToWorkspaceBinding)
+  }
+
+  public getWorkspaceName(workspaceId: string): string | undefined {
+    return this.store.get<{ name: string } & SqliteRow>(
+      "SELECT name FROM workspaces WHERE id = ?",
+      [workspaceId],
+    )?.name
+  }
+
+  public removeWorkspaceBinding(workspaceId: string): void {
+    this.transaction((repository) => {
+      const binding = repository.getWorkspaceBinding(workspaceId)
+      if (binding === undefined) {
+        return
+      }
+      repository.store.set(
+        "UPDATE workspaces SET origin = 'local', syncMode = 'local-only', updatedAt = datetime('now') WHERE id = ?",
+        [workspaceId],
+      )
+      repository.store.delete("DELETE FROM cloud_outbox WHERE workspace_id = ?", [workspaceId])
+      repository.store.delete("DELETE FROM cloud_record_state WHERE workspace_id = ?", [workspaceId])
+      repository.store.delete("DELETE FROM cloud_conflicts WHERE workspace_id = ?", [workspaceId])
+      repository.store.delete("DELETE FROM cloud_workspace_bindings WHERE workspace_id = ?", [workspaceId])
+      repository.resetCursor(binding.cloudWorkspaceId)
+    })
   }
 
   public clearCloudDeviceState(): void {
@@ -829,7 +930,7 @@ export class CloudSyncRepository {
     const settingsJson = JSON.stringify({
       description: payload["description"] ?? null,
       swaggerDocUrl: payload["swaggerDocUrl"] ?? null,
-      secrets: { ...cloudReferences, ...existingSecrets },
+      secrets: mergeCloudSecretReferences(cloudReferences, existingSecrets),
       isDefault: payload["isDefault"] ?? false,
     })
     this.store.set(
@@ -1062,7 +1163,7 @@ function findForbiddenPayloadField(value: unknown, path = ""): string | undefine
     return undefined
   }
   if (value === null || typeof value !== "object") {
-    if (typeof value === "string" && (/\bbearer\s+\S+/i.test(value)
+    if (typeof value === "string" && (/\bbearer\s+[a-zA-Z0-9_.-]*[0-9_.-][a-zA-Z0-9_.-]*/i.test(value)
         || /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/.test(value)
         || /\b(?:sk|pk)_live_[A-Za-z0-9_-]+\b/i.test(value))) {
       return path
@@ -1147,6 +1248,29 @@ function normalizeSecretReferences(
       reference: parts.length >= 3 ? `workspace:${localWorkspaceId}:${parts.slice(2).join(":")}` : reference,
     }]
   }))
+}
+
+function mergeCloudSecretReferences(
+  cloudReferences: Record<string, unknown>,
+  existingSecrets: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(cloudReferences).map(([name, cloudReference]) => {
+    const existing = existingSecrets[name]
+    if (existing === undefined || isSecretReference(existing)) {
+      return [name, cloudReference]
+    }
+    if (existing !== null && typeof existing === "object" && !Array.isArray(existing)
+        && cloudReference !== null && typeof cloudReference === "object" && !Array.isArray(cloudReference)) {
+      return [name, { ...existing as Record<string, unknown>, ...cloudReference as Record<string, unknown> }]
+    }
+    return [name, existing]
+  }))
+}
+
+function isSecretReference(value: unknown): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && typeof (value as Record<string, unknown>)["reference"] === "string"
+    && Object.keys(value).length === 1
 }
 
 function rowToOutboxRow(row: OutboxDbRow): CloudOutboxRow {

@@ -235,6 +235,13 @@ export class ErrUnauthorized extends Error {
   }
 }
 
+export class ErrCloudOffline extends Error {
+  constructor(cause?: unknown) {
+    super(cause instanceof Error && cause.message.length > 0 ? cause.message : "Cloud service unavailable")
+    this.name = "ErrCloudOffline"
+  }
+}
+
 export class ErrProtocolMismatch extends Error {
   constructor(
     public readonly serverVersion: number,
@@ -255,12 +262,20 @@ export async function exchangeDesktopSession(
   idToken: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const response = await fetch(`${apiBaseUrl}/desktop/auth/session`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ idToken }),
-    ...(signal !== undefined ? { signal } : {}),
-  })
+  let response: Response
+  try {
+    response = await fetch(`${apiBaseUrl}/desktop/auth/session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken }),
+      ...(signal !== undefined ? { signal } : {}),
+    })
+  } catch (error) {
+    if (signal?.aborted === true) {
+      throw signal.reason
+    }
+    throw new ErrCloudOffline(error)
+  }
   if (!response.ok) {
     throw new ErrUnauthorized()
   }
@@ -285,12 +300,18 @@ const METHOD_REVOKE_DEVICE = "RevokeDevice"
 const METHOD_RESOLVE_CONFLICT = "ResolveConflict"
 const METHOD_FETCH_LOSER = "FetchLoser"
 
+export interface CloudClientEvents {
+  readonly onAuthenticationRequired?: () => void
+  readonly onAuthenticated?: () => void
+}
+
 export class CloudClient {
   private refreshInFlight: Promise<void> | null = null
 
   public constructor(
     private readonly config: CloudClientConfig,
     private readonly tokenStore: DeviceTokenStore,
+    private readonly events: CloudClientEvents = {},
   ) {}
 
   public async hello(): Promise<HelloResponse> {
@@ -423,8 +444,8 @@ export class CloudClient {
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: body.toString(),
       })
-    } catch {
-      throw new ErrUnauthorized()
+    } catch (error) {
+      throw new ErrCloudOffline(error)
     }
 
     if (!response.ok) {
@@ -448,6 +469,7 @@ export class CloudClient {
     }
     const sessionToken = await exchangeDesktopSession(this.config.baseUrl, tokens.id_token)
     refreshToken.setAccessToken(sessionToken)
+    this.events.onAuthenticated?.()
   }
 
   private async call(serviceName: string, methodName: string, body: JsonValue): Promise<JsonValue> {
@@ -463,9 +485,23 @@ export class CloudClient {
     // A concurrent RPC may already have refreshed the shared in-memory
     // session. Otherwise perform exactly one refresh for this call.
     if (this.tokenStore.getAccessToken() === sessionBeforeCall) {
-      await this.refreshSession()
+      try {
+        await this.refreshSession()
+      } catch (error) {
+        if (error instanceof ErrUnauthorized) {
+          this.events.onAuthenticationRequired?.()
+        }
+        throw error
+      }
     }
-    return this.callOnce(serviceName, methodName, body)
+    try {
+      return await this.callOnce(serviceName, methodName, body)
+    } catch (error) {
+      if (error instanceof ErrUnauthorized) {
+        this.events.onAuthenticationRequired?.()
+      }
+      throw error
+    }
   }
 
   private async callOnce(serviceName: string, methodName: string, body: JsonValue): Promise<JsonValue> {
@@ -475,14 +511,19 @@ export class CloudClient {
     }
 
     const url = `${this.config.baseUrl}/${serviceName}/${methodName}`
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify(body),
-    })
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(body),
+      })
+    } catch (error) {
+      throw new ErrCloudOffline(error)
+    }
 
     if (response.status === 401) {
       throw new ErrUnauthorized()

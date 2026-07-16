@@ -3,7 +3,7 @@ import type { ContractResult } from "../../shared/contract/errors"
 import type { RunProgressEvent } from "../../shared/types/RunProgressEvent"
 import type { McpStatus } from "../../shared/types/McpStatus"
 import type { MCPTool } from "../../shared/types/MCPTool"
-import { INVOKE_CHANNEL, runProgressChannel } from "../core/ipc/channels"
+import { CLOUD_STATUS_CHANGED_CHANNEL, INVOKE_CHANNEL, runProgressChannel } from "../core/ipc/channels"
 
 /**
  * The untyped data-channel primitive. The renderer (Task 17) wraps `invoke` with
@@ -13,6 +13,7 @@ import { INVOKE_CHANNEL, runProgressChannel } from "../core/ipc/channels"
 type IpcBridge = {
   readonly invoke: (domain: string, action: string, payload: unknown) => Promise<ContractResult<unknown>>
   readonly onRunProgress: (runId: string, callback: (event: RunProgressEvent) => void) => () => void
+  readonly onCloudStatusChanged: (callback: () => void) => () => void
 }
 
 const ipcBridge: IpcBridge = {
@@ -25,6 +26,11 @@ const ipcBridge: IpcBridge = {
     }
     ipcRenderer.on(channel, handler)
     return () => ipcRenderer.removeListener(channel, handler)
+  },
+  onCloudStatusChanged: (callback) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(CLOUD_STATUS_CHANGED_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(CLOUD_STATUS_CHANGED_CHANNEL, handler)
   },
 }
 

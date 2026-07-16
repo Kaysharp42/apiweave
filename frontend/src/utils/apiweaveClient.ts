@@ -14,6 +14,10 @@ import type { Run } from "../types/Run";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { Workflow } from "../types/Workflow";
 import type { Workspace } from "../types/Workspace";
+import type {
+  CloudBindWorkspaceInput,
+  CloudSyncStatus,
+} from "../types/cloud";
 
 type Environment = ScopedEnvironment;
 type ImportDryRunResult = DryRunResult;
@@ -36,6 +40,7 @@ type IpcBridge = {
     runId: string,
     callback: (event: RunProgressEvent) => void,
   ) => () => void;
+  readonly onCloudStatusChanged?: (callback: () => void) => () => void;
 };
 
 type DesktopBridge = {
@@ -426,6 +431,28 @@ export const apiweave = {
     dryRun: (workspaceId: string, bundle: ProjectBundle) =>
       invoke<ImportDryRunResult>("projects", "dryRun", { workspaceId, bundle }),
   },
+  cloud: {
+    status: () => invoke<CloudSyncStatus>("cloud", "status", {}),
+    link: (deviceLabel?: string) =>
+      invoke<CloudSyncStatus>("cloud", "link", deviceLabel ? { deviceLabel } : {}),
+    cancelLink: () => invoke<CloudSyncStatus>("cloud", "cancelLink", {}),
+    unlink: (localOnly?: boolean) =>
+      invoke<CloudSyncStatus>("cloud", "unlink", localOnly ? { localOnly } : {}),
+    bindWorkspace: (input: CloudBindWorkspaceInput) =>
+      invoke<CloudSyncStatus>("cloud", "bindWorkspace", input),
+    unbindWorkspace: (workspaceId: string) =>
+      invoke<CloudSyncStatus>("cloud", "unbindWorkspace", { workspaceId }),
+    initializeWorkspace: (workspaceId: string) =>
+      invoke<CloudSyncStatus>("cloud", "initializeWorkspace", { workspaceId }),
+    refreshWorkspaceCatalog: () =>
+      invoke<CloudSyncStatus>("cloud", "refreshWorkspaceCatalog", {}),
+    retryDeadLetters: (workspaceId: string) =>
+      invoke<CloudSyncStatus>("cloud", "retryDeadLetters", { workspaceId }),
+    discardDeadLetters: (workspaceId: string) =>
+      invoke<CloudSyncStatus>("cloud", "discardDeadLetters", { workspaceId }),
+    pull: () => invoke<CloudSyncStatus>("cloud", "pull", {}),
+    push: () => invoke<CloudSyncStatus>("cloud", "push", {}),
+  },
 } as const;
 
 if (typeof window !== "undefined") {
@@ -437,6 +464,13 @@ export function onRunProgress(
   callback: (event: RunProgressEvent) => void,
 ): () => void {
   return getIpcBridge().onRunProgress(runId, callback);
+}
+
+/** Subscribe to the token-free main→renderer cloud-status-changed signal. The
+ * renderer refetches authoritative status on each tick. No-op (returns an inert
+ * unsubscribe) when the bridge or signal is absent, e.g. web preview. */
+export function onCloudStatusChanged(callback: () => void): () => void {
+  return getIpcBridge().onCloudStatusChanged?.(callback) ?? (() => undefined);
 }
 
 function getDesktopBridge(): DesktopBridge | undefined {

@@ -21,6 +21,7 @@ import { CloudSyncRepository, type CloudWorkspaceBinding } from "../../core/repo
 import {
   CloudClient,
   DeviceTokenStore,
+  ErrCloudOffline,
   type ChangeEnvelope as ClientChangeEnvelope,
   type CloudClientConfig,
 } from "./cloud-client"
@@ -31,7 +32,7 @@ import { PushOutcome_Status } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 
 export { CloudClient, DeviceTokenStore }
 
-export type SyncState = "idle" | "syncing" | "conflict" | "error"
+export type SyncState = "idle" | "initializing" | "syncing" | "conflict" | "error" | "offline"
 
 export function createCloudClient(tokenStore: DeviceTokenStore, config?: CloudClientConfig): CloudClient {
   if (config === undefined) {
@@ -120,7 +121,7 @@ export class CloudSyncProvider implements SyncProvider {
       this.onStateChange?.(this.stateAfterSync())
     } catch (err) {
       if (this.stopped) return
-      this.onStateChange?.("error")
+      this.onStateChange?.(stateForError(err))
       throw err
     }
   }
@@ -147,7 +148,7 @@ export class CloudSyncProvider implements SyncProvider {
 
   public async initializeWorkspace(workspaceId: string): Promise<void> {
     if (this.stopped) return
-    this.onStateChange?.("syncing")
+    this.onStateChange?.("initializing")
     if (!this.repository || !this.syncConfig) {
       throw new Error("CloudSyncProvider not initialized with store and config")
     }
@@ -168,7 +169,7 @@ export class CloudSyncProvider implements SyncProvider {
     } catch (error) {
       if (this.stopped) return
       this.repository.setBindingError(workspaceId, failureReasonForError(error))
-      this.onStateChange?.("error")
+      this.onStateChange?.(stateForError(error))
       throw error
     }
   }
@@ -282,7 +283,14 @@ export class CloudSyncProvider implements SyncProvider {
       throw new Error("CloudSyncProvider not initialized with store")
     }
     try {
-      let firstError: unknown
+      const configuredWorkspaceIds = this.syncConfig?.workspaceBindings.map((binding) => binding.workspaceId) ?? []
+      const orphanedCount = this.repository?.deadLetterOutboxOutsideWorkspaces(
+        configuredWorkspaceIds,
+        "cloud workspace binding is unavailable",
+      ) ?? 0
+      let firstError: unknown = orphanedCount > 0
+        ? new Error(`${orphanedCount} cloud outbox row(s) have no workspace binding`)
+        : undefined
       for (const configuredBinding of this.syncConfig?.workspaceBindings ?? []) {
         const binding = this.currentBinding(configuredBinding)
         try {
@@ -307,7 +315,7 @@ export class CloudSyncProvider implements SyncProvider {
       this.onStateChange?.(this.stateAfterSync())
     } catch (err) {
       if (this.stopped) return
-      this.onStateChange?.("error")
+      this.onStateChange?.(stateForError(err))
       throw err
     }
   }
@@ -363,7 +371,10 @@ export class CloudSyncProvider implements SyncProvider {
 
   private completeInitialSyncIfReady(binding: CloudWorkspaceBinding): void {
     if (this.repository?.countBaselineOutbox(binding.workspaceId) === 0) {
-      this.repository.setBindingInitializationState(binding.workspaceId, "initialized")
+      const lastError = this.repository.countDeadLetterOutbox(binding.workspaceId) > 0
+        ? this.repository.getWorkspaceBinding(binding.workspaceId)?.lastError ?? null
+        : null
+      this.repository.setBindingInitializationState(binding.workspaceId, "initialized", lastError)
     }
   }
 
@@ -385,17 +396,16 @@ export class CloudSyncProvider implements SyncProvider {
 
   private async pushRow(binding: CloudWorkspaceBindingRef, row: OutboxRow): Promise<"applied" | "blocked"> {
     if (this.stopped) return "blocked"
-    const delta = {
-      workspaceId: binding.cloudWorkspaceId,
-      kind: kindToRecordKind(row.kind),
-      recordId: row.kind === "workspace" ? binding.cloudWorkspaceId : row.record_id,
-      expectedRev: BigInt(row.expected_rev),
-      payload: mapPayloadWorkspaceId(row.payload, binding.cloudWorkspaceId),
-      op: opToChangeOp(row.op),
-    }
-
     let response
     try {
+      const delta = {
+        workspaceId: binding.cloudWorkspaceId,
+        kind: kindToRecordKind(row.kind),
+        recordId: row.kind === "workspace" ? binding.cloudWorkspaceId : row.record_id,
+        expectedRev: BigInt(row.expected_rev),
+        payload: mapPayloadWorkspaceId(row.payload, binding.cloudWorkspaceId),
+        op: opToChangeOp(row.op),
+      }
       response = await this.client.pushDeltas(row.id, [delta])
     } catch (err) {
       if (this.stopped) return "blocked"
@@ -419,6 +429,11 @@ export class CloudSyncProvider implements SyncProvider {
         cloudPayload: outcome.winnerPayload ?? new Uint8Array(),
         cloudRev: Number(outcome.newRev),
       })
+      return "blocked"
+    } else if (outcome.status === PushOutcome_Status.REJECTED) {
+      const reason = `server rejected mutation: ${pushOutcomeFailureReason(outcome)}`
+      this.outbox?.markDeadLetter(row.id, reason)
+      this.repository?.setBindingError(binding.workspaceId, reason)
       return "blocked"
     } else {
       this.outbox?.markFailed(row.id, pushOutcomeFailureReason(outcome))
@@ -551,6 +566,10 @@ function mapPayloadWorkspaceId(payload: Uint8Array | null, cloudWorkspaceId: str
 
 function failureReasonForError(error: unknown): string {
   return `transport error: ${error instanceof Error ? error.name : "unknown"}`
+}
+
+function stateForError(error: unknown): SyncState {
+  return error instanceof ErrCloudOffline ? "offline" : "error"
 }
 
 function pushOutcomeFailureReason(outcome: {

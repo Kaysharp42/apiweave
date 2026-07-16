@@ -6,16 +6,30 @@ import { CloudFirstSyncService } from "../../core/services/cloud_first_sync_serv
 import type { SyncProvider } from "../../core/sync"
 import {
   CloudUnlinkRequiresConfirmationError,
+  CloudAccountIdentityRequiredError,
+  CloudAccountMismatchError,
+  type CloudAccountIdentity,
   type CloudBindWorkspaceInput,
+  type CloudDeadLetterInput,
+  type CloudInitializeWorkspaceInput,
   type CloudLinkInput,
   type CloudSyncControl,
   type CloudSyncStatus,
+  type CloudSyncState,
+  type CloudUnbindWorkspaceInput,
   type CloudUnlinkInput,
+  type CloudWorkspaceBindingStatus,
   type CloudWorkspaceCatalogEntry,
 } from "../../core/services/cloud_sync_control"
 import { LocalOnlySyncProvider } from "../../core/sync"
-import { cancelDeviceLink, ErrLinkBusy, ErrLinkCancelled, startDeviceLink } from "./cloud-link"
-import { CloudClient, DeviceTokenStore } from "./cloud-client"
+import {
+  cancelDeviceLink,
+  ErrLinkAccountMismatch,
+  ErrLinkBusy,
+  ErrLinkCancelled,
+  startDeviceLink,
+} from "./cloud-link"
+import { CloudClient, DeviceTokenStore, ErrCloudOffline } from "./cloud-client"
 import {
   CANONICAL_CLOUD_ENTRY_URL,
   fetchDesktopCloudConfig,
@@ -26,6 +40,7 @@ import {
 } from "./cloud-config"
 import { CloudSyncProvider } from "./cloud-transport"
 import { getState, setState } from "./cloud-state"
+import type { SyncConflictResolver } from "./conflict-ui-bridge"
 
 interface DesktopCloudSyncDefaults {
   readonly cloudEntryUrl: string
@@ -38,11 +53,15 @@ export interface DesktopCloudSyncControlOptions {
   readonly keyfilePath: string
   readonly defaults: DesktopCloudSyncDefaults
   readonly configClient?: DesktopCloudConfigClient
+  readonly linkClient?: typeof startDeviceLink
   readonly setSyncProviderTarget: (provider: SyncProvider) => void
+  readonly onStatusChanged?: () => void
 }
 
 const KEY_PUBLIC_CONFIG = "cloud.public_config"
 const KEY_WORKSPACE_CATALOG = "cloud.workspace_catalog"
+const KEY_ACCOUNT_IDENTITY = "cloud.account_identity"
+const KEY_AUTHENTICATION_REQUIRED = "cloud.authentication_required"
 
 export class DesktopCloudSyncControl implements CloudSyncControl {
   private readonly repository: CloudSyncRepository
@@ -64,14 +83,55 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
 
   public status(): CloudSyncStatus {
     const deviceId = this.tokenStore.getDeviceId()
+    const linked = this.tokenStore.hasTokens()
+    const bindings = this.repository.listWorkspaceBindings().map((binding): CloudWorkspaceBindingStatus => ({
+      workspaceId: binding.workspaceId,
+      workspaceName: this.repository.getWorkspaceName(binding.workspaceId) ?? "Unknown workspace",
+      cloudWorkspaceId: binding.cloudWorkspaceId,
+      cloudWorkspaceName: binding.cloudWorkspaceName,
+      ...(binding.teamId !== null ? { teamId: binding.teamId } : {}),
+      ...(binding.teamName !== null ? { teamName: binding.teamName } : {}),
+      syncMode: binding.syncMode,
+      initializationState: binding.initializationState,
+      pendingCount: this.repository.countPendingOutbox(binding.workspaceId),
+      deadLetterCount: this.repository.countDeadLetterOutbox(binding.workspaceId),
+      conflictCount: this.repository.countPendingConflicts(binding.workspaceId),
+      boundAt: binding.boundAt,
+      ...(binding.lastSyncedAt !== null ? { lastSyncedAt: binding.lastSyncedAt } : {}),
+      ...(binding.initializedAt !== null ? { initializedAt: binding.initializedAt } : {}),
+      ...(binding.lastError !== null ? { lastError: binding.lastError } : {}),
+    }))
+    const pendingCount = this.repository.countPendingOutbox()
     const deadLetterCount = this.repository.countDeadLetterOutbox()
+    const conflictCount = this.repository.countPendingConflicts()
+    const syncState = this.resolveSyncState(bindings, deadLetterCount, conflictCount)
+    const device = deviceId === undefined ? undefined : this.repository.getDevice(deviceId)
+    const account = this.loadAccountIdentity()
+    const lastSyncedAt = bindings
+      .flatMap((binding) => binding.lastSyncedAt === undefined ? [] : [binding.lastSyncedAt])
+      .sort()
+      .at(-1)
+    const lastError = bindings.find((binding) => binding.lastError !== undefined)?.lastError
     return {
-      linked: this.tokenStore.hasTokens(),
+      linked,
       active: this.activeProvider !== null,
-      state: deadLetterCount > 0 ? "error" : getState(),
+      linkState: this.linkController !== null
+        ? "linking"
+        : linked && this.authenticationRequired()
+          ? "authenticationRequired"
+          : linked ? "linked" : "unlinked",
+      syncState,
+      state: syncState,
+      pendingCount,
       deadLetterCount,
+      conflictCount,
+      ...(lastSyncedAt !== undefined ? { lastSyncedAt } : {}),
+      ...(lastError !== undefined ? { lastError } : {}),
       ...(deviceId !== undefined ? { deviceId } : {}),
-      workspaceIds: this.repository.listBoundCloudWorkspaceIds(),
+      ...(device !== undefined ? { device } : {}),
+      ...(account !== undefined ? { account } : {}),
+      workspaceIds: bindings.map((binding) => binding.cloudWorkspaceId),
+      bindings,
       workspaceCatalog: this.workspaceCatalog,
     }
   }
@@ -82,10 +142,16 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     }
     const controller = new AbortController()
     this.linkController = controller
+    this.notifyStatusChanged()
     try {
+      const existingAccount = this.loadAccountIdentity()
+      if (existingAccount === undefined && this.repository.listWorkspaceBindings().length > 0) {
+        throw new CloudAccountIdentityRequiredError()
+      }
       const configClient = this.options.configClient ?? fetchDesktopCloudConfig
       const config = await configClient(this.options.defaults.cloudEntryUrl, controller.signal)
-      const result = await startDeviceLink({
+      const linkClient = this.options.linkClient ?? startDeviceLink
+      const result = await linkClient({
         zitadelIssuer: config.oidcIssuer,
         desktopClientId: config.desktopClientId,
         apiBaseUrl: config.apiBaseUrl,
@@ -94,7 +160,11 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         devicePublicKey: makeDevicePublicKey(),
         clientVersion: this.options.defaults.clientVersion,
         signal: controller.signal,
+        ...(existingAccount !== undefined ? { expectedAccountId: existingAccount.accountId } : {}),
       })
+      if (existingAccount !== undefined && result.account.accountId !== existingAccount.accountId) {
+        throw new CloudAccountMismatchError()
+      }
 
       const catalog = result.workspaces.map(toCatalogEntry)
       this.repository.transaction((repository) => {
@@ -113,23 +183,36 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         })
         repository.setSetting(KEY_PUBLIC_CONFIG, JSON.stringify(config))
         repository.setSetting(KEY_WORKSPACE_CATALOG, JSON.stringify(catalog))
+        repository.setSetting(KEY_ACCOUNT_IDENTITY, JSON.stringify(result.account))
+        repository.deleteSetting(KEY_AUTHENTICATION_REQUIRED)
       })
 
       this.tokenStore.setAccessToken(result.accessToken)
       this.activeConfig = config
       this.workspaceCatalog = catalog
-      this.activateIfReady()
+      this.activateIfReady(false, true)
+      if (this.linkController === controller) {
+        this.linkController = null
+      }
+      this.notifyStatusChanged()
       return this.status()
+    } catch (error) {
+      if (error instanceof ErrLinkAccountMismatch) {
+        throw new CloudAccountMismatchError()
+      }
+      throw error
     } finally {
       if (this.linkController === controller) {
         this.linkController = null
       }
+      this.notifyStatusChanged()
     }
   }
 
   public cancelLink(): CloudSyncStatus {
     this.linkController?.abort(new ErrLinkCancelled())
     cancelDeviceLink()
+    this.notifyStatusChanged()
     return this.status()
   }
 
@@ -150,6 +233,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       } catch {
         if (input.localOnly !== true) {
           this.activateIfReady()
+          this.notifyStatusChanged()
           throw new CloudUnlinkRequiresConfirmationError()
         }
       }
@@ -160,10 +244,13 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       repository.clearCloudDeviceState()
       repository.deleteSetting(KEY_WORKSPACE_CATALOG)
       repository.deleteSetting(KEY_PUBLIC_CONFIG)
+      repository.deleteSetting(KEY_ACCOUNT_IDENTITY)
+      repository.deleteSetting(KEY_AUTHENTICATION_REQUIRED)
     })
     this.activeConfig = null
     this.workspaceCatalog = []
     setState("idle")
+    this.notifyStatusChanged()
     return this.status()
   }
 
@@ -191,33 +278,156 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       syncMode: input.syncMode ?? "bi-directional",
       deviceId,
     })
-    this.activateIfReady()
-    await this.requireActiveProvider().initializeWorkspace(binding.workspaceId)
+    this.activateIfReady(false, true)
+    const provider = this.requireActiveProvider()
+    void provider.initializeWorkspace(binding.workspaceId)
+      .catch(() => undefined)
+      .finally(() => this.notifyStatusChanged())
+    this.notifyStatusChanged()
+    return this.status()
+  }
+
+  public unbindWorkspace(input: CloudUnbindWorkspaceInput): CloudSyncStatus {
+    this.repository.removeWorkspaceBinding(input.workspaceId)
+    this.activateIfReady(false, true)
+    this.notifyStatusChanged()
+    return this.status()
+  }
+
+  public async initializeWorkspace(input: CloudInitializeWorkspaceInput): Promise<CloudSyncStatus> {
+    if (this.repository.getWorkspaceBinding(input.workspaceId) === undefined) {
+      throw new Error("Cloud workspace binding is unavailable")
+    }
+    try {
+      await this.requireActiveProvider().initializeWorkspace(input.workspaceId)
+      return this.status()
+    } finally {
+      this.notifyStatusChanged()
+    }
+  }
+
+  public async refreshWorkspaceCatalog(): Promise<CloudSyncStatus> {
+    if (!this.tokenStore.hasTokens() || this.activeConfig === null) {
+      throw new Error("Cloud account must be linked before refreshing workspaces")
+    }
+    try {
+      const response = await this.createClient(this.activeConfig).listSyncWorkspaces()
+      const catalog = response.workspaces.map(toCatalogEntry)
+      this.repository.setSetting(KEY_WORKSPACE_CATALOG, JSON.stringify(catalog))
+      this.workspaceCatalog = catalog
+      setState("idle")
+      return this.status()
+    } catch (error) {
+      setState(error instanceof ErrCloudOffline ? "offline" : "error")
+      throw error
+    } finally {
+      this.notifyStatusChanged()
+    }
+  }
+
+  public async retryDeadLetters(input: CloudDeadLetterInput): Promise<CloudSyncStatus> {
+    if (this.repository.getWorkspaceBinding(input.workspaceId) === undefined) {
+      throw new Error("Cloud workspace binding is unavailable")
+    }
+    const requeued = this.repository.retryDeadLetterOutbox(input.workspaceId)
+    if (requeued === 0) {
+      this.notifyStatusChanged()
+      return this.status()
+    }
+    // Rows are back in the pending queue; drive a push to re-send them. If we're
+    // offline the rows stay safely queued and will drain on the next sync, so
+    // report offline rather than surfacing a hard error for a successful requeue.
+    try {
+      await this.requireActiveProvider().push()
+      return this.status()
+    } catch (error) {
+      if (!(error instanceof ErrCloudOffline)) {
+        throw error
+      }
+      setState("offline")
+      return this.status()
+    } finally {
+      this.notifyStatusChanged()
+    }
+  }
+
+  public discardDeadLetters(input: CloudDeadLetterInput): CloudSyncStatus {
+    if (this.repository.getWorkspaceBinding(input.workspaceId) === undefined) {
+      throw new Error("Cloud workspace binding is unavailable")
+    }
+    this.repository.discardDeadLetterOutbox(input.workspaceId)
+    // Clearing the last dead letter clears the durable error state (the active
+    // provider stays put, so recompute it here rather than relying on a
+    // re-activation).
+    if (getState() === "error" && this.repository.countDeadLetterOutbox() === 0 && !this.authenticationRequired()) {
+      setState("idle")
+    }
+    this.notifyStatusChanged()
     return this.status()
   }
 
   public async pull(): Promise<CloudSyncStatus> {
     const provider = this.requireActiveProvider()
-    await provider.pull()
-    return this.status()
+    try {
+      await provider.pull()
+      return this.status()
+    } finally {
+      this.notifyStatusChanged()
+    }
   }
 
   public async push(): Promise<CloudSyncStatus> {
     const provider = this.requireActiveProvider()
-    await provider.push()
-    return this.status()
+    try {
+      await provider.push()
+      return this.status()
+    } finally {
+      this.notifyStatusChanged()
+    }
   }
 
-  private activateIfReady(resumePending = false): void {
+  /**
+   * Resolver the conflict-UI bridge calls when a conflict has a server-side ID.
+   * Delegates to an authenticated {@link CloudClient} so it inherits the same
+   * one-refresh/one-retry behaviour as every other RPC. The device ID is sourced
+   * from the token store inside the client — the caller-supplied `device_id` is
+   * ignored (the renderer must not authorize its own device).
+   */
+  public getConflictResolver(): SyncConflictResolver {
+    return {
+      resolveConflict: async ({ conflict_id, winner }) => {
+        if (this.activeConfig === null) {
+          throw new Error("Cloud configuration is unavailable")
+        }
+        await this.createClient(this.activeConfig).resolveConflict(conflict_id, winner)
+      },
+    }
+  }
+
+  private activateIfReady(resumePending = false, replace = false): void {
+    if (this.activeProvider !== null && !replace) {
+      return
+    }
+    if (replace && this.activeProvider !== null) {
+      this.activeProvider.deactivate()
+      this.activeProvider = null
+    }
     const workspaceBindings = this.repository.listWorkspaceBindings()
     if (!this.tokenStore.hasTokens() || workspaceBindings.length === 0 || this.activeConfig === null) {
+      if (replace) {
+        this.options.setSyncProviderTarget(new LocalOnlySyncProvider())
+        setState("idle")
+      }
       return
     }
 
     const client = this.createClient(this.activeConfig)
     const provider = new CloudSyncProvider(client, this.tokenStore, this.options.store, {
       workspaceBindings,
-    }, (state) => setState(state))
+    }, (state) => {
+      setState(state)
+      this.notifyStatusChanged()
+    })
     this.activeProvider = provider
     this.options.setSyncProviderTarget(provider)
     setState(this.repository.countDeadLetterOutbox() > 0 ? "error" : "idle")
@@ -243,6 +453,10 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         clientId: config.desktopClientId,
       },
       this.tokenStore,
+      {
+        onAuthenticationRequired: () => this.markAuthenticationRequired(),
+        onAuthenticated: () => this.markAuthenticated(),
+      },
     )
   }
 
@@ -270,6 +484,71 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     } catch {
       return []
     }
+  }
+
+  private loadAccountIdentity(): CloudAccountIdentity | undefined {
+    const value = this.repository.getSetting(KEY_ACCOUNT_IDENTITY)
+    if (value === undefined) {
+      return undefined
+    }
+    try {
+      const parsed = JSON.parse(value) as unknown
+      return isAccountIdentity(parsed) ? parsed : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  private authenticationRequired(): boolean {
+    return this.repository.getSetting(KEY_AUTHENTICATION_REQUIRED) === "true"
+  }
+
+  private markAuthenticationRequired(): void {
+    if (!this.tokenStore.hasTokens()) {
+      return
+    }
+    this.repository.setSetting(KEY_AUTHENTICATION_REQUIRED, "true")
+    setState("error")
+    this.notifyStatusChanged()
+  }
+
+  private markAuthenticated(): void {
+    if (!this.tokenStore.hasTokens()) {
+      return
+    }
+    this.repository.deleteSetting(KEY_AUTHENTICATION_REQUIRED)
+    this.notifyStatusChanged()
+  }
+
+  private resolveSyncState(
+    bindings: readonly CloudWorkspaceBindingStatus[],
+    deadLetterCount: number,
+    conflictCount: number,
+  ): CloudSyncState {
+    const current = getState()
+    if (this.authenticationRequired() || deadLetterCount > 0) {
+      return "error"
+    }
+    if (conflictCount > 0) {
+      return "conflict"
+    }
+    if (bindings.some((binding) => binding.lastError?.includes("ErrCloudOffline") === true)) {
+      return "offline"
+    }
+    if (bindings.some((binding) => binding.lastError !== undefined)) {
+      return "error"
+    }
+    if (current === "offline" || current === "syncing" || current === "initializing") {
+      return current
+    }
+    if (bindings.some((binding) => binding.initializationState !== "initialized")) {
+      return "initializing"
+    }
+    return current
+  }
+
+  private notifyStatusChanged(): void {
+    this.options.onStatusChanged?.()
   }
 }
 
@@ -309,6 +588,17 @@ function isCatalogEntry(value: unknown): value is CloudWorkspaceCatalogEntry {
     && typeof entry["canPull"] === "boolean"
     && typeof entry["canPush"] === "boolean"
     && typeof entry["canResolveConflicts"] === "boolean"
+}
+
+function isAccountIdentity(value: unknown): value is CloudAccountIdentity {
+  if (typeof value !== "object" || value === null) {
+    return false
+  }
+  const account = value as Record<string, unknown>
+  return typeof account["accountId"] === "string"
+    && account["accountId"].length > 0
+    && (account["email"] === undefined || typeof account["email"] === "string")
+    && (account["displayName"] === undefined || typeof account["displayName"] === "string")
 }
 
 function makeDevicePublicKey(): Uint8Array {

@@ -53,16 +53,16 @@ export class Outbox {
     return this.repository.enqueueOutbox(row)
   }
 
-  public listPending(limit: number): OutboxRow[] {
-    return [...this.repository.listPendingOutbox(limit)]
-  }
-
   public markApplied(id: string, serverRev: number): void {
     this.repository.markOutboxApplied(id, serverRev)
   }
 
   public markFailed(id: string, reason: string): void {
     this.repository.markOutboxFailed(id, reason)
+  }
+
+  public markDeadLetter(id: string, reason: string): void {
+    this.repository.markOutboxDeadLetter(id, reason)
   }
 
   public clear(): void {

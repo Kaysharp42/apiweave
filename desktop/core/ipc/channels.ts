@@ -6,6 +6,7 @@
 
 /** The single request channel. Streaming (per-run topics) is the only exception. */
 export const INVOKE_CHANNEL = "apiweave:invoke"
+export const CLOUD_STATUS_CHANGED_CHANNEL = "apiweave:cloud-status-changed"
 
 export function runProgressChannel(runId: string): string {
   return `apiweave:run-progress:${runId}`

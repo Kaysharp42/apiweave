@@ -28,7 +28,9 @@ vi.mock("electron", () => ({
 // Mock jose for id_token verification
 vi.mock("jose", () => ({
   createLocalJWKSet: vi.fn(() => ({})),
-  jwtVerify: vi.fn(() => Promise.resolve({ payload: {} })),
+  jwtVerify: vi.fn(() => Promise.resolve({
+    payload: { sub: "account-123", email: "owner@example.com", name: "APIWeave Owner" },
+  })),
 }))
 
 interface FakeZitadelOptions {
@@ -197,6 +199,11 @@ describe("cloud-link — happy path", () => {
     // Verify the result.
     expect(result.device.deviceId).toBe("device-123")
     expect(result.device.label).toBe("Test Device")
+    expect(result.account).toEqual({
+      accountId: "account-123",
+      email: "owner@example.com",
+      displayName: "APIWeave Owner",
+    })
     expect(result.accessToken).toBe("fake-session-token")
     expect(result.workspaces).toHaveLength(1)
     expect(result.workspaces[0]).toMatchObject({

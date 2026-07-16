@@ -31,6 +31,7 @@ import {
   type SyncWorkspace,
 } from "@apiweave/proto/apiweave/v1/device_pb"
 import { exchangeDesktopSession } from "./cloud-client"
+import type { CloudAccountIdentity } from "../../core/services/cloud_sync_control"
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,13 @@ export class ErrLinkBrowserFailed extends Error {
   }
 }
 
+export class ErrLinkAccountMismatch extends Error {
+  constructor() {
+    super("Authenticated cloud account does not match the account already linked to this desktop")
+    this.name = "ErrLinkAccountMismatch"
+  }
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface DeviceRecord {
@@ -109,6 +117,7 @@ export interface DeviceRecord {
 
 export interface DeviceLinkResult {
   readonly device: DeviceRecord
+  readonly account: CloudAccountIdentity
   readonly workspaces: readonly SyncWorkspace[]
   readonly encryptedRefreshToken: EncryptedBlob
   readonly wrappedDek: Uint8Array
@@ -125,6 +134,7 @@ export interface DeviceLinkConfig {
   readonly clientVersion: string
   readonly timeoutMs?: number
   readonly signal?: AbortSignal
+  readonly expectedAccountId?: string
 }
 
 interface TokenResponse {
@@ -215,7 +225,10 @@ export async function startDeviceLink(config: DeviceLinkConfig): Promise<DeviceL
     const tokens = await exchangeCode(config, callbackResult.code, redirectUri, codeVerifier, controller.signal)
 
     // Verify id_token (using jose for local verification).
-    await verifyIdToken(config, tokens.id_token, controller.signal)
+    const account = await verifyIdToken(config, tokens.id_token, controller.signal)
+    if (config.expectedAccountId !== undefined && account.accountId !== config.expectedAccountId) {
+      throw new ErrLinkAccountMismatch()
+    }
 
     // Exchange the provider token once; DeviceService and SyncService accept
     // only the resulting opaque APIWeave session.
@@ -235,6 +248,7 @@ export async function startDeviceLink(config: DeviceLinkConfig): Promise<DeviceL
 
     return {
       device,
+      account,
       workspaces,
       encryptedRefreshToken: blob,
       wrappedDek,
@@ -443,7 +457,11 @@ async function exchangeCode(
   return tokens
 }
 
-async function verifyIdToken(config: DeviceLinkConfig, idToken: string, signal: AbortSignal): Promise<void> {
+async function verifyIdToken(
+  config: DeviceLinkConfig,
+  idToken: string,
+  signal: AbortSignal,
+): Promise<CloudAccountIdentity> {
   // ponytail: local verification with jose. The Go API's auth middleware validates
   // bearer tokens on every request, so this is a belt-and-suspenders check.
   // If a Go API /auth/verify endpoint is added later, prefer that to keep crypto
@@ -459,14 +477,33 @@ async function verifyIdToken(config: DeviceLinkConfig, idToken: string, signal: 
     }
     const jwks = await response.json() as Parameters<typeof createLocalJWKSet>[0]
     const JWKS = createLocalJWKSet(jwks)
-    await jwtVerify(idToken, JWKS, {
+    const verified = await jwtVerify(idToken, JWKS, {
       issuer: config.zitadelIssuer,
       audience: config.desktopClientId,
     })
+    const accountId = claimString(verified.payload.sub, 512)
+    if (accountId === undefined) {
+      throw new Error("missing subject")
+    }
+    const email = claimString(verified.payload["email"], 320)
+    const displayName = claimString(verified.payload["name"] ?? verified.payload["preferred_username"], 256)
+    return {
+      accountId,
+      ...(email !== undefined ? { email } : {}),
+      ...(displayName !== undefined ? { displayName } : {}),
+    }
   } catch (err) {
     rethrowAbort(signal)
     throw new ErrLinkExchangeFailed("id_token verification failed")
   }
+}
+
+function claimString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") {
+    return undefined
+  }
+  const normalized = value.trim()
+  return normalized.length > 0 && normalized.length <= maxLength ? normalized : undefined
 }
 
 async function registerDevice(

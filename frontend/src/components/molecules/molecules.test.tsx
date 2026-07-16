@@ -529,7 +529,7 @@ describe("KeyValueEditor", () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
     render(<KeyValueEditor pairs={[]} onChange={onChange} />);
-    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.click(screen.getByRole("button", { name: "Add row" }));
     expect(onChange).toHaveBeenCalledWith([{ key: "", value: "" }]);
   });
 
@@ -548,7 +548,7 @@ describe("KeyValueEditor", () => {
   it("hides the add and remove buttons when readOnly is true", () => {
     const pairs = [{ key: "a", value: "1" }];
     render(<KeyValueEditor pairs={pairs} onChange={() => {}} readOnly />);
-    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add row" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Remove row/i })).toBeNull();
   });
 });

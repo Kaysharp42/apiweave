@@ -5,14 +5,19 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { BadgeCheck, Cloud, HardDrive, LogOut, ShieldCheck } from "lucide-react";
+import { BadgeCheck, HardDrive, LogOut, ShieldCheck } from "lucide-react";
 import { useAuth } from "../../auth/useAuth";
 import { Button } from "../atoms/Button";
+import { CloudAccountSection } from "./CloudAccountSection";
 import {
   getAccountDisplayName,
   getAccountInitials,
   getRoleSummary,
 } from "./accountMenuUtils";
+
+// Logout sits above the cloud section's roving-tabindex range (0..n) so the two
+// never collide in the shared menuItemRefs array.
+const LOGOUT_ITEM_INDEX = 10;
 
 export function AccountMenu() {
   const { user, isAuthenticated, logout } = useAuth();
@@ -82,9 +87,9 @@ export function AccountMenu() {
     }
   };
 
-  const focusMenuItem = (index: number) => {
-    const item = menuItemRefs.current[index];
-    item?.focus();
+  const focusFirstMenuItem = () => {
+    const first = menuItemRefs.current.find((item) => item != null);
+    first?.focus();
   };
 
   const handleTriggerKeyDown = (
@@ -97,7 +102,7 @@ export function AccountMenu() {
     ) {
       event.preventDefault();
       setOpen(true);
-      requestAnimationFrame(() => focusMenuItem(0));
+      requestAnimationFrame(focusFirstMenuItem);
     }
 
     if (event.key === "Escape") {
@@ -205,23 +210,19 @@ export function AccountMenu() {
               </div>
             </div>
 
-            <div className="flex items-start gap-3 rounded-lg border border-dashed border-border px-3 py-2 dark:border-border-dark">
-              <Cloud className="mt-0.5 h-4 w-4 shrink-0 text-primary dark:text-primary-light" />
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">
-                  Cloud sync ready
-                </div>
-                <div className="text-[11px] text-text-secondary dark:text-text-secondary-dark">
-                  Link an APIWeave Cloud account here when sync launches.
-                </div>
-              </div>
-            </div>
+            <CloudAccountSection
+              onNavigate={() => closeMenu()}
+              registerItem={(index) => (element) => {
+                menuItemRefs.current[index] = element;
+              }}
+              startIndex={0}
+            />
           </div>
 
           <div className="p-2">
             <Button
               ref={(element) => {
-                menuItemRefs.current[0] = element;
+                menuItemRefs.current[LOGOUT_ITEM_INDEX] = element;
               }}
               role="menuitem"
               variant="ghost"

@@ -195,8 +195,14 @@ describe("database migrations", () => {
       )).toEqual({ origin: "local", syncMode: "none" })
       expect(upgraded.kvStore.get("SELECT 1 FROM cloud_workspace_bindings WHERE workspace_id = ?", ["workspace-2"]))
         .toBeUndefined()
-      expect(upgraded.kvStore.get("SELECT id FROM cloud_outbox WHERE id = ?", ["outbox-duplicate"]))
-        .toEqual({ id: "outbox-duplicate" })
+      expect(upgraded.kvStore.get(
+        "SELECT id, retry_count, failure_reason FROM cloud_outbox WHERE id = ?",
+        ["outbox-duplicate"],
+      )).toEqual({
+        id: "outbox-duplicate",
+        retry_count: 10,
+        failure_reason: "cloud workspace binding was disconnected during migration",
+      })
       expect(upgraded.kvStore.get("SELECT value FROM app_settings WHERE key = 'cloud.binding_migration_warning'"))
         .toEqual({ value: "1 duplicate cloud workspace binding(s) were disconnected" })
     } finally {

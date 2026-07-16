@@ -10,7 +10,12 @@ import { ConfirmDialog } from "../../components/molecules/ConfirmDialog";
 import { EmptyState } from "../../components/molecules/EmptyState";
 import { WorkflowProvider } from "../../contexts/WorkflowContext";
 import { invoke, IpcError } from "../../utils/apiweaveClient";
-import type { Conflict, ConflictPayload, ConflictWinner } from "../../types/cloud";
+import type {
+  Conflict,
+  ConflictPayload,
+  ConflictWinner,
+  CloudSyncStatus,
+} from "../../types/cloud";
 
 type PendingChoice = ConflictWinner | null;
 
@@ -41,6 +46,7 @@ export function ConflictDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [pendingChoice, setPendingChoice] = useState<PendingChoice>(null);
   const [resolving, setResolving] = useState(false);
+  const [deviceId, setDeviceId] = useState<string>("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,6 +62,15 @@ export function ConflictDetailPage() {
       setLoading(false);
     }
   }, [conflictId]);
+
+  // The real device id (this device's registered cloud identity). The main
+  // process authorizes with its own token-store device id regardless, but the
+  // bridge requires a non-empty value, so we source the persisted one.
+  useEffect(() => {
+    void invoke<CloudSyncStatus>("cloud", "status", {})
+      .then((status) => setDeviceId(status.deviceId ?? ""))
+      .catch(() => setDeviceId(""));
+  }, []);
 
   useEffect(() => {
     void load();
@@ -82,7 +97,7 @@ export function ConflictDetailPage() {
       await invoke<Conflict>("cloud", "conflict-resolve", {
         conflict_id: conflict.id,
         winner: choice,
-        device_id: "desktop",
+        device_id: deviceId || "desktop",
       });
       toast.success(`Kept ${choice} copy`);
       navigate("/cloud/conflicts");
