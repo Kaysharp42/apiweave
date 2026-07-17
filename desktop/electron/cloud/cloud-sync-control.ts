@@ -599,6 +599,7 @@ function isAccountIdentity(value: unknown): value is CloudAccountIdentity {
     && account["accountId"].length > 0
     && (account["email"] === undefined || typeof account["email"] === "string")
     && (account["displayName"] === undefined || typeof account["displayName"] === "string")
+    && (account["avatarUrl"] === undefined || typeof account["avatarUrl"] === "string")
 }
 
 function makeDevicePublicKey(): Uint8Array {

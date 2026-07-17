@@ -159,7 +159,7 @@ describe("DesktopCloudSyncControl", () => {
     expect(store.get<{ origin: string; syncMode: string; name: string }>(
       "SELECT origin, syncMode, name FROM workspaces WHERE id = ?",
       [WORKSPACE_ID],
-    )).toEqual({ origin: "local", syncMode: "local-only", name: "Local Workspace" })
+    )).toEqual({ origin: "local", syncMode: "none", name: "Local Workspace" })
     expect(nock.isDone()).toBe(true)
   })
 
@@ -384,7 +384,7 @@ describe("DesktopCloudSyncControl", () => {
     expect(store.get<{ origin: string; syncMode: string }>(
       "SELECT origin, syncMode FROM workspaces WHERE id = ?",
       [WORKSPACE_ID],
-    )).toEqual({ origin: "local", syncMode: "local-only" })
+    )).toEqual({ origin: "local", syncMode: "none" })
     expect(nock.isDone()).toBe(true)
   })
 
@@ -743,7 +743,7 @@ describe("DesktopCloudSyncControl", () => {
     expect(store.get<{ name: string; origin: string; syncMode: string }>(
       "SELECT name, origin, syncMode FROM workspaces WHERE id = ?",
       [WORKSPACE_ID],
-    )).toEqual({ name: "Local Workspace", origin: "local", syncMode: "local-only" })
+    )).toEqual({ name: "Local Workspace", origin: "local", syncMode: "none" })
     expect(nock.isDone()).toBe(true)
   })
 

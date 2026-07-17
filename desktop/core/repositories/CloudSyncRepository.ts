@@ -706,7 +706,7 @@ export class CloudSyncRepository {
         return
       }
       repository.store.set(
-        "UPDATE workspaces SET origin = 'local', syncMode = 'local-only', updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+        "UPDATE workspaces SET origin = 'local', syncMode = 'none', updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
         [workspaceId],
       )
       repository.store.delete("DELETE FROM cloud_outbox WHERE workspace_id = ?", [workspaceId])
@@ -720,7 +720,7 @@ export class CloudSyncRepository {
   public clearCloudDeviceState(): void {
     this.store.transaction((store) => {
       store.set(
-        `UPDATE workspaces SET origin = 'local', syncMode = 'local-only', updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        `UPDATE workspaces SET origin = 'local', syncMode = 'none', updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
          WHERE id IN (SELECT workspace_id FROM cloud_workspace_bindings)`,
       )
       store.delete("DELETE FROM cloud_outbox")

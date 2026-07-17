@@ -1017,7 +1017,7 @@ describe("CloudSyncProvider", () => {
     it("dead-letters outbox rows outside the configured bindings and still drains healthy workspaces", async () => {
       store.set(
         "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
-        [SECOND_WORKSPACE_ID, "Unbound Workspace", "unbound-workspace", "local", "local-only", "{}"],
+        [SECOND_WORKSPACE_ID, "Unbound Workspace", "unbound-workspace", "local", "none", "{}"],
       )
       const orphanId = provider.enqueue({
         kind: "workflow",

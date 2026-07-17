@@ -224,8 +224,16 @@ export async function startDeviceLink(config: DeviceLinkConfig): Promise<DeviceL
     // Exchange code for tokens at ZITADEL.
     const tokens = await exchangeCode(config, callbackResult.code, redirectUri, codeVerifier, controller.signal)
 
-    // Verify id_token (using jose for local verification).
-    const account = await verifyIdToken(config, tokens.id_token, controller.signal)
+    // Verify id_token (using jose for local verification), then backfill the
+    // email/name from the userinfo endpoint when the id_token omits them
+    // (ZITADEL only embeds those claims in the id_token when explicitly
+    // configured; otherwise they live at userinfo).
+    const account = await verifyIdToken(
+      config,
+      tokens.id_token,
+      tokens.access_token,
+      controller.signal,
+    )
     if (config.expectedAccountId !== undefined && account.accountId !== config.expectedAccountId) {
       throw new ErrLinkAccountMismatch()
     }
@@ -460,6 +468,7 @@ async function exchangeCode(
 async function verifyIdToken(
   config: DeviceLinkConfig,
   idToken: string,
+  accessToken: string,
   signal: AbortSignal,
 ): Promise<CloudAccountIdentity> {
   // ponytail: local verification with jose. The Go API's auth middleware validates
@@ -485,16 +494,51 @@ async function verifyIdToken(
     if (accountId === undefined) {
       throw new Error("missing subject")
     }
-    const email = claimString(verified.payload["email"], 320)
-    const displayName = claimString(verified.payload["name"] ?? verified.payload["preferred_username"], 256)
+    let email = claimString(verified.payload["email"], 320)
+    let displayName = claimString(verified.payload["name"] ?? verified.payload["preferred_username"], 256)
+    let avatarUrl = claimString(verified.payload["picture"], 2048)
+
+    // Backfill from the userinfo endpoint when the id_token omitted the profile
+    // claims. Best-effort: a failure here must not block linking (accountId is
+    // sufficient to sync).
+    if (email === undefined || displayName === undefined || avatarUrl === undefined) {
+      const info = await fetchUserInfo(config.zitadelIssuer, accessToken, signal)
+      email = email ?? claimString(info["email"], 320)
+      displayName =
+        displayName ?? claimString(info["name"] ?? info["preferred_username"], 256)
+      avatarUrl = avatarUrl ?? claimString(info["picture"], 2048)
+    }
+
     return {
       accountId,
       ...(email !== undefined ? { email } : {}),
       ...(displayName !== undefined ? { displayName } : {}),
+      ...(avatarUrl !== undefined ? { avatarUrl } : {}),
     }
   } catch (err) {
     rethrowAbort(signal)
     throw new ErrLinkExchangeFailed("id_token verification failed")
+  }
+}
+
+/** OIDC userinfo lookup. Returns {} on any failure so linking can continue. */
+async function fetchUserInfo(
+  issuer: string,
+  accessToken: string,
+  signal: AbortSignal,
+): Promise<Record<string, unknown>> {
+  try {
+    const response = await fetch(`${issuer}/oidc/v1/userinfo`, {
+      headers: { accept: "application/json", authorization: `Bearer ${accessToken}` },
+      signal,
+    })
+    if (!response.ok) {
+      return {}
+    }
+    return (await response.json()) as Record<string, unknown>
+  } catch {
+    rethrowAbort(signal)
+    return {}
   }
 }
 

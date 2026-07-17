@@ -312,14 +312,27 @@ if (!hasSingleInstanceLock) {
         })
     }
 
-    protocol.handle("app", (request) => {
+    protocol.handle("app", async (request) => {
       let pathname = decodeURIComponent(new URL(request.url).pathname)
 
       if (pathname === "/" || pathname === "" || !path.extname(pathname)) {
         pathname = "/index.html"
       }
 
-      return net.fetch(pathToFileURL(path.join(frontendDistDir(), pathname)).toString())
+      const response = await net.fetch(
+        pathToFileURL(path.join(frontendDistDir(), pathname)).toString(),
+      )
+      // Local files behind a privileged scheme get heuristically cached by
+      // Electron, pinning index.html to stale asset hashes after a rebuild
+      // ("restarted dev, UI didn't change"). Reading from disk is cheap, so
+      // never cache.
+      const headers = new Headers(response.headers)
+      headers.set("Cache-Control", "no-store")
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      })
     })
 
     void createWindow()

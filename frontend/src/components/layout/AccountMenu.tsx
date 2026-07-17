@@ -4,24 +4,24 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { useNavigate } from "react-router-dom";
-import { BadgeCheck, HardDrive, LogOut, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { useAuth } from "../../auth/useAuth";
+import { useCloudSync } from "../../hooks/useCloudSync";
 import { Button } from "../atoms/Button";
 import { CloudAccountSection } from "./CloudAccountSection";
 import {
-  getAccountDisplayName,
   getAccountInitials,
+  getConnectionBadge,
   getRoleSummary,
+  resolveAccountIdentity,
 } from "./accountMenuUtils";
 
-// Logout sits above the cloud section's roving-tabindex range (0..n) so the two
-// never collide in the shared menuItemRefs array.
-const LOGOUT_ITEM_INDEX = 10;
-
 export function AccountMenu() {
-  const { user, isAuthenticated, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
+  // Second useCloudSync instance: it only reads status for the header identity.
+  // Both instances share the same push-based refresh (onCloudStatusChanged), so
+  // the only extra cost is one status fetch on mount.
+  const cloud = useCloudSync();
   const [open, setOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -30,9 +30,15 @@ export function AccountMenu() {
     Array<HTMLAnchorElement | HTMLButtonElement | null>
   >([]);
 
+  // Reset the failed flag when the effective avatar source changes (cloud
+  // picture takes precedence over the local one — see resolveAccountIdentity).
+  const cloudAvatarUrl =
+    cloud.status?.linkState === "linked"
+      ? cloud.status.account?.avatarUrl
+      : undefined;
   useEffect(() => {
     setAvatarFailed(false);
-  }, [user?.avatar_url]);
+  }, [cloudAvatarUrl, user?.avatar_url]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -75,10 +81,13 @@ export function AccountMenu() {
     return null;
   }
 
-  const displayName = getAccountDisplayName(user);
-  const initials = getAccountInitials(user, displayName);
+  // Identity reflects the linked cloud account once available, falling back to
+  // the local profile — so the name and email update after linking.
+  const { name, email, avatarUrl } = resolveAccountIdentity(user, cloud.status);
+  const initials = getAccountInitials(user, name);
   const roleSummary = getRoleSummary(user);
-  const avatarVisible = Boolean(user.avatar_url) && !avatarFailed;
+  const connection = getConnectionBadge(cloud.status, cloud.unavailable);
+  const avatarVisible = Boolean(avatarUrl) && !avatarFailed;
 
   const closeMenu = (focusTrigger = false) => {
     setOpen(false);
@@ -111,12 +120,6 @@ export function AccountMenu() {
     }
   };
 
-  const handleLogout = async () => {
-    closeMenu();
-    await logout();
-    navigate("/app", { replace: true });
-  };
-
   return (
     <div className="relative" ref={wrapperRef}>
       <Button
@@ -125,16 +128,16 @@ export function AccountMenu() {
         size="sm"
         onClick={() => setOpen((prev) => !prev)}
         onKeyDown={handleTriggerKeyDown}
-        className="h-9 w-9 overflow-hidden rounded-full border border-border bg-surface-raised p-0 hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
-        aria-label={`Account menu for ${displayName}`}
+        className="h-9 w-9 overflow-hidden !rounded-full border border-border bg-surface-raised p-0 hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
+        aria-label={`Account menu for ${name}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={displayName}
+        title={name}
       >
         {avatarVisible ? (
           <img
             src={user.avatar_url ?? undefined}
-            alt={displayName}
+            alt={name}
             className="h-full w-full object-cover"
             onError={() => {
               setAvatarFailed(true);
@@ -154,62 +157,51 @@ export function AccountMenu() {
           role="menu"
           aria-label="Account actions"
         >
-          <div className="bg-surface-overlay/60 px-4 py-4 dark:bg-surface-dark-overlay/40">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-raised px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark">
-                <HardDrive className="h-3 w-3 text-primary dark:text-primary-light" />
-                Local profile
-              </span>
-              <span className="text-[11px] text-text-muted dark:text-text-muted-dark">
-                Cloud not linked
-              </span>
+          <div className="flex items-start gap-3 px-4 pb-3 pt-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-primary/20 bg-primary/10 dark:border-primary-light/20 dark:bg-primary-light/10">
+              {avatarVisible ? (
+                <img
+                  src={avatarUrl ?? undefined}
+                  alt={name}
+                  className="h-full w-full object-cover"
+                  onError={() => {
+                    setAvatarFailed(true);
+                  }}
+                />
+              ) : (
+                <span className="text-sm font-semibold text-primary dark:text-primary-light">
+                  {initials}
+                </span>
+              )}
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-primary/20 bg-primary/10 shadow-inner dark:border-primary-light/20 dark:bg-primary-light/10">
-                {avatarVisible ? (
-                  <img
-                    src={user.avatar_url ?? undefined}
-                    alt={displayName}
-                    className="h-full w-full object-cover"
-                    onError={() => {
-                      setAvatarFailed(true);
-                    }}
-                  />
-                ) : (
-                  <span className="text-sm font-semibold text-primary dark:text-primary-light">
-                    {initials}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
+                {name}
+              </div>
+              <div className="mt-0.5 truncate font-mono text-[11px] text-text-muted dark:text-text-muted-dark">
+                {email}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] font-medium text-text-secondary dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
+                  <ShieldCheck className="h-3 w-3 text-status-success dark:text-status-success-dark" />
+                  {roleSummary}
+                </span>
+                {connection && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${connection.className}`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${connection.dotClassName}`}
+                    />
+                    {connection.label}
                   </span>
                 )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
-                  {displayName}
-                </div>
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary dark:text-text-secondary-dark">
-                  <CheckCircleLine />
-                  <span className="truncate">Verified local identity</span>
-                </div>
-                <div className="mt-0.5 truncate font-mono text-[11px] text-text-muted dark:text-text-muted-dark">
-                  {user.verified_email}
-                </div>
               </div>
             </div>
           </div>
 
-          <div className="space-y-2 border-y border-border px-4 py-3 dark:border-border-dark">
-            <div className="flex items-start gap-3 rounded-lg bg-surface-overlay px-3 py-2 dark:bg-surface-dark-overlay">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-status-success dark:text-status-success-dark" />
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">
-                  {roleSummary}
-                </div>
-                <div className="text-[11px] text-text-secondary dark:text-text-secondary-dark">
-                  Workflows, secrets, and runs stay on this device.
-                </div>
-              </div>
-            </div>
-
+          <div className="border-t border-border px-4 py-3 dark:border-border-dark">
             <CloudAccountSection
               onNavigate={() => closeMenu()}
               registerItem={(index) => (element) => {
@@ -218,31 +210,8 @@ export function AccountMenu() {
               startIndex={0}
             />
           </div>
-
-          <div className="p-2">
-            <Button
-              ref={(element) => {
-                menuItemRefs.current[LOGOUT_ITEM_INDEX] = element;
-              }}
-              role="menuitem"
-              variant="ghost"
-              intent="error"
-              size="sm"
-              onClick={() => void handleLogout()}
-              className="w-full justify-start rounded-lg px-3 py-2 text-sm"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out of local profile
-            </Button>
-          </div>
         </div>
       )}
     </div>
-  );
-}
-
-function CheckCircleLine() {
-  return (
-    <BadgeCheck className="h-3.5 w-3.5 text-status-success dark:text-status-success-dark" />
   );
 }

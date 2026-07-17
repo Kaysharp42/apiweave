@@ -78,6 +78,16 @@ function createFakeZitadel(options: FakeZitadelOptions = {}): Promise<{
         return
       }
 
+      if (url.pathname === "/oidc/v1/userinfo") {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify({
+          sub: "account-123",
+          email: "userinfo@example.com",
+          name: "Userinfo Name",
+        }))
+        return
+      }
+
       if (url.pathname === "/desktop/auth/session") {
         res.writeHead(200, { "content-type": "application/json" })
         res.end(JSON.stringify({
@@ -227,6 +237,41 @@ describe("cloud-link — happy path", () => {
     const dek = unwrapDek(result.wrappedDek, keyfile.masterKek)
     const decrypted = decrypt(result.encryptedRefreshToken, dek)
     expect(decrypted).toBe("fake-refresh-token")
+  })
+
+  it("backfills email/name from userinfo when the id_token omits them", async () => {
+    // Real ZITADEL id_tokens often carry only `sub`; profile claims live at userinfo.
+    const { jwtVerify } = await import("jose")
+    vi.mocked(jwtVerify).mockResolvedValueOnce({
+      payload: { sub: "account-123" },
+    } as unknown as Awaited<ReturnType<typeof jwtVerify>>)
+
+    const config: DeviceLinkConfig = {
+      zitadelIssuer: fakeZitadel.baseUrl,
+      desktopClientId: "test-client-id",
+      apiBaseUrl: fakeZitadel.baseUrl,
+      keyfilePath,
+      deviceLabel: "Test Device",
+      devicePublicKey: new Uint8Array([1, 2, 3, 4]),
+      clientVersion: "1.0.0",
+    }
+
+    const linkPromise = startDeviceLink(config)
+    await vi.waitFor(() => expect(mockOpenExternal).toHaveBeenCalled(), { timeout: 5000 })
+
+    const authorizeUrl = mockOpenExternal.mock.calls[0]?.[0] as string
+    const url = new URL(authorizeUrl)
+    const redirectUri = url.searchParams.get("redirect_uri")
+    const state = url.searchParams.get("state")
+
+    await fetch(`${redirectUri}?code=test-code&state=${state}`)
+    const result = await linkPromise
+
+    expect(result.account).toEqual({
+      accountId: "account-123",
+      email: "userinfo@example.com",
+      displayName: "Userinfo Name",
+    })
   })
 
   it("encrypts the refresh token with the existing keyfile (no new key material)", async () => {
