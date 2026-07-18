@@ -9,7 +9,7 @@
 
 ## What Is an Environment
 
-An environment is a named bundle of variables on your local machine. Every environment lives in the SQLite database under your user data directory. A run selects exactly one environment explicitly. There is no global "active" environment flag. The selected environment is the one whose variables feed `{{env.*}}` and whose secret store wins the scope chain for `{{secrets.*}}`.
+An environment is a named bundle of variables on your local machine. Every environment lives in the SQLite database under your user data directory. Each workspace has exactly one default environment (`isDefault = true`). A run uses the environment you select for that workflow, or falls back to the default when you have not selected one. The effective environment is the one whose variables feed `{{env.*}}` and whose secret store wins the scope chain for `{{secrets.*}}`.
 
 Each environment holds three things:
 
@@ -64,21 +64,21 @@ Secrets live at one of two scopes:
 
 | Scope | Visible to |
 |-------|------------|
-| `user` | Your workflows (your local store on this machine, never synced) |
+| `workspace` | Workflows in your local team (workspace) container on this machine, never synced |
 | `environment` | Workflows that select the environment |
 
 The scope of a secret is fixed at creation time. The same secret cannot move between scopes; delete and recreate if you need a different scope.
 
-Teams share workflow, environment, and project config, but they never share secret values. Each user keeps their own secrets in their local user store, so the same workflow can be run by different team members against their own keys. Secrets are not part of any sync, now or in the future.
+Teams can share workflow, environment, and project config, but they never share secret values. Each user keeps their own secrets in their local workspace store, so the same workflow can be run by different team members against their own keys. Secret values are never synced; when Cloud sync is in use, only secret references and structure travel, and secret values are rejected from sync payloads.
 
 ### The Scope Chain
 
 `{{secrets.NAME}}` resolves through a fixed chain, with the first scope that declares the key winning:
 
 1. The selected environment's secret store.
-2. Your local user secret store.
+2. Your local workspace secret store.
 
-The chain is fixed and lives entirely on your machine. There are no other scopes. The chain is read-only. A user who can write a user secret cannot write the same key as an environment secret; the environment editor is the only path to the environment scope.
+The chain is fixed and lives entirely on your machine. There are no other scopes. The chain is read-only. A user who can write a workspace secret cannot write the same key as an environment secret; the environment editor is the only path to the environment scope.
 
 When a secret overrides a same-named secret at the broader scope, the secret's metadata shows an `isOverride` flag and the scope it shadows. The UI surfaces this on the secret detail page so you know the broader value is no longer effective in that scope.
 
@@ -145,7 +145,7 @@ Set the URL during environment creation or edit it later. The URL must be reacha
 ## Troubleshooting
 
 - **If `{{env.BASE_URL}}` comes back as plain text in the response**, the selected environment does not define that key. Open the **Environments** page, add the variable, and run again.
-- **If `{{secrets.NAME}}` resolves to an empty string**, no scope in the chain declares that key. Open **Secrets** for the selected environment and your user store (in that order), and add the key through the Libsodium write flow.
+- **If `{{secrets.NAME}}` resolves to an empty string**, no scope in the chain declares that key. Open **Secrets** for the selected environment and the workspace store (in that order), and add the key through the Libsodium write flow.
 - **If a secret write is rejected with a key mismatch**, the scope's public key rotated between the time the UI fetched it and the time the write arrived. The UI retries automatically; if the failure persists, reload the **Secrets** page to fetch the fresh public key.
 - **If deletion returns `409 Conflict`**, one or more workflows still attach to the environment. Find them via the workflow list filter, reassign or detach, then delete.
 - **If a stored secret value seems unreadable after copying the database to a new machine**, the keyfile from the source machine is not on the destination. Copy the keyfile too, or re-enter the secrets through the write flow.

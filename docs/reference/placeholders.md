@@ -40,7 +40,7 @@ All placeholders work in any request field: URL, method, query parameters, heade
 | `env.*`       | `{{env.BASE_URL}}`                   | the selected environment                                     |
 | `variables.*` | `{{variables.token}}`                | workflow variable (manual or extracted)                      |
 | `prev.*`      | `{{prev.response.body.id}}`          | previous node result (`prev[0]` after a merge)               |
-| `secrets.*`   | `{{secrets.API_KEY}}`        | the local scope chain (env > user)                       |
+| `secrets.*`   | `{{secrets.API_KEY}}`        | the local scope chain (env > workspace)                       |
 | functions     | `{{uuid()}}`                         | dynamic helper (uuid, timestamp, randomString, etc.)         |
 
 The four data namespaces are tried in a fixed order. See [Substitution Order](#substitution-order) for the exact sequence.
@@ -113,11 +113,11 @@ Secret values are submitted through a Libsodium sealed box encrypted against the
 The runner resolves `{{secrets.NAME}}` through a fixed local chain. The first scope that declares the key wins.
 
 1. The selected environment's secret store.
-2. Your local user secret store.
+2. Your local workspace secret store.
 
-The chain lives entirely in the local SQLite database and the encrypted secret store. There are no other scopes. The chain is read-only. A user who can write a user secret cannot write the same key as an environment secret; the environment editor is the only path to the environment scope. The chain exists to let a user set a default and let a specific environment override it for one deployment.
+The chain lives entirely in the local SQLite database and the encrypted secret store. There are no other scopes. The chain is read-only. A user who can write a workspace secret cannot write the same key as an environment secret; the environment editor is the only path to the environment scope. The chain exists to let a workspace set a default and let a specific environment override it for one deployment.
 
-Teams share workflow, environment, and project config, but they do **not** share secret values. Each user keeps their own secrets in their local user store, so a `{{secrets.NAME}}` placeholder resolves to that user's value regardless of which team the workflow belongs to. Secrets are never synced, even when team sync ships later.
+Collaborators can share workflow, environment, and project config, but they do **not** share secret values. Each user keeps their own secrets in their local workspace store, so a `{{secrets.NAME}}` placeholder resolves to that user's value regardless of which team the workflow belongs to. Secret values are never synced; when Cloud sync is in use, only secret references and structure travel, and secret values are rejected from sync payloads.
 
 When a secret overrides a same-named secret at the broader scope, the secret's metadata shows an `isOverride` flag and the scope it shadows. The UI surfaces this on the secret detail page so the operator knows the broader value is no longer effective in that scope.
 

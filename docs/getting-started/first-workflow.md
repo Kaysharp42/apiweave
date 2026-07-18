@@ -46,7 +46,7 @@ The full secret model lives in [Environments and Secrets](../features/environmen
 - **If Run does nothing**, the main process is not responsive. Quit the app and relaunch. If the issue persists, check the main process log (the terminal that launched Electron, or your OS console) for stack traces.
 - **If the HTTP node turns red with a connection error**, your local network blocked the outbound call, or the runner's SSRF block rejected the target. Try a different public endpoint or check your proxy.
 - **If the Assertion node turns red**, the status code did not match. Click the node to see the actual status, then update the assertion or use a different endpoint.
-- **If the environment selector shows "no environment available"**, you have not created an environment. Open **Environments**, create one, mark it default, then re-run.
+- **If the environment selector shows "no environment available"**, you have not created an environment. Open **Environments**, create one, mark it as the default for the workspace, then re-run.
 - **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in any scope visible to the selected environment. Open **Secrets** and add the key on the right scope.
 
 ## Related

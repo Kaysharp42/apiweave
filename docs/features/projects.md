@@ -37,11 +37,11 @@ Projects are the unit of export and import. The `.awecollection` file bundles ev
 
 ## Use Cases
 
-Projects map directly to how teams organize test work. Three common patterns:
+Projects map directly to how you organize test work. Three common patterns:
 
 - **Feature grouping**: every workflow that covers the same feature area lives in one project. A "Checkout API" project contains the auth, cart, payment, and receipt workflows for checkout.
 - **Release cycles**: group the smoke and regression workflows you want to run for a release. A "Release 2.4" project runs the same workflows in the same order against staging and production environments.
-- **Team or service ownership**: assign one project per service boundary. You can then target the project for that service without running unrelated workflows.
+- **Service ownership**: assign one project per service boundary. You can then target the project for that service without running unrelated workflows.
 
 A workflow can belong to at most one project at a time. If you need parallel groupings, duplicate the workflow and assign the copies to different projects.
 

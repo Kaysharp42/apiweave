@@ -77,7 +77,7 @@ For parallel branches, the index starts at 0 and matches the branch order on the
 
 ## Secrets
 
-Secrets are declared as named keys at the user or environment scope. The runner resolves `{{secrets.NAME}}` through a fixed local chain: the selected environment wins, then your local user store. The scope chain lives entirely in the encrypted local store. Teams share workflow and environment config but never secret values, so each user resolves their own secrets.
+Secrets are declared as named keys at the workspace or environment scope. The runner resolves `{{secrets.NAME}}` through a fixed local chain: the selected environment wins, then your local workspace store. The scope chain lives entirely in the encrypted local store. Collaborators share workflow and environment config but never secret values, so each user resolves their own secrets.
 
 Secret values are write-only at every layer. The renderer encrypts the value with a Libsodium sealed box against the scope's public key before the write request leaves. The main process never accepts a plaintext secret value, and no UI, IPC handler, or MCP tool can read a stored value back. The runtime substitutes the plaintext into the field, header, body, or assertion path, and the masking layer scrubs the value before any result is persisted.
 

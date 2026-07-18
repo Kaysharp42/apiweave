@@ -27,7 +27,7 @@
 
 ## Where Workflows Live
 
-Every workflow in APIWeave belongs to a project on your local machine. The sidebar lists every project and every workflow in the project. The selected workflow is the one shown on the canvas. Use the sidebar to navigate; the canvas does not have multi-tenant routing.
+Every workflow can live inside a project on your local machine. A workflow belongs to at most one project at a time, or can be left outside any project. The sidebar lists every project and every workflow in the project. The selected workflow is the one shown on the canvas. Use the sidebar to navigate; the canvas does not have multi-tenant routing.
 
 Workflows are members of a project. A workflow can be inside one project at a time, and the project decides the run order. See [Projects](projects.md) for the grouping flow and the `.awecollection` export.
 
@@ -60,7 +60,7 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 | Config | What it does |
 | --- | --- |
 | `label` | Optional display name shown on the canvas |
-| `metadata` | Optional key/value pairs for your own organization |
+| `metadata` | Optional key/value pairs for your own use |
 
 **Handles:** output only. One workflow should have exactly one Start node.
 
@@ -71,7 +71,7 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 | Config | What it does |
 | --- | --- |
 | `label` | Optional display name shown on the canvas |
-| `metadata` | Optional key/value pairs for your own organization |
+| `metadata` | Optional key/value pairs for your own use |
 
 **Handles:** input only. When a run reaches an End node, that path is considered complete.
 
@@ -169,7 +169,7 @@ The walk is bounded by the `resumeFromRunId` link, so it cannot loop forever. Us
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+N` | New workflow |
-| `Ctrl+S` | Save (auto-save also runs in the background; this is a manual flush) |
+| `Ctrl+S` | Flush to disk now (auto-save still runs in the background every 700ms) |
 | `Ctrl+R` or `F5` | Run the active workflow |
 | `Ctrl+J` | Open the JSON editor |
 | `Ctrl+C` | Copy the selected node (canvas context only) |

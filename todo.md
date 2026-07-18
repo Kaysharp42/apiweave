@@ -115,7 +115,7 @@ Status legend:
   - [ ] `runFromAllFailed(sourceRunId)` for multi-resume.
   - [ ] `runFromLastFailed()` to fetch/resolve and trigger resume mode.
 - [ ] Ensure secrets prompt compatibility:
-  - [ ] Preserve runtime-secrets flow for resume mode.
+  - [ ] Preserve resume secret resolution: resume reuses the already-selected environment's `environment > workspace` scope chain. No runtime secret-value input path exists; every secret must already be in the local store at the right scope.
   - [ ] Keep adaptive polling and status update behavior unchanged.
 - [ ] Improve user feedback:
   - [ ] Toast on resume start with node label/id.

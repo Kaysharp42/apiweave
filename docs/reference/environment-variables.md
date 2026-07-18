@@ -18,8 +18,8 @@ Variables Vite injects into the browser bundle. They are baked in at build time,
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `VITE_API_URL` | No | `http://localhost:8000` (dev) | Base URL the renderer uses for the IPC channel during local development against a separate backend. In a packaged build, the renderer talks to the bundled main process and this variable is ignored. |
-| `VITE_API_WEAVE_URL` | No | `http://localhost:8000` (dev) | Base URL the renderer uses for the workflow execution and run status endpoints during local development. In a packaged build, the renderer talks to the bundled main process and this variable is ignored. |
+| `VITE_API_URL` | No | `http://localhost:8000` (dev) | Legacy. The renderer always talks to the bundled main process over the typed IPC channel — in development and in packaged builds — and does not make HTTP calls to a separate backend. This variable is no longer read at runtime; it remains in `frontend/.env.example` and the `ImportMeta` type for compatibility. |
+| `VITE_API_WEAVE_URL` | No | `http://localhost:8000` (dev) | Legacy. Same as `VITE_API_URL`: the renderer uses the typed IPC channel and does not call a separate HTTP backend. No longer read at runtime. |
 
 ### Example frontend `.env`
 
@@ -28,7 +28,7 @@ VITE_API_URL=http://localhost:8000
 VITE_API_WEAVE_URL=http://localhost:8000
 ```
 
-These values are only used when you run the renderer against a separate backend during development. In the packaged desktop app, the renderer talks to the bundled main process over the typed IPC channel; the `VITE_*` values are not used at runtime.
+These values are legacy and are not read at runtime. The renderer always talks to the bundled main process over the typed IPC channel, in both development and packaged builds; there is no separate backend to point at.
 
 ## Main Process (Desktop)
 

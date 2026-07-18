@@ -6,11 +6,13 @@
 
 APIWeave is a local-first desktop app. There is no server to run, no cloud account to create, no login screen, no deployment to plan. You download the installer, run it, and the app opens straight into the canvas. Everything — workflows, environments, secrets, run history — lives on your machine in a single SQLite database under your user data directory.
 
-Work is organized locally into **orgs and teams**: an org is the top-level container for your APIWeave work, and a team is a group inside an org that shares workflows, environments, and projects. Today orgs and teams organize work on *this machine* — they are a local structure, not a cloud account. Cloud sync across users and multi-user collaboration are a future feature that turns on only when an optional login system is added later; until then, everything stays local and single-user on your computer.
+Work is organized locally into **orgs and teams**: an org is the top-level container for your APIWeave work, and a team is a group inside an org that shares workflows, environments, and projects. Orgs and teams are a local structure on *this machine*. No account is required, and everything stays on your computer by default.
+
+Optional APIWeave Cloud sync and collaboration turn on when you sign in with an optional Cloud account. Cloud syncs test structure (workflows, environments, projects, and secret references) and lets multiple machines collaborate in shared Cloud Workspaces; secret values and run history stay local and are rejected from sync payloads. The local and Cloud names map: a desktop **org** corresponds to a Cloud **Team**, and a desktop **team** corresponds to a Cloud **Workspace**. Cloud never builds or runs tests — all execution stays on the desktop.
 
 There is no SSO, no webhooks, and no remote trigger. You run a workflow by clicking **Run** in the app, by scheduling it locally, or by having a local AI agent drive the app through the loopback MCP bridge.
 
-If you have used an earlier web build of APIWeave, the things that changed are spelled out in the [changelog](../CHANGELOG.md). The short version: no login required, no hosted backend, no webhooks, no public ports. The canvas, the variables, the environments, the projects, the secret store, and the MCP integration are all the same shape they were before. (A future optional login will enable cloud sync and team collaboration across machines — see above — but it is not required to use the app today.)
+If you have used an earlier web build of APIWeave, the things that changed are spelled out in the [changelog](../CHANGELOG.md). The short version: no login required, no hosted backend, no webhooks, no public ports. The canvas, the variables, the environments, the projects, the secret store, and the MCP integration are all the same shape they were before. An optional Cloud account adds sync and collaboration across machines, but the desktop app is fully usable without it.
 
 ## Prerequisites
 

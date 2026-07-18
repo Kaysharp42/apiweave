@@ -239,7 +239,7 @@ These properties automatically switch values between light and dark themes.
 | --------------- | -------------------------- | ---------------------------------------------------------- |
 | `MainLayout`    | `layout/MainLayout.tsx`    | Top-level layout with AppNavBar, Sidebar, Workspace.       |
 | `AppNavBar`     | `layout/AppNavBar.tsx`     | Left icon navigation bar with collapse/expand.             |
-| `Sidebar`       | `layout/Sidebar.tsx`       | Workflow/collection list with search, pagination, actions. |
+| `Sidebar`       | `layout/Sidebar.tsx`       | Workflow/project list with search, pagination, actions. |
 | `SidebarHeader` | `layout/SidebarHeader.tsx` | Sidebar header with breadcrumb, actions, search.           |
 | `MainHeader`    | `layout/MainHeader.tsx`    | Top header bar with logo, environment, theme controls.     |
 | `MainFooter`    | `layout/MainFooter.tsx`    | Bottom status bar.                                         |
@@ -348,7 +348,7 @@ frontend/
 │       ├── layout/
 │       │   ├── MainLayout.tsx     — Top-level layout
 │       │   ├── AppNavBar.tsx      — Left icon navigation
-│       │   ├── Sidebar.tsx        — Workflow/collection list
+│       │   ├── Sidebar.tsx        — Workflow/project list
 │       │   ├── SidebarHeader.tsx  — Sidebar header
 │       │   ├── MainHeader.tsx     — Top header bar
 │       │   ├── MainFooter.tsx     — Bottom status bar

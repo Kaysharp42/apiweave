@@ -46,18 +46,18 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 ## Resource Model
 
-APIWeave is a local-first app built around six resource types, organized into orgs and teams. Every resource lives in the local SQLite database on your machine. An **org** is the top-level container for your work; a **team** is a group inside an org that shares workflows, environments, and projects. Today orgs and teams are a local structure — cloud sync and cross-user collaboration are a future feature that activates when an optional login system is added.
+APIWeave is a local-first app built around six resource types, organized into orgs and teams. Every resource lives in the local SQLite database on your machine. An **org** is the top-level container for your work; a **team** is a group inside an org that shares workflows, environments, and projects. Orgs and teams are a local structure — no account is required to use them. Optional APIWeave Cloud sync turns on when you sign in with a Cloud account: it syncs test structure (workflows, environments, projects, and secret references) across machines and lets multiple people collaborate in shared Cloud Workspaces. The local and Cloud names map — a desktop **org** corresponds to a Cloud **Team**, and a desktop **team** corresponds to a Cloud **Workspace**. Cloud never builds or runs tests, and it never holds run history or secret values.
 
 | Resource | Visible to | Owner |
 |----------|-----------|-------|
-| Project | Your team (locally) | The team it belongs to |
-| Workflow | Your team (locally) | The project it belongs to |
-| Environment | Your team (locally) | The team |
-| Secret (user) | The workflows you run | You (per-user, never synced) |
+| Project | Your local team | The team it belongs to |
+| Workflow | Your local team | The project it belongs to |
+| Environment | Your local team | The team |
+| Secret (workspace) | Workflows in your local team container | Your workspace (per-user across machines, never synced) |
 | Secret (environment) | Workflows that select the environment | The environment |
 | Run | You | The workflow or project that produced it |
 
-Secrets are the one resource that is never shared: even when teams sync later, each user keeps their own secret values locally. There are no outside collaborators, no invites, no service tokens, and no audit log yet — those arrive with the future login-gated sync. The desktop app has no multi-tenant cloud model today; it is single-user on this machine.
+Secrets are the one resource that is never shared: even when structure syncs through Cloud, each desktop keeps its own secret values and run history locally. Cloud carries no outside collaborators, invites, service tokens, or audit log on the desktop side; cross-machine collaboration and Cloud Workspace membership are handled by the optional Cloud account, not the local model. The desktop app remains single-user on this machine when no Cloud account is signed in.
 
 ## Data Flow
 
@@ -77,7 +77,7 @@ A local AI agent calling through the MCP bridge follows the same path. The agent
 A single node execution follows a predictable lifecycle inside the engine:
 
 - **Resolve scope**: confirm the workflow, the selected environment, and the variables.
-- **Resolve secrets**: walk the scope chain (environment, then your local user store) for each `{{secrets.NAME}}` placeholder. The resolved values never leave the runtime path.
+- **Resolve secrets**: walk the scope chain (environment, then your local workspace store) for each `{{secrets.NAME}}` placeholder. The resolved values never leave the runtime path.
 - **Resolve placeholders**: substitute variables, environment variables, previous node results, and dynamic functions in the node's configuration.
 - **Execute**: perform the node's action (an HTTP call, a delay, an assertion check, and so on).
 - **Extract**: capture values from the response into workflow variables for downstream nodes.
