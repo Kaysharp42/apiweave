@@ -28,7 +28,12 @@ export class SwitchableSyncProvider implements SyncProvider {
     return this.target.pull()
   }
 
-  public push(): Promise<void> {
-    return this.target.push()
+  public async push(): Promise<void> {
+    try {
+      await this.target.push()
+    } catch {
+      // Local writes are already committed and cloud mutations remain in the
+      // durable outbox. The concrete provider reports its own sync state.
+    }
   }
 }

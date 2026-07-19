@@ -15,6 +15,7 @@ export type {
   ExportedWorkflow,
   ExportedEnvironment,
   ImportResult,
+  ProjectImportOptions,
   DryRunResult,
 } from "./project_export_service"
 export {

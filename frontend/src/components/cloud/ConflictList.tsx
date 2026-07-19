@@ -89,7 +89,11 @@ export function ConflictList() {
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => navigate(`/cloud/conflicts/${conflict.id}`)}
+                      onClick={() =>
+                        navigate(`/cloud/conflicts/${conflict.id}`, {
+                          state: "conflict-list",
+                        })
+                      }
                     >
                       Open
                     </Button>

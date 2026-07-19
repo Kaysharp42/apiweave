@@ -424,10 +424,22 @@ export const apiweave = {
         workspaceId,
         collectionId,
       }),
-    export: (workspaceId: string, projectId: string) =>
-      invoke<ProjectBundle>("projects", "export", { workspaceId, projectId }),
-    import: (workspaceId: string, bundle: ProjectBundle) =>
-      invoke<unknown>("projects", "import", { workspaceId, bundle }),
+    export: (
+      workspaceId: string,
+      projectId: string,
+      includeEnvironments = true,
+    ) =>
+      invoke<ProjectBundle>("projects", "export", {
+        workspaceId,
+        projectId,
+        includeEnvironments,
+      }),
+    import: (
+      workspaceId: string,
+      bundle: ProjectBundle,
+      options: { readonly targetProjectId?: string; readonly projectName?: string } = {},
+    ) =>
+      invoke<unknown>("projects", "import", { workspaceId, bundle, ...options }),
     dryRun: (workspaceId: string, bundle: ProjectBundle) =>
       invoke<ImportDryRunResult>("projects", "dryRun", { workspaceId, bundle }),
   },
@@ -838,6 +850,16 @@ export async function authenticatedFetch(
           }
           return ok(run);
         }
+        if (parts[5] === "export" && method === "GET") {
+          return ok(
+            await invoke<unknown>("workflows", "export", {
+              workspaceId,
+              workflowId,
+              includeEnvironment:
+                params.get("include_environment") !== "false",
+            }),
+          );
+        }
       }
 
       if (parts[3] === "projects") {
@@ -853,11 +875,24 @@ export async function authenticatedFetch(
           );
         }
         if (parts[4] === "import") {
-          const bundle = (payload ?? {}) as ProjectBundle;
+          const request = (payload ?? {}) as {
+            readonly bundle?: ProjectBundle;
+            readonly createNewProject?: boolean;
+            readonly newProjectName?: string;
+            readonly targetProjectId?: string | null;
+          };
+          const bundle = request.bundle ?? (request as ProjectBundle);
           return ok(
             parts[5] === "dry-run"
               ? await apiweave.projects.dryRun(workspaceId, bundle)
-              : await apiweave.projects.import(workspaceId, bundle),
+              : await apiweave.projects.import(workspaceId, bundle, {
+                  ...(request.createNewProject === false && request.targetProjectId
+                    ? { targetProjectId: request.targetProjectId }
+                    : {}),
+                  ...(request.createNewProject !== false && request.newProjectName?.trim()
+                    ? { projectName: request.newProjectName.trim() }
+                    : {}),
+                }),
           );
         }
         const projectId = segment(parts, 4);
@@ -877,7 +912,13 @@ export async function authenticatedFetch(
           return noContent();
         }
         if (parts[5] === "export" && method === "GET")
-          return ok(await apiweave.projects.export(workspaceId, projectId));
+          return ok(
+            await apiweave.projects.export(
+              workspaceId,
+              projectId,
+              params.get("include_environment") !== "false",
+            ),
+          );
         if (parts[5] === "workflows") {
           const workflowId = segment(parts, 6);
           if (parts[7] === "assign")

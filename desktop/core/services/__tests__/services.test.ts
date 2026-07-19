@@ -148,14 +148,28 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
       name: "Env",
       variables: { apiKey: "sekret-value", base: "http://api" },
     })
-    const collection = collections.create({ workspaceId: wsA, name: "Col", color: "#123456" })
-    workflows.create({
+    const collection = collections.create({
+      workspaceId: wsA,
+      name: "Col",
+      color: "#123456",
+      continueOnFail: false,
+    })
+    const workflow = workflows.create({
       workspaceId: wsA,
       name: "WF",
       collectionId: collection.collectionId,
       selectedEnvironmentId: env.environmentId,
       variables: { token: "plaintext-token", url: "{{secrets.MY_KEY}}" },
       tags: ["smoke"],
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        { nodeId: "end", type: "end", position: { x: 200, y: 0 }, config: {} },
+      ],
+      edges: [{ edgeId: "start-end", source: "start", target: "end" }],
+      nodeTemplates: [{ name: "Reusable request", type: "http-request" }],
+    })
+    collections.update(collection.collectionId, {
+      workflowOrder: [{ workflowId: workflow.workflowId, order: 0, enabled: false, continueOnFail: false }],
     })
 
     const bundle = await exportService().exportProject(wsA, collection.collectionId)
@@ -163,6 +177,13 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     // Format + sanitization invariants.
     expect(bundle.schemaVersion).toBe("2.0")
     expect(bundle.type).toBe("awecollection")
+    expect(bundle.project.continueOnFail).toBe(false)
+    expect(bundle.project.workflowOrder).toEqual([
+      { workflowId: workflow.workflowId, order: 0, enabled: false, continueOnFail: false },
+    ])
+    expect(bundle.workflows[0]?.nodes).toHaveLength(2)
+    expect(bundle.workflows[0]?.edges).toHaveLength(1)
+    expect(bundle.workflows[0]?.nodeTemplates).toEqual([{ name: "Reusable request", type: "http-request" }])
     expect(bundle.workflows[0]?.variables).toEqual({ token: "<SECRET>", url: "{{secrets.MY_KEY}}" })
     expect(bundle.environments[0]?.variables).toEqual({ apiKey: "<SECRET>", base: "http://api" })
     expect(bundle.secretReferences.map((r) => r.name).sort()).toEqual(["MY_KEY", "apiKey"])
@@ -181,6 +202,15 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     expect(result.missingSecrets.slice().sort()).toEqual(["MY_KEY", "apiKey"])
 
     const project2 = collections.listByWorkspace(wsB).items[0]!
+    const importedWorkflow = workflows.listByCollection(project2.collectionId).items[0]!
+    expect(project2.workflowCount).toBe(1)
+    expect(project2.continueOnFail).toBe(false)
+    expect(project2.workflowOrder).toEqual([
+      { workflowId: importedWorkflow.workflowId, order: 0, enabled: false, continueOnFail: false },
+    ])
+    expect(importedWorkflow.nodes).toHaveLength(2)
+    expect(importedWorkflow.edges).toHaveLength(1)
+    expect(importedWorkflow.nodeTemplates).toEqual([{ name: "Reusable request", type: "http-request" }])
     const bundle2 = await exportService().exportProject(wsB, project2.collectionId)
 
     expect(bundle2.workflows[0]?.variables).toEqual(bundle.workflows[0]?.variables)
@@ -189,6 +219,61 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     expect(bundle2.secretReferences.map((r) => r.name).sort()).toEqual(
       bundle.secretReferences.map((r) => r.name).sort(),
     )
+  })
+
+  it("can omit environments while retaining a clear unmapped reference warning on import", async () => {
+    const wsA = seedWorkspace("a")
+    const env = environments.create({ workspaceId: wsA, name: "Env" })
+    const collection = collections.create({ workspaceId: wsA, name: "Col" })
+    workflows.create({
+      workspaceId: wsA,
+      name: "WF",
+      collectionId: collection.collectionId,
+      selectedEnvironmentId: env.environmentId,
+    })
+
+    const bundle = await exportService().exportProject(wsA, collection.collectionId, false)
+    expect(bundle.environments).toEqual([])
+
+    const result = await exportService().importProject(seedWorkspace("b"), bundle)
+    expect(result.environmentCount).toBe(0)
+    expect(result.warnings.some((warning) => warning.includes("could not be mapped"))).toBe(true)
+  })
+
+  it("can merge imported workflows into an explicitly selected project", async () => {
+    const sourceWorkspace = seedWorkspace("source")
+    const sourceProject = collections.create({ workspaceId: sourceWorkspace, name: "Source" })
+    workflows.create({ workspaceId: sourceWorkspace, name: "Imported", collectionId: sourceProject.collectionId })
+    const bundle = await exportService().exportProject(sourceWorkspace, sourceProject.collectionId)
+
+    const targetWorkspace = seedWorkspace("target")
+    const targetProject = collections.create({ workspaceId: targetWorkspace, name: "Target" })
+    const existingWorkflow = workflows.create({
+      workspaceId: targetWorkspace,
+      name: "Existing",
+      collectionId: targetProject.collectionId,
+    })
+    collections.update(targetProject.collectionId, {
+      workflowCount: 1,
+      workflowOrder: [{
+        workflowId: existingWorkflow.workflowId,
+        order: 0,
+        enabled: true,
+        continueOnFail: true,
+      }],
+    })
+
+    const result = await exportService().importProject(targetWorkspace, bundle, {
+      targetProjectId: targetProject.collectionId,
+    })
+
+    expect(result.projectId).toBe(targetProject.collectionId)
+    expect(result.workflowCount).toBe(1)
+    const merged = collections.getById(targetProject.collectionId)!
+    expect(merged.name).toBe("Target")
+    expect(merged.workflowCount).toBe(2)
+    expect(merged.workflowOrder).toHaveLength(2)
+    expect(workflows.listByCollection(targetProject.collectionId).total).toBe(2)
   })
 
   it("dry-run flags a bad node and warns on schema drift", async () => {

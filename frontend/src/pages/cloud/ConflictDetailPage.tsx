@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, GitCompareArrows } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../../components/atoms/Button";
 import { Badge } from "../../components/atoms/Badge";
@@ -40,6 +40,7 @@ export function redactEnvironmentPayload(
 
 export function ConflictDetailPage() {
   const { conflictId = "" } = useParams<{ conflictId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,6 +91,14 @@ export function ConflictDetailPage() {
     };
   }, [conflict]);
 
+  function returnToConflictList(): void {
+    if (location.state === "conflict-list") {
+      navigate(-1);
+      return;
+    }
+    navigate("/cloud/conflicts", { replace: true });
+  }
+
   async function resolve(choice: ConflictWinner): Promise<void> {
     if (resolving || !conflict) return;
     setResolving(true);
@@ -100,7 +109,7 @@ export function ConflictDetailPage() {
         device_id: deviceId || "desktop",
       });
       toast.success(`Kept ${choice} copy`);
-      navigate("/cloud/conflicts");
+      returnToConflictList();
     } catch (err) {
       const message =
         err instanceof IpcError && err.code === "conflict"
@@ -140,7 +149,7 @@ export function ConflictDetailPage() {
             variant="ghost"
             size="sm"
             icon={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
-            onClick={() => navigate("/cloud/conflicts")}
+            onClick={returnToConflictList}
           >
             Back
           </Button>

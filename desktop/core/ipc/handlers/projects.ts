@@ -50,6 +50,7 @@ const ExportedWorkflowSchema = z
     variables: z.record(z.string(), JsonValueSchema),
     tags: z.array(z.string()),
     selectedEnvironmentId: z.string().nullable(),
+    nodeTemplates: z.array(JsonValueSchema).optional(),
   })
   .strict()
 
@@ -71,7 +72,14 @@ const ProjectBundleSchema = z
     schemaVersion: z.string(),
     type: z.literal("awecollection"),
     project: z
-      .object({ projectId: z.string(), name: z.string(), description: z.string(), color: z.string() })
+      .object({
+        projectId: z.string(),
+        name: z.string(),
+        description: z.string(),
+        color: z.string(),
+        workflowOrder: z.array(WorkflowOrderItemSchema).optional(),
+        continueOnFail: z.boolean().optional(),
+      })
       .strict(),
     workflows: z.array(ExportedWorkflowSchema),
     environments: z.array(ExportedEnvironmentSchema),
@@ -190,16 +198,28 @@ export function registerProjectHandlers(router: IpcRouter, deps: HandlerDeps): v
   })
 
   router.register("projects", "export", {
-    input: z.object({ workspaceId: ws, projectId: z.string().min(1) }).strict(),
+    input: z.object({
+      workspaceId: ws,
+      projectId: z.string().min(1),
+      includeEnvironments: z.boolean().optional(),
+    }).strict(),
     output: ProjectBundleSchema,
-    handle: (i) => projects.exportProject(i.workspaceId, i.projectId),
+    handle: (i) => projects.exportProject(i.workspaceId, i.projectId, i.includeEnvironments ?? true),
   })
 
   router.register("projects", "import", {
-    input: z.object({ workspaceId: ws, bundle: BundleInputSchema }).strict(),
+    input: z.object({
+      workspaceId: ws,
+      bundle: BundleInputSchema,
+      targetProjectId: z.string().min(1).optional(),
+      projectName: z.string().optional(),
+    }).strict(),
     output: ImportResultSchema,
     // ponytail: service re-validates fail-closed, so the cast past the lenient input is safe.
-    handle: (i) => projects.importProject(i.workspaceId, i.bundle as unknown as ProjectBundle),
+    handle: (i) => projects.importProject(i.workspaceId, i.bundle as unknown as ProjectBundle, {
+      ...(i.targetProjectId !== undefined ? { targetProjectId: i.targetProjectId } : {}),
+      ...(i.projectName !== undefined ? { projectName: i.projectName } : {}),
+    }),
   })
 
   router.register("projects", "dryRun", {

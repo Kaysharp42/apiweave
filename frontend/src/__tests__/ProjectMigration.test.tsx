@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import API_BASE_URL from "../utils/apiweaveClient";
 import { CollectionManager } from "../components/CollectionManager";
@@ -40,6 +40,8 @@ vi.mock("../utils/apiweaveClient", () => ({
     includeEnvironment = true,
   ) =>
     `ipc://apiweave/api/workspaces/${workspaceId}/projects/${projectId}/export?include_environment=${includeEnvironment}`,
+  projectImportUrl: (workspaceId: string, dryRun = false) =>
+    `ipc://apiweave/api/workspaces/${workspaceId}/projects/import${dryRun ? "/dry-run" : ""}`,
   workflowsUrl: (workspaceId: string) =>
     `ipc://apiweave/api/workspaces/${workspaceId}/workflows?skip=0&limit=20`,
   workflowsCreateInProjectUrl: (workspaceId: string, projectId: string) =>
@@ -158,6 +160,83 @@ describe("project migration UI", () => {
       );
       expect(appendedDownloads).toContain("Smoke_Project.awecollection");
       expect(createdUrls).toContain("application/json");
+    });
+  });
+
+  it("validates and imports a project bundle with its workflows", async () => {
+    const user = userEvent.setup();
+    const bundle = {
+      schemaVersion: "2.0",
+      type: "awecollection",
+      project: { projectId: "source", name: "Imported Project", description: "", color: "#123456" },
+      workflows: [{
+        workflowId: "workflow-1",
+        name: "Imported Workflow",
+        description: "",
+        nodes: [],
+        edges: [],
+        variables: {},
+        tags: [],
+        selectedEnvironmentId: null,
+      }],
+      environments: [],
+      secretReferences: [],
+      metadata: {
+        exportedAt: "2026-01-01T00:00:00.000Z",
+        schemaVersion: "2.0",
+        workflowCount: 1,
+        environmentCount: 0,
+        secretReferenceCount: 0,
+      },
+    };
+    authenticatedFetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/dry-run")) {
+        return new Response(JSON.stringify({
+          valid: true,
+          errors: [],
+          warnings: [],
+          stats: { workflows: 1, environments: 0, secretReferences: 0, missingSecrets: 0 },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        projectId: "imported-project",
+        workflowCount: 1,
+        environmentCount: 0,
+        missingSecrets: [],
+        warnings: [],
+      }), { status: 200 });
+    });
+
+    render(
+      <CollectionExportImport
+        isOpen={true}
+        onClose={vi.fn()}
+        mode="import-collection"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/or paste json/i), {
+      target: { value: JSON.stringify(bundle) },
+    });
+    await user.click(screen.getByRole("button", { name: /^validate$/i }));
+    await screen.findByText(/valid project bundle/i);
+    await user.click(screen.getAllByRole("button", { name: /^import project$/i })[1]!);
+
+    await waitFor(() => {
+      expect(authenticatedFetchMock).toHaveBeenCalledWith(
+        `${API_BASE_URL}/api/workspaces/ws-1/projects/import`,
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            bundle,
+            createNewProject: true,
+            newProjectName: "Imported Project",
+            targetProjectId: null,
+            environmentMapping: {},
+          }),
+        }),
+      );
     });
   });
 });

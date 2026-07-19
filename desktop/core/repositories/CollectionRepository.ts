@@ -35,6 +35,10 @@ interface CollectionSettings {
 export class CollectionRepository {
   public constructor(private readonly store: KVStore) {}
 
+  public transaction<T>(fn: () => T): T {
+    return this.store.transaction(fn)
+  }
+
   public create(input: CollectionCreate): Collection {
     const id = generateId()
     const settings: CollectionSettings = {

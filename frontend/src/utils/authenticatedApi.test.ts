@@ -122,6 +122,70 @@ describe("apiweave IPC legacy transport shim", () => {
     });
   });
 
+  test("project import unwraps the bundle and preserves import options", async () => {
+    const bundle = {
+      schemaVersion: "2.0",
+      type: "awecollection",
+      project: { projectId: "source", name: "Imported project", description: "", color: "#123456" },
+      workflows: [],
+      environments: [],
+      secretReferences: [],
+      metadata: {
+        exportedAt: "2026-01-01T00:00:00.000Z",
+        schemaVersion: "2.0",
+        workflowCount: 0,
+        environmentCount: 0,
+        secretReferenceCount: 0,
+      },
+    };
+    const invoke = vi.fn().mockResolvedValue({
+      ok: true,
+      data: { projectId: "target", workflowCount: 0 },
+    });
+    vi.stubGlobal("__APIWEAVE_IPC__", {
+      invoke,
+      onRunProgress: vi.fn().mockReturnValue(() => undefined),
+    });
+
+    const response = await authenticatedFetch(
+      "ipc://apiweave/api/workspaces/ws-1/projects/import",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          bundle,
+          createNewProject: false,
+          targetProjectId: "target",
+        }),
+      },
+    );
+
+    expect(response.ok).toBe(true);
+    expect(invoke).toHaveBeenCalledWith("projects", "import", {
+      workspaceId: "ws-1",
+      bundle,
+      targetProjectId: "target",
+    });
+  });
+
+  test("project export forwards the include-environments option", async () => {
+    const invoke = vi.fn().mockResolvedValue({ ok: true, data: { workflows: [], environments: [] } });
+    vi.stubGlobal("__APIWEAVE_IPC__", {
+      invoke,
+      onRunProgress: vi.fn().mockReturnValue(() => undefined),
+    });
+
+    const response = await authenticatedFetch(
+      "ipc://apiweave/api/workspaces/ws-1/projects/project-1/export?include_environment=false",
+    );
+
+    expect(response.ok).toBe(true);
+    expect(invoke).toHaveBeenCalledWith("projects", "export", {
+      workspaceId: "ws-1",
+      projectId: "project-1",
+      includeEnvironments: false,
+    });
+  });
+
   test("copyInviteLink reports unavailable clipboard", async () => {
     vi.stubGlobal("navigator", {});
     await expect(copyInviteLink("https://example.test/invite")).resolves.toBe(

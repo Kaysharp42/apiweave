@@ -48,10 +48,10 @@ interface ValidationError {
 }
 
 interface ValidationStats {
-  workflowCount?: number;
-  environmentCount?: number;
-  secretCount?: number;
-  nodeCount?: number;
+  workflows?: number;
+  environments?: number;
+  secretReferences?: number;
+  missingSecrets?: number;
 }
 
 interface ValidationResult {
@@ -63,8 +63,10 @@ interface ValidationResult {
 
 interface ImportResult {
   workflowCount: number;
-  collectionId: string;
-  projectId?: string;
+  environmentCount: number;
+  projectId: string;
+  missingSecrets: string[];
+  warnings: string[];
 }
 
 interface CollectionExportImportProps {
@@ -349,7 +351,7 @@ export function CollectionExportImport({
           createNewProject,
           newProjectName:
             newProjectName ||
-            (bundleData.collection as Record<string, unknown> | undefined)
+            (bundleData.project as Record<string, unknown> | undefined)
               ?.name,
           targetProjectId: selectedTargetProject,
           environmentMapping: {},
@@ -372,7 +374,7 @@ export function CollectionExportImport({
         useSidebarStore.getState().signalProjectsRefresh();
 
         setTimeout(() => {
-          onImportSuccess(result.projectId ?? result.collectionId);
+          onImportSuccess(result.projectId);
           onClose();
         }, 2000);
       } else {
@@ -1038,19 +1040,19 @@ export function CollectionExportImport({
                   <div className="grid grid-cols-2 gap-2 mt-3 text-xs text-text-secondary dark:text-text-secondary-dark">
                     <p className="flex items-center gap-1">
                       <Package className="w-3 h-3" /> Workflows:{" "}
-                      {validation.stats?.workflowCount || 0}
+                      {validation.stats?.workflows || 0}
                     </p>
                     <p className="flex items-center gap-1">
                       <Network className="w-3 h-3" /> Environments:{" "}
-                      {validation.stats?.environmentCount || 0}
+                      {validation.stats?.environments || 0}
                     </p>
                     <p className="flex items-center gap-1">
                       <Lock className="w-3 h-3" /> Secrets:{" "}
-                      {validation.stats?.secretCount || 0}
+                      {validation.stats?.secretReferences || 0}
                     </p>
                     <p className="flex items-center gap-1">
-                      <Target className="w-3 h-3" /> Nodes:{" "}
-                      {validation.stats?.nodeCount || 0}
+                      <Target className="w-3 h-3" /> Missing secrets:{" "}
+                      {validation.stats?.missingSecrets || 0}
                     </p>
                   </div>
                 </div>

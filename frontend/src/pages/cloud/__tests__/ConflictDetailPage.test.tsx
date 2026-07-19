@@ -2,8 +2,9 @@
 import "../../../__tests__/setup";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ConflictList } from "../../../components/cloud/ConflictList";
 import { PaletteProvider } from "../../../contexts/PaletteContext";
 import { ConflictDetailPage } from "../ConflictDetailPage";
 import type { Conflict } from "../../../types/cloud";
@@ -105,6 +106,26 @@ describe("ConflictDetailPage", () => {
     },
   );
 
+  it("removes the resolved detail page from back navigation history", async () => {
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-list") return { ok: true, data: [workflowConflict] };
+      if (action === "conflict-get") return { ok: true, data: workflowConflict };
+      if (action === "conflict-resolve") return { ok: true, data: workflowConflict };
+      return { ok: true, data: [] };
+    });
+    const user = userEvent.setup();
+    renderHistoryPage();
+
+    await user.click(await screen.findByRole("button", { name: "Open" }));
+    await screen.findByLabelText("Local workflow definition");
+    await user.click(screen.getByRole("button", { name: "Keep local" }));
+    await user.click(screen.getByRole("button", { name: "Resolve conflict" }));
+
+    await user.click(await screen.findByRole("button", { name: "Back to app" }));
+    expect(await screen.findByText("app index")).toBeInTheDocument();
+    expect(screen.queryByText("Resolve conflict")).not.toBeInTheDocument();
+  });
+
   it("redacts environment secret references in the diff view", async () => {
     renderPage("/cloud/conflicts/env-conflict");
 
@@ -160,6 +181,30 @@ function renderPage(initialEntry: string): void {
         </Routes>
       </MemoryRouter>
     </PaletteProvider>,
+  );
+}
+
+function renderHistoryPage(): void {
+  render(
+    <PaletteProvider>
+      <MemoryRouter initialEntries={["/app", "/cloud/conflicts"]} initialIndex={1}>
+        <Routes>
+          <Route path="/app" element={<div>app index</div>} />
+          <Route path="/cloud/conflicts/:conflictId" element={<ConflictDetailPage />} />
+          <Route path="/cloud/conflicts" element={<ConflictIndex />} />
+        </Routes>
+      </MemoryRouter>
+    </PaletteProvider>,
+  );
+}
+
+function ConflictIndex() {
+  const navigate = useNavigate();
+  return (
+    <div>
+      <button type="button" onClick={() => navigate(-1)}>Back to app</button>
+      <ConflictList />
+    </div>
   );
 }
 
