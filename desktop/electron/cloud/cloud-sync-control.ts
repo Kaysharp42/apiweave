@@ -627,14 +627,14 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     if (conflictCount > 0) {
       return "conflict"
     }
+    if (current === "offline" || current === "syncing" || current === "initializing") {
+      return current
+    }
     if (bindings.some((binding) => binding.lastError?.includes("ErrCloudOffline") === true)) {
       return "offline"
     }
     if (bindings.some((binding) => binding.lastError !== undefined)) {
       return "error"
-    }
-    if (current === "offline" || current === "syncing" || current === "initializing") {
-      return current
     }
     if (bindings.some((binding) => binding.initializationState !== "initialized")) {
       return "initializing"
