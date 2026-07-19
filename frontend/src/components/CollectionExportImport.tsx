@@ -141,6 +141,7 @@ export function CollectionExportImport({
   const [includeEnvironments, setIncludeEnvironments] = useState<boolean>(true);
   const [importMode] = useState<ImportModeType>("linear");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const modalContentRef = useRef<HTMLDivElement>(null);
   const [createNewProject, setCreateNewProject] = useState<boolean>(true);
   const [newProjectName, setNewProjectName] = useState<string>("");
   // Source projects from the SidebarStore — the same workspace-scoped list
@@ -343,6 +344,36 @@ export function CollectionExportImport({
         return;
       }
 
+      const validationResponse = await authenticatedFetch(
+        projectImportUrl(workspaceId, true),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bundle: bundleData }),
+        },
+      );
+      if (!validationResponse.ok) {
+        const error: { detail?: unknown } = await validationResponse.json();
+        setMessage({
+          type: "error",
+          title: "Validation Failed",
+          text: formatErrorMessage(error.detail) || "Failed to validate bundle",
+        });
+        scrollModalToTop(modalContentRef.current);
+        return;
+      }
+      const validationResult: ValidationResult = await validationResponse.json();
+      setValidation(validationResult);
+      if (!validationResult.valid) {
+        setMessage({
+          type: "error",
+          title: "Validation Failed",
+          text: validationResult.errors.join(", "),
+        });
+        scrollModalToTop(modalContentRef.current);
+        return;
+      }
+
       const response = await authenticatedFetch(projectImportUrl(workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -384,6 +415,7 @@ export function CollectionExportImport({
           title: "Import Failed",
           text: formatErrorMessage(error.detail) || "Failed to import project",
         });
+        scrollModalToTop(modalContentRef.current);
       }
     } catch (error: unknown) {
       const err = error as Error;
@@ -392,6 +424,7 @@ export function CollectionExportImport({
         title: "Import Error",
         text: err.message,
       });
+      scrollModalToTop(modalContentRef.current);
     } finally {
       setIsLoading(false);
     }
@@ -745,9 +778,11 @@ export function CollectionExportImport({
     const reader = new FileReader();
     reader.onload = (e: ProgressEvent<FileReader>) => {
       if (e.target?.result) {
-        setUploadedFile(e.target.result as string);
+        const contents = e.target.result as string;
+        setUploadedFile(contents);
         setPastedJson("");
         setValidation(null);
+        setNewProjectName((current) => current || projectNameFromBundle(contents));
       }
     };
     reader.readAsText(file);
@@ -776,7 +811,7 @@ export function CollectionExportImport({
   return (
     <dialog
       open
-      className="fixed inset-0 z-50 bg-transparent p-0"
+      className="fixed inset-0 z-[100] bg-transparent p-0"
       aria-label="Project export import"
     >
       <button
@@ -785,7 +820,10 @@ export function CollectionExportImport({
         className="fixed inset-0 z-40 cursor-default bg-[var(--aw-surface)]/60 dark:bg-[var(--aw-surface)]/80"
         onClick={onClose}
       />
-      <div className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark w-full max-w-2xl max-h-screen overflow-y-auto">
+      <div
+        ref={modalContentRef}
+        className="relative z-50 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark w-full max-w-2xl max-h-screen overflow-y-auto"
+      >
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-border dark:border-border-dark">
           <h2 className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
@@ -994,6 +1032,7 @@ export function CollectionExportImport({
                   onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                     setPastedJson(e.target.value);
                     setUploadedFile(null);
+                    setValidation(null);
                   }}
                   placeholder="Paste project JSON here..."
                   className="w-full h-32 resize-none"
@@ -1131,7 +1170,7 @@ export function CollectionExportImport({
                   onClick={handleImportCollection}
                   disabled={
                     isLoading ||
-                    !validation?.valid ||
+                    (!uploadedFile && !pastedJson) ||
                     (!createNewProject && !selectedTargetProject)
                   }
                   variant="primary"
@@ -1573,6 +1612,24 @@ export function CollectionExportImport({
       </div>
     </dialog>
   );
+}
+
+function projectNameFromBundle(contents: string): string {
+  try {
+    const parsed = JSON.parse(contents) as { readonly project?: { readonly name?: unknown } };
+    return typeof parsed.project?.name === "string" ? parsed.project.name : "";
+  } catch {
+    return "";
+  }
+}
+
+function scrollModalToTop(element: HTMLDivElement | null): void {
+  if (element === null) return;
+  if (typeof element.scrollTo === "function") {
+    element.scrollTo({ top: 0, behavior: "smooth" });
+    return;
+  }
+  element.scrollTop = 0;
 }
 
 export default CollectionExportImport;

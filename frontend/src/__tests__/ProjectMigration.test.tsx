@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import API_BASE_URL from "../utils/apiweaveClient";
 import { CollectionManager } from "../components/CollectionManager";
@@ -216,12 +216,21 @@ describe("project migration UI", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText(/or paste json/i), {
-      target: { value: JSON.stringify(bundle) },
-    });
+    await user.upload(
+      screen.getByLabelText(/project bundle file upload/i),
+      new File([JSON.stringify(bundle)], "Imported_Project.awecollection", {
+        type: "application/json",
+      }),
+    );
+    await screen.findByText(/file loaded successfully/i);
+    expect(screen.getByPlaceholderText(/project name/i)).toHaveValue("Imported Project");
+    const importAction = screen.getAllByRole("button", { name: /^import project$/i })[1]!;
+    expect(importAction).toBeEnabled();
+    expect(screen.getByRole("dialog", { name: /project export import/i })).toHaveClass("z-[100]");
+
     await user.click(screen.getByRole("button", { name: /^validate$/i }));
     await screen.findByText(/valid project bundle/i);
-    await user.click(screen.getAllByRole("button", { name: /^import project$/i })[1]!);
+    await user.click(importAction);
 
     await waitFor(() => {
       expect(authenticatedFetchMock).toHaveBeenCalledWith(
