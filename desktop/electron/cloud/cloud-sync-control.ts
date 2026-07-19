@@ -1,8 +1,13 @@
 import { createHash, generateKeyPairSync } from "node:crypto"
 import { hostname } from "node:os"
 import type { KVStore } from "../../core/db"
-import { CloudSyncRepository } from "../../core/repositories"
+import { CloudSyncRepository, WorkspaceRepository } from "../../core/repositories"
 import { CloudFirstSyncService } from "../../core/services/cloud_first_sync_service"
+import {
+  reconcileWorkspaces,
+  type ReconcilerBindInput,
+  type ReconcilerCatalogEntry,
+} from "./cloud-workspace-reconciler"
 import type { SyncProvider } from "../../core/sync"
 import {
   CloudUnlinkRequiresConfirmationError,
@@ -71,6 +76,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   private activeConfig: DesktopCloudConfig | null
   private workspaceCatalog: readonly CloudWorkspaceCatalogEntry[]
   private linkController: AbortController | null = null
+  private reconcileInFlight: Promise<void> | null = null
 
   public constructor(private readonly options: DesktopCloudSyncControlOptions) {
     this.repository = new CloudSyncRepository(options.store)
@@ -191,6 +197,9 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       this.activeConfig = config
       this.workspaceCatalog = catalog
       this.activateIfReady(false, true)
+      // Link once, everything syncs: provision local-only workspaces, download
+      // accessible cloud-only ones, pair Personal — no manual binding.
+      await this.reconcile()
       if (this.linkController === controller) {
         this.linkController = null
       }
@@ -315,6 +324,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       const catalog = response.workspaces.map(toCatalogEntry)
       this.repository.setSetting(KEY_WORKSPACE_CATALOG, JSON.stringify(catalog))
       this.workspaceCatalog = catalog
+      await this.reconcile()
       setState("idle")
       return this.status()
     } catch (error) {
@@ -323,6 +333,20 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     } finally {
       this.notifyStatusChanged()
     }
+  }
+
+  /**
+   * Hook for the workspace service: a workspace was just created locally. When
+   * cloud is linked, reconcile it (provision + bind + push). No-op when
+   * unlinked. Fire-and-forget — local creation must not block on the network.
+   */
+  public syncNewWorkspace(): void {
+    if (!this.tokenStore.hasTokens() || this.activeConfig === null) {
+      return
+    }
+    void this.reconcile()
+      .catch(() => undefined)
+      .finally(() => this.notifyStatusChanged())
   }
 
   public async retryDeadLetters(input: CloudDeadLetterInput): Promise<CloudSyncStatus> {
@@ -402,6 +426,77 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         await this.createClient(this.activeConfig).resolveConflict(conflict_id, winner)
       },
     }
+  }
+
+  /**
+   * Reconcile local ↔ cloud workspaces. Guarded by a single in-flight promise so
+   * concurrent link/refresh/create triggers coalesce and it is safe to re-run.
+   */
+  private async reconcile(): Promise<void> {
+    if (this.reconcileInFlight !== null) {
+      return this.reconcileInFlight
+    }
+    const run = this.runReconcile()
+    this.reconcileInFlight = run
+    try {
+      await run
+    } finally {
+      if (this.reconcileInFlight === run) {
+        this.reconcileInFlight = null
+      }
+    }
+  }
+
+  private async runReconcile(): Promise<void> {
+    const deviceId = this.tokenStore.getDeviceId()
+    if (deviceId === undefined || !this.tokenStore.hasTokens() || this.activeConfig === null) {
+      return
+    }
+    const client = this.createClient(this.activeConfig)
+    await reconcileWorkspaces({
+      listLocalWorkspaces: () =>
+        new WorkspaceRepository(this.options.store)
+          .listAll()
+          .filter((workspace) => workspace.deletedAt === null)
+          .map((workspace) => ({
+            workspaceId: workspace.workspaceId,
+            name: workspace.name,
+            slug: workspace.slug,
+            isPersonal: workspace.isPersonal,
+          })),
+      listBoundPairs: () =>
+        this.repository.listWorkspaceBindings().map((binding) => ({
+          workspaceId: binding.workspaceId,
+          cloudWorkspaceId: binding.cloudWorkspaceId,
+        })),
+      catalog: () => this.workspaceCatalog as readonly ReconcilerCatalogEntry[],
+      ensureSyncWorkspace: async (input) => toCatalogEntry(await client.ensureSyncWorkspace(input)),
+      createLocalFromCloud: (input) => {
+        new WorkspaceRepository(this.options.store).createWithId({
+          id: input.id,
+          name: input.name,
+          slug: input.slug,
+          isPersonal: input.isPersonal,
+          origin: input.origin,
+        })
+      },
+      bind: (input: ReconcilerBindInput) => {
+        this.firstSyncService.bindAndSnapshot({
+          workspaceId: input.workspaceId,
+          cloudWorkspaceId: input.cloudWorkspaceId,
+          cloudWorkspaceName: input.cloudWorkspaceName,
+          ...(input.teamId !== undefined ? { teamId: input.teamId } : {}),
+          ...(input.teamName !== undefined ? { teamName: input.teamName } : {}),
+          syncMode: "bi-directional",
+          deviceId,
+          recordBaseline: input.recordBaseline,
+        })
+      },
+      reactivate: () => this.activateIfReady(false, true),
+      initializeWorkspace: (workspaceId) => this.requireActiveProvider().initializeWorkspace(workspaceId),
+      log: (message, data) => console.log(`[cloud-reconcile] ${message}`, data ? JSON.stringify(data) : ""),
+    })
+    this.notifyStatusChanged()
   }
 
   private activateIfReady(resumePending = false, replace = false): void {

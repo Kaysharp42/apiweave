@@ -1097,7 +1097,7 @@ describe("CloudSyncProvider", () => {
       )
       expect(row?.retry_count).toBe(1)
       expect(row?.next_retry_at ?? 0).toBeGreaterThan(Date.now())
-      expect(row?.failure_reason).toBe("transport error: ErrCloudOffline")
+      expect(row?.failure_reason).toBe("Can't reach the cloud right now. Sync will resume when you're back online.")
     })
 
     it("continues pulling later workspace bindings after one workspace fails", async () => {
@@ -1168,7 +1168,7 @@ describe("CloudSyncProvider", () => {
         "SELECT workspace_id, name FROM workflows WHERE id = ?",
         ["workflow-second-workspace"],
       )).toEqual({ workspace_id: SECOND_WORKSPACE_ID, name: "Pulled Despite Neighbor Failure" })
-      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("transport error: Error")
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("Something went wrong talking to the cloud. Sync will retry automatically.")
       expect(repository.getWorkspaceBinding(SECOND_WORKSPACE_ID)?.lastSyncedAt).not.toBeNull()
       expect(nock.isDone()).toBe(true)
     })
@@ -1232,7 +1232,7 @@ describe("CloudSyncProvider", () => {
         "SELECT 1 FROM cloud_outbox WHERE workspace_id = ?",
         [SECOND_WORKSPACE_ID],
       )).toBeUndefined()
-      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("transport error: ErrCloudOffline")
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("Can't reach the cloud right now. Sync will resume when you're back online.")
       expect(repository.getWorkspaceBinding(SECOND_WORKSPACE_ID)?.lastSyncedAt).not.toBeNull()
       expect(nock.isDone()).toBe(true)
     })
@@ -1458,7 +1458,7 @@ describe("CloudSyncProvider", () => {
 
       expect(repository.getWorkspaceBinding(WORKSPACE_ID)).toMatchObject({
         initializationState: "initialized",
-        lastError: expect.stringContaining("server rejected mutation"),
+        lastError: expect.stringContaining("couldn't apply a change"),
       })
       expect(repository.countBaselineOutbox(WORKSPACE_ID)).toBe(0)
       expect(repository.countDeadLetterOutbox(WORKSPACE_ID)).toBe(1)
@@ -1467,7 +1467,7 @@ describe("CloudSyncProvider", () => {
         [baselineId],
       )).toMatchObject({
         retry_count: CLOUD_OUTBOX_MAX_RETRIES,
-        failure_reason: expect.stringContaining("rejectionReason=4"),
+        failure_reason: expect.stringContaining("couldn't apply a change"),
       })
       expect(nock.isDone()).toBe(true)
     })
@@ -1826,7 +1826,7 @@ describe("CloudSyncProvider", () => {
       expect(repository.getFullSync(CLOUD_WORKSPACE_ID)).toBeUndefined()
       expect(repository.getCursor(SECOND_CLOUD_WORKSPACE_ID)).toEqual({ cursor: 0n, lastRev: 0n })
       expect(repository.getFullSync(SECOND_CLOUD_WORKSPACE_ID)).toBeTypeOf("number")
-      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("transport error: Error")
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("Something went wrong talking to the cloud. Sync will retry automatically.")
       expect(repository.getWorkspaceBinding(SECOND_WORKSPACE_ID)?.lastSyncedAt).not.toBeNull()
       expect(nock.isDone()).toBe(true)
     })

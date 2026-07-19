@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import { WorkspaceRepository } from "../../repositories"
@@ -47,5 +47,41 @@ describe("WorkspaceService — personal workspace idempotency guard", () => {
     const second = await svc.create({ name: "Personal" })
 
     expect(second.workspaceId).toBe(first.workspaceId)
+  })
+})
+
+describe("WorkspaceService — provision hook", () => {
+  let hookDb: InitializedDatabase
+  let onCreated: ReturnType<typeof vi.fn>
+  let hookedSvc: WorkspaceService
+
+  beforeEach(() => {
+    hookDb = initDatabase({ databasePath: ":memory:" })
+    const workspaces = new WorkspaceRepository(hookDb.kvStore)
+    const existence: ScopeExistence = {
+      workspaceExists: (id) => workspaces.getById(id) !== undefined,
+      environmentExists: () => false,
+    }
+    onCreated = vi.fn()
+    hookedSvc = new WorkspaceService(
+      workspaces,
+      new LocalOnlySyncProvider(),
+      new ScopeResolver(existence),
+      onCreated,
+    )
+  })
+
+  afterEach(() => hookDb.close())
+
+  it("fires the hook after creating a new workspace (cloud can provision it)", async () => {
+    await hookedSvc.create({ name: "Team", slug: "team", isPersonal: false })
+    expect(onCreated).toHaveBeenCalledOnce()
+  })
+
+  it("does not fire the hook when a personal create is a dedupe no-op", async () => {
+    await hookedSvc.create({ name: "Personal", slug: "personal", isPersonal: true })
+    onCreated.mockClear()
+    await hookedSvc.create({ name: "Personal", slug: "personal", isPersonal: true })
+    expect(onCreated).not.toHaveBeenCalled()
   })
 })

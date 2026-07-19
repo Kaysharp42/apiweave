@@ -33,7 +33,7 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "@apiweave/proto": "https://github.com/Kaysharp42/apiweave-proto/archive/refs/tags/v0.2.0.tar.gz",
+    "@apiweave/proto": "https://github.com/Kaysharp42/apiweave-proto/archive/refs/tags/v0.4.0.tar.gz",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.27.2",

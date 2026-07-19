@@ -570,7 +570,7 @@ describe("DesktopCloudSyncControl", () => {
     expect(store.get<{ origin: string }>("SELECT origin FROM workspaces WHERE id = ?", [WORKSPACE_ID]))
       .toEqual({ origin: "cloud" })
     await expect.poll(() => repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError)
-      .toBe("transport error: Error")
+      .toBe("Something went wrong talking to the cloud. Sync will retry automatically.")
     expect(control.status().syncState).toBe("error")
     expect(nock.isDone()).toBe(true)
   })

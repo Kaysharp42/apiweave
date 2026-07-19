@@ -25,6 +25,14 @@ export interface CloudFirstSyncBindingInput {
   readonly teamName?: string
   readonly syncMode: "push" | "bi-directional"
   readonly deviceId: string
+  /**
+   * When false, the binding is created and the workspace is marked for pull
+   * without a baseline snapshot — used for cloud-only workspaces that are
+   * downloaded (pull-only): we must not push a fresh, empty local copy over
+   * the authoritative cloud data, and read-only members would 401 on push.
+   * Defaults to true (bidirectional first sync: pull then push baseline).
+   */
+  readonly recordBaseline?: boolean
 }
 
 export class CloudFirstSyncService {
@@ -69,16 +77,18 @@ export class CloudFirstSyncService {
         initializationState: "pulling",
       })
 
-      const recorder = new BaselineRecorder(cloud)
-      recordWorkspaceUpsert(recorder, syncWorkspace)
-      for (const environment of new EnvironmentRepository(tx).listByWorkspace(input.workspaceId).items) {
-        recordEnvironmentUpsert(recorder, environment)
-      }
-      for (const collection of new CollectionRepository(tx).listByWorkspace(input.workspaceId).items) {
-        recordCollectionUpsert(recorder, collection)
-      }
-      for (const workflow of new WorkflowRepository(tx).listByWorkspace(input.workspaceId, true).items) {
-        recordWorkflowUpsert(recorder, workflow)
+      if (input.recordBaseline !== false) {
+        const recorder = new BaselineRecorder(cloud)
+        recordWorkspaceUpsert(recorder, syncWorkspace)
+        for (const environment of new EnvironmentRepository(tx).listByWorkspace(input.workspaceId).items) {
+          recordEnvironmentUpsert(recorder, environment)
+        }
+        for (const collection of new CollectionRepository(tx).listByWorkspace(input.workspaceId).items) {
+          recordCollectionUpsert(recorder, collection)
+        }
+        for (const workflow of new WorkflowRepository(tx).listByWorkspace(input.workspaceId, true).items) {
+          recordWorkflowUpsert(recorder, workflow)
+        }
       }
 
       const binding = cloud.getWorkspaceBinding(input.workspaceId)

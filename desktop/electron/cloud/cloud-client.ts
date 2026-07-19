@@ -18,8 +18,11 @@ import { EmptySchema } from "@bufbuild/protobuf/wkt"
 import { UlidSchema } from "@apiweave/proto/apiweave/v1/common_pb"
 import {
   DeviceService,
+  EnsureSyncWorkspaceRequestSchema,
   RevokeDeviceRequestSchema,
   SyncWorkspaceListSchema,
+  SyncWorkspaceSchema,
+  type SyncWorkspace,
   type SyncWorkspaceList,
 } from "@apiweave/proto/apiweave/v1/device_pb"
 import {
@@ -296,6 +299,7 @@ const METHOD_HELLO = "Hello"
 const METHOD_PULL_CHANGES = "PullChanges"
 const METHOD_PUSH_DELTAS = "PushDeltas"
 const METHOD_LIST_SYNC_WORKSPACES = "ListSyncWorkspaces"
+const METHOD_ENSURE_SYNC_WORKSPACE = "EnsureSyncWorkspace"
 const METHOD_REVOKE_DEVICE = "RevokeDevice"
 const METHOD_RESOLVE_CONFLICT = "ResolveConflict"
 const METHOD_FETCH_LOSER = "FetchLoser"
@@ -376,6 +380,26 @@ export class CloudClient {
       toJson(EmptySchema, create(EmptySchema)),
     )
     return fromJson(SyncWorkspaceListSchema, json, { ignoreUnknownFields: true })
+  }
+
+  public async ensureSyncWorkspace(params: {
+    workspaceId: string
+    name: string
+    slug: string
+    isPersonal: boolean
+  }): Promise<SyncWorkspace> {
+    const request = create(EnsureSyncWorkspaceRequestSchema, {
+      workspaceId: params.workspaceId,
+      name: params.name,
+      slug: params.slug,
+      isPersonal: params.isPersonal,
+    })
+    const json = await this.call(
+      DeviceService.typeName,
+      METHOD_ENSURE_SYNC_WORKSPACE,
+      toJson(EnsureSyncWorkspaceRequestSchema, request),
+    )
+    return fromJson(SyncWorkspaceSchema, json, { ignoreUnknownFields: true })
   }
 
   public async revokeDevice(deviceId: string): Promise<void> {

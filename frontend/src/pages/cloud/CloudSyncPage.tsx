@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -12,39 +12,31 @@ import {
   Unlink,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
 import { Badge } from "../../components/atoms/Badge";
 import { Button } from "../../components/atoms/Button";
 import { EmptyState } from "../../components/molecules/EmptyState";
 import { ConfirmDialog } from "../../components/molecules/ConfirmDialog";
 import { useCloudSync } from "../../hooks/useCloudSync";
-import { apiweave, IpcError } from "../../utils/apiweaveClient";
-import type {
-  CloudSyncStatus,
-  CloudWorkspaceBinding,
-  CloudWorkspaceCatalogEntry,
-} from "../../types/cloud";
-import type { Workspace } from "../../types/Workspace";
+import { IpcError } from "../../utils/apiweaveClient";
+import type { ContractErrorCode } from "../../../../shared/contract/errors";
+import type { CloudSyncStatus, CloudWorkspaceBinding } from "../../types/cloud";
 
-const ROLE_LABELS = [
-  "No access",
-  "Read",
-  "Triage",
-  "Write",
-  "Maintain",
-  "Admin",
-] as const;
-
-function roleLabel(role: number): string {
-  return ROLE_LABELS[role] ?? "Member";
-}
+// Fallback sentences for the rare IpcError with no server message. Codes must
+// never surface raw — every error the user sees is a sentence.
+const CODE_MESSAGES: Partial<Record<ContractErrorCode, string>> = {
+  denied: "You don't have permission to do that.",
+  not_found: "That workspace or record no longer exists.",
+  validation: "That request wasn't valid. Try again.",
+};
 
 function reportError(error: unknown): void {
-  const message =
-    error instanceof IpcError
-      ? error.message
-      : error instanceof Error
-        ? error.message
-        : "Cloud sync request failed";
+  let message = "Cloud sync request failed.";
+  if (error instanceof IpcError) {
+    message = error.message || CODE_MESSAGES[error.code] || message;
+  } else if (error instanceof Error && error.message) {
+    message = error.message;
+  }
   toast.error(message);
 }
 
@@ -65,65 +57,20 @@ function formatSyncedAt(iso?: string): string {
   return Number.isNaN(date.getTime()) ? "Never" : date.toLocaleString();
 }
 
+const SYNC_STATE_LABELS: Partial<Record<CloudSyncStatus["syncState"], string>> = {
+  initializing: "Reconnecting…",
+  syncing: "Syncing…",
+  offline: "Offline — will resume when you're back online",
+};
+
 export function CloudSyncPage() {
   const navigate = useNavigate();
   const cloud = useCloudSync();
   const { status, loading, unavailable, busy } = cloud;
 
-  const [localWorkspaces, setLocalWorkspaces] = useState<readonly Workspace[]>(
-    [],
-  );
-  const [selectedLocal, setSelectedLocal] = useState("");
-  const [selectedCloud, setSelectedCloud] = useState("");
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [confirmLocalOnly, setConfirmLocalOnly] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (unavailable) return;
-    void apiweave.workspaces
-      .list()
-      .then(setLocalWorkspaces)
-      .catch(() => setLocalWorkspaces([]));
-  }, [unavailable]);
-
-  const boundLocalIds = useMemo(
-    () => new Set(status?.bindings.map((b) => b.workspaceId) ?? []),
-    [status],
-  );
-  const boundCloudIds = useMemo(
-    () => new Set(status?.bindings.map((b) => b.cloudWorkspaceId) ?? []),
-    [status],
-  );
-
-  const unboundLocal = useMemo(
-    () => localWorkspaces.filter((w) => !boundLocalIds.has(w.workspaceId)),
-    [localWorkspaces, boundLocalIds],
-  );
-  const availableCloud = useMemo(
-    () =>
-      (status?.workspaceCatalog ?? []).filter(
-        (c) => !boundCloudIds.has(c.workspaceId) && c.canPull && c.canPush,
-      ),
-    [status, boundCloudIds],
-  );
-
-  // Preselect a sensible mapping: first unbound local workspace, and the cloud
-  // Personal workspace by metadata (never by ID/name equality).
-  useEffect(() => {
-    setSelectedLocal((prev) =>
-      prev && unboundLocal.some((w) => w.workspaceId === prev)
-        ? prev
-        : (unboundLocal[0]?.workspaceId ?? ""),
-    );
-  }, [unboundLocal]);
-  useEffect(() => {
-    setSelectedCloud((prev) => {
-      if (prev && availableCloud.some((c) => c.workspaceId === prev)) return prev;
-      const personal = availableCloud.find((c) => c.isPersonal);
-      return personal?.workspaceId ?? availableCloud[0]?.workspaceId ?? "";
-    });
-  }, [availableCloud]);
 
   const wrap = useCallback(
     (action: () => Promise<CloudSyncStatus>, successMsg?: string) =>
@@ -137,16 +84,6 @@ export function CloudSyncPage() {
       },
     [],
   );
-
-  const bind = wrap(async () => {
-    const entry = availableCloud.find((c) => c.workspaceId === selectedCloud);
-    return cloud.bindWorkspace({
-      workspaceId: selectedLocal,
-      cloudWorkspaceId: selectedCloud,
-      teamId: entry?.teamId ?? null,
-      syncMode: "bi-directional",
-    });
-  }, "Workspace bound — first sync started");
 
   const doUnlink = async (localOnly: boolean): Promise<void> => {
     try {
@@ -201,8 +138,8 @@ export function CloudSyncPage() {
             Cloud Sync
           </h1>
           <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-            Link a cloud account and map local workspaces to cloud workspaces.
-            Secrets, run history, and local auth never leave this device.
+            Link a cloud account and your workspaces sync automatically. Secrets,
+            run history, and local auth never leave this device.
           </p>
         </div>
       </div>
@@ -238,6 +175,7 @@ export function CloudSyncPage() {
 
   const linked = status?.linked ?? false;
   const linkState = status?.linkState ?? "unlinked";
+  const syncStateLabel = status ? SYNC_STATE_LABELS[status.syncState] : undefined;
 
   return (
     <div className="flex h-full flex-col bg-surface dark:bg-surface-dark">
@@ -298,6 +236,13 @@ export function CloudSyncPage() {
                     <AlertTriangle className="h-4 w-4" />
                     Session expired — relink to resume sync.
                   </div>
+                ) : syncStateLabel ? (
+                  <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-text-secondary dark:text-text-secondary-dark">
+                    {status?.syncState === "offline" ? null : (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+                    )}
+                    {syncStateLabel}
+                  </div>
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-2">
@@ -319,11 +264,11 @@ export function CloudSyncPage() {
                   onClick={() =>
                     void wrap(
                       cloud.refreshWorkspaceCatalog,
-                      "Workspace list refreshed",
+                      "Checked for new workspaces",
                     )()
                   }
                 >
-                  Refresh workspaces
+                  Check for new workspaces
                 </Button>
                 <Button
                   variant="ghost"
@@ -350,8 +295,8 @@ export function CloudSyncPage() {
             {(status?.bindings.length ?? 0) === 0 ? (
               <EmptyState
                 icon={<Cloud className="h-12 w-12 text-text-muted" strokeWidth={1.5} />}
-                title="No workspaces synced yet"
-                description="Map a local workspace to a cloud workspace below to start syncing."
+                title="Your workspaces sync automatically"
+                description="Create one from the workspace switcher, or they'll appear here once linked. Use “Check for new workspaces” to pull in workspaces added elsewhere."
               />
             ) : (
               <ul className="divide-y divide-border dark:divide-border-dark">
@@ -361,10 +306,10 @@ export function CloudSyncPage() {
                     binding={binding}
                     busy={busy}
                     onSync={() => void syncNow(binding.workspaceId)()}
-                    onUnbind={() =>
+                    onStopSyncing={() =>
                       void wrap(
                         () => cloud.unbindWorkspace(binding.workspaceId),
-                        "Workspace unbound (local data kept)",
+                        "Stopped syncing (local data kept)",
                       )()
                     }
                     onResolve={() => navigate("/cloud/conflicts")}
@@ -380,66 +325,6 @@ export function CloudSyncPage() {
                   />
                 ))}
               </ul>
-            )}
-          </section>
-        ) : null}
-
-        {/* Add a workspace */}
-        {linked && linkState !== "authenticationRequired" ? (
-          <section className="rounded-sm border border-border bg-surface-raised p-4 dark:border-border-dark dark:bg-surface-dark-raised">
-            <h2 className="mb-3 text-sm font-semibold text-text-primary dark:text-text-primary-dark">
-              Add a workspace
-            </h2>
-            {unboundLocal.length === 0 || availableCloud.length === 0 ? (
-              <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                {unboundLocal.length === 0
-                  ? "Every local workspace is already synced."
-                  : "No more authorized cloud workspaces available. Use Refresh workspaces if you expect more."}
-              </p>
-            ) : (
-              <div className="flex flex-wrap items-end gap-3">
-                <label className="flex flex-col gap-1 text-xs text-text-secondary dark:text-text-secondary-dark">
-                  Local workspace
-                  <select
-                    className="min-w-[12rem] rounded border border-border bg-surface px-2 py-1.5 text-sm text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark"
-                    value={selectedLocal}
-                    onChange={(e) => setSelectedLocal(e.target.value)}
-                  >
-                    {unboundLocal.map((w) => (
-                      <option key={w.workspaceId} value={w.workspaceId}>
-                        {w.name}
-                        {w.isPersonal ? " (Personal)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <span className="pb-2 text-text-muted dark:text-text-muted-dark">
-                  →
-                </span>
-                <label className="flex flex-col gap-1 text-xs text-text-secondary dark:text-text-secondary-dark">
-                  Cloud workspace
-                  <select
-                    className="min-w-[12rem] rounded border border-border bg-surface px-2 py-1.5 text-sm text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark"
-                    value={selectedCloud}
-                    onChange={(e) => setSelectedCloud(e.target.value)}
-                  >
-                    {availableCloud.map((c) => (
-                      <option key={c.workspaceId} value={c.workspaceId}>
-                        {catalogLabel(c)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={busy}
-                  disabled={!selectedLocal || !selectedCloud}
-                  onClick={() => void bind()}
-                >
-                  Bind &amp; sync
-                </Button>
-              </div>
             )}
           </section>
         ) : null}
@@ -485,17 +370,11 @@ export function CloudSyncPage() {
   );
 }
 
-function catalogLabel(entry: CloudWorkspaceCatalogEntry): string {
-  const team = entry.teamName ? `${entry.teamName} · ` : "";
-  const personal = entry.isPersonal ? " (Personal)" : "";
-  return `${team}${entry.workspaceName}${personal} — ${roleLabel(entry.effectiveRole)}`;
-}
-
 interface BindingRowProps {
   readonly binding: CloudWorkspaceBinding;
   readonly busy: boolean;
   readonly onSync: () => void;
-  readonly onUnbind: () => void;
+  readonly onStopSyncing: () => void;
   readonly onResolve: () => void;
   readonly onRetryDeadLetters: () => void;
   readonly onDiscardDeadLetters: () => void;
@@ -505,7 +384,7 @@ function BindingRow({
   binding,
   busy,
   onSync,
-  onUnbind,
+  onStopSyncing,
   onResolve,
   onRetryDeadLetters,
   onDiscardDeadLetters,
@@ -518,16 +397,16 @@ function BindingRow({
           <span className="truncate text-sm font-medium text-text-primary dark:text-text-primary-dark">
             {binding.workspaceName}
           </span>
-          <span className="text-text-muted dark:text-text-muted-dark">→</span>
-          <span className="truncate text-sm text-text-secondary dark:text-text-secondary-dark">
-            {binding.teamName ? `${binding.teamName} · ` : ""}
-            {binding.cloudWorkspaceName}
-          </span>
+          {binding.teamName ? (
+            <span className="truncate text-xs text-text-muted dark:text-text-muted-dark">
+              {binding.teamName}
+            </span>
+          ) : null}
           {initializing ? (
             <Badge variant="warning">
               {binding.initializationState === "pulling"
-                ? "Pulling…"
-                : "Pushing…"}
+                ? "Downloading…"
+                : "Uploading…"}
             </Badge>
           ) : null}
         </div>
@@ -601,9 +480,9 @@ function BindingRow({
           intent="error"
           size="sm"
           icon={<Unlink className="h-4 w-4" />}
-          onClick={onUnbind}
+          onClick={onStopSyncing}
         >
-          Unbind
+          Stop syncing
         </Button>
       </div>
     </li>

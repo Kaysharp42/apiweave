@@ -29,6 +29,7 @@ import { CursorStore } from "./cloud-cursor"
 import { Outbox, type OutboxInput, type OutboxRow, type OutboxKind, type OutboxOp } from "./cloud-outbox"
 import { applyToRepositories, RecordKind, ChangeOp, type ChangeEnvelope } from "./cloud-apply"
 import { PushOutcome_Status } from "@apiweave/proto/apiweave/v1/sync_service_pb"
+import { rejectionMessage, transportErrorMessage } from "./cloud-error-messages"
 
 export { CloudClient, DeviceTokenStore }
 
@@ -431,12 +432,14 @@ export class CloudSyncProvider implements SyncProvider {
       })
       return "blocked"
     } else if (outcome.status === PushOutcome_Status.REJECTED) {
-      const reason = `server rejected mutation: ${pushOutcomeFailureReason(outcome)}`
+      this.log("push rejected", { debug: pushOutcomeDebug(outcome) })
+      const reason = rejectionMessage(outcome.rejectionReason)
       this.outbox?.markDeadLetter(row.id, reason)
       this.repository?.setBindingError(binding.workspaceId, reason)
       return "blocked"
     } else {
-      this.outbox?.markFailed(row.id, pushOutcomeFailureReason(outcome))
+      this.log("push outcome unexpected", { debug: pushOutcomeDebug(outcome) })
+      this.outbox?.markFailed(row.id, rejectionMessage(outcome.rejectionReason))
       return "blocked"
     }
   }
@@ -565,14 +568,16 @@ function mapPayloadWorkspaceId(payload: Uint8Array | null, cloudWorkspaceId: str
 }
 
 function failureReasonForError(error: unknown): string {
-  return `transport error: ${error instanceof Error ? error.name : "unknown"}`
+  return transportErrorMessage(error)
 }
 
 function stateForError(error: unknown): SyncState {
   return error instanceof ErrCloudOffline ? "offline" : "error"
 }
 
-function pushOutcomeFailureReason(outcome: {
+// pushOutcomeDebug renders the raw enum tuple for diagnostic logs only — it must
+// never reach the UI (see cloud-error-messages for the user-facing text).
+function pushOutcomeDebug(outcome: {
   readonly status: PushOutcome_Status
   readonly newRev: bigint
   readonly rejectionReason: number

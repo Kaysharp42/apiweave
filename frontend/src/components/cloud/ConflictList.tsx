@@ -74,8 +74,10 @@ export function ConflictList() {
                   <td className="px-3 py-2">
                     <Badge variant="warning" size="sm">{conflict.kind}</Badge>
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-text-primary dark:text-text-primary-dark">
-                    {conflict.record_id}
+                  <td className="px-3 py-2 text-text-primary dark:text-text-primary-dark">
+                    {conflict.name ?? (
+                      <span className="font-mono text-xs">{conflict.record_id}</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-text-secondary dark:text-text-secondary-dark">
                     {conflict.local_rev}

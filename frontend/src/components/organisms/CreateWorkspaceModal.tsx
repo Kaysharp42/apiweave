@@ -5,8 +5,9 @@ import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
 import { Modal } from "../molecules/Modal";
 import { FormField } from "../molecules/FormField";
-import { authenticatedJson } from "../../utils/apiweaveClient";
+import { apiweave, authenticatedJson } from "../../utils/apiweaveClient";
 import API_BASE_URL from "../../utils/apiweaveClient";
+import { isDesktopShell } from "../../utils/isDesktopShell";
 import type { CreateWorkspaceModalProps, Workspace } from "../../types";
 
 // Workspace slugs use hyphens (backend SLUG_PATTERN: start/end alphanumeric,
@@ -68,20 +69,28 @@ export function CreateWorkspaceModal({
     setServerError(null);
 
     try {
-      const workspace = await authenticatedJson<Workspace>(
-        `${API_BASE_URL}/api/workspaces`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+      // Desktop is IPC-only and single-user: create a non-personal workspace
+      // directly (a bare REST POST would default to isPersonal and just return
+      // the existing Personal). When linked, cloud sync provisions it. The web
+      // path stays a team/user REST create.
+      const workspace = isDesktopShell()
+        ? await apiweave.workspaces.create({
             name: trimmedName,
             slug: trimmedSlug,
-            ownerType: orgId ? "organization" : "user",
-            orgId: orgId ?? null,
             description: description.trim() || null,
-          }),
-        },
-      );
+            isPersonal: false,
+          })
+        : await authenticatedJson<Workspace>(`${API_BASE_URL}/api/workspaces`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: trimmedName,
+              slug: trimmedSlug,
+              ownerType: orgId ? "organization" : "user",
+              orgId: orgId ?? null,
+              description: description.trim() || null,
+            }),
+          });
       await onCreated(workspace);
       toast.success(`Workspace "${workspace.name}" created`);
       onClose();

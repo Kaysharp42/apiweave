@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { GitCompareArrows } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, GitCompareArrows } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "../../components/atoms/Badge";
 import { Button } from "../../components/atoms/Button";
@@ -10,9 +11,15 @@ import { invoke } from "../../utils/apiweaveClient";
 import type { ConflictListItem, ConflictPayload } from "../../types/cloud";
 
 export function ConflictsPage() {
+  const navigate = useNavigate();
   const [resolved, setResolved] = useState<readonly ConflictListItem[]>([]);
   const [loser, setLoser] = useState<ConflictPayload | null>(null);
   const [loadingLoser, setLoadingLoser] = useState(false);
+
+  const goBack = useCallback(() => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate("/");
+  }, [navigate]);
 
   const loadResolved = useCallback(async () => {
     try {
@@ -50,6 +57,16 @@ export function ConflictsPage() {
     <div className="flex h-full flex-col bg-surface dark:bg-surface-dark">
       <div className="border-b border-border px-6 py-6 dark:border-border-dark">
         <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={goBack}
+            aria-label="Back to app"
+            className="gap-1"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back
+          </Button>
           <GitCompareArrows className="h-5 w-5 text-text-secondary dark:text-text-secondary-dark" aria-hidden="true" />
           <div>
             <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
@@ -93,7 +110,9 @@ export function ConflictsPage() {
                   {resolved.map((conflict) => (
                     <tr key={conflict.id}>
                       <td className="px-3 py-2"><Badge variant="secondary">{conflict.kind}</Badge></td>
-                      <td className="px-3 py-2 font-mono text-xs">{conflict.record_id}</td>
+                      <td className="px-3 py-2">
+                        {conflict.name ?? <span className="font-mono text-xs">{conflict.record_id}</span>}
+                      </td>
                       <td className="px-3 py-2"><Badge variant="success">{conflict.winner}</Badge></td>
                       <td className="px-3 py-2 text-text-secondary dark:text-text-secondary-dark">
                         {conflict.resolved_at ?? conflict.created_at}

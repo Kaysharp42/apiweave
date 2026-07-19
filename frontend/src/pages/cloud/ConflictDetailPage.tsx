@@ -149,7 +149,7 @@ export function ConflictDetailPage() {
               Resolve conflict
             </h1>
             <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-              {conflict.kind} · <span className="font-mono">{conflict.record_id}</span>
+              {conflict.kind} · {conflict.name ?? <span className="font-mono">{conflict.record_id}</span>}
             </p>
           </div>
         </div>

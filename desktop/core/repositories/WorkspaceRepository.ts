@@ -49,6 +49,24 @@ export class WorkspaceRepository {
     return mustExist(this.getById(id), `workspace ${id} missing after insert`)
   }
 
+  /**
+   * Insert a workspace with a caller-supplied id. Used to mirror a cloud
+   * workspace locally under its cloud id so the binding is `localId == cloudId`
+   * (no id remap needed on pull). Does not record a sync mutation.
+   */
+  public createWithId(input: WorkspaceCreate & { readonly id: string }): Workspace {
+    const settings: WorkspaceSettings = {
+      description: input.description ?? null,
+      isPersonal: input.isPersonal ?? false,
+      deletedAt: null,
+    }
+    this.store.set(
+      "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
+      [input.id, input.name, input.slug, input.origin ?? "cloud", input.syncMode ?? "none", toJson(settings)],
+    )
+    return mustExist(this.getById(input.id), `workspace ${input.id} missing after insert`)
+  }
+
   public getById(workspaceId: string): Workspace | undefined {
     const row = this.store.get<WorkspaceRow>(`SELECT ${COLUMNS} FROM workspaces WHERE id = ?`, [workspaceId])
     return row === undefined ? undefined : rowToWorkspace(row)

@@ -7,6 +7,7 @@ import {
 import { ChevronDown, User, Plus, ListTree } from "lucide-react";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useAuth } from "../../auth/useAuth";
+import { isDesktopShell } from "../../utils/isDesktopShell";
 import { Button } from "../atoms/Button";
 import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
@@ -210,7 +211,7 @@ export function OrgWorkspaceSwitcher() {
             )}
           </div>
 
-          {!isSingleUser && (
+          {(isDesktopShell() || !isSingleUser) && (
             <div className="space-y-1 border-t border-border/80 p-2 dark:border-border-dark/80">
               <Button
                 variant="ghost"
@@ -225,18 +226,21 @@ export function OrgWorkspaceSwitcher() {
               >
                 New workspace
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                fullWidth
-                className="justify-start text-xs"
-                icon={<ListTree className="h-4 w-4" aria-hidden="true" />}
-                onClick={() => {
-                  setOpen(false);
-                }}
-              >
-                Manage workspaces
-              </Button>
+              {/* "Manage workspaces" is a web/team-only surface. */}
+              {!isSingleUser && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  fullWidth
+                  className="justify-start text-xs"
+                  icon={<ListTree className="h-4 w-4" aria-hidden="true" />}
+                  onClick={() => {
+                    setOpen(false);
+                  }}
+                >
+                  Manage workspaces
+                </Button>
+              )}
             </div>
           )}
         </div>

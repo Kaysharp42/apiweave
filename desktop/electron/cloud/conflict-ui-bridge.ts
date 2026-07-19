@@ -36,6 +36,7 @@ const conflictListItemSchema = z.object({
   workspace_id: z.string(),
   kind: kindSchema,
   record_id: z.string(),
+  name: z.string().nullable(),
   local_rev: z.number(),
   cloud_rev: z.number(),
   winner: winnerSchema.nullable(),
@@ -81,11 +82,11 @@ export class ConflictUiBridge {
   public list(input: { readonly resolved?: boolean; readonly since_days?: number } = {}): readonly z.infer<typeof conflictListItemSchema>[] {
     const resolved = input.resolved ?? false
     const days = input.since_days ?? 30
-    return this.repository.listConflicts(resolved, days).map(conflictToListItem)
+    return this.repository.listConflicts(resolved, days).map((conflict) => conflictToListItem(conflict, this.repository))
   }
 
   public get(conflictId: string): z.infer<typeof conflictSchema> {
-    return conflictToDetail(this.mustGet(conflictId))
+    return conflictToDetail(this.mustGet(conflictId), this.repository)
   }
 
   public async resolve(input: ResolveConflictInput): Promise<z.infer<typeof conflictSchema>> {
@@ -122,12 +123,13 @@ export class ConflictUiBridge {
   }
 }
 
-function conflictToListItem(conflict: CloudConflict): z.infer<typeof conflictListItemSchema> {
+function conflictToListItem(conflict: CloudConflict, repository: CloudSyncRepository): z.infer<typeof conflictListItemSchema> {
   return {
     id: conflict.conflictId,
     workspace_id: conflict.workspaceId,
     kind: conflict.kind as ConflictKind,
     record_id: conflict.recordId,
+    name: repository.getRecordName(conflict.kind, conflict.recordId) ?? null,
     local_rev: conflict.localRev,
     cloud_rev: conflict.cloudRev,
     winner: conflict.winner,
@@ -136,9 +138,9 @@ function conflictToListItem(conflict: CloudConflict): z.infer<typeof conflictLis
   }
 }
 
-function conflictToDetail(conflict: CloudConflict): z.infer<typeof conflictSchema> {
+function conflictToDetail(conflict: CloudConflict, repository: CloudSyncRepository): z.infer<typeof conflictSchema> {
   return {
-    ...conflictToListItem(conflict),
+    ...conflictToListItem(conflict, repository),
     local_payload: parsePayload(conflict.localPayload),
     cloud_payload: parsePayload(conflict.cloudPayload),
   }

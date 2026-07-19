@@ -23,6 +23,7 @@ const workflowConflict: Conflict = {
   workspace_id: "ws-1",
   kind: "workflow",
   record_id: "workflow-1",
+  name: "My Workflow",
   local_rev: 3,
   cloud_rev: 4,
   winner: null,

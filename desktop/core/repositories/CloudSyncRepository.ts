@@ -180,6 +180,15 @@ interface CloudConflictDbRow extends SqliteRow {
   readonly resolvedAt: string | null
 }
 
+// Maps a conflict kind to the local table holding its display name.
+// Table names are a fixed allowlist here — never interpolate untrusted input into SQL.
+const RECORD_KIND_TABLES: Record<string, string> = {
+  workspace: "workspaces",
+  project: "collections",
+  collection: "collections",
+  workflow: "workflows",
+  environment: "environments",
+}
 const KEY_CURSOR = "cloud.cursor."
 const KEY_LAST_REV = "cloud.last_rev."
 const KEY_LAST_FULL_SYNC = "cloud.last_full_sync."
@@ -693,9 +702,17 @@ export class CloudSyncRepository {
   }
 
   public getWorkspaceName(workspaceId: string): string | undefined {
+    return this.getRecordName("workspace", workspaceId)
+  }
+
+  // Resolves a record's display name by kind+id from its local table. Best-effort:
+  // returns undefined if the record no longer exists locally (caller falls back to the id).
+  public getRecordName(kind: string, recordId: string): string | undefined {
+    const table = RECORD_KIND_TABLES[kind]
+    if (table === undefined) return undefined
     return this.store.get<{ name: string } & SqliteRow>(
-      "SELECT name FROM workspaces WHERE id = ?",
-      [workspaceId],
+      `SELECT name FROM ${table} WHERE id = ?`,
+      [recordId],
     )?.name
   }
 

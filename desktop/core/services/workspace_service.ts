@@ -25,6 +25,9 @@ export class WorkspaceService {
     private readonly workspaces: WorkspaceRepository,
     private readonly syncProvider: SyncProvider,
     private readonly scopeResolver: ScopeResolver,
+    // Called after a workspace is created so cloud sync can provision + bind it
+    // when linked. No-op when unlinked; fire-and-forget (never blocks create).
+    private readonly onWorkspaceCreated?: () => void,
   ) {}
 
   async list(): Promise<readonly Workspace[]> {
@@ -50,6 +53,9 @@ export class WorkspaceService {
     })
     recordWorkspaceUpsert(this.syncProvider, created)
     await this.syncProvider.push()
+    // When cloud is linked this local-only push is a no-op (no binding yet);
+    // the hook provisions + binds + pushes the baseline in the background.
+    this.onWorkspaceCreated?.()
     return created
   }
 

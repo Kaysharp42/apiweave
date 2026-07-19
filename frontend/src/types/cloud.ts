@@ -14,6 +14,7 @@ export interface ConflictListItem {
   readonly workspace_id: string;
   readonly kind: ConflictKind;
   readonly record_id: string;
+  readonly name: string | null;
   readonly local_rev: number;
   readonly cloud_rev: number;
   readonly winner: ConflictWinner | null;

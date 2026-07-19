@@ -210,7 +210,10 @@ describe("OrgWorkspaceSwitcher", () => {
     });
   });
 
-  it("hides workspace creation in single-user mode", async () => {
+  it("shows workspace creation on desktop even in single-user mode", async () => {
+    // Desktop is single-user but IPC-backed: users create workspaces locally and
+    // cloud sync provisions them. The old web-only "hide when single-user" gate
+    // no longer applies on the desktop shell.
     const user = userEvent.setup();
     authState.isSingleUser = true;
     const personalWs = makeWorkspace({ isPersonal: true });
@@ -223,7 +226,11 @@ describe("OrgWorkspaceSwitcher", () => {
     await user.click(screen.getByLabelText("Switch workspace"));
 
     expect(
-      screen.queryByRole("button", { name: "New workspace" }),
+      screen.getByRole("button", { name: "New workspace" }),
+    ).toBeInTheDocument();
+    // "Manage workspaces" stays a web/team-only affordance.
+    expect(
+      screen.queryByRole("button", { name: "Manage workspaces" }),
     ).not.toBeInTheDocument();
   });
 });
