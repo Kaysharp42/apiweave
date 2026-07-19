@@ -78,7 +78,8 @@ export function CloudAccountSection({
 
   const syncNow = wrap(async () => {
     const next = await cloud.pull();
-    return cloud.push().catch(() => next);
+    await cloud.push().catch(() => next);
+    return cloud.refreshWorkspaceCatalog();
   });
 
   const heading = (

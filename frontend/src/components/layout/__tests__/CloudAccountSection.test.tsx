@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "../../../__tests__/setup";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CloudAccountSection } from "../CloudAccountSection";
@@ -38,8 +39,12 @@ function binding(overrides: Partial<CloudSyncStatus["bindings"][number]> = {}) {
   };
 }
 
-function setStatus(status: CloudSyncStatus | "unavailable"): void {
-  const invoke = vi.fn(async () => {
+function setStatus(status: CloudSyncStatus | "unavailable") {
+  const invoke = vi.fn(async (
+    _domain: string,
+    _action: string,
+    _payload: unknown,
+  ) => {
     if (status === "unavailable") {
       return { ok: false, error: { code: "denied", message: "no bridge" } };
     }
@@ -55,6 +60,7 @@ function setStatus(status: CloudSyncStatus | "unavailable"): void {
     value: bridge,
     configurable: true,
   });
+  return invoke;
 }
 
 function renderSection(): void {
@@ -102,7 +108,7 @@ describe("CloudAccountSection", () => {
   });
 
   it("offers Sync now in the active/idle state", async () => {
-    setStatus({
+    const invoke = setStatus({
       ...base,
       linked: true,
       active: true,
@@ -111,7 +117,19 @@ describe("CloudAccountSection", () => {
       bindings: [binding()],
     });
     renderSection();
-    expect(await item(/sync now/i)).toBeInTheDocument();
+    await userEvent.click(await item(/sync now/i));
+
+    await waitFor(() => {
+      const actions = invoke.mock.calls
+        .filter(([domain]) => domain === "cloud")
+        .map(([, action]) => action);
+      expect(actions).toEqual([
+        "status",
+        "pull",
+        "push",
+        "refreshWorkspaceCatalog",
+      ]);
+    });
   });
 
   it("offers Relink when authentication is required", async () => {

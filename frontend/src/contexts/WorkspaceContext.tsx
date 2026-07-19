@@ -13,7 +13,10 @@ import type {
   WorkspaceContextValue,
   WorkspaceEntry,
 } from "../types/WorkspaceContextValue";
-import { authenticatedJson } from "../utils/apiweaveClient";
+import {
+  authenticatedJson,
+  onCloudStatusChanged,
+} from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -83,6 +86,27 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
 
     return () => {
       cancelled = true;
+    };
+  }, [loadWorkspaceData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const unsubscribe = onCloudStatusChanged(() => {
+      void loadWorkspaceData()
+        .then((data) => {
+          if (cancelled) return;
+          setWorkspaces(data.workspaces);
+          setMemberships(data.roleMap);
+        })
+        .catch(() => {
+          // Keep the current list when a background refresh fails.
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
     };
   }, [loadWorkspaceData]);
 
