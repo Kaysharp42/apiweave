@@ -49,9 +49,6 @@ let scheduler: RunScheduler | null = null
 let mcpHost: McpHost | null = null
 let isQuitting = false
 
-// Optional Vite dev server (`npm run dev`) - port 3000 per vite.config.js.
-const DEV_SERVER_URL = "http://localhost:3000"
-
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("ozone-platform-hint", "auto")
 }
@@ -114,8 +111,7 @@ async function createWindow(): Promise<void> {
   })
 
   try {
-    const serveStatic = app.isPackaged || process.env["APIWEAVE_USE_VITE"] !== "1"
-    const rendererUrl = serveStatic ? "app://local/" : DEV_SERVER_URL
+    const rendererUrl = "app://local/"
     await win.loadURL(rendererUrl)
     console.info(`[renderer] loaded ${rendererUrl}`)
   } catch (error) {

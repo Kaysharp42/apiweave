@@ -8,17 +8,6 @@ const pkg = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
 );
 
-const proxy = {
-  "^/api(?:/|$)": {
-    target: process.env.BACKEND_INTERNAL_URL || "http://localhost:8000",
-    changeOrigin: true,
-  },
-  "^/mcp(?:/|$)": {
-    target: process.env.BACKEND_INTERNAL_URL || "http://localhost:8000",
-    changeOrigin: true,
-  },
-};
-
 export default defineConfig(({ command }) => ({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(pkg.version),
@@ -42,18 +31,12 @@ export default defineConfig(({ command }) => ({
   },
   server: {
     port: 3000,
-    host: true,
-    allowedHosts: process.env.FRONTEND_ALLOWED_HOST
-      ? [process.env.FRONTEND_ALLOWED_HOST]
-      : undefined,
-    proxy,
+    host: "127.0.0.1",
+    strictPort: true,
   },
   preview: {
     port: 3000,
-    host: true,
-    allowedHosts: process.env.FRONTEND_ALLOWED_HOST
-      ? [process.env.FRONTEND_ALLOWED_HOST]
-      : undefined,
-    proxy,
+    host: "127.0.0.1",
+    strictPort: true,
   },
 }));

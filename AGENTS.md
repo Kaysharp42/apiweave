@@ -25,7 +25,7 @@ npm run build            # Build the installable desktop package
 - `scripts/start.sh` / `scripts/start.ps1` — run the desktop app in dev.
 - `scripts/build.sh` / `scripts/build.ps1` — build the desktop installer.
 - `scripts/desktop.ps1 build` (Windows) / `scripts/desktop.sh build` (Linux/macOS) — build the desktop installer.
-- For day-to-day development, run `npm run dev` from `app/`; this bundles the main process, starts Vite, and launches Electron pointed at the dev renderer. Renderer changes hot reload; restart the command after main-process changes.
+- For day-to-day development, run `npm run dev` from `app/`; this builds both bundles and launches Electron with the renderer embedded behind `app://local/`. No renderer HTTP server is started. Restart the command after source changes.
 
 ## Architecture & Code Quirks (Do Not Violate)
 

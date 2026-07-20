@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the APIWeave desktop app with the Vite renderer and Electron shell.
+# Build and start the APIWeave desktop app with its embedded renderer.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

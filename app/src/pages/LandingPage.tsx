@@ -696,11 +696,10 @@ function SelfHost() {
 git clone https://github.com/your-org/apiweave
 cd apiweave
 
-# Setup + start (one-time setup, then dev server)
-./setup.sh && ./start-dev.sh
+# Setup + start the desktop app
+./scripts/setup.sh && ./scripts/start.sh
 
-# Open the app
-# http://localhost:3000`}</code>
+# APIWeave opens in its own desktop window`}</code>
             </pre>
           </div>
         </div>

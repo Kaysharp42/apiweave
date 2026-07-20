@@ -79,7 +79,7 @@ The bridge binds only to `127.0.0.1`, but the port still has to be free. If the 
 
 ## Troubleshooting
 
-- **If the renderer shows a stale URL after editing `app/.env`**, rebuild the renderer (`npm run build:renderer` from `app/`). The Vite dev server picks up changes; the built bundle does not.
+- **If the renderer shows stale build-time configuration**, rebuild the renderer (`npm run build:renderer` from `app/`). The desktop app always loads the built bundle.
 - **If the main process refuses to start with a database error**, the directory pointed at by `APIWEAVE_DB_PATH` is not writable. Check permissions and free disk space.
 - **If the MCP bridge fails to bind**, the port in `APIWEAVE_MCP_PORT` is in use, or the bridge was disabled in **Settings**. Re-enable the bridge in **Settings**, change the port, or set `APIWEAVE_MCP_DISABLE=1` to suppress the bridge entirely.
 - **If a stored secret value seems unreadable after moving the database to a new machine**, the keyfile from the source machine is not on the destination. Copy the keyfile too, or re-enter the secrets through the write flow.

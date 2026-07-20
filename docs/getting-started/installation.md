@@ -122,7 +122,7 @@ scripts/desktop.ps1 build
 ./scripts/desktop.sh build
 ```
 
-The installer lands in `app/release/`. For day-to-day development, run `cd app && npm run dev` instead. It bundles the main process, starts the Vite renderer, and launches Electron. Renderer changes hot reload; restart the command after main-process changes.
+The installer lands in `app/release/`. For day-to-day development, run `cd app && npm run dev` instead. It builds the main process and renderer, then launches Electron with the renderer loaded from `app://local/`. It does not start an HTTP server. Restart the command after source changes.
 
 ## Verify the Install
 
