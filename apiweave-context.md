@@ -42,7 +42,7 @@ There is no separate backend, no MongoDB, no FastAPI, no worker. Everything is o
 
 ### 3. Atomic Design Structure
 ```
-frontend/src/
+app/src/
   types/              — Shared TypeScript interfaces and types
   components/
     atoms/            — Button, Input, Badge, Spinner, Toggle, etc. (no business logic)
@@ -115,15 +115,17 @@ export function Button({
 ### 7. Testing Requirements
 After EVERY phase of work:
 1. Write/update tests for components changed in that phase
-2. Run test suite: `cd frontend && npm test`
-3. Run type check: `cd frontend && npx tsc --noEmit`
-4. Run production build: `cd frontend && npm run build`
-5. All must pass before committing
+2. Run test suite: `cd app && npm test`
+3. Run both type checks: `cd app && npm run typecheck`
+4. Run lint: `cd app && npm run lint`
+5. Run the production bundles: `cd app && npm run build:app`
+6. Run the installer build when packaging changed: `cd app && npm run build`
+7. All applicable checks must pass before committing
 
 For desktop-side changes:
-1. Run `cd desktop && npm run typecheck:desktop`
-2. Run `cd desktop && npm run test:desktop`
-3. Run `cd desktop && npm run build`
+1. Run `cd app && npm run typecheck:desktop`
+2. Run `cd app && npm run test:desktop`
+3. Run `cd app && npm run build:electron`
 
 ### 8. Commit Requirements
 After EVERY phase:
@@ -224,7 +226,7 @@ After EVERY phase:
 ### Before Starting Any Work
 1. Read this file (`apiweave-context.md`)
 2. Read `todo.md` for current phase and checklist
-3. Read `DESIGN_SYSTEM.md` for detailed design tokens and guidelines
+3. Read `app/DESIGN_SYSTEM.md` for detailed design tokens and guidelines
 4. Understand the existing codebase structure before making changes
 
 ### During Work
@@ -233,18 +235,17 @@ After EVERY phase:
 3. Follow atomic design structure — put components in the right layer
 4. Use design tokens — never hardcoded colors
 5. Write tests alongside components
-6. For desktop-side changes: keep all SQLite access inside `desktop/core/repositories/`, register new operations through `desktop/core/ipc/handlers/`, never bypass the IPC handler registry
+6. For desktop-side changes: keep all SQLite access inside `app/core/repositories/`, register new operations through `app/core/ipc/handlers/`, never bypass the IPC handler registry
 
 ### After Each Phase
-1. Run `cd frontend && npx tsc --noEmit` — zero type errors required
-2. Run `cd frontend && npm run lint` — zero lint errors required
-3. Run `cd frontend && npm run build` — successful build required
-4. Run `cd frontend && npm test` — all tests passing required
-5. Run `cd desktop && npm run typecheck:desktop` and `cd desktop && npm run test:desktop`
-6. Commit with phase-specific message (excluding `todo.md`, `progress/`)
+1. Run `cd app && npm run typecheck` — zero type errors required
+2. Run `cd app && npm run lint` — zero lint errors required
+3. Run `cd app && npm run build:app` — successful renderer and Electron bundles required
+4. Run `cd app && npm test` — all tests passing required
+5. Commit with phase-specific message (excluding `todo.md`, `progress/`)
 
 ### Phase 10 Lessons Learned
-- TypeScript migration is not complete while `.js` tests remain under `frontend/src`; tests are part of the strict source tree and must be migrated alongside production files.
+- TypeScript migration is not complete while `.js` tests remain under `app/src`; tests are part of the strict source tree and must be migrated alongside production files.
 - Fallback UI props should preserve the real component contract. Prefer conditional rendering over constructing incomplete placeholder objects for typed domain entities like `Environment`.
 - Canvas hydration must tolerate both backend workflow payloads (`nodeId`/`edgeId`) and in-memory ReactFlow snapshots (`id`/`data`) when tabs can store either shape.
 - Production debug output should be removed during final polish. Keep diagnostic logging limited to `console.warn`/`console.error` or guard verbose logs behind development-only checks.
@@ -267,14 +268,14 @@ APIWeave exposes a local MCP (Model Context Protocol) server so AI agents on the
 
 | Transport | Use Case | Entry Point |
 |-----------|----------|-------------|
-| **Loopback HTTP** | Local AI agents on the same machine | `desktop/core/mcp/host.ts` |
+| **Loopback HTTP** | Local AI agents on the same machine | `app/core/mcp/host.ts` |
 
 The server is bound to `127.0.0.1` only. It is opt-in (a setting in the desktop app) and authenticates with a static per-install token written to a file under the user's app data directory. There is no `stdio` transport in the desktop app; loopback HTTP is the single MCP entry point. There is no Streamable HTTP across the network — the desktop app has no exposed ports.
 
 ### File Structure
 
 ```
-desktop/core/mcp/
+app/core/mcp/
   host.ts        HTTP server bound to 127.0.0.1
   bridge.ts      Maps MCP tool calls to IPC handler invocations
   server.ts      MCP server setup
@@ -293,9 +294,9 @@ desktop/core/mcp/
 ### Testing/Verification Baseline
 
 After MCP changes:
-1. Run desktop tests: `cd desktop && npm run test:desktop`
-2. Run type check: `cd desktop && npm run typecheck:desktop`
-3. Run desktop build: `cd desktop && npm run build`
+1. Run desktop tests: `cd app && npm run test:desktop`
+2. Run type check: `cd app && npm run typecheck:desktop`
+3. Run desktop build: `cd app && npm run build:electron`
 4. Enable the MCP bridge in the app settings, point an MCP client at the loopback URL, and confirm the tool picker shows the expected tool list.
 
 ---

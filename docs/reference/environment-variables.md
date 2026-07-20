@@ -18,7 +18,7 @@ Variables Vite injects into the browser bundle. They are baked in at build time,
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `VITE_API_URL` | No | `http://localhost:8000` (dev) | Legacy. The renderer always talks to the bundled main process over the typed IPC channel — in development and in packaged builds — and does not make HTTP calls to a separate backend. This variable is no longer read at runtime; it remains in `frontend/.env.example` and the `ImportMeta` type for compatibility. |
+| `VITE_API_URL` | No | `http://localhost:8000` (dev) | Legacy. The renderer always talks to the bundled main process over the typed IPC channel — in development and in packaged builds — and does not make HTTP calls to a separate backend. This variable is no longer read at runtime; it remains in `app/.env.example` and the `ImportMeta` type for compatibility. |
 | `VITE_API_WEAVE_URL` | No | `http://localhost:8000` (dev) | Legacy. Same as `VITE_API_URL`: the renderer uses the typed IPC channel and does not call a separate HTTP backend. No longer read at runtime. |
 
 ### Example frontend `.env`
@@ -32,7 +32,7 @@ These values are legacy and are not read at runtime. The renderer always talks t
 
 ## Main Process (Desktop)
 
-Variables the Electron main process reads from the host environment. In a packaged app, defaults are baked in. In a development run from `desktop/`, you can set these in the shell before `npm run dev:electron` to override the defaults.
+Variables the Electron main process reads from the host environment. In a packaged app, defaults are baked in. In a development run from `app/`, you can set these in the shell before `npm run dev` to override the defaults.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -57,12 +57,12 @@ A short list of foot-guns we have seen. Each one has tripped up a real user.
 
 ### Mistake 1: Changing `VITE_API_URL` after the frontend has built
 
-Vite injects these values at build time, then the browser bundle no longer reads `.env`. If you change the value in `frontend/.env` and forget to rebuild, the running app keeps the old URL. The fix is always `npm run build` after editing `frontend/.env`.
+Vite injects these values at build time, then the browser bundle no longer reads `.env`. If you change the value in `app/.env` and forget to rebuild, the running app keeps the old URL. The fix is always `npm run build` after editing `app/.env`.
 
 ```bash
-cd frontend
+cd app
 # Edit .env, then rebuild
-npm run build
+npm run build:renderer
 ```
 
 ### Mistake 2: Pointing `APIWEAVE_DB_PATH` at a read-only location
@@ -79,7 +79,7 @@ The bridge binds only to `127.0.0.1`, but the port still has to be free. If the 
 
 ## Troubleshooting
 
-- **If the renderer shows a stale URL after editing `frontend/.env`**, rebuild the frontend (`npm run build` from `frontend/`). The Vite dev server picks up changes; the built bundle does not.
+- **If the renderer shows a stale URL after editing `app/.env`**, rebuild the renderer (`npm run build:renderer` from `app/`). The Vite dev server picks up changes; the built bundle does not.
 - **If the main process refuses to start with a database error**, the directory pointed at by `APIWEAVE_DB_PATH` is not writable. Check permissions and free disk space.
 - **If the MCP bridge fails to bind**, the port in `APIWEAVE_MCP_PORT` is in use, or the bridge was disabled in **Settings**. Re-enable the bridge in **Settings**, change the port, or set `APIWEAVE_MCP_DISABLE=1` to suppress the bridge entirely.
 - **If a stored secret value seems unreadable after moving the database to a new machine**, the keyfile from the source machine is not on the destination. Copy the keyfile too, or re-enter the secrets through the write flow.

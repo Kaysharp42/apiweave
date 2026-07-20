@@ -1,0 +1,14 @@
+-- Gate marker for the TS post-migration pass that canonicalises every
+-- workflow's `graph_json` (see
+-- desktop/core/db/canonicalize_existing_workflows.ts, invoked from
+-- electron/main.ts after initDatabase). The actual graph rewrite lives in
+-- TS: the canonical NodeConfig shape uses `KeyValuePair[]` for
+-- `headers` / `cookies` / `queryParams` / `pathVariables`, and reshaping a
+-- nested JSON column with SQL only obscures the transform while offering
+-- nothing the TS pass can't do in one obvious place. The migration runner
+-- (`core/db/migrations.ts`) bumps `user_version` to 3 after applying this
+-- file; existing rows are then rewritten in place on the next app startup.
+--
+-- ponytail: no SQL DDL needed here. This file exists solely so user_version
+-- advances and the TS pass can be skipped once it has run.
+SELECT 1;

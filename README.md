@@ -73,11 +73,15 @@ There is no operations section in the desktop app: no authentication to set up, 
 
 ```text
 apiweave/
-  frontend/   React app, ReactFlow canvas, contexts, components
-  desktop/    Electron main process, IPC handlers, repositories, runner, MCP bridge
-  docs/       User-facing documentation (the hub and all guides)
-  progress/   Internal implementation notes and history
-  shared/     Cross-process TypeScript types
+  app/
+    src/       React app, ReactFlow canvas, contexts, components (the renderer)
+    electron/  Electron main process and preload entry points
+    core/      IPC handlers, repositories, runner, services, and MCP bridge
+    shared/    Cross-process TypeScript contracts and Zod schemas
+    package.json
+  scripts/     setup / start / build scripts (Linux + Windows)
+  docs/        User-facing documentation (the hub and all guides)
+  progress/    Internal implementation notes and history
 ```
 
 ## License

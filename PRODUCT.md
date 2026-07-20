@@ -22,7 +22,7 @@ Precise, minimal, professional. A developer tool that earns trust through clarit
 
 ## Anti-references
 
-The existing DESIGN_SYSTEM.md (frontend/DESIGN_SYSTEM.md) defines 10 explicit forbidden patterns that are incorporated by reference:
+The existing DESIGN_SYSTEM.md (app/DESIGN_SYSTEM.md) defines 10 explicit forbidden patterns that are incorporated by reference:
 
 1. No hardcoded hex/rgb in components — all colors reference design tokens
 2. No `any` type — TypeScript strict mode is non-negotiable

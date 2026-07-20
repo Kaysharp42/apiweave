@@ -101,11 +101,13 @@ If you are working on APIWeave itself, build the desktop installer from source.
 git clone https://github.com/Kaysharp42/apiweave.git
 cd apiweave
 
-# Install the renderer dependencies
-cd frontend && npm install && cd ..
+# Install everything in one step (recommended)
+./scripts/setup.sh        # macOS / Linux
+# Windows (PowerShell):
+# .\scripts\setup.ps1
 
-# Install the desktop dependencies
-cd desktop && npm install && cd ..
+# Or install the single package manually:
+cd app && npm install && cd ..
 
 # Build the installer
 # Windows (PowerShell):
@@ -114,7 +116,7 @@ scripts/desktop.ps1 build
 ./scripts/desktop.sh build
 ```
 
-The installer lands in `desktop/release/`. For day-to-day development, run `cd desktop && npm run dev:electron` instead. It builds the renderer, bundles the main process, and launches Electron pointed at the dev renderer. Hot reload happens in the renderer; the main process restarts on rebuild.
+The installer lands in `app/release/`. For day-to-day development, run `cd app && npm run dev` instead. It bundles the main process, starts the Vite renderer, and launches Electron. Renderer changes hot reload; restart the command after main-process changes.
 
 ## Verify the Install
 

@@ -8,18 +8,16 @@ set -euo pipefail
 
 cmd="${1:-dev}"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
-desktop="$repo/desktop"
-frontend="$repo/frontend"
+app="$repo/app"
 
-[ -d "$desktop/node_modules" ] || npm --prefix "$desktop" install
+[ -d "$app/node_modules" ] || npm --prefix "$app" install
 
 case "$cmd" in
   dev)
-    npm --prefix "$desktop" run dev
+    npm --prefix "$app" run dev
     ;;
   build)
-    npm --prefix "$frontend" run build
-    npm --prefix "$desktop" run build
+    npm --prefix "$app" run build
     ;;
   *) echo "usage: $0 [dev|build]" >&2; exit 2 ;;
 esac

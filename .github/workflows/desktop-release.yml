@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: app/package-lock.json
 
       # electron-builder shells out to fpm for the .deb/.pacman targets; pacman
       # packaging needs bsdtar (libarchive-tools) and fakeroot.
@@ -33,24 +33,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y fakeroot libarchive-tools
 
-      - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-
-      - name: Install desktop deps
-        working-directory: desktop
+      - name: Install app dependencies
+        working-directory: app
         run: npm ci
 
-      # electron-builder ships dist/desktop/** but does not compile TS — bundle
-      # the main process (esbuild) first or the installer has no main.js.
-      - name: Bundle main process
-        working-directory: desktop
-        run: npm run build:electron
-
       - name: Package installer (electron-builder)
-        working-directory: desktop
+        working-directory: app
         env:
           # No Apple signing certs in CI — build unsigned rather than fail.
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -60,11 +48,11 @@ jobs:
         with:
           name: apiweave-desktop-${{ matrix.os }}
           path: |
-            desktop/release/*.exe
-            desktop/release/*.dmg
-            desktop/release/*.AppImage
-            desktop/release/*.deb
-            desktop/release/*.pacman
+            app/release/*.exe
+            app/release/*.dmg
+            app/release/*.AppImage
+            app/release/*.deb
+            app/release/*.pacman
           if-no-files-found: error
 
   # Attach every OS's installer to the GitHub Release for the tag, so users

@@ -8,39 +8,30 @@ APIWeave is a local-first Electron desktop app. The Python backend, MongoDB, sep
 
 ## Critical Development Commands
 
-### Frontend (React/Vite, the renderer)
-
-Run these from `frontend/` after every phase to verify changes:
+Run these from the single `app/` package after every phase:
 
 ```bash
-cd frontend
-npm test                 # Run unit tests
-npx tsc --noEmit         # Typecheck (zero errors allowed)
-npm run lint             # Linting
-npm run build            # Verify production build
-```
-
-### Desktop (Electron main process, IPC, runner, MCP)
-
-Run these from `desktop/` for the desktop side:
-
-```bash
-cd desktop
-npm run test:desktop        # Vitest run
-npm run typecheck:desktop   # tsc --noEmit on the desktop TS tree
-npm run build               # Build the electron bundle via esbuild
+cd app
+npm test                 # Renderer + desktop + shared unit tests
+npm run typecheck        # Renderer and desktop TypeScript configs
+npm run lint             # Renderer, desktop, and shared linting
+npm run build:app        # Build renderer and Electron bundles
+npm run build            # Build the installable desktop package
 ```
 
 ### Dev Shell
 
+- `scripts/setup.sh` (Linux/macOS) / `scripts/setup.ps1` (Windows) — install the single dependency graph in `app/`.
+- `scripts/start.sh` / `scripts/start.ps1` — run the desktop app in dev.
+- `scripts/build.sh` / `scripts/build.ps1` — build the desktop installer.
 - `scripts/desktop.ps1 build` (Windows) / `scripts/desktop.sh build` (Linux/macOS) — build the desktop installer.
-- For day-to-day development, run `npm run dev:electron` from `desktop/`; this builds the frontend, bundles the main process, and launches Electron pointed at the dev renderer. Hot reload happens in the renderer; the main process restarts on rebuild.
+- For day-to-day development, run `npm run dev` from `app/`; this bundles the main process, starts Vite, and launches Electron pointed at the dev renderer. Renderer changes hot reload; restart the command after main-process changes.
 
 ## Architecture & Code Quirks (Do Not Violate)
 
 ### Frontend
 
-- **WorkflowContext is Sacred**: `frontend/src/contexts/WorkflowContext.jsx` is the single source of truth for canvas state. Bypassing it for variables or settings will cause sync bugs.
+- **WorkflowContext is Sacred**: `app/src/contexts/WorkflowContext.tsx` is the single source of truth for canvas state. Bypassing it for variables or settings will cause sync bugs.
 - **Auto-Save Only**: State changes trigger a 700ms debounced auto-save over IPC. NEVER implement manual "Save" buttons.
 - **TypeScript STRICT**: `.ts`/`.tsx` ONLY. `any` is strictly forbidden.
 - **ONE Type Per File**: Every interface/type MUST be in its own file under `src/types/` and exported via `index.ts`.
@@ -49,16 +40,16 @@ npm run build               # Build the electron bundle via esbuild
 ### Desktop
 
 - **Single process**: The Electron main process owns everything except the renderer UI. There is no separate backend, worker, or database server. Keep it that way.
-- **Repositories only**: All SQLite access goes through `desktop/core/repositories/`. The IPC handlers, the runner, the MCP bridge, and any other consumer must call repository methods. No raw `better-sqlite3` queries outside `core/db/` and `core/repositories/`.
-- **IPC handler registry**: New server-side operations go into `desktop/core/ipc/handlers/<domain>.ts` and are registered through `desktop/core/ipc/handlers/index.ts`. The renderer calls them through the typed channel exposed by `desktop/electron/preload.ts`. Don't add a new `ipcMain.handle(...)` call scattered across the codebase; route through the registry.
-- **MCP bridge uses the same handlers**: `desktop/core/mcp/` exposes the IPC handler registry as a local HTTP server bound to the loopback interface. Adding a new IPC handler is the only step needed to expose it to local agents — do not maintain a parallel MCP handler list.
+- **Repositories only**: All SQLite access goes through `app/core/repositories/`. The IPC handlers, the runner, the MCP bridge, and any other consumer must call repository methods. No raw `better-sqlite3` queries outside `core/db/` and `core/repositories/`.
+- **IPC handler registry**: New server-side operations go into `app/core/ipc/handlers/<domain>.ts` and are registered through `app/core/ipc/handlers/index.ts`. The renderer calls them through the typed channel exposed by `app/electron/preload.ts`. Don't add a new `ipcMain.handle(...)` call scattered across the codebase; route through the registry.
+- **MCP bridge uses the same handlers**: `app/core/mcp/` exposes the IPC handler registry as a local HTTP server bound to the loopback interface. Adding a new IPC handler is the only step needed to expose it to local agents — do not maintain a parallel MCP handler list.
 - **No secrets in exports**: `.awecollection` bundles carry references only. Secret values, ciphertext, private keys, and tokens never appear in exports or in any read API.
 
 ## Design Context
 
 - **PRODUCT.md** (root): Strategic product register, users, brand personality, design principles, and anti-references.
 - **DESIGN.md** (root): Visual design system — colors, typography, elevation, components, do's and don'ts. Follows Google Stitch DESIGN.md format.
-- **frontend/DESIGN_SYSTEM.md**: Full component inventory, atomic design architecture, DaisyUI themes, CSS custom properties, and the redesign contract.
+- **app/DESIGN_SYSTEM.md**: Full component inventory, atomic design architecture, DaisyUI themes, CSS custom properties, and the redesign contract.
 - **`.impeccable/` directory**: Design tooling config for `/impeccable` commands.
 
 ## MCP Tools (codebase-memory-mcp)

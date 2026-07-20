@@ -8,7 +8,7 @@ None. This is a reference doc for users who need to find an IPC handler or an MC
 
 ## Where to Find the Full Reference
 
-The renderer talks to the main process through a single typed channel exposed by `desktop/electron/preload.ts`. Every IPC call is a `domain.action` name on that channel, and the handler registry routes it to the right service call. The full channel map is regenerated at build time; check the running app's developer tools (the network/IPC panel) for the authoritative list.
+The renderer talks to the main process through a single typed channel exposed by `app/electron/preload.ts`. Every IPC call is a `domain.action` name on that channel, and the handler registry routes it to the right service call. The full channel map is regenerated at build time; check the running app's developer tools (the network/IPC panel) for the authoritative list.
 
 For the local MCP bridge, the per-tool schema is in the running server's `tools/list` response. Treat the per-tool signature as the source of truth; the surface evolves.
 
@@ -26,21 +26,21 @@ The IPC surface is grouped by resource, and the renderer and the local MCP bridg
 | MCP | `mcp.*` | Bridge status, token rotation, port, on/off toggle |
 | App | `app.*` | Settings, about, version, log level |
 
-The renderer never calls services directly. Every renderer call routes through a handler in `desktop/core/ipc/handlers/`, and the handler delegates to a service. The MCP bridge follows the same rule: every tool call maps to a handler, and the handler delegates to the same service.
+The renderer never calls services directly. Every renderer call routes through a handler in `app/core/ipc/handlers/`, and the handler delegates to a service. The MCP bridge follows the same rule: every tool call maps to a handler, and the handler delegates to the same service.
 
 ## Handler Groups
 
 | Group | Path | What it covers |
 |-------|------|----------------|
-| Workflows | `desktop/core/ipc/handlers/workflows.ts` | List, get, create, update, delete, add node, export, import, import dry-run, run, resume |
-| Runs | `desktop/core/ipc/handlers/runs.ts` | Get status, get results, get node result, list, cancel, latest failed |
-| Projects | `desktop/core/ipc/handlers/projects.ts` | List, get, create, update, delete, list workflows, add workflow, remove workflow, reorder, export, import, import dry-run, run |
-| Collections | `desktop/core/ipc/handlers/collections.ts` | Legacy alias surface; new code uses the projects group |
-| Environments | `desktop/core/ipc/handlers/environments.ts` | List, get, create, update, delete |
-| Secrets | `desktop/core/ipc/handlers/secrets.ts` | List (metadata only), get (metadata only), write (sealed box), rotate (sealed box), delete, get public key |
-| Workspaces | `desktop/core/ipc/handlers/workspaces.ts` | List, get, current |
-| Common | `desktop/core/ipc/handlers/common.ts` | Shared types, error shapes, helpers |
-| Index | `desktop/core/ipc/handlers/index.ts` | Registration entry point for `registerAllHandlers` |
+| Workflows | `app/core/ipc/handlers/workflows.ts` | List, get, create, update, delete, add node, export, import, import dry-run, run, resume |
+| Runs | `app/core/ipc/handlers/runs.ts` | Get status, get results, get node result, list, cancel, latest failed |
+| Projects | `app/core/ipc/handlers/projects.ts` | List, get, create, update, delete, list workflows, add workflow, remove workflow, reorder, export, import, import dry-run, run |
+| Collections | `app/core/ipc/handlers/collections.ts` | Legacy alias surface; new code uses the projects group |
+| Environments | `app/core/ipc/handlers/environments.ts` | List, get, create, update, delete |
+| Secrets | `app/core/ipc/handlers/secrets.ts` | List (metadata only), get (metadata only), write (sealed box), rotate (sealed box), delete, get public key |
+| Workspaces | `app/core/ipc/handlers/workspaces.ts` | List, get, current |
+| Common | `app/core/ipc/handlers/common.ts` | Shared types, error shapes, helpers |
+| Index | `app/core/ipc/handlers/index.ts` | Registration entry point for `registerAllHandlers` |
 
 ## Common Patterns
 

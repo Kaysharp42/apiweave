@@ -1,6 +1,6 @@
-# Render smoke test for the Electron desktop shell. Builds the frontend, then
+# Render smoke test for the Electron desktop shell. Builds the renderer, then
 # launches the shell headless under Xvfb (no sidecars) and asserts the renderer
-# loads the embedded SPA — see desktop/smoke.cjs. Catches a broken app://
+# loads the embedded SPA - see app/smoke.cjs. Catches a broken app://
 # protocol handler or preload before they ship.
 name: Desktop render smoke
 
@@ -8,14 +8,12 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - desktop/**
-      - frontend/**
+      - app/**/**
       - .github/workflows/desktop-smoke.yml
   push:
     branches: [main]
     paths:
-      - desktop/**
-      - frontend/**
+      - app/**/**
       - .github/workflows/desktop-smoke.yml
 
 jobs:
@@ -28,23 +26,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: app/package-lock.json
 
-      # The non-packaged shell serves frontend/dist over app://, so build it first.
-      - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-
-      - name: Install desktop deps
-        working-directory: desktop
+      - name: Install app dependencies
+        working-directory: app
         run: npm ci
 
-      # smoke.cjs launches the built shell, so bundle the main process first.
-      - name: Bundle main process
-        working-directory: desktop
-        run: npm run build:electron
+      - name: Build renderer and main process
+        working-directory: app
+        run: npm run build:app
 
       - name: Install Xvfb + Electron runtime libs
         run: |
@@ -58,5 +48,5 @@ jobs:
             libasound2
 
       - name: Launch headless and assert render
-        working-directory: desktop
+        working-directory: app
         run: xvfb-run -a --server-args="-screen 0 1280x800x24" node smoke.cjs

@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "ignoreDeprecations": "6.0",
+    "strict": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["shared/*"]
+    },
+    "noEmit": true
+  },
+  "include": ["electron/**/*.ts", "core/**/*.ts", "shared/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "release",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "core/runner/harness/**"
+  ]
+}

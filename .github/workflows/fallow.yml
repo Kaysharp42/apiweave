@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: app
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +21,7 @@ jobs:
         id: fallow-audit
         uses: fallow-rs/fallow@v2
         with:
-          root: frontend
+          root: app
           command: audit
           format: sarif
           gate: new-only

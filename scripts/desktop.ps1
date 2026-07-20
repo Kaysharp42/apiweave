@@ -7,14 +7,12 @@ param([ValidateSet('dev', 'build')][string]$Command = 'dev')
 $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $PSScriptRoot
-$desktop = Join-Path $repo 'desktop'
-$frontend = Join-Path $repo 'frontend'
+$app = Join-Path $repo 'app'
 
-if (-not (Test-Path (Join-Path $desktop 'node_modules'))) { npm --prefix $desktop install }
+if (-not (Test-Path (Join-Path $app 'node_modules'))) { npm --prefix $app install }
 
 if ($Command -eq 'dev') {
-    npm --prefix $desktop run dev
+    npm --prefix $app run dev
 } else {
-    npm --prefix $frontend run build
-    npm --prefix $desktop run build
+    npm --prefix $app run build
 }
