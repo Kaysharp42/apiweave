@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-export const CANONICAL_CLOUD_ENTRY_URL = "https://apiweave.kaysharp.com"
+export const CANONICAL_CLOUD_ENTRY_URL = "https://apiweave.app"
 export const DESKTOP_CONFIG_PATH = "/api/desktop/config"
 export const SUPPORTED_SYNC_PROTOCOL_VERSIONS = [1] as const
 

@@ -9,9 +9,9 @@ import {
 
 const VALID_CONFIG = {
   version: 1,
-  webBaseUrl: "https://apiweave.kaysharp.com",
-  apiBaseUrl: "https://apiweave-api.kaysharp.com",
-  oidcIssuer: "https://apiweave-zitadel.kaysharp.com",
+  webBaseUrl: "https://apiweave.app",
+  apiBaseUrl: "https://api.apiweave.app",
+  oidcIssuer: "https://auth.apiweave.app",
   desktopClientId: "desktop-client-id",
   minimumDesktopVersion: "0.1.0",
   syncProtocolVersions: [1, 2],
