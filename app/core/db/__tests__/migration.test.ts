@@ -185,9 +185,9 @@ describe("database migrations", () => {
     try {
       expect(upgraded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
       expect(upgraded.kvStore.get(
-        "SELECT initialization_state, cloud_workspace_name FROM cloud_workspace_bindings WHERE workspace_id = ?",
+        "SELECT initialization_state, cloud_workspace_name, local_origin FROM cloud_workspace_bindings WHERE workspace_id = ?",
         ["workspace-1"],
-      )).toEqual({ initialization_state: "initialized", cloud_workspace_name: "" })
+      )).toEqual({ initialization_state: "initialized", cloud_workspace_name: "", local_origin: "local" })
       expect(upgraded.kvStore.get<{ total: number }>("SELECT COUNT(*) AS total FROM cloud_outbox")?.total).toBe(1)
       expect(upgraded.kvStore.get(
         "SELECT origin, syncMode FROM workspaces WHERE id = ?",
@@ -205,6 +205,41 @@ describe("database migrations", () => {
       })
       expect(upgraded.kvStore.get("SELECT value FROM app_settings WHERE key = 'cloud.binding_migration_warning'"))
         .toEqual({ value: "1 duplicate cloud workspace binding(s) were disconnected" })
+    } finally {
+      upgraded.close()
+    }
+  })
+
+  it("classifies legacy Team bindings as downloaded cloud copies", () => {
+    const tempRoot = makeTempRoot()
+    const oldMigrationsPath = path.join(tempRoot, "migrations-v8")
+    fs.mkdirSync(oldMigrationsPath)
+    for (const fileName of fs.readdirSync(path.join(__dirname, "..", "migrations"))) {
+      if (/^00[1-8]_.*\.sql$/.test(fileName)) {
+        fs.copyFileSync(
+          path.join(__dirname, "..", "migrations", fileName),
+          path.join(oldMigrationsPath, fileName),
+        )
+      }
+    }
+    const databasePath = path.join(tempRoot, "team-binding-upgrade.db")
+    const old = initDatabase({ databasePath, migrationsPath: oldMigrationsPath })
+    old.kvStore.set(
+      "INSERT INTO workspaces (id, name, slug, origin, syncMode) VALUES (?, ?, ?, ?, ?)",
+      ["team-workspace", "Team", "team", "team", "bi-directional"],
+    )
+    old.kvStore.set(
+      "INSERT INTO cloud_workspace_bindings (workspace_id, cloud_workspace_id, team_id, sync_mode) VALUES (?, ?, ?, ?)",
+      ["team-workspace", "cloud-team-workspace", "team-1", "bi-directional"],
+    )
+    old.close()
+
+    const upgraded = initDatabase({ databasePath })
+    try {
+      expect(upgraded.kvStore.get(
+        "SELECT local_origin FROM cloud_workspace_bindings WHERE workspace_id = ?",
+        ["team-workspace"],
+      )).toEqual({ local_origin: "team" })
     } finally {
       upgraded.close()
     }

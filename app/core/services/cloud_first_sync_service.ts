@@ -73,6 +73,7 @@ export class CloudFirstSyncService {
         teamId: input.teamId ?? null,
         teamName: input.teamName ?? null,
         syncMode: input.syncMode,
+        localOrigin: workspace.origin,
         deviceId: input.deviceId,
         initializationState: "pulling",
       })

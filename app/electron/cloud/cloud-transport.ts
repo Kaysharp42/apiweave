@@ -386,6 +386,7 @@ export class CloudSyncProvider implements SyncProvider {
       teamId: null,
       teamName: null,
       syncMode: "bi-directional",
+      localOrigin: "local",
       deviceId: null,
       initializationState: "initialized",
       boundAt: "",

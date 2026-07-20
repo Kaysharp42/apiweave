@@ -3,6 +3,7 @@ import { generateId } from "../id"
 import { slugify } from "./helpers"
 import { sanitizeCloudSnapshotPayload } from "../sync/cloud-mutations"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
+import type { WorkspaceOrigin } from "@shared/types/WorkspaceOrigin"
 
 export type CloudOutboxKind = "workspace" | "project" | "workflow" | "environment"
 export type CloudOutboxOp = "upsert" | "tombstone"
@@ -49,6 +50,7 @@ export interface CloudWorkspaceBindingUpsert {
   readonly teamId?: string | null
   readonly teamName?: string | null
   readonly syncMode: string
+  readonly localOrigin?: WorkspaceOrigin
   readonly deviceId?: string
   readonly initializationState: CloudBindingInitializationState
 }
@@ -62,6 +64,7 @@ export interface CloudWorkspaceBinding {
   readonly teamId: string | null
   readonly teamName: string | null
   readonly syncMode: string
+  readonly localOrigin: WorkspaceOrigin
   readonly deviceId: string | null
   readonly initializationState: CloudBindingInitializationState
   readonly boundAt: string
@@ -136,6 +139,7 @@ interface CloudWorkspaceBindingDbRow extends SqliteRow {
   readonly team_id: string | null
   readonly team_name: string | null
   readonly sync_mode: string
+  readonly local_origin: string
   readonly device_id: string | null
   readonly initialization_state: CloudBindingInitializationState
   readonly boundAt: string
@@ -193,7 +197,7 @@ const KEY_CURSOR = "cloud.cursor."
 const KEY_LAST_REV = "cloud.last_rev."
 const KEY_LAST_FULL_SYNC = "cloud.last_full_sync."
 const WORKSPACE_BINDING_SELECT = `SELECT workspace_id, cloud_workspace_id, cloud_workspace_name,
-  team_id, team_name, sync_mode, device_id, initialization_state, boundAt, lastSyncedAt,
+  team_id, team_name, sync_mode, local_origin, device_id, initialization_state, boundAt, lastSyncedAt,
   initializedAt, last_error FROM cloud_workspace_bindings`
 
 export const CLOUD_OUTBOX_MAX_RETRIES = 10
@@ -617,8 +621,8 @@ export class CloudSyncRepository {
     this.store.set(
       `INSERT INTO cloud_workspace_bindings (
         workspace_id, cloud_workspace_id, cloud_workspace_name, team_id, team_name,
-        sync_mode, device_id, initialization_state
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        sync_mode, local_origin, device_id, initialization_state
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(workspace_id) DO UPDATE SET
         cloud_workspace_id = excluded.cloud_workspace_id,
         cloud_workspace_name = excluded.cloud_workspace_name,
@@ -633,6 +637,7 @@ export class CloudSyncRepository {
         input.teamId ?? null,
         input.teamName ?? null,
         input.syncMode,
+        input.localOrigin ?? "local",
         input.deviceId ?? null,
         input.initializationState,
       ],
@@ -738,7 +743,14 @@ export class CloudSyncRepository {
     this.store.transaction((store) => {
       store.set(
         `UPDATE workspaces SET origin = 'local', syncMode = 'none', updatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-         WHERE id IN (SELECT workspace_id FROM cloud_workspace_bindings)`,
+         WHERE id IN (
+           SELECT workspace_id FROM cloud_workspace_bindings WHERE local_origin = 'local'
+         )`,
+      )
+      store.delete(
+        `DELETE FROM workspaces WHERE id IN (
+           SELECT workspace_id FROM cloud_workspace_bindings WHERE local_origin IN ('cloud', 'team')
+         )`,
       )
       store.delete("DELETE FROM cloud_outbox")
       store.delete("DELETE FROM cloud_record_state")
@@ -868,7 +880,7 @@ export class CloudSyncRepository {
 
   private upsertWorkspace(id: string, rev: bigint, payload: Record<string, unknown>, force: boolean): void {
     const name = String(payload["name"] ?? "")
-    const slug = String(payload["slug"] ?? slugify(name, id))
+    const slug = this.uniqueWorkspaceSlug(String(payload["slug"] ?? slugify(name, id)), id)
     const origin = String(payload["origin"] ?? "cloud")
     const syncMode = String(payload["syncMode"] ?? "bi-directional")
     const settingsJson = JSON.stringify({
@@ -883,6 +895,20 @@ export class CloudSyncRepository {
        ${force ? "" : "WHERE excluded.rev > workspaces.rev"}`,
       [id, name, slug, origin, syncMode, settingsJson, Number(rev)],
     )
+  }
+
+  private uniqueWorkspaceSlug(requestedSlug: string, workspaceId: string): string {
+    const base = requestedSlug || slugify("workspace", workspaceId)
+    let candidate = base
+    let suffix = 2
+    while (this.store.get<SqliteRow>(
+      "SELECT 1 FROM workspaces WHERE slug = ? AND id <> ?",
+      [candidate, workspaceId],
+    ) !== undefined) {
+      candidate = `${base}-${suffix}`
+      suffix += 1
+    }
+    return candidate
   }
 
   private upsertCollection(workspaceId: string, id: string, rev: bigint, payload: Record<string, unknown>, force: boolean): void {
@@ -1315,6 +1341,7 @@ function rowToWorkspaceBinding(row: CloudWorkspaceBindingDbRow): CloudWorkspaceB
     teamId: row.team_id,
     teamName: row.team_name,
     syncMode: row.sync_mode,
+    localOrigin: row.local_origin as WorkspaceOrigin,
     deviceId: row.device_id,
     initializationState: row.initialization_state,
     boundAt: row.boundAt,

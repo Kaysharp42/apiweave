@@ -335,7 +335,7 @@ export function CloudSyncPage() {
         onClose={() => setConfirmUnlink(false)}
         onConfirm={() => void doUnlink(false)}
         title="Disconnect cloud account?"
-        message="Sync stops and cloud credentials are removed from this device. Your local workspaces, workflows, and secrets are kept. The device will be revoked in the cloud."
+        message="Sync stops and cloud credentials are removed from this device. Workspaces created locally are kept, including their workflows and secrets. Workspaces downloaded from Cloud or a shared Team are removed from this device. The device will be revoked in the cloud."
         confirmLabel="Disconnect"
         intent="error"
       />

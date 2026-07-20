@@ -124,6 +124,50 @@ describe("conflict-ui-bridge", () => {
     )).toEqual({ server_rev: 9, local_rev: 9, dirty: 0, conflict_id: null })
   })
 
+  it("disambiguates a cloud workspace slug that is already used locally", async () => {
+    store.set(
+      "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
+      ["personal-workspace", "Personal", "personal", "local", "none", "{}"],
+    )
+    const local = { workspaceId: WORKSPACE_ID, name: "Conflicts", slug: "conflicts", origin: "cloud", syncMode: "bi-directional" }
+    const cloud = { workspaceId: WORKSPACE_ID, name: "Cloud Personal", slug: "personal", origin: "cloud", syncMode: "bi-directional" }
+    store.set(
+      `INSERT INTO cloud_conflicts (
+        conflict_id, workspace_id, kind, record_id, base_rev,
+        local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "workspace-slug-conflict",
+        WORKSPACE_ID,
+        "workspace",
+        WORKSPACE_ID,
+        1,
+        Buffer.from(JSON.stringify(local)),
+        Buffer.from(JSON.stringify(cloud)),
+        2,
+        3,
+        "upsert",
+        "upsert",
+      ],
+    )
+
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "workspace-slug-conflict", winner: "cloud", device_id: "device-1" },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(store.get<{ name: string; slug: string }>(
+      "SELECT name, slug FROM workspaces WHERE id = ?",
+      [WORKSPACE_ID],
+    )).toEqual({ name: "Cloud Personal", slug: "personal-2" })
+    expect(store.get<{ slug: string }>(
+      "SELECT slug FROM workspaces WHERE id = ?",
+      ["personal-workspace"],
+    )).toEqual({ slug: "personal" })
+  })
+
   it("errors if the Go SyncService resolve call fails", async () => {
     insertConflict("conflict-4")
     resolver.resolveConflict.mockRejectedValueOnce(new Error("sync service down"))

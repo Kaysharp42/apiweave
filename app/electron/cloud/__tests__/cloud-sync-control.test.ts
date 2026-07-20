@@ -135,6 +135,21 @@ describe("DesktopCloudSyncControl", () => {
         conflictCount: 1,
       }],
     })
+    store.set(
+      "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
+      ["downloaded-team", "Downloaded Team", "downloaded-team", "team", "bi-directional", "{}"],
+    )
+    repository.upsertWorkspaceBinding({
+      workspaceId: "downloaded-team",
+      cloudWorkspaceId: "cloud-downloaded-team",
+      cloudWorkspaceName: "Downloaded Team",
+      teamId: "team-1",
+      teamName: "Team One",
+      syncMode: "bi-directional",
+      localOrigin: "team",
+      deviceId: "device-1",
+      initializationState: "initialized",
+    })
     nock("https://auth.test")
       .post("/oauth/v2/token")
       .reply(200, { id_token: "unlink-id-token" })
@@ -160,6 +175,8 @@ describe("DesktopCloudSyncControl", () => {
       "SELECT origin, syncMode, name FROM workspaces WHERE id = ?",
       [WORKSPACE_ID],
     )).toEqual({ origin: "local", syncMode: "none", name: "Local Workspace" })
+    expect(store.get("SELECT 1 FROM workspaces WHERE id = ?", ["downloaded-team"]))
+      .toBeUndefined()
     expect(nock.isDone()).toBe(true)
   })
 

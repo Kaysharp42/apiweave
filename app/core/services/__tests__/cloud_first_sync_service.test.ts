@@ -57,6 +57,7 @@ describe("CloudFirstSyncService", () => {
       workspaceId: workspace.workspaceId,
       cloudWorkspaceId: "cloud-personal-id",
       cloudWorkspaceName: "Cloud Personal",
+      localOrigin: "local",
       initializationState: "pulling",
     })
     expect(new WorkspaceRepository(store).getById(workspace.workspaceId)).toMatchObject({

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "../../../__tests__/setup";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CloudSyncPage } from "../CloudSyncPage";
@@ -121,5 +121,18 @@ describe("CloudSyncPage", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.queryByText(/rejectionReason=|status=3/)).not.toBeInTheDocument();
+  });
+
+  it("warns that downloaded cloud workspaces are removed on disconnect", async () => {
+    setStatus({ ...base, bindings: [binding()] });
+    renderPage();
+
+    const disconnect = await screen.findByRole("button", { name: "Disconnect" });
+    fireEvent.click(disconnect);
+
+    expect(
+      screen.getByText(/Workspaces downloaded from Cloud or a shared Team are removed/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Workspaces created locally are kept/)).toBeInTheDocument();
   });
 });
