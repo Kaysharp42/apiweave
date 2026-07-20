@@ -39,6 +39,14 @@ Before opening a PR:
 
 The PR description should explain the why. The diff already shows the what.
 
+## Publishing A Release
+
+1. Update the version in both `app/package.json` and `app/package-lock.json`, then merge the release commit into `main`.
+2. Tag that commit with a semantic version such as `v0.6.0` and push the tag.
+3. The desktop release workflow verifies that the tag is on `main` and matches the package version before building and publishing the GitHub release.
+
+The workflow publishes Windows x64, macOS Intel and Apple Silicon, and Linux x64 installers. Linux includes AppImage, Debian, RPM, and Pacman formats. Release notes are generated from merged changes and every release includes SHA-256 checksums.
+
 ## Code of Conduct
 
 Participation is governed by the Contributor Covenant. Read the full text at [contributor-covenant.org](https://www.contributor-covenant.org/). Report conduct violations to the maintainers privately.

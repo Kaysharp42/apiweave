@@ -15,11 +15,11 @@ For contributors who want to build the desktop app from source: Node.js 20+ and 
 
 ## Download the Installer
 
-Grab the latest installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases). Three artifact types are published per release:
+Grab the latest installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases). Each release also includes `SHA256SUMS.txt` for download verification.
 
-- **Windows**: `APIWeave Setup <version>.exe` (NSIS per-user installer).
-- **macOS**: `APIWeave-<version>.dmg`.
-- **Linux**: `APIWeave-<version>.AppImage`, `apiweave-desktop_<version>_amd64.deb`, and `apiweave-desktop-<version>.pacman`. Pick the one that matches your distro.
+- **Windows**: `APIWeave-<version>-win-x64.exe` (NSIS per-user installer).
+- **macOS**: `APIWeave-<version>-mac-x64.dmg` for Intel or `APIWeave-<version>-mac-arm64.dmg` for Apple Silicon.
+- **Linux**: AppImage, `.deb`, `.rpm`, and `.pacman` x64 builds. Pick the one that matches your distro.
 
 ## Windows
 
@@ -41,31 +41,37 @@ The installer and binaries are unsigned, so SmartScreen may warn on first launch
 
 ## Linux
 
-Three install paths. Pick what fits your distro.
+Four install paths. Pick what fits your distro.
 
 **AppImage** (portable, runs anywhere):
 
 ```bash
-chmod +x APIWeave-<version>.AppImage
-./APIWeave-<version>.AppImage
+chmod +x APIWeave-<version>-linux-x86_64.AppImage
+./APIWeave-<version>-linux-x86_64.AppImage
 ```
 
 If FUSE 2 is missing (common on Arch), install it (`sudo pacman -S fuse2`) or run the AppImage without FUSE:
 
 ```bash
-./APIWeave-<version>.AppImage --appimage-extract-and-run
+./APIWeave-<version>-linux-x86_64.AppImage --appimage-extract-and-run
 ```
 
 **Debian / Ubuntu**:
 
 ```bash
-sudo apt install ./apiweave-desktop_<version>_amd64.deb
+sudo apt install ./APIWeave-<version>-linux-amd64.deb
+```
+
+**Fedora / RHEL / openSUSE**:
+
+```bash
+sudo dnf install ./APIWeave-<version>-linux-x86_64.rpm
 ```
 
 **Arch / Manjaro**:
 
 ```bash
-sudo pacman -U apiweave-desktop-<version>.pacman
+sudo pacman -U APIWeave-<version>-linux-x64.pacman
 ```
 
 On Arch + Hyprland, the app requests native Wayland automatically (`ozone-platform-hint=auto`), so it runs directly on Hyprland with no XWayland. If a compositor quirk forces XWayland, launch with an explicit override: `apiweave --ozone-platform=wayland` (or `--ozone-platform=x11` to force XWayland).

@@ -106,6 +106,7 @@
   "build": {
     "appId": "com.kaysharp.apiweave",
     "productName": "APIWeave",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -131,6 +132,7 @@
       "target": [
         "AppImage",
         "deb",
+        "rpm",
         "pacman"
       ],
       "category": "Development"

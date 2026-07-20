@@ -22,23 +22,24 @@ Download the installer for your OS from the [latest release](https://github.com/
 
 ### Windows
 
-Run `APIWeave Setup <version>.exe`. It installs per-user (no admin prompt) and adds a Start-menu entry. The installer and binaries are unsigned, so SmartScreen may warn on first launch — choose **More info → Run anyway**.
+Run `APIWeave-<version>-win-x64.exe`. It installs per-user (no admin prompt) and adds a Start-menu entry. The installer and binaries are unsigned, so SmartScreen may warn on first launch — choose **More info → Run anyway**.
 
 ### macOS
 
-Open `APIWeave-<version>.dmg` and drag APIWeave to Applications. The build is unsigned/un-notarized, so the first launch is blocked by Gatekeeper: right-click the app → **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
+Download the `mac-x64.dmg` build for Intel Macs or the `mac-arm64.dmg` build for Apple Silicon, then drag APIWeave to Applications. The build is unsigned/un-notarized, so the first launch is blocked by Gatekeeper: right-click the app → **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
 
 ### Linux
 
-Three artifacts are published; pick what fits your distro:
+Four artifacts are published; pick what fits your distro:
 
-- **AppImage** — portable, runs on any distro. `chmod +x APIWeave-<version>.AppImage && ./APIWeave-<version>.AppImage`.
-- **`.deb`** — Debian/Ubuntu: `sudo apt install ./apiweave-desktop_<version>_amd64.deb`.
-- **`.pacman`** — Arch/Manjaro: `sudo pacman -U apiweave-desktop-<version>.pacman`.
+- **AppImage** — portable, runs on any distro. `chmod +x APIWeave-<version>-linux-x86_64.AppImage && ./APIWeave-<version>-linux-x86_64.AppImage`.
+- **`.deb`** — Debian, Ubuntu, and Mint: `sudo apt install ./APIWeave-<version>-linux-amd64.deb`.
+- **`.rpm`** — Fedora, RHEL, and openSUSE: `sudo dnf install ./APIWeave-<version>-linux-x86_64.rpm`.
+- **`.pacman`** — Arch and Manjaro: `sudo pacman -U APIWeave-<version>-linux-x64.pacman`.
 
 **Arch Linux + Hyprland (Wayland).** The app requests native Wayland automatically (`ozone-platform-hint=auto`), so it runs directly on Hyprland with no XWayland. Two Arch-specific notes:
 
-- The **AppImage** needs FUSE 2 (`sudo pacman -S fuse2`), or run it with `./APIWeave-<version>.AppImage --appimage-extract-and-run`. The **`.pacman`** package has no such requirement — prefer it on Arch.
+- The **AppImage** needs FUSE 2 (`sudo pacman -S fuse2`), or run it with `./APIWeave-<version>-linux-x86_64.AppImage --appimage-extract-and-run`. The **`.pacman`** package has no such requirement — prefer it on Arch.
 - If a compositor quirk forces XWayland, launch with an explicit override: `apiweave --ozone-platform=wayland` (or `--ozone-platform=x11` to force XWayland).
 
 The Linux binaries are built on Ubuntu (older glibc), so they run on Arch's newer glibc without issue.
