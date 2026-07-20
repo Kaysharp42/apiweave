@@ -10,6 +10,7 @@
   "scripts": {
     "setup": "npm install && npm run rebuild:electron",
     "dev": "npm run dev:electron",
+    "dev:renderer": "vite --host 127.0.0.1",
     "predev:electron": "npm run rebuild:electron && npm run build:electron",
     "dev:electron": "concurrently -k -s first -n renderer,desktop \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:3000 && cross-env APIWEAVE_USE_VITE=1 electron .\"",
     "prestart": "npm run rebuild:electron && npm run build:app",

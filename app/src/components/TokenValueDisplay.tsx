@@ -1,14 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { Copy, Check, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { Button } from "./atoms/Button";
-
-export interface TokenValueDisplayProps {
-  /** The one-time token value to display. */
-  tokenValue: string;
-  /** Called when the user dismisses the token display. */
-  onDismiss: () => void;
-  className?: string;
-}
+import type { TokenValueDisplayProps } from "../types/TokenValueDisplayProps";
 
 /**
  * TokenValueDisplay — shows a one-time service token value with copy

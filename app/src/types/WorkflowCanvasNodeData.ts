@@ -1,5 +1,5 @@
 export interface WorkflowCanvasNodeData {
-  label?: string;
+  label?: string | null;
   config?: Record<string, unknown>;
   executionStatus?: string;
   executionResult?: unknown;

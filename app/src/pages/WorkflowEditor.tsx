@@ -1,25 +1,13 @@
 import { useState, useEffect } from "react";
+import type { Workflow } from "@shared/types/Workflow";
+import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import WorkflowCanvas from "../components/WorkflowCanvas";
 import { Spinner } from "../components/atoms/Spinner";
-import type { WorkflowCanvasWorkflow } from "../types/WorkflowCanvasWorkflow";
 import { authenticatedFetch } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { workflowUrl } from "../utils/apiweaveClient";
-
-interface Workflow extends WorkflowCanvasWorkflow {
-  id: string;
-  name?: string;
-  description?: string;
-  variables?: Record<string, unknown>[];
-  createdAt?: string;
-  updatedAt?: string;
-  collectionId?: string;
-  swaggerUrl?: string;
-  swaggerLastRefreshed?: string;
-  nodeTemplates?: unknown[];
-}
 
 const WorkflowEditor = () => {
   const { workflowId } = useParams<{ workflowId: string }>();
@@ -48,7 +36,7 @@ const WorkflowEditor = () => {
           workflowUrl(workspaceId, workflowId),
         );
         if (response.ok) {
-          const data = (await response.json()) as Workflow;
+          const data = WorkflowSchema.parse(await response.json());
           setWorkflow(data);
         } else {
           toast.error("Workflow not found");

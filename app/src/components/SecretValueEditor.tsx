@@ -9,19 +9,8 @@ import {
   fetchScopedPublicKey,
   postScopedEncryptedSecret,
 } from "../hooks/useSecretValues";
-import type { PublicKey, SecretScopeType } from "../types";
-
-export interface SecretValueEditorProps {
-  isOpen: boolean;
-  scopeType: SecretScopeType;
-  scopeId: string;
-  workspaceId?: string;
-  secretName: string;
-  /** Optional existing secret ID for update mode. */
-  secretId?: string;
-  onClose: () => void;
-  onSuccess: () => void;
-}
+import type { PublicKey } from "../types";
+import type { SecretValueEditorProps } from "../types/SecretValueEditorProps";
 
 export default function SecretValueEditor({
   isOpen,

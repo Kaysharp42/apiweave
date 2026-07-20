@@ -12,11 +12,8 @@ import {
 } from "../../utils/apiweaveClient";
 import API_BASE_URL from "../../utils/apiweaveClient";
 import type { OutsideCollaborator } from "../../types";
+import type { OutsideCollaboratorListProps } from "../../types/OutsideCollaboratorListProps";
 import { toast } from "sonner";
-
-export interface OutsideCollaboratorListProps {
-  workspaceId: string;
-}
 
 interface CollaboratorsResponse {
   collaborators: OutsideCollaborator[];

@@ -7,16 +7,7 @@ import { Spinner } from "./atoms/Spinner";
 import { authenticatedJson } from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
 import type { ServiceTokenCreateResponse } from "../types";
-
-export interface ServiceTokenCreateFormProps {
-  /** The scope type (workspace or organization). */
-  scopeType: "workspace" | "organization";
-  /** The scope ID. */
-  scopeId: string;
-  /** Called with the one-time token response after creation. */
-  onCreated: (response: ServiceTokenCreateResponse) => void;
-  className?: string;
-}
+import type { ServiceTokenCreateFormProps } from "../types/ServiceTokenCreateFormProps";
 
 const AVAILABLE_PERMISSIONS = [
   "secrets:read",

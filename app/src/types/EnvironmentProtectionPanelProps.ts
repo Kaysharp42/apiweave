@@ -1,5 +1,8 @@
 import type { EnvironmentProtectionPolicy } from "./EnvironmentProtectionPolicy";
 import type { ReviewerOption } from "./ReviewerSelectorProps";
+import type { ProtectionFormState } from "./ProtectionFormState";
+
+export type { ProtectionFormState } from "./ProtectionFormState";
 
 export interface EnvironmentProtectionPanelProps {
   /** The environment ID this protection applies to. */
@@ -15,11 +18,4 @@ export interface EnvironmentProtectionPanelProps {
   /** Whether a save/remove is in progress. */
   saving?: boolean;
   className?: string;
-}
-
-export interface ProtectionFormState {
-  requiredReviewers: string[];
-  allowSelfApproval: boolean;
-  bypassPolicy: "none" | "trusted_token_only";
-  bypassAllowlist: string[];
 }

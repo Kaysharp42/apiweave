@@ -12,9 +12,10 @@ import useSidebarStore from "../stores/SidebarStore";
 import { authenticatedFetch } from "../utils/apiweaveClient";
 import { projectsUrl } from "../utils/apiweaveClient";
 import type { Project } from "../types/Project";
+import type { JsonValue } from "@shared/types/JsonValue";
 
 interface WorkflowVariables {
-  [key: string]: unknown;
+  [key: string]: JsonValue;
 }
 
 interface WorkflowSettings {
@@ -32,7 +33,7 @@ interface WorkflowContextValue {
   setVariables: React.Dispatch<React.SetStateAction<WorkflowVariables>>;
   setSettings: React.Dispatch<React.SetStateAction<WorkflowSettings>>;
   setCurrentCollectionId: React.Dispatch<React.SetStateAction<string | null>>;
-  updateVariable: (varName: string, varValue: unknown) => void;
+  updateVariable: (varName: string, varValue: JsonValue) => void;
   deleteVariable: (varName: string) => void;
   deleteVariablesWithCleanup: (varNames: string[]) => void;
   updateVariables: (newVariables: WorkflowVariables) => void;
@@ -121,7 +122,7 @@ export const WorkflowProvider = ({
     | { type: "set-collections"; value: Project[] }
     | { type: "set-loading-collections"; value: boolean }
     | { type: "set-current-collection-id"; value: string | null }
-    | { type: "update-variable"; varName: string; varValue: unknown }
+    | { type: "update-variable"; varName: string; varValue: JsonValue }
     | { type: "delete-variable"; varName: string }
     | { type: "delete-variables"; varNames: string[] }
     | { type: "update-variables"; value: WorkflowVariables }
@@ -282,7 +283,7 @@ export const WorkflowProvider = ({
     }
   }, [collectionVersion, fetchCollections]);
 
-  const updateVariable = useCallback((varName: string, varValue: unknown) => {
+  const updateVariable = useCallback((varName: string, varValue: JsonValue) => {
     dispatch({ type: "update-variable", varName, varValue });
   }, []);
 

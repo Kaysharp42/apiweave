@@ -1,12 +1,8 @@
-export type AuditActorType =
-  | "user"
-  | "org_app"
-  | "service_token"
-  | "mcp_client"
-  | "webhook_token"
-  | "system_migration";
+import type { AuditActorType } from "./AuditActorType";
+import type { AuditScopeType } from "./AuditScopeType";
 
-export type AuditScopeType = "org" | "workspace" | "environment";
+export type { AuditActorType } from "./AuditActorType";
+export type { AuditScopeType } from "./AuditScopeType";
 
 export interface AuditEvent {
   eventId: string;

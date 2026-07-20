@@ -1,8 +1,8 @@
-import type { WorkflowCanvasWorkflow } from "./WorkflowCanvasWorkflow";
+import type { Workflow } from "@shared/types/Workflow";
 
 export interface WorkflowCanvasProps {
   workflowId: string | undefined;
-  workflow: WorkflowCanvasWorkflow | null | undefined;
+  workflow: Workflow | null | undefined;
   isPanelOpen?: boolean;
   showVariablesPanel?: boolean;
   onShowVariablesPanel?: (show: boolean) => void;

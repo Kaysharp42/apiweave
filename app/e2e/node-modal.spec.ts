@@ -1,88 +1,68 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
-  MOCK_PERSONAL_WORKSPACE,
+  DESKTOP_WORKFLOW,
+  DESKTOP_WORKSPACE,
   captureEvidence,
-  navigateAndWait,
-} from "./fixtures/auth";
+  installDesktopIpc,
+  navigateDesktop,
+} from "./fixtures/desktop";
 
 const WORKFLOW_ID = "wf-node-modal";
 const WORKFLOW = {
-  id: WORKFLOW_ID,
+  ...DESKTOP_WORKFLOW,
   workflowId: WORKFLOW_ID,
+  workspaceId: DESKTOP_WORKSPACE.workspaceId,
   name: "Node modal visual QA",
   description: "Playwright fixture for the HTTP request editor",
   nodes: [
     {
-      id: "request-users",
+      nodeId: "request-users",
       type: "http-request",
+      label: "Get users",
       position: { x: 240, y: 180 },
-      data: {
-        label: "Get users",
-        config: {
-          method: "GET",
-          url: "https://api.example.com/users",
-          queryParams: [{ key: "page", value: "1" }],
-          headers: [{ key: "Accept", value: "application/json" }],
-          cookies: [],
-          bodyType: "json",
-          body: '{\n  "active": true\n}',
-          timeout: 30,
-          followRedirects: true,
-          sslVerify: true,
-          continueOnFail: false,
-        },
+      config: {
+        method: "GET",
+        url: "https://api.example.com/users",
+        queryParams: [{ key: "page", value: "1" }],
+        headers: [{ key: "Accept", value: "application/json" }],
+        cookies: [],
+        bodyType: "json",
+        body: '{\n  "active": true\n}',
+        timeout: 30,
+        followRedirects: true,
+        sslVerify: true,
+        continueOnFail: false,
       },
     },
   ],
   edges: [],
-  variables: {},
-  createdAt: "2026-07-14T00:00:00Z",
-  updatedAt: "2026-07-14T00:00:00Z",
 } as const;
 
 async function openNodeModal(page: Page): Promise<void> {
-  await page.addInitScript(
-    ({ workflow, workspace }) => {
-      localStorage.setItem("apiweave:v1:darkMode", "true");
-      localStorage.setItem("darkMode", "true");
-      window.__APIWEAVE_IPC__ = {
-        invoke: async (domain, action) => {
-          let data: unknown = null;
-          if (domain === "workspaces" && action === "list") data = [workspace];
-          if (domain === "workflows" && action === "list") {
-            data = { items: [workflow], total: 1 };
-          }
-          if (
-            domain === "workflows" &&
-            (action === "get" || action === "update")
-          ) {
-            data = workflow;
-          }
-          if (
-            ["environments", "projects", "runs"].includes(domain) &&
-            action.startsWith("list")
-          ) {
-            data = { items: [], total: 0 };
-          }
-          if (
-            domain === "runs" &&
-            (action === "getLatest" || action === "getLatestFailed")
-          ) {
-            data = null;
-          }
-          if (domain === "secrets" && action === "list") data = [];
-          return { ok: true as const, data };
-        },
-        onRunProgress: () => () => undefined,
-      };
-    },
-    { workflow: WORKFLOW, workspace: MOCK_PERSONAL_WORKSPACE },
-  );
+  await installDesktopIpc(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("apiweave:v1:darkMode", "true");
+    localStorage.setItem("darkMode", "true");
+  });
+  await page.addInitScript((workflow) => {
+    const bridge = window.__APIWEAVE_IPC__;
+    if (!bridge) return;
+    const invoke = bridge.invoke;
+    bridge.invoke = async (domain, action, payload) => {
+      if (domain === "workflows" && action === "list") {
+        return { ok: true as const, data: { items: [workflow], total: 1 } };
+      }
+      if (
+        domain === "workflows" &&
+        (action === "get" || action === "update")
+      ) {
+        return { ok: true as const, data: workflow };
+      }
+      return invoke(domain, action, payload);
+    };
+  }, WORKFLOW);
 
-  await navigateAndWait(
-    page,
-    `/#/${MOCK_PERSONAL_WORKSPACE.slug}/workflows/${WORKFLOW_ID}`,
-  );
+  await navigateDesktop(page, `/${DESKTOP_WORKSPACE.slug}/workflows/${WORKFLOW_ID}`);
 
   const workflowButton = page.getByRole("button", {
     name: /Node modal visual QA/,

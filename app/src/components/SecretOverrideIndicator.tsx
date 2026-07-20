@@ -1,10 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-
-export interface SecretOverrideIndicatorProps {
-  isOverride: boolean;
-  overriddenScopeType?: string;
-  className?: string;
-}
+import type { SecretOverrideIndicatorProps } from "../types/SecretOverrideIndicatorProps";
 
 const SCOPE_LABELS: Record<string, string> = {
   user: "user",

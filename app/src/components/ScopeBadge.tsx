@@ -1,10 +1,5 @@
 import { Badge } from "./atoms/Badge";
-import type { SecretScopeType } from "../types";
-
-export interface ScopeBadgeProps {
-  scopeType: SecretScopeType | string;
-  className?: string;
-}
+import type { ScopeBadgeProps } from "../types/ScopeBadgeProps";
 
 const SCOPE_CONFIG: Record<
   string,

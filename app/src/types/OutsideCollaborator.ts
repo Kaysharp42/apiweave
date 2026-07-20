@@ -1,3 +1,7 @@
+import type { WorkspaceRole } from "./WorkspaceRole";
+
+export type { WorkspaceRole } from "./WorkspaceRole";
+
 /** Outside collaborator on a workspace. */
 export interface OutsideCollaborator {
   collaboratorId: string;
@@ -7,6 +11,3 @@ export interface OutsideCollaborator {
   grantedBy: string;
   createdAt: string;
 }
-
-/** Workspace-level roles for outside collaborators. */
-export type WorkspaceRole = "read" | "triage" | "write" | "maintain" | "admin";

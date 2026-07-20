@@ -99,7 +99,7 @@ interface Position {
   y: number;
 }
 
-interface WorkflowNode {
+interface ImportedWorkflowNode {
   nodeId: string;
   type: string;
   label: string;
@@ -107,7 +107,7 @@ interface WorkflowNode {
   position: Position;
 }
 
-interface WorkflowEdge {
+interface ImportedWorkflowEdge {
   edgeId: string;
   source: string;
   target: string;
@@ -115,8 +115,8 @@ interface WorkflowEdge {
 
 interface CreateWorkflowPayload {
   name: string;
-  nodes: WorkflowNode[];
-  edges: WorkflowEdge[];
+  nodes: ImportedWorkflowNode[];
+  edges: ImportedWorkflowEdge[];
   nodeTemplates: Record<string, unknown>[];
   collectionId: string;
   variables: Record<string, unknown>;
@@ -573,7 +573,7 @@ export function CollectionExportImport({
         const startNodeId = `start_${Date.now()}`;
         const endNodeId = `end_${Date.now()}`;
 
-        const startNode: WorkflowNode = {
+        const startNode: ImportedWorkflowNode = {
           nodeId: startNodeId,
           type: "start",
           label: "Start",
@@ -581,7 +581,7 @@ export function CollectionExportImport({
           position: { x: 100, y: 100 },
         };
 
-        const endNode: WorkflowNode = {
+        const endNode: ImportedWorkflowNode = {
           nodeId: endNodeId,
           type: "end",
           label: "End",

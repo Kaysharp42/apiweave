@@ -7,19 +7,8 @@ import { Spinner } from "./atoms/Spinner";
 import { encryptSecretValue } from "../utils/encryptSecretValue";
 import { authenticatedJson } from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
-import type { PublicKey, SecretScopeType } from "../types";
-
-export interface SecretFormProps {
-  /** The scope type this secret belongs to. */
-  scopeType: SecretScopeType;
-  /** The scope ID (e.g., workspace ID). */
-  scopeId: string;
-  /** Called after a secret is successfully created. */
-  onCreated: () => void;
-  /** Optional existing secret name for update mode. */
-  existingSecretId?: string;
-  className?: string;
-}
+import type { PublicKey } from "../types";
+import type { SecretFormProps } from "../types/SecretFormProps";
 
 /**
  * SecretForm — fetches the scope's public key, encrypts the value with

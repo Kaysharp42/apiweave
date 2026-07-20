@@ -1,8 +1,8 @@
-/** Status of a pending approval record. */
-export type ApprovalStatus = "pending" | "approved" | "bypassed" | "rejected";
+import type { ApprovalActorType } from "./ApprovalActorType";
+import type { ApprovalStatus } from "./ApprovalStatus";
 
-/** Actor type that requested or resolved an approval. */
-export type ApprovalActorType = "user" | "service_token" | "webhook" | "system";
+export type { ApprovalActorType } from "./ApprovalActorType";
+export type { ApprovalStatus } from "./ApprovalStatus";
 
 /**
  * Pending approval record for a protected environment run.

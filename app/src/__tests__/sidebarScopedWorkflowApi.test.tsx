@@ -58,10 +58,14 @@ vi.mock("../components/layout/sidebar/WorkflowList", () => ({
   WorkflowList: (props: WorkflowListProps) => {
     const workflow: Workflow = {
       workflowId: "wf-open",
+      workspaceId: "ws-personal",
       name: "Open Me",
       nodes: [],
       edges: [],
-      variables: [],
+      variables: {},
+      tags: [],
+      nodeTemplates: [],
+      rev: 0,
       createdAt: "2026-06-18T00:00:00Z",
       updatedAt: "2026-06-18T00:00:00Z",
     };
@@ -122,10 +126,14 @@ vi.mock("../components/molecules/ConfirmDialog", () => ({
 function makeWorkflow(workflowId: string, name: string): Workflow {
   return {
     workflowId,
+    workspaceId: "ws-personal",
     name,
     nodes: [],
     edges: [],
-    variables: [],
+    variables: {},
+    tags: [],
+    nodeTemplates: [],
+    rev: 0,
     createdAt: "2026-06-18T00:00:00Z",
     updatedAt: "2026-06-18T00:00:00Z",
   };

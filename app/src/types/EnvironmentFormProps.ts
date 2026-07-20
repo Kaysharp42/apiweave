@@ -1,5 +1,6 @@
 import type { ScopedEnvironment } from "./ScopedEnvironment";
 import type { EnvironmentFormData } from "./EnvironmentFormData";
+import type { WorkspaceOption } from "./WorkspaceOption";
 
 export interface EnvironmentFormProps {
   /** Existing environment to edit. Undefined for create mode. */
@@ -18,9 +19,4 @@ export interface EnvironmentFormProps {
 }
 
 export type { EnvironmentFormData };
-
-export interface WorkspaceOption {
-  workspaceId: string;
-  name: string;
-  slug: string;
-}
+export type { WorkspaceOption } from "./WorkspaceOption";

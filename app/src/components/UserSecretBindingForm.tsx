@@ -6,14 +6,7 @@ import { ConfirmDialog } from "./molecules/ConfirmDialog";
 import { authenticatedJson } from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
 import type { Secret, SecretBinding } from "../types";
-
-export interface UserSecretBindingFormProps {
-  /** The target scope type (workspace or environment). */
-  targetScopeType: "workspace" | "environment";
-  /** The target scope ID. */
-  targetScopeId: string;
-  className?: string;
-}
+import type { UserSecretBindingFormProps } from "../types/UserSecretBindingFormProps";
 
 interface BindingListResponse {
   bindings: SecretBinding[];

@@ -1,3 +1,7 @@
+import type { SecretScopeType } from "./SecretScopeType";
+
+export type { SecretScopeType } from "./SecretScopeType";
+
 /**
  * Scoped secret metadata — returned by list/get endpoints.
  *
@@ -12,6 +16,3 @@ export interface Secret {
   createdAt: string;
   updatedAt: string;
 }
-
-/** Valid scope types for scoped secrets. */
-export type SecretScopeType = "workspace" | "environment";

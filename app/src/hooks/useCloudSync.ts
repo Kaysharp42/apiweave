@@ -4,35 +4,8 @@ import {
   IpcError,
   onCloudStatusChanged,
 } from "../utils/apiweaveClient";
-import type { CloudBindWorkspaceInput, CloudSyncStatus } from "../types/cloud";
-
-export interface UseCloudSync {
-  /** Latest authoritative status, or null before the first load / when the
-   * cloud bridge is unavailable (e.g. web preview outside Electron). */
-  readonly status: CloudSyncStatus | null;
-  /** True until the first status fetch settles. */
-  readonly loading: boolean;
-  /** True when the cloud IPC bridge is not present in this runtime. */
-  readonly unavailable: boolean;
-  /** An action is in flight; use to lock out duplicate submissions. */
-  readonly busy: boolean;
-  readonly refresh: () => Promise<void>;
-  readonly link: (deviceLabel?: string) => Promise<CloudSyncStatus>;
-  readonly cancelLink: () => Promise<CloudSyncStatus>;
-  readonly unlink: (localOnly?: boolean) => Promise<CloudSyncStatus>;
-  readonly bindWorkspace: (
-    input: CloudBindWorkspaceInput,
-  ) => Promise<CloudSyncStatus>;
-  readonly unbindWorkspace: (workspaceId: string) => Promise<CloudSyncStatus>;
-  readonly initializeWorkspace: (
-    workspaceId: string,
-  ) => Promise<CloudSyncStatus>;
-  readonly refreshWorkspaceCatalog: () => Promise<CloudSyncStatus>;
-  readonly retryDeadLetters: (workspaceId: string) => Promise<CloudSyncStatus>;
-  readonly discardDeadLetters: (workspaceId: string) => Promise<CloudSyncStatus>;
-  readonly pull: () => Promise<CloudSyncStatus>;
-  readonly push: () => Promise<CloudSyncStatus>;
-}
+import type { CloudSyncStatus } from "../types/cloud";
+import type { UseCloudSync } from "../types/UseCloudSync";
 
 /**
  * Single typed entry point the account menu and Cloud Sync page share. Fetches

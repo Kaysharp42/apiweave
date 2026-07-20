@@ -1,5 +1,7 @@
-/** Bypass policy options for environment protection. */
-export type BypassPolicy = "none" | "trusted_token_only";
+import type { BypassPolicy } from "./BypassPolicy";
+
+export type { BypassPolicy } from "./BypassPolicy";
+export type { EnvironmentProtectionUpdate } from "./EnvironmentProtectionUpdate";
 
 /**
  * Protection policy for a scoped environment.
@@ -14,12 +16,4 @@ export interface EnvironmentProtectionPolicy {
   bypassAllowlist: string[];
   createdAt: string;
   updatedAt: string;
-}
-
-/** Request body for updating environment protection config. */
-export interface EnvironmentProtectionUpdate {
-  requiredReviewers?: string[];
-  allowSelfApproval?: boolean;
-  bypassPolicy?: BypassPolicy;
-  bypassAllowlist?: string[];
 }

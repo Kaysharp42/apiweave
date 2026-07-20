@@ -3,7 +3,7 @@ interface BaselineGraph {
   edgeCount?: number;
 }
 
-interface WorkflowNode {
+interface AutosaveWorkflowNode {
   type?: string;
   nodeId?: string;
   id?: string;
@@ -16,7 +16,7 @@ export function isDefaultStartOnlyGraph(
   if (!Array.isArray(nodes) || !Array.isArray(edges)) return false;
   if (nodes.length !== 1 || edges.length !== 0) return false;
 
-  const node = (nodes[0] ?? {}) as WorkflowNode;
+  const node = (nodes[0] ?? {}) as AutosaveWorkflowNode;
   const nodeId = node.nodeId ?? node.id;
 
   return node.type === "start" && nodeId === "start-1";

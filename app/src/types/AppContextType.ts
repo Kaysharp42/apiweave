@@ -1,6 +1,8 @@
+import type { Dispatch, SetStateAction } from "react";
+
 export interface AppContextType {
   darkMode: boolean;
-  setDarkMode: (value: boolean) => void;
+  setDarkMode: Dispatch<SetStateAction<boolean>>;
   autoSaveEnabled: boolean;
-  setAutoSaveEnabled: (value: boolean) => void;
+  setAutoSaveEnabled: Dispatch<SetStateAction<boolean>>;
 }

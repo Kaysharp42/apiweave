@@ -7,17 +7,8 @@ import { ScopeBadge } from "./ScopeBadge";
 import { SecretOverrideIndicator } from "./SecretOverrideIndicator";
 import { authenticatedJson } from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
-import type { Secret, SecretScopeType } from "../types";
-
-export interface ScopedSecretListProps {
-  scopeType: SecretScopeType;
-  scopeId: string;
-  /** Called after a secret is deleted, to refresh parent state. */
-  onChanged: () => void;
-  onSelect?: (secret: Secret) => void;
-  selectedId?: string;
-  className?: string;
-}
+import type { Secret } from "../types";
+import type { ScopedSecretListProps } from "../types/ScopedSecretListProps";
 
 interface SecretListResponse {
   secrets: Secret[];

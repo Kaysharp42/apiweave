@@ -27,7 +27,8 @@ import {
   Zap,
 } from "lucide-react";
 import { Button } from "../components/atoms/Button";
-import { AppContext, type AppContextValue } from "../App";
+import { AppContext } from "../App";
+import type { AppContextType } from "../types/AppContextType";
 
 const NOISE_DATA_URI =
   "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
@@ -225,7 +226,7 @@ function HeroCanvas() {
 // ─── Sections ─────────────────────────────────────────────────────────────
 
 function Nav() {
-  const { darkMode, setDarkMode } = useContext(AppContext) as AppContextValue;
+  const { darkMode, setDarkMode } = useContext(AppContext) as AppContextType;
 
   return (
     <header className="sticky top-0 z-50 bg-surface/90 dark:bg-surface-dark/90 backdrop-blur-sm border-b border-border dark:border-border-dark">

@@ -1,9 +1,7 @@
 import type { Workspace } from "./Workspace";
+import type { WorkspaceEntry } from "./WorkspaceEntry";
 
-export interface WorkspaceEntry {
-  workspace: Workspace;
-  role: string;
-}
+export type { WorkspaceEntry } from "./WorkspaceEntry";
 
 export interface WorkspaceContextValue {
   availableWorkspaces: WorkspaceEntry[];

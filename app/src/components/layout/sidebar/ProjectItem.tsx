@@ -35,7 +35,7 @@ export function ProjectItem({
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const projectId = project.projectId ?? project.collectionId;
   const projectWorkflows = Array.isArray(workflows)
-    ? workflows.filter((wf) => (wf.projectId ?? wf.collectionId) === projectId)
+    ? workflows.filter((wf) => wf.collectionId === projectId)
     : [];
   const unassignedWorkflows = Array.isArray(workflows)
     ? workflows.filter(

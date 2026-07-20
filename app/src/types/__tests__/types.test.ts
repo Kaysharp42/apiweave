@@ -12,8 +12,7 @@ import type {
   ButtonIntent,
   ButtonSize,
   Workflow,
-  WorkflowNode,
-  WorkflowEdge,
+  CanvasNode,
   NodeType,
   NodeStatus,
   HttpMethod,
@@ -51,28 +50,26 @@ const _validSizes: ButtonSize[] = ["xs", "sm", "md", "lg"];
 
 const _mockWorkflow: Workflow = {
   workflowId: "wf-1",
+  workspaceId: "ws-1",
   name: "Test Workflow",
   nodes: [],
   edges: [],
+  variables: {},
+  tags: [],
+  nodeTemplates: [],
+  rev: 0,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-const _mockNode: WorkflowNode = {
+const _mockNode: CanvasNode = {
   id: "node-1",
-  type: "httpRequest",
+  type: "http-request",
   position: { x: 0, y: 0 },
   data: {
     label: "HTTP Request",
-    status: "idle",
     config: {},
   },
-};
-
-const _mockEdge: WorkflowEdge = {
-  id: "edge-1",
-  source: "node-1",
-  target: "node-2",
 };
 
 // ============================================================
@@ -244,7 +241,6 @@ void _validIntents;
 void _validSizes;
 void _mockWorkflow;
 void _mockNode;
-void _mockEdge;
 void _validNodeTypes;
 void _validNodeStatuses;
 void _validMethods;

@@ -33,6 +33,7 @@ import useNavigationStore from "./stores/NavigationStore";
 import { apiweave } from "./utils/apiweaveClient";
 import { isDesktopShell } from "./utils/isDesktopShell";
 import type { WorkspacePageShellProps } from "./types/WorkspacePageShellProps";
+import type { AppContextType } from "./types/AppContextType";
 
 const STORAGE_PREFIX = "apiweave:v1:";
 
@@ -46,14 +47,7 @@ const setStoredValue = (key: string, value: string): void => {
   localStorage.setItem(key, value);
 };
 
-export interface AppContextValue {
-  darkMode: boolean;
-  setDarkMode: React.Dispatch<React.SetStateAction<boolean>>;
-  autoSaveEnabled: boolean;
-  setAutoSaveEnabled: React.Dispatch<React.SetStateAction<boolean>>;
-}
-
-export const AppContext = createContext<AppContextValue>({
+export const AppContext = createContext<AppContextType>({
   darkMode: false,
   setDarkMode: () => {},
   autoSaveEnabled: true,

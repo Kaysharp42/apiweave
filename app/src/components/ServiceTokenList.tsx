@@ -10,16 +10,7 @@ import { TokenValueDisplay } from "./TokenValueDisplay";
 import { authenticatedJson } from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
 import type { ServiceToken } from "../types";
-
-export interface ServiceTokenListProps {
-  scopeType: "workspace" | "organization";
-  scopeId: string;
-  /** Called after a token action to refresh parent state. */
-  onChanged: () => void;
-  onSelect?: ((token: ServiceToken) => void) | undefined;
-  selectedId?: string | undefined;
-  className?: string;
-}
+import type { ServiceTokenListProps } from "../types/ServiceTokenListProps";
 
 interface TokenListResponse {
   tokens: ServiceToken[];

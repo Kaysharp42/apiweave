@@ -22,11 +22,20 @@ jobs:
       - name: Run tests
         run: npm run test:renderer
         working-directory: app
+      - name: Audit type organization
+        run: npm run audit:types
+        working-directory: app
       - name: Type check
         run: npm run typecheck:renderer
         working-directory: app
       - name: Lint
         run: npm run lint:renderer
+        working-directory: app
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: app
+      - name: Run desktop renderer E2E
+        run: npm run qa:ui
         working-directory: app
       - name: Build
         run: npm run build:renderer

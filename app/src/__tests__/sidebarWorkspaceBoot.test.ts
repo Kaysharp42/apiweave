@@ -38,10 +38,14 @@ function resetStores(): void {
 function makeWorkflow(id: string, name: string) {
   return {
     workflowId: id,
+    workspaceId: "ws-personal",
     name,
     nodes: [],
     edges: [],
-    variables: [],
+    variables: {},
+    tags: [],
+    nodeTemplates: [],
+    rev: 0,
     createdAt: "2026-06-18T00:00:00Z",
     updatedAt: "2026-06-18T00:00:00Z",
   };

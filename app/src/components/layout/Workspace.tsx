@@ -212,7 +212,7 @@ export function Workspace(_props: WorkspaceProps) {
             initialWorkflow={activeTab.workflow ?? undefined}
           >
             {/* Environment banner — compact, only when active */}
-            {activeTab.workflow?.environmentId && (
+            {activeTab.workflow?.selectedEnvironmentId && (
               <div className="flex min-w-0 items-center gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 text-xs dark:border-primary-light/20 dark:bg-primary-light/10">
                 <Globe
                   className="w-3.5 h-3.5 flex-shrink-0 text-primary dark:text-primary-light"
@@ -223,7 +223,9 @@ export function Workspace(_props: WorkspaceProps) {
                 </span>
                 <Badge variant="primary" size="sm" className="min-w-0 truncate">
                   <span className="min-w-0 truncate">
-                    {state.environmentNames[activeTab.workflow.environmentId] ??
+                    {state.environmentNames[
+                      activeTab.workflow.selectedEnvironmentId
+                    ] ??
                       (state.environmentNamesLoaded
                         ? "Environment unavailable"
                         : "Loading…")}

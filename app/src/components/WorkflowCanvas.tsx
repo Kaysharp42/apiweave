@@ -48,11 +48,14 @@ import useAutoSave from "../hooks/useAutoSave";
 import useCanvasDrop from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import { useClipboardActions } from "../hooks/useClipboardActions";
+import { useHydration } from "../hooks/useHydration";
 import {
-  useHydration,
   assertionEdgeColor,
+  canvasToWorkflow,
   edgeLabelBackground,
-} from "../hooks/useHydration";
+  workflowToCanvas,
+} from "../adapters/workflowCanvas";
+import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
 import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
@@ -141,7 +144,7 @@ export function WorkflowCanvas({
   const {
     variables: workflowVariables,
     registerExtractors,
-    updateVariable,
+    updateVariables,
     onVariablesDeletedRef,
   } = useWorkflow();
 
@@ -192,8 +195,12 @@ export function WorkflowCanvas({
     (s) => s.selectedEnvironmentByWorkflow,
   );
   const selectedEnvironment = useMemo<string | null>(
-    () => getSelectedEnvironment(workflowId ?? "", workflow?.environmentId),
-    [workflowId, workflow?.environmentId, selectedEnvMap],
+    () =>
+      getSelectedEnvironment(
+        workflowId ?? "",
+        workflow?.selectedEnvironmentId ?? undefined,
+      ),
+    [workflowId, workflow?.selectedEnvironmentId, selectedEnvMap],
   );
 
   // ── Hooks ──────────────────────────────────────────────────────────
@@ -267,10 +274,14 @@ export function WorkflowCanvas({
   }, [nodes]);
 
   useEffect(() => {
-    const extractorsFromNodes: Record<string, unknown> = {};
+    const extractorsFromNodes: Record<string, string> = {};
     nodesRef.current.forEach((node) => {
       if (node.type === "http-request" && node.data?.config?.extractors) {
-        Object.assign(extractorsFromNodes, node.data.config.extractors);
+        Object.entries(node.data.config.extractors).forEach(([name, value]) => {
+          if (typeof value === "string") {
+            extractorsFromNodes[name] = value;
+          }
+        });
       }
     });
     registerExtractors(extractorsFromNodes);
@@ -326,76 +337,25 @@ export function WorkflowCanvas({
         workflowDetailUrl(scope.workspaceId, workflowId),
       );
       if (response.ok) {
-        const data = (await response.json()) as {
-          nodes?: Array<{
-            nodeId: string;
-            type: string;
-            position: { x: number; y: number };
-            config?: Record<string, unknown>;
-            label?: string;
-          }>;
-          edges?: Array<{
-            edgeId: string;
-            source: string;
-            target: string;
-            sourceHandle?: string;
-            targetHandle?: string;
-            label?: string;
-          }>;
-        };
-        const newNodes = (data.nodes || []).map((node) => ({
-          id: node.nodeId,
-          type: node.type,
-          position: node.position,
-          data: {
-            config: node.config || {},
-            label: node.label,
-          },
-        })) as Node<WorkflowCanvasNodeData>[];
-        const newEdges: Edge<WorkflowCanvasEdgeData>[] = (data.edges || []).map(
-          (edge) => ({
-            id: edge.edgeId,
-            source: edge.source,
-            target: edge.target,
-            sourceHandle: edge.sourceHandle || null,
-            targetHandle: edge.targetHandle || null,
-            label: edge.label,
-            type: "custom",
-            ...(edge.sourceHandle === "pass" || edge.sourceHandle === "fail"
-              ? {
-                  animated: true,
-                  style: {
-                    stroke:
-                      edge.sourceHandle === "pass"
-                        ? assertionEdgeColor("pass")
-                        : assertionEdgeColor("fail"),
-                    strokeWidth: 1,
-                  },
-                  labelStyle: {
-                    fill:
-                      edge.sourceHandle === "pass"
-                        ? assertionEdgeColor("pass")
-                        : assertionEdgeColor("fail"),
-                    fontWeight: 700,
-                    fontSize: 11,
-                  },
-                  labelBgStyle: {
-                    fill: edgeLabelBackground,
-                    fillOpacity: 0.95,
-                  },
-                  labelBgPadding: [6, 4] as [number, number],
-                  labelBgBorderRadius: 4,
-                }
-              : {}),
-          }),
-        );
-        setNodes(newNodes);
-        setEdges(newEdges);
+        const reloadedWorkflow = WorkflowSchema.parse(await response.json());
+        const canvasState = workflowToCanvas(reloadedWorkflow);
+        setNodes(canvasState.nodes);
+        setEdges(canvasState.edges);
+        updateVariables(canvasState.variables);
+        useTabStore
+          .getState()
+          .updateTabWorkflow(workflowId, reloadedWorkflow);
       }
     } catch (err) {
       console.error("Error reloading workflow:", err);
     }
-  }, [workflowId, scope.workspaceId, setNodes, setEdges]);
+  }, [
+    workflowId,
+    scope.workspaceId,
+    setNodes,
+    setEdges,
+    updateVariables,
+  ]);
 
   useEffect(() => {
     if (!workflowId) return;
@@ -596,48 +556,46 @@ export function WorkflowCanvas({
 
   const saveWorkflow = useCallback(
     async (silent = false) => {
-      if (!scope.workspaceId) return;
-
-      const workflowPayload = {
-        nodes: nodesRef.current.map((node) => ({
-          nodeId: node.id,
-          type: node.type ?? "",
-          label: node.data.label,
-          position: node.position,
-          config: node.data.config || {},
-        })),
-        edges: edgesRef.current.map((edge) => ({
-          edgeId: edge.id,
-          source: edge.source,
-          target: edge.target,
-          sourceHandle: edge.sourceHandle ?? null,
-          targetHandle: edge.targetHandle ?? null,
-          label: typeof edge.label === "string" ? edge.label : null,
-        })),
-        variables: workflowVariablesRef.current,
-      };
-
-      const nodeCount = workflowPayload.nodes.length;
-      const edgeCount = workflowPayload.edges.length;
-      if (
-        silent &&
-        shouldBlockDestructiveAutosave(
-          workflowPayload.nodes,
-          workflowPayload.edges,
-          hydratedBaselineRef.current,
-        )
-      ) {
-        console.warn("[workflow-save-blocked]", {
-          workflowId,
-          reason: "destructive-autosave-protection",
-          baseline: hydratedBaselineRef.current,
-          nodeCount,
-          edgeCount,
-        });
-        return;
-      }
+      if (!scope.workspaceId || !workflow) return;
 
       try {
+        const canonicalWorkflow = canvasToWorkflow(
+          {
+            nodes: nodesRef.current,
+            edges: edgesRef.current,
+            variables: workflowVariablesRef.current,
+            selectedEnvironmentId: selectedEnvironment,
+          },
+          workflow,
+        );
+        const workflowPayload = {
+          nodes: canonicalWorkflow.nodes,
+          edges: canonicalWorkflow.edges,
+          variables: canonicalWorkflow.variables,
+          selectedEnvironmentId:
+            canonicalWorkflow.selectedEnvironmentId ?? null,
+        };
+
+        const nodeCount = workflowPayload.nodes.length;
+        const edgeCount = workflowPayload.edges.length;
+        if (
+          silent &&
+          shouldBlockDestructiveAutosave(
+            workflowPayload.nodes,
+            workflowPayload.edges,
+            hydratedBaselineRef.current,
+          )
+        ) {
+          console.warn("[workflow-save-blocked]", {
+            workflowId,
+            reason: "destructive-autosave-protection",
+            baseline: hydratedBaselineRef.current,
+            nodeCount,
+            edgeCount,
+          });
+          return;
+        }
+
         const response = await authenticatedFetch(
           workflowDetailUrl(scope.workspaceId, workflowId ?? ""),
           {
@@ -648,8 +606,12 @@ export function WorkflowCanvas({
         );
 
         if (response.ok) {
+          const savedWorkflow = WorkflowSchema.parse(await response.json());
           hydratedBaselineRef.current = { nodeCount, edgeCount };
           useTabStore.getState().markClean(workflowId ?? "");
+          useTabStore
+            .getState()
+            .updateTabWorkflow(workflowId ?? "", savedWorkflow);
         } else {
           console.error("Failed to save workflow");
         }
@@ -657,7 +619,7 @@ export function WorkflowCanvas({
         console.error("Save error:", error);
       }
     },
-    [workflowId, scope.workspaceId],
+    [workflowId, scope.workspaceId, selectedEnvironment, workflow],
   );
 
   // ── JSON editor ──────────────────────────────────────────────────────
@@ -686,98 +648,39 @@ export function WorkflowCanvas({
 
   const handleJsonApply = useCallback(
     async (parsed: Record<string, unknown>) => {
-      const parsedNodes = (parsed.nodes || []) as Array<{
-        nodeId: string;
-        type: string;
-        position: { x: number; y: number };
-        label?: string;
-        config?: Record<string, unknown>;
-      }>;
-      const parsedEdges = (parsed.edges || []) as Array<{
-        edgeId: string;
-        source: string;
-        target: string;
-        sourceHandle?: string | null;
-        targetHandle?: string | null;
-        label?: string;
-      }>;
-
-      const newNodes = parsedNodes.map((node) => ({
-        id: node.nodeId,
-        type: node.type,
-        position: node.position,
-        data: {
-          label: node.label,
-          config: node.config || {},
-        },
-      })) as Node<WorkflowCanvasNodeData>[];
-
-      const newEdges = parsedEdges.map((edge) => ({
-        id: edge.edgeId,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle ?? null,
-        targetHandle: edge.targetHandle ?? null,
-        label: edge.label,
-        type: "custom",
-        ...(edge.sourceHandle === "pass" || edge.sourceHandle === "fail"
-          ? {
-              animated: true,
-              style: {
-                stroke:
-                  edge.sourceHandle === "pass"
-                    ? assertionEdgeColor("pass")
-                    : assertionEdgeColor("fail"),
-                strokeWidth: 2,
-              },
-              labelStyle: {
-                fill:
-                  edge.sourceHandle === "pass"
-                    ? assertionEdgeColor("pass")
-                    : assertionEdgeColor("fail"),
-                fontWeight: 700,
-                fontSize: 11,
-              },
-              labelBgStyle: {
-                fill: edgeLabelBackground,
-                fillOpacity: 0.95,
-              },
-              labelBgPadding: [6, 4] as [number, number],
-              labelBgBorderRadius: 4,
-            }
-          : {}),
-      })) as Edge<WorkflowCanvasEdgeData>[];
-
       try {
-        if (!scope.workspaceId || !workflowId) return;
+        if (!scope.workspaceId || !workflowId || !workflow) return;
+        const editedWorkflow = WorkflowSchema.parse({
+          ...workflow,
+          nodes: parsed.nodes,
+          edges: parsed.edges,
+          variables: parsed.variables ?? workflowVariables,
+        });
         const response = await authenticatedFetch(
           workflowDetailUrl(scope.workspaceId, workflowId),
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              nodes: parsed.nodes,
-              edges: parsed.edges,
-              variables: parsed.variables || workflowVariables,
+              nodes: editedWorkflow.nodes,
+              edges: editedWorkflow.edges,
+              variables: editedWorkflow.variables,
             }),
           },
         );
         if (response.ok) {
+          const savedWorkflow = WorkflowSchema.parse(await response.json());
+          const canvasState = workflowToCanvas(savedWorkflow);
           hydratedBaselineRef.current = {
-            nodeCount: Array.isArray(parsed.nodes) ? parsed.nodes.length : 0,
-            edgeCount: Array.isArray(parsed.edges) ? parsed.edges.length : 0,
+            nodeCount: canvasState.nodes.length,
+            edgeCount: canvasState.edges.length,
           };
-          setNodes(newNodes);
-          setEdges(newEdges);
-
-          const parsedVars = parsed.variables as
-            | Record<string, unknown>
-            | undefined;
-          if (parsedVars && typeof parsedVars === "object") {
-            Object.entries(parsedVars).forEach(([k, v]) =>
-              updateVariable(k, v),
-            );
-          }
+          setNodes(canvasState.nodes);
+          setEdges(canvasState.edges);
+          updateVariables(canvasState.variables);
+          useTabStore
+            .getState()
+            .updateTabWorkflow(workflowId, savedWorkflow);
 
           setShowJsonEditor(false);
           toast.success("Workflow updated from JSON editor");
@@ -812,8 +715,9 @@ export function WorkflowCanvas({
       setEdges,
       workflowId,
       scope.workspaceId,
+      workflow,
       workflowVariables,
-      updateVariable,
+      updateVariables,
     ],
   );
 
