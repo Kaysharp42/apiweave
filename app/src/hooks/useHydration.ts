@@ -28,6 +28,7 @@ export function useHydration({
 }: UseHydrationParams): UseHydrationReturn {
   const [isHydrated, setIsHydrated] = useState(false);
   const hydratedBaselineRef = useRef<HydratedBaseline | null>(null);
+  const lastContentSigRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (
@@ -36,8 +37,21 @@ export function useHydration({
       !Array.isArray(workflow.edges)
     ) {
       setIsHydrated(false);
+      lastContentSigRef.current = null;
       return;
     }
+
+    // The tab's workflow object identity changes after every save (the server
+    // bumps rev/updatedAt and we write the echo back). Re-hydrating on those
+    // rev-only changes rebuilds node.data references, which the autosave
+    // signature reads as an edit — a false-dirty save/sync loop. Skip
+    // re-hydration when the actual content is unchanged.
+    const content = { ...workflow } as Partial<Workflow>;
+    delete content.rev;
+    delete content.updatedAt;
+    const contentSig = JSON.stringify(content);
+    if (contentSig === lastContentSigRef.current) return;
+    lastContentSigRef.current = contentSig;
 
     const { nodes: loadedNodes, edges: loadedEdges } =
       workflowToCanvas(workflow);
