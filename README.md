@@ -14,6 +14,8 @@ APIWeave ships as a single-process Electron app with an embedded SQLite store. T
 
 **For contributors:** clone the repo, install the desktop and frontend dependencies, and run the dev shell. See the [Developer Guide](AGENTS.md) for the dev workflow.
 
+> **npm 12+ note:** The `@apiweave/proto` dependency is a remote tarball. npm 12+ blocks this by default — `scripts/setup.sh` creates `app/.npmrc` with `allow-remote=all` automatically. If your global npm config has `allow-scripts=false`, Electron's postinstall will be blocked; `scripts/setup.sh` also downloads the binary manually in that case.
+
 ## Desktop App
 
 APIWeave ships as a self-contained Electron app. The app is single-process: the renderer (the React UI), the main process (the Node.js execution engine), the embedded SQLite store, and the optional local MCP bridge all run inside one process, talking to each other over Electron IPC. No external services. No open ports on your network. No telemetry.
