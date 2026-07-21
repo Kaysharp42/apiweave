@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/merge/right"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "right": "ready"
+    }
+  }
+}

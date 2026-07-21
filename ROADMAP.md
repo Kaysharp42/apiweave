@@ -1,29 +1,62 @@
 # Roadmap
 
-This roadmap is subject to change. APIWeave 2.0 is the first release tracked as a stable public surface, and post-2.0 work tracks the items below. Priorities shift based on user feedback.
+This roadmap is subject to change. The current product is the local-first
+Electron desktop app; optional APIWeave Cloud sync and collaboration run as a
+separate Cloud control plane. Priorities shift based on user feedback.
 
-## Shipped in 2.0
+## Shipped
 
-The 2.0 release is the GitHub-style multi-tenant refactor. Personal and organization-owned workspaces, organizations with teams and members, projects (formerly collections), scoped environments, scoped secrets with a GitHub-like override chain, Libsodium write-only secret ingress, per-scope keypairs, environment protection with required reviewers and the trusted-token bypass, scoped service tokens, a rebuilt scoped MCP tool surface, and an append-only audit log with a JSON export. The full 2.0 surface is in the [Changelog](../CHANGELOG.md).
+The local-first desktop rewrite. Single Electron process: ReactFlow canvas,
+six node types, workflow variables and extractors, projects with `.awecollection`
+export (references only), explicit per-run environment selection, the encrypted
+local secret store with `environment > workspace` scope chain, in-process runner with
+resume and lineage, the opt-in local MCP bridge, OpenAPI/Swagger/HAR/cURL
+import, and optional APIWeave Cloud structure sync. See the
+[Changelog](CHANGELOG.md) for the full current surface.
 
-## Next (2.1)
+## Next
 
-- **Workspace transfer.** Move a workspace from one organization to another, with a confirmation flow and an audit event.
-- **Audit retention controls.** Per-org and per-workspace retention windows, with the export as the canonical long-term store.
-- **Audit search.** Full-text search over the audit log context map, scoped to the calling user's permissions.
-- **Service token narrowing UI.** Walk an operator through the minimum permission set a token actually needs, based on the call history.
-- **Project templates.** Export a project as a workspace-level template that other workspaces in the same org can import.
-- **Scheduled runs.** Cron-style triggers per project, with the same scoped service token model as webhooks.
+- **Workflow history.** A per-workflow diff view across revisions, using the
+  canvas auto-save as the source of truth.
+- **Cloud conflict resolution UI on desktop.** When Cloud structure sync is connected,
+  surface the conflict queue and the Local copy vs Cloud copy comparison from
+  the Cloud Conflict Center on the desktop, with Keep local / Keep Cloud actions
+  that apply the chosen outcome through the sync transport.
+- **MCP tool surface expansion.** Additional local-only MCP tools that map to
+  existing IPC handlers, staying inside the loopback bridge and the per-install
+  token model.
+- **Environment editing improvements.** Bulk variable import and clearer
+  reference-check messaging when an environment is still attached to a workflow
+  and cannot be deleted.
 
-## Later (2.2+)
+## Later
 
-- **Advanced billing UI.** Per-organization seat counts, with the per-org role model already in place.
-- **Advanced security policy center.** Org-level rules for secret scope visibility, environment protection defaults, and service token expiry floors.
-- **GitHub App style integration tokens.** A first-class "app" actor type in the audit log, distinct from user and service_token.
-- **Cross-org environment sharing.** Allow an org to expose an environment to specific external orgs, with a grant record.
-- **Real-time collaboration.** Multiple users on the same canvas, with the change stream written to the audit log.
-- **Workflow history.** Per-workflow diff view across revisions, with the editor's auto-save as the source.
+- **Local scheduling.** Locally scheduled runs per workflow or project, run by
+  the in-process scheduler on the user's machine. No remote trigger, no
+  webhook, no public port.
+- **Project templates.** Export a project as a reusable local template, with
+  references only and no secret material.
+- **Cross-machine collaboration polish.** Sharing, roles, and conflict
+  workflows that build on the optional Cloud account and the
+  desktop-org → Cloud-Team / desktop-team → Cloud-Workspace mapping.
+
+## Out of scope
+
+The following were explored in earlier builds and are explicitly out of scope
+for the desktop app. They either contradict the local-first boundary or belong
+to the optional Cloud control plane rather than the desktop process:
+
+- Webhooks or remote triggers. Runs start from the UI, a local scheduler, or
+  the local MCP bridge.
+- Hosted execution or cloud-side run history. Cloud never builds or runs tests.
+- Real-time canvas collaboration. The desktop canvas is single-user on the
+  machine it runs on.
+- An append-only audit log, scoped service tokens, and environment protection
+  with required reviewers. These were part of the retired web surface.
+- A Docker Compose self-hosting stack. There is no server to host.
 
 ## How to influence
 
-Open or comment on a [GitHub Issue](https://github.com/apiweave/apiweave/issues) with your use case. The roadmap above shifts toward the work the community asks for first.
+Open or comment on a [GitHub Issue](https://github.com/apiweave/apiweave/issues)
+with your use case. The roadmap above shifts toward the work the community asks
+for first.

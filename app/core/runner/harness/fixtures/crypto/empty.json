@@ -1,0 +1,13 @@
+{
+  "name": "empty",
+  "source": "Python cryptography + PyNaCl capture on 2026-07-05",
+  "plaintextSize": 0,
+  "masterKeySha256Base64": "ayqWOX3muYms08l7v/JBBRQbPzuevr9IA4bJxrfSduo=",
+  "kekId": "kek-task-4",
+  "wrappedDekBase64": "AAECAwQFBgcICQoLKEEYBpqgGXtbzBf72LrGmtVyfTiI2Wh2Eq_x-7c876HVhI-fCohrjZuM3Ytd3d_C",
+  "secretNonceBase64": "EBESExQVFhcYGRob",
+  "plaintextBase64": "",
+  "aes256GcmCiphertextBase64": "8SZAEORitdpo1fCJsCMUgw==",
+  "sealedBoxPublicKeyBase64": "pwgOpq0YnT2Vk8BnIHznZ/4alXYiIkNNxIvzCyX3MzQ=",
+  "sealedBoxCiphertextBase64": "KqUzhfkoEoIkOPqWzsIP2HcEoP4U033fhXMoVwfmH3xUyBT0Pzdndk88Et0IqpfU"
+}

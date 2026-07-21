@@ -1,0 +1,52 @@
+# Render smoke test for the Electron desktop shell. Builds the renderer, then
+# launches the shell headless under Xvfb (no sidecars) and asserts the renderer
+# loads the embedded SPA - see app/smoke.cjs. Catches a broken app://
+# protocol handler or preload before they ship.
+name: Desktop render smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - app/**/**
+      - .github/workflows/desktop-smoke.yml
+  push:
+    branches: [main]
+    paths:
+      - app/**/**
+      - .github/workflows/desktop-smoke.yml
+
+jobs:
+  render-smoke:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build renderer and main process
+        working-directory: app
+        run: npm run build:app
+
+      - name: Install Xvfb + Electron runtime libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            libnss3 \
+            libatk-bridge2.0-0 \
+            libgtk-3-0 \
+            libgbm1 \
+            libasound2
+
+      - name: Launch headless and assert render
+        working-directory: app
+        run: xvfb-run -a --server-args="-screen 0 1280x800x24" node smoke.cjs

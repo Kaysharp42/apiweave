@@ -1,6 +1,6 @@
 # Environment Variables
 
-*Canonical reference for every environment variable read by the APIWeave 2.0 backend and frontend. Use this page to find a variable's name, default, and what it controls. All secret values shown here are placeholders. Never commit real keys to a repository or a `.env` file in version control.*
+*Canonical reference for every environment variable read by the APIWeave desktop app. The desktop app is a single Electron process: the renderer reads `VITE_*` variables at build time, and the main process reads its own configuration from the OS environment. There is no `.env` file inside the desktop app; settings that change at runtime live in the SQLite database and are managed through the in-app settings panel.*
 
 ## Prerequisites
 
@@ -8,329 +8,84 @@ None. This is a reference doc. If you are setting up APIWeave for the first time
 
 ## Reading Order
 
-Variables are grouped by feature. Within each group, the table lists every variable name, whether it is required, the default if you do not set it, and what it controls. Variables that the backend reads from `backend/.env` are case-sensitive and use UPPER_SNAKE_CASE. Frontend variables must start with `VITE_` because Vite only exposes that prefix to the browser bundle.
+Variables are grouped by feature. Within each group, the table lists every variable name, whether it is required, the default if you do not set it, and what it controls. Frontend variables must start with `VITE_` because Vite only exposes that prefix to the browser bundle.
 
-### Categories at a Glance
+The main process reads a small set of OS environment variables for development overrides. In a packaged app, the defaults are baked into the build; you can override them by setting the variable on the host before launching the app.
 
-1. App
-2. Database
-3. CORS and Trusted Hosts
-4. Security
-5. Deployment Mode
-6. Authentication and OAuth
-7. Sessions and CSRF
-8. Approved Domains
-9. Webhooks
-10. Storage and Artifacts
-11. Network Safety
-12. Rate Limiter
-13. MCP
-14. Secrets and Keyring
-15. Worker
-16. Frontend
-
-## App
-
-Core application settings read by FastAPI at startup.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DEBUG` | No | `false` | Enables verbose logging and stack traces. Set to `true` only for local development. Never enable in production. |
-| `APP_ENV` | Yes | `development` | Deployment environment marker. Valid values: `development`, `production`, `prod`. Drives cookie security, allowed origin checks, and other production guards. |
-| `BASE_URL` | Yes | none | Internal backend base URL used by the app. In development: `http://localhost:8000`. In production: the HTTPS URL behind your reverse proxy. |
-| `FRONTEND_URL` | No | `None` | Browser URL the user returns to after OAuth login. Must match an entry in `ALLOWED_ORIGINS`. |
-| `DEPLOYMENT_MODE` | No | `multi_tenant` | Top-level mode switch. Valid values: `single_user`, `multi_tenant`. See [Deployment Mode](#deployment-mode) below. |
-
-## Database
-
-MongoDB connection settings.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `MONGODB_URL` | Yes | none | Full MongoDB connection string. Local default: `mongodb://localhost:27017`. Use a credentials URL for Atlas or a replica set. |
-| `MONGODB_DB_NAME` | Yes | `apiweave` | Database name inside the MongoDB instance. The 2.0 install requires a clean database; the destructive reset is documented in [Installation](../getting-started/installation.md#destructive-database-reset). |
-
-## CORS and Trusted Hosts
-
-Browser origin allowlist and accepted hostnames. CORS is credentialed because the browser sends session cookies, so wildcards are not safe.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `ALLOWED_ORIGINS` | Yes | none | Comma-separated list of exact frontend origins that may call the API. Production must list HTTPS origins only. Do not set to `*` in production. |
-| `TRUSTED_HOSTS` | No | `localhost,127.0.0.1` | Comma-separated hostnames the app accepts in the `Host` header. Restrict this in production to the public API hostname. |
-| `PUBLIC_BASE_URL` | No | `http://localhost:8000` | Public HTTPS URL used to build OAuth callback URLs. Configure this in production to your real backend URL so provider consoles accept the callback. |
-
-## Security
-
-Long-lived signing keys for cookies, sessions, and other cryptographic operations.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `SECRET_KEY` | Yes | none | Primary application secret. Generate with `openssl rand -hex 32` and store in a secret manager. |
-| `SESSION_SECRET_KEY` | Yes (production) | empty | Separate key used to sign browser session cookies. Required when `APP_ENV` is `production` or `prod`. Generate with `openssl rand -hex 32`. |
-
-## Deployment Mode
-
-The single most consequential variable in this file. `DEPLOYMENT_MODE` selects between two completely separate operating models. The contract of every other auth variable depends on which one is active.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DEPLOYMENT_MODE` | No | `multi_tenant` | Valid values: `single_user`, `multi_tenant`. See the matrix below and the [Authentication guide](../operations/authentication.md#deployment-mode) for the full per-mode contract. |
-
-### `single_user`
-
-A self-hosted install for a single human operator. The backend auto-creates one synthetic owner on first request, and every API call is authenticated as that owner. There are no sessions, no CSRF, no OAuth, no invites, no orgs UI, no admin pages. The frontend shows the canvas immediately with no login screen.
-
-Required configuration: only `MONGODB_URL`, `MONGODB_DB_NAME`, `BASE_URL`, `APP_ENV`, and `SECRET_ENCRYPTION_KEY` (the last so stored secrets survive restarts). All `OAUTH_*`, `SESSION_*`, `CSRF_*`, `APPROVED_DOMAINS_*`, and `SETUP_MODE_ENABLED` variables are ignored.
-
-The personal workspace is auto-created with the same slug (`personal`) and id pattern used by the multi-tenant first-owner bootstrap, so the rest of the system — workflows, environments, secrets, runs — works without modification.
-
-### `multi_tenant`
-
-The historical 2.0 behavior. OAuth SSO, server-side sessions, double-submit CSRF, invites, approved domains, and the full organization/workspace/team model are all active. The first sign-in becomes the per-instance owner.
-
-Required configuration in addition to the App/Database vars: at least one OAuth provider's `*_CLIENT_ID` and `*_CLIENT_SECRET`, `SESSION_SECRET_KEY`, `ALLOWED_ORIGINS`, and `PUBLIC_BASE_URL`. The startup checks in [Deployment](../operations/deployment.md) enforce these in production.
-
-### When to Use Each
-
-| Situation | Recommended mode |
-| --- | --- |
-| Local evaluation, side project, dev laptop | `single_user` |
-| Self-hosted for one operator or a small private team that does not need orgs/invites | `single_user` |
-| Any deployment that needs invites, organizations, or team permission grants | `multi_tenant` |
-| Hosted multi-tenant SaaS | `multi_tenant` |
-| Production with public signups | `multi_tenant` |
-
-### Switching Modes
-
-You can flip `DEPLOYMENT_MODE` in `.env` and restart the backend; the API surface, scopes, and permissions code is identical in both modes and does not need to change. The only thing that changes is *who* the backend treats as the authenticated caller.
-
-Two operational notes:
-
-- The first request after switching to `single_user` triggers the implicit-owner bootstrap. Subsequent restarts reuse the same `User` row (`usr-single-user-owner`).
-- Switching from `multi_tenant` to `single_user` is a one-way simplification: real users, sessions, and OAuth identities stay in the database but are no longer reachable. Use the destructive database reset in [Installation](../getting-started/installation.md#destructive-database-reset) to clear them.
-
-## Authentication and OAuth
-
-Client credentials for the supported OAuth providers. Leave unused providers blank. Configure the callback URL in each provider console as `{PUBLIC_BASE_URL}/api/auth/callback/{provider}`.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `GITHUB_CLIENT_ID` | No | empty | GitHub OAuth app client ID. |
-| `GITHUB_CLIENT_SECRET` | No | empty | GitHub OAuth app client secret. |
-| `GITLAB_CLIENT_ID` | No | empty | GitLab OAuth app client ID. |
-| `GITLAB_CLIENT_SECRET` | No | empty | GitLab OAuth app client secret. |
-| `MICROSOFT_CLIENT_ID` | No | empty | Microsoft Entra ID application client ID. |
-| `MICROSOFT_CLIENT_SECRET` | No | empty | Microsoft Entra ID application client secret. |
-| `MICROSOFT_TENANT` | No | `common` | Tenant for Microsoft login. Use `common` for multi-tenant, or a tenant ID for single-tenant. |
-| `GOOGLE_CLIENT_ID` | No | empty | Google OAuth client ID. |
-| `GOOGLE_CLIENT_SECRET` | No | empty | Google OAuth client secret. |
-
-The first sign-in on a clean database becomes the per-instance owner, gated by `SETUP_MODE_ENABLED` (default `true`). The backend auto-disables setup mode after the first owner is created; set `SETUP_MODE_ENABLED=false` in production (startup checks reject `true`).
-
-## Sessions and CSRF
-
-Browser session lifetime and CSRF protection. The defaults match the recommended production posture.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `SESSION_MAX_IDLE_MINUTES` | No | `720` | Idle window before the session expires. 720 minutes equals 12 hours. |
-| `SESSION_MAX_ABSOLUTE_MINUTES` | No | `10080` | Hard lifetime regardless of activity. 10080 minutes equals 7 days. |
-| `SESSION_COOKIE_SECURE` | No | `true` | Sends the session cookie over HTTPS only. Forced to `false` automatically when `APP_ENV=development` for local HTTP testing. |
-| `SESSION_COOKIE_SAMESITE` | No | `lax` | SameSite cookie attribute. Valid values: `lax`, `strict`, `none`. |
-| `CSRF_ENABLED` | No | `true` | Enables CSRF token validation on state-changing requests. Keep enabled. |
-
-## Approved Domains
-
-Restrict signup to a list of email domains. Useful for single-tenant deployments.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `APPROVED_DOMAINS_ENABLED` | No | `false` | Enables the approved-domain gate. When `true`, signup is restricted to the domains listed in `APPROVED_DOMAINS`. Enforced for both OAuth and email magic-link sign-in. |
-| `APPROVED_DOMAINS` | No | empty | Comma-separated email domains allowed to sign up. Example: `example.com,example.org`. |
-| `REGISTRATION_MODE` | No | `invite_only` | Who may obtain a **new** account. `invite_only` (self-host default): only existing users or emails with a pending invite (general or org). `open`: anyone whose email passes the approved-domains policy may self-register (e.g. public hosted with `APPROVED_DOMAINS` set). Approved-domains is always enforced when enabled, in both modes. Applies to OAuth and email sign-in. |
-
-## Email Sign-In (Magic Link)
-
-Passwordless email sign-in (multi_tenant only). A user enters their email and receives a single-use sign-in link. Requires SMTP (see below). Org invites are also delivered as magic links when this is enabled.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `EMAIL_LOGIN_ENABLED` | No | `false` | Enables email magic-link sign-in (`POST /api/auth/email/request`, `GET /api/auth/email/verify`) and magic-link delivery of org invites. Requires SMTP to be configured to actually send mail. Ignored in `single_user` mode. |
-| `EMAIL_LOGIN_TOKEN_TTL_MINUTES` | No | `15` | Lifetime of a magic-link token in minutes. Each link is single-use. |
-
-## Webhooks
-
-Scoped webhook execution and payload limits. Webhook authentication now uses a scoped service token bound to a workspace.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `WEBHOOK_REQUIRE_HMAC` | No | `true` | Requires HMAC-SHA256 signed requests for webhook execution. Keep `true` in production. Token-only execution is rejected when this is on. |
-| `MAX_WEBHOOK_BODY_SIZE` | No | `65536` | Maximum webhook body size in bytes. Production must keep this at or below `1048576` (1 MB). Larger values fail startup. |
-
-## Storage and Artifacts
-
-Local filesystem paths for uploads and run artifacts.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `UPLOADS_BASE_DIR` | No | `uploads` | Base directory where uploaded files are sandboxed. Path is relative to the backend working directory. |
-| `ARTIFACTS_PATH` | No | `./artifacts` | Directory where JUnit XML and HTML reports are written after each run. |
-
-## Network Safety
-
-SSRF and request routing controls.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `BLOCK_PRIVATE_NETWORKS` | No | `true` | Blocks HTTP nodes from reaching `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, and other reserved ranges. SSRF protection. **Must be `true` in production.** Do not flip this to `false` to allow localhost — use `ALLOW_LOOPBACK` instead, which only unblocks loopback (not RFC1918 or cloud metadata). The startup validator refuses to boot in production when this is `false`. |
-| `ALLOW_LOOPBACK` | No | `false` (auto-`true` for single-user dev) | Surgically unblocks `127.0.0.0/8` and `::1/128` so workflows can hit services on the same machine. RFC1918 (`10.x`, `192.168.x`, `172.16.x`), link-local (`169.254.x` — cloud metadata), and unique-local IPv6 stay blocked. Auto-enabled when `DEPLOYMENT_MODE=single_user` AND `APP_ENV=development`, so a normal laptop user does not need to set anything. **Refused in production** — the startup validator rejects `true` when `APP_ENV=production`. For self-hosted prod deployments that need to reach specific internal hosts, use `APPROVED_DOMAINS` to whitelist them explicitly. |
-
-## Rate Limiter
-
-Backend used by the token bucket rate limiter. Choose based on whether you run one process or many.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `RATE_LIMITER_BACKEND` | No | `memory` | Valid values: `memory`, `mongodb`. Use `mongodb` when you run multiple backend processes and want a shared counter. |
-
-## MCP
-
-Settings for the Model Context Protocol server, used by AI agents for machine-to-machine access. HTTP MCP is separate from human browser sessions. 2.0 uses scoped service tokens for MCP; the 1.0 global `MCP_API_KEY` flow is gone.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `MCP_ENABLED` | No | `false` | Enables the MCP server. Set to `true` to expose MCP tools to AI agents. |
-| `MCP_HTTP_ENABLED` | No | `false` | Enables the HTTP transport for MCP. Stdio MCP is always available locally. |
-| `MCP_ALLOWED_ORIGINS` | No | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated origins allowed to call the MCP HTTP endpoint. The MCP SDK also derives a Host header allowlist (DNS rebinding protection) from these origins automatically: every origin's hostname is added with a `:*` port wildcard (loopback defaults `127.0.0.1`, `localhost`, `[::1]` are always merged in as well). Override with `MCP_ALLOWED_HOSTS` only if the backend is reached on a host that does not appear in any origin (rare — most reverse-proxy setups still match by the public origin). |
-| `MCP_ALLOWED_HOSTS` | No | empty | Optional override for the MCP Host header allowlist (DNS rebinding protection). Normally derived from `MCP_ALLOWED_ORIGINS`; set only when the backend is served on a host not present in the origin list (e.g. reverse proxy). Accepts the MCP SDK's `host:*` wildcard syntax to match any port. |
-| `MCP_REQUIRE_API_KEY` | No | `true` | When `true`, every MCP HTTP request must carry a valid `Bearer awst_...` scoped service token. Set to `false` for local single-user deployments where no token is needed; the single-user owner's personal workspace is used automatically. |
-
-The bearer token for MCP is now a scoped service token. Create one in the workspace or organization settings and pass it as `Authorization: Bearer <token>` on every HTTP MCP request.
-
-## Secrets and Keyring
-
-Per-scope Libsodium keypairs and the master KEK. The full model is in the [Encryption Guide](../operations/encryption.md).
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `SECRET_ENCRYPTION_KEY` | No | empty | Master KEK for envelope encryption of stored secret ciphertext. 32 bytes, base64-encoded. Set this in production so secrets survive restart. Leave empty in development for an ephemeral key. |
-| `SECRET_KEYRING_BACKEND` | No | `mongodb` | Valid values: `mongodb`, `memory`. The keyring stores old per-scope Libsodium keypairs so rotation never strands existing ciphertexts. |
-
-## Worker
-
-Settings for the optional background worker process that polls and executes runs.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `WORKER_POLL_INTERVAL` | No | `5` | Seconds the worker waits between polling the database for new runs. |
-| `WORKER_MAX_RETRIES` | No | `3` | Maximum retry attempts for a failing run before the worker marks it failed. |
-
-## Frontend
+## Renderer (Frontend)
 
 Variables Vite injects into the browser bundle. They are baked in at build time, so changing them requires rebuilding the frontend. The `VITE_` prefix is required; Vite refuses to expose any other variable name to the client.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `VITE_API_URL` | No | `http://localhost:8000` | Base URL the browser uses to reach the backend REST API. Override in production to your HTTPS backend URL. |
-| `VITE_API_WEAVE_URL` | No | `http://localhost:8000` | Base URL the browser uses for the workflow execution and run status endpoints. Override in production to match `VITE_API_URL` unless you front the API with a different hostname. |
+| `VITE_API_URL` | No | `http://localhost:8000` (dev) | Legacy. The renderer always talks to the bundled main process over the typed IPC channel — in development and in packaged builds — and does not make HTTP calls to a separate backend. This variable is no longer read at runtime; it remains in `app/.env.example` and the `ImportMeta` type for compatibility. |
+| `VITE_API_WEAVE_URL` | No | `http://localhost:8000` (dev) | Legacy. Same as `VITE_API_URL`: the renderer uses the typed IPC channel and does not call a separate HTTP backend. No longer read at runtime. |
 
 ### Example frontend `.env`
 
 ```env
-VITE_API_URL=https://api.example.com
-VITE_API_WEAVE_URL=https://api.example.com
+VITE_API_URL=http://localhost:8000
+VITE_API_WEAVE_URL=http://localhost:8000
 ```
 
-## Production Required
+These values are legacy and are not read at runtime. The renderer always talks to the bundled main process over the typed IPC channel, in both development and packaged builds; there is no separate backend to point at.
 
-The backend refuses to start in production mode unless these are set correctly. Set every variable in this list before you bring the service up.
+## Main Process (Desktop)
 
-Required in `production` or `prod` (`APP_ENV`):
+Variables the Electron main process reads from the host environment. In a packaged app, defaults are baked in. In a development run from `app/`, you can set these in the shell before `npm run dev` to override the defaults.
 
-- `SECRET_KEY` set to a strong random value, never the development placeholder.
-- `SESSION_SECRET_KEY` set to a strong random value.
-- `SESSION_COOKIE_SECURE=true`. The startup check rejects `false` outside development.
-- `WEBHOOK_REQUIRE_HMAC=true`.
-- `BLOCK_PRIVATE_NETWORKS=true`.
-- `ALLOWED_ORIGINS` set to a comma-separated list of exact HTTPS frontend origins. The startup check rejects `*` in production.
-- `MAX_WEBHOOK_BODY_SIZE` at or below `1048576` (1 MB). Larger values fail startup.
-- `MONGODB_URL` and `MONGODB_DB_NAME` pointing at the production database (clean, post-2.0 reset).
-- `BASE_URL` and `PUBLIC_BASE_URL` set to the public HTTPS backend URL.
-- `TRUSTED_HOSTS` set to the public API hostname(s) only.
-- `SECRET_ENCRYPTION_KEY` set to a 32-byte base64 value so stored secrets survive restart.
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `APIWEAVE_FRONTEND_DIST` | No | resolved from `app.getAppPath()` | Absolute path to the renderer's `dist/` directory. Override to point the main process at a custom build of the renderer. |
+| `APIWEAVE_MCP_PORT` | No | first free loopback port | Port the local MCP bridge binds to. Override to pin a specific port. The bridge is opt-in; this variable is only consulted when the bridge is enabled. |
+| `APIWEAVE_MCP_DISABLE` | No | unset | Set to `1` or `true` to prevent the MCP bridge from starting, even if it is enabled in the app settings. Useful for scripted runs and CI. |
+| `APIWEAVE_LOG_LEVEL` | No | `info` | Main process log level. One of `debug`, `info`, `warn`, `error`. |
+| `APIWEAVE_DB_PATH` | No | `<userData>/apiweave.db` | Override the SQLite database path. Use a different file to run a second instance against an isolated database. |
+| `APIWEAVE_KEYFILE_PATH` | No | `<userData>/keyfile` | Override the secret store keyfile path. Use the same override as `APIWEAVE_DB_PATH` to keep the keyfile and the database together. |
+| `APIWEAVE_DISABLE_GPU` | No | unset | Set to `1` or `true` to force the software rasterizer. Useful on machines whose GPU driver is incompatible with the renderer's WebGL canvas. |
+| `OZONE_PLATFORM_HINT` | No | `auto` | Linux-only. Hint for the Wayland/X11 selection. Defaults to `auto`, which lets Electron pick. Set to `wayland` or `x11` to force a specific backend. |
 
-Required when MCP HTTP is exposed:
+`<userData>` is the OS-standard user data path for the app:
 
-- A scoped service token with the right permissions. Create it in the workspace or organization settings; there is no global `MCP_API_KEY` in 2.0.
-- `MCP_ALLOWED_ORIGINS` set to the trusted agent host origin(s).
-
-Required for each OAuth provider you actually enable:
-
-- Both `*_CLIENT_ID` and `*_CLIENT_SECRET` for that provider. A client ID with an empty secret fails startup.
-
-Generate strong secrets with:
-
-```bash
-openssl rand -hex 32
-```
+- **Windows**: `%APPDATA%\APIWeave`
+- **macOS**: `~/Library/Application Support/APIWeave`
+- **Linux**: `~/.config/APIWeave`
 
 ## Common Mistakes
 
-A short list of foot-guns we have seen in deployments. Each one has tripped up a real user.
+A short list of foot-guns we have seen. Each one has tripped up a real user.
 
-### Mistake 1: ALLOWED_ORIGINS set to `*` in production
+### Mistake 1: Changing `VITE_API_URL` after the frontend has built
 
-The startup check rejects this, but if you bypass the check or run a pre-production build you will get credentialed CORS errors that look like browser bugs. Use a comma-separated list of exact HTTPS origins instead.
-
-```env
-# Wrong
-ALLOWED_ORIGINS=*
-
-# Right
-ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
-```
-
-### Mistake 2: SESSION_SECRET_KEY left empty
-
-The development default is empty so you can iterate without ceremony. Production startup fails when this is empty, which is the desired behavior. Always generate a fresh value and store it in a secret manager.
-
-```env
-# Wrong (works in dev, fails in prod)
-SESSION_SECRET_KEY=
-
-# Right
-SESSION_SECRET_KEY=<output of openssl rand -hex 32>
-```
-
-### Mistake 3: Pasting a plaintext secret value into a write endpoint
-
-The 2.0 secret write flow is Libsodium sealed-box only. The backend rejects plaintext on the wire and the UI does not offer a paste field. If you are trying to add a secret through curl, fetch the scope's public key first, encrypt the value with a sealed box, and submit the ciphertext.
-
-### Mistake 4: Changing VITE_API_URL after the frontend has built
-
-Vite injects these values at build time, then the browser bundle no longer reads `.env`. If you change the value in `frontend/.env` and forget to rebuild, the running app keeps the old URL. The fix is always `npm run build` after editing `frontend/.env`.
+Vite injects these values at build time, then the browser bundle no longer reads `.env`. If you change the value in `app/.env` and forget to rebuild, the running app keeps the old URL. The fix is always `npm run build` after editing `app/.env`.
 
 ```bash
-cd frontend
+cd app
 # Edit .env, then rebuild
-npm run build
+npm run build:renderer
 ```
+
+### Mistake 2: Pointing `APIWEAVE_DB_PATH` at a read-only location
+
+The main process needs write access to the database file. The default `<userData>` location is writable. If you override `APIWEAVE_DB_PATH`, make sure the directory exists and is writable by the user running the app.
+
+### Mistake 3: Forgetting to set `APIWEAVE_KEYFILE_PATH` alongside `APIWEAVE_DB_PATH`
+
+The keyfile and the database must travel together. If you copy the database to a new machine and forget the keyfile, the secret store is unreadable. Override both variables in lockstep, or copy the whole user data directory.
+
+### Mistake 4: Setting `APIWEAVE_MCP_PORT` to a port the OS already has bound
+
+The bridge binds only to `127.0.0.1`, but the port still has to be free. If the override collides with another process, the bridge fails to start. The **MCP** panel in the app shows the actual port; check it after launch.
 
 ## Troubleshooting
 
-- **If the backend fails to start with a first-owner error**, the database still has 1.0 collections or a previous 2.0 install already created the owner. Run the destructive reset in [Installation](../getting-started/installation.md#destructive-database-reset) and restart.
-- **If CORS errors appear in the browser console after switching to HTTPS**, the most common cause is `ALLOWED_ORIGINS` still listing the old `http://` origin. Update the list to your new HTTPS origin and restart the backend.
-- **If webhooks return 401 with `HMAC signature required`**, `WEBHOOK_REQUIRE_HMAC` is on and the caller did not send the `X-Webhook-Signature` and `X-Webhook-Timestamp` headers. Confirm both headers are set, then check that the signed payload uses `printf '%s%s'` (timestamp then body) rather than `echo` (which adds a trailing newline).
-- **If MCP HTTP requests return 401**, confirm the bearer token is a current scoped service token. The 1.0 `MCP_API_KEY` is no longer accepted.
-- **If sessions log the user out immediately after login in production**, `SESSION_COOKIE_SECURE` is almost certainly `false` and the browser is dropping the cookie because the connection is HTTPS. Set it to `true`.
-- **If the login page never appears and the app loads straight into the canvas**, `DEPLOYMENT_MODE` is set to `single_user`. The login screen is intentionally hidden in that mode. Either switch to `multi_tenant` to restore the OAuth flow, or keep `single_user` and accept the implicit-owner model.
+- **If the renderer shows stale build-time configuration**, rebuild the renderer (`npm run build:renderer` from `app/`). The desktop app always loads the built bundle.
+- **If the main process refuses to start with a database error**, the directory pointed at by `APIWEAVE_DB_PATH` is not writable. Check permissions and free disk space.
+- **If the MCP bridge fails to bind**, the port in `APIWEAVE_MCP_PORT` is in use, or the bridge was disabled in **Settings**. Re-enable the bridge in **Settings**, change the port, or set `APIWEAVE_MCP_DISABLE=1` to suppress the bridge entirely.
+- **If a stored secret value seems unreadable after moving the database to a new machine**, the keyfile from the source machine is not on the destination. Copy the keyfile too, or re-enter the secrets through the write flow.
 
 ## Related
 
-- [Architecture](../reference/architecture.md)
-- [Security and Deployment Checklist](../operations/security.md)
+- [Architecture](architecture.md)
+- [Installation](../getting-started/installation.md)
 - [MCP Integration Guide](../features/mcp-integration.md)
-- [Webhook Quick Start](../features/webhooks.md)
-- [Authentication Setup](../operations/authentication.md)
-- [Encryption Guide](../operations/encryption.md)

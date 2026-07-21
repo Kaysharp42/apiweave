@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/users/42"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "id": 42,
+      "token": "user-token-42"
+    }
+  }
+}

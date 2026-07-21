@@ -250,7 +250,7 @@ In dark mode, shadow opacity increases to maintain separation against the near-b
 ### Navigation
 
 - **AppNavBar (left rail):** Fixed 56px width. Dark background (zinc-950). Icon-only navigation with Lucide icons. Active state uses ink-teal icon color; inactive uses mocca-mist text color. Hover expands a brief tooltip via Tippy. Collapses to 56px always (no expandable mode).
-- **Sidebar:** 380px default width (max 600px). Zinc-50 background in light mode (slightly dimmer than the page). Contains searchable workflow/collection list. Uses Allotment split-pane for resizable boundaries.
+- **Sidebar:** 380px default width (max 600px). Zinc-50 background in light mode (slightly dimmer than the page). Contains searchable workflow/project list. Uses Allotment split-pane for resizable boundaries.
 - **MainHeader:** 48px height. Contains logo/branding, environment selector, theme toggle. Spans full width above workspace.
 - **MainFooter:** 32px height. Status bar with execution state, connection status. Minimal.
 

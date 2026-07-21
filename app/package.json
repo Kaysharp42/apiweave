@@ -1,0 +1,141 @@
+{
+  "name": "apiweave",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "APIWeave local-first API testing desktop app",
+  "author": "Kaysharp42 <kaysharp42@users.noreply.github.com>",
+  "homepage": "https://github.com/Kaysharp42/apiweave",
+  "main": "dist/desktop/main.cjs",
+  "scripts": {
+    "setup": "npm install && npm run rebuild:electron",
+    "dev": "npm start",
+    "dev:renderer": "vite --host 127.0.0.1",
+    "prestart": "npm run rebuild:electron && npm run build:app",
+    "start": "electron .",
+    "build": "npm run build:app && electron-builder",
+    "build:app": "npm run build:renderer && npm run build:electron",
+    "build:renderer": "vite build",
+    "build:electron": "node esbuild.config.cjs",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:renderer": "vitest run src",
+    "test:desktop": "vitest run core electron shared",
+    "typecheck": "npm run typecheck:renderer && npm run typecheck:desktop",
+    "typecheck:renderer": "tsc --noEmit -p tsconfig.json",
+    "typecheck:desktop": "tsc --noEmit -p tsconfig.desktop.json",
+    "lint": "eslint src core electron shared",
+    "lint:renderer": "eslint src",
+    "format": "prettier --write \"{src,core,electron,shared}/**/*.{ts,tsx,json,css,md}\"",
+    "audit:types": "node scripts/audit-types.mjs",
+    "doctor": "npx react-doctor@latest",
+    "qa:ui": "playwright test",
+    "parity": "node core/runner/harness/run-parity.mjs",
+    "parity:capture": "node core/runner/harness/run-parity.mjs --capture",
+    "rebuild:electron": "node scripts/rebuild-sqlite.mjs electron",
+    "rebuild:node": "node scripts/rebuild-sqlite.mjs node",
+    "pretest": "npm run rebuild:node"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.12.1",
+    "@fallow-cli/beacon": "^0.5.1",
+    "@headlessui/react": "^2.2.9",
+    "@modelcontextprotocol/sdk": "^1.23.0",
+    "@monaco-editor/react": "^4.6.0",
+    "@tippyjs/react": "^4.2.6",
+    "@types/dagre": "^0.7.54",
+    "allotment": "^1.20.4",
+    "axios": "^1.17.0",
+    "better-sqlite3": "^12.6.0",
+    "dagre": "^0.8.5",
+    "daisyui": "^5.5.18",
+    "framer-motion": "^12.40.0",
+    "jose": "6.2.3",
+    "json-edit-react": "^1.30.1",
+    "libsodium-wrappers": "^0.8.4",
+    "lucide-react": "^0.548.0",
+    "mousetrap": "^1.6.5",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0",
+    "reactflow": "^11.10.0",
+    "sonner": "^2.0.7",
+    "undici": "^7.16.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@apiweave/proto": "https://github.com/Kaysharp42/apiweave-proto/archive/refs/tags/v0.5.0.tar.gz",
+    "@playwright/test": "^1.60.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/mousetrap": "^1.6.15",
+    "@types/node": "^25.8.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.3",
+    "@typescript-eslint/parser": "^8.59.3",
+    "@vitejs/plugin-react": "^4.2.0",
+    "autoprefixer": "^10.4.0",
+    "baseline-browser-mapping": "^2.10.38",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.27.2",
+    "eslint": "^8.55.0",
+    "eslint-plugin-react": "^7.33.0",
+    "fallow": "^2.98.0",
+    "jsdom": "^25.0.1",
+    "nock": "^14.0.16",
+    "postcss": "^8.4.0",
+    "prettier": "^3.1.0",
+    "react-doctor": "^0.2.10",
+    "tailwindcss": "^3.3.0",
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3",
+    "vite": "^5.0.0",
+    "vite-plugin-checker": "^0.8.0",
+    "vitest": "^2.1.9"
+  },
+  "build": {
+    "appId": "com.kaysharp.apiweave",
+    "productName": "APIWeave",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/desktop/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/renderer",
+        "to": "renderer"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "pacman"
+      ],
+      "category": "Development"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    }
+  }
+}

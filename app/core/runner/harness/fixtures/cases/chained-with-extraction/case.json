@@ -1,0 +1,19 @@
+{
+  "name": "chained-with-extraction",
+  "seed": "0x12345678",
+  "clock": "2026-01-02T03:04:05.000Z",
+  "httpTapeRefs": ["http/chained-user.json", "http/chained-profile.json"],
+  "workflow": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      { "id": "get_user", "type": "httpRequest", "config": { "method": "GET", "url": "/users/42", "extractors": { "userId": "body.id", "token": "body.token" } } },
+      { "id": "get_profile", "type": "httpRequest", "config": { "method": "GET", "url": "/profiles/42", "headers": "Authorization=Bearer {{variables.token}}" } },
+      { "id": "end", "type": "end" }
+    ],
+    "edges": [
+      { "source": "start", "target": "get_user" },
+      { "source": "get_user", "target": "get_profile" },
+      { "source": "get_profile", "target": "end" }
+    ]
+  }
+}

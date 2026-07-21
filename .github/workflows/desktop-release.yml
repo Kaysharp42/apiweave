@@ -1,0 +1,224 @@
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag, version, and main ancestry
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tags must use SemVer, for example v0.6.0 or v0.6.0-beta.1." >&2
+            exit 1
+          fi
+
+          version="${GITHUB_REF_NAME#v}"
+          node -e '
+            const packageJson = require("./app/package.json");
+            const packageLock = require("./app/package-lock.json");
+            const expected = process.argv[1];
+            if (packageJson.version !== expected || packageLock.version !== expected || packageLock.packages[""].version !== expected) {
+              console.error(`Tag ${expected} does not match app/package.json and app/package-lock.json.`);
+              process.exit(1);
+            }
+          ' "$version"
+
+          git fetch --no-tags origin main
+          tag_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            echo "The release tag must point to a commit on main." >&2
+            exit 1
+          fi
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            id: windows-x64
+            os: windows-latest
+            command: npx electron-builder --win nsis --x64 --publish never
+          - name: macOS Intel
+            id: macos-x64
+            os: macos-15-intel
+            command: npx electron-builder --mac dmg --x64 --publish never
+          - name: macOS Apple Silicon
+            id: macos-arm64
+            os: macos-15
+            command: npx electron-builder --mac dmg --arm64 --publish never
+          - name: Linux x64
+            id: linux-x64
+            os: ubuntu-22.04
+            command: npx electron-builder --linux AppImage deb rpm pacman --x64 --publish never
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fakeroot libarchive-tools rpm
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build application
+        working-directory: app
+        run: npm run build:app
+
+      - name: Package installer
+        working-directory: app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: ${{ matrix.command }}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: apiweave-${{ matrix.id }}
+          path: |
+            app/release/*.exe
+            app/release/*.dmg
+            app/release/*.AppImage
+            app/release/*.deb
+            app/release/*.rpm
+            app/release/*.pacman
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+
+      - name: Verify and collect installers
+        shell: bash
+        run: |
+          shopt -s nullglob
+          mkdir assets
+
+          mapfile -d '' installers < <(find dist -type f \( \
+            -name '*.exe' -o \
+            -name '*.dmg' -o \
+            -name '*.AppImage' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' -o \
+            -name '*.pacman' \
+          \) -print0)
+
+          if (( ${#installers[@]} != 7 )); then
+            echo "Expected 7 installers, found ${#installers[@]}." >&2
+            printf '%s\n' "${installers[@]}"
+            exit 1
+          fi
+
+          for installer in "${installers[@]}"; do
+            filename="$(basename "$installer")"
+            if [[ -e "assets/$filename" ]]; then
+              echo "Duplicate release asset name: $filename" >&2
+              exit 1
+            fi
+            cp "$installer" assets/
+          done
+
+          expected=(
+            'assets/*-win-x64.exe'
+            'assets/*-mac-x64.dmg'
+            'assets/*-mac-arm64.dmg'
+            'assets/*.AppImage'
+            'assets/*.deb'
+            'assets/*.rpm'
+            'assets/*.pacman'
+          )
+          for pattern in "${expected[@]}"; do
+            compgen -G "$pattern" >/dev/null || {
+              echo "Missing expected release asset: $pattern" >&2
+              exit 1
+            }
+          done
+
+          (cd assets && sha256sum * > SHA256SUMS.txt)
+          ls -lh assets
+
+      - name: Generate release description
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'EOF'
+          APIWeave desktop builds for Windows, macOS, and Linux.
+
+          ## Downloads
+
+          - **Windows:** x64 NSIS installer (`.exe`)
+          - **macOS:** Intel x64 and Apple Silicon arm64 disk images (`.dmg`)
+          - **Linux:** portable AppImage, Debian/Ubuntu (`.deb`), Fedora/RHEL/openSUSE (`.rpm`), and Arch/Manjaro (`.pacman`)
+
+          The Windows and macOS builds are currently unsigned. See the [installation guide](https://github.com/Kaysharp42/apiweave/blob/main/docs/getting-started/installation.md) for first-launch instructions. Verify downloads with `SHA256SUMS.txt`.
+
+          EOF
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$GITHUB_REF_NAME" \
+            --jq .body >> release-notes.md
+
+      - name: Create or update GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "APIWeave $GITHUB_REF_NAME" \
+              --notes-file release-notes.md \
+              "${prerelease[@]}"
+            gh release upload "$GITHUB_REF_NAME" assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "APIWeave $GITHUB_REF_NAME" \
+              --notes-file release-notes.md \
+              "${prerelease[@]}"
+          fi

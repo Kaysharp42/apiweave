@@ -1,6 +1,6 @@
 # Concepts
 
-*Short definitions of every term you will see in the APIWeave 2.0 docs. Read this once before any feature guide, then come back to it as a glossary.*
+*Short definitions of every term you will see in the APIWeave docs. Read this once before any feature guide, then come back to it as a glossary.*
 
 ## Prerequisites
 
@@ -8,72 +8,22 @@
 
 ## Table of Contents
 
-- [Organization](#organization)
-- [Team](#team)
-- [Workspace](#workspace)
-- [Project](#project)
 - [Workflow](#workflow)
 - [Node](#node)
 - [Edge](#edge)
+- [Project](#project)
+- [Org](#org)
+- [Team](#team)
+- [Cloud Team and Cloud Workspace](#cloud-team-and-cloud-workspace)
 - [Environment](#environment)
 - [Secret](#secret)
-- [Service Token](#service-token)
-- [Environment Protection](#environment-protection)
-- [Approval](#approval)
-- [Audit Event](#audit-event)
 - [Run](#run)
 - [Variable](#variable)
 - [Extractor](#extractor)
 
-## Organization
-
-An organization is a multi-tenant owner of workspaces. A user can belong to one or more organizations with a role of `owner`, `member`, `billing`, or `security`. Organizations have a slug, used in every URL that touches their resources, and they own the workspaces, environments, projects, and service tokens that fall under their scope.
-
-```text
-Organization: "Acme"  slug: "acme"
-  workspaces: 3
-  members:    12
-  teams:      4
-```
-
-## Team
-
-A team is a named group inside an organization. Teams receive permission grants for workspaces, environments, secrets, and approval reviews. Outside collaborators can join a single workspace without becoming an organization member.
-
-```text
-Org: "Acme"
-  Team: "Checkout"
-    members: [alice, bob, carol]
-    grants:
-      workspace "checkout-api" -> write
-      environment "production"  -> approve
-```
-
-## Workspace
-
-A workspace is a container for workflows, projects, environments, secrets, and service tokens. Every user gets a personal workspace on first sign-in (`/personal/...`). An organization can own any number of additional workspaces. Each workspace has a slug, a name, and an owner type of `user` or `organization`. Workspace transfer is out of scope in 2.0.
-
-```text
-Workspace: "checkout-api"  slug: "checkout-api"  owner: org/acme
-Workspace: "personal"      slug: "personal"      owner: user/alice
-```
-
-The URL pattern is always `/:orgSlug/:workspaceSlug/...` for organization-owned workspaces and `/personal/...` for the current user's personal workspace.
-
-## Project
-
-A project is a workspace-scoped, ordered group of workflows that run together. Projects replace the 1.0 collection concept. Each project carries a `workflowOrder`, a per-row `continueOnFail` flag, and a color tag for the sidebar. Projects export as `.awecollection` v2 bundles, which carry references only (no secret values, no per-scope private keys).
-
-```text
-Project: "Checkout API"  workspace: checkout-api
-  1. Auth        (workflow)  continueOnFail: false
-  2. Add to cart (workflow)  continueOnFail: false
-  3. Pay         (workflow)  continueOnFail: true
-```
-
 ## Workflow
 
-A workflow is a graph of connected nodes that you build on the canvas. Every workflow belongs to exactly one workspace, and every workflow sits inside one of that workspace's projects. Workflows start with a Start node, run through the nodes you added, and end at one or more End nodes. A run selects exactly one environment; that environment must be visible to the workflow's workspace.
+A workflow is a graph of connected nodes that you build on the canvas. Workflows start with a Start node, run through the nodes you added, and end at one or more End nodes. A run selects exactly one environment; that environment is the source of the variables and the scope of the secret lookup.
 
 ```text
 [ Start ] -> [ HTTP Request ] -> [ Assertion ] -> [ End ]
@@ -89,12 +39,37 @@ APIWeave ships six node types: **HTTP Request**, **Assertion**, **Delay**, **Mer
 
 An edge is the connection between two nodes that defines the order of execution. Edges go from an output handle of one node to an input handle of another. Without edges, the runner does not know which node comes next. Nodes with two output handles (such as Assertion, with `pass` and `fail`) use different edges to split the path.
 
-## Environment
+## Project
 
-An environment is a named bundle of variables and a scope. Environments live at one of three scopes: `user`, `organization`, or `workspace`. A run selects exactly one environment explicitly, and the runner uses the variables and secrets visible to that environment. Organization environments restrict which workspaces can see them through an `allowedWorkspaceIds` allowlist. Each workspace has exactly one default environment.
+A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. Projects replace the older collection concept. Each project carries a `workflowOrder`, a per-row `continueOnFail` flag, and a color tag for the sidebar. Projects export as `.awecollection` bundles, which carry references only (no secret values, no per-scope private keys).
 
 ```text
-Environment: "Staging"  scope: workspace  default: true
+Project: "Checkout API"
+  1. Auth        (workflow)  continueOnFail: false
+  2. Add to cart (workflow)  continueOnFail: false
+  3. Pay         (workflow)  continueOnFail: true
+```
+
+## Org
+
+An org (organization) is the top-level container for your APIWeave work on this machine. It groups your teams, projects, workflows, environments, and runs. Orgs are a local structure — they organize work on your computer, and no account is required to use them.
+
+## Team
+
+A team is a group inside an org that shares workflows, environments, and projects. Team members collaborate on the same config (workflows, environments, variables). Each member keeps their own secret values locally, because secret values are never synced. Orgs and teams are local structures by default.
+
+## Cloud Team and Cloud Workspace
+
+Optional APIWeave Cloud sync turns on when you sign in with a Cloud account. Cloud syncs test structure (workflows, environments, projects, and secret references) across machines and lets multiple people collaborate in shared Cloud Workspaces. Cloud never builds or runs tests, and it never holds run history or secret values.
+
+The local and Cloud names map: a desktop **org** corresponds to a Cloud **Team**, and a desktop **team** corresponds to a Cloud **Workspace**. Cloud carries the structure; each desktop keeps its own secret values and run history.
+
+## Environment
+
+An environment is a named bundle of variables that you select before a run. The selected environment feeds `{{env.*}}` placeholders and is the narrowest scope the runner checks for `{{secrets.*}}`. Each environment can optionally pin a Swagger or OpenAPI document URL for the importer.
+
+```text
+Environment: "Staging"  default: true
   variables:
     BASE_URL    = https://api.staging.example.com
     API_VERSION = v1
@@ -102,56 +77,21 @@ Environment: "Staging"  scope: workspace  default: true
 
 ## Secret
 
-A secret is a sensitive value (API key, client secret, signing token) that you do not want stored in plain workflow configuration. Secrets live at one of four scopes: `user`, `organization`, `workspace`, or `environment`. The metadata-only display shows name, scope, key id, and last update time, never the value or ciphertext. The `{{secrets.NAME}}` placeholder resolves through a scope override chain: the selected environment wins, then the workspace, then the organization. User personal secrets participate only through an explicit binding record on a workspace or environment.
+A secret is a sensitive value (API key, client secret, signing token) that you do not want stored in plain workflow configuration. Secrets live at one of two scopes: **workspace** (your local team container on this machine) or **environment**. The metadata-only display shows name, scope, key id, and last update time — never the value or ciphertext. The `{{secrets.NAME}}` placeholder resolves through a scope chain: the selected environment wins, then the workspace secret store. Secret values are per-user and never synced, even when teams share config.
 
-New secret values are submitted through a Libsodium sealed box encrypted against the scope's public key. The backend never accepts a plaintext secret value on a write path, and no UI, API, or MCP tool can read a stored value back. There is no runtime secret prompt in 2.0; the value must exist in the scope before the run starts.
-
-```text
-{{secrets.API_KEY}}       # resolved from the selected env, then workspace, then org
-{{secrets.CLIENT_SECRET}} # same override chain, no plaintext on the wire
-```
-
-## Service Token
-
-A service token is a scoped machine credential that replaces the 1.0 global `MCP_API_KEY` and the per-webhook credential pair. A token is bound to a workspace or organization scope, carries an explicit permission set, expires on a chosen date, and can be revoked, rotated, or narrowed without reissuing unrelated tokens. The raw token value is shown once at creation time and never again.
+New secret values are submitted through a Libsodium sealed box encrypted against the scope's public key. The main process never accepts a plaintext secret value on a write path, and no UI, IPC handler, or MCP tool can read a stored value back.
 
 ```text
-Service token: "ci-runner"  scope: workspace/checkout-api
-  permissions: workflows.read workflows.run runs.read
-  expires: 2026-09-01
-```
-
-## Environment Protection
-
-Environment protection is a policy attached to a workspace environment. It controls who must approve a run, whether the run initiator can self-approve, and whether a trusted service token can bypass the gate. A protected environment queues a run behind a `pending` approval record; the run executes once every required reviewer approves.
-
-```text
-Environment: "production"  scope: workspace  protected: true
-  requiredReviewers: [alice, bob]
-  allowSelfApproval: false
-  bypassPolicy:      trusted_token_only
-  bypassAllowlist:   [token/ci-release]
-```
-
-## Approval
-
-An approval is the act of a required reviewer accepting or denying a pending run against a protected environment. The run queues until every required reviewer has approved. Self-approval is opt-in per environment. A run can be denied by any single required reviewer, and a denial writes to the audit log with the reviewer's identity.
-
-## Audit Event
-
-An audit event is an append-only record of a meaningful action: secret resolution, environment activation, protection decision, member change, service-token creation, webhook delivery, and more. The audit log is immutable, supports filters by actor, action, scope, resource type, and time range, and exports to JSON for offline retention.
-
-```text
-AuditEvent: actor=alice action=env.activate scope=workspace/3
-  resource: environment/22  createdAt: 2026-06-17T11:02:14Z
+{{secrets.API_KEY}}       # resolved from the selected env, then the workspace store
+{{secrets.CLIENT_SECRET}} # same scope chain, no plaintext on the wire
 ```
 
 ## Run
 
-A run is a single execution of a workflow or a project. A workflow run selects exactly one environment explicitly. A project run executes the project's workflows in order, each against its selected environment. The run captures the status of every node, the variables and responses produced, the timing, and any errors. The runner writes the run to the database and the UI polls its status.
+A run is a single execution of a workflow or a project. A workflow run uses exactly one environment: the one you select for that workflow, or the workspace default when you have not selected one. A project run executes the project's workflows in order, each against its selected environment. The run captures the status of every node, the variables and responses produced, the timing, and any errors. The runner writes the run to the database and the UI subscribes to a progress event stream over IPC.
 
 ```text
-Run  run_4f9c  workflow "Login flow"  env: workspace/Staging
+Run  run_4f9c  workflow "Login flow"  env: Staging
   nodes: 5 / 5  passed
   duration: 1.2s
 ```
@@ -163,9 +103,9 @@ A variable is a named value you can drop into any field of a request, header, bo
 | Namespace     | Example                       | Source                                                       |
 | ------------- | ----------------------------- | ------------------------------------------------------------ |
 | `variables.*` | `{{variables.token}}`         | workflow variable (manual or extracted)                      |
-| `env.*`       | `{{env.BASE_URL}}`            | the selected environment                                    |
-| `prev.*`      | `{{prev.response.body.id}}`   | previous node result (`prev[0]` after a merge)               |
-| `secrets.*`   | `{{secrets.API_KEY}}`         | scope override chain (env > workspace > org)                 |
+| `env.*`       | `{{env.BASE_URL}}`            | the selected environment                                     |
+| `prev.*`      | `{{prev.response.body.field}}`| previous node result (`prev[0]` after a merge)               |
+| `secrets.*`   | `{{secrets.API_KEY}}`         | the scope chain (env > workspace)                             |
 
 Dynamic functions are also available: `{{uuid()}}`, `{{randomString(12)}}`, `{{timestamp()}}`, and similar helpers.
 
@@ -175,10 +115,9 @@ An extractor is a rule on an HTTP Request node that pulls a value out of the res
 
 ## Troubleshooting
 
-- **If a placeholder like `{{env.BASE_URL}}` comes back as plain text in the response**, the selected environment does not define that key. Open Environments for the workspace, add the variable, and re-run.
-- **If `{{secrets.NAME}}` resolves to empty**, no scope in the override chain declared that key, or the stored ciphertext cannot be decrypted. Open Secrets for the workspace, confirm the key exists on the right scope, and see the [Encryption Guide](../operations/encryption.md) for the at-rest key model.
-- **If a workflow is missing from the canvas**, you are not in the workspace that owns it. Use the workspace switcher in the header to navigate to the right `org/workspace` pair.
-- **If a project run is stuck in `pending approval`**, the environment is protected. Open the environment, see the [Environment Protection Guide](../operations/environment-protection.md), and either collect approvals or use a service token on the bypass allowlist.
+- **If a placeholder like `{{env.BASE_URL}}` comes back as plain text in the response**, the selected environment does not define that key. Open **Environments**, add the variable, and re-run.
+- **If `{{secrets.NAME}}` resolves to empty**, no scope in the chain declared that key, or the stored ciphertext cannot be decrypted. Open **Secrets** and confirm the key exists on the right scope.
+- **If a workflow is missing from the canvas**, it was deleted or lives in a different project. Use the sidebar to navigate to the right project.
 - **If a node never runs**, the canvas has no edge from an upstream node into it. Drag a connection from the previous node's output handle to this node's input handle.
 
 ## Related

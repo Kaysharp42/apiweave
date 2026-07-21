@@ -10,9 +10,11 @@ A good bug report includes:
 
 - Steps to reproduce, in order
 - What you expected to happen
-- What actually happened (error text, screenshots, relevant logs from `backend/logs/`)
-- Your environment: OS, Python version, Node version, MongoDB version
+- What actually happened (error text, screenshots, the renderer DevTools console output)
+- Your environment: OS, Node version, desktop app version
 - Whether the issue is consistent or intermittent
+
+For desktop-side bugs, also include the contents of the main process log (the terminal that launched Electron, or your OS console). For renderer-side bugs, the DevTools console and the Network tab are usually enough.
 
 ## Security Issues
 
@@ -26,7 +28,7 @@ Open a GitHub Issue with the `enhancement` label. Describe the problem you are t
 
 ## Pull Requests
 
-Open a pull request against the `main` branch. For development setup, scripts, lint, test, and build commands, see `apiweave-context.md` at the repo root. That file is the single source of truth for the development workflow and is updated as the project evolves; this page does not duplicate it.
+Open a pull request against the `main` branch. For development setup, scripts, lint, test, and build commands, see `apiweave-context.md` and `AGENTS.md` at the repo root. Those files are the single source of truth for the development workflow and are updated as the project evolves; this page does not duplicate them.
 
 Before opening a PR:
 
@@ -37,6 +39,14 @@ Before opening a PR:
 
 The PR description should explain the why. The diff already shows the what.
 
+## Publishing A Release
+
+1. Update the version in both `app/package.json` and `app/package-lock.json`, then merge the release commit into `main`.
+2. Tag that commit with a semantic version such as `v0.6.0` and push the tag.
+3. The desktop release workflow verifies that the tag is on `main` and matches the package version before building and publishing the GitHub release.
+
+The workflow publishes Windows x64, macOS Intel and Apple Silicon, and Linux x64 installers. Linux includes AppImage, Debian, RPM, and Pacman formats. Release notes are generated from merged changes and every release includes SHA-256 checksums.
+
 ## Code of Conduct
 
 Participation is governed by the Contributor Covenant. Read the full text at [contributor-covenant.org](https://www.contributor-covenant.org/). Report conduct violations to the maintainers privately.
@@ -45,5 +55,4 @@ Participation is governed by the Contributor Covenant. Read the full text at [co
 
 - [Project README](README.md)
 - [Documentation Hub](docs/README.md)
-- [Security Guide](docs/operations/security.md)
-- [FAQ and Troubleshooting](docs/operations/troubleshooting.md)
+- [AGENTS.md](AGENTS.md) — developer workflow

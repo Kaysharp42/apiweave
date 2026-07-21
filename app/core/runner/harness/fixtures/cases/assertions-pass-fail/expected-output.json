@@ -1,0 +1,30 @@
+{
+  "caseName": "assertions-pass-fail",
+  "status": "passed",
+  "startedAt": "2026-01-02T03:04:05.000Z",
+  "seed": "0xFEEDFACE",
+  "nodeStatuses": {
+    "start": "passed",
+    "http_status": "passed",
+    "assertion_pass": "passed",
+    "assertion_fail": "failed"
+  },
+  "extractedVariables": {},
+  "outputs": {
+    "http_status": {
+      "status": 200,
+      "body": {
+        "healthy": true,
+        "count": 3
+      }
+    },
+    "assertion_pass": {
+      "passed": true,
+      "message": "All 1 assertions passed"
+    },
+    "assertion_fail": {
+      "passed": false,
+      "message": "Assertion failed: 1/1 assertions failed\nAssertion 1: prev.body.count equals 4: 3"
+    }
+  }
+}

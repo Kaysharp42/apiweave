@@ -1,0 +1,20 @@
+{
+  "caseName": "secret-placeholder",
+  "status": "passed",
+  "startedAt": "2026-01-02T03:04:05.000Z",
+  "seed": "0xC0FFEE",
+  "nodeStatuses": {
+    "start": "passed",
+    "send_secret": "passed",
+    "end": "passed"
+  },
+  "extractedVariables": {},
+  "outputs": {
+    "send_secret": {
+      "status": 202,
+      "body": {
+        "accepted": true
+      }
+    }
+  }
+}

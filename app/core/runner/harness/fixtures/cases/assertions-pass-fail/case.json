@@ -1,0 +1,19 @@
+{
+  "name": "assertions-pass-fail",
+  "seed": "0xFEEDFACE",
+  "clock": "2026-01-02T03:04:05.000Z",
+  "httpTapeRefs": ["http/assertions-status.json"],
+  "workflow": {
+    "nodes": [
+      { "id": "start", "type": "start" },
+      { "id": "http_status", "type": "httpRequest", "config": { "method": "GET", "url": "/assertions/status" } },
+      { "id": "assertion_pass", "type": "assertion", "config": { "path": "body.healthy", "operator": "equals", "expected": true } },
+      { "id": "assertion_fail", "type": "assertion", "config": { "path": "body.count", "operator": "equals", "expected": 4 } }
+    ],
+    "edges": [
+      { "source": "start", "target": "http_status" },
+      { "source": "http_status", "target": "assertion_pass" },
+      { "source": "assertion_pass", "target": "assertion_fail" }
+    ]
+  }
+}
