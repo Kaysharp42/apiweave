@@ -860,6 +860,15 @@ export async function authenticatedFetch(
             }),
           );
         }
+        if (parts[5] === "templates" && parts.length === 6 && method === "POST") {
+          return ok(
+            await invoke<unknown>("workflows", "saveTemplates", {
+              workspaceId,
+              workflowId,
+              templates: payload ?? [],
+            }),
+          );
+        }
       }
 
       if (parts[3] === "projects") {
