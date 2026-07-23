@@ -12,6 +12,64 @@ import { Button } from "./atoms/Button";
 import { BeautifyButton } from "./molecules/BeautifyButton";
 import type { WorkflowJsonEditorProps } from "../types";
 
+// Mirrors the key-name/structural-auth redaction rules in
+// app/core/services/secret_utils.ts, scoped for the renderer bundle (which
+// cannot import Electron-main code): the AI prompt is copied to an external
+// AI tool, so credentials must never appear in it.
+const SECRET_KEY_PATTERN =
+  /(api[_-]?key|secret|token|password|authorization|auth[_-]|credential)/i;
+const KEY_VALUE_FIELD_NAMES = new Set([
+  "headers",
+  "cookies",
+  "queryParams",
+  "pathVariables",
+  "formDataEntries",
+  "urlEncodedEntries",
+]);
+const REDACTED = "<REDACTED>";
+
+function sanitizeKeyValuePairs(items: readonly unknown[]): unknown[] {
+  return items.map((item) => {
+    if (!item || typeof item !== "object") return item;
+    const pair = item as Record<string, unknown>;
+    if (typeof pair["key"] === "string" && SECRET_KEY_PATTERN.test(pair["key"])) {
+      return { ...pair, value: REDACTED };
+    }
+    return pair;
+  });
+}
+
+export function sanitizeWorkflowJsonForPrompt(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeWorkflowJsonForPrompt);
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, v] of entries) {
+      if (key === "auth" && v && typeof v === "object") {
+        const auth = v as Record<string, unknown>;
+        const { bearer, basic, apiKey } = auth as Record<
+          string,
+          Record<string, unknown> | undefined
+        >;
+        sanitized[key] = {
+          ...auth,
+          ...(bearer ? { bearer: { ...bearer, token: REDACTED } } : {}),
+          ...(basic ? { basic: { ...basic, password: REDACTED } } : {}),
+          ...(apiKey ? { apiKey: { ...apiKey, value: REDACTED } } : {}),
+        };
+      } else if (KEY_VALUE_FIELD_NAMES.has(key) && Array.isArray(v)) {
+        sanitized[key] = sanitizeKeyValuePairs(v);
+      } else if (typeof v === "string" && SECRET_KEY_PATTERN.test(key)) {
+        sanitized[key] = REDACTED;
+      } else {
+        sanitized[key] = sanitizeWorkflowJsonForPrompt(v);
+      }
+    }
+    return sanitized;
+  }
+  return value;
+}
+
 /**
  * Generates a comprehensive AI prompt for creating/updating workflows
  */
@@ -23,11 +81,15 @@ function buildAIPrompt(
     includeWorkflow &&
     (currentWorkflowJson as Record<string, unknown>[])?.length > 0;
 
+  const sanitizedWorkflowJson = hasWorkflow
+    ? sanitizeWorkflowJsonForPrompt(currentWorkflowJson)
+    : currentWorkflowJson;
+
   const existingSection = hasWorkflow
     ? `
 ## Current Workflow (to update)
 \`\`\`json
-${JSON.stringify(currentWorkflowJson, null, 2)}
+${JSON.stringify(sanitizedWorkflowJson, null, 2)}
 \`\`\`
 Modify the JSON above according to my instructions. Keep existing nodes/edges that should remain unchanged.
 `

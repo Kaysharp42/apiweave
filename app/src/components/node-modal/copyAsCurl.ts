@@ -42,7 +42,7 @@ function authHeaders(config: NodeModalHTTPRequestConfig): KeyValuePair[] {
     return [
       {
         key: "Authorization",
-        value: `Basic ${auth.basic.username}:${auth.basic.password}`,
+        value: `Basic ${btoa(`${auth.basic.username}:${auth.basic.password}`)}`,
       },
     ];
   if (auth.type === "apiKey" && auth.apiKey?.addTo === "header")

@@ -3,6 +3,7 @@ import type { ClockProvider, RngProvider } from "./harness/providers"
 import { FormData as UndiciFormData, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError } from "./safe_http"
+import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
 import type { RunResult } from "@shared/types/RunResult"
@@ -95,6 +96,7 @@ export interface NodeResult {
     readonly body: unknown
     readonly headers: Record<string, string>
     readonly statusCode: number
+    readonly truncated?: boolean
   }
   readonly mergedByOther?: boolean
   readonly [key: string]: unknown
@@ -529,15 +531,19 @@ export class WorkflowExecutor {
       }
 
       const response = await this.deps.http.safeFetch(url, fetchInit, { followRedirects, rejectUnauthorized: sslVerify })
-      const responseText = await response.text()
+      const { text: responseText, truncated } = await this.deps.http.readTextCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
       const statusCode = response.status
       const duration = Date.now() - startTime
 
       let responseBody: unknown
-      try {
-        responseBody = JSON.parse(responseText)
-      } catch {
+      if (truncated) {
         responseBody = responseText
+      } else {
+        try {
+          responseBody = JSON.parse(responseText)
+        } catch {
+          responseBody = responseText
+        }
       }
 
       let status: string
@@ -564,6 +570,7 @@ export class WorkflowExecutor {
           body: responseBody,
           headers: responseHeaders,
           statusCode,
+          ...(truncated ? { truncated: true } : {}),
         },
       }
 

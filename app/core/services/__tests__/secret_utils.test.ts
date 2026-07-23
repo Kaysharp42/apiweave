@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { sanitizeExportValue } from "../secret_utils"
+import { sanitizeExportValue, sanitizeVariablesForExport } from "../secret_utils"
 
 describe("sanitizeExportValue", () => {
   it("redacts auth sub-config leaves by structural path, not key-name heuristic", () => {
@@ -51,5 +51,49 @@ describe("sanitizeExportValue", () => {
     const config = sanitized[0]?.["config"] as Record<string, unknown>
     const bearer = (config["auth"] as Record<string, unknown>)["bearer"] as Record<string, unknown>
     expect(bearer["token"]).toBe("<SECRET>")
+  })
+
+  it("redacts FileUpload.value (base64/path) but passes through variable-type references", () => {
+    const config = {
+      fileUploads: [
+        { name: "a.pdf", type: "base64", value: "JVBERi0xLjQK...", fieldName: "file", mimeType: "application/pdf", description: "" },
+        { name: "b.pdf", type: "path", value: "/Users/kay/secret.pdf", fieldName: "file", mimeType: "application/pdf", description: "" },
+        { name: "c.pdf", type: "variable", value: "myFileVar", fieldName: "file", mimeType: "application/pdf", description: "" },
+      ],
+    }
+    const sanitized = sanitizeExportValue(config) as Record<string, Array<Record<string, unknown>>>
+    expect(sanitized["fileUploads"]?.[0]?.["value"]).toBe("<SECRET>")
+    expect(sanitized["fileUploads"]?.[1]?.["value"]).toBe("<SECRET>")
+    expect(sanitized["fileUploads"]?.[2]?.["value"]).toBe("myFileVar")
+  })
+})
+
+describe("sanitizeVariablesForExport", () => {
+  it("redacts secret-shaped keys, matching prior behavior", () => {
+    const sanitized = sanitizeVariablesForExport({ API_TOKEN: "raw-value", label: "keep me" })
+    expect(sanitized["API_TOKEN"]).toBe("<SECRET>")
+    expect(sanitized["label"]).toBe("keep me")
+  })
+
+  it("redacts a secret-looking VALUE stored under an innocuous key (JWT, sk_live_)", () => {
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+    const sanitized = sanitizeVariablesForExport({
+      BASE_URL_TOKEN: jwt,
+      STRIPE_KEY: "sk_live_abcdef1234567890",
+      COUNT: "42",
+    })
+    expect(sanitized["BASE_URL_TOKEN"]).toBe("<SECRET>")
+    expect(sanitized["STRIPE_KEY"]).toBe("<SECRET>")
+    expect(sanitized["COUNT"]).toBe("42")
+  })
+
+  it("strips credentials/fragment from a tokenized URL value but leaves a plain URL untouched", () => {
+    const sanitized = sanitizeVariablesForExport({
+      BASE_URL: "https://user:pass@api.example.com/v1#access_token=abc123",
+      PLAIN_URL: "https://api.example.com",
+    })
+    expect(sanitized["BASE_URL"]).toBe("https://api.example.com/v1")
+    // No credentials/secrets present — must round-trip byte-for-byte, no reformatting.
+    expect(sanitized["PLAIN_URL"]).toBe("https://api.example.com")
   })
 })

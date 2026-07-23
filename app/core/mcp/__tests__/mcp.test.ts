@@ -315,4 +315,24 @@ describe("McpHost — loopback bind, bearer auth, port fallback", () => {
 
     await new Promise<void>((resolve) => squatter.close(() => resolve()))
   })
+
+  it("concurrent start() calls bind exactly one server and agree on the port", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0 })
+    const [a, b, c] = await Promise.all([host.start(), host.start(), host.start()])
+    expect(a.port).toBe(b.port)
+    expect(b.port).toBe(c.port)
+
+    // Only one server is actually listening: stop() must close it, and a
+    // post-stop request must fail to connect rather than reach an orphan.
+    await host.stop()
+    await expect(post(a.port, { authorization: `Bearer ${a.token}` }, listBody)).rejects.toThrow()
+  })
+
+  it("a stop() racing an in-flight start() leaves no orphaned listener", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0 })
+    const [info] = await Promise.all([host.start(), host.stop()])
+
+    expect(host.isRunning()).toBe(false)
+    await expect(post(info.port, { authorization: `Bearer ${info.token}` }, listBody)).rejects.toThrow()
+  })
 })

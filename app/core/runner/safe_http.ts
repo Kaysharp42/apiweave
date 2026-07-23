@@ -225,6 +225,45 @@ export class SafeHttp {
     return this.safeFetch(url, { ...init, method: "POST", redirect: "manual" })
   }
 
+  /**
+   * Read a response body as text, capped at `maxBytes`. A malicious or
+   * compromised endpoint can otherwise return an unbounded or slow-trickling
+   * body and exhaust memory/CPU; this stops pulling bytes off the stream (and
+   * cancels the underlying connection) the moment the cap is hit instead of
+   * buffering the whole thing via `response.text()`.
+   */
+  public async readTextCapped(response: Response, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
+    const contentLength = Number(response.headers.get("content-length") ?? "")
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      await response.body?.cancel()
+      return { text: "", truncated: true }
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      const text = await response.text()
+      return text.length > maxBytes ? { text: text.slice(0, maxBytes), truncated: true } : { text, truncated: false }
+    }
+
+    const chunks: Buffer[] = []
+    let received = 0
+    let truncated = false
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      received += value.byteLength
+      if (received > maxBytes) {
+        truncated = true
+        const overflow = received - maxBytes
+        chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength - overflow))
+        await reader.cancel()
+        break
+      }
+      chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength))
+    }
+    return { text: Buffer.concat(chunks).toString("utf-8"), truncated }
+  }
+
   // -------------------- Internals --------------------
 
   private isBlockedIp(address: string, family: 4 | 6): boolean {

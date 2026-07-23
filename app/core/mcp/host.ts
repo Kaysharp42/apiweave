@@ -36,6 +36,11 @@ export class McpHost {
   private httpServer: http.Server | null = null
   private token: string | null = null
   private info: McpTokenInfo | null = null
+  // Serializes start()/stop() through a single-flight promise chain so a
+  // concurrent start can't create a second server before `httpServer` is
+  // assigned, and stop() always closes the server the in-flight start (if
+  // any) actually ended up with — no orphaned/untracked listener.
+  private lifecycle: Promise<unknown> = Promise.resolve()
 
   constructor(options: McpHostOptions) {
     this.router = options.router
@@ -59,6 +64,24 @@ export class McpHost {
   }
 
   async start(): Promise<McpTokenInfo> {
+    return this.runExclusive(() => this.startLocked())
+  }
+
+  async stop(): Promise<void> {
+    return this.runExclusive(() => this.stopLocked())
+  }
+
+  /** Run `fn` after every previously-queued start/stop has settled, never overlapping. */
+  private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.lifecycle.then(fn, fn)
+    this.lifecycle = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
+  private async startLocked(): Promise<McpTokenInfo> {
     if (this.info !== null) return this.info
 
     this.token = loadToken(this.tokenFilePath) ?? generateToken()
@@ -84,7 +107,7 @@ export class McpHost {
     return this.info
   }
 
-  async stop(): Promise<void> {
+  private async stopLocked(): Promise<void> {
     const server = this.httpServer
     if (server === null) return
     this.httpServer = null

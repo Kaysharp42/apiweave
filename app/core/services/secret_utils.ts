@@ -67,6 +67,13 @@ export function detectSecretsInValue(value: string): boolean {
   return SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))
 }
 
+const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/
+
+/** Value-level secret heuristic used by export sanitizers: import patterns plus a bare-JWT check. */
+export function looksLikeSecretValue(value: string): boolean {
+  return detectSecretsInValue(value) || JWT_PATTERN.test(value)
+}
+
 /** Structural fields that must NEVER appear in an export bundle — fail closed if seen. */
 const FORBIDDEN_EXPORT_KEYS: ReadonlySet<string> = new Set([
   "ciphertext",
@@ -102,9 +109,10 @@ export function extractSecretRefsFromString(value: string): string[] {
 
 /**
  * Recursively replace values whose *key* matches a secret pattern with the
- * `<SECRET>` placeholder. Mirrors Python `_sanitize_variables_for_export`: only
- * string values under secret-looking keys are redacted; everything else passes
- * through unchanged.
+ * `<SECRET>` placeholder. Also inspects string values under innocuous keys
+ * (e.g. a JWT or tokenized URL under `BASE_URL`) so manual exports redact the
+ * same secret-looking values the cloud-sync sanitizer does, and strips
+ * credentials/query-string secrets from URL-shaped strings.
  */
 export function sanitizeVariablesForExport(data: Record<string, JsonValue>): Record<string, JsonValue> {
   const sanitized: Record<string, JsonValue> = {}
@@ -112,6 +120,19 @@ export function sanitizeVariablesForExport(data: Record<string, JsonValue>): Rec
     if (isRecord(value)) {
       sanitized[key] = sanitizeVariablesForExport(value)
     } else if (typeof value === "string" && isSecretKey(key)) {
+      sanitized[key] = SECRET_PLACEHOLDER
+    } else if (typeof value === "string" && extractSecretRefsFromString(value).length > 0) {
+      // A `{{secrets.NAME}}` placeholder is a safe indirection, not the secret
+      // itself — collectSecretRefs tracks it separately, so it must survive
+      // export verbatim (and not get flagged by the "contains 'secret'" value
+      // heuristic below).
+      sanitized[key] = value
+    } else if (typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+      // URL-shaped: strip embedded credentials/fragment surgically rather than
+      // nuking the whole value — a URL commonly contains "token"-ish substrings
+      // (e.g. an `access_token` fragment key) that aren't the full secret.
+      sanitized[key] = sanitizeUrlForExport(value)
+    } else if (typeof value === "string" && looksLikeSecretValue(value)) {
       sanitized[key] = SECRET_PLACEHOLDER
     } else {
       sanitized[key] = value
@@ -141,6 +162,20 @@ function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<st
   if (isRecord(basic)) sanitized["basic"] = { ...basic, password: SECRET_PLACEHOLDER }
   if (isRecord(apiKey)) sanitized["apiKey"] = { ...apiKey, value: SECRET_PLACEHOLDER }
   return sanitized
+}
+
+/**
+ * Redact `FileUpload.value` (the base64 payload or local filesystem path) from
+ * an export/sync bundle, keeping name/type/fieldName/mimeType/description so
+ * the attachment slot round-trips. A `variable` reference just names a
+ * workflow variable, not file content, so it passes through unredacted.
+ */
+function sanitizeFileUploadsForExport(items: readonly JsonValue[]): JsonValue[] {
+  return items.map((item) => {
+    if (!isRecord(item)) return item
+    if (item["type"] === "variable") return item
+    return { ...item, value: SECRET_PLACEHOLDER }
+  })
 }
 
 /**
@@ -175,6 +210,11 @@ function sanitizeKeyValueArrayForExport(items: readonly JsonValue[], redactAllVa
 function sanitizeUrlForExport(value: string): string {
   try {
     const url = new URL(value)
+    const hasSecretQueryParam = [...url.searchParams.keys()].some(isSecretKey)
+    // Nothing to redact — return the original string verbatim so a plain
+    // env-var URL isn't silently reformatted (e.g. a bare origin gaining a
+    // trailing slash) by round-tripping it through the URL constructor.
+    if (!url.username && !url.password && !url.hash && !hasSecretQueryParam) return value
     url.username = ""
     url.password = ""
     for (const [key] of url.searchParams) {
@@ -207,6 +247,8 @@ export function sanitizeExportValue(data: JsonValue): JsonValue {
   for (const [key, value] of Object.entries(data)) {
     if (key === "auth" && isRecord(value)) {
       sanitized[key] = sanitizeAuthConfigForExport(value)
+    } else if (key === "fileUploads" && Array.isArray(value)) {
+      sanitized[key] = sanitizeFileUploadsForExport(value)
     } else if (key === "cookies" && Array.isArray(value)) {
       sanitized[key] = sanitizeKeyValueArrayForExport(value, true)
     } else if (KEY_VALUE_EXPORT_FIELDS.has(key) && Array.isArray(value)) {

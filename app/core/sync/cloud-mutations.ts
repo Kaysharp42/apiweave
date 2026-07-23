@@ -210,9 +210,23 @@ function sanitizeConfig(config: Record<string, unknown>): JsonValue {
       sanitized[key] = sanitizeAuthConfig(value)
       continue
     }
+    if (key === "fileUploads" && Array.isArray(value)) {
+      sanitized[key] = sanitizeFileUploads(value)
+      continue
+    }
     sanitized[key] = sanitizeValue(value)
   }
   return sanitized
+}
+
+// A `variable` reference just names a workflow variable, not file content, so
+// it passes through; base64/path payloads must never leave the machine.
+function sanitizeFileUploads(items: readonly unknown[]): JsonValue[] {
+  return items.map((item) => {
+    if (!isRecord(item) || item["type"] === "variable") return sanitizeValue(item)
+    const sanitized = sanitizeValue(item) as Record<string, JsonValue>
+    return { ...sanitized, value: "" }
+  })
 }
 
 // Auth secrets live under generic leaf names (`token`, `password`, `value`) that
@@ -289,6 +303,8 @@ function sanitizeSnapshotValue(value: unknown, key = ""): JsonValue {
         sanitized[nestedKey] = sanitizeKeyValueItems(nestedValue, false)
       } else if (nestedKey === "auth" && isRecord(nestedValue)) {
         sanitized[nestedKey] = sanitizeAuthConfig(nestedValue)
+      } else if (nestedKey === "fileUploads" && Array.isArray(nestedValue)) {
+        sanitized[nestedKey] = sanitizeFileUploads(nestedValue)
       } else {
         sanitized[nestedKey] = sanitizeSnapshotValue(nestedValue, nestedKey)
       }

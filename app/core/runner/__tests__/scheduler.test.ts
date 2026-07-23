@@ -337,6 +337,57 @@ describe("RunScheduler", () => {
       expect(finished).toHaveLength(1)
       expect(finished[0]?.status).toBe(runs.getById(runId)?.status)
     })
+
+    it("redacts secret-looking extracted variables from node.completed events and persisted nodeStatuses", async () => {
+      const ws = seedWorkspace()
+      const { createServer } = await import("node:http")
+      const server = createServer((_req, res) => {
+        res.setHeader("content-type", "application/json")
+        res.end(JSON.stringify({ token: "super-secret-value-xyz" }))
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "extractor-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: {
+              method: "GET",
+              url: `http://127.0.0.1:${port}/login`,
+              extractors: { api_key: "body.token" },
+            } as never,
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }).workflowId
+
+      const events: RunProgressEvent[] = []
+      const scheduler = makeScheduler({
+        emitProgress: (_runId, event) => events.push(event),
+      })
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      server.close()
+
+      // "running" fires before extraction; the terminal "passed"/"failed" event carries the extracted variable.
+      const httpEvents = events.filter((e) => e.kind === "node.completed" && e.nodeId === "http_1")
+      const httpEvent = httpEvents[httpEvents.length - 1]
+      expect(httpEvent && "variables" in httpEvent ? httpEvent.variables : undefined).toMatchObject({ api_key: "<SECRET>" })
+      expect(JSON.stringify(httpEvents)).not.toContain("super-secret-value-xyz")
+
+      // The raw HTTP response body legitimately stays in `results[].response` (that's
+      // the point of an API tester); only the *extracted variable* snapshot is redacted.
+      const persisted = runs.getById(runId)?.nodeStatuses?.["http_1"] as Record<string, unknown> | undefined
+      expect(persisted?.["variables"]).toMatchObject({ api_key: "<SECRET>" })
+      expect(JSON.stringify(persisted)).not.toContain("super-secret-value-xyz")
+    })
   })
 
   describe("shutdown", () => {
