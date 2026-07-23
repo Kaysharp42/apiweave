@@ -44,8 +44,21 @@ describe("SafeHttp.isSafeUrl / validateUrl (pure)", () => {
     "http://[fe80::1]", // IPv6 link-local
     "http://[ff00::1]", // IPv6 multicast
     "http://[::]", // IPv6 unspecified
+    // IPv4-mapped IPv6 (node's BlockList normalizes these to the IPv4 subnets)
+    "http://[::ffff:169.254.169.254]/latest/meta-data", // mapped AWS metadata
+    "http://[::ffff:10.0.0.5]", // mapped RFC1918
+    "http://[::ffff:a9fe:a9fe]", // mapped metadata, hex form
+    // IPv4-compatible IPv6 (deprecated; not normalized — must be blocked by ::/96)
+    "http://[::169.254.169.254]", // compat metadata, dotted
+    "http://[::a9fe:a9fe]", // compat metadata, hex
+    "http://[::7f00:1]", // compat 127.0.0.1
   ])("blocks the blocked address: %s", (url) => {
     expect(allowLoopback.isSafeUrl(url)).toBe(false)
+  })
+
+  it("mapped/compat public IPv4-in-IPv6 not over-blocked", () => {
+    // ::ffff:8.8.8.8 normalizes to public 8.8.8.8; ::/96 must not touch ::ffff:*
+    expect(allowLoopback.isSafeUrl("http://[::ffff:8.8.8.8]")).toBe(true)
   })
 
   it("public IP literal allowed (loopback mode)", () => {
@@ -95,6 +108,13 @@ describe("SafeHttp.resolveAndPinIp (DNS rebinding guard)", () => {
     const dnsLookup = async (): Promise<LookupAddress[]> => [{ address: "127.0.0.1", family: 4 }]
     await expect(new SafeHttp({ allowLoopback: true, dnsLookup }).resolveAndPinIp("localhost-relay")).resolves.toBe("127.0.0.1")
     await expect(new SafeHttp({ allowLoopback: false, dnsLookup }).resolveAndPinIp("localhost-relay")).rejects.toBeInstanceOf(SafeUrlError)
+  })
+
+  it("rejects AAAA records that embed a private IPv4 (mapped or compat)", async () => {
+    for (const address of ["::ffff:169.254.169.254", "::a9fe:a9fe"]) {
+      const dnsLookup = async (): Promise<LookupAddress[]> => [{ address, family: 6 }]
+      await expect(new SafeHttp({ allowLoopback: false, dnsLookup }).resolveAndPinIp("rebind.test")).rejects.toBeInstanceOf(SafeUrlError)
+    }
   })
 
   it("host.docker.internal skips pinning under allowLoopback", async () => {

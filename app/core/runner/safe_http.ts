@@ -33,8 +33,12 @@ const BLOCKED_IPV4: ReadonlyArray<readonly [string, number]> = [
   ["224.0.0.0", 4], // multicast
 ]
 const BLOCKED_IPV6: ReadonlyArray<readonly [string, number]> = [
-  ["::", 128], // unspecified
-  ["::1", 128], // loopback (carved-out when allowLoopback)
+  // ::/96 covers the unspecified address AND deprecated IPv4-compatible
+  // addresses (::a.b.c.d, e.g. ::169.254.169.254), which node's BlockList does
+  // NOT auto-normalize to IPv4. (IPv4-mapped ::ffff:a.b.c.d IS normalized by
+  // BlockList against the IPv4 subnets, so it needs no separate entry.)
+  ["::", 96],
+  ["::1", 128], // loopback (carved-out when allowLoopback; subsumed by ::/96 otherwise)
   ["fc00::", 7], // unique-local
   ["fe80::", 10], // link-local
   ["ff00::", 8], // multicast
