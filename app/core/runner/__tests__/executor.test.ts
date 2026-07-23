@@ -114,6 +114,48 @@ describe("WorkflowExecutor", () => {
       const output = await executor.executeWorkflow(workflow)
       expect(output.nodeStatuses["assert1"]).toBe("failed")
     })
+
+    it("evaluates a header-source assertion case-insensitively", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "assert1",
+            type: "assertion",
+            config: { path: "Content-Type", operator: "contains", expected: "json", source: "headers" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "assert1" }],
+      }
+      const executor = new WorkflowExecutor(makeDeps())
+      ;(executor as unknown as { results: Map<string, unknown> }).results.set("prev_node", {
+        type: "http-request",
+        headers: { "content-type": "application/json" },
+      })
+      const output = await executor.executeWorkflow(workflow)
+      expect(output.nodeStatuses["assert1"]).toBe("passed")
+    })
+
+    it("evaluates a cookie-source assertion from Set-Cookie", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "assert1",
+            type: "assertion",
+            config: { path: "session", operator: "equals", expected: "abc", source: "cookies" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "assert1" }],
+      }
+      const executor = new WorkflowExecutor(makeDeps())
+      ;(executor as unknown as { results: Map<string, unknown> }).results.set("prev_node", {
+        type: "http-request",
+        headers: { "set-cookie": "session=abc; Path=/; HttpOnly, theme=dark; Path=/" },
+      })
+      const output = await executor.executeWorkflow(workflow)
+      expect(output.nodeStatuses["assert1"]).toBe("passed")
+    })
   })
 
   describe("delay nodes", () => {

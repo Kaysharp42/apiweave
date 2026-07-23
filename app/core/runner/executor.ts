@@ -649,13 +649,7 @@ export class WorkflowExecutor {
     let actual: unknown
 
     if (source === "prev") {
-      let lastResult: NodeResult | undefined
-      for (const result of [...this.results.values()].reverse()) {
-        if (result.type === "http-request") {
-          lastResult = result
-          break
-        }
-      }
+      const lastResult = this.findLastHttpResult()
       if (!lastResult) {
         return { passed: false, message: "No previous HTTP request result found" }
       }
@@ -666,6 +660,18 @@ export class WorkflowExecutor {
       }
 
       actual = this.getNestedValue(lastResult, cleanPath)
+    } else if (source === "headers") {
+      const lastResult = this.findLastHttpResult()
+      if (!lastResult) {
+        return { passed: false, message: "No previous HTTP request result found" }
+      }
+      actual = this.getResponseHeader(lastResult, path)
+    } else if (source === "cookies") {
+      const lastResult = this.findLastHttpResult()
+      if (!lastResult) {
+        return { passed: false, message: "No previous HTTP request result found" }
+      }
+      actual = this.getResponseCookie(lastResult, path)
     } else if (source === "variables") {
       actual = this.workflowVariables[path]
     } else if (source === "status") {
@@ -682,6 +688,40 @@ export class WorkflowExecutor {
     } catch (error) {
       return { passed: false, message: `Comparison error: ${String(error)}` }
     }
+  }
+
+  private findLastHttpResult(): NodeResult | undefined {
+    for (const result of [...this.results.values()].reverse()) {
+      if (result.type === "http-request") return result
+    }
+    return undefined
+  }
+
+  /** Case-insensitive lookup of a response header value. */
+  private getResponseHeader(result: NodeResult, name: string): string | undefined {
+    const headers = result.headers ?? result.response?.headers ?? {}
+    const target = name.trim().toLowerCase()
+    for (const [key, value] of Object.entries(headers)) {
+      if (key.toLowerCase() === target) return value
+    }
+    return undefined
+  }
+
+  /** Value of a Set-Cookie cookie by name, from the last response. */
+  private getResponseCookie(result: NodeResult, name: string): string | undefined {
+    const raw = this.getResponseHeader(result, "set-cookie")
+    if (!raw) return undefined
+    const target = name.trim()
+    // ponytail: split multiple cookies on the comma that precedes the next
+    // `name=` pair; good enough for typical Set-Cookie. Swap for a real
+    // set-cookie parser if Expires/edge attributes ever misparse.
+    for (const part of raw.split(/,(?=\s*[^=;,\s]+=)/)) {
+      const pair = part.split(";")[0] ?? ""
+      const eq = pair.indexOf("=")
+      if (eq === -1) continue
+      if (pair.slice(0, eq).trim() === target) return pair.slice(eq + 1).trim()
+    }
+    return undefined
   }
 
   private compareValues(actual: unknown, operator: string, expected: unknown): boolean {
