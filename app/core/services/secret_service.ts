@@ -29,6 +29,11 @@ export interface SecretPublicKey {
   readonly algorithm: typeof ALGORITHM
 }
 
+/** Narrow seam for checking that an environment scope belongs to a workspace. */
+export interface EnvironmentOwnershipLookup {
+  getById(environmentId: string): { readonly workspaceId: string } | undefined
+}
+
 export class SecretService {
   private readonly resolver: ScopedSecretResolver
   // ponytail: seed MUST derive from the persisted keyfile master KEK, never randomBytes —
@@ -41,10 +46,29 @@ export class SecretService {
     private readonly syncProvider: SyncProvider,
     private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
+    private readonly environments: EnvironmentOwnershipLookup,
     masterKek: Uint8Array,
   ) {
     this.resolver = new ScopedSecretResolver(store)
     this.sealedBoxSeed = createHash("sha256").update(masterKek).digest()
+  }
+
+  /**
+   * Reject scope IDs that don't belong to the caller's authorized workspace.
+   * `authorizeWorkspace` only checks the outer `workspaceId` param — every
+   * scopeId/chain entry passed alongside it must be bound here, or a caller
+   * authorized for one workspace can read/write another's secret metadata by
+   * naming a foreign scopeId.
+   */
+  private assertScopeInWorkspace(scopeType: SecretScopeType, scopeId: string, workspaceId: string): void {
+    if (scopeType === "workspace") {
+      if (scopeId !== workspaceId) throw new NotFoundError(`workspace ${scopeId} not found`)
+      return
+    }
+    const environment = this.environments.getById(scopeId)
+    if (!environment || environment.workspaceId !== workspaceId) {
+      throw new NotFoundError(`environment ${scopeId} not found`)
+    }
   }
 
   async publicKey(
@@ -61,6 +85,7 @@ export class SecretService {
   /** Store (or overwrite) a sealed secret under `workspaceId`. Returns metadata only. */
   async set(workspaceId: string, input: SecretUpsert): Promise<SecretMetadata> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_SECRETS)
+    this.assertScopeInWorkspace(input.scopeType, input.scopeId, workspaceId)
     const metadata = await this.store.put({ ...input, workspaceId })
     await this.syncProvider.push()
     return metadata
@@ -73,6 +98,7 @@ export class SecretService {
     scopeId: string,
   ): Promise<readonly SecretMetadata[]> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_SECRETS)
+    this.assertScopeInWorkspace(scopeType, scopeId, workspaceId)
     return this.store.listByScope(scopeType, scopeId)
   }
 
@@ -84,6 +110,7 @@ export class SecretService {
     name: string,
   ): Promise<void> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_SECRETS)
+    this.assertScopeInWorkspace(scopeType, scopeId, workspaceId)
     const removed = await this.store.remove(scopeType, scopeId, name)
     if (!removed) throw new NotFoundError(`secret ${name} not found`)
     await this.syncProvider.push()
@@ -96,6 +123,8 @@ export class SecretService {
     name: string,
   ): Promise<ResolvedSecret | null> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_SECRETS)
+    if (chain.workspaceId !== undefined) this.assertScopeInWorkspace("workspace", chain.workspaceId, workspaceId)
+    if (chain.environmentId !== undefined) this.assertScopeInWorkspace("environment", chain.environmentId, workspaceId)
     return this.resolver.resolve(chain, name)
   }
 

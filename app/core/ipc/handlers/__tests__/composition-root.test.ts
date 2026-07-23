@@ -68,7 +68,7 @@ beforeEach(() => {
     workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
     runs: new RunService(runs, sync, permissions, scopeResolver, scheduler),
-    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, new Uint8Array(32)),
+    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
       collections,
       workflows,

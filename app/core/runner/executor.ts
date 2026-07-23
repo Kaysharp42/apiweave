@@ -1,5 +1,6 @@
+import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import type { RequestInit as UndiciRequestInit } from "undici"
+import { FormData as UndiciFormData, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError } from "./safe_http"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
@@ -37,6 +38,30 @@ export interface WorkflowGraph {
   readonly edges: readonly WorkflowEdge[]
   readonly variables?: Readonly<Record<string, unknown>>
   readonly settings?: { readonly continueOnFail?: boolean }
+}
+
+// -------------------- HTTP request config shapes --------------------
+// Mirrors HTTPNodeDataSchema (shared/zod-schemas/HTTPNodeDataSchema.ts) — the
+// panel writes this shape into node.config; the executor must consume it.
+
+interface HttpAuthConfig {
+  readonly type?: "none" | "bearer" | "basic" | "apiKey"
+  readonly bearer?: { readonly token?: string }
+  readonly basic?: { readonly username?: string; readonly password?: string }
+  readonly apiKey?: { readonly key?: string; readonly value?: string; readonly addTo?: "header" | "query" }
+}
+
+interface FormDataEntryLike {
+  readonly key: string
+  readonly value: string
+  readonly type: "text" | "file"
+  readonly active?: boolean
+}
+
+interface FileUploadLike {
+  readonly type: "path" | "base64" | "variable"
+  readonly value: string
+  readonly mimeType?: string
 }
 
 export interface ExecutorDeps {
@@ -439,11 +464,17 @@ export class WorkflowExecutor {
     const config = node.config ?? {}
     const method = (config["method"] as string | undefined) ?? "GET"
     let url = (config["url"] as string | undefined) ?? ""
-    const headersField = config["headers"] as
-      | ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }>
-      | undefined
+    type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
+    const headersField = config["headers"] as KVField
     const body = config["body"] as string | Record<string, unknown> | undefined
+    const bodyType = config["bodyType"] as string | undefined
     const timeout = (config["timeout"] as number | undefined) ?? 30
+    const followRedirects = (config["followRedirects"] as boolean | undefined) ?? true
+    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
+    const auth = config["auth"] as HttpAuthConfig | undefined
+    const formDataEntries = config["formDataEntries"] as readonly FormDataEntryLike[] | undefined
+    const urlEncodedEntries = config["urlEncodedEntries"] as KVField
+    const fileUploads = config["fileUploads"] as readonly FileUploadLike[] | undefined
 
     if (!url) {
       throw new Error("URL is required for HTTP request")
@@ -456,21 +487,34 @@ export class WorkflowExecutor {
     }
 
     const headers = this.normalizeKeyValueField(headersField)
+    const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
+    const cookies = this.normalizeKeyValueField(config["cookies"] as KVField)
 
-    let bodyStr: string | undefined
-    if (body !== undefined && body !== null) {
-      if (typeof body === "string") {
-        bodyStr = this.substituteVariables(body)
-      } else {
-        bodyStr = JSON.stringify(body)
-        bodyStr = this.substituteVariables(bodyStr)
-        if (!headers["Content-Type"] && !headers["content-type"]) {
-          headers["Content-Type"] = "application/json"
-        }
-      }
+    if (Object.keys(cookies).length > 0) {
+      const cookieHeader = Object.entries(cookies)
+        .map(([key, value]) => `${key}=${value}`)
+        .join("; ")
+      const existingCookie = headers["Cookie"] ?? headers["cookie"]
+      headers["Cookie"] = existingCookie ? `${existingCookie}; ${cookieHeader}` : cookieHeader
+    }
+
+    this.applyAuthConfig(auth, headers, queryParams)
+
+    if (Object.keys(queryParams).length > 0) {
+      const [base = url, existingQuery] = url.split("?")
+      const params = new URLSearchParams(existingQuery ?? "")
+      for (const [key, value] of Object.entries(queryParams)) params.set(key, value)
+      url = `${base}?${params.toString()}`
     }
 
     const startTime = Date.now()
+
+    let fetchBody: string | Buffer | UndiciFormData | undefined
+    try {
+      fetchBody = await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
+    } catch (bodyError) {
+      return { status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url, duration: 0 }
+    }
 
     try {
       this.deps.http.validateUrl(url)
@@ -480,11 +524,11 @@ export class WorkflowExecutor {
         headers,
         signal: AbortSignal.timeout(timeout * 1000),
       }
-      if (bodyStr !== undefined && method !== "GET") {
-        fetchInit.body = bodyStr
+      if (fetchBody !== undefined && method !== "GET") {
+        fetchInit.body = fetchBody
       }
 
-      const response = await this.deps.http.safeFetch(url, fetchInit)
+      const response = await this.deps.http.safeFetch(url, fetchInit, { followRedirects, rejectUnauthorized: sslVerify })
       const responseText = await response.text()
       const statusCode = response.status
       const duration = Date.now() - startTime
@@ -1114,6 +1158,117 @@ export class WorkflowExecutor {
       result[String(key)] = this.substituteVariables(String(entry.value ?? ""))
     }
     return result
+  }
+
+  // -------------------- HTTP auth / body construction --------------------
+
+  /** Apply the panel's auth config as an Authorization header or an apiKey header/query entry. */
+  private applyAuthConfig(
+    auth: HttpAuthConfig | undefined,
+    headers: Record<string, string>,
+    queryParams: Record<string, string>,
+  ): void {
+    if (!auth || !auth.type || auth.type === "none") return
+    if (auth.type === "bearer" && auth.bearer?.token) {
+      headers["Authorization"] = `Bearer ${this.substituteVariables(auth.bearer.token)}`
+    } else if (auth.type === "basic" && auth.basic) {
+      const username = this.substituteVariables(auth.basic.username ?? "")
+      const password = this.substituteVariables(auth.basic.password ?? "")
+      headers["Authorization"] = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
+    } else if (auth.type === "apiKey" && auth.apiKey?.key) {
+      const key = this.substituteVariables(auth.apiKey.key)
+      const value = this.substituteVariables(auth.apiKey.value ?? "")
+      if (auth.apiKey.addTo === "query") {
+        queryParams[key] = value
+      } else {
+        headers[key] = value
+      }
+    }
+  }
+
+  /** Build the fetch body per `bodyType`, mutating `headers` with a Content-Type when one is implied. */
+  private async buildHttpRequestBody(
+    bodyType: string | undefined,
+    body: string | Record<string, unknown> | undefined,
+    headers: Record<string, string>,
+    formDataEntries: readonly FormDataEntryLike[] | undefined,
+    urlEncodedEntries: ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined,
+    fileUploads: readonly FileUploadLike[] | undefined,
+  ): Promise<string | Buffer | UndiciFormData | undefined> {
+    switch (bodyType) {
+      case "none":
+        return undefined
+
+      case "form-data": {
+        const form = new UndiciFormData()
+        for (const entry of formDataEntries ?? []) {
+          if (entry.active === false || !entry.key) continue
+          if (entry.type === "file") {
+            // ponytail: form-data file rows store a local file path in `value`
+            // (see FormDataRows "file ref" placeholder) — read it directly.
+            const buffer = await this.readFileUploadContent({ type: "path", value: entry.value })
+            const fileName = entry.value.split(/[\\/]/).pop() || entry.key
+            form.append(entry.key, new Blob([new Uint8Array(buffer)]), fileName)
+          } else {
+            form.append(entry.key, this.substituteVariables(entry.value ?? ""))
+          }
+        }
+        return form
+      }
+
+      case "x-www-form-urlencoded": {
+        const params = new URLSearchParams()
+        for (const entry of urlEncodedEntries ?? []) {
+          if (entry.active === false || !entry.key) continue
+          params.append(entry.key, this.substituteVariables(entry.value ?? ""))
+        }
+        if (!headers["Content-Type"] && !headers["content-type"]) {
+          headers["Content-Type"] = "application/x-www-form-urlencoded"
+        }
+        return params.toString()
+      }
+
+      case "binary": {
+        const upload = fileUploads?.[0]
+        if (!upload) return undefined
+        const buffer = await this.readFileUploadContent(upload)
+        if (!headers["Content-Type"] && !headers["content-type"] && upload.mimeType) {
+          headers["Content-Type"] = upload.mimeType
+        }
+        return buffer
+      }
+
+      case "raw":
+        return typeof body === "string" ? this.substituteVariables(body) : undefined
+
+      case "json":
+      default: {
+        // Back-compat default for nodes saved before `bodyType` existed.
+        if (body === undefined || body === null) return undefined
+        if (typeof body === "string") return this.substituteVariables(body)
+        const json = this.substituteVariables(JSON.stringify(body))
+        if (!headers["Content-Type"] && !headers["content-type"]) {
+          headers["Content-Type"] = "application/json"
+        }
+        return json
+      }
+    }
+  }
+
+  /** Resolve a file upload's bytes per its `type` — base64-decoded, read from disk, or a resolved variable. */
+  private async readFileUploadContent(upload: { readonly type: string; readonly value: string }): Promise<Buffer> {
+    switch (upload.type) {
+      case "base64":
+        return Buffer.from(upload.value, "base64")
+      case "path":
+        // ponytail: desktop single-user trust model — the path comes from the
+        // user's own saved workflow config, same trust boundary safe_http.ts
+        // documents for allowLoopback.
+        return fs.readFile(upload.value)
+      case "variable":
+      default:
+        return Buffer.from(this.substituteVariables(upload.value ?? ""), "utf-8")
+    }
   }
 
   // -------------------- Status tracking --------------------

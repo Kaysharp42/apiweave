@@ -66,6 +66,13 @@ export type SafeHttpOptions = {
   readonly timeoutMs?: number
 }
 
+export type SafeFetchOptions = {
+  /** Follow 3xx redirects (default true). `false` returns the redirect response as-is. */
+  readonly followRedirects?: boolean
+  /** Verify the TLS certificate chain (default true). Per-node opt-out for self-signed dev endpoints. */
+  readonly rejectUnauthorized?: boolean
+}
+
 export class SafeHttp {
   private readonly blocklist: NodeBlockList
   private readonly loopbackList: NodeBlockList
@@ -149,8 +156,9 @@ export class SafeHttp {
 
   /**
    * Resolve `host`; reject if any resolved address is blocked; return one
-   * safe address to pin the connection to (or `null` for dev-allowed hosts
-   * and unresolvable names — let the caller's client surface the error).
+   * safe address to pin the connection to (or `null` for dev-allowed hosts).
+   * Fails closed on DNS lookup errors — an unresolvable/erroring name must
+   * not fall through to an unpinned, unvalidated fetch-level resolution.
    */
   public async resolveAndPinIp(host: string): Promise<string | null> {
     if (!host) throw new SafeUrlError("Missing host")
@@ -158,8 +166,8 @@ export class SafeHttp {
     let infos: LookupAddress[]
     try {
       infos = [...(await this.dnsLookup!.call(null, host))]
-    } catch {
-      return null
+    } catch (err) {
+      throw new SafeUrlError(`DNS resolution failed for host ${host}: ${(err as Error).message}`)
     }
     for (const info of infos) {
       const family = info.family === 6 ? 6 : 4
@@ -173,7 +181,7 @@ export class SafeHttp {
   // -------------------- HTTP wrappers (undici-based, fail-closed) --------------------
 
   /** Execute an HTTP request with SSRF protection + per-hop redirect validation. */
-  public async safeFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  public async safeFetch(url: string, init: RequestInit = {}, opts: SafeFetchOptions = {}): Promise<Response> {
     this.validateUrl(url)
     // Compose our timeout with the caller's signal so node-level timeouts and
     // external cancellation aren't dropped. The timeout signal is never cleared,
@@ -182,17 +190,21 @@ export class SafeHttp {
     const signals: AbortSignal[] = [AbortSignal.timeout(this.timeoutMs)]
     if (init.signal) signals.push(init.signal)
     const signal = AbortSignal.any(signals)
+    const followRedirects = opts.followRedirects ?? true
+    const rejectUnauthorized = opts.rejectUnauthorized ?? true
+    const maxHops = followRedirects ? this.maxRedirectHops : 0
     let currentUrl = url
     const lastInit: RequestInit = { ...init, redirect: "manual", signal }
-    for (let hop = 0; hop <= this.maxRedirectHops; hop++) {
+    for (let hop = 0; hop <= maxHops; hop++) {
       const pinnedIp = await this.resolveAndPinIp(hostOf(currentUrl))
       // Pin the TCP/TLS connection to the resolved+validated IP via a custom
       // dispatcher `lookup`, without touching the request URL — for HTTPS,
       // SNI and certificate hostname verification must stay on the original
       // hostname or normal public certs fail to validate against the IP.
-      const dispatcher = pinnedIp ? buildPinnedDispatcher(pinnedIp) : undefined
+      const dispatcher = pinnedIp ? buildPinnedDispatcher(pinnedIp, rejectUnauthorized) : undefined
       const response = await this.fetchImpl(currentUrl, dispatcher ? { ...lastInit, dispatcher } : lastInit)
       if (response.status < 300 || response.status >= 400) return response
+      if (!followRedirects) return response
       const location = response.headers.get("location")
       if (!location) return response
       if (!this.checkRedirectAllowed(currentUrl, location)) {
@@ -260,7 +272,7 @@ function stripIpv6Brackets(hostname: string): string {
  * without rewriting the request URL — so TLS SNI/cert checks and the Host
  * header stay on the original hostname.
  */
-function buildPinnedDispatcher(ip: string): Dispatcher {
+function buildPinnedDispatcher(ip: string, rejectUnauthorized: boolean): Dispatcher {
   const family = isIP(ip) === 6 ? 6 : 4
   const lookup = (
     _hostname: string,
@@ -273,5 +285,5 @@ function buildPinnedDispatcher(ip: string): Dispatcher {
     }
     callback(null, ip, family)
   }
-  return new Agent({ connect: { lookup: lookup as never } })
+  return new Agent({ connect: { lookup: lookup as never, rejectUnauthorized } })
 }

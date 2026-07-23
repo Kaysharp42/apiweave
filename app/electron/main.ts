@@ -207,7 +207,7 @@ if (!hasSingleInstanceLock) {
     // it and every stored secret is orphaned (intentional — never auto-regenerate).
     const keyfilePath = path.join(app.getPath("userData"), "keyfile.json")
     const keyfile = keyfileExists(keyfilePath) ? readKeyfile(keyfilePath) : createKeyfile(keyfilePath)
-    const secretService = new SecretService(secretStore, sync, permissions, scopeResolver, keyfile.masterKek)
+    const secretService = new SecretService(secretStore, sync, permissions, scopeResolver, environments, keyfile.masterKek)
     const cloud = new DesktopCloudSyncControl({
       store: database.kvStore,
       keyfilePath,

@@ -16,6 +16,9 @@ on:
       - app/**/**
       - .github/workflows/desktop-smoke.yml
 
+permissions:
+  contents: read
+
 jobs:
   render-smoke:
     runs-on: ubuntu-22.04

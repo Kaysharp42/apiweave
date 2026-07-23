@@ -62,7 +62,7 @@ beforeEach(() => {
     workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
     runs: new RunService(runs, sync, permissions, scopeResolver),
-    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, new Uint8Array(32)),
+    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver, secretStore, () => "2026-01-01T00:00:00.000Z"),
     imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver),
   }

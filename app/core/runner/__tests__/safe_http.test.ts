@@ -129,12 +129,12 @@ describe("SafeHttp.resolveAndPinIp (DNS rebinding guard)", () => {
     await expect(http.resolveAndPinIp("host.docker.internal")).rejects.toBeInstanceOf(SafeUrlError)
   })
 
-  it("returns null when DNS lookup throws (unresolvable — not SSRF)", async () => {
+  it("fails closed (does not fall through to an unpinned fetch) when DNS lookup throws", async () => {
     const dnsLookup = async (): Promise<LookupAddress[]> => {
       throw new Error("ENOTFOUND")
     }
     const http = new SafeHttp({ allowLoopback: true, dnsLookup })
-    await expect(http.resolveAndPinIp("nonexistent.test")).resolves.toBeNull()
+    await expect(http.resolveAndPinIp("nonexistent.test")).rejects.toBeInstanceOf(SafeUrlError)
   })
 
   it("throws when host is empty", async () => {
