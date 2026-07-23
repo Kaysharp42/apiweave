@@ -337,6 +337,17 @@ if (!hasSingleInstanceLock) {
       // never cache.
       const headers = new Headers(response.headers)
       headers.set("Cache-Control", "no-store")
+      // Restrict the renderer document to same-origin scripts/workers only.
+      // Monaco is now bundled locally (see src/lib/monaco.ts) and the editor
+      // assets are served from app://local, so no CDN script source is needed.
+      // Other resource types (fonts, images, styles) are left unrestricted to
+      // keep web-font loading working; only script/worker execution is pinned.
+      if (pathname === "/index.html") {
+        headers.set(
+          "Content-Security-Policy",
+          "script-src 'self' app:; worker-src 'self' app: blob:",
+        )
+      }
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,

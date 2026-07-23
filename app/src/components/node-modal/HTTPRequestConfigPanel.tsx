@@ -48,7 +48,10 @@ import type {
   UrlEncodedEntry,
 } from "../../types";
 
-const MonacoEditor = lazy(() => import("@monaco-editor/react"));
+const MonacoEditor = lazy(async () => {
+  await import("@/config/monaco");
+  return import("@monaco-editor/react");
+});
 
 const AUTH_OPTIONS: SelectOption[] = [
   { label: "None", value: "none" },
