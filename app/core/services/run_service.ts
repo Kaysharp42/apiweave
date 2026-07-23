@@ -70,7 +70,7 @@ export class RunService {
 
   async listByWorkflow(workspaceId: string, workflowId: string): Promise<{ items: readonly Run[]; total: number }> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
-    return this.runs.listByWorkflow(workflowId)
+    return this.runs.listByWorkflow(workflowId, workspaceId)
   }
 
   async listByWorkspace(workspaceId: string): Promise<{ items: readonly Run[]; total: number }> {
@@ -80,12 +80,12 @@ export class RunService {
 
   async getLatest(workspaceId: string, workflowId: string): Promise<Run | undefined> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
-    return this.runs.getLatestRun(workflowId)
+    return this.runs.getLatestRun(workflowId, workspaceId)
   }
 
   async getLatestFailed(workspaceId: string, workflowId: string): Promise<Run | undefined> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
-    return this.runs.getLatestFailedRun(workflowId)
+    return this.runs.getLatestFailedRun(workflowId, workspaceId)
   }
 
   async cancel(workspaceId: string, runId: string): Promise<Run> {

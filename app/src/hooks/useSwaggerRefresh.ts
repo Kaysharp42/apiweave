@@ -11,6 +11,32 @@ import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { ImportedItem } from "../types/ImportedItem";
 import type { SwaggerRefreshResult } from "../types/SwaggerRefreshResult";
 
+// Loopback/private/link-local targets are only fetched on an explicit,
+// user-initiated refresh (force=true) — never from the automatic mount
+// effect. swaggerDocUrl is environment data that can arrive via import/sync,
+// so the automatic path must not silently issue requests to local services.
+export function isSensitiveAutoRefreshTarget(rawUrl: string): boolean {
+  let hostname: string;
+  try {
+    hostname = new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const host = hostname.replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host === "host.docker.internal" || host === "0.0.0.0" || host === "::1") {
+    return true;
+  }
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    if (a === 127 || a === 10 || a === 169 /* link-local/metadata */ || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 interface UseSwaggerRefreshParams {
   workflowId: string | undefined;
   selectedEnvironment: string | null;
@@ -90,6 +116,10 @@ export function useSwaggerRefresh({
           );
         }
         return { skipped: true, reason: "missing-swagger-url" };
+      }
+
+      if (!force && isSensitiveAutoRefreshTarget(swaggerDocUrl)) {
+        return { skipped: true, reason: "loopback-requires-confirmation" };
       }
 
       const requestId = swaggerRefreshRequestIdRef.current + 1;

@@ -21,6 +21,8 @@ export interface SecretMetadata {
   readonly scopeId: string
   readonly keyId: string
   readonly label?: string
+  readonly createdAt: string
+  readonly updatedAt: string
 }
 
 /** The scope chain to resolve against — a request may name an environment, a workspace, or both. */

@@ -160,8 +160,6 @@ export function SidebarHeader({
         return "Workflows";
       case "projects":
         return "Projects";
-      case "webhooks":
-        return "Webhooks";
       case "mcp":
         return "MCP";
       case "settings":

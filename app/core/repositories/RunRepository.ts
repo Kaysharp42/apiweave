@@ -105,9 +105,16 @@ export class RunRepository {
     return row === undefined ? undefined : rowToRun(row)
   }
 
-  public listByWorkflow(workflowId: string): { items: readonly Run[]; total: number } {
+  // Reads are scoped by workspace as well as workflow: RunService authorizes the
+  // caller's workspaceId but the workflowId is caller-supplied, so binding both
+  // columns stops a caller from reading another workspace's runs via a foreign
+  // workflowId (existence-hiding: a mismatch just returns empty/undefined).
+  public listByWorkflow(workflowId: string, workspaceId: string): { items: readonly Run[]; total: number } {
     const items = this.store
-      .query<RunRow>(`SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? ORDER BY createdAt DESC, id DESC`, [workflowId])
+      .query<RunRow>(
+        `SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? AND workspace_id = ? ORDER BY createdAt DESC, id DESC`,
+        [workflowId, workspaceId],
+      )
       .map(rowToRun)
     return { items, total: items.length }
   }
@@ -119,18 +126,18 @@ export class RunRepository {
     return { items, total: items.length }
   }
 
-  public getLatestRun(workflowId: string): Run | undefined {
+  public getLatestRun(workflowId: string, workspaceId: string): Run | undefined {
     const row = this.store.get<RunRow>(
-      `SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? ORDER BY createdAt DESC, id DESC LIMIT 1`,
-      [workflowId],
+      `SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? AND workspace_id = ? ORDER BY createdAt DESC, id DESC LIMIT 1`,
+      [workflowId, workspaceId],
     )
     return row === undefined ? undefined : rowToRun(row)
   }
 
-  public getLatestFailedRun(workflowId: string): Run | undefined {
+  public getLatestFailedRun(workflowId: string, workspaceId: string): Run | undefined {
     const row = this.store.get<RunRow>(
-      `SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? AND status = 'failed' ORDER BY createdAt DESC, id DESC LIMIT 1`,
-      [workflowId],
+      `SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? AND workspace_id = ? AND status = 'failed' ORDER BY createdAt DESC, id DESC LIMIT 1`,
+      [workflowId, workspaceId],
     )
     return row === undefined ? undefined : rowToRun(row)
   }

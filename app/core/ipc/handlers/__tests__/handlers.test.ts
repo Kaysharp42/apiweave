@@ -36,6 +36,8 @@ class FakeSecretStore implements SecretWriteStore {
       scopeType: input.scopeType,
       scopeId: input.scopeId,
       keyId: input.keyId,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
       ...(input.label !== undefined ? { label: input.label } : {}),
     }
     this.rows.set(meta.secretId, { meta, sealed: input.sealed })
@@ -79,7 +81,7 @@ beforeEach(() => {
     workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
     runs: new RunService(runs, sync, permissions, scopeResolver),
-    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, new Uint8Array(32)),
+    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
       collections,
       workflows,
@@ -237,5 +239,27 @@ describe("IPC handlers — no secret plaintext in read responses (QA: task-13-ha
     expect(JSON.stringify(secrets)).not.toContain("sealed")
     expect((secrets as { metadata?: unknown }[])?.[0]).toMatchObject({ name: "TEST_KEY", keyId: "k1" })
     void env
+  })
+
+  it("environments.create/update reject a legacy 'secrets' field and never return one", async () => {
+    const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+
+    const rejected = await router.dispatch({
+      domain: "environments",
+      action: "create",
+      payload: { workspaceId: workspace.workspaceId, name: "Env", secrets: { KEY: "plaintext" } },
+    })
+    expect(rejected.ok).toBe(false)
+
+    const env = await ok<{ environmentId: string; secrets: Record<string, unknown> }>("environments", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "Env",
+    })
+    expect(env.secrets).toEqual({})
+
+    const listed = await ok<{ items: { secrets: Record<string, unknown> }[] }>("environments", "list", {
+      workspaceId: workspace.workspaceId,
+    })
+    expect(listed.items.every((item) => Object.keys(item.secrets).length === 0)).toBe(true)
   })
 })

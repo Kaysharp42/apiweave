@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { DelayJitterConfigSchema } from "./DelayJitterConfigSchema"
 
 /**
  * Per-node CONFIG schema for `type: "delay"` nodes.
@@ -11,6 +12,7 @@ import { z } from "zod"
 export const DelayNodeDataSchema = z
   .object({
     duration: z.number().int().nonnegative().optional(),
+    jitter: DelayJitterConfigSchema.optional(),
     continueOnFail: z.boolean().optional(),
   })
   .strict()

@@ -36,6 +36,11 @@ export class McpHost {
   private httpServer: http.Server | null = null
   private token: string | null = null
   private info: McpTokenInfo | null = null
+  // Serializes start()/stop() through a single-flight promise chain so a
+  // concurrent start can't create a second server before `httpServer` is
+  // assigned, and stop() always closes the server the in-flight start (if
+  // any) actually ended up with — no orphaned/untracked listener.
+  private lifecycle: Promise<unknown> = Promise.resolve()
 
   constructor(options: McpHostOptions) {
     this.router = options.router
@@ -59,6 +64,24 @@ export class McpHost {
   }
 
   async start(): Promise<McpTokenInfo> {
+    return this.runExclusive(() => this.startLocked())
+  }
+
+  async stop(): Promise<void> {
+    return this.runExclusive(() => this.stopLocked())
+  }
+
+  /** Run `fn` after every previously-queued start/stop has settled, never overlapping. */
+  private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.lifecycle.then(fn, fn)
+    this.lifecycle = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
+  private async startLocked(): Promise<McpTokenInfo> {
     if (this.info !== null) return this.info
 
     this.token = loadToken(this.tokenFilePath) ?? generateToken()
@@ -84,7 +107,7 @@ export class McpHost {
     return this.info
   }
 
-  async stop(): Promise<void> {
+  private async stopLocked(): Promise<void> {
     const server = this.httpServer
     if (server === null) return
     this.httpServer = null
@@ -109,7 +132,10 @@ export class McpHost {
     let body: unknown
     try {
       body = await readJson(req)
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === "payload_too_large") {
+        return json(res, 413, { error: "payload_too_large" })
+      }
       return json(res, 400, { error: "invalid_json" })
     }
 
@@ -152,11 +178,26 @@ function listen(server: http.Server, port: number): Promise<number> {
   })
 }
 
+const MAX_MCP_BODY_BYTES = 10 * 1024 * 1024 // 10MB
+
 function readJson(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
-    req.on("data", (chunk: Buffer) => chunks.push(chunk))
+    let received = 0
+    let tooLarge = false
+    req.on("data", (chunk: Buffer) => {
+      if (tooLarge) return
+      received += chunk.length
+      if (received > MAX_MCP_BODY_BYTES) {
+        tooLarge = true
+        req.destroy()
+        reject(new Error("payload_too_large"))
+        return
+      }
+      chunks.push(chunk)
+    })
     req.on("end", () => {
+      if (tooLarge) return
       const raw = Buffer.concat(chunks).toString("utf8")
       if (raw.length === 0) {
         resolve(undefined)

@@ -21,10 +21,16 @@ import {
   assertNoSecretValues,
   collectSecretRefs,
   isSecretKey,
+  sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
 import { SafeHttp } from "../runner/safe_http"
+
+// ponytail: fixed 10 MiB knob for remote OpenAPI/Swagger doc fetches — large
+// enough for real specs, small enough that a malicious/slow URL can't exhaust
+// main-process memory or hang the refresh. Bump only if real specs need more.
+const MAX_REMOTE_SPEC_BYTES = 10 * 1024 * 1024
 import { canonicalizeWorkflowGraph } from "../repositories/helpers"
 import {
   parseCurlCommands,
@@ -133,7 +139,7 @@ export class ImportService {
     const nodes = workflow.nodes.map((node) => {
       const plain = JSON.parse(JSON.stringify(node)) as Record<string, JsonValue>
       if (plain["config"] !== undefined && typeof plain["config"] === "object" && plain["config"] !== null) {
-        plain["config"] = sanitizeVariablesForExport(plain["config"] as Record<string, JsonValue>)
+        plain["config"] = sanitizeExportValue(plain["config"])
       }
       return plain as JsonValue
     })
@@ -241,7 +247,7 @@ export class ImportService {
       ? bundle.workflow.nodes.map((n) => {
           const plain = JSON.parse(JSON.stringify(n)) as Record<string, JsonValue>
           if (plain["config"] !== undefined && typeof plain["config"] === "object" && plain["config"] !== null) {
-            plain["config"] = sanitizeVariablesForExport(plain["config"] as Record<string, JsonValue>)
+            plain["config"] = sanitizeExportValue(plain["config"])
           }
           return plain as JsonValue
         })
@@ -351,7 +357,8 @@ export class ImportService {
     if (!response.ok) throw new ValidationError(`Failed to fetch URL: HTTP ${response.status}`)
 
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? ""
-    const text = await response.text()
+    const { text, truncated } = await this.safeHttp.readTextCapped(response, MAX_REMOTE_SPEC_BYTES)
+    if (truncated) throw new ValidationError(`Response from ${url} exceeds the ${MAX_REMOTE_SPEC_BYTES} byte limit for OpenAPI/Swagger docs`)
 
     if (isJsonSpec(text, contentType)) {
       const spec = parseSpecText(text)
@@ -376,7 +383,11 @@ export class ImportService {
           warnings.push(`Failed to fetch candidate ${candidate}: HTTP ${specResponse.status}`)
           continue
         }
-        const specText = await specResponse.text()
+        const { text: specText, truncated } = await this.safeHttp.readTextCapped(specResponse, MAX_REMOTE_SPEC_BYTES)
+        if (truncated) {
+          warnings.push(`Candidate ${candidate} exceeds the ${MAX_REMOTE_SPEC_BYTES} byte limit`)
+          continue
+        }
         const spec = parseSpecText(specText)
         if (spec["paths"] !== undefined) return { spec, sourceUrl: candidate, warnings }
         warnings.push(`Candidate ${candidate} did not contain paths`)

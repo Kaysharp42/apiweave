@@ -8,6 +8,8 @@ import type { ClockProvider, RngProvider } from "./harness/providers"
 import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp } from "./safe_http"
+import { NotFoundError } from "../ipc/errors"
+import { sanitizeVariablesForExport } from "../services/secret_utils"
 
 const DEFAULT_CONCURRENCY_CAP = 4
 
@@ -61,6 +63,13 @@ export class RunScheduler {
   }
 
   public enqueue(request: EnqueueRequest): string {
+    // Object-level ownership check: the workflow must live in the run's workspace.
+    // RunService authorizes the workspaceId but passes workflowId through untouched,
+    // so without this a caller could execute another workspace's graph under their
+    // run. Existence-hiding 404 mirrors WorkflowService's scoped reads.
+    if (!this.deps.workflows.getByIdInWorkspace(request.workflowId, request.workspaceId)) {
+      throw new NotFoundError(`workflow ${request.workflowId} not found`)
+    }
     const run = this.deps.runs.create({
       workspaceId: request.workspaceId,
       workflowId: request.workflowId,
@@ -133,13 +142,16 @@ export class RunScheduler {
       const run = this.deps.runs.getById(runId)
       if (!run) throw new Error(`run ${runId} not found after create`)
 
-      const workflow = this.deps.workflows.getById(run.workflowId)
+      // Defense-in-depth: re-assert workflow ownership at execution time (enqueue
+      // already checked), so a run row can never execute a graph outside its workspace.
+      const workflow = this.deps.workflows.getByIdInWorkspace(run.workflowId, run.workspaceId)
       if (!workflow) throw new Error(`workflow ${run.workflowId} not found`)
 
+      const mergedVariables = { ...workflow.variables, ...(run.variables ?? {}) }
       const graph: WorkflowGraph = {
         nodes: workflow.nodes as unknown as WorkflowGraph["nodes"],
         edges: workflow.edges as unknown as WorkflowGraph["edges"],
-        ...(run.variables ? { variables: run.variables as Record<string, unknown> } : {}),
+        ...(Object.keys(mergedVariables).length > 0 ? { variables: mergedVariables as Record<string, unknown> } : {}),
       }
 
       const selectedEnvironmentId = run.selectedEnvironmentId ?? workflow.selectedEnvironmentId ?? null
@@ -232,10 +244,15 @@ export class RunScheduler {
     // The executor only ever hands us node events; the terminal event is emitted
     // separately by emitFinished. Narrow so appendNodeStatus stays node-only.
     if (event.kind !== "node.completed") return
-    this.deps.emitProgress?.(runId, event)
+    // A workflow can extract a token/password/api-key into a variable; redact
+    // secret-looking keys/values the same way exports do before this snapshot
+    // goes out over IPC and into run history (readable via runs.get/list, incl. MCP).
+    const sanitizedVariables = sanitizeVariablesForExport(event.variables as Record<string, JsonValue>)
+    const sanitizedEvent: RunProgressEvent = { ...event, variables: sanitizedVariables }
+    this.deps.emitProgress?.(runId, sanitizedEvent)
     this.deps.runs.appendNodeStatus(runId, event.nodeId, {
       status: event.status,
-      variables: event.variables as JsonValue,
+      variables: sanitizedVariables,
       ...(event.error ? { error: event.error } : {}),
       ...(event.message ? { message: event.message } : {}),
       ...(event.statusCode !== undefined ? { statusCode: event.statusCode } : {}),

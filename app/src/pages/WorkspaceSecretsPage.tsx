@@ -6,7 +6,6 @@ import { EmptyState } from "../components/molecules/EmptyState";
 import { Modal } from "../components/molecules/Modal";
 import { SecretForm } from "../components/SecretForm";
 import { ScopedSecretList } from "../components/ScopedSecretList";
-import { UserSecretBindingForm } from "../components/UserSecretBindingForm";
 import { useParams } from "react-router-dom";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import { Spinner } from "../components/atoms/Spinner";
@@ -33,7 +32,6 @@ export function WorkspaceSecretsPage() {
   }>();
   const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
   const [showAddForm, setShowAddForm] = useState(false);
-  const [showBindings, setShowBindings] = useState(false);
   const [selectedSecret, setSelectedSecret] = useState<Secret | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -74,7 +72,7 @@ export function WorkspaceSecretsPage() {
             <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
               {orgSlug && workspaceSlug
                 ? `${orgSlug} / ${workspaceSlug}`
-                : "Manage workspace secrets and user bindings"}
+                : "Manage workspace secrets"}
             </p>
           </div>
         </div>
@@ -130,13 +128,6 @@ export function WorkspaceSecretsPage() {
           <div className="lg:col-span-2 space-y-6">
             <div className="flex justify-end gap-2">
               <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowBindings(!showBindings)}
-              >
-                {showBindings ? "Hide bindings" : "User bindings"}
-              </Button>
-              <Button
                 variant="primary"
                 intent="success"
                 size="sm"
@@ -159,15 +150,6 @@ export function WorkspaceSecretsPage() {
                   : {})}
               />
             </Card>
-
-            {showBindings && (
-              <Card title="User-secret bindings" collapsible defaultExpanded>
-                <UserSecretBindingForm
-                  targetScopeType="workspace"
-                  targetScopeId={scopeId}
-                />
-              </Card>
-            )}
           </div>
 
           <div className="space-y-4">

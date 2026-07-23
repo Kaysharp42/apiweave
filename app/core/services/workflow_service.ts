@@ -27,6 +27,8 @@ export class WorkflowService {
 
   async create(workspaceId: string, input: Omit<WorkflowCreate, "workspaceId">): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_WORKFLOWS)
+    this.assertCollectionInWorkspace(input.collectionId, workspaceId)
+    this.assertEnvironmentInWorkspace(input.selectedEnvironmentId, workspaceId)
     const created = this.workflows.create({ ...input, workspaceId })
     recordWorkflowUpsert(this.syncProvider, created)
     await this.syncProvider.push()
@@ -49,6 +51,10 @@ export class WorkflowService {
   async update(workspaceId: string, workflowId: string, patch: WorkflowUpdate): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     this.mustGet(workspaceId, workflowId)
+    if ("collectionId" in patch) this.assertCollectionInWorkspace(patch.collectionId ?? null, workspaceId)
+    if ("selectedEnvironmentId" in patch) {
+      this.assertEnvironmentInWorkspace(patch.selectedEnvironmentId ?? null, workspaceId)
+    }
     const updated = this.workflows.update(workflowId, patch)
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
     recordWorkflowUpsert(this.syncProvider, updated)
@@ -72,12 +78,7 @@ export class WorkflowService {
   ): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     this.mustGet(workspaceId, workflowId)
-    if (collectionId !== null) {
-      const collection = this.collections?.getById(collectionId)
-      if (!collection || collection.workspaceId !== workspaceId) {
-        throw new NotFoundError(`collection ${collectionId} not found`)
-      }
-    }
+    this.assertCollectionInWorkspace(collectionId, workspaceId)
     const updated = this.workflows.update(workflowId, { collectionId })
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
     recordWorkflowUpsert(this.syncProvider, updated)
@@ -93,12 +94,7 @@ export class WorkflowService {
   ): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     this.mustGet(workspaceId, workflowId)
-    if (environmentId !== null) {
-      const env = this.environments?.getById(environmentId)
-      if (!env || env.workspaceId !== workspaceId) {
-        throw new NotFoundError(`environment ${environmentId} not found`)
-      }
-    }
+    this.assertEnvironmentInWorkspace(environmentId, workspaceId)
     const updated = this.workflows.update(workflowId, { selectedEnvironmentId: environmentId })
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
     recordWorkflowUpsert(this.syncProvider, updated)
@@ -111,5 +107,23 @@ export class WorkflowService {
     const workflow = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
     if (workflow === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
     return workflow
+  }
+
+  /** Reject a collectionId that doesn't belong to `workspaceId` — blocks cross-workspace project membership. */
+  private assertCollectionInWorkspace(collectionId: string | null | undefined, workspaceId: string): void {
+    if (collectionId == null) return
+    const collection = this.collections?.getById(collectionId)
+    if (!collection || collection.workspaceId !== workspaceId) {
+      throw new NotFoundError(`collection ${collectionId} not found`)
+    }
+  }
+
+  /** Reject an environmentId that doesn't belong to `workspaceId`. */
+  private assertEnvironmentInWorkspace(environmentId: string | null | undefined, workspaceId: string): void {
+    if (environmentId == null) return
+    const env = this.environments?.getById(environmentId)
+    if (!env || env.workspaceId !== workspaceId) {
+      throw new NotFoundError(`environment ${environmentId} not found`)
+    }
   }
 }

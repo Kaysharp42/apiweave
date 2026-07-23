@@ -138,7 +138,11 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
     }
     try {
       const response = await authenticatedFetch(
-        workflowsUrl(workspaceId, { skip: 0, limit: 100 }),
+        workflowsUrl(workspaceId, {
+          skip: 0,
+          limit: 100,
+          includeAttached: true,
+        }),
       );
       if (response.ok) {
         const data: unknown = await response.json();

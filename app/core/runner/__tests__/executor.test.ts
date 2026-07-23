@@ -114,6 +114,48 @@ describe("WorkflowExecutor", () => {
       const output = await executor.executeWorkflow(workflow)
       expect(output.nodeStatuses["assert1"]).toBe("failed")
     })
+
+    it("evaluates a header-source assertion case-insensitively", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "assert1",
+            type: "assertion",
+            config: { path: "Content-Type", operator: "contains", expected: "json", source: "headers" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "assert1" }],
+      }
+      const executor = new WorkflowExecutor(makeDeps())
+      ;(executor as unknown as { results: Map<string, unknown> }).results.set("prev_node", {
+        type: "http-request",
+        headers: { "content-type": "application/json" },
+      })
+      const output = await executor.executeWorkflow(workflow)
+      expect(output.nodeStatuses["assert1"]).toBe("passed")
+    })
+
+    it("evaluates a cookie-source assertion from Set-Cookie", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "assert1",
+            type: "assertion",
+            config: { path: "session", operator: "equals", expected: "abc", source: "cookies" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "assert1" }],
+      }
+      const executor = new WorkflowExecutor(makeDeps())
+      ;(executor as unknown as { results: Map<string, unknown> }).results.set("prev_node", {
+        type: "http-request",
+        headers: { "set-cookie": "session=abc; Path=/; HttpOnly, theme=dark; Path=/" },
+      })
+      const output = await executor.executeWorkflow(workflow)
+      expect(output.nodeStatuses["assert1"]).toBe("passed")
+    })
   })
 
   describe("delay nodes", () => {
@@ -135,6 +177,24 @@ describe("WorkflowExecutor", () => {
       const elapsed = Date.now() - start
       expect(elapsed).toBeLessThan(1000) // Should be instant in harness mode
       expect(output.nodeStatuses["delay1"]).toBe("passed")
+    })
+
+    it("uses the jitter bounds instead of the fixed duration when jitter is configured", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "delay1", type: "delay", config: { duration: 5000, jitter: { minMs: 2000, maxMs: 2000 } } },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "delay1" },
+          { edgeId: "e2", source: "delay1", target: "end" },
+        ],
+      }
+      const executor = new WorkflowExecutor(makeDeps())
+      const output = await executor.executeWorkflow(workflow)
+      expect(output.nodeStatuses["delay1"]).toBe("passed")
+      expect(output.results.find((r) => r.nodeId === "delay1")?.duration).toBe(2)
     })
   })
 
@@ -209,6 +269,66 @@ describe("WorkflowExecutor", () => {
     })
   })
 
+  describe("conditional merge gate", () => {
+    type MergeCond = { branchIndex: number; field: string; operator: string; value: string }
+    const gate = (
+      conditions: MergeCond[],
+      conditionLogic: "AND" | "OR",
+      branches: unknown[],
+    ) => {
+      const executor = new WorkflowExecutor(makeDeps())
+      const results = (executor as unknown as { results: Map<string, unknown> }).results
+      const predIds = branches.map((b, i) => {
+        const id = `b${i}`
+        results.set(id, { type: "http-request", ...(b as object) })
+        return id
+      })
+      return () =>
+        (
+          executor as unknown as {
+            evaluateMergeConditions: (
+              c: Record<string, unknown>,
+              p: readonly string[],
+              e: readonly unknown[],
+            ) => void
+          }
+        ).evaluateMergeConditions({ conditions, conditionLogic }, predIds, [])
+    }
+
+    it("passes when a branch field matches (OR)", () => {
+      expect(
+        gate(
+          [{ branchIndex: 0, field: "response.statusCode", operator: "equals", value: "201" }],
+          "OR",
+          [{ statusCode: 201 }],
+        ),
+      ).not.toThrow()
+    })
+
+    it("throws when the configured condition is not met", () => {
+      expect(
+        gate(
+          [{ branchIndex: 0, field: "response.statusCode", operator: "equals", value: "201" }],
+          "OR",
+          [{ statusCode: 200 }],
+        ),
+      ).toThrow(/Conditional merge gate not satisfied/)
+    })
+
+    it("AND requires every condition to pass", () => {
+      const conds: MergeCond[] = [
+        { branchIndex: 0, field: "response.statusCode", operator: "equals", value: "200" },
+        { branchIndex: 1, field: "response.body.ok", operator: "equals", value: "true" },
+      ]
+      expect(gate(conds, "AND", [{ statusCode: 200 }, { body: { ok: true } }])).not.toThrow()
+      expect(gate(conds, "AND", [{ statusCode: 200 }, { body: { ok: false } }])).toThrow()
+    })
+
+    it("no conditions means no gating", () => {
+      expect(gate([], "AND", [{ statusCode: 500 }])).not.toThrow()
+    })
+  })
+
   describe("event emission", () => {
     it("emits node.completed events", async () => {
       const events: Array<{ nodeId: string; status: string }> = []
@@ -257,6 +377,23 @@ describe("WorkflowExecutor", () => {
         status: "failed",
         error: "Error: URL is required for HTTP request",
       })
+    })
+  })
+
+  describe("cycle protection", () => {
+    it("fails a cyclic graph with a step-budget error instead of hanging", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "delay", type: "delay", config: { duration: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "delay" },
+          { edgeId: "e2", source: "delay", target: "start" },
+        ],
+      }
+      const executor = new WorkflowExecutor({ ...makeDeps(), baseUrl: "http://harness" })
+      await expect(executor.executeWorkflow(workflow)).rejects.toThrow(/step budget|possible cycle/i)
     })
   })
 })

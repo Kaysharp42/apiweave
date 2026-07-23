@@ -242,7 +242,7 @@ test("ResponseInspector preview tab renders HTML in a sandboxed iframe", () => {
   assertIncludes(markup, "HTML preview");
   assertIncludes(markup, "<iframe");
   assertIncludes(markup, 'title="Response HTML preview"');
-  assertIncludes(markup, 'sandbox="allow-scripts"');
+  assertIncludes(markup, 'sandbox=""');
   assertIncludes(markup, "srcDoc=");
   assertIncludes(markup, "&lt;main&gt;&lt;h1&gt;Preview&lt;/h1&gt;");
 });

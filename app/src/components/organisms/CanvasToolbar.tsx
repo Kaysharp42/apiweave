@@ -21,6 +21,13 @@ const EMPTY_ENVIRONMENTS: Array<{ environmentId: string; name: string }> = [];
 const EMPTY_RESUME_OPTIONS: NonNullable<CanvasToolbarProps["resumeOptions"]> =
   [];
 
+// ponytail: resume (run-from-failed) UI is hidden — executeWorkflow ignores the
+// resume payload and always triggers a FULL run, so these controls would re-run
+// destructive/expensive API calls while telling the user otherwise. Flip to true
+// once the scheduler resume path is wired (deferred Task 13/21). See the matching
+// note in app/src/hooks/useWorkflowPolling.ts (executeWorkflow).
+const RESUME_ENABLED = false;
+
 export function CanvasToolbar({
   onSave,
   onHistory,
@@ -147,7 +154,11 @@ export function CanvasToolbar({
           size="sm"
           onClick={isRunning && onCancel ? onCancel : onRun}
           disabled={isRunning && !onCancel}
-          className="rounded-r-none h-8 whitespace-nowrap font-semibold border-r border-surface-raised/30 dark:border-surface-dark-raised/30"
+          className={
+            RESUME_ENABLED
+              ? "rounded-r-none h-8 whitespace-nowrap font-semibold border-r border-surface-raised/30 dark:border-surface-dark-raised/30"
+              : "h-8 whitespace-nowrap font-semibold"
+          }
           icon={
             isRunning ? (
               onCancel ? (
@@ -163,6 +174,8 @@ export function CanvasToolbar({
           {isRunning ? (onCancel ? "Cancel" : "Running…") : "Run"}
         </Button>
 
+        {RESUME_ENABLED && (
+        <>
         <IconButton
           onClick={() => setIsRunMenuOpen((prev) => !prev)}
           disabled={isRunning}
@@ -237,6 +250,8 @@ export function CanvasToolbar({
                 </Button>
               ))}
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

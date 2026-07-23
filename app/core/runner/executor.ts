@@ -1,7 +1,9 @@
+import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import type { RequestInit as UndiciRequestInit } from "undici"
+import { FormData as UndiciFormData, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError } from "./safe_http"
+import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
 import type { RunResult } from "@shared/types/RunResult"
@@ -39,6 +41,30 @@ export interface WorkflowGraph {
   readonly settings?: { readonly continueOnFail?: boolean }
 }
 
+// -------------------- HTTP request config shapes --------------------
+// Mirrors HTTPNodeDataSchema (shared/zod-schemas/HTTPNodeDataSchema.ts) — the
+// panel writes this shape into node.config; the executor must consume it.
+
+interface HttpAuthConfig {
+  readonly type?: "none" | "bearer" | "basic" | "apiKey"
+  readonly bearer?: { readonly token?: string }
+  readonly basic?: { readonly username?: string; readonly password?: string }
+  readonly apiKey?: { readonly key?: string; readonly value?: string; readonly addTo?: "header" | "query" }
+}
+
+interface FormDataEntryLike {
+  readonly key: string
+  readonly value: string
+  readonly type: "text" | "file"
+  readonly active?: boolean
+}
+
+interface FileUploadLike {
+  readonly type: "path" | "base64" | "variable"
+  readonly value: string
+  readonly mimeType?: string
+}
+
 export interface ExecutorDeps {
   readonly clock: ClockProvider
   readonly rng: RngProvider
@@ -70,6 +96,7 @@ export interface NodeResult {
     readonly body: unknown
     readonly headers: Record<string, string>
     readonly statusCode: number
+    readonly truncated?: boolean
   }
   readonly mergedByOther?: boolean
   readonly [key: string]: unknown
@@ -109,6 +136,8 @@ export class WorkflowExecutor {
   private currentBranchContext: ReadonlyArray<readonly [string, NodeResult]> = []
   private readonly mergeCompleted = new Set<string>()
   private activeRunId = "harness"
+  private stepCount = 0
+  private maxSteps = 0
 
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
@@ -138,6 +167,13 @@ export class WorkflowExecutor {
       nodes.set(node.nodeId, node)
     }
     const edges = workflow.edges
+
+    // ponytail: global step budget guards against cyclic graphs (start->delay->start)
+    // recursing forever — schemas/renderer don't enforce acyclicity. Generous cap so
+    // any legit acyclic run finishes well under it; a cycle blows past and fails clean.
+    // Upgrade path: real cycle/topological validation before execution if false trips appear.
+    this.stepCount = 0
+    this.maxSteps = Math.max(10000, (nodes.size + edges.length) * 100)
 
     let entryNodeIds: string[] = []
     if (options.startNodeIds && options.startNodeIds.length > 0) {
@@ -198,6 +234,12 @@ export class WorkflowExecutor {
     const node = nodes.get(nodeId)
     if (!node) return
     if (cancelSignal?.aborted) return
+
+    if (++this.stepCount > this.maxSteps) {
+      throw new Error(
+        `Workflow exceeded step budget (${this.maxSteps}) — possible cycle in graph at node '${nodeId}'`,
+      )
+    }
 
     // Set branch context if predecessor is a merge
     const incomingEdges = edges.filter((e) => e.target === nodeId)
@@ -424,11 +466,17 @@ export class WorkflowExecutor {
     const config = node.config ?? {}
     const method = (config["method"] as string | undefined) ?? "GET"
     let url = (config["url"] as string | undefined) ?? ""
-    const headersField = config["headers"] as
-      | ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }>
-      | undefined
+    type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
+    const headersField = config["headers"] as KVField
     const body = config["body"] as string | Record<string, unknown> | undefined
+    const bodyType = config["bodyType"] as string | undefined
     const timeout = (config["timeout"] as number | undefined) ?? 30
+    const followRedirects = (config["followRedirects"] as boolean | undefined) ?? true
+    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
+    const auth = config["auth"] as HttpAuthConfig | undefined
+    const formDataEntries = config["formDataEntries"] as readonly FormDataEntryLike[] | undefined
+    const urlEncodedEntries = config["urlEncodedEntries"] as KVField
+    const fileUploads = config["fileUploads"] as readonly FileUploadLike[] | undefined
 
     if (!url) {
       throw new Error("URL is required for HTTP request")
@@ -440,22 +488,40 @@ export class WorkflowExecutor {
       url = `${this.deps.baseUrl}${url}`
     }
 
-    const headers = this.normalizeKeyValueField(headersField)
+    const pathVariables = this.normalizeKeyValueField(config["pathVariables"] as KVField)
+    for (const [key, value] of Object.entries(pathVariables)) {
+      url = url.split(`{${key}}`).join(encodeURIComponent(value))
+    }
 
-    let bodyStr: string | undefined
-    if (body !== undefined && body !== null) {
-      if (typeof body === "string") {
-        bodyStr = this.substituteVariables(body)
-      } else {
-        bodyStr = JSON.stringify(body)
-        bodyStr = this.substituteVariables(bodyStr)
-        if (!headers["Content-Type"] && !headers["content-type"]) {
-          headers["Content-Type"] = "application/json"
-        }
-      }
+    const headers = this.normalizeKeyValueField(headersField)
+    const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
+    const cookies = this.normalizeKeyValueField(config["cookies"] as KVField)
+
+    if (Object.keys(cookies).length > 0) {
+      const cookieHeader = Object.entries(cookies)
+        .map(([key, value]) => `${key}=${value}`)
+        .join("; ")
+      const existingCookie = headers["Cookie"] ?? headers["cookie"]
+      headers["Cookie"] = existingCookie ? `${existingCookie}; ${cookieHeader}` : cookieHeader
+    }
+
+    this.applyAuthConfig(auth, headers, queryParams)
+
+    if (Object.keys(queryParams).length > 0) {
+      const [base = url, existingQuery] = url.split("?")
+      const params = new URLSearchParams(existingQuery ?? "")
+      for (const [key, value] of Object.entries(queryParams)) params.set(key, value)
+      url = `${base}?${params.toString()}`
     }
 
     const startTime = Date.now()
+
+    let fetchBody: string | Buffer | UndiciFormData | undefined
+    try {
+      fetchBody = await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
+    } catch (bodyError) {
+      return { status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url, duration: 0 }
+    }
 
     try {
       this.deps.http.validateUrl(url)
@@ -465,20 +531,24 @@ export class WorkflowExecutor {
         headers,
         signal: AbortSignal.timeout(timeout * 1000),
       }
-      if (bodyStr !== undefined && method !== "GET") {
-        fetchInit.body = bodyStr
+      if (fetchBody !== undefined && method !== "GET") {
+        fetchInit.body = fetchBody
       }
 
-      const response = await this.deps.http.safeFetch(url, fetchInit)
-      const responseText = await response.text()
+      const response = await this.deps.http.safeFetch(url, fetchInit, { followRedirects, rejectUnauthorized: sslVerify })
+      const { text: responseText, truncated } = await this.deps.http.readTextCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
       const statusCode = response.status
       const duration = Date.now() - startTime
 
       let responseBody: unknown
-      try {
-        responseBody = JSON.parse(responseText)
-      } catch {
+      if (truncated) {
         responseBody = responseText
+      } else {
+        try {
+          responseBody = JSON.parse(responseText)
+        } catch {
+          responseBody = responseText
+        }
       }
 
       let status: string
@@ -505,6 +575,7 @@ export class WorkflowExecutor {
           body: responseBody,
           headers: responseHeaders,
           statusCode,
+          ...(truncated ? { truncated: true } : {}),
         },
       }
 
@@ -526,7 +597,12 @@ export class WorkflowExecutor {
 
   private async executeDelay(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
     const config = node.config ?? {}
-    const durationMs = (config["duration"] as number | undefined) ?? 1000
+    const baseDurationMs = (config["duration"] as number | undefined) ?? 1000
+    const jitter = config["jitter"] as { minMs?: number; maxMs?: number } | undefined
+    const durationMs =
+      jitter && jitter.maxMs !== undefined && jitter.minMs !== undefined && jitter.maxMs >= jitter.minMs
+        ? jitter.minMs + Math.floor(this.deps.rng.next() * (jitter.maxMs - jitter.minMs + 1))
+        : baseDurationMs
 
     if (this.deps.baseUrl) {
       return { status: "success", duration: 0, message: "Delayed for 0 seconds (harness mode)" }
@@ -555,7 +631,7 @@ export class WorkflowExecutor {
   private async executeAssertion(node: WorkflowNode): Promise<NodeResult> {
     const config = node.config ?? {}
 
-    type AssertionDef = { field?: string; path?: string; operator: string; expected?: unknown; source?: string }
+    type AssertionDef = { field?: string; path?: string; operator: string; expected?: unknown; expectedValue?: unknown; source?: string }
     let assertions: AssertionDef[]
 
     const configAssertions = config["assertions"]
@@ -621,23 +697,20 @@ export class WorkflowExecutor {
     path?: string
     operator: string
     expected?: unknown
+    expectedValue?: unknown
     source?: string
   }): { passed: boolean; message: string } {
     const source = assertion.source ?? "prev"
     const path = assertion.field ?? assertion.path ?? ""
     const operator = assertion.operator
-    const expected = assertion.expected
+    // Renderer editors persist `expectedValue`; older single-assertion configs
+    // use `expected`. Accept either so saved rules are actually enforced.
+    const expected = assertion.expectedValue ?? assertion.expected
 
     let actual: unknown
 
     if (source === "prev") {
-      let lastResult: NodeResult | undefined
-      for (const result of [...this.results.values()].reverse()) {
-        if (result.type === "http-request") {
-          lastResult = result
-          break
-        }
-      }
+      const lastResult = this.findLastHttpResult()
       if (!lastResult) {
         return { passed: false, message: "No previous HTTP request result found" }
       }
@@ -648,6 +721,18 @@ export class WorkflowExecutor {
       }
 
       actual = this.getNestedValue(lastResult, cleanPath)
+    } else if (source === "headers") {
+      const lastResult = this.findLastHttpResult()
+      if (!lastResult) {
+        return { passed: false, message: "No previous HTTP request result found" }
+      }
+      actual = this.getResponseHeader(lastResult, path)
+    } else if (source === "cookies") {
+      const lastResult = this.findLastHttpResult()
+      if (!lastResult) {
+        return { passed: false, message: "No previous HTTP request result found" }
+      }
+      actual = this.getResponseCookie(lastResult, path)
     } else if (source === "variables") {
       actual = this.workflowVariables[path]
     } else if (source === "status") {
@@ -664,6 +749,40 @@ export class WorkflowExecutor {
     } catch (error) {
       return { passed: false, message: `Comparison error: ${String(error)}` }
     }
+  }
+
+  private findLastHttpResult(): NodeResult | undefined {
+    for (const result of [...this.results.values()].reverse()) {
+      if (result.type === "http-request") return result
+    }
+    return undefined
+  }
+
+  /** Case-insensitive lookup of a response header value. */
+  private getResponseHeader(result: NodeResult, name: string): string | undefined {
+    const headers = result.headers ?? result.response?.headers ?? {}
+    const target = name.trim().toLowerCase()
+    for (const [key, value] of Object.entries(headers)) {
+      if (key.toLowerCase() === target) return value
+    }
+    return undefined
+  }
+
+  /** Value of a Set-Cookie cookie by name, from the last response. */
+  private getResponseCookie(result: NodeResult, name: string): string | undefined {
+    const raw = this.getResponseHeader(result, "set-cookie")
+    if (!raw) return undefined
+    const target = name.trim()
+    // ponytail: split multiple cookies on the comma that precedes the next
+    // `name=` pair; good enough for typical Set-Cookie. Swap for a real
+    // set-cookie parser if Expires/edge attributes ever misparse.
+    for (const part of raw.split(/,(?=\s*[^=;,\s]+=)/)) {
+      const pair = part.split(";")[0] ?? ""
+      const eq = pair.indexOf("=")
+      if (eq === -1) continue
+      if (pair.slice(0, eq).trim() === target) return pair.slice(eq + 1).trim()
+    }
+    return undefined
   }
 
   private compareValues(actual: unknown, operator: string, expected: unknown): boolean {
@@ -773,6 +892,10 @@ export class WorkflowExecutor {
       }
     }
 
+    if (mergeStrategy === "conditional") {
+      this.evaluateMergeConditions(config, predecessorNodeIds, edges)
+    }
+
     this.mergeCompleted.add(nodeId)
 
     const predecessorResults: Array<readonly [string, NodeResult]> = []
@@ -791,6 +914,48 @@ export class WorkflowExecutor {
       message: `Merged ${predecessorResults.length} branches using '${mergeStrategy}' strategy`,
       mergeStrategy,
       branchCount: predecessorResults.length,
+    }
+  }
+
+  /**
+   * Gate a conditional merge: throws if the saved branch conditions do not
+   * pass under the configured AND/OR logic. branchIndex is the zero-based
+   * position in the incoming-edge order (matching the panel's "Branch index").
+   */
+  private evaluateMergeConditions(
+    config: Record<string, unknown>,
+    predecessorNodeIds: readonly string[],
+    edges: readonly WorkflowEdge[],
+  ): void {
+    const raw = config["conditions"]
+    const conditions = Array.isArray(raw)
+      ? (raw as Array<{ branchIndex?: number; field?: string; operator?: string; value?: unknown }>)
+      : []
+    if (conditions.length === 0) return
+
+    const branchResults = predecessorNodeIds.map((predId) =>
+      this.results.get(this.findDataProducingAncestor(predId, edges)),
+    )
+
+    const outcome = (condition: (typeof conditions)[number]): boolean => {
+      const branch = branchResults[condition.branchIndex ?? 0]
+      if (!branch) return false
+      const field = condition.field ?? ""
+      const cleanPath = field.startsWith("response.") ? field.slice(9) : field
+      const actual = this.getNestedValue(branch, cleanPath)
+      const expected = this.substituteVariables(String(condition.value ?? ""))
+      try {
+        return this.compareValues(actual, condition.operator ?? "equals", expected)
+      } catch {
+        return false
+      }
+    }
+
+    const logic = config["conditionLogic"] === "AND" ? "AND" : "OR"
+    const outcomes = conditions.map(outcome)
+    const passed = logic === "AND" ? outcomes.every(Boolean) : outcomes.some(Boolean)
+    if (!passed) {
+      throw new Error(`Conditional merge gate not satisfied (${logic}): branch conditions did not match`)
     }
   }
 
@@ -1010,6 +1175,117 @@ export class WorkflowExecutor {
       result[String(key)] = this.substituteVariables(String(entry.value ?? ""))
     }
     return result
+  }
+
+  // -------------------- HTTP auth / body construction --------------------
+
+  /** Apply the panel's auth config as an Authorization header or an apiKey header/query entry. */
+  private applyAuthConfig(
+    auth: HttpAuthConfig | undefined,
+    headers: Record<string, string>,
+    queryParams: Record<string, string>,
+  ): void {
+    if (!auth || !auth.type || auth.type === "none") return
+    if (auth.type === "bearer" && auth.bearer?.token) {
+      headers["Authorization"] = `Bearer ${this.substituteVariables(auth.bearer.token)}`
+    } else if (auth.type === "basic" && auth.basic) {
+      const username = this.substituteVariables(auth.basic.username ?? "")
+      const password = this.substituteVariables(auth.basic.password ?? "")
+      headers["Authorization"] = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
+    } else if (auth.type === "apiKey" && auth.apiKey?.key) {
+      const key = this.substituteVariables(auth.apiKey.key)
+      const value = this.substituteVariables(auth.apiKey.value ?? "")
+      if (auth.apiKey.addTo === "query") {
+        queryParams[key] = value
+      } else {
+        headers[key] = value
+      }
+    }
+  }
+
+  /** Build the fetch body per `bodyType`, mutating `headers` with a Content-Type when one is implied. */
+  private async buildHttpRequestBody(
+    bodyType: string | undefined,
+    body: string | Record<string, unknown> | undefined,
+    headers: Record<string, string>,
+    formDataEntries: readonly FormDataEntryLike[] | undefined,
+    urlEncodedEntries: ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined,
+    fileUploads: readonly FileUploadLike[] | undefined,
+  ): Promise<string | Buffer | UndiciFormData | undefined> {
+    switch (bodyType) {
+      case "none":
+        return undefined
+
+      case "form-data": {
+        const form = new UndiciFormData()
+        for (const entry of formDataEntries ?? []) {
+          if (entry.active === false || !entry.key) continue
+          if (entry.type === "file") {
+            // ponytail: form-data file rows store a local file path in `value`
+            // (see FormDataRows "file ref" placeholder) — read it directly.
+            const buffer = await this.readFileUploadContent({ type: "path", value: entry.value })
+            const fileName = entry.value.split(/[\\/]/).pop() || entry.key
+            form.append(entry.key, new Blob([new Uint8Array(buffer)]), fileName)
+          } else {
+            form.append(entry.key, this.substituteVariables(entry.value ?? ""))
+          }
+        }
+        return form
+      }
+
+      case "x-www-form-urlencoded": {
+        const params = new URLSearchParams()
+        for (const entry of urlEncodedEntries ?? []) {
+          if (entry.active === false || !entry.key) continue
+          params.append(entry.key, this.substituteVariables(entry.value ?? ""))
+        }
+        if (!headers["Content-Type"] && !headers["content-type"]) {
+          headers["Content-Type"] = "application/x-www-form-urlencoded"
+        }
+        return params.toString()
+      }
+
+      case "binary": {
+        const upload = fileUploads?.[0]
+        if (!upload) return undefined
+        const buffer = await this.readFileUploadContent(upload)
+        if (!headers["Content-Type"] && !headers["content-type"] && upload.mimeType) {
+          headers["Content-Type"] = upload.mimeType
+        }
+        return buffer
+      }
+
+      case "raw":
+        return typeof body === "string" ? this.substituteVariables(body) : undefined
+
+      case "json":
+      default: {
+        // Back-compat default for nodes saved before `bodyType` existed.
+        if (body === undefined || body === null) return undefined
+        if (typeof body === "string") return this.substituteVariables(body)
+        const json = this.substituteVariables(JSON.stringify(body))
+        if (!headers["Content-Type"] && !headers["content-type"]) {
+          headers["Content-Type"] = "application/json"
+        }
+        return json
+      }
+    }
+  }
+
+  /** Resolve a file upload's bytes per its `type` — base64-decoded, read from disk, or a resolved variable. */
+  private async readFileUploadContent(upload: { readonly type: string; readonly value: string }): Promise<Buffer> {
+    switch (upload.type) {
+      case "base64":
+        return Buffer.from(upload.value, "base64")
+      case "path":
+        // ponytail: desktop single-user trust model — the path comes from the
+        // user's own saved workflow config, same trust boundary safe_http.ts
+        // documents for allowLoopback.
+        return fs.readFile(upload.value)
+      case "variable":
+      default:
+        return Buffer.from(this.substituteVariables(upload.value ?? ""), "utf-8")
+    }
   }
 
   // -------------------- Status tracking --------------------

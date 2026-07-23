@@ -26,6 +26,9 @@ export function OpenAPIImport({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sanitize, setSanitize] = useState<boolean>(true);
   const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [previewParamsKey, setPreviewParamsKey] = useState<string | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -87,6 +90,16 @@ export function OpenAPIImport({
     handleFileUpload(file);
   };
 
+  const getPreviewParamsKey = (file: File): string =>
+    JSON.stringify({
+      name: file.name,
+      size: file.size,
+      lastModified: file.lastModified,
+      baseUrl,
+      tags: [...selectedTags].sort(),
+      sanitize,
+    });
+
   const handlePreview = async () => {
     if (!openapiFile) {
       setError("Please select an OpenAPI file");
@@ -123,6 +136,7 @@ export function OpenAPIImport({
 
       const data = (await response.json()) as PreviewData;
       setPreview(data);
+      setPreviewParamsKey(getPreviewParamsKey(openapiFile));
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "An unknown error occurred";
@@ -132,6 +146,11 @@ export function OpenAPIImport({
     }
   };
 
+  const isPreviewStale =
+    !openapiFile ||
+    previewParamsKey === null ||
+    previewParamsKey !== getPreviewParamsKey(openapiFile);
+
   const handleImport = async () => {
     if (!openapiFile) {
       setError("Please select an OpenAPI file");
@@ -139,6 +158,10 @@ export function OpenAPIImport({
     }
     if (!preview || !preview.nodes) {
       setError("Please run Preview first");
+      return;
+    }
+    if (isPreviewStale) {
+      setError("Inputs changed since the last preview. Please preview again.");
       return;
     }
 
@@ -488,8 +511,13 @@ export function OpenAPIImport({
             <Button
               onClick={handleImport}
               variant="primary"
-              disabled={!preview || isLoading}
+              disabled={!preview || isPreviewStale || isLoading}
               loading={isLoading}
+              title={
+                preview && isPreviewStale
+                  ? "Inputs changed since the last preview. Preview again before importing."
+                  : undefined
+              }
             >
               {isLoading ? "Adding..." : "Add to Nodes"}
             </Button>

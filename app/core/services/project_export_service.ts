@@ -21,6 +21,7 @@ import {
   assertNoSecretValues,
   collectSecretRefs,
   isSecretKey,
+  sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
@@ -141,7 +142,7 @@ export class ProjectExportService {
       throw new NotFoundError(`project ${projectId} not found`)
     }
 
-    const workflows = this.workflows.listByCollection(projectId).items
+    const workflows = this.workflows.listByCollection(workspaceId, projectId).items
     const secretReferences: SecretReference[] = []
     const seen = new Set<string>()
 
@@ -152,7 +153,7 @@ export class ProjectExportService {
         const plain = asRecord(toPlain(node))
         if (plain["config"] !== undefined) {
           collectSecretRefs(plain["config"], "workspace", workspaceId, secretReferences, seen)
-          plain["config"] = sanitizeVariablesForExport(asRecord(plain["config"]))
+          plain["config"] = sanitizeExportValue(plain["config"])
         }
         return plain as JsonValue
       })
@@ -165,7 +166,7 @@ export class ProjectExportService {
         variables: sanitizeVariablesForExport(asRecord(rawVariables)),
         tags: workflow.tags,
         selectedEnvironmentId: workflow.selectedEnvironmentId ?? null,
-        nodeTemplates: workflow.nodeTemplates.map((template) => toPlain(template)),
+        nodeTemplates: workflow.nodeTemplates.map((template) => sanitizeExportValue(toPlain(template))),
       }
     })
 
@@ -317,7 +318,7 @@ export class ProjectExportService {
         ? importedOrder
         : appendWorkflowOrder(existingProject.workflowOrder, importedOrder)
       const updatedProject = this.collections.update(project.collectionId, {
-        workflowCount: this.workflows.countByCollection(project.collectionId),
+        workflowCount: this.workflows.countByCollection(targetWorkspaceId, project.collectionId),
         workflowOrder,
       }) ?? project
       recordCollectionUpsert(this.syncProvider, updatedProject)

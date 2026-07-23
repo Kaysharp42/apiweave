@@ -73,7 +73,7 @@ interface ImportToNodesPanelProps {
 }
 
 type ActiveTab = "openapi" | "har" | "curl";
-type ImportMode = "linear" | "parallel";
+type ImportMode = "linear" | "grouped";
 
 interface FileUploadDropzoneProps {
   accept: string;
@@ -220,20 +220,11 @@ export function ImportToNodesPanel({
   const handleFileSelect = (file: File): void => {
     const reader = new FileReader();
     reader.onload = (e: ProgressEvent<FileReader>) => {
-      try {
-        const result = e.target?.result;
-        if (typeof result === "string") {
-          const json = JSON.parse(result);
-          setUploadedFile(JSON.stringify(json));
-          setPastedText("");
-          setMessage(null);
-        }
-      } catch {
-        setMessage({
-          type: "error",
-          title: "Invalid File",
-          text: "File is not valid JSON",
-        });
+      const result = e.target?.result;
+      if (typeof result === "string") {
+        setUploadedFile(result);
+        setPastedText("");
+        setMessage(null);
       }
     };
     reader.readAsText(file);
@@ -746,7 +737,7 @@ export function ImportToNodesPanel({
                     className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark text-text-primary dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary"
                   >
                     <option value="linear">Linear (sequential)</option>
-                    <option value="parallel">Parallel</option>
+                    <option value="grouped">Parallel</option>
                   </select>
                 </div>
                 <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />

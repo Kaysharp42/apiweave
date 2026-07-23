@@ -41,7 +41,10 @@ async function dispatchAsTool(
 ): Promise<CallToolResult> {
   let result
   try {
-    result = await router.dispatch({ domain: spec.domain, action: spec.action, payload: args ?? {} })
+    result = await router.dispatch(
+      { domain: spec.domain, action: spec.action, payload: args ?? {} },
+      { redactSecrets: true },
+    )
   } catch {
     // dispatch re-throws genuine internal bugs (HTTP-500 equivalent). Surface a
     // generic error to the client rather than leaking internals over the wire.

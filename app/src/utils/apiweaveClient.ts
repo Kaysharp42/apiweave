@@ -319,15 +319,20 @@ export const apiweave = {
       }),
     cancel: (workspaceId: string, runId: string) =>
       invoke<IpcRun>("runs", "cancel", { workspaceId, runId }),
-    getArtifacts: (runId: string) =>
-      invoke<unknown>("runs", "getArtifacts", { runId }),
-    openArtifact: (path: string) =>
-      invoke<string>("runs", "openArtifact", { path }),
-    saveArtifactAs: (
+    getArtifacts: (workspaceId: string, runId: string) =>
+      invoke<unknown>("runs", "getArtifacts", { workspaceId, runId }),
+    openArtifact: (
+      workspaceId: string,
       runId: string,
       artifactName: "junit.xml" | "report.html",
     ) =>
-      invoke<string | null>("runs", "saveArtifactAs", { runId, artifactName }),
+      invoke<string>("runs", "openArtifact", { workspaceId, runId, artifactName }),
+    saveArtifactAs: (
+      workspaceId: string,
+      runId: string,
+      artifactName: "junit.xml" | "report.html",
+    ) =>
+      invoke<string | null>("runs", "saveArtifactAs", { workspaceId, runId, artifactName }),
   },
   secrets: {
     set: (input: {
@@ -860,6 +865,15 @@ export async function authenticatedFetch(
             }),
           );
         }
+        if (parts[5] === "templates" && parts.length === 6 && method === "POST") {
+          return ok(
+            await invoke<unknown>("workflows", "saveTemplates", {
+              workspaceId,
+              workflowId,
+              templates: payload ?? [],
+            }),
+          );
+        }
       }
 
       if (parts[3] === "projects") {
@@ -1224,18 +1238,6 @@ export const secretsUrl = (
   `${API_BASE_URL}/api/scopes/${encodeURIComponent(params.scopeType)}/${encodeURIComponent(params.scopeId)}/secrets${secretId ? `/${encodeURIComponent(secretId)}` : ""}${params.workspaceId ? `?workspaceId=${encodeURIComponent(params.workspaceId)}` : ""}`;
 export const publicKeyUrl = (scopeType: string, scopeId: string, workspaceId?: string): string =>
   `${API_BASE_URL}/api/secrets/public-key?scope=${encodeURIComponent(scopeType)}&id=${encodeURIComponent(scopeId)}${workspaceId ? `&workspaceId=${encodeURIComponent(workspaceId)}` : ""}`;
-export const webhooksForWorkflowUrl = (resourceId: string): string =>
-  `${API_BASE_URL}/api/webhooks/workflows/${encodeURIComponent(resourceId)}`;
-export const webhooksForProjectUrl = (resourceId: string): string =>
-  `${API_BASE_URL}/api/webhooks/collections/${encodeURIComponent(resourceId)}`;
-export const webhooksCreateUrl = (): string => `${API_BASE_URL}/api/webhooks`;
-export const webhookDetailUrl = (webhookId: string): string =>
-  `${API_BASE_URL}/api/webhooks/${encodeURIComponent(webhookId)}`;
-export const webhookRegenerateUrl = (webhookId: string): string =>
-  `${webhookDetailUrl(webhookId)}/regenerate-token`;
-export const webhookLogsUrl = (webhookId: string, limit = 50): string =>
-  `${webhookDetailUrl(webhookId)}/logs?limit=${limit}`;
-
 type DeletionTarget = {
   readonly workflowId?: string;
   readonly projectId?: string;

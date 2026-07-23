@@ -185,6 +185,11 @@ export function WorkflowCanvas({
     WorkflowCanvasNodeData,
     WorkflowCanvasEdgeData
   > | null>;
+  // Holds the latest saveWorkflow (defined below); the run hook awaits it to
+  // flush pending edits before executing so it never runs a stale graph.
+  const saveWorkflowRef = useRef<((silent: boolean) => Promise<void>) | null>(
+    null,
+  );
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -253,6 +258,7 @@ export function WorkflowCanvas({
     setNodes,
     selectedEnvironment,
     reactFlowInstanceRef,
+    saveWorkflowRef,
   });
 
   // ── Extractors effect ───────────────────────────────────────────────
@@ -480,10 +486,17 @@ export function WorkflowCanvas({
           return [...eds, newEdge];
         }
 
-        const newEdge = addEdge(
+        const edgesWithNewConnection = addEdge(
           { ...params, type: "custom" } as Parameters<typeof addEdge>[0],
           eds,
-        )[eds.length];
+        );
+
+        if (edgesWithNewConnection.length === eds.length) {
+          // addEdge deduped a connection that already exists; nothing to add.
+          return eds;
+        }
+
+        const newEdge = edgesWithNewConnection[eds.length];
 
         const parallelEdges = eds.filter((e) => e.source === params.source);
 
@@ -543,10 +556,7 @@ export function WorkflowCanvas({
           return updatedEdges as Edge<WorkflowCanvasEdgeData>[];
         }
 
-        return addEdge(
-          { ...params, type: "custom" } as Parameters<typeof addEdge>[0],
-          eds,
-        ) as Edge<WorkflowCanvasEdgeData>[];
+        return edgesWithNewConnection as Edge<WorkflowCanvasEdgeData>[];
       });
     },
     [setEdges],
@@ -614,13 +624,22 @@ export function WorkflowCanvas({
             .updateTabWorkflow(workflowId ?? "", savedWorkflow);
         } else {
           console.error("Failed to save workflow");
+          toast.error("Failed to save workflow — your changes are not saved", {
+            id: `workflow-save-error-${workflowId}`,
+          });
         }
       } catch (error) {
         console.error("Save error:", error);
+        toast.error("Failed to save workflow — your changes are not saved", {
+          id: `workflow-save-error-${workflowId}`,
+        });
       }
     },
     [workflowId, scope.workspaceId, selectedEnvironment, workflow],
   );
+
+  // Keep the run hook's flush pointer at the latest saveWorkflow closure.
+  saveWorkflowRef.current = saveWorkflow;
 
   // ── JSON editor ──────────────────────────────────────────────────────
 

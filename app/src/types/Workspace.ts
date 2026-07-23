@@ -3,9 +3,9 @@ export interface Workspace {
   slug: string;
   name: string;
   description: string | null;
-  ownerType: "user";
-  ownerUserId: string | null;
   isPersonal: boolean;
+  origin: "local" | "cloud" | "team";
+  syncMode: "none" | "push" | "bi-directional";
   createdAt: string;
   updatedAt: string;
 }

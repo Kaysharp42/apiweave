@@ -51,27 +51,20 @@ export function useClipboardActions({
         }
       } else if (type === "copy" && nodeId) {
         const nodeToClone = nodes.find((n) => n.id === nodeId);
-        if (nodeToClone) {
-          const cloneData = {
+        if (nodeToClone && nodeToClone.type) {
+          useCanvasStore.getState().setClipboardNode({
             type: nodeToClone.type,
             data: JSON.parse(JSON.stringify(nodeToClone.data)),
-          };
-          useCanvasStore
-            .getState()
-            .setClipboardNode(
-              cloneData as unknown as import("../types").ClipboardNodeData,
-            );
+          });
         }
       } else if (type === "paste") {
-        const cloneData = sessionStorage.getItem("copiedNode");
+        useCanvasStore.getState().hydrateClipboard();
+        const cloneData = useCanvasStore.getState().clipboardNode;
         if (!cloneData) {
           toast.error("No node in clipboard");
         } else {
           try {
-            const { type: nodeType, data } = JSON.parse(cloneData) as {
-              type: string;
-              data: Record<string, unknown>;
-            };
+            const { type: nodeType, data } = cloneData;
             let newPosition = { x: 400, y: 300 };
             if (selectedNodeRef.current) {
               newPosition = {

@@ -5,6 +5,7 @@ import {
   CollectionRepository,
   EnvironmentRepository,
   RunRepository,
+  SecretRepository,
   WorkflowRepository,
   WorkspaceRepository,
 } from "../index"
@@ -15,6 +16,7 @@ let workflows: WorkflowRepository
 let runs: RunRepository
 let environments: EnvironmentRepository
 let collections: CollectionRepository
+let secrets: SecretRepository
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
@@ -23,6 +25,7 @@ beforeEach(() => {
   runs = new RunRepository(db.kvStore)
   environments = new EnvironmentRepository(db.kvStore)
   collections = new CollectionRepository(db.kvStore)
+  secrets = new SecretRepository(db.kvStore)
 })
 
 afterEach(() => {
@@ -68,6 +71,29 @@ describe("WorkspaceRepository", () => {
   })
 })
 
+describe("SecretRepository", () => {
+  // Regression: env-scoped secrets must bind workspace_id to the owning workspace,
+  // not to scopeId (an environmentId), or the FK to workspaces() insert-fails.
+  it("persists and deletes an environment-scoped secret against SQLite", () => {
+    const workspaceId = seedWorkspace()
+    const env = environments.create({ workspaceId, name: "Prod" })
+
+    const meta = secrets.put({
+      name: "TOKEN",
+      scopeType: "environment",
+      scopeId: env.environmentId,
+      workspaceId,
+      keyId: "k1",
+      sealed: new TextEncoder().encode("sealed-bytes"),
+    })
+    expect(meta).toMatchObject({ name: "TOKEN", scopeType: "environment", scopeId: env.environmentId })
+
+    expect(secrets.getByScopeAndName("environment", env.environmentId, "TOKEN")?.keyId).toBe("k1")
+    expect(secrets.remove("environment", env.environmentId, "TOKEN")).toBe(true)
+    expect(secrets.getByScopeAndName("environment", env.environmentId, "TOKEN")).toBeNull()
+  })
+})
+
 describe("WorkflowRepository", () => {
   it("round-trips a workflow and bumps rev on each update (QA: rev-bump)", () => {
     const workspaceId = seedWorkspace()
@@ -108,8 +134,8 @@ describe("WorkflowRepository", () => {
     const everything = workflows.listByWorkspace(workspaceId, true)
     expect(everything.total).toBe(2)
 
-    expect(workflows.listByCollection("col-1").total).toBe(1)
-    expect(workflows.countByCollection("col-1")).toBe(1)
+    expect(workflows.listByCollection(workspaceId, "col-1").total).toBe(1)
+    expect(workflows.countByCollection(workspaceId, "col-1")).toBe(1)
   })
 
   it("scopes getByIdInWorkspace and cascades when its workspace is deleted", () => {
@@ -182,10 +208,22 @@ describe("RunRepository", () => {
     const failed = runs.create({ workspaceId, workflowId })
     runs.updateStatus(failed.runId, "failed", "kaboom")
 
-    expect(runs.listByWorkflow(workflowId).total).toBe(2)
-    const latestFailed = runs.getLatestFailedRun(workflowId)
+    expect(runs.listByWorkflow(workflowId, workspaceId).total).toBe(2)
+    const latestFailed = runs.getLatestFailedRun(workflowId, workspaceId)
     expect(latestFailed?.runId).toBe(failed.runId)
     expect(latestFailed?.error).toBe("kaboom")
+  })
+
+  it("scopes run reads to the workspace, hiding another workspace's runs", () => {
+    const { workflowId, workspaceId } = seedRun()
+    const failed = runs.create({ workspaceId, workflowId })
+    runs.updateStatus(failed.runId, "failed", "kaboom")
+    const otherWorkspaceId = seedWorkspace()
+
+    // Same workflowId, wrong workspace: a foreign caller sees nothing.
+    expect(runs.listByWorkflow(workflowId, otherWorkspaceId).total).toBe(0)
+    expect(runs.getLatestRun(workflowId, otherWorkspaceId)).toBeUndefined()
+    expect(runs.getLatestFailedRun(workflowId, otherWorkspaceId)).toBeUndefined()
   })
 })
 

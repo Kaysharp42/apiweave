@@ -70,6 +70,32 @@ describe("WorkflowService — scope + permission round-trip (QA: task-12-service
     const created = await service.create(wsA, { name: "demo" })
     await expect(service.get(wsB, created.workflowId)).rejects.toMatchObject({ code: "not_found" })
   })
+
+  it("rejects create/update with a collectionId or environmentId from another workspace", async () => {
+    const wsA = seedWorkspace("a")
+    const wsB = seedWorkspace("b")
+    const foreignCollection = collections.create({ workspaceId: wsB, name: "Foreign" })
+    const foreignEnv = environments.create({ workspaceId: wsB, name: "Foreign" })
+    const service = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
+
+    await expect(
+      service.create(wsA, { name: "demo", collectionId: foreignCollection.collectionId }),
+    ).rejects.toMatchObject({ code: "not_found" })
+    await expect(
+      service.create(wsA, { name: "demo", selectedEnvironmentId: foreignEnv.environmentId }),
+    ).rejects.toMatchObject({ code: "not_found" })
+
+    const created = await service.create(wsA, { name: "demo" })
+    await expect(
+      service.update(wsA, created.workflowId, { collectionId: foreignCollection.collectionId }),
+    ).rejects.toMatchObject({ code: "not_found" })
+    await expect(
+      service.update(wsA, created.workflowId, { selectedEnvironmentId: foreignEnv.environmentId }),
+    ).rejects.toMatchObject({ code: "not_found" })
+
+    // Attached collection's own workflow listing/count never picks up the rejected attempts.
+    expect(workflows.listByCollection(wsB, foreignCollection.collectionId).total).toBe(0)
+  })
 })
 
 describe("CollectionService — membership + delete conflict", () => {
@@ -202,7 +228,7 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     expect(result.missingSecrets.slice().sort()).toEqual(["MY_KEY", "apiKey"])
 
     const project2 = collections.listByWorkspace(wsB).items[0]!
-    const importedWorkflow = workflows.listByCollection(project2.collectionId).items[0]!
+    const importedWorkflow = workflows.listByCollection(wsB, project2.collectionId).items[0]!
     expect(project2.workflowCount).toBe(1)
     expect(project2.continueOnFail).toBe(false)
     expect(project2.workflowOrder).toEqual([
@@ -273,7 +299,7 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     expect(merged.name).toBe("Target")
     expect(merged.workflowCount).toBe(2)
     expect(merged.workflowOrder).toHaveLength(2)
-    expect(workflows.listByCollection(targetProject.collectionId).total).toBe(2)
+    expect(workflows.listByCollection(targetWorkspace, targetProject.collectionId).total).toBe(2)
   })
 
   it("dry-run flags a bad node and warns on schema drift", async () => {

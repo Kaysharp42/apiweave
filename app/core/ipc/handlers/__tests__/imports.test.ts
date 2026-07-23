@@ -27,7 +27,7 @@ class FakeSecretStore implements SecretWriteStore {
   private readonly rows = new Map<string, { meta: SecretMetadata; sealed: Uint8Array }>()
   private key(t: string, s: string, n: string): string { return `${t}/${s}/${n}` }
   put(input: SecretUpsert): SecretMetadata {
-    const meta: SecretMetadata = { secretId: this.key(input.scopeType, input.scopeId, input.name), name: input.name, scopeType: input.scopeType, scopeId: input.scopeId, keyId: input.keyId, ...(input.label !== undefined ? { label: input.label } : {}) }
+    const meta: SecretMetadata = { secretId: this.key(input.scopeType, input.scopeId, input.name), name: input.name, scopeType: input.scopeType, scopeId: input.scopeId, keyId: input.keyId, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", ...(input.label !== undefined ? { label: input.label } : {}) }
     this.rows.set(meta.secretId, { meta, sealed: input.sealed })
     return meta
   }
@@ -62,7 +62,7 @@ beforeEach(() => {
     workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
     runs: new RunService(runs, sync, permissions, scopeResolver),
-    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, new Uint8Array(32)),
+    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver, secretStore, () => "2026-01-01T00:00:00.000Z"),
     imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver),
   }

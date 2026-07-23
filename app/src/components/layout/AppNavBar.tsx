@@ -3,7 +3,6 @@ import { useNavigate, useLocation, useParams } from "react-router-dom";
 import {
   Home,
   Settings,
-  Webhook,
   LayoutGrid,
   ChevronLeft,
   ChevronRight,
@@ -37,11 +36,6 @@ const navItems: NavItemConfig[] = [
     id: AppNavBarItems.projects!.value,
     label: AppNavBarItems.projects!.displayValue,
     icon: LayoutGrid,
-  },
-  {
-    id: "webhooks",
-    label: "Webhooks",
-    icon: Webhook,
   },
   {
     id: "mcp",

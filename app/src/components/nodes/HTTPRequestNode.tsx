@@ -837,8 +837,10 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                 </div>
                 <ExtractorForm
                   onAdd={(varName, varPath) => {
-                    const newExtractors = data.config?.extractors ?? {};
-                    newExtractors[varName] = normalizeExtractorPath(varPath);
+                    const newExtractors = {
+                      ...(data.config?.extractors ?? {}),
+                      [varName]: normalizeExtractorPath(varPath),
+                    };
                     updateNodeData("extractors", newExtractors);
                   }}
                 />

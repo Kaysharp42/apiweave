@@ -13,5 +13,6 @@ export const AssertionNodeDataSchema = z
   .object({
     assertions: z.array(AssertionItemSchema).optional(),
     continueOnFail: z.boolean().optional(),
+    failureMode: z.enum(["first", "all"]).optional(),
   })
   .strict()

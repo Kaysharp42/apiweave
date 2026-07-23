@@ -122,6 +122,12 @@ interface UseWorkflowPollingParams {
   reactFlowInstanceRef: MutableRefObject<{
     setCenter: (x: number, y: number, opts: { zoom: number }) => void;
   } | null> | null;
+  // Latest canvas-save fn, kept in a ref because it's defined after this hook
+  // is called in WorkflowCanvas. Awaited before a run so the scheduler loads
+  // the current graph, not a copy stale by up to one autosave debounce.
+  saveWorkflowRef?: MutableRefObject<
+    ((silent: boolean) => Promise<void>) | null
+  > | null;
 }
 
 interface UseWorkflowPollingResult {
@@ -160,6 +166,7 @@ export default function useWorkflowPolling({
   setNodes,
   selectedEnvironment,
   reactFlowInstanceRef,
+  saveWorkflowRef,
 }: UseWorkflowPollingParams): UseWorkflowPollingResult {
   const [isRunning, setIsRunning] = useState(false);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
@@ -170,6 +177,9 @@ export default function useWorkflowPolling({
   } | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const currentRunIdRef = useRef<string | null>(null);
+  // Synchronous guard against double-enqueue from rapid clicks/triggers: set
+  // before awaiting runs.create, released once the run has started (or failed).
+  const isStartingRef = useRef(false);
   const latestFailedRunRef = useRef<{
     runId: string | null;
     failedNodes: FailedNodeOption[];
@@ -380,6 +390,9 @@ export default function useWorkflowPolling({
         return;
       }
 
+      if (isStartingRef.current) return;
+      isStartingRef.current = true;
+
       try {
         stopStream();
         setNodes((nds) =>
@@ -398,6 +411,12 @@ export default function useWorkflowPolling({
           selectedEnvironment && selectedEnvironment.trim()
             ? selectedEnvironment.trim()
             : null;
+
+        // Flush pending canvas edits before the run. The scheduler loads the
+        // graph from persisted storage by workflowId, so without this a click
+        // less than one autosave debounce (700ms) after an edit would execute
+        // the stale graph against external systems.
+        await saveWorkflowRef?.current?.(false);
 
         // ponytail: resume (run-from-failed) is not forwarded — `runs.create`'s
         // input schema is .strict() and the scheduler's resume path isn't wired
@@ -419,6 +438,8 @@ export default function useWorkflowPolling({
             ? error.message
             : "Failed to trigger workflow run";
         toast.error(detail);
+      } finally {
+        isStartingRef.current = false;
       }
     },
     [

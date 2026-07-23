@@ -85,6 +85,7 @@ export interface HarPreviewEntry {
 export interface HarDryRunResult {
   readonly stats: { readonly totalEntries: number; readonly nodes: number; readonly edges: number }
   readonly preview: readonly HarPreviewEntry[]
+  readonly items: readonly HarPreviewEntry[]
 }
 
 export interface CurlDryRunResult {
@@ -455,7 +456,7 @@ export function harDryRun(data: Record<string, unknown>, opts: HarParseOptions =
   const log = data["log"] as Record<string, unknown> | undefined
   const entries = ((log?.["entries"]) as Record<string, unknown>[] | undefined) ?? []
 
-  const preview: HarPreviewEntry[] = entries.slice(0, 10).map((entry) => {
+  const toPreviewEntry = (entry: Record<string, unknown>): HarPreviewEntry => {
     const request = (entry["request"] ?? {}) as Record<string, unknown>
     const method = (request["method"] as string) ?? "GET"
     const url = (request["url"] as string) ?? ""
@@ -478,10 +479,13 @@ export function harDryRun(data: Record<string, unknown>, opts: HarParseOptions =
       body,
       time: (entry["time"] as number) ?? 0,
     }
-  })
+  }
+
+  const items = entries.map(toPreviewEntry)
   return {
     stats: { totalEntries: entries.length, nodes: entries.length + 2, edges: entries.length + 1 },
-    preview,
+    preview: items.slice(0, 10),
+    items,
   }
 }
 

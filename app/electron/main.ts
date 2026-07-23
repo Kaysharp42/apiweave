@@ -1,8 +1,8 @@
-import { app, BrowserWindow, ipcMain, net, protocol } from "electron"
+import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
-import { emitRunProgress } from "../core/ipc/register"
+import { emitRunProgress, isTrustedSender } from "../core/ipc/register"
 import { registerAllHandlers, type HandlerDeps } from "../core/ipc/handlers"
 import { canonicalizeExistingWorkflows } from "../core/db/canonicalize_existing_workflows"
 import { initDatabase, type InitializedDatabase } from "../core/db"
@@ -59,6 +59,16 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null
 
+const APP_ORIGIN = "app://local"
+
+function isAppOrigin(url: string): boolean {
+  try {
+    return new URL(url).origin === new URL(APP_ORIGIN).origin
+  } catch {
+    return false
+  }
+}
+
 function frontendDistDir(): string {
   if (process.env["APIWEAVE_FRONTEND_DIST"]) {
     return process.env["APIWEAVE_FRONTEND_DIST"]
@@ -108,6 +118,23 @@ async function createWindow(): Promise<void> {
   })
   win.webContents.on("render-process-gone", (_event, details) => {
     console.error("[renderer] render-process-gone", details)
+  })
+
+  // Never let the privileged app:// document navigate to attacker-controlled
+  // content — that content would inherit the same preload/IPC bridge.
+  win.webContents.on("will-navigate", (event, url) => {
+    if (!isAppOrigin(url)) {
+      event.preventDefault()
+    }
+  })
+
+  // Renderer-created windows (e.g. target="_blank" links) never get the
+  // privileged preload. http/https links open in the system browser instead.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      void shell.openExternal(url)
+    }
+    return { action: "deny" }
   })
 
   try {
@@ -180,7 +207,7 @@ if (!hasSingleInstanceLock) {
     // it and every stored secret is orphaned (intentional — never auto-regenerate).
     const keyfilePath = path.join(app.getPath("userData"), "keyfile.json")
     const keyfile = keyfileExists(keyfilePath) ? readKeyfile(keyfilePath) : createKeyfile(keyfilePath)
-    const secretService = new SecretService(secretStore, sync, permissions, scopeResolver, keyfile.masterKek)
+    const secretService = new SecretService(secretStore, sync, permissions, scopeResolver, environments, keyfile.masterKek)
     const cloud = new DesktopCloudSyncControl({
       store: database.kvStore,
       keyfilePath,
@@ -278,22 +305,41 @@ if (!hasSingleInstanceLock) {
         [enabled ? "true" : "false"],
       )
     }
-    ipcMain.handle("mcp:getStatus", () => mcpStatus())
-    ipcMain.handle("mcp:enable", async () => {
-      if (mcpHost === null) {
-        mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+    const requireTrustedSender = <Args extends unknown[], R>(
+      handler: (...args: Args) => R,
+    ): ((event: Electron.IpcMainInvokeEvent, ...args: Args) => R | Promise<never>) => {
+      return (event, ...args) => {
+        if (!isTrustedSender(event)) {
+          return Promise.reject(new Error("untrusted sender"))
+        }
+        return handler(...args)
       }
-      await mcpHost.start()
-      writeMcpEnabled(true)
-      return mcpStatus()
-    })
-    ipcMain.handle("mcp:disable", async () => {
-      await mcpHost?.stop()
-      writeMcpEnabled(false)
-      return mcpStatus()
-    })
-    ipcMain.handle("mcp:listTools", (): readonly MCPTool[] =>
-      MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
+    }
+    ipcMain.handle("mcp:getStatus", requireTrustedSender(() => mcpStatus()))
+    ipcMain.handle(
+      "mcp:enable",
+      requireTrustedSender(async () => {
+        if (mcpHost === null) {
+          mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+        }
+        await mcpHost.start()
+        writeMcpEnabled(true)
+        return mcpStatus()
+      }),
+    )
+    ipcMain.handle(
+      "mcp:disable",
+      requireTrustedSender(async () => {
+        await mcpHost?.stop()
+        writeMcpEnabled(false)
+        return mcpStatus()
+      }),
+    )
+    ipcMain.handle(
+      "mcp:listTools",
+      requireTrustedSender(
+        (): readonly MCPTool[] => MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
+      ),
     )
 
     // Restore the user's persisted MCP choice on launch.
@@ -309,21 +355,45 @@ if (!hasSingleInstanceLock) {
     }
 
     protocol.handle("app", async (request) => {
-      let pathname = decodeURIComponent(new URL(request.url).pathname)
+      let pathname: string
+      try {
+        pathname = decodeURIComponent(new URL(request.url).pathname)
+      } catch {
+        // Malformed percent-encoding — reject rather than serve anything.
+        return new Response(null, { status: 400 })
+      }
 
       if (pathname === "/" || pathname === "" || !path.extname(pathname)) {
         pathname = "/index.html"
       }
 
-      const response = await net.fetch(
-        pathToFileURL(path.join(frontendDistDir(), pathname)).toString(),
-      )
+      // Confine the served file to the renderer bundle. Encoded separators or
+      // dot segments could otherwise escape frontendDistDir and read arbitrary
+      // files accessible to the Electron process.
+      const baseDir = path.resolve(frontendDistDir())
+      const filePath = path.resolve(baseDir, `.${pathname}`)
+      if (filePath !== baseDir && !filePath.startsWith(baseDir + path.sep)) {
+        return new Response(null, { status: 404 })
+      }
+
+      const response = await net.fetch(pathToFileURL(filePath).toString())
       // Local files behind a privileged scheme get heuristically cached by
       // Electron, pinning index.html to stale asset hashes after a rebuild
       // ("restarted dev, UI didn't change"). Reading from disk is cheap, so
       // never cache.
       const headers = new Headers(response.headers)
       headers.set("Cache-Control", "no-store")
+      // Restrict the renderer document to same-origin scripts/workers only.
+      // Monaco is now bundled locally (see src/lib/monaco.ts) and the editor
+      // assets are served from app://local, so no CDN script source is needed.
+      // Other resource types (fonts, images, styles) are left unrestricted to
+      // keep web-font loading working; only script/worker execution is pinned.
+      if (pathname === "/index.html") {
+        headers.set(
+          "Content-Security-Policy",
+          "script-src 'self' app:; worker-src 'self' app: blob:",
+        )
+      }
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,

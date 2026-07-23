@@ -130,6 +130,51 @@ describe("Task 20: run progress streams over IPC events", () => {
     expect(captured.cb).toBeTypeOf("function");
   });
 
+  it("(a2) flushes the canvas save before creating the run (no stale graph)", async () => {
+    const order: string[] = [];
+    const saveWorkflowRef = {
+      current: vi.fn(async () => {
+        order.push("save");
+      }),
+    };
+    invoke = vi.fn(
+      async (_domain: string, action: string): Promise<ContractResult> => {
+        if (action === "create") {
+          order.push("create");
+          return { ok: true, data: { ...runResult, status: "pending" } };
+        }
+        if (action === "getLatestFailed") return { ok: true, data: null };
+        return { ok: true, data: {} };
+      },
+    );
+    (window as unknown as Record<string, unknown>).__APIWEAVE_IPC__ = {
+      invoke,
+      onRunProgress: (_runId: string, cb: (e: RunProgressEvent) => void) => {
+        captured.cb = cb;
+        return unsubscribe;
+      },
+    };
+
+    const { result } = renderHook(() =>
+      useWorkflowPolling({
+        workspaceId: "ws-1",
+        workflowId: "wf-1",
+        nodes: nodesBox.nodes,
+        setNodes,
+        selectedEnvironment: null,
+        reactFlowInstanceRef: null,
+        saveWorkflowRef,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.runWorkflow();
+    });
+
+    expect(saveWorkflowRef.current).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["save", "create"]);
+  });
+
   it("(b) a node.completed event repaints that node's executionStatus", async () => {
     const { result } = mount();
     await act(async () => {

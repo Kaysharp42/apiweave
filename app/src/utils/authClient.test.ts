@@ -1,5 +1,10 @@
 import { describe, expect, test, vi, beforeEach } from "vitest";
-import { authenticatedJson, IpcError, invoke } from "./apiweaveClient";
+import {
+  authenticatedFetch,
+  authenticatedJson,
+  IpcError,
+  invoke,
+} from "./apiweaveClient";
 
 describe("apiweave IPC auth-compatible client", () => {
   beforeEach(() => {
@@ -35,6 +40,26 @@ describe("apiweave IPC auth-compatible client", () => {
       "ipc://apiweave/api/workspaces/ws-1/workflows",
     );
     expect(data).toEqual({ workflows: undefined, total: undefined });
+  });
+
+  test("POST /workflows/{id}/templates routes to workflows.saveTemplates", async () => {
+    const ipcInvoke = vi.fn().mockResolvedValue({ ok: true, data: {} });
+    vi.stubGlobal("__APIWEAVE_IPC__", {
+      invoke: ipcInvoke,
+      onRunProgress: vi.fn().mockReturnValue(() => undefined),
+    });
+    const templates = [{ label: "req" }];
+
+    await authenticatedFetch(
+      "ipc://apiweave/api/workspaces/ws-1/workflows/wf-1/templates",
+      { method: "POST", body: JSON.stringify(templates) },
+    );
+
+    expect(ipcInvoke).toHaveBeenCalledWith("workflows", "saveTemplates", {
+      workspaceId: "ws-1",
+      workflowId: "wf-1",
+      templates,
+    });
   });
 
   test("IpcError exposes code for React Query handlers", () => {

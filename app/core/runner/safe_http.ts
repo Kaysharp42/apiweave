@@ -1,7 +1,7 @@
 import dns from "node:dns/promises"
 import type { LookupAddress } from "node:dns"
 import { BlockList as NodeBlockList, isIP } from "node:net"
-import { fetch, Headers, type RequestInit, type Response } from "undici"
+import { Agent, fetch, type Dispatcher, type RequestInit, type Response } from "undici"
 
 // @types/node dropped the exported `AddressType` alias; net.BlockList's
 // IPVersion parameter is the lowercase pair.
@@ -33,8 +33,12 @@ const BLOCKED_IPV4: ReadonlyArray<readonly [string, number]> = [
   ["224.0.0.0", 4], // multicast
 ]
 const BLOCKED_IPV6: ReadonlyArray<readonly [string, number]> = [
-  ["::", 128], // unspecified
-  ["::1", 128], // loopback (carved-out when allowLoopback)
+  // ::/96 covers the unspecified address AND deprecated IPv4-compatible
+  // addresses (::a.b.c.d, e.g. ::169.254.169.254), which node's BlockList does
+  // NOT auto-normalize to IPv4. (IPv4-mapped ::ffff:a.b.c.d IS normalized by
+  // BlockList against the IPv4 subnets, so it needs no separate entry.)
+  ["::", 96],
+  ["::1", 128], // loopback (carved-out when allowLoopback; subsumed by ::/96 otherwise)
   ["fc00::", 7], // unique-local
   ["fe80::", 10], // link-local
   ["ff00::", 8], // multicast
@@ -60,6 +64,13 @@ export type SafeHttpOptions = {
   readonly fetchImpl?: typeof fetch
   readonly dnsLookup?: (host: string) => Promise<readonly LookupAddress[]>
   readonly timeoutMs?: number
+}
+
+export type SafeFetchOptions = {
+  /** Follow 3xx redirects (default true). `false` returns the redirect response as-is. */
+  readonly followRedirects?: boolean
+  /** Verify the TLS certificate chain (default true). Per-node opt-out for self-signed dev endpoints. */
+  readonly rejectUnauthorized?: boolean
 }
 
 export class SafeHttp {
@@ -145,8 +156,9 @@ export class SafeHttp {
 
   /**
    * Resolve `host`; reject if any resolved address is blocked; return one
-   * safe address to pin the connection to (or `null` for dev-allowed hosts
-   * and unresolvable names — let the caller's client surface the error).
+   * safe address to pin the connection to (or `null` for dev-allowed hosts).
+   * Fails closed on DNS lookup errors — an unresolvable/erroring name must
+   * not fall through to an unpinned, unvalidated fetch-level resolution.
    */
   public async resolveAndPinIp(host: string): Promise<string | null> {
     if (!host) throw new SafeUrlError("Missing host")
@@ -154,8 +166,8 @@ export class SafeHttp {
     let infos: LookupAddress[]
     try {
       infos = [...(await this.dnsLookup!.call(null, host))]
-    } catch {
-      return null
+    } catch (err) {
+      throw new SafeUrlError(`DNS resolution failed for host ${host}: ${(err as Error).message}`)
     }
     for (const info of infos) {
       const family = info.family === 6 ? 6 : 4
@@ -169,33 +181,38 @@ export class SafeHttp {
   // -------------------- HTTP wrappers (undici-based, fail-closed) --------------------
 
   /** Execute an HTTP request with SSRF protection + per-hop redirect validation. */
-  public async safeFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  public async safeFetch(url: string, init: RequestInit = {}, opts: SafeFetchOptions = {}): Promise<Response> {
     this.validateUrl(url)
-    const abort = new AbortController()
-    const timer = setTimeout(() => abort.abort(), this.timeoutMs)
+    // Compose our timeout with the caller's signal so node-level timeouts and
+    // external cancellation aren't dropped. The timeout signal is never cleared,
+    // so it keeps enforcing while the caller reads the body — undici aborts the
+    // body stream if the signal fires, closing the "slow/endless body" gap.
+    const signals: AbortSignal[] = [AbortSignal.timeout(this.timeoutMs)]
+    if (init.signal) signals.push(init.signal)
+    const signal = AbortSignal.any(signals)
+    const followRedirects = opts.followRedirects ?? true
+    const rejectUnauthorized = opts.rejectUnauthorized ?? true
+    const maxHops = followRedirects ? this.maxRedirectHops : 0
     let currentUrl = url
-    let lastInit: RequestInit = { ...init, redirect: "manual", signal: abort.signal }
-    try {
-      for (let hop = 0; hop <= this.maxRedirectHops; hop++) {
-        const pinnedIp = await this.resolveAndPinIp(hostOf(currentUrl))
-        const reqUrl = pinnedIp ? rewriteWithPinnedIp(currentUrl, pinnedIp) : currentUrl
-        const hostHeader = hostOf(currentUrl)
-        const headers = new Headers(init.headers)
-        if (pinnedIp) headers.set("Host", hostHeader)
-        lastInit = { ...lastInit, headers }
-        const response = await this.fetchImpl(reqUrl, lastInit)
-        if (response.status < 300 || response.status >= 400) return response
-        const location = response.headers.get("location")
-        if (!location) return response
-        if (!this.checkRedirectAllowed(currentUrl, location)) {
-          throw new SafeUrlError(`Redirect to blocked URL denied after ${hop + 1} hop(s): ${location}`)
-        }
-        currentUrl = new URL(location, currentUrl).toString()
+    const lastInit: RequestInit = { ...init, redirect: "manual", signal }
+    for (let hop = 0; hop <= maxHops; hop++) {
+      const pinnedIp = await this.resolveAndPinIp(hostOf(currentUrl))
+      // Pin the TCP/TLS connection to the resolved+validated IP via a custom
+      // dispatcher `lookup`, without touching the request URL — for HTTPS,
+      // SNI and certificate hostname verification must stay on the original
+      // hostname or normal public certs fail to validate against the IP.
+      const dispatcher = pinnedIp ? buildPinnedDispatcher(pinnedIp, rejectUnauthorized) : undefined
+      const response = await this.fetchImpl(currentUrl, dispatcher ? { ...lastInit, dispatcher } : lastInit)
+      if (response.status < 300 || response.status >= 400) return response
+      if (!followRedirects) return response
+      const location = response.headers.get("location")
+      if (!location) return response
+      if (!this.checkRedirectAllowed(currentUrl, location)) {
+        throw new SafeUrlError(`Redirect to blocked URL denied after ${hop + 1} hop(s): ${location}`)
       }
-      throw new SafeUrlError(`Too many redirects (>${this.maxRedirectHops}) — last URL: ${currentUrl}`)
-    } finally {
-      clearTimeout(timer)
+      currentUrl = new URL(location, currentUrl).toString()
     }
+    throw new SafeUrlError(`Too many redirects (>${this.maxRedirectHops}) — last URL: ${currentUrl}`)
   }
 
   /** Safe GET — no redirect following, validates the URL once. */
@@ -206,6 +223,45 @@ export class SafeHttp {
   /** Safe POST — no redirect following. */
   public async safePost(url: string, init: RequestInit = {}): Promise<Response> {
     return this.safeFetch(url, { ...init, method: "POST", redirect: "manual" })
+  }
+
+  /**
+   * Read a response body as text, capped at `maxBytes`. A malicious or
+   * compromised endpoint can otherwise return an unbounded or slow-trickling
+   * body and exhaust memory/CPU; this stops pulling bytes off the stream (and
+   * cancels the underlying connection) the moment the cap is hit instead of
+   * buffering the whole thing via `response.text()`.
+   */
+  public async readTextCapped(response: Response, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
+    const contentLength = Number(response.headers.get("content-length") ?? "")
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      await response.body?.cancel()
+      return { text: "", truncated: true }
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      const text = await response.text()
+      return text.length > maxBytes ? { text: text.slice(0, maxBytes), truncated: true } : { text, truncated: false }
+    }
+
+    const chunks: Buffer[] = []
+    let received = 0
+    let truncated = false
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      received += value.byteLength
+      if (received > maxBytes) {
+        truncated = true
+        const overflow = received - maxBytes
+        chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength - overflow))
+        await reader.cancel()
+        break
+      }
+      chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength))
+    }
+    return { text: Buffer.concat(chunks).toString("utf-8"), truncated }
   }
 
   // -------------------- Internals --------------------
@@ -250,13 +306,23 @@ function stripIpv6Brackets(hostname: string): string {
 }
 
 /**
- * Rewrite the URL's host with the resolved IP, preserving scheme + port + path + query.
- * Used only when we resolved and verified the pin — keeps DNS rebinding out.
+ * Build a one-shot undici dispatcher whose connector resolves every hostname
+ * to the given (already-validated) IP, closing the DNS-rebinding TOCTOU gap
+ * without rewriting the request URL — so TLS SNI/cert checks and the Host
+ * header stay on the original hostname.
  */
-function rewriteWithPinnedIp(url: string, ip: string): string {
-  const parsed = new URL(url)
-  const port = parsed.port ? `:${parsed.port}` : ""
-  parsed.hostname = ip
-  parsed.host = `${ip}${port}`
-  return parsed.toString()
+function buildPinnedDispatcher(ip: string, rejectUnauthorized: boolean): Dispatcher {
+  const family = isIP(ip) === 6 ? 6 : 4
+  const lookup = (
+    _hostname: string,
+    options: { all?: boolean },
+    callback: (err: null, address: string | LookupAddress[], family?: number) => void,
+  ): void => {
+    if (options?.all) {
+      callback(null, [{ address: ip, family }])
+      return
+    }
+    callback(null, ip, family)
+  }
+  return new Agent({ connect: { lookup: lookup as never, rejectUnauthorized } })
 }

@@ -159,22 +159,25 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
       : "none";
   const authConfig: AuthConfig = { type };
 
-  const bearer = isRecord(value.bearer) ? value.bearer : undefined;
-  if (bearer) authConfig.bearer = { token: getString(bearer.token) };
-
-  const basic = isRecord(value.basic) ? value.basic : undefined;
-  if (basic)
+  // Only keep the sub-config matching the selected type — otherwise stale
+  // token/password/API-key material from a previously selected auth type
+  // survives in the saved workflow config after switching to "none" or
+  // another type.
+  if (type === "bearer") {
+    const bearer = isRecord(value.bearer) ? value.bearer : undefined;
+    authConfig.bearer = { token: bearer ? getString(bearer.token) : "" };
+  } else if (type === "basic") {
+    const basic = isRecord(value.basic) ? value.basic : undefined;
     authConfig.basic = {
-      username: getString(basic.username),
-      password: getString(basic.password),
+      username: basic ? getString(basic.username) : "",
+      password: basic ? getString(basic.password) : "",
     };
-
-  const apiKey = isRecord(value.apiKey) ? value.apiKey : undefined;
-  if (apiKey) {
+  } else if (type === "apiKey") {
+    const apiKey = isRecord(value.apiKey) ? value.apiKey : undefined;
     authConfig.apiKey = {
-      key: getString(apiKey.key),
-      value: getString(apiKey.value),
-      addTo: apiKey.addTo === "query" ? "query" : "header",
+      key: apiKey ? getString(apiKey.key) : "",
+      value: apiKey ? getString(apiKey.value) : "",
+      addTo: apiKey?.addTo === "query" ? "query" : "header",
     };
   }
 

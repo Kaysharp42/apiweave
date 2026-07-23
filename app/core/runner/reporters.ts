@@ -370,6 +370,20 @@ export function artifactsDir(baseDir: string, runId: string): string {
   return path.join(baseDir, ARTIFACTS_DIR_NAME, ARTIFACTS_SUBDIR, runId)
 }
 
+/**
+ * Resolve an artifact file path, guaranteeing it stays under the runs root.
+ * `runId` is caller-controlled (IPC input), so guard against path traversal
+ * (e.g. `runId = "../.."`). `artifactName` should already be enum-restricted.
+ */
+export function resolveArtifactPath(baseDir: string, runId: string, artifactName: string): string {
+  const runsRoot = path.resolve(baseDir, ARTIFACTS_DIR_NAME, ARTIFACTS_SUBDIR)
+  const resolved = path.resolve(artifactsDir(baseDir, runId), artifactName)
+  if (resolved !== runsRoot && !resolved.startsWith(runsRoot + path.sep)) {
+    throw new Error("Artifact path escapes runs directory")
+  }
+  return resolved
+}
+
 const ARTIFACT_FILES = [
   { name: "junit.xml", contentFn: generateJUnit },
   { name: "report.html", contentFn: generateHTML },
@@ -410,16 +424,23 @@ export async function readReportArtifacts(
   runId: string,
   baseDir: string,
 ): Promise<ArtifactInfo | null> {
+  // runId is renderer-controlled — guard traversal the same way
+  // resolveArtifactPath does before probing the filesystem.
+  const runsRoot = path.resolve(baseDir, ARTIFACTS_DIR_NAME, ARTIFACTS_SUBDIR)
   const dir = artifactsDir(baseDir, runId)
+  const resolvedDir = path.resolve(dir)
+  if (resolvedDir !== runsRoot && !resolvedDir.startsWith(runsRoot + path.sep)) {
+    throw new Error("Artifact path escapes runs directory")
+  }
   try {
-    await fs.promises.access(dir)
+    await fs.promises.access(resolvedDir)
   } catch {
     return null
   }
 
   const artifacts: ArtifactFile[] = []
   for (const file of ARTIFACT_FILES) {
-    const filePath = path.join(dir, file.name)
+    const filePath = path.join(resolvedDir, file.name)
     try {
       const stat = await fs.promises.stat(filePath)
       artifacts.push({ name: file.name, path: filePath, sizeBytes: stat.size })

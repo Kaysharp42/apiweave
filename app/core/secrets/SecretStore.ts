@@ -9,6 +9,10 @@ export interface SecretUpsert {
   readonly name: string
   readonly scopeType: SecretScopeType
   readonly scopeId: string
+  // Owning workspace for the FK — distinct from scopeId, which for scopeType
+  // 'environment' is an environmentId, not a workspace. The store binds
+  // secrets_metadata.workspace_id to this so env-scoped secrets persist.
+  readonly workspaceId: string
   readonly keyId: string
   readonly sealed: Uint8Array
   readonly label?: string

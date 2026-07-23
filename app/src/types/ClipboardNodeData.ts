@@ -1,6 +1,4 @@
-import type { CanvasNode } from "./CanvasNode";
-
 export interface ClipboardNodeData {
-  node: CanvasNode;
-  workflowId: string;
+  type: string;
+  data: Record<string, unknown>;
 }
