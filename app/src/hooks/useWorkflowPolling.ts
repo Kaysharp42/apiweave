@@ -170,6 +170,9 @@ export default function useWorkflowPolling({
   } | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const currentRunIdRef = useRef<string | null>(null);
+  // Synchronous guard against double-enqueue from rapid clicks/triggers: set
+  // before awaiting runs.create, released once the run has started (or failed).
+  const isStartingRef = useRef(false);
   const latestFailedRunRef = useRef<{
     runId: string | null;
     failedNodes: FailedNodeOption[];
@@ -380,6 +383,9 @@ export default function useWorkflowPolling({
         return;
       }
 
+      if (isStartingRef.current) return;
+      isStartingRef.current = true;
+
       try {
         stopStream();
         setNodes((nds) =>
@@ -419,6 +425,8 @@ export default function useWorkflowPolling({
             ? error.message
             : "Failed to trigger workflow run";
         toast.error(detail);
+      } finally {
+        isStartingRef.current = false;
       }
     },
     [
