@@ -309,15 +309,28 @@ if (!hasSingleInstanceLock) {
     }
 
     protocol.handle("app", async (request) => {
-      let pathname = decodeURIComponent(new URL(request.url).pathname)
+      let pathname: string
+      try {
+        pathname = decodeURIComponent(new URL(request.url).pathname)
+      } catch {
+        // Malformed percent-encoding — reject rather than serve anything.
+        return new Response(null, { status: 400 })
+      }
 
       if (pathname === "/" || pathname === "" || !path.extname(pathname)) {
         pathname = "/index.html"
       }
 
-      const response = await net.fetch(
-        pathToFileURL(path.join(frontendDistDir(), pathname)).toString(),
-      )
+      // Confine the served file to the renderer bundle. Encoded separators or
+      // dot segments could otherwise escape frontendDistDir and read arbitrary
+      // files accessible to the Electron process.
+      const baseDir = path.resolve(frontendDistDir())
+      const filePath = path.resolve(baseDir, `.${pathname}`)
+      if (filePath !== baseDir && !filePath.startsWith(baseDir + path.sep)) {
+        return new Response(null, { status: 404 })
+      }
+
+      const response = await net.fetch(pathToFileURL(filePath).toString())
       // Local files behind a privileged scheme get heuristically cached by
       // Electron, pinning index.html to stale asset hashes after a rebuild
       // ("restarted dev, UI didn't change"). Reading from disk is cheap, so
