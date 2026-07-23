@@ -5,6 +5,7 @@ import {
   CollectionRepository,
   EnvironmentRepository,
   RunRepository,
+  SecretRepository,
   WorkflowRepository,
   WorkspaceRepository,
 } from "../index"
@@ -15,6 +16,7 @@ let workflows: WorkflowRepository
 let runs: RunRepository
 let environments: EnvironmentRepository
 let collections: CollectionRepository
+let secrets: SecretRepository
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
@@ -23,6 +25,7 @@ beforeEach(() => {
   runs = new RunRepository(db.kvStore)
   environments = new EnvironmentRepository(db.kvStore)
   collections = new CollectionRepository(db.kvStore)
+  secrets = new SecretRepository(db.kvStore)
 })
 
 afterEach(() => {
@@ -65,6 +68,29 @@ describe("WorkspaceRepository", () => {
       }),
     ).toThrow("boom")
     expect(workspaces.getBySlug("doomed")).toBeUndefined()
+  })
+})
+
+describe("SecretRepository", () => {
+  // Regression: env-scoped secrets must bind workspace_id to the owning workspace,
+  // not to scopeId (an environmentId), or the FK to workspaces() insert-fails.
+  it("persists and deletes an environment-scoped secret against SQLite", () => {
+    const workspaceId = seedWorkspace()
+    const env = environments.create({ workspaceId, name: "Prod" })
+
+    const meta = secrets.put({
+      name: "TOKEN",
+      scopeType: "environment",
+      scopeId: env.environmentId,
+      workspaceId,
+      keyId: "k1",
+      sealed: new TextEncoder().encode("sealed-bytes"),
+    })
+    expect(meta).toMatchObject({ name: "TOKEN", scopeType: "environment", scopeId: env.environmentId })
+
+    expect(secrets.getByScopeAndName("environment", env.environmentId, "TOKEN")?.keyId).toBe("k1")
+    expect(secrets.remove("environment", env.environmentId, "TOKEN")).toBe(true)
+    expect(secrets.getByScopeAndName("environment", env.environmentId, "TOKEN")).toBeNull()
   })
 })
 

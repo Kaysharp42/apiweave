@@ -21,12 +21,9 @@ const COLUMNS = "id, scopeType, scopeId, key, label, key_id"
  * only, matching {@link SecretWriteStore}. The sealing/opening of the box lives in
  * the secrets crypto subsystem (Task 7), never here.
  *
- * ponytail: environment-scoped secrets aren't supported — the FK `workspace_id`
- * has no value to bind for scopeType='environment' (SecretUpsert carries no
- * workspace), so we bind it to scopeId, which is a real workspace only for the
- * workspace scope (the sole path the desktop UI exercises). An env-scoped write
- * FK-fails loudly rather than corrupting; thread the workspace through the store
- * contract if env-scoped secrets are ever wired.
+ * The FK `workspace_id` binds to {@link SecretUpsert.workspaceId} — the owning
+ * workspace threaded from the service — never to scopeId, which for
+ * scopeType='environment' is an environmentId and would FK-fail.
  */
 export class SecretRepository implements SecretWriteStore {
   public constructor(private readonly store: KVStore) {}
@@ -49,7 +46,7 @@ export class SecretRepository implements SecretWriteStore {
     const id = generateId()
     this.store.set(
       "INSERT INTO secrets_metadata (id, workspace_id, scopeType, scopeId, key, label, key_id, sealed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, input.scopeId, input.scopeType, input.scopeId, input.name, input.label ?? "", input.keyId, sealed],
+      [id, input.workspaceId, input.scopeType, input.scopeId, input.name, input.label ?? "", input.keyId, sealed],
     )
     return mustExist(this.getById(id), `secret ${id} missing after insert`)
   }
