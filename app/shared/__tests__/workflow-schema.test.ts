@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { ZodError } from "zod"
+import { WorkflowNodeSchema } from "../zod-schemas/WorkflowNodeSchema"
 import { WorkflowSchema } from "../zod-schemas/WorkflowSchema"
 
 const workflowFixture = {
@@ -34,7 +35,7 @@ const workflowFixture = {
       label: "Assert status",
       position: { x: 480, y: 0 },
       config: {
-        assertions: [{ field: "statusCode", operator: "equals", expected: 200 }],
+        assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }],
       },
     },
     {
@@ -92,5 +93,30 @@ describe("WorkflowSchema", () => {
     expect(result.error.issues.map((issue) => issue.path.join("."))).toEqual(
       expect.arrayContaining(["workflowId", "rev"]),
     )
+  })
+
+  // Regression: assertion nodes saved from either renderer editor round-trip
+  // through the persistence boundary. Both editors emit source/path/operator/
+  // expectedValue plus continueOnFail/failureMode; a stale schema used to
+  // reject this shape, silently failing autosave.
+  it("accepts assertion config produced by the renderer editors", () => {
+    const node = {
+      nodeId: "01JY0000000000000000000099",
+      type: "assertion",
+      label: "Assert",
+      position: { x: 0, y: 0 },
+      config: {
+        assertions: [
+          { source: "status", path: "", operator: "equals", expectedValue: "200" },
+          { source: "prev", path: "response.body.id", operator: "exists", expectedValue: "" },
+          { source: "prev", path: "response.body.items", operator: "count", expectedValue: "3" },
+          { source: "prev", path: "response.body.name", operator: "notContains", expectedValue: "x" },
+        ],
+        continueOnFail: true,
+        failureMode: "all",
+      },
+    }
+
+    expect(WorkflowNodeSchema.safeParse(node).success).toBe(true)
   })
 })

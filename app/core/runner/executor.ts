@@ -570,7 +570,7 @@ export class WorkflowExecutor {
   private async executeAssertion(node: WorkflowNode): Promise<NodeResult> {
     const config = node.config ?? {}
 
-    type AssertionDef = { field?: string; path?: string; operator: string; expected?: unknown; source?: string }
+    type AssertionDef = { field?: string; path?: string; operator: string; expected?: unknown; expectedValue?: unknown; source?: string }
     let assertions: AssertionDef[]
 
     const configAssertions = config["assertions"]
@@ -636,12 +636,15 @@ export class WorkflowExecutor {
     path?: string
     operator: string
     expected?: unknown
+    expectedValue?: unknown
     source?: string
   }): { passed: boolean; message: string } {
     const source = assertion.source ?? "prev"
     const path = assertion.field ?? assertion.path ?? ""
     const operator = assertion.operator
-    const expected = assertion.expected
+    // Renderer editors persist `expectedValue`; older single-assertion configs
+    // use `expected`. Accept either so saved rules are actually enforced.
+    const expected = assertion.expectedValue ?? assertion.expected
 
     let actual: unknown
 
