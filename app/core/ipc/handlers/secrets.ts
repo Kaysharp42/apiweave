@@ -14,6 +14,8 @@ const SecretMetadataSchema = z
     scopeId: z.string().min(1),
     keyId: z.string().min(1),
     label: z.string().optional(),
+    createdAt: z.string().min(1),
+    updatedAt: z.string().min(1),
   })
   .strict()
 

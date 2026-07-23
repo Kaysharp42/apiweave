@@ -11,9 +11,11 @@ interface SecretRow extends SqliteRow {
   readonly key: string
   readonly label: string
   readonly key_id: string
+  readonly createdAt: string
+  readonly updatedAt: string
 }
 
-const COLUMNS = "id, scopeType, scopeId, key, label, key_id"
+const COLUMNS = "id, scopeType, scopeId, key, label, key_id, createdAt, updatedAt"
 
 /**
  * SQLite-backed write-only secret store. Persists the sealed ciphertext verbatim
@@ -106,6 +108,8 @@ function rowToMetadata(row: SecretRow): SecretMetadata {
     scopeType: row.scopeType as SecretScopeType,
     scopeId: row.scopeId,
     keyId: row.key_id,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
     ...(row.label ? { label: row.label } : {}),
   }
 }

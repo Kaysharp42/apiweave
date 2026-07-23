@@ -47,7 +47,7 @@ const workflow: Workflow = {
       type: "delay",
       label: "Wait for processing",
       position: { x: 660, y: 0 },
-      config: { duration: 250, continueOnFail: false },
+      config: { duration: 250, jitter: { minMs: 100, maxMs: 500 }, continueOnFail: false },
     },
     {
       nodeId: "merge-1",

@@ -23,6 +23,8 @@ class FakeSecretStore implements SecretWriteStore {
       scopeType: input.scopeType,
       scopeId: input.scopeId,
       keyId: input.keyId,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
     }
     this.rows.set(meta.secretId, { meta, sealed: input.sealed })
     return meta

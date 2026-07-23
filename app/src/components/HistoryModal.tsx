@@ -34,7 +34,7 @@ interface PaginationInfo {
 
 interface RunHistoryResponse {
   runs: RunRecord[];
-  pagination: PaginationInfo;
+  total: number;
 }
 
 type RequestStatus = "loading" | "idle";
@@ -133,14 +133,28 @@ export default function HistoryModal({
       dispatchRequest({ type: "start-loading" });
       setHistoryModalStoreState({ isLoading: true });
       try {
+        const limit = 10;
         const response = await authenticatedFetch(
-          workflowRunsListUrl(workspaceId, workflowId, page, 10),
+          workflowRunsListUrl(workspaceId, workflowId, page, limit),
         );
         if (response.ok) {
           const data: RunHistoryResponse = await response.json();
+          // The runs route returns the full unpaginated set with a total
+          // count; paginate it client-side since the backend ignores
+          // page/limit query params.
+          const totalPages = Math.max(1, Math.ceil(data.total / limit));
+          const clampedPage = Math.min(Math.max(page, 1), totalPages);
+          const start = (clampedPage - 1) * limit;
           setHistoryModalStoreState({
-            runs: data.runs,
-            pagination: data.pagination,
+            runs: data.runs.slice(start, start + limit),
+            pagination: {
+              page: clampedPage,
+              limit,
+              total: data.total,
+              totalPages,
+              hasNext: clampedPage < totalPages,
+              hasPrevious: clampedPage > 1,
+            },
           });
         }
       } catch {

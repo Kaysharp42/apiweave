@@ -2,7 +2,7 @@ import type { Workspace } from "@shared/types/Workspace"
 import type { WorkspaceRepository, WorkspaceUpdate } from "../repositories"
 import type { SyncProvider } from "../sync/SyncProvider"
 import { recordWorkspaceTombstone, recordWorkspaceUpsert } from "../sync/cloud-mutations"
-import { NotFoundError } from "../ipc/errors"
+import { ConflictError, NotFoundError } from "../ipc/errors"
 import type { ScopeResolver } from "./scope_resolver"
 
 /** Input for creating a workspace. `slug` is derived from `name` when omitted. */
@@ -67,6 +67,7 @@ export class WorkspaceService {
 
   async update(workspaceId: string, patch: WorkspaceUpdate): Promise<Workspace> {
     await this.mustResolve(workspaceId)
+    if (patch.isPersonal !== undefined) this.assertPersonalInvariant(workspaceId, patch.isPersonal)
     const next: WorkspaceUpdate = patch.slug ? { ...patch, slug: this.uniqueSlug(patch.slug, workspaceId) } : patch
     const updated = this.workspaces.update(workspaceId, next)
     if (updated === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
@@ -87,6 +88,20 @@ export class WorkspaceService {
   private async mustResolve(workspaceId: string): Promise<void> {
     const resolution = await this.scopeResolver.resolve({ scopeType: "workspace", scopeId: workspaceId })
     if (!resolution.ok) throw new NotFoundError(`workspace ${workspaceId} not found`)
+  }
+
+  /** Enforces the 'exactly one personal workspace' invariant on update (create already enforces it). */
+  private assertPersonalInvariant(workspaceId: string, wantPersonal: boolean): void {
+    const others = this.workspaces.listAll().filter((ws) => ws.workspaceId !== workspaceId)
+    if (wantPersonal) {
+      if (others.some((ws) => ws.isPersonal)) {
+        throw new ConflictError("another workspace is already the personal workspace")
+      }
+    } else {
+      if (!others.some((ws) => ws.isPersonal)) {
+        throw new ConflictError("cannot unset the only personal workspace")
+      }
+    }
   }
 
   /** Derive a URL-safe slug and disambiguate against existing workspaces. */

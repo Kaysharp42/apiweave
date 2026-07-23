@@ -27,7 +27,7 @@ class FakeSecretStore implements SecretWriteStore {
   private readonly rows = new Map<string, { meta: SecretMetadata; sealed: Uint8Array }>()
   private key(t: string, s: string, n: string): string { return `${t}/${s}/${n}` }
   put(input: SecretUpsert): SecretMetadata {
-    const meta: SecretMetadata = { secretId: this.key(input.scopeType, input.scopeId, input.name), name: input.name, scopeType: input.scopeType, scopeId: input.scopeId, keyId: input.keyId, ...(input.label !== undefined ? { label: input.label } : {}) }
+    const meta: SecretMetadata = { secretId: this.key(input.scopeType, input.scopeId, input.name), name: input.name, scopeType: input.scopeType, scopeId: input.scopeId, keyId: input.keyId, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", ...(input.label !== undefined ? { label: input.label } : {}) }
     this.rows.set(meta.secretId, { meta, sealed: input.sealed })
     return meta
   }

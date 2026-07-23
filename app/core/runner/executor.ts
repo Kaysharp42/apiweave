@@ -592,7 +592,12 @@ export class WorkflowExecutor {
 
   private async executeDelay(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
     const config = node.config ?? {}
-    const durationMs = (config["duration"] as number | undefined) ?? 1000
+    const baseDurationMs = (config["duration"] as number | undefined) ?? 1000
+    const jitter = config["jitter"] as { minMs?: number; maxMs?: number } | undefined
+    const durationMs =
+      jitter && jitter.maxMs !== undefined && jitter.minMs !== undefined && jitter.maxMs >= jitter.minMs
+        ? jitter.minMs + Math.floor(this.deps.rng.next() * (jitter.maxMs - jitter.minMs + 1))
+        : baseDurationMs
 
     if (this.deps.baseUrl) {
       return { status: "success", duration: 0, message: "Delayed for 0 seconds (harness mode)" }

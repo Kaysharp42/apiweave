@@ -132,7 +132,10 @@ export class McpHost {
     let body: unknown
     try {
       body = await readJson(req)
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === "payload_too_large") {
+        return json(res, 413, { error: "payload_too_large" })
+      }
       return json(res, 400, { error: "invalid_json" })
     }
 
@@ -175,11 +178,26 @@ function listen(server: http.Server, port: number): Promise<number> {
   })
 }
 
+const MAX_MCP_BODY_BYTES = 10 * 1024 * 1024 // 10MB
+
 function readJson(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
-    req.on("data", (chunk: Buffer) => chunks.push(chunk))
+    let received = 0
+    let tooLarge = false
+    req.on("data", (chunk: Buffer) => {
+      if (tooLarge) return
+      received += chunk.length
+      if (received > MAX_MCP_BODY_BYTES) {
+        tooLarge = true
+        req.destroy()
+        reject(new Error("payload_too_large"))
+        return
+      }
+      chunks.push(chunk)
+    })
     req.on("end", () => {
+      if (tooLarge) return
       const raw = Buffer.concat(chunks).toString("utf8")
       if (raw.length === 0) {
         resolve(undefined)

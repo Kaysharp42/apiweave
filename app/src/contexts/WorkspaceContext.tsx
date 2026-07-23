@@ -40,9 +40,11 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       `${API_BASE_URL}/api/workspaces`,
     );
 
+    // Local-owner mode: the desktop app's single user owns every workspace
+    // it can list, and access is enforced in the Electron main process.
     const roleMap = new Map<string, string>();
     for (const ws of workspacesRes.workspaces) {
-      roleMap.set(ws.workspaceId, ws.ownerType === "user" ? "owner" : "write");
+      roleMap.set(ws.workspaceId, "owner");
     }
 
     return { workspaces: workspacesRes.workspaces, roleMap };

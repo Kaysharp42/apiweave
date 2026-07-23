@@ -178,6 +178,24 @@ describe("WorkflowExecutor", () => {
       expect(elapsed).toBeLessThan(1000) // Should be instant in harness mode
       expect(output.nodeStatuses["delay1"]).toBe("passed")
     })
+
+    it("uses the jitter bounds instead of the fixed duration when jitter is configured", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "delay1", type: "delay", config: { duration: 5000, jitter: { minMs: 2000, maxMs: 2000 } } },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "delay1" },
+          { edgeId: "e2", source: "delay1", target: "end" },
+        ],
+      }
+      const executor = new WorkflowExecutor(makeDeps())
+      const output = await executor.executeWorkflow(workflow)
+      expect(output.nodeStatuses["delay1"]).toBe("passed")
+      expect(output.results.find((r) => r.nodeId === "delay1")?.duration).toBe(2)
+    })
   })
 
   describe("cancellation", () => {

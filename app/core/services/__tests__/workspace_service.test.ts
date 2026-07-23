@@ -49,6 +49,33 @@ describe("WorkspaceService — personal workspace idempotency guard", () => {
   })
 })
 
+describe("WorkspaceService — personal workspace invariant on update", () => {
+  it("rejects promoting a second workspace to personal", async () => {
+    await svc.create({ name: "Personal", slug: "personal", isPersonal: true })
+    const team = await svc.create({ name: "Team", slug: "team", isPersonal: false })
+
+    await expect(svc.update(team.workspaceId, { isPersonal: true })).rejects.toThrow(
+      "another workspace is already the personal workspace",
+    )
+  })
+
+  it("rejects unsetting the only personal workspace", async () => {
+    const personal = await svc.create({ name: "Personal", slug: "personal", isPersonal: true })
+
+    await expect(svc.update(personal.workspaceId, { isPersonal: false })).rejects.toThrow(
+      "cannot unset the only personal workspace",
+    )
+  })
+
+  it("allows a no-op update that keeps the same workspace personal", async () => {
+    const personal = await svc.create({ name: "Personal", slug: "personal", isPersonal: true })
+
+    const updated = await svc.update(personal.workspaceId, { isPersonal: true })
+
+    expect(updated.isPersonal).toBe(true)
+  })
+})
+
 describe("WorkspaceService — provision hook", () => {
   let hookDb: InitializedDatabase
   let onCreated: ReturnType<typeof vi.fn>
