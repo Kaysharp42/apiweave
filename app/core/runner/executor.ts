@@ -109,6 +109,8 @@ export class WorkflowExecutor {
   private currentBranchContext: ReadonlyArray<readonly [string, NodeResult]> = []
   private readonly mergeCompleted = new Set<string>()
   private activeRunId = "harness"
+  private stepCount = 0
+  private maxSteps = 0
 
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
@@ -138,6 +140,13 @@ export class WorkflowExecutor {
       nodes.set(node.nodeId, node)
     }
     const edges = workflow.edges
+
+    // ponytail: global step budget guards against cyclic graphs (start->delay->start)
+    // recursing forever — schemas/renderer don't enforce acyclicity. Generous cap so
+    // any legit acyclic run finishes well under it; a cycle blows past and fails clean.
+    // Upgrade path: real cycle/topological validation before execution if false trips appear.
+    this.stepCount = 0
+    this.maxSteps = Math.max(10000, (nodes.size + edges.length) * 100)
 
     let entryNodeIds: string[] = []
     if (options.startNodeIds && options.startNodeIds.length > 0) {
@@ -198,6 +207,12 @@ export class WorkflowExecutor {
     const node = nodes.get(nodeId)
     if (!node) return
     if (cancelSignal?.aborted) return
+
+    if (++this.stepCount > this.maxSteps) {
+      throw new Error(
+        `Workflow exceeded step budget (${this.maxSteps}) — possible cycle in graph at node '${nodeId}'`,
+      )
+    }
 
     // Set branch context if predecessor is a merge
     const incomingEdges = edges.filter((e) => e.target === nodeId)

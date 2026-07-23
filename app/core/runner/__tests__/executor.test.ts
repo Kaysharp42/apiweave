@@ -259,4 +259,21 @@ describe("WorkflowExecutor", () => {
       })
     })
   })
+
+  describe("cycle protection", () => {
+    it("fails a cyclic graph with a step-budget error instead of hanging", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "delay", type: "delay", config: { duration: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "delay" },
+          { edgeId: "e2", source: "delay", target: "start" },
+        ],
+      }
+      const executor = new WorkflowExecutor({ ...makeDeps(), baseUrl: "http://harness" })
+      await expect(executor.executeWorkflow(workflow)).rejects.toThrow(/step budget|possible cycle/i)
+    })
+  })
 })

@@ -200,3 +200,4 @@ progress/learnings.md
 .claude/settings.local.json
 progress/
 tmp/
+.deepsec/
