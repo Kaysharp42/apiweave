@@ -182,10 +182,22 @@ describe("RunRepository", () => {
     const failed = runs.create({ workspaceId, workflowId })
     runs.updateStatus(failed.runId, "failed", "kaboom")
 
-    expect(runs.listByWorkflow(workflowId).total).toBe(2)
-    const latestFailed = runs.getLatestFailedRun(workflowId)
+    expect(runs.listByWorkflow(workflowId, workspaceId).total).toBe(2)
+    const latestFailed = runs.getLatestFailedRun(workflowId, workspaceId)
     expect(latestFailed?.runId).toBe(failed.runId)
     expect(latestFailed?.error).toBe("kaboom")
+  })
+
+  it("scopes run reads to the workspace, hiding another workspace's runs", () => {
+    const { workflowId, workspaceId } = seedRun()
+    const failed = runs.create({ workspaceId, workflowId })
+    runs.updateStatus(failed.runId, "failed", "kaboom")
+    const otherWorkspaceId = seedWorkspace()
+
+    // Same workflowId, wrong workspace: a foreign caller sees nothing.
+    expect(runs.listByWorkflow(workflowId, otherWorkspaceId).total).toBe(0)
+    expect(runs.getLatestRun(workflowId, otherWorkspaceId)).toBeUndefined()
+    expect(runs.getLatestFailedRun(workflowId, otherWorkspaceId)).toBeUndefined()
   })
 })
 
