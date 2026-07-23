@@ -142,7 +142,7 @@ export class ProjectExportService {
       throw new NotFoundError(`project ${projectId} not found`)
     }
 
-    const workflows = this.workflows.listByCollection(projectId).items
+    const workflows = this.workflows.listByCollection(workspaceId, projectId).items
     const secretReferences: SecretReference[] = []
     const seen = new Set<string>()
 
@@ -318,7 +318,7 @@ export class ProjectExportService {
         ? importedOrder
         : appendWorkflowOrder(existingProject.workflowOrder, importedOrder)
       const updatedProject = this.collections.update(project.collectionId, {
-        workflowCount: this.workflows.countByCollection(project.collectionId),
+        workflowCount: this.workflows.countByCollection(targetWorkspaceId, project.collectionId),
         workflowOrder,
       }) ?? project
       recordCollectionUpsert(this.syncProvider, updatedProject)

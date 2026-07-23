@@ -108,16 +108,18 @@ export class WorkflowRepository {
     return { items, total: items.length }
   }
 
-  public listByCollection(collectionId: string): { items: readonly Workflow[]; total: number } {
+  public listByCollection(workspaceId: string, collectionId: string): { items: readonly Workflow[]; total: number } {
     const items = this.store
-      .query<WorkflowRow>(`SELECT ${COLUMNS} FROM workflows ORDER BY createdAt DESC, id DESC`)
+      .query<WorkflowRow>(`SELECT ${COLUMNS} FROM workflows WHERE workspace_id = ? ORDER BY createdAt DESC, id DESC`, [
+        workspaceId,
+      ])
       .map(rowToWorkflow)
       .filter((workflow) => workflow.collectionId === collectionId)
     return { items, total: items.length }
   }
 
-  public countByCollection(collectionId: string): number {
-    return this.listByCollection(collectionId).total
+  public countByCollection(workspaceId: string, collectionId: string): number {
+    return this.listByCollection(workspaceId, collectionId).total
   }
 
   public update(workflowId: string, patch: WorkflowUpdate): Workflow | undefined {

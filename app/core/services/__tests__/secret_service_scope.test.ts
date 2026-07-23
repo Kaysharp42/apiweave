@@ -75,7 +75,6 @@ describe("SecretService — scope IDs are bound to the authorized workspace (cro
         name: "API_KEY",
         scopeType: "workspace",
         scopeId: workspaceB,
-        workspaceId: workspaceA,
         keyId: "k1",
         sealed: new Uint8Array(),
       }),
@@ -88,7 +87,6 @@ describe("SecretService — scope IDs are bound to the authorized workspace (cro
         name: "API_KEY",
         scopeType: "environment",
         scopeId: environmentInB,
-        workspaceId: workspaceA,
         keyId: "k1",
         sealed: new Uint8Array(),
       }),
@@ -108,7 +106,7 @@ describe("SecretService — scope IDs are bound to the authorized workspace (cro
   it("allows operations scoped to the caller's own authorized workspace/environment", async () => {
     const ownEnv = new EnvironmentRepository(db.kvStore).create({ workspaceId: workspaceA, name: "Dev" }).environmentId
     await expect(
-      secretService.set(workspaceA, { name: "API_KEY", scopeType: "workspace", scopeId: workspaceA, workspaceId: workspaceA, keyId: "k1", sealed: new Uint8Array() }),
+      secretService.set(workspaceA, { name: "API_KEY", scopeType: "workspace", scopeId: workspaceA, keyId: "k1", sealed: new Uint8Array() }),
     ).resolves.toMatchObject({ scopeId: workspaceA })
     await expect(secretService.resolve(workspaceA, { workspaceId: workspaceA, environmentId: ownEnv }, "API_KEY")).resolves.not.toBeNull()
   })

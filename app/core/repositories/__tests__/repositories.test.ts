@@ -134,8 +134,8 @@ describe("WorkflowRepository", () => {
     const everything = workflows.listByWorkspace(workspaceId, true)
     expect(everything.total).toBe(2)
 
-    expect(workflows.listByCollection("col-1").total).toBe(1)
-    expect(workflows.countByCollection("col-1")).toBe(1)
+    expect(workflows.listByCollection(workspaceId, "col-1").total).toBe(1)
+    expect(workflows.countByCollection(workspaceId, "col-1")).toBe(1)
   })
 
   it("scopes getByIdInWorkspace and cascades when its workspace is deleted", () => {

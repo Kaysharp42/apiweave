@@ -83,7 +83,7 @@ export class SecretService {
   }
 
   /** Store (or overwrite) a sealed secret under `workspaceId`. Returns metadata only. */
-  async set(workspaceId: string, input: SecretUpsert): Promise<SecretMetadata> {
+  async set(workspaceId: string, input: Omit<SecretUpsert, "workspaceId">): Promise<SecretMetadata> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_SECRETS)
     this.assertScopeInWorkspace(input.scopeType, input.scopeId, workspaceId)
     const metadata = await this.store.put({ ...input, workspaceId })

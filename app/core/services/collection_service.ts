@@ -62,7 +62,7 @@ export class CollectionService {
   async delete(workspaceId: string, collectionId: string): Promise<void> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_COLLECTIONS)
     const existing = this.mustGet(workspaceId, collectionId)
-    const count = this.workflows.countByCollection(collectionId)
+    const count = this.workflows.countByCollection(workspaceId, collectionId)
     if (count > 0) {
       throw new ConflictError(`Cannot delete collection. ${count} workflow(s) are still in it.`)
     }
@@ -99,11 +99,14 @@ export class CollectionService {
   async listWorkflows(workspaceId: string, collectionId: string): Promise<readonly Workflow[]> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_COLLECTIONS)
     this.mustGet(workspaceId, collectionId)
-    return this.workflows.listByCollection(collectionId).items
+    return this.workflows.listByCollection(workspaceId, collectionId).items
   }
 
   private withCount(collection: Collection): Collection {
-    return { ...collection, workflowCount: this.workflows.countByCollection(collection.collectionId) }
+    return {
+      ...collection,
+      workflowCount: this.workflows.countByCollection(collection.workspaceId, collection.collectionId),
+    }
   }
 
   private mustGet(workspaceId: string, collectionId: string): Collection {
