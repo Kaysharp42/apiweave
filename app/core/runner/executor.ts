@@ -488,6 +488,11 @@ export class WorkflowExecutor {
       url = `${this.deps.baseUrl}${url}`
     }
 
+    const pathVariables = this.normalizeKeyValueField(config["pathVariables"] as KVField)
+    for (const [key, value] of Object.entries(pathVariables)) {
+      url = url.split(`{${key}}`).join(encodeURIComponent(value))
+    }
+
     const headers = this.normalizeKeyValueField(headersField)
     const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
     const cookies = this.normalizeKeyValueField(config["cookies"] as KVField)

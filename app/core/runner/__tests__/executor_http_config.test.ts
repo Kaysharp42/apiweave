@@ -62,6 +62,22 @@ describe("WorkflowExecutor — HTTP request config panel contract", () => {
     expect(captured[0]!.url).toBe("http://localhost/resource?page=1")
   })
 
+  it("substitutes active pathVariables into the URL", async () => {
+    const { executor, captured } = makeExecutorWithCapture(() => new Response("{}", { status: 200 }))
+    await executor.executeWorkflow(
+      singleHttpNodeWorkflow({
+        method: "GET",
+        url: "http://localhost/users/{userId}/posts/{postId}",
+        pathVariables: [
+          { key: "userId", value: "42", active: true },
+          { key: "postId", value: "7", active: true },
+          { key: "unused", value: "x", active: false },
+        ],
+      }),
+    )
+    expect(captured[0]!.url).toBe("http://localhost/users/42/posts/7")
+  })
+
   it("builds an Authorization header for bearer auth", async () => {
     const { executor, captured } = makeExecutorWithCapture(() => new Response("{}", { status: 200 }))
     await executor.executeWorkflow(

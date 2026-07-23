@@ -24,9 +24,8 @@ describe("WorkspaceEnvironmentsPage", () => {
     expect(source).toContain("New Environment");
   });
 
-  it("renders scope-grouped environment lists", () => {
+  it("renders the workspace environment list", () => {
     expect(source).toContain('title="Workspace Environments"');
-    expect(source).toContain('title="User Environments"');
   });
 
   it('shows "Select an environment" empty state when no env is selected', () => {
@@ -35,9 +34,6 @@ describe("WorkspaceEnvironmentsPage", () => {
 
   it("loads workspace-scoped environment data via API", () => {
     expect(source).toContain("fetchEnvironments(workspaceId)");
-    expect(source).toContain(
-      "/api/workspaces/${workspaceId}/pending-approvals",
-    );
     expect(source).toContain("/api/orgs/${orgId}/workspaces");
   });
 

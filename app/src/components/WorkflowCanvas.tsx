@@ -624,9 +624,15 @@ export function WorkflowCanvas({
             .updateTabWorkflow(workflowId ?? "", savedWorkflow);
         } else {
           console.error("Failed to save workflow");
+          toast.error("Failed to save workflow — your changes are not saved", {
+            id: `workflow-save-error-${workflowId}`,
+          });
         }
       } catch (error) {
         console.error("Save error:", error);
+        toast.error("Failed to save workflow — your changes are not saved", {
+          id: `workflow-save-error-${workflowId}`,
+        });
       }
     },
     [workflowId, scope.workspaceId, selectedEnvironment, workflow],
