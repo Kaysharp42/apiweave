@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import CollectionManager from "../CollectionManager";
-import WebhookManager from "../WebhookManager";
 import MCPManager from "../MCPManager";
 import { SidebarHeader } from "./SidebarHeader";
 import { WorkflowList } from "./sidebar/WorkflowList";
@@ -503,7 +502,6 @@ export function Sidebar() {
                 onAssignWorkflowToProject={handleAssignWorkflowToProject}
               />
             </div>
-          {selectedNav === "webhooks" && <WebhookManager />}
           {selectedNav === "mcp" && <MCPManager className="h-full" />}
           {selectedNav === "settings" && (
             <SettingsContent

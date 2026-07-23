@@ -90,7 +90,6 @@ vi.mock("../components/layout/sidebar/SettingsContent", () => ({
 }));
 
 vi.mock("../components/CollectionManager", () => ({ default: () => null }));
-vi.mock("../components/WebhookManager", () => ({ default: () => null }));
 vi.mock("../components/MCPManager", () => ({ default: () => null }));
 vi.mock("../components/WorkflowExportImport", () => ({ default: () => null }));
 vi.mock("../components/CollectionExportImport", () => ({

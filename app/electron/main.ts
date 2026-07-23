@@ -1,8 +1,8 @@
-import { app, BrowserWindow, ipcMain, net, protocol } from "electron"
+import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
-import { emitRunProgress } from "../core/ipc/register"
+import { emitRunProgress, isTrustedSender } from "../core/ipc/register"
 import { registerAllHandlers, type HandlerDeps } from "../core/ipc/handlers"
 import { canonicalizeExistingWorkflows } from "../core/db/canonicalize_existing_workflows"
 import { initDatabase, type InitializedDatabase } from "../core/db"
@@ -59,6 +59,16 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null
 
+const APP_ORIGIN = "app://local"
+
+function isAppOrigin(url: string): boolean {
+  try {
+    return new URL(url).origin === new URL(APP_ORIGIN).origin
+  } catch {
+    return false
+  }
+}
+
 function frontendDistDir(): string {
   if (process.env["APIWEAVE_FRONTEND_DIST"]) {
     return process.env["APIWEAVE_FRONTEND_DIST"]
@@ -108,6 +118,23 @@ async function createWindow(): Promise<void> {
   })
   win.webContents.on("render-process-gone", (_event, details) => {
     console.error("[renderer] render-process-gone", details)
+  })
+
+  // Never let the privileged app:// document navigate to attacker-controlled
+  // content — that content would inherit the same preload/IPC bridge.
+  win.webContents.on("will-navigate", (event, url) => {
+    if (!isAppOrigin(url)) {
+      event.preventDefault()
+    }
+  })
+
+  // Renderer-created windows (e.g. target="_blank" links) never get the
+  // privileged preload. http/https links open in the system browser instead.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      void shell.openExternal(url)
+    }
+    return { action: "deny" }
   })
 
   try {
@@ -278,22 +305,41 @@ if (!hasSingleInstanceLock) {
         [enabled ? "true" : "false"],
       )
     }
-    ipcMain.handle("mcp:getStatus", () => mcpStatus())
-    ipcMain.handle("mcp:enable", async () => {
-      if (mcpHost === null) {
-        mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+    const requireTrustedSender = <Args extends unknown[], R>(
+      handler: (...args: Args) => R,
+    ): ((event: Electron.IpcMainInvokeEvent, ...args: Args) => R | Promise<never>) => {
+      return (event, ...args) => {
+        if (!isTrustedSender(event)) {
+          return Promise.reject(new Error("untrusted sender"))
+        }
+        return handler(...args)
       }
-      await mcpHost.start()
-      writeMcpEnabled(true)
-      return mcpStatus()
-    })
-    ipcMain.handle("mcp:disable", async () => {
-      await mcpHost?.stop()
-      writeMcpEnabled(false)
-      return mcpStatus()
-    })
-    ipcMain.handle("mcp:listTools", (): readonly MCPTool[] =>
-      MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
+    }
+    ipcMain.handle("mcp:getStatus", requireTrustedSender(() => mcpStatus()))
+    ipcMain.handle(
+      "mcp:enable",
+      requireTrustedSender(async () => {
+        if (mcpHost === null) {
+          mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+        }
+        await mcpHost.start()
+        writeMcpEnabled(true)
+        return mcpStatus()
+      }),
+    )
+    ipcMain.handle(
+      "mcp:disable",
+      requireTrustedSender(async () => {
+        await mcpHost?.stop()
+        writeMcpEnabled(false)
+        return mcpStatus()
+      }),
+    )
+    ipcMain.handle(
+      "mcp:listTools",
+      requireTrustedSender(
+        (): readonly MCPTool[] => MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
+      ),
     )
 
     // Restore the user's persisted MCP choice on launch.

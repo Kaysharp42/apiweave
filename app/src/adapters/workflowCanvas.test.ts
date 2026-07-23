@@ -37,7 +37,7 @@ const workflow: Workflow = {
       position: { x: 440, y: 40 },
       config: {
         assertions: [
-          { field: "response.status", operator: "equals", expected: 201 },
+          { source: "prev", path: "response.status", operator: "equals", expectedValue: 201 },
         ],
         continueOnFail: false,
       },

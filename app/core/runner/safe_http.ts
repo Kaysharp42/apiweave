@@ -1,7 +1,7 @@
 import dns from "node:dns/promises"
 import type { LookupAddress } from "node:dns"
 import { BlockList as NodeBlockList, isIP } from "node:net"
-import { fetch, Headers, type RequestInit, type Response } from "undici"
+import { Agent, fetch, type Dispatcher, type RequestInit, type Response } from "undici"
 
 // @types/node dropped the exported `AddressType` alias; net.BlockList's
 // IPVersion parameter is the lowercase pair.
@@ -183,15 +183,15 @@ export class SafeHttp {
     if (init.signal) signals.push(init.signal)
     const signal = AbortSignal.any(signals)
     let currentUrl = url
-    let lastInit: RequestInit = { ...init, redirect: "manual", signal }
+    const lastInit: RequestInit = { ...init, redirect: "manual", signal }
     for (let hop = 0; hop <= this.maxRedirectHops; hop++) {
       const pinnedIp = await this.resolveAndPinIp(hostOf(currentUrl))
-      const reqUrl = pinnedIp ? rewriteWithPinnedIp(currentUrl, pinnedIp) : currentUrl
-      const hostHeader = hostOf(currentUrl)
-      const headers = new Headers(init.headers)
-      if (pinnedIp) headers.set("Host", hostHeader)
-      lastInit = { ...lastInit, headers }
-      const response = await this.fetchImpl(reqUrl, lastInit)
+      // Pin the TCP/TLS connection to the resolved+validated IP via a custom
+      // dispatcher `lookup`, without touching the request URL — for HTTPS,
+      // SNI and certificate hostname verification must stay on the original
+      // hostname or normal public certs fail to validate against the IP.
+      const dispatcher = pinnedIp ? buildPinnedDispatcher(pinnedIp) : undefined
+      const response = await this.fetchImpl(currentUrl, dispatcher ? { ...lastInit, dispatcher } : lastInit)
       if (response.status < 300 || response.status >= 400) return response
       const location = response.headers.get("location")
       if (!location) return response
@@ -255,13 +255,23 @@ function stripIpv6Brackets(hostname: string): string {
 }
 
 /**
- * Rewrite the URL's host with the resolved IP, preserving scheme + port + path + query.
- * Used only when we resolved and verified the pin — keeps DNS rebinding out.
+ * Build a one-shot undici dispatcher whose connector resolves every hostname
+ * to the given (already-validated) IP, closing the DNS-rebinding TOCTOU gap
+ * without rewriting the request URL — so TLS SNI/cert checks and the Host
+ * header stay on the original hostname.
  */
-function rewriteWithPinnedIp(url: string, ip: string): string {
-  const parsed = new URL(url)
-  const port = parsed.port ? `:${parsed.port}` : ""
-  parsed.hostname = ip
-  parsed.host = `${ip}${port}`
-  return parsed.toString()
+function buildPinnedDispatcher(ip: string): Dispatcher {
+  const family = isIP(ip) === 6 ? 6 : 4
+  const lookup = (
+    _hostname: string,
+    options: { all?: boolean },
+    callback: (err: null, address: string | LookupAddress[], family?: number) => void,
+  ): void => {
+    if (options?.all) {
+      callback(null, [{ address: ip, family }])
+      return
+    }
+    callback(null, ip, family)
+  }
+  return new Agent({ connect: { lookup: lookup as never } })
 }

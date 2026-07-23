@@ -158,7 +158,7 @@ describe("SafeHttp.safeFetch (no real network)", () => {
     await expect(http.safeFetch("http://10.0.0.1/secret")).rejects.toBeInstanceOf(SafeUrlError)
   })
 
-  it("happy path: pinned IP returned, response surfaced, Host header preserved", async () => {
+  it("happy path: original URL/hostname preserved (pin applied via dispatcher, not URL rewrite)", async () => {
     let capturedInit: RequestInit | undefined
     let capturedUrl: string | undefined
     const fetchImpl = async (url: string, init: RequestInit): Promise<Response> => {
@@ -171,9 +171,10 @@ describe("SafeHttp.safeFetch (no real network)", () => {
     const res = await http.safeFetch("https://example.com/")
     expect(res.status).toBe(200)
     expect(await res.text()).toBe("ok")
-    expect(capturedUrl).toContain("93.184.216.34")
-    const headers = new Headers(capturedInit!.headers)
-    expect(headers.get("Host")).toBe("example.com")
+    // The request URL/hostname must stay untouched so TLS SNI and certificate
+    // hostname verification run against "example.com", not the pinned IP.
+    expect(capturedUrl).toBe("https://example.com/")
+    expect(capturedInit!.dispatcher).toBeDefined()
   })
 
   it("redirect to blocked target is refused mid-chain", async () => {
