@@ -113,18 +113,22 @@ export default function useAutoSave({
       return;
     }
 
-    lastSnapshotRef.current = {
-      nodes: nodesSig,
-      edges: edgesSig,
-      vars: workflowVariables,
-    };
-
     if (timerRef.current) clearTimeout(timerRef.current);
 
     useTabStore.getState().markDirty(workflowId);
 
+    // Only advance the persisted snapshot once the save actually fires. If the
+    // timer is cleared first (e.g. autosave disabled when a run starts), the
+    // snapshot stays at the last-saved state so re-enabling reschedules the
+    // save instead of short-circuiting on the equality check above.
+    const pending: Snapshot = {
+      nodes: nodesSig,
+      edges: edgesSig,
+      vars: workflowVariables,
+    };
     timerRef.current = setTimeout(() => {
       saveWorkflow(true);
+      lastSnapshotRef.current = pending;
       timerRef.current = null;
     }, 700);
 
