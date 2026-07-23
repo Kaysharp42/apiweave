@@ -251,6 +251,66 @@ describe("WorkflowExecutor", () => {
     })
   })
 
+  describe("conditional merge gate", () => {
+    type MergeCond = { branchIndex: number; field: string; operator: string; value: string }
+    const gate = (
+      conditions: MergeCond[],
+      conditionLogic: "AND" | "OR",
+      branches: unknown[],
+    ) => {
+      const executor = new WorkflowExecutor(makeDeps())
+      const results = (executor as unknown as { results: Map<string, unknown> }).results
+      const predIds = branches.map((b, i) => {
+        const id = `b${i}`
+        results.set(id, { type: "http-request", ...(b as object) })
+        return id
+      })
+      return () =>
+        (
+          executor as unknown as {
+            evaluateMergeConditions: (
+              c: Record<string, unknown>,
+              p: readonly string[],
+              e: readonly unknown[],
+            ) => void
+          }
+        ).evaluateMergeConditions({ conditions, conditionLogic }, predIds, [])
+    }
+
+    it("passes when a branch field matches (OR)", () => {
+      expect(
+        gate(
+          [{ branchIndex: 0, field: "response.statusCode", operator: "equals", value: "201" }],
+          "OR",
+          [{ statusCode: 201 }],
+        ),
+      ).not.toThrow()
+    })
+
+    it("throws when the configured condition is not met", () => {
+      expect(
+        gate(
+          [{ branchIndex: 0, field: "response.statusCode", operator: "equals", value: "201" }],
+          "OR",
+          [{ statusCode: 200 }],
+        ),
+      ).toThrow(/Conditional merge gate not satisfied/)
+    })
+
+    it("AND requires every condition to pass", () => {
+      const conds: MergeCond[] = [
+        { branchIndex: 0, field: "response.statusCode", operator: "equals", value: "200" },
+        { branchIndex: 1, field: "response.body.ok", operator: "equals", value: "true" },
+      ]
+      expect(gate(conds, "AND", [{ statusCode: 200 }, { body: { ok: true } }])).not.toThrow()
+      expect(gate(conds, "AND", [{ statusCode: 200 }, { body: { ok: false } }])).toThrow()
+    })
+
+    it("no conditions means no gating", () => {
+      expect(gate([], "AND", [{ statusCode: 500 }])).not.toThrow()
+    })
+  })
+
   describe("event emission", () => {
     it("emits node.completed events", async () => {
       const events: Array<{ nodeId: string; status: string }> = []

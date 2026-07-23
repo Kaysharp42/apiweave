@@ -831,6 +831,10 @@ export class WorkflowExecutor {
       }
     }
 
+    if (mergeStrategy === "conditional") {
+      this.evaluateMergeConditions(config, predecessorNodeIds, edges)
+    }
+
     this.mergeCompleted.add(nodeId)
 
     const predecessorResults: Array<readonly [string, NodeResult]> = []
@@ -849,6 +853,48 @@ export class WorkflowExecutor {
       message: `Merged ${predecessorResults.length} branches using '${mergeStrategy}' strategy`,
       mergeStrategy,
       branchCount: predecessorResults.length,
+    }
+  }
+
+  /**
+   * Gate a conditional merge: throws if the saved branch conditions do not
+   * pass under the configured AND/OR logic. branchIndex is the zero-based
+   * position in the incoming-edge order (matching the panel's "Branch index").
+   */
+  private evaluateMergeConditions(
+    config: Record<string, unknown>,
+    predecessorNodeIds: readonly string[],
+    edges: readonly WorkflowEdge[],
+  ): void {
+    const raw = config["conditions"]
+    const conditions = Array.isArray(raw)
+      ? (raw as Array<{ branchIndex?: number; field?: string; operator?: string; value?: unknown }>)
+      : []
+    if (conditions.length === 0) return
+
+    const branchResults = predecessorNodeIds.map((predId) =>
+      this.results.get(this.findDataProducingAncestor(predId, edges)),
+    )
+
+    const outcome = (condition: (typeof conditions)[number]): boolean => {
+      const branch = branchResults[condition.branchIndex ?? 0]
+      if (!branch) return false
+      const field = condition.field ?? ""
+      const cleanPath = field.startsWith("response.") ? field.slice(9) : field
+      const actual = this.getNestedValue(branch, cleanPath)
+      const expected = this.substituteVariables(String(condition.value ?? ""))
+      try {
+        return this.compareValues(actual, condition.operator ?? "equals", expected)
+      } catch {
+        return false
+      }
+    }
+
+    const logic = config["conditionLogic"] === "AND" ? "AND" : "OR"
+    const outcomes = conditions.map(outcome)
+    const passed = logic === "AND" ? outcomes.every(Boolean) : outcomes.some(Boolean)
+    if (!passed) {
+      throw new Error(`Conditional merge gate not satisfied (${logic}): branch conditions did not match`)
     }
   }
 
