@@ -185,6 +185,11 @@ export function WorkflowCanvas({
     WorkflowCanvasNodeData,
     WorkflowCanvasEdgeData
   > | null>;
+  // Holds the latest saveWorkflow (defined below); the run hook awaits it to
+  // flush pending edits before executing so it never runs a stale graph.
+  const saveWorkflowRef = useRef<((silent: boolean) => Promise<void>) | null>(
+    null,
+  );
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -253,6 +258,7 @@ export function WorkflowCanvas({
     setNodes,
     selectedEnvironment,
     reactFlowInstanceRef,
+    saveWorkflowRef,
   });
 
   // ── Extractors effect ───────────────────────────────────────────────
@@ -621,6 +627,9 @@ export function WorkflowCanvas({
     },
     [workflowId, scope.workspaceId, selectedEnvironment, workflow],
   );
+
+  // Keep the run hook's flush pointer at the latest saveWorkflow closure.
+  saveWorkflowRef.current = saveWorkflow;
 
   // ── JSON editor ──────────────────────────────────────────────────────
 
