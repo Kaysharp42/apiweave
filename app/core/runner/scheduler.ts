@@ -8,6 +8,7 @@ import type { ClockProvider, RngProvider } from "./harness/providers"
 import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp } from "./safe_http"
+import { NotFoundError } from "../ipc/errors"
 
 const DEFAULT_CONCURRENCY_CAP = 4
 
@@ -61,6 +62,13 @@ export class RunScheduler {
   }
 
   public enqueue(request: EnqueueRequest): string {
+    // Object-level ownership check: the workflow must live in the run's workspace.
+    // RunService authorizes the workspaceId but passes workflowId through untouched,
+    // so without this a caller could execute another workspace's graph under their
+    // run. Existence-hiding 404 mirrors WorkflowService's scoped reads.
+    if (!this.deps.workflows.getByIdInWorkspace(request.workflowId, request.workspaceId)) {
+      throw new NotFoundError(`workflow ${request.workflowId} not found`)
+    }
     const run = this.deps.runs.create({
       workspaceId: request.workspaceId,
       workflowId: request.workflowId,
@@ -133,7 +141,9 @@ export class RunScheduler {
       const run = this.deps.runs.getById(runId)
       if (!run) throw new Error(`run ${runId} not found after create`)
 
-      const workflow = this.deps.workflows.getById(run.workflowId)
+      // Defense-in-depth: re-assert workflow ownership at execution time (enqueue
+      // already checked), so a run row can never execute a graph outside its workspace.
+      const workflow = this.deps.workflows.getByIdInWorkspace(run.workflowId, run.workspaceId)
       if (!workflow) throw new Error(`workflow ${run.workflowId} not found`)
 
       const graph: WorkflowGraph = {

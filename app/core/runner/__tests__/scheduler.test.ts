@@ -191,6 +191,20 @@ describe("RunScheduler", () => {
     })
   })
 
+  describe("workspace ownership", () => {
+    it("rejects enqueue of a workflow from another workspace and creates no run", async () => {
+      const wsA = seedWorkspace()
+      const wsB = seedWorkspace()
+      const wfB = seedWorkflow(wsB)
+      const scheduler = makeScheduler()
+
+      expect(() => scheduler.enqueue({ workspaceId: wsA, workflowId: wfB })).toThrow(/not found/)
+
+      // No cross-tenant run record leaked into workspace A.
+      expect(runs.listByWorkspace(wsA).total).toBe(0)
+    })
+  })
+
   describe("concurrency cap", () => {
     it("holds the cap+1th run in pending", async () => {
       const ws = seedWorkspace()
