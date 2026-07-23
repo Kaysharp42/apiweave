@@ -175,31 +175,32 @@ export class SafeHttp {
   /** Execute an HTTP request with SSRF protection + per-hop redirect validation. */
   public async safeFetch(url: string, init: RequestInit = {}): Promise<Response> {
     this.validateUrl(url)
-    const abort = new AbortController()
-    const timer = setTimeout(() => abort.abort(), this.timeoutMs)
+    // Compose our timeout with the caller's signal so node-level timeouts and
+    // external cancellation aren't dropped. The timeout signal is never cleared,
+    // so it keeps enforcing while the caller reads the body — undici aborts the
+    // body stream if the signal fires, closing the "slow/endless body" gap.
+    const signals: AbortSignal[] = [AbortSignal.timeout(this.timeoutMs)]
+    if (init.signal) signals.push(init.signal)
+    const signal = AbortSignal.any(signals)
     let currentUrl = url
-    let lastInit: RequestInit = { ...init, redirect: "manual", signal: abort.signal }
-    try {
-      for (let hop = 0; hop <= this.maxRedirectHops; hop++) {
-        const pinnedIp = await this.resolveAndPinIp(hostOf(currentUrl))
-        const reqUrl = pinnedIp ? rewriteWithPinnedIp(currentUrl, pinnedIp) : currentUrl
-        const hostHeader = hostOf(currentUrl)
-        const headers = new Headers(init.headers)
-        if (pinnedIp) headers.set("Host", hostHeader)
-        lastInit = { ...lastInit, headers }
-        const response = await this.fetchImpl(reqUrl, lastInit)
-        if (response.status < 300 || response.status >= 400) return response
-        const location = response.headers.get("location")
-        if (!location) return response
-        if (!this.checkRedirectAllowed(currentUrl, location)) {
-          throw new SafeUrlError(`Redirect to blocked URL denied after ${hop + 1} hop(s): ${location}`)
-        }
-        currentUrl = new URL(location, currentUrl).toString()
+    let lastInit: RequestInit = { ...init, redirect: "manual", signal }
+    for (let hop = 0; hop <= this.maxRedirectHops; hop++) {
+      const pinnedIp = await this.resolveAndPinIp(hostOf(currentUrl))
+      const reqUrl = pinnedIp ? rewriteWithPinnedIp(currentUrl, pinnedIp) : currentUrl
+      const hostHeader = hostOf(currentUrl)
+      const headers = new Headers(init.headers)
+      if (pinnedIp) headers.set("Host", hostHeader)
+      lastInit = { ...lastInit, headers }
+      const response = await this.fetchImpl(reqUrl, lastInit)
+      if (response.status < 300 || response.status >= 400) return response
+      const location = response.headers.get("location")
+      if (!location) return response
+      if (!this.checkRedirectAllowed(currentUrl, location)) {
+        throw new SafeUrlError(`Redirect to blocked URL denied after ${hop + 1} hop(s): ${location}`)
       }
-      throw new SafeUrlError(`Too many redirects (>${this.maxRedirectHops}) — last URL: ${currentUrl}`)
-    } finally {
-      clearTimeout(timer)
+      currentUrl = new URL(location, currentUrl).toString()
     }
+    throw new SafeUrlError(`Too many redirects (>${this.maxRedirectHops}) — last URL: ${currentUrl}`)
   }
 
   /** Safe GET — no redirect following, validates the URL once. */

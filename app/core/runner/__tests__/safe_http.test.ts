@@ -196,6 +196,38 @@ describe("SafeHttp.safeFetch (no real network)", () => {
     await expect(http.safeFetch("https://example.com/")).rejects.toThrow(/Too many redirects/)
   })
 
+  it("honors the caller's abort signal instead of discarding it", async () => {
+    const controller = new AbortController()
+    controller.abort()
+    let seenSignal: AbortSignal | undefined
+    const fetchImpl = async (_url: string, init: RequestInit): Promise<Response> => {
+      seenSignal = init.signal ?? undefined
+      if (init.signal?.aborted) throw new DOMException("aborted", "AbortError")
+      return new Response("ok", { status: 200 })
+    }
+    const http = new SafeHttp({ allowLoopback: true, fetchImpl: fetchImpl as never,
+      dnsLookup: async () => [{ address: "93.184.216.34", family: 4 }] })
+    await expect(http.safeFetch("https://example.com/", { signal: controller.signal })).rejects.toThrow(/abort/i)
+    expect(seenSignal?.aborted).toBe(true)
+  })
+
+  it("timeout signal stays live after the response returns (covers body read)", async () => {
+    let captured: AbortSignal | undefined
+    const fetchImpl = async (_url: string, init: RequestInit): Promise<Response> => {
+      captured = init.signal ?? undefined
+      return new Response("ok", { status: 200 })
+    }
+    const http = new SafeHttp({ allowLoopback: true, timeoutMs: 50, fetchImpl: fetchImpl as never,
+      dnsLookup: async () => [{ address: "93.184.216.34", family: 4 }] })
+    await http.safeFetch("https://example.com/")
+    // The old code cleared the timer on return, leaving no way to abort a slow
+    // body. The composed timeout signal must still be un-aborted-but-armed here.
+    expect(captured).toBeDefined()
+    expect(captured!.aborted).toBe(false)
+    await new Promise((r) => setTimeout(r, 80))
+    expect(captured!.aborted).toBe(true)
+  })
+
   it("exports MAX_REDIRECT_HOPS default 5", () => {
     expect(MAX_REDIRECT_HOPS).toBe(5)
   })
