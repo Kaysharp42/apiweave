@@ -319,15 +319,20 @@ export const apiweave = {
       }),
     cancel: (workspaceId: string, runId: string) =>
       invoke<IpcRun>("runs", "cancel", { workspaceId, runId }),
-    getArtifacts: (runId: string) =>
-      invoke<unknown>("runs", "getArtifacts", { runId }),
-    openArtifact: (runId: string, artifactName: "junit.xml" | "report.html") =>
-      invoke<string>("runs", "openArtifact", { runId, artifactName }),
-    saveArtifactAs: (
+    getArtifacts: (workspaceId: string, runId: string) =>
+      invoke<unknown>("runs", "getArtifacts", { workspaceId, runId }),
+    openArtifact: (
+      workspaceId: string,
       runId: string,
       artifactName: "junit.xml" | "report.html",
     ) =>
-      invoke<string | null>("runs", "saveArtifactAs", { runId, artifactName }),
+      invoke<string>("runs", "openArtifact", { workspaceId, runId, artifactName }),
+    saveArtifactAs: (
+      workspaceId: string,
+      runId: string,
+      artifactName: "junit.xml" | "report.html",
+    ) =>
+      invoke<string | null>("runs", "saveArtifactAs", { workspaceId, runId, artifactName }),
   },
   secrets: {
     set: (input: {

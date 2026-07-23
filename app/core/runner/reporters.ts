@@ -424,16 +424,23 @@ export async function readReportArtifacts(
   runId: string,
   baseDir: string,
 ): Promise<ArtifactInfo | null> {
+  // runId is renderer-controlled — guard traversal the same way
+  // resolveArtifactPath does before probing the filesystem.
+  const runsRoot = path.resolve(baseDir, ARTIFACTS_DIR_NAME, ARTIFACTS_SUBDIR)
   const dir = artifactsDir(baseDir, runId)
+  const resolvedDir = path.resolve(dir)
+  if (resolvedDir !== runsRoot && !resolvedDir.startsWith(runsRoot + path.sep)) {
+    throw new Error("Artifact path escapes runs directory")
+  }
   try {
-    await fs.promises.access(dir)
+    await fs.promises.access(resolvedDir)
   } catch {
     return null
   }
 
   const artifacts: ArtifactFile[] = []
   for (const file of ARTIFACT_FILES) {
-    const filePath = path.join(dir, file.name)
+    const filePath = path.join(resolvedDir, file.name)
     try {
       const stat = await fs.promises.stat(filePath)
       artifacts.push({ name: file.name, path: filePath, sizeBytes: stat.size })

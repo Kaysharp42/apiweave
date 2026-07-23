@@ -376,6 +376,10 @@ describe("writeReportArtifacts / readReportArtifacts", () => {
     expect(info).toBeNull()
   })
 
+  it("rejects a traversal runId in readReportArtifacts", async () => {
+    await expect(readReportArtifacts("../../../../etc", tmpDir)).rejects.toThrow(/escapes/)
+  })
+
   it("written files contain correct XML and HTML content", async () => {
     const run = makeRun()
     await writeReportArtifacts(run.runId, tmpDir, run, { nodeTypes: NODE_TYPES })
