@@ -321,8 +321,8 @@ export const apiweave = {
       invoke<IpcRun>("runs", "cancel", { workspaceId, runId }),
     getArtifacts: (runId: string) =>
       invoke<unknown>("runs", "getArtifacts", { runId }),
-    openArtifact: (path: string) =>
-      invoke<string>("runs", "openArtifact", { path }),
+    openArtifact: (runId: string, artifactName: "junit.xml" | "report.html") =>
+      invoke<string>("runs", "openArtifact", { runId, artifactName }),
     saveArtifactAs: (
       runId: string,
       artifactName: "junit.xml" | "report.html",

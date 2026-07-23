@@ -1,11 +1,10 @@
 import fs from "node:fs"
-import path from "node:path"
 import { z } from "zod"
 import { RunSchema, JsonValueSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { listResult } from "./common"
-import { artifactsDir, readReportArtifacts } from "../../runner/reporters"
+import { readReportArtifacts, resolveArtifactPath } from "../../runner/reporters"
 
 const ws = z.string().min(1)
 
@@ -83,31 +82,34 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     },
   })
 
-  const openPathInput = z.object({ path: z.string().min(1) }).strict()
-
-  router.register("runs", "openArtifact", {
-    input: openPathInput,
-    output: z.string(),
-    handle: async ({ path: artifactPath }) => {
-      const { shell } = await import("electron")
-      return shell.openPath(artifactPath)
-    },
-  })
-
-  const saveArtifactInput = z
+  // Never accept a raw path from the renderer: derive the artifact path in the
+  // main process from runId + a fixed artifact enum, resolved under the runs
+  // root (resolveArtifactPath guards traversal). See path-traversal finding.
+  const artifactAccessInput = z
     .object({
       runId: z.string().min(1),
       artifactName: z.enum(["junit.xml", "report.html"]),
     })
     .strict()
 
+  router.register("runs", "openArtifact", {
+    input: artifactAccessInput,
+    output: z.string(),
+    handle: async ({ runId, artifactName }) => {
+      const { app, shell } = await import("electron")
+      const baseDir = app.getPath("temp")
+      const artifactPath = resolveArtifactPath(baseDir, runId, artifactName)
+      return shell.openPath(artifactPath)
+    },
+  })
+
   router.register("runs", "saveArtifactAs", {
-    input: saveArtifactInput,
+    input: artifactAccessInput,
     output: z.string().nullable(),
     handle: async ({ runId, artifactName }) => {
       const { app, dialog } = await import("electron")
       const baseDir = app.getPath("temp")
-      const srcPath = path.join(artifactsDir(baseDir, runId), artifactName)
+      const srcPath = resolveArtifactPath(baseDir, runId, artifactName)
 
       const result = await dialog.showSaveDialog({
         defaultPath: artifactName,

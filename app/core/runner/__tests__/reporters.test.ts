@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { generateJUnit, generateHTML, writeReportArtifacts, readReportArtifacts } from "../reporters"
+import { generateJUnit, generateHTML, writeReportArtifacts, readReportArtifacts, resolveArtifactPath } from "../reporters"
 import type { Run } from "@shared/types/Run"
 
 // -------------------- Fixtures --------------------
@@ -409,5 +409,19 @@ describe("writeReportArtifacts / readReportArtifacts", () => {
       expect(junitContent).not.toContain(secret)
       expect(htmlContent).not.toContain(secret)
     }
+  })
+})
+
+describe("resolveArtifactPath", () => {
+  const baseDir = path.join(os.tmpdir(), "aw-resolve")
+  const runsRoot = path.join(baseDir, "apiweave", "runs")
+
+  it("resolves a legit artifact under the runs root", () => {
+    const p = resolveArtifactPath(baseDir, "run_1", "junit.xml")
+    expect(p).toBe(path.resolve(runsRoot, "run_1", "junit.xml"))
+  })
+
+  it("rejects a runId that escapes the runs root", () => {
+    expect(() => resolveArtifactPath(baseDir, "../../../../etc", "report.html")).toThrow(/escapes/)
   })
 })

@@ -370,6 +370,20 @@ export function artifactsDir(baseDir: string, runId: string): string {
   return path.join(baseDir, ARTIFACTS_DIR_NAME, ARTIFACTS_SUBDIR, runId)
 }
 
+/**
+ * Resolve an artifact file path, guaranteeing it stays under the runs root.
+ * `runId` is caller-controlled (IPC input), so guard against path traversal
+ * (e.g. `runId = "../.."`). `artifactName` should already be enum-restricted.
+ */
+export function resolveArtifactPath(baseDir: string, runId: string, artifactName: string): string {
+  const runsRoot = path.resolve(baseDir, ARTIFACTS_DIR_NAME, ARTIFACTS_SUBDIR)
+  const resolved = path.resolve(artifactsDir(baseDir, runId), artifactName)
+  if (resolved !== runsRoot && !resolved.startsWith(runsRoot + path.sep)) {
+    throw new Error("Artifact path escapes runs directory")
+  }
+  return resolved
+}
+
 const ARTIFACT_FILES = [
   { name: "junit.xml", contentFn: generateJUnit },
   { name: "report.html", contentFn: generateHTML },
