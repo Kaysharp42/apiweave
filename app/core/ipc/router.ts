@@ -1,6 +1,8 @@
 import { ZodError, type z } from "zod"
 import type { ContractResult } from "@shared/contract/errors"
+import type { JsonValue } from "@shared/types/JsonValue"
 import { AppError } from "./errors"
+import { sanitizeExportValue } from "../services/secret_utils"
 
 /** The untrusted envelope every renderer call sends over the single channel. */
 export type InvokeRequest = {
@@ -99,7 +101,15 @@ export class IpcRouter {
     return this.handlers.get(key(domain, action))
   }
 
-  async dispatch(request: InvokeRequest): Promise<ContractResult<unknown>> {
+  /**
+   * `redactSecrets` is set by the MCP transport (see `mcp/bridge.ts`): any local
+   * MCP client is a less-trusted caller than the app's own renderer, so its reads
+   * get a second, blanket secret-redaction pass over the full response — headers,
+   * cookies, auth config, URLs, bodies — on top of whatever a given handler
+   * already does. Renderer IPC calls (`ipc/register.ts`) never set this, since
+   * the renderer needs literal values to render its own editors.
+   */
+  async dispatch(request: InvokeRequest, opts?: { readonly redactSecrets?: boolean }): Promise<ContractResult<unknown>> {
     const handler = this.handlers.get(key(request.domain, request.action))
     if (handler === undefined) {
       return {
@@ -126,6 +136,10 @@ export class IpcRouter {
     // Output is validated OUTSIDE the try: a bad handler return is a server bug,
     // so its zod failure must throw (HTTP-500 equivalent), not read as a client
     // `validation` error.
-    return { ok: true, data: handler.output.parse(output) }
+    const validated = handler.output.parse(output)
+    return {
+      ok: true,
+      data: opts?.redactSecrets === true ? sanitizeExportValue(validated as JsonValue) : validated,
+    }
   }
 }

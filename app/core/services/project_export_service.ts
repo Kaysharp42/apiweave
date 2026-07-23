@@ -21,6 +21,7 @@ import {
   assertNoSecretValues,
   collectSecretRefs,
   isSecretKey,
+  sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
@@ -152,7 +153,7 @@ export class ProjectExportService {
         const plain = asRecord(toPlain(node))
         if (plain["config"] !== undefined) {
           collectSecretRefs(plain["config"], "workspace", workspaceId, secretReferences, seen)
-          plain["config"] = sanitizeVariablesForExport(asRecord(plain["config"]))
+          plain["config"] = sanitizeExportValue(plain["config"])
         }
         return plain as JsonValue
       })
@@ -165,7 +166,7 @@ export class ProjectExportService {
         variables: sanitizeVariablesForExport(asRecord(rawVariables)),
         tags: workflow.tags,
         selectedEnvironmentId: workflow.selectedEnvironmentId ?? null,
-        nodeTemplates: workflow.nodeTemplates.map((template) => toPlain(template)),
+        nodeTemplates: workflow.nodeTemplates.map((template) => sanitizeExportValue(toPlain(template))),
       }
     })
 

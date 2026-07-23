@@ -21,6 +21,7 @@ import {
   assertNoSecretValues,
   collectSecretRefs,
   isSecretKey,
+  sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
@@ -133,7 +134,7 @@ export class ImportService {
     const nodes = workflow.nodes.map((node) => {
       const plain = JSON.parse(JSON.stringify(node)) as Record<string, JsonValue>
       if (plain["config"] !== undefined && typeof plain["config"] === "object" && plain["config"] !== null) {
-        plain["config"] = sanitizeVariablesForExport(plain["config"] as Record<string, JsonValue>)
+        plain["config"] = sanitizeExportValue(plain["config"])
       }
       return plain as JsonValue
     })
@@ -241,7 +242,7 @@ export class ImportService {
       ? bundle.workflow.nodes.map((n) => {
           const plain = JSON.parse(JSON.stringify(n)) as Record<string, JsonValue>
           if (plain["config"] !== undefined && typeof plain["config"] === "object" && plain["config"] !== null) {
-            plain["config"] = sanitizeVariablesForExport(plain["config"] as Record<string, JsonValue>)
+            plain["config"] = sanitizeExportValue(plain["config"])
           }
           return plain as JsonValue
         })

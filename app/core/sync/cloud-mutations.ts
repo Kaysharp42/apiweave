@@ -206,8 +206,25 @@ function sanitizeConfig(config: Record<string, unknown>): JsonValue {
       sanitized[key] = sanitizeKeyValueItems(value, false)
       continue
     }
+    if (key === "auth" && isRecord(value)) {
+      sanitized[key] = sanitizeAuthConfig(value)
+      continue
+    }
     sanitized[key] = sanitizeValue(value)
   }
+  return sanitized
+}
+
+// Auth secrets live under generic leaf names (`token`, `password`, `value`) that
+// only make sense as secrets given their parent (`bearer`, `basic`, `apiKey`).
+// Key-name/value-heuristic redaction elsewhere in this file can't see that
+// context, so these three paths are redacted unconditionally, by structure.
+function sanitizeAuthConfig(auth: Record<string, unknown>): JsonValue {
+  const sanitized = sanitizeValue(auth, true) as Record<string, JsonValue>
+  const { bearer, basic, apiKey } = sanitized
+  if (isRecord(bearer)) sanitized["bearer"] = { ...bearer, token: "" }
+  if (isRecord(basic)) sanitized["basic"] = { ...basic, password: "" }
+  if (isRecord(apiKey)) sanitized["apiKey"] = { ...apiKey, value: "" }
   return sanitized
 }
 
@@ -270,6 +287,8 @@ function sanitizeSnapshotValue(value: unknown, key = ""): JsonValue {
         sanitized[nestedKey] = sanitizeKeyValueItems(nestedValue, true)
       } else if (isKeyValueConfigField(nestedKey) && Array.isArray(nestedValue)) {
         sanitized[nestedKey] = sanitizeKeyValueItems(nestedValue, false)
+      } else if (nestedKey === "auth" && isRecord(nestedValue)) {
+        sanitized[nestedKey] = sanitizeAuthConfig(nestedValue)
       } else {
         sanitized[nestedKey] = sanitizeSnapshotValue(nestedValue, nestedKey)
       }
@@ -344,6 +363,14 @@ function sanitizeUrl(value: string | null): string | null {
         url.searchParams.set(key, "")
       }
     }
+    // OAuth implicit-flow tokens travel in the fragment (`#access_token=...`),
+    // and path segments can embed tokens too (`/tokens/<secret>`); neither is
+    // reachable via searchParams.
+    if (url.hash) url.hash = ""
+    url.pathname = url.pathname
+      .split("/")
+      .map((segment) => (containsSecretValue(segment) ? "" : segment))
+      .join("/")
     return url.toString()
   } catch {
     return containsSecretValue(value) ? "" : value

@@ -238,4 +238,26 @@ describe("IPC handlers — no secret plaintext in read responses (QA: task-13-ha
     expect((secrets as { metadata?: unknown }[])?.[0]).toMatchObject({ name: "TEST_KEY", keyId: "k1" })
     void env
   })
+
+  it("environments.create/update reject a legacy 'secrets' field and never return one", async () => {
+    const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+
+    const rejected = await router.dispatch({
+      domain: "environments",
+      action: "create",
+      payload: { workspaceId: workspace.workspaceId, name: "Env", secrets: { KEY: "plaintext" } },
+    })
+    expect(rejected.ok).toBe(false)
+
+    const env = await ok<{ environmentId: string; secrets: Record<string, unknown> }>("environments", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "Env",
+    })
+    expect(env.secrets).toEqual({})
+
+    const listed = await ok<{ items: { secrets: Record<string, unknown> }[] }>("environments", "list", {
+      workspaceId: workspace.workspaceId,
+    })
+    expect(listed.items.every((item) => Object.keys(item.secrets).length === 0)).toBe(true)
+  })
 })
