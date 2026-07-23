@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import type { Node, Edge } from "reactflow";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
@@ -13,9 +13,14 @@ interface UseNodeBranchCountsParams {
 
 export function useNodeBranchCounts({
   edges,
-  nodes: _nodes,
+  nodes,
   setNodes,
 }: UseNodeBranchCountsParams) {
+  const nodeLabelSignature = useMemo(
+    () => nodes.map((n) => `${n.id}:${n.data?.label ?? ""}`).join("|"),
+    [nodes],
+  );
+
   useEffect(() => {
     const branchCounts: Record<string, number> = {};
     edges.forEach((edge) => {
@@ -118,5 +123,5 @@ export function useNodeBranchCounts({
 
       return didChange ? nextNodes : nds;
     });
-  }, [edges, setNodes]);
+  }, [edges, nodeLabelSignature, setNodes]);
 }

@@ -8,7 +8,11 @@ import { Spinner } from "../components/atoms/Spinner";
 import { EmptyState } from "../components/molecules/EmptyState";
 import { PromptDialog } from "../components/molecules/PromptDialog";
 import { useWorkspace } from "../contexts/WorkspaceContext";
-import { authenticatedJson, authenticatedFetch } from "../utils/apiweaveClient";
+import {
+  authenticatedJson,
+  authenticatedFetch,
+  apiweave,
+} from "../utils/apiweaveClient";
 import {
   workflowsCreateInProjectUrl,
   projectWorkflowAssignUrl,
@@ -55,18 +59,20 @@ export function WorkspaceProjectPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [projectRes, workflowsRes, allWorkflowsRes] = await Promise.all([
-        authenticatedJson<Project>(
-          `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/projects/${projectId}`,
-        ),
-        authenticatedJson<{ workflows: Workflow[]; total: number }>(
-          `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/workflows?project_id=${projectId}&limit=100`,
-        ),
-        authenticatedJson<{ workflows: Workflow[]; total: number }>(
-          `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/workflows?skip=0&limit=100`,
-        ),
-      ]);
-      setData({ project: projectRes, workflows: workflowsRes.workflows });
+      const [projectRes, projectWorkflows, allWorkflowsRes] =
+        await Promise.all([
+          authenticatedJson<Project>(
+            `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/projects/${projectId}`,
+          ),
+          apiweave.projects.listWorkflows(
+            currentWorkspace.workspaceId,
+            projectId,
+          ),
+          authenticatedJson<{ workflows: Workflow[]; total: number }>(
+            `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/workflows?skip=0&limit=100`,
+          ),
+        ]);
+      setData({ project: projectRes, workflows: [...projectWorkflows] });
       setAllWorkflows(allWorkflowsRes.workflows);
     } catch {
       setError(

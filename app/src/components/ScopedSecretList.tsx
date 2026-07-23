@@ -74,7 +74,7 @@ export function ScopedSecretList({
     setDeleting(true);
     try {
       await authenticatedJson(
-        `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets/${encodeURIComponent(deleteTarget.secretId)}`,
+        `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets/${encodeURIComponent(deleteTarget.name)}`,
         { method: "DELETE" },
       );
       setDeleteTarget(null);

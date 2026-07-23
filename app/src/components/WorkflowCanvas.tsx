@@ -486,10 +486,17 @@ export function WorkflowCanvas({
           return [...eds, newEdge];
         }
 
-        const newEdge = addEdge(
+        const edgesWithNewConnection = addEdge(
           { ...params, type: "custom" } as Parameters<typeof addEdge>[0],
           eds,
-        )[eds.length];
+        );
+
+        if (edgesWithNewConnection.length === eds.length) {
+          // addEdge deduped a connection that already exists; nothing to add.
+          return eds;
+        }
+
+        const newEdge = edgesWithNewConnection[eds.length];
 
         const parallelEdges = eds.filter((e) => e.source === params.source);
 
@@ -549,10 +556,7 @@ export function WorkflowCanvas({
           return updatedEdges as Edge<WorkflowCanvasEdgeData>[];
         }
 
-        return addEdge(
-          { ...params, type: "custom" } as Parameters<typeof addEdge>[0],
-          eds,
-        ) as Edge<WorkflowCanvasEdgeData>[];
+        return edgesWithNewConnection as Edge<WorkflowCanvasEdgeData>[];
       });
     },
     [setEdges],

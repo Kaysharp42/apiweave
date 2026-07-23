@@ -703,7 +703,7 @@ export function CollectionExportImport({
       const params = new URLSearchParams();
       params.append("curl_command", pastedJson);
       params.append("sanitize", String(sanitize));
-      params.append("project_id", selectedTargetProject);
+      params.append("collectionId", selectedTargetProject);
 
       const response = await authenticatedFetch(
         `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split("?")[0]}/import/curl?${params}`,

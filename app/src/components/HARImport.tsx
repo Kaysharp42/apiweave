@@ -32,6 +32,7 @@ interface HARImportDryRunStats {
 interface HARImportDryRunResult {
   stats: HARImportDryRunStats;
   preview: HARPreviewEntry[];
+  items: HARPreviewEntry[];
 }
 
 interface HARImportProps {
@@ -148,13 +149,13 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
       setError("Please select a HAR file first");
       return;
     }
-    if (!dryRunResult || !Array.isArray(dryRunResult.preview)) {
+    if (!dryRunResult || !Array.isArray(dryRunResult.items)) {
       setError("Please run Preview first");
       return;
     }
 
     try {
-      const items = dryRunResult.preview.map((entry) => ({
+      const items = dryRunResult.items.map((entry) => ({
         label: `[${entry.method}] ${entry.url}`,
         method: entry.method || "GET",
         url: entry.url || "",
