@@ -672,10 +672,12 @@ export function ResponseInspector({
     if (showHtmlPreview) {
       return (
         <Card title="HTML preview" icon={EyeCardIcon}>
+          {/* ponytail: empty sandbox = fully inert (no scripts, no same-origin). Previewing an
+              untrusted API response must never execute its scripts. Do not re-add allow-scripts. */}
           <iframe
             title="Response HTML preview"
             srcDoc={bodyText}
-            sandbox="allow-scripts"
+            sandbox=""
             className="h-96 w-full rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
           />
         </Card>
