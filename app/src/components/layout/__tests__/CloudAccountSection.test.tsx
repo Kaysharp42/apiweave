@@ -141,6 +141,8 @@ describe("CloudAccountSection", () => {
     });
     renderSection();
     expect(await item(/relink account/i)).toBeInTheDocument();
+    // Escape hatch for switching to a different account when relink can't help.
+    expect(await item(/use a different account/i)).toBeInTheDocument();
   });
 
   it("renders nothing when the cloud bridge is unavailable", async () => {

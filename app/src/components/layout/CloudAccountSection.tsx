@@ -176,6 +176,18 @@ export function CloudAccountSection({
           >
             Relink account
           </Button>
+          {/* Escape hatch when the user can't get back into this account and
+              wants a different one — routes to the disconnect flow on /cloud/sync. */}
+          <Button
+            ref={itemRef(1)}
+            role="menuitem"
+            variant="secondary"
+            size="sm"
+            fullWidth
+            onClick={() => goTo("/cloud/sync")}
+          >
+            Use a different account
+          </Button>
         </div>
       );
     }
