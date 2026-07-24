@@ -1,15 +1,19 @@
-import { useReducer } from "react";
+import { useReducer, useState } from "react";
 import { useWorkflow } from "../contexts/WorkflowContext";
-import { GitMerge, Pencil, Search, Trash2 } from "lucide-react";
+import { GitBranch, GitMerge, Pencil, Search, Trash2 } from "lucide-react";
 import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { EmptyState } from "./molecules/EmptyState";
+import { VariableProvenanceModal } from "./molecules/VariableProvenanceModal";
+import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
 
 export default function VariablesPanel() {
   const { variables, updateVariable, deleteVariablesWithCleanup } =
     useWorkflow();
+  const provenanceMap = useVariableProvenanceStore((s) => s.provenance);
+  const [tracingVar, setTracingVar] = useState<string | null>(null);
 
   type VariablesPanelState = {
     showForm: boolean;
@@ -194,6 +198,15 @@ export default function VariablesPanel() {
                   </code>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <IconButton
+                      onClick={() => setTracingVar(varName)}
+                      variant="ghost"
+                      size="xs"
+                      tooltip="Trace variable provenance"
+                      className="flex-shrink-0"
+                    >
+                      <GitBranch className="w-3 h-3" />
+                    </IconButton>
+                    <IconButton
                       onClick={() =>
                         dispatch({
                           type: "start-edit",
@@ -328,6 +341,13 @@ export default function VariablesPanel() {
           </li>
         </ul>
       </div>
+
+      <VariableProvenanceModal
+        isOpen={tracingVar !== null}
+        onClose={() => setTracingVar(null)}
+        variableName={tracingVar ?? ""}
+        provenance={tracingVar !== null ? (provenanceMap[tracingVar] ?? null) : null}
+      />
     </div>
   );
 }

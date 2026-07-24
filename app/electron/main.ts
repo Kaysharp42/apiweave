@@ -233,7 +233,8 @@ if (!hasSingleInstanceLock) {
       functions,
       clock,
       rng,
-      resolveSecret: (name, chain) => secretService.resolvePlaintext(name, chain),
+      resolveSecret: (name, chain) =>
+        secretService.resolvePlaintext(name, chain).then((r) => ({ plaintext: r.plaintext, scopeType: r.scopeType })),
       emitProgress: (_runId, event) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           emitRunProgress(mainWindow.webContents, event)

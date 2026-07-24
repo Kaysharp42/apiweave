@@ -28,6 +28,11 @@ type IpcRun = Run & {
   readonly failedNodes?: readonly string[] | null;
   readonly nodeStatuses?: Record<string, JsonValue>;
   readonly variables?: Record<string, JsonValue>;
+  readonly resolvedSecrets?: readonly {
+    readonly name: string;
+    readonly scopeType: "environment" | "workspace" | null;
+    readonly resolved: boolean;
+  }[];
 };
 
 type IpcBridge = {

@@ -38,11 +38,14 @@ import NodeModal from "./NodeModal";
 import HistoryModal from "./HistoryModal";
 import ImportToNodesPanel from "./ImportToNodesPanel";
 import WorkflowJsonEditor from "./WorkflowJsonEditor";
+import { RunTimelinePanel } from "./organisms/RunTimelinePanel";
 import { AppContext } from "../App";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";
 import useTabStore from "../stores/TabStore";
+import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
+import { computeProvenance } from "../utils/variableProvenance";
 import useCanvasStore from "../stores/CanvasStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasDrop from "../hooks/useCanvasDrop";
@@ -113,6 +116,10 @@ const miniMapStyle = {
 // WeakMap IDs track extractor-config identity by ref so the signature doesn't churn during position-only drag frames.
 const extractorConfigIdMap = new WeakMap<object, number>();
 let nextExtractorConfigId = 0;
+// Same idea for full node configs, so the provenance signature only changes on
+// real config edits (add/remove extractor, new {{variables.X}} ref) — not drag.
+const configRefMap = new WeakMap<object, number>();
+let nextConfigRefId = 0;
 
 const initialNodes: Node<WorkflowCanvasNodeData>[] = [
   {
@@ -147,6 +154,7 @@ export function WorkflowCanvas({
     updateVariables,
     onVariablesDeletedRef,
   } = useWorkflow();
+  const setProvenance = useVariableProvenanceStore((s) => s.setProvenance);
 
   const [nodes, setNodes, onNodesChange] =
     useNodesState<WorkflowCanvasNodeData>(initialNodes);
@@ -195,6 +203,7 @@ export function WorkflowCanvas({
   const [showHistory, setShowHistory] = useState(false);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
+  const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   const environments = useEnvironmentStore((s) => s.environments);
   const selectedEnvMap = useEnvironmentStore(
     (s) => s.selectedEnvironmentByWorkflow,
@@ -292,6 +301,31 @@ export function WorkflowCanvas({
     });
     registerExtractors(extractorsFromNodes);
   }, [extractorsSig, registerExtractors]);
+
+  // ── Variable provenance (feature 5.2) ───────────────────────────────
+  // Rebuild the producer/consumer map whenever a node config actually changes
+  // (not on position-only drag frames). View panels read it from the store.
+  const provenanceSig = useMemo(() => {
+    const parts: string[] = [];
+    for (const node of nodes) {
+      const cfg = node.data?.config;
+      if (cfg !== null && typeof cfg === "object" && !Array.isArray(cfg)) {
+        let id = configRefMap.get(cfg as object);
+        if (id === undefined) {
+          id = nextConfigRefId++;
+          configRefMap.set(cfg as object, id);
+        }
+        parts.push(`${node.id}:${id}`);
+      } else {
+        parts.push(`${node.id}:0`);
+      }
+    }
+    return parts.join("|");
+  }, [nodes]);
+
+  useEffect(() => {
+    setProvenance(computeProvenance(nodesRef.current));
+  }, [provenanceSig, setProvenance]);
 
   // ── Variables deletion effect ───────────────────────────────────────
 
@@ -957,8 +991,19 @@ export function WorkflowCanvas({
           workspaceId={scope.workspaceId ?? ""}
           onClose={() => setShowHistory(false)}
           onSelectRun={loadHistoricalRun}
+          onShowTimeline={(runId) => {
+            setTimelineRunId(runId);
+            setShowHistory(false);
+          }}
         />
       )}
+
+      <RunTimelinePanel
+        isOpen={timelineRunId !== null}
+        onClose={() => setTimelineRunId(null)}
+        workspaceId={scope.workspaceId ?? null}
+        runId={timelineRunId}
+      />
 
       {showImportToNodes && (
         <ImportToNodesPanel

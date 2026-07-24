@@ -9,7 +9,7 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
     workspaceId: "ws1",
     name: "wf",
     nodes: [
-      { nodeId: "n1", type: "http", position: { x: 0, y: 0 }, config: {} },
+      { nodeId: "n1", type: "http-request", position: { x: 0, y: 0 }, config: {} },
     ],
     edges: [],
     variables: {},
@@ -45,7 +45,7 @@ describe("useHydration", () => {
       workflow: makeWorkflow({
         rev: 3,
         nodes: [
-          { nodeId: "n1", type: "http", position: { x: 5, y: 5 }, config: {} },
+          { nodeId: "n1", type: "http-request", position: { x: 5, y: 5 }, config: {} },
         ],
       }),
     });

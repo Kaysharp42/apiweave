@@ -3,6 +3,7 @@ import type { ClockProvider, RngProvider } from "./harness/providers"
 import { FormData as UndiciFormData, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError } from "./safe_http"
+import { extractSecretRefsFromString } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
@@ -99,6 +100,9 @@ export interface NodeResult {
     readonly truncated?: boolean
   }
   readonly mergedByOther?: boolean
+  readonly startedAt?: string
+  readonly completedAt?: string
+  readonly secretRefs?: readonly string[]
   readonly [key: string]: unknown
 }
 
@@ -402,6 +406,10 @@ export class WorkflowExecutor {
     const nodeType = node.type
 
     this.updateNodeStatus(nodeId, "running")
+    // Stamp the node's execution window on the injected clock so the run
+    // timeline/waterfall can place bars on an absolute run timeline.
+    const nodeStartedAt = this.deps.clock.isoNow()
+    const secretRefs = collectSecretRefs(node.config)
 
     try {
       let result: NodeResult
@@ -437,8 +445,9 @@ export class WorkflowExecutor {
 
       // Update node status
       const mappedStatus: RunnerNodeStatus = executionStatus === "success" || executionStatus === "warning" ? "passed" : "failed"
+      const nodeCompletedAt = this.deps.clock.isoNow()
       this.updateNodeStatus(nodeId, mappedStatus, result)
-      result = { ...result, type: nodeType }
+      result = { ...result, type: nodeType, startedAt: nodeStartedAt, completedAt: nodeCompletedAt, secretRefs }
       this.results.set(nodeId, result)
 
       // Handle failures
@@ -452,7 +461,13 @@ export class WorkflowExecutor {
       return { shouldContinue: true }
     } catch (error) {
       if (error instanceof StopBranch) throw error
-      const errorResult: NodeResult = { status: "error", error: String(error) }
+      const errorResult: NodeResult = {
+        status: "error",
+        error: String(error),
+        startedAt: nodeStartedAt,
+        completedAt: this.deps.clock.isoNow(),
+        secretRefs,
+      }
       this.updateNodeStatus(nodeId, "failed", errorResult)
       this.results.set(nodeId, errorResult)
       this.failedNodes.add(nodeId)
@@ -1346,6 +1361,9 @@ export class WorkflowExecutor {
         nodeId,
         status,
         duration: Math.max(0, Math.round(typeof result.duration === "number" ? result.duration : 0)),
+        ...(typeof result.startedAt === "string" ? { startedAt: result.startedAt } : {}),
+        ...(typeof result.completedAt === "string" ? { completedAt: result.completedAt } : {}),
+        ...(result.secretRefs && result.secretRefs.length > 0 ? { secretRefs: [...result.secretRefs] } : {}),
         request: {
           ...(typeof result["method"] === "string" ? { method: result["method"] } : {}),
           ...(typeof result["url"] === "string" ? { url: result["url"] } : {}),
@@ -1383,4 +1401,21 @@ export class WorkflowExecutor {
 function toJsonValue(value: unknown): JsonValue {
   if (value === undefined) return null
   return JSON.parse(JSON.stringify(value)) as JsonValue
+}
+
+/** Collect every {{secrets.NAME}} referenced by a node's config (names only). */
+function collectSecretRefs(config: Record<string, unknown> | undefined): readonly string[] {
+  if (!config) return []
+  const names = new Set<string>()
+  const visit = (value: unknown): void => {
+    if (typeof value === "string") {
+      for (const name of extractSecretRefsFromString(value)) names.add(name)
+    } else if (Array.isArray(value)) {
+      for (const item of value) visit(item)
+    } else if (value !== null && typeof value === "object") {
+      for (const item of Object.values(value as Record<string, unknown>)) visit(item)
+    }
+  }
+  visit(config)
+  return [...names]
 }

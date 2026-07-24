@@ -380,6 +380,54 @@ describe("WorkflowExecutor", () => {
     })
   })
 
+  describe("per-node execution window + secret refs (5.1/5.3)", () => {
+    it("stamps startedAt/completedAt on a completed delay node", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "delay", type: "delay", config: { duration: 10 } },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "delay" },
+          { edgeId: "e2", source: "delay", target: "end" },
+        ],
+      }
+      const executor = new WorkflowExecutor({ ...makeDeps(), baseUrl: "http://harness" })
+      const output = await executor.executeWorkflow(workflow)
+      const delayResult = output.results.find((r) => r.nodeId === "delay")
+      expect(delayResult?.status).toBe("passed")
+      expect(delayResult?.startedAt).toBe("2026-01-02T03:04:05.000Z")
+      expect(delayResult?.completedAt).toBe("2026-01-02T03:04:05.000Z")
+    })
+
+    it("records secretRefs (names only) on a node that references {{secrets.X}}", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            config: { method: "POST", url: "", body: "{{secrets.API_KEY}}" },
+          },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "http_1" },
+          { edgeId: "e2", source: "http_1", target: "end" },
+        ],
+        settings: { continueOnFail: true },
+      }
+      const executor = new WorkflowExecutor(makeDeps({ secrets: { API_KEY: "secret-value" } }))
+      const output = await executor.executeWorkflow(workflow)
+      expect(output.status).toBe("failed")
+      const httpResult = output.results.find((r) => r.nodeId === "http_1")
+      expect(httpResult?.secretRefs).toEqual(["API_KEY"])
+      expect(httpResult?.startedAt).toBe("2026-01-02T03:04:05.000Z")
+      expect(httpResult?.completedAt).toBe("2026-01-02T03:04:05.000Z")
+    })
+  })
+
   describe("cycle protection", () => {
     it("fails a cyclic graph with a step-budget error instead of hanging", async () => {
       const workflow: WorkflowGraph = {

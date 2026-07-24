@@ -12,6 +12,7 @@ The two guides in this section cover the canvas itself and the data that flows b
 
 - [Workflows and Nodes](workflows-and-nodes.md): build, edit, and run workflows on the canvas. Covers every node type, canvas actions, resume behavior after a failed run, and keyboard shortcuts.
 - [Variables and Extractors](variables-and-extractors.md): pass data between steps with the four placeholder namespaces, pull values from responses with extractors, and manage workflow-level variables.
+- [Visualization and Debugging](visualization-and-debugging.md): run timeline/waterfall, variable provenance tracing, and masked-secret resolution confidence — three read-only debugging views over existing run and dataflow data.
 
 ## Configuration
 
