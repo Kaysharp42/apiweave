@@ -87,6 +87,16 @@ export interface CloudChangeEnvelope {
 export type CloudApplyResult = "applied" | "ignored" | "conflict"
 export type CloudConflictWinner = "local" | "cloud"
 
+// Cloud-side writer attribution (who wrote the cloud copy), resolved by the
+// server and carried on a push-conflict outcome. Every field may be empty when
+// the server could not attribute the write (legacy snapshot, deleted user).
+export interface CloudConflictWriter {
+  readonly userId: string
+  readonly deviceId: string
+  readonly name: string
+  readonly deviceLabel: string
+}
+
 export interface CloudConflict {
   readonly conflictId: string
   readonly serverConflictId: string | null
@@ -104,6 +114,7 @@ export interface CloudConflict {
   readonly status: "pending" | "resolved"
   readonly createdAt: string
   readonly resolvedAt: string | null
+  readonly cloudWriter: CloudConflictWriter | null
 }
 
 export interface CloudPushConflictInput {
@@ -111,6 +122,7 @@ export interface CloudPushConflictInput {
   readonly outboxRow: CloudOutboxRow
   readonly cloudPayload: Uint8Array
   readonly cloudRev: number
+  readonly cloudWriter?: CloudConflictWriter | null
 }
 
 interface SettingRow extends SqliteRow {
@@ -182,6 +194,10 @@ interface CloudConflictDbRow extends SqliteRow {
   readonly status: "pending" | "resolved"
   readonly createdAt: string
   readonly resolvedAt: string | null
+  readonly cloud_writer_user_id: string | null
+  readonly cloud_writer_device_id: string | null
+  readonly cloud_writer_name: string | null
+  readonly cloud_writer_device_label: string | null
 }
 
 // Maps a conflict kind to the local table holding its display name.
@@ -577,6 +593,7 @@ export class CloudSyncRepository {
       cloudRev,
       localOp: input.outboxRow.op,
       cloudOp: cloudPayload.length === 0 ? "tombstone" : "upsert",
+      cloudWriter: input.cloudWriter ?? null,
     })
   }
 
@@ -1075,24 +1092,35 @@ export class CloudSyncRepository {
       cloudRev: Number(change.rev),
       localOp: latest.op,
       cloudOp: changeOpToOutboxOp(change.op),
+      // ponytail: pull-created conflicts carry no writer — PullChanges doesn't
+      // attribute changes. Renders "unknown author"; add if we ever put a
+      // writer on ChangeEnvelope.
+      cloudWriter: null,
     })
   }
 
   private saveConflict(input: Omit<CloudConflict, "winner" | "status" | "createdAt" | "resolvedAt">): void {
+    const writer = input.cloudWriter
     this.store.set(
       `INSERT INTO cloud_conflicts (
          conflict_id, server_conflict_id, workspace_id, kind, record_id, base_rev,
-         local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op,
+         cloud_writer_user_id, cloud_writer_device_id, cloud_writer_name, cloud_writer_device_label
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(conflict_id) DO UPDATE SET
          server_conflict_id = excluded.server_conflict_id,
          local_payload = excluded.local_payload, cloud_payload = excluded.cloud_payload,
          local_rev = excluded.local_rev, cloud_rev = excluded.cloud_rev,
-         local_op = excluded.local_op, cloud_op = excluded.cloud_op`,
+         local_op = excluded.local_op, cloud_op = excluded.cloud_op,
+         cloud_writer_user_id = excluded.cloud_writer_user_id,
+         cloud_writer_device_id = excluded.cloud_writer_device_id,
+         cloud_writer_name = excluded.cloud_writer_name,
+         cloud_writer_device_label = excluded.cloud_writer_device_label`,
       [
         input.conflictId, input.serverConflictId, input.workspaceId, input.kind, input.recordId, input.baseRev,
         toBuffer(input.localPayload), toBuffer(input.cloudPayload), input.localRev, input.cloudRev,
         input.localOp, input.cloudOp,
+        writer?.userId || null, writer?.deviceId || null, writer?.name || null, writer?.deviceLabel || null,
       ],
     )
     this.upsertRecordState(input.workspaceId, input.kind, input.recordId, {
@@ -1369,6 +1397,26 @@ function rowToCloudConflict(row: CloudConflictDbRow): CloudConflict {
     status: row.status,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
+    cloudWriter: cloudWriterFromRow(row),
+  }
+}
+
+// Reassembles the cloud writer from its columns, returning null when the
+// server carried no attribution (all columns NULL — legacy or pull conflict).
+function cloudWriterFromRow(row: CloudConflictDbRow): CloudConflictWriter | null {
+  if (
+    row.cloud_writer_user_id === null &&
+    row.cloud_writer_device_id === null &&
+    row.cloud_writer_name === null &&
+    row.cloud_writer_device_label === null
+  ) {
+    return null
+  }
+  return {
+    userId: row.cloud_writer_user_id ?? "",
+    deviceId: row.cloud_writer_device_id ?? "",
+    name: row.cloud_writer_name ?? "",
+    deviceLabel: row.cloud_writer_device_label ?? "",
   }
 }
 

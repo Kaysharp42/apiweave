@@ -32,6 +32,14 @@ export interface ConflictUiBridgeOptions {
 
 const winnerSchema = z.enum(["local", "cloud"])
 const kindSchema = z.enum(["workspace", "project", "collection", "workflow", "environment"])
+const conflictWriterSchema = z
+  .object({
+    userId: z.string(),
+    deviceId: z.string(),
+    name: z.string(),
+    deviceLabel: z.string(),
+  })
+  .nullable()
 const conflictListItemSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
@@ -43,6 +51,8 @@ const conflictListItemSchema = z.object({
   winner: winnerSchema.nullable(),
   created_at: z.string(),
   resolved_at: z.string().nullable().optional(),
+  // cloud_writer attributes the cloud copy; null for legacy/pull conflicts.
+  cloud_writer: conflictWriterSchema.optional(),
 })
 const conflictSchema = conflictListItemSchema.extend({
   local_payload: z.record(z.string(), z.unknown()),
@@ -147,6 +157,7 @@ function conflictToListItem(conflict: CloudConflict, repository: CloudSyncReposi
     winner: conflict.winner,
     created_at: conflict.createdAt,
     resolved_at: conflict.resolvedAt,
+    cloud_writer: conflict.cloudWriter,
   }
 }
 

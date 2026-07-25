@@ -174,6 +174,11 @@ export function ConflictDetailPage() {
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Badge variant="secondary">local rev {conflict.local_rev}</Badge>
           <Badge variant="secondary">cloud rev {conflict.cloud_rev}</Badge>
+          {conflict.winner === null ? (
+            <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
+              Cloud edited by {cloudWriterLabel(conflict.cloud_writer)}
+            </span>
+          ) : null}
         </div>
         <DiffView entries={diff} />
         <details className="mt-4 rounded-sm border border-border dark:border-border-dark">
@@ -220,6 +225,13 @@ export function ConflictDetailPage() {
       />
     </div>
   );
+}
+
+/** "Ada · MacBook Pro", "Ada", or "an unknown author" when unattributed. */
+function cloudWriterLabel(writer: Conflict["cloud_writer"]): string {
+  if (!writer || (!writer.name && !writer.deviceLabel)) return "an unknown author";
+  const name = writer.name || "an unknown author";
+  return writer.deviceLabel ? `${name} · ${writer.deviceLabel}` : name;
 }
 
 function RecordPane({

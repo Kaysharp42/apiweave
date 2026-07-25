@@ -90,6 +90,27 @@ describe("ConflictDetailPage", () => {
     expect(screen.getByText("Local API smoke test")).toBeInTheDocument();
   });
 
+  it("shows the cloud-side author when the server attributed it", async () => {
+    const attributed = {
+      ...workflowConflict,
+      cloud_writer: { userId: "u2", deviceId: "d2", name: "Grace", deviceLabel: "Cloud Desktop" },
+    };
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-get") return { ok: true, data: attributed };
+      return { ok: true, data: [] };
+    });
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep local" });
+    expect(screen.getByText("Cloud edited by Grace · Cloud Desktop")).toBeInTheDocument();
+  });
+
+  it("falls back to unknown author when the cloud writer is absent", async () => {
+    renderPage("/cloud/conflicts/conflict-1");
+    await screen.findByRole("button", { name: "Keep local" });
+    expect(screen.getByText("Cloud edited by an unknown author")).toBeInTheDocument();
+  });
+
   it("keeps the raw JSON available behind the technical-detail toggle", async () => {
     const user = userEvent.setup();
     renderPage("/cloud/conflicts/conflict-1");

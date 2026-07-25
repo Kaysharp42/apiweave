@@ -430,6 +430,14 @@ export class CloudSyncProvider implements SyncProvider {
         outboxRow: row,
         cloudPayload: outcome.winnerPayload ?? new Uint8Array(),
         cloudRev: Number(outcome.newRev),
+        cloudWriter: outcome.cloudWriter
+          ? {
+              userId: outcome.cloudWriter.userId,
+              deviceId: outcome.cloudWriter.deviceId,
+              name: outcome.cloudWriter.name,
+              deviceLabel: outcome.cloudWriter.deviceLabel,
+            }
+          : null,
       })
       return "blocked"
     } else if (outcome.status === PushOutcome_Status.REJECTED) {

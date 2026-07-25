@@ -1,5 +1,6 @@
 import type { ConflictKind } from "./ConflictKind";
 import type { ConflictWinner } from "./ConflictWinner";
+import type { ConflictWriter } from "./ConflictWriter";
 
 export interface ConflictListItem {
   readonly id: string;
@@ -12,4 +13,5 @@ export interface ConflictListItem {
   readonly winner: ConflictWinner | null;
   readonly created_at: string;
   readonly resolved_at?: string | null;
+  readonly cloud_writer?: ConflictWriter | null;
 }
