@@ -31,6 +31,11 @@ export interface ResolveConflictOutcome {
 
 export interface SyncConflictResolver {
   readonly resolveConflict: (input: ResolveConflictInput) => Promise<ResolveConflictOutcome>
+  // Optional best-effort trigger to run a sync cycle immediately after a
+  // resolve, so a keep-local re-push / merged re-push propagates and the view
+  // settles in seconds instead of on the next periodic sync. Fire-and-forget:
+  // the periodic sync remains the correctness guarantee, so it must not throw.
+  readonly nudgeSync?: () => void
 }
 
 export interface ConflictUiBridgeOptions {
@@ -129,6 +134,7 @@ export class ConflictUiBridge {
         conflict_id: conflict.serverConflictId,
       })
       this.repository.resolveConflictMerged(input.conflict_id, outcome.resultingRev, outcome.winnerPayload)
+      this.options.syncService.nudgeSync?.()
       return this.get(input.conflict_id)
     }
 
@@ -151,6 +157,7 @@ export class ConflictUiBridge {
     }
 
     this.repository.resolveConflict(input.conflict_id, input.winner)
+    this.options.syncService.nudgeSync?.()
     return this.get(input.conflict_id)
   }
 

@@ -426,6 +426,16 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         const response = await this.createClient(this.activeConfig).resolveConflict(conflict_id, winner)
         return { resultingRev: Number(response.resultingRev), winnerPayload: response.winnerPayload }
       },
+      // Best-effort convergence accelerator: push (flush a keep-local/merged
+      // re-push) then pull, so the resolution settles now instead of on the
+      // next periodic sync. Fire-and-forget — the periodic sync is the
+      // guarantee, so any error (no active provider, offline, transient) is
+      // swallowed and retried on the next cycle.
+      nudgeSync: () => {
+        void this.push()
+          .then(() => this.pull())
+          .catch(() => {})
+      },
     }
   }
 

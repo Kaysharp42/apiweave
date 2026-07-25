@@ -14,7 +14,7 @@ describe("conflict-ui-bridge", () => {
   let db: Database
   let store: KVStore
   let router: IpcRouter
-  let resolver: SyncConflictResolver & { resolveConflict: ReturnType<typeof vi.fn> }
+  let resolver: SyncConflictResolver & { resolveConflict: ReturnType<typeof vi.fn>; nudgeSync: ReturnType<typeof vi.fn> }
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), "conflict-ui-test-"))
@@ -26,7 +26,7 @@ describe("conflict-ui-bridge", () => {
       "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
       [WORKSPACE_ID, "Conflicts", "conflicts", "cloud", "bi-directional", "{}"],
     )
-    resolver = { resolveConflict: vi.fn().mockResolvedValue(undefined) }
+    resolver = { resolveConflict: vi.fn().mockResolvedValue(undefined), nudgeSync: vi.fn() }
     router = new IpcRouter()
     registerConflictUiHandlers(router, { store, syncService: resolver })
     await router.dispatch({ domain: "cloud", action: "conflict-list", payload: {} })
@@ -267,6 +267,30 @@ describe("conflict-ui-bridge", () => {
       expect(result.error.message).toContain("Auto-merge is not available")
     }
     expect(resolver.resolveConflict).not.toHaveBeenCalled()
+  })
+
+  it("nudges an immediate sync cycle after a successful resolve", async () => {
+    insertConflict("conflict-nudge")
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-nudge", winner: "local", device_id: "device-1" },
+    })
+    expect(result.ok).toBe(true)
+    expect(resolver.nudgeSync).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not nudge a sync when the resolve fails", async () => {
+    insertConflict("conflict-nonudge")
+    resolver.resolveConflict.mockRejectedValueOnce(new Error("boom"))
+    await expect(
+      router.dispatch({
+        domain: "cloud",
+        action: "conflict-resolve",
+        payload: { conflict_id: "conflict-nonudge", winner: "cloud", device_id: "device-1" },
+      }),
+    ).rejects.toThrow("boom")
+    expect(resolver.nudgeSync).not.toHaveBeenCalled()
   })
 
   it("errors if the Go SyncService resolve call fails", async () => {
