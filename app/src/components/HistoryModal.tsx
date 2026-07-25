@@ -18,9 +18,11 @@ import {
   ChevronRight,
   Timer,
   Zap,
+  Activity,
 } from "lucide-react";
 import { authenticatedFetch } from "../utils/apiweaveClient";
 import { workflowRunsListUrl } from "../utils/apiweaveClient";
+import { IconButton } from "./atoms/IconButton";
 import type { RunRecord, HistoryModalProps } from "../types";
 
 interface PaginationInfo {
@@ -109,6 +111,7 @@ export default function HistoryModal({
   workspaceId,
   onClose,
   onSelectRun,
+  onShowTimeline,
 }: HistoryModalProps) {
   const [requestState, dispatchRequest] = useReducer(requestReducer, {
     status: "loading",
@@ -337,11 +340,18 @@ export default function HistoryModal({
               className={`divide-y divide-border dark:divide-border-dark transition-opacity ${isLoading ? "opacity-50" : "opacity-100"}`}
             >
               {runs.map((run) => (
-                <button
-                  type="button"
+                <div
                   key={run.runId}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => handleRunClick(run)}
-                  className="w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleRunClick(run);
+                    }
+                  }}
+                  className="w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
@@ -405,11 +415,25 @@ export default function HistoryModal({
                         )}
                     </div>
 
-                    <div className="flex-shrink-0 text-text-muted dark:text-text-muted-dark">
+                    <div className="flex-shrink-0 flex items-center gap-1 text-text-muted dark:text-text-muted-dark">
+                      {onShowTimeline && (
+                        <IconButton
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onShowTimeline(run.runId);
+                          }}
+                          variant="ghost"
+                          size="xs"
+                          tooltip="View run timeline"
+                          aria-label={`View timeline for run ${run.runId}`}
+                        >
+                          <Activity className="w-4 h-4" />
+                        </IconButton>
+                      )}
                       <ChevronRight className="w-5 h-5" />
                     </div>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}

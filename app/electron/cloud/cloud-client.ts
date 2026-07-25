@@ -255,6 +255,26 @@ export class ErrProtocolMismatch extends Error {
   }
 }
 
+/** A non-2xx Connect response (other than 401). Carries the HTTP status so
+ * callers can react to a specific code — e.g. 409 (Aborted). */
+export class ErrCloudRequestFailed extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message)
+    this.name = "ErrCloudRequestFailed"
+  }
+}
+
+/** The conflict snapshot being resolved is stale: the cloud record advanced
+ * past it, so the server refused "keep local" (Aborted/409) rather than clobber
+ * unseen cloud changes. Recoverable — the local resolution re-enqueues the edit
+ * and the next push reconciles against the current cloud rev. */
+export class ErrCloudConflictStale extends Error {
+  constructor() {
+    super("conflict snapshot is stale — the cloud copy changed")
+    this.name = "ErrCloudConflictStale"
+  }
+}
+
 interface DesktopSessionResponse {
   readonly sessionToken: string
   readonly expiresAt: string
@@ -417,11 +437,22 @@ export class CloudClient {
       winner: winner === "local" ? ConflictWinner.LOCAL : ConflictWinner.CLOUD,
       deviceId: this.tokenStore.getDeviceId() ?? "",
     })
-    await this.call(
-      SyncService.typeName,
-      METHOD_RESOLVE_CONFLICT,
-      toJson(ResolveConflictRequestSchema, request),
-    )
+    try {
+      await this.call(
+        SyncService.typeName,
+        METHOD_RESOLVE_CONFLICT,
+        toJson(ResolveConflictRequestSchema, request),
+      )
+    } catch (error) {
+      // Aborted (HTTP 409) here means "keep local" hit the server's rev guard:
+      // the record moved past the snapshot's cloud_rev. Surface it as a stale
+      // conflict so the caller can recover instead of showing a raw transport
+      // error.
+      if (error instanceof ErrCloudRequestFailed && error.status === 409) {
+        throw new ErrCloudConflictStale()
+      }
+      throw error
+    }
   }
 
   public async fetchLoser(conflictId: string): Promise<FetchLoserResponse> {
@@ -554,7 +585,10 @@ export class CloudClient {
     }
 
     if (!response.ok) {
-      throw new Error(`Connect call failed: ${serviceName}/${methodName} — HTTP ${response.status}`)
+      throw new ErrCloudRequestFailed(
+        response.status,
+        `Connect call failed: ${serviceName}/${methodName} — HTTP ${response.status}`,
+      )
     }
 
     return await response.json() as JsonValue

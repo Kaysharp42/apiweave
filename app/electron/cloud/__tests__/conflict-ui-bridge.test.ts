@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { initDatabase, type Database, type KVStore } from "../../../core/db"
 import { IpcRouter } from "../../../core/ipc/router"
 import { registerConflictUiHandlers, type SyncConflictResolver } from "../conflict-ui-bridge"
+import { ErrCloudConflictStale } from "../cloud-client"
 
 const WORKSPACE_ID = "ws-conflicts"
 
@@ -166,6 +167,41 @@ describe("conflict-ui-bridge", () => {
       "SELECT slug FROM workspaces WHERE id = ?",
       ["personal-workspace"],
     )).toEqual({ slug: "personal" })
+  })
+
+  it("recovers a stale server snapshot on keep local by resolving locally", async () => {
+    insertConflict("conflict-stale")
+    resolver.resolveConflict.mockRejectedValueOnce(new ErrCloudConflictStale())
+
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-stale", winner: "local", device_id: "device-1" },
+    })
+
+    // The server 409 is swallowed: local resolution still runs, re-enqueuing the
+    // edit so the next push reconciles against the current cloud rev.
+    expect(result.ok).toBe(true)
+    expect(store.get<{ winner: string; status: string }>(
+      "SELECT winner, status FROM cloud_conflicts WHERE conflict_id = ?",
+      ["conflict-stale"],
+    )).toEqual({ winner: "local", status: "resolved" })
+    expect(store.get<{ expected_rev: number }>(
+      "SELECT expected_rev FROM cloud_outbox WHERE record_id = ?",
+      ["workflow-1"],
+    )).toEqual({ expected_rev: 9 })
+  })
+
+  it("rethrows a stale conflict error when keeping cloud", async () => {
+    insertConflict("conflict-stale-cloud")
+    resolver.resolveConflict.mockRejectedValueOnce(new ErrCloudConflictStale())
+    await expect(
+      router.dispatch({
+        domain: "cloud",
+        action: "conflict-resolve",
+        payload: { conflict_id: "conflict-stale-cloud", winner: "cloud", device_id: "device-1" },
+      }),
+    ).rejects.toThrow(ErrCloudConflictStale)
   })
 
   it("errors if the Go SyncService resolve call fails", async () => {

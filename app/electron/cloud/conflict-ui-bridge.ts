@@ -3,6 +3,7 @@ import type { KVStore } from "../../core/db"
 import { ConflictError, NotFoundError, ValidationError } from "../../core/ipc/errors"
 import type { IpcRouter } from "../../core/ipc/router"
 import { CloudSyncRepository, type CloudConflict } from "../../core/repositories"
+import { ErrCloudConflictStale } from "./cloud-client"
 
 export const CLOUD_CONFLICT_DOMAIN = "cloud"
 export const CONFLICT_LIST_ACTION = "conflict-list"
@@ -96,10 +97,21 @@ export class ConflictUiBridge {
     }
 
     if (conflict.serverConflictId !== null) {
-      await this.options.syncService.resolveConflict({
-        ...input,
-        conflict_id: conflict.serverConflictId,
-      })
+      try {
+        await this.options.syncService.resolveConflict({
+          ...input,
+          conflict_id: conflict.serverConflictId,
+        })
+      } catch (error) {
+        // A stale server snapshot on "keep local" (the cloud record advanced
+        // past it) is recoverable: the local resolution below re-enqueues the
+        // edit and the next push reconciles against the current cloud rev —
+        // regenerating a fresh conflict if the cloud genuinely diverged. Any
+        // other failure (offline, auth, server error) is fatal and rethrown.
+        if (!(input.winner === "local" && error instanceof ErrCloudConflictStale)) {
+          throw error
+        }
+      }
     }
 
     this.repository.resolveConflict(input.conflict_id, input.winner)

@@ -7,4 +7,5 @@ export interface HistoryModalProps {
   workspaceId: string;
   onClose: () => void;
   onSelectRun: (run: RunRecord) => void;
+  onShowTimeline?: (runId: string) => void;
 }

@@ -130,18 +130,20 @@ export class SecretService {
 
   /**
    * Trusted runtime resolution: walk the env > workspace chain, open the winning
-   * sealed box, and return the plaintext. Returns null if the name is unset in
-   * every scope. The only path that yields a secret's plaintext; the value stays
-   * in the executor's runtime scope and is masked before any result is persisted.
+   * sealed box, and return the plaintext plus which scope won. Returns
+   * `{ plaintext: null, scopeType: <scope|null> }` if the name is unset or has
+   * no ciphertext. The only path that yields a secret's plaintext; the value
+   * stays in the executor's runtime scope and is masked before any result is
+   * persisted. The scope is safe (non-secret) metadata used for debug confidence.
    */
   async resolvePlaintext(
     name: string,
     chain: SecretScopeChain,
-  ): Promise<string | null> {
+  ): Promise<{ plaintext: string | null; scopeType: SecretScopeType | null }> {
     const hit = await this.resolver.resolve(chain, name)
-    if (!hit) return null
+    if (!hit) return { plaintext: null, scopeType: null }
     const ciphertext = await this.store.getCiphertext(hit.resolvedScope, hit.metadata.scopeId, name)
-    if (!ciphertext) return null
-    return openSealedBox(ciphertext, this.sealedBoxSeed)
+    if (!ciphertext) return { plaintext: null, scopeType: hit.resolvedScope }
+    return { plaintext: await openSealedBox(ciphertext, this.sealedBoxSeed), scopeType: hit.resolvedScope }
   }
 }

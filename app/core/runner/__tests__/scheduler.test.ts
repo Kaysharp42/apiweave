@@ -174,8 +174,8 @@ describe("RunScheduler", () => {
 
       const scheduler = makeScheduler({
         resolveSecret: async (name) => {
-          if (name !== "kyra_admin_pass") return null
-          return sealedBox.openSealedBox(sealedBody, seed)
+          if (name !== "kyra_admin_pass") return { plaintext: null, scopeType: null }
+          return { plaintext: await sealedBox.openSealedBox(sealedBody, seed), scopeType: "workspace" }
         },
       })
 

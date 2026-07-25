@@ -241,6 +241,7 @@ export default function useWorkflowPolling({
       if (!workspaceId) return;
       try {
         const run = await apiweave.runs.get(workspaceId, runId);
+        const resolvedSecrets = run.resolvedSecrets;
         const statuses: NodeStatuses = {};
         for (const [nodeId, entry] of Object.entries(run.nodeStatuses ?? {})) {
           if (typeof entry === "string") {
@@ -260,7 +261,12 @@ export default function useWorkflowPolling({
         for (const result of run.results ?? []) {
           statuses[result.nodeId] = {
             status: result.status,
-            result: resultFromRunResult(result),
+            result: {
+              ...(resultFromRunResult(result) as Record<string, unknown>),
+              ...(resolvedSecrets && resolvedSecrets.length > 0
+                ? { resolvedSecrets }
+                : {}),
+            },
           };
         }
         setNodes((nds) => selectiveNodeUpdate(nds, statuses));
@@ -540,9 +546,18 @@ export default function useWorkflowPolling({
       if (!workspaceId || !workflowId) return;
       try {
         const fullRun = await apiweave.runs.get(workspaceId, run.runId);
+        const resolvedSecrets = fullRun.resolvedSecrets;
         const statuses: NodeStatuses = {};
         for (const result of fullRun.results ?? []) {
-          statuses[result.nodeId] = { status: result.status, result: resultFromRunResult(result) };
+          statuses[result.nodeId] = {
+            status: result.status,
+            result: {
+              ...(resultFromRunResult(result) as Record<string, unknown>),
+              ...(resolvedSecrets && resolvedSecrets.length > 0
+                ? { resolvedSecrets }
+                : {}),
+            },
+          };
         }
         setNodes((nds) => selectiveNodeUpdate(nds, statuses));
         setCurrentRunId(fullRun.runId);

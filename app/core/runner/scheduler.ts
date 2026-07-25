@@ -1,4 +1,5 @@
 import type { Run } from "@shared/types/Run"
+import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { RunRepository } from "../repositories/RunRepository"
@@ -23,8 +24,13 @@ export interface SchedulerDeps {
   readonly rng: RngProvider
   readonly emitProgress?: (runId: string, event: RunProgressEvent) => void
   readonly concurrencyCap?: number
-  /** Trusted runtime secret resolver — opens sealed boxes down the env > workspace chain. */
-  readonly resolveSecret?: (name: string, chain: { environmentId?: string; workspaceId?: string }) => Promise<string | null>
+  /** Trusted runtime secret resolver — opens sealed boxes down the env > workspace
+   * chain. Returns the plaintext plus which scope won (or null/null when unset),
+   * so the run can record safe resolution metadata for masked-secret debugging. */
+  readonly resolveSecret?: (
+    name: string,
+    chain: { environmentId?: string; workspaceId?: string },
+  ) => Promise<{ plaintext: string | null; scopeType: "environment" | "workspace" | null }>
 }
 
 export interface EnqueueRequest {
@@ -160,13 +166,18 @@ export class RunScheduler {
         throw new Error(`environment ${selectedEnvironmentId} not found for run ${runId}`)
       }
 
+      const secretResolution = await this.resolveRunSecrets(graph, selectedEnvironmentId, run.workspaceId)
+      if (secretResolution.resolvedSecrets.length > 0) {
+        void this.deps.runs.setResolvedSecrets(runId, secretResolution.resolvedSecrets)
+      }
+
       const executorDeps: ExecutorDeps = {
         clock: this.deps.clock,
         rng: this.deps.rng,
         http: this.deps.http,
         functions: this.deps.functions,
         ...(environment ? { environmentVariables: environment.variables as Record<string, unknown> } : {}),
-        ...(await this.resolveRunSecrets(graph, selectedEnvironmentId, run.workspaceId)),
+        ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
         emitProgress: (event) => this.handleProgress(runId, event),
       }
 
@@ -207,15 +218,17 @@ export class RunScheduler {
   /**
    * Scan the workflow graph for `{{secrets.NAME}}` references, resolve each down
    * the env > workspace chain, and return a name -> plaintext map for the executor.
+   * Also records safe resolution metadata (name/scope/resolved) on
+   * {@link lastResolvedSecrets} for masked-secret debugging — never values.
    * Returns nothing when no resolver is wired or no references exist.
    */
   private async resolveRunSecrets(
     graph: WorkflowGraph,
     environmentId: string | null,
     workspaceId: string,
-  ): Promise<{ secrets?: Record<string, string> }> {
+  ): Promise<{ secrets?: Record<string, string>; resolvedSecrets: ResolvedSecretInfo[] }> {
     const resolver = this.deps.resolveSecret
-    if (!resolver) return {}
+    if (!resolver) return { resolvedSecrets: [] }
 
     const names = new Set<string>()
     const pattern = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
@@ -229,15 +242,17 @@ export class RunScheduler {
         }
       }
     }
-    if (names.size === 0) return {}
+    if (names.size === 0) return { resolvedSecrets: [] }
 
     const chain = { ...(environmentId ? { environmentId } : {}), workspaceId }
     const secrets: Record<string, string> = {}
+    const resolvedSecrets: ResolvedSecretInfo[] = []
     for (const name of names) {
-      const plaintext = await resolver(name, chain)
+      const { plaintext, scopeType } = await resolver(name, chain)
+      resolvedSecrets.push({ name, scopeType, resolved: plaintext !== null })
       if (plaintext !== null) secrets[name] = plaintext
     }
-    return { secrets }
+    return { ...(Object.keys(secrets).length > 0 ? { secrets } : {}), resolvedSecrets }
   }
 
   private handleProgress(runId: string, event: RunProgressEvent): void {

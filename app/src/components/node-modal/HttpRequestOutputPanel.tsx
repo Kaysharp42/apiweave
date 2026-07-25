@@ -4,6 +4,7 @@ import { Badge } from "../atoms/Badge";
 import { IconButton } from "../atoms/IconButton";
 import { ResponseInspector } from "../molecules/ResponseInspector";
 import { SearchInput } from "../molecules/SearchInput";
+import { SecretResolutionIndicator } from "../molecules/SecretResolutionIndicator";
 import { formatNodeOutputDuration } from "../../utils/nodeOutputStatus";
 import {
   createInspectorResponse,
@@ -12,6 +13,7 @@ import {
   getNumberValue,
 } from "./nodeModalUtils";
 import { buildCurlCommand, buildFetchCommand } from "./copyAsCurl";
+import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo";
 import type { BadgeProps, HttpRequestOutputPanelProps } from "../../types";
 
 function formatBytes(bytes: number | undefined): string {
@@ -56,6 +58,11 @@ export function HttpRequestOutputPanel({
   );
   const responseSize = formatBytes(metadata?.responseSizeBytes);
   const requestLabel = `${initialConfig.method || "GET"} ${initialConfig.url || "Untitled request"}`;
+  const outputRecord = output as Record<string, unknown> | null;
+  const secretRefs = Array.isArray(outputRecord?.secretRefs)
+    ? (outputRecord!.secretRefs as readonly string[])
+    : [];
+  const resolvedSecrets = outputRecord?.resolvedSecrets as readonly ResolvedSecretInfo[] | undefined;
 
   const commands = useMemo(
     () => ({
@@ -124,6 +131,17 @@ export function HttpRequestOutputPanel({
             </IconButton>
           </div>
         </div>
+        {secretRefs.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted dark:text-text-muted-dark">
+              Secrets
+            </span>
+            <SecretResolutionIndicator
+              secretRefs={secretRefs}
+              resolvedSecrets={resolvedSecrets}
+            />
+          </div>
+        )}
         <SearchInput
           value={filterQuery}
           onChange={setFilterQuery}

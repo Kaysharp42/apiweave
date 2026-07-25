@@ -2,6 +2,7 @@ import type { KVStore, SqliteRow } from "../db"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
+import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { generateId } from "../id"
 import { mustExist, parseJson, toJson } from "./helpers"
@@ -27,6 +28,7 @@ export type RunUpdate = Partial<
     | "resumeFromRunId"
     | "resumeFromNodeIds"
     | "resumeMode"
+    | "resolvedSecrets"
   >
 >
 
@@ -65,6 +67,7 @@ interface RunMetadata {
   readonly resumeFromRunId: string | null
   readonly resumeFromNodeIds: readonly string[] | null
   readonly resumeMode: "single" | "all-failed" | null
+  readonly resolvedSecrets: readonly ResolvedSecretInfo[]
 }
 
 export class RunRepository {
@@ -83,6 +86,7 @@ export class RunRepository {
       resumeFromRunId: null,
       resumeFromNodeIds: null,
       resumeMode: null,
+      resolvedSecrets: [],
     }
     this.store.set(
       "INSERT INTO runs (id, workspace_id, workflow_id, scopeId, status, node_statuses_json, extracted_variables_json, response_metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -219,6 +223,19 @@ export class RunRepository {
     return this.update(runId, { results: [...results] })
   }
 
+  /**
+   * Patch safe secret-resolution metadata (`$.resolvedSecrets`) into the run's
+   * metadata blob — a targeted `json_set`, NOT a whole-row write, so it never
+   * clobbers per-node progress. Holds names + scope + a resolved flag only;
+   * never secret values/ciphertext. For masked-secret debug confidence (5.3).
+   */
+  public setResolvedSecrets(runId: string, secrets: readonly ResolvedSecretInfo[]): void {
+    this.store.set("UPDATE runs SET response_metadata_json = json_set(response_metadata_json, '$.resolvedSecrets', json(?)) WHERE id = ?", [
+      toJson(secrets),
+      runId,
+    ])
+  }
+
   public delete(runId: string): boolean {
     return this.store.delete("DELETE FROM runs WHERE id = ?", [runId]).changes > 0
   }
@@ -264,6 +281,7 @@ export class RunRepository {
       resumeFromRunId: run.resumeFromRunId ?? null,
       resumeFromNodeIds: run.resumeFromNodeIds ?? null,
       resumeMode: run.resumeMode ?? null,
+      resolvedSecrets: run.resolvedSecrets ?? [],
     }
     this.store.set(
       "UPDATE runs SET status = ?, node_statuses_json = ?, extracted_variables_json = ?, response_metadata_json = ?, startedAt = ?, completedAt = ? WHERE id = ?",
@@ -301,6 +319,7 @@ function rowToRun(row: RunRow): Run {
     resumeFromRunId: metadata.resumeFromRunId,
     resumeFromNodeIds: metadata.resumeFromNodeIds === null ? null : [...metadata.resumeFromNodeIds],
     resumeMode: metadata.resumeMode,
+    resolvedSecrets: [...metadata.resolvedSecrets],
     rev: row.rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
