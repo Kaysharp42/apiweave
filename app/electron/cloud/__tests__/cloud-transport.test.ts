@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import nock from "nock"
 import { initDatabase, type KVStore, type Database } from "../../../core/db"
-import { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository } from "../../../core/repositories"
+import { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository, type CloudOutboxRow } from "../../../core/repositories"
 import { encrypt, generateDek, wrapDek } from "../../../core/secrets/crypto"
 import { createKeyfile, readKeyfile } from "../../../core/secrets/keyfile"
 import { CloudSyncProvider } from "../cloud-transport"
@@ -1829,6 +1829,133 @@ describe("CloudSyncProvider", () => {
       expect(repository.getFullSync(SECOND_CLOUD_WORKSPACE_ID)).toBeTypeOf("number")
       expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBe("Something went wrong talking to the cloud. Sync will retry automatically.")
       expect(repository.getWorkspaceBinding(SECOND_WORKSPACE_ID)?.lastSyncedAt).not.toBeNull()
+      expect(nock.isDone()).toBe(true)
+    })
+  })
+
+  describe("remote conflict reconciliation", () => {
+    const RECORD_ID = "wf-remote-reconcile"
+    const SERVER_CONFLICT_ID = "srv-conflict-remote"
+    const encode = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value))
+    const localPayload = (): Uint8Array =>
+      encode({ name: "Local", graph: { nodes: [], edges: [] }, variables: {} })
+    const cloudPayload = (): Uint8Array =>
+      encode({ name: "Cloud", graph: { nodes: [], edges: [] }, variables: {} })
+
+    // Reproduces the desktop state after a push conflict: the original edit sits
+    // blocked in the outbox and a server-linked conflict snapshot is recorded.
+    function seedPushConflict(repository: CloudSyncRepository, newerLocalEdit?: Uint8Array): void {
+      repository.enqueueOutbox({
+        kind: "workflow", record_id: RECORD_ID, workspace_id: WORKSPACE_ID,
+        expected_rev: 1, op: "upsert", payload: localPayload(),
+      })
+      const outboxRow: CloudOutboxRow = {
+        id: "outbox-remote", kind: "workflow", record_id: RECORD_ID, workspace_id: WORKSPACE_ID,
+        expected_rev: 1, op: "upsert", payload: localPayload(),
+        retry_count: 0, next_retry_at: 0, failure_reason: null, created_at: Date.now(), is_baseline: false,
+      }
+      repository.recordPushConflict({
+        conflictId: SERVER_CONFLICT_ID, outboxRow, cloudPayload: cloudPayload(), cloudRev: 2,
+      })
+      if (newerLocalEdit !== undefined) {
+        repository.enqueueOutbox({
+          kind: "workflow", record_id: RECORD_ID, workspace_id: WORKSPACE_ID,
+          expected_rev: 2, op: "upsert", payload: newerLocalEdit,
+        })
+      }
+    }
+
+    const recordState = (): { server_rev: number; conflict_id: string | null } | undefined =>
+      store.get<{ server_rev: number; conflict_id: string | null }>(
+        "SELECT server_rev, conflict_id FROM cloud_record_state WHERE record_id = ?",
+        [RECORD_ID],
+      )
+
+    it("keep-local: the server kept our copy, so it clears and advances the rev", () => {
+      const repository = new CloudSyncRepository(store)
+      seedPushConflict(repository)
+
+      // FetchLoser returned the cloud copy → cloud lost → local won.
+      const outcome = repository.reconcileRemoteResolvedConflict(SERVER_CONFLICT_ID, cloudPayload())
+
+      expect(outcome).toBe("local")
+      const conflict = repository.getConflict(SERVER_CONFLICT_ID)
+      expect(conflict?.status).toBe("resolved")
+      expect(conflict?.winner).toBe("local")
+      expect(store.query("SELECT id FROM cloud_outbox WHERE record_id = ?", [RECORD_ID])).toHaveLength(0)
+      expect(recordState()).toMatchObject({ server_rev: 3, conflict_id: null })
+    })
+
+    it("keep-cloud: the server kept the cloud copy, so it applies cloud and discards local", () => {
+      const repository = new CloudSyncRepository(store)
+      seedPushConflict(repository)
+
+      // FetchLoser returned our local copy → local lost → cloud won.
+      const outcome = repository.reconcileRemoteResolvedConflict(SERVER_CONFLICT_ID, localPayload())
+
+      expect(outcome).toBe("cloud")
+      expect(repository.getConflict(SERVER_CONFLICT_ID)?.winner).toBe("cloud")
+      expect(store.get<{ name: string }>("SELECT name FROM workflows WHERE id = ?", [RECORD_ID])?.name).toBe("Cloud")
+      expect(store.query("SELECT id FROM cloud_outbox WHERE record_id = ?", [RECORD_ID])).toHaveLength(0)
+    })
+
+    it("leaves the conflict pending when the loser matches neither side", () => {
+      const repository = new CloudSyncRepository(store)
+      seedPushConflict(repository)
+
+      const outcome = repository.reconcileRemoteResolvedConflict(SERVER_CONFLICT_ID, encode({ name: "Unrelated" }))
+
+      expect(outcome).toBe("ambiguous")
+      expect(repository.getConflict(SERVER_CONFLICT_ID)?.status).toBe("pending")
+    })
+
+    it("keep-local re-pushes a newer local edit made behind the conflict", () => {
+      const repository = new CloudSyncRepository(store)
+      seedPushConflict(repository, encode({ name: "Newer", graph: { nodes: [], edges: [] }, variables: {} }))
+
+      const outcome = repository.reconcileRemoteResolvedConflict(SERVER_CONFLICT_ID, cloudPayload())
+
+      expect(outcome).toBe("local")
+      const rows = store.query<{ expected_rev: number; payload: Buffer }>(
+        "SELECT expected_rev, payload FROM cloud_outbox WHERE record_id = ?",
+        [RECORD_ID],
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.expected_rev).toBe(3)
+      expect(Buffer.from(rows[0]?.payload ?? []).toString("utf8")).toContain("Newer")
+      expect(recordState()).toMatchObject({ server_rev: 3, conflict_id: null })
+    })
+
+    it("pull() clears a conflict resolved on another surface via FetchLoser", async () => {
+      const repository = new CloudSyncRepository(store)
+      repository.upsertWorkspaceBinding({
+        workspaceId: WORKSPACE_ID,
+        cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+        cloudWorkspaceName: "Cloud Workspace",
+        syncMode: "bi-directional",
+        deviceId: "device-123",
+        initializationState: "initialized",
+      })
+      seedPushConflict(repository)
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/FetchLoser", { conflictId: SERVER_CONFLICT_ID })
+        .reply(200, { loserPayload: Buffer.from(cloudPayload()).toString("base64") })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges")
+        .reply(200, { changes: [], nextCursor: "0", hasMore: false })
+
+      const reconcilingProvider = new CloudSyncProvider(client, tokenStore, store, {
+        workspaceBindings: [{ workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID }],
+      })
+      await reconcilingProvider.pull()
+
+      const conflict = repository.getConflict(SERVER_CONFLICT_ID)
+      expect(conflict?.status).toBe("resolved")
+      expect(conflict?.winner).toBe("local")
       expect(nock.isDone()).toBe(true)
     })
   })

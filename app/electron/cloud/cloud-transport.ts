@@ -99,6 +99,9 @@ export class CloudSyncProvider implements SyncProvider {
         return
       }
 
+      await this.reconcileRemoteResolvedConflicts()
+      if (this.stopped) return
+
       let firstError: unknown
       for (const configuredBinding of this.syncConfig.workspaceBindings) {
         const binding = this.currentBinding(configuredBinding)
@@ -224,6 +227,34 @@ export class CloudSyncProvider implements SyncProvider {
     }
     if (firstError !== undefined) {
       throw firstError
+    }
+  }
+
+  // Clears local conflicts that were resolved on another surface (web or another
+  // device). For each pending push-originated conflict, FetchLoser tells us
+  // whether its server snapshot is resolved (success) or not (any error → skip),
+  // and returns the loser payload the repository uses to infer the winner. Runs
+  // before pulling changes so a keep-local resolution's re-applied cloud rev is
+  // ignored rather than re-conflicting.
+  private async reconcileRemoteResolvedConflicts(): Promise<void> {
+    if (!this.repository) return
+    for (const conflict of this.repository.listPendingServerConflicts()) {
+      if (this.stopped) return
+      if (conflict.serverConflictId === null) continue
+      let loserPayload: Uint8Array
+      try {
+        loserPayload = (await this.client.fetchLoser(conflict.serverConflictId)).loserPayload
+      } catch {
+        // Unresolved (400), gone (404), expired (412), or transient: leave the
+        // conflict pending and try again on a later sync.
+        continue
+      }
+      const outcome = this.repository.reconcileRemoteResolvedConflict(conflict.conflictId, loserPayload)
+      if (outcome === "local" || outcome === "cloud") {
+        this.log("conflict reconciled from remote resolution", { winner: outcome })
+      } else if (outcome === "ambiguous") {
+        this.log("conflict resolved remotely but loser payload was ambiguous; left pending")
+      }
     }
   }
 

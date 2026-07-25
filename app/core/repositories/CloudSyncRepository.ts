@@ -4,6 +4,7 @@ import { slugify } from "./helpers"
 import { sanitizeCloudSnapshotPayload } from "../sync/cloud-mutations"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import type { WorkspaceOrigin } from "@shared/types/WorkspaceOrigin"
+import { canonicalizeSyncPayload } from "@shared/conflict-diff"
 
 export type CloudOutboxKind = "workspace" | "project" | "workflow" | "environment"
 export type CloudOutboxOp = "upsert" | "tombstone"
@@ -573,6 +574,108 @@ export class CloudSyncRepository {
     this.store.set(
       "UPDATE cloud_conflicts SET winner = ?, status = 'resolved', resolvedAt = ? WHERE conflict_id = ? AND status = 'pending'",
       [winner, new Date().toISOString(), conflictId],
+    )
+  }
+
+  // Pending conflicts that originated from a push (they carry a server snapshot
+  // id). These are the only ones the desktop can reconcile against the server —
+  // pull-detected conflicts have no server_conflict_id and no snapshot to query.
+  public listPendingServerConflicts(): readonly CloudConflict[] {
+    return this.store
+      .query<CloudConflictDbRow>(
+        "SELECT * FROM cloud_conflicts WHERE status = 'pending' AND server_conflict_id IS NOT NULL ORDER BY datetime(createdAt) ASC",
+      )
+      .map(rowToCloudConflict)
+  }
+
+  // Clears a local conflict once its server snapshot has been resolved on another
+  // surface (web or another device). The server tells us only the loser payload
+  // (via FetchLoser); we infer the winner by matching it against our stored
+  // sides, then converge to the server's outcome. Returns what happened.
+  public reconcileRemoteResolvedConflict(
+    conflictId: string,
+    loserPayload: Uint8Array,
+  ): "local" | "cloud" | "ambiguous" | "missing" {
+    return this.store.transaction((store) =>
+      new CloudSyncRepository(store).reconcileRemoteResolvedInTransaction(conflictId, loserPayload),
+    )
+  }
+
+  private reconcileRemoteResolvedInTransaction(
+    conflictId: string,
+    loserPayload: Uint8Array,
+  ): "local" | "cloud" | "ambiguous" | "missing" {
+    const conflict = this.getConflict(conflictId)
+    if (conflict === undefined || conflict.status !== "pending") {
+      return "missing"
+    }
+    const winner = this.inferRemoteWinner(conflict, loserPayload)
+    if (winner === undefined) {
+      return "ambiguous"
+    }
+    if (winner === "cloud") {
+      // Cloud won: apply the cloud copy and discard local, exactly as a local
+      // keep-cloud would. The server's rev did not advance, so nothing pulled
+      // this cycle fights the applied state.
+      this.resolveConflictInTransaction(conflictId, "cloud")
+      return "cloud"
+    }
+    this.convergeRemoteKeepLocal(conflict)
+    return "local"
+  }
+
+  // Determines which side the server kept by matching the loser payload it
+  // returned against our stored sides (canonicalized to neutralize per-surface
+  // id remaps and volatile fields). If the loser is the cloud copy, local won;
+  // if the loser is the local copy, cloud won. Checks local first so a
+  // no-difference conflict resolves as cloud (the no-rev-bump outcome).
+  private inferRemoteWinner(
+    conflict: CloudConflict,
+    loserPayload: Uint8Array,
+  ): "local" | "cloud" | undefined {
+    const loser = canonicalConflictKey(conflict.kind, loserPayload)
+    if (loser === canonicalConflictKey(conflict.kind, conflict.localPayload)) {
+      return "cloud"
+    }
+    if (loser === canonicalConflictKey(conflict.kind, conflict.cloudPayload)) {
+      return "local"
+    }
+    return undefined
+  }
+
+  // Local won on another surface: the server already applied our local copy as
+  // cloud_rev + 1. Drop the blocked outbox, clear the conflict, and advance the
+  // record's server_rev so the matching pulled change is ignored. Any newer
+  // local edit queued behind the conflict is re-pushed on top of the new rev.
+  private convergeRemoteKeepLocal(conflict: CloudConflict): void {
+    const resultingRev = conflict.cloudRev + 1
+    const queued = this.listOutboxForRecord(conflict.workspaceId, conflict.kind, conflict.recordId)
+    const latestLocal = queued.at(-1)
+    this.store.delete(
+      "DELETE FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ?",
+      [conflict.workspaceId, conflict.kind, conflict.recordId],
+    )
+    const hasNewerEdit = latestLocal !== undefined
+      && !payloadsEquivalent(conflict.kind, latestLocal.payload, conflict.localPayload ?? new Uint8Array())
+    if (hasNewerEdit) {
+      this.enqueueOutbox({
+        workspace_id: conflict.workspaceId,
+        kind: conflict.kind,
+        record_id: conflict.recordId,
+        expected_rev: resultingRev,
+        op: latestLocal.op,
+        payload: latestLocal.payload,
+      })
+    }
+    this.upsertRecordState(conflict.workspaceId, conflict.kind, conflict.recordId, {
+      serverRev: resultingRev,
+      localRev: hasNewerEdit ? resultingRev + 1 : resultingRev,
+      dirty: hasNewerEdit,
+      conflictId: null,
+    })
+    this.store.set(
+      "UPDATE cloud_conflicts SET winner = 'local', status = 'resolved', resolvedAt = ? WHERE conflict_id = ? AND status = 'pending'",
+      [new Date().toISOString(), conflict.conflictId],
     )
   }
 
@@ -1147,6 +1250,17 @@ function parsePayload(data: Uint8Array): Record<string, unknown> {
     return {}
   }
   return parsed as Record<string, unknown>
+}
+
+// A comparison key for a conflict side: the canonicalized payload as stable
+// JSON, or a distinct marker for an absent/tombstone side. Canonicalization
+// neutralizes per-surface id remaps and volatile fields so a local copy and its
+// server-stored twin (which differ only in mapped workspace ids) compare equal.
+function canonicalConflictKey(kind: CloudOutboxKind, payload: Uint8Array | null): string {
+  if (payload === null || payload.length === 0) {
+    return " tombstone"
+  }
+  return JSON.stringify(canonicalizeSyncPayload(kind, parsePayload(payload)))
 }
 
 function payloadsEquivalent(kind: CloudOutboxKind, localPayload: Uint8Array | null, cloudPayload: Uint8Array): boolean {
