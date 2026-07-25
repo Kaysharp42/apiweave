@@ -8,7 +8,7 @@ import { Spinner } from "../../components/atoms/Spinner";
 import { Card } from "../../components/molecules/Card";
 import { ConfirmDialog } from "../../components/molecules/ConfirmDialog";
 import { EmptyState } from "../../components/molecules/EmptyState";
-import { WorkflowProvider } from "../../contexts/WorkflowContext";
+import { computeConflictDiff, type ConflictDiffEntry } from "@shared/conflict-diff";
 import { invoke, IpcError } from "../../utils/apiweaveClient";
 import type {
   Conflict,
@@ -91,6 +91,11 @@ export function ConflictDetailPage() {
     };
   }, [conflict]);
 
+  const diff = useMemo<ConflictDiffEntry[]>(() => {
+    if (!conflict || !views) return [];
+    return computeConflictDiff(conflict.kind, views.local, views.cloud);
+  }, [conflict, views]);
+
   function returnToConflictList(): void {
     if (location.state === "conflict-list") {
       navigate(-1);
@@ -170,10 +175,16 @@ export function ConflictDetailPage() {
           <Badge variant="secondary">local rev {conflict.local_rev}</Badge>
           <Badge variant="secondary">cloud rev {conflict.cloud_rev}</Badge>
         </div>
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <RecordPane title="Local" payload={views.local} conflict={conflict} />
-          <RecordPane title="Cloud" payload={views.cloud} conflict={conflict} />
-        </div>
+        <DiffView entries={diff} />
+        <details className="mt-4 rounded-sm border border-border dark:border-border-dark">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
+            Technical detail (raw JSON)
+          </summary>
+          <div className="grid grid-cols-1 gap-4 border-t border-border p-4 dark:border-border-dark xl:grid-cols-2">
+            <RecordPane title="Local" payload={views.local} />
+            <RecordPane title="Cloud" payload={views.cloud} />
+          </div>
+        </details>
       </div>
 
       <div className="flex justify-end gap-2 border-t border-border bg-surface-raised px-6 py-4 dark:border-border-dark dark:bg-surface-dark-raised">
@@ -214,22 +225,65 @@ export function ConflictDetailPage() {
 function RecordPane({
   title,
   payload,
-  conflict,
 }: {
   readonly title: string;
   readonly payload: ConflictPayload;
-  readonly conflict: Conflict;
 }) {
   return (
     <Card title={title} icon={ConflictCardIcon} className="h-full">
-      {conflict.kind === "workflow" ? (
-        <WorkflowProvider workflowId={conflict.record_id} initialWorkflow={payload}>
-          <JsonBlock value={payload} label={`${title} workflow definition`} />
-        </WorkflowProvider>
-      ) : (
-        <JsonBlock value={payload} label={`${title} record JSON`} />
-      )}
+      <JsonBlock value={payload} label={`${title} record JSON`} />
     </Card>
+  );
+}
+
+const DIFF_BADGE_VARIANT: Record<ConflictDiffEntry["kind"], "success" | "error" | "warning"> = {
+  add: "success",
+  remove: "error",
+  change: "warning",
+};
+
+function DiffView({ entries }: { readonly entries: readonly ConflictDiffEntry[] }) {
+  if (entries.length === 0) {
+    return (
+      <p className="rounded-sm border border-border bg-surface-overlay p-4 text-sm text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
+        No structural differences — the two copies are equivalent once volatile metadata is ignored.
+      </p>
+    );
+  }
+  return (
+    <ul className="flex flex-col gap-2">
+      {entries.map((entry) => (
+        <li
+          key={entry.path}
+          className="rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay"
+        >
+          <div className="mb-2 flex items-center gap-2">
+            <Badge variant={DIFF_BADGE_VARIANT[entry.kind]} size="sm">{entry.kind}</Badge>
+            <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">{entry.label}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <DiffValue label="Cloud" value={entry.before} />
+            <DiffValue label="Local" value={entry.after} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function DiffValue({ label, value }: { readonly label: string; readonly value: unknown }) {
+  if (value === undefined) {
+    return (
+      <div className="rounded-sm border border-dashed border-border p-2 text-xs text-text-muted dark:border-border-dark">
+        <span className="mr-1 font-semibold">{label}:</span>not present
+      </div>
+    );
+  }
+  return (
+    <pre className="max-h-40 overflow-auto rounded-sm border border-border bg-surface p-2 font-mono text-xs leading-relaxed text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
+      <span className="mr-1 font-semibold not-italic text-text-secondary dark:text-text-secondary-dark">{label}:</span>
+      {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+    </pre>
   );
 }
 
