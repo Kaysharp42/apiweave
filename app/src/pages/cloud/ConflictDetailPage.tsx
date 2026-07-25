@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, GitCompareArrows } from "lucide-react";
+import { ArrowLeft, GitCompareArrows, GitMerge } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../../components/atoms/Button";
@@ -113,7 +113,7 @@ export function ConflictDetailPage() {
         winner: choice,
         device_id: deviceId || "desktop",
       });
-      toast.success(`Kept ${choice} copy`);
+      toast.success(choice === "merged" ? "Auto-merged both copies" : `Kept ${choice} copy`);
       returnToConflictList();
     } catch (err) {
       const message =
@@ -192,24 +192,40 @@ export function ConflictDetailPage() {
         </details>
       </div>
 
-      <div className="flex justify-end gap-2 border-t border-border bg-surface-raised px-6 py-4 dark:border-border-dark dark:bg-surface-dark-raised">
-        <Button
-          variant="secondary"
-          intent="warning"
-          disabled={disabled}
-          loading={resolving && pendingChoice === "local"}
-          onClick={() => setPendingChoice("local")}
-        >
-          Keep local
-        </Button>
-        <Button
-          variant="primary"
-          disabled={disabled}
-          loading={resolving && pendingChoice === "cloud"}
-          onClick={() => setPendingChoice("cloud")}
-        >
-          Keep cloud
-        </Button>
+      <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-raised px-6 py-4 dark:border-border-dark dark:bg-surface-dark-raised">
+        {conflict.auto_mergeable && conflict.winner === null ? (
+          <Button
+            variant="secondary"
+            intent="success"
+            icon={<GitMerge className="h-4 w-4" aria-hidden="true" />}
+            disabled={disabled}
+            loading={resolving && pendingChoice === "merged"}
+            onClick={() => setPendingChoice("merged")}
+          >
+            Auto-merge
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            intent="warning"
+            disabled={disabled}
+            loading={resolving && pendingChoice === "local"}
+            onClick={() => setPendingChoice("local")}
+          >
+            Keep local
+          </Button>
+          <Button
+            variant="primary"
+            disabled={disabled}
+            loading={resolving && pendingChoice === "cloud"}
+            onClick={() => setPendingChoice("cloud")}
+          >
+            Keep cloud
+          </Button>
+        </div>
       </div>
 
       <ConfirmDialog
@@ -218,10 +234,14 @@ export function ConflictDetailPage() {
         onConfirm={() => {
           if (pendingChoice) void resolve(pendingChoice);
         }}
-        title="Resolve whole record?"
-        message={`Keep the ${pendingChoice ?? "selected"} copy and store the rejected copy for audit.`}
-        confirmLabel="Resolve conflict"
-        intent="warning"
+        title={pendingChoice === "merged" ? "Auto-merge both copies?" : "Resolve whole record?"}
+        message={
+          pendingChoice === "merged"
+            ? "Combine both copies into a new cloud revision, keeping every non-overlapping change from local and cloud."
+            : `Keep the ${pendingChoice ?? "selected"} copy and store the rejected copy for audit.`
+        }
+        confirmLabel={pendingChoice === "merged" ? "Auto-merge" : "Resolve conflict"}
+        intent={pendingChoice === "merged" ? "info" : "warning"}
       />
     </div>
   );

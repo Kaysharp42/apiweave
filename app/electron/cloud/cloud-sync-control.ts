@@ -423,7 +423,8 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         if (this.activeConfig === null) {
           throw new Error("Cloud configuration is unavailable")
         }
-        await this.createClient(this.activeConfig).resolveConflict(conflict_id, winner)
+        const response = await this.createClient(this.activeConfig).resolveConflict(conflict_id, winner)
+        return { resultingRev: Number(response.resultingRev), winnerPayload: response.winnerPayload }
       },
     }
   }

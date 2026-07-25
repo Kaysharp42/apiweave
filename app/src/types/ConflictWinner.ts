@@ -1,1 +1,1 @@
-export type ConflictWinner = "local" | "cloud";
+export type ConflictWinner = "local" | "cloud" | "merged";

@@ -86,6 +86,9 @@ export interface CloudChangeEnvelope {
 }
 
 export type CloudApplyResult = "applied" | "ignored" | "conflict"
+// The stored resolution outcome. A server-side auto-merge is recorded as
+// 'local' (local edits survived the merge); 'merged' is not a stored value on
+// the desktop — see migration 011 and resolveConflictMerged.
 export type CloudConflictWinner = "local" | "cloud"
 
 // Cloud-side writer attribution (who wrote the cloud copy), resolved by the
@@ -116,6 +119,9 @@ export interface CloudConflict {
   readonly createdAt: string
   readonly resolvedAt: string | null
   readonly cloudWriter: CloudConflictWriter | null
+  // True when the server reported this conflict as cleanly 3-way auto-mergeable
+  // (PushOutcome.auto_mergeable), so the UI can offer a one-click Auto-merge.
+  readonly autoMergeable: boolean
 }
 
 export interface CloudPushConflictInput {
@@ -124,6 +130,7 @@ export interface CloudPushConflictInput {
   readonly cloudPayload: Uint8Array
   readonly cloudRev: number
   readonly cloudWriter?: CloudConflictWriter | null
+  readonly autoMergeable?: boolean
 }
 
 interface SettingRow extends SqliteRow {
@@ -199,6 +206,7 @@ interface CloudConflictDbRow extends SqliteRow {
   readonly cloud_writer_device_id: string | null
   readonly cloud_writer_name: string | null
   readonly cloud_writer_device_label: string | null
+  readonly auto_mergeable: number
 }
 
 // Maps a conflict kind to the local table holding its display name.
@@ -679,6 +687,65 @@ export class CloudSyncRepository {
     )
   }
 
+  // Converges after a server-side auto-merge (winner = MERGED). The server
+  // combined both sides and applied the merged payload as resultingRev; we apply
+  // that same payload locally, drop the blocked outbox, and clear the conflict.
+  // Any newer local edit queued behind the conflict is re-pushed on top of the
+  // merged rev so it is not lost.
+  public resolveConflictMerged(conflictId: string, resultingRev: number, mergedPayload: Uint8Array): void {
+    this.store.transaction((store) => {
+      new CloudSyncRepository(store).resolveConflictMergedInTransaction(conflictId, resultingRev, mergedPayload)
+    })
+  }
+
+  private resolveConflictMergedInTransaction(conflictId: string, resultingRev: number, mergedPayload: Uint8Array): void {
+    const conflict = this.getConflict(conflictId)
+    if (conflict === undefined || conflict.status !== "pending") {
+      return
+    }
+    const queued = this.listOutboxForRecord(conflict.workspaceId, conflict.kind, conflict.recordId)
+    const latestLocal = queued.at(-1)
+    this.store.delete(
+      "DELETE FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ?",
+      [conflict.workspaceId, conflict.kind, conflict.recordId],
+    )
+    this.applyRecord({
+      cursor: 0n,
+      workspaceId: conflict.workspaceId,
+      kind: cloudKindToRecordKind(conflict.kind),
+      recordId: conflict.recordId,
+      rev: BigInt(resultingRev),
+      op: outboxOpToChangeOp("upsert"),
+      payload: mergedPayload,
+    }, true)
+    const hasNewerEdit = latestLocal !== undefined
+      && !payloadsEquivalent(conflict.kind, latestLocal.payload, mergedPayload)
+    if (hasNewerEdit) {
+      this.enqueueOutbox({
+        workspace_id: conflict.workspaceId,
+        kind: conflict.kind,
+        record_id: conflict.recordId,
+        expected_rev: resultingRev,
+        op: latestLocal.op,
+        payload: latestLocal.payload,
+      })
+    }
+    this.upsertRecordState(conflict.workspaceId, conflict.kind, conflict.recordId, {
+      serverRev: resultingRev,
+      localRev: hasNewerEdit ? resultingRev + 1 : resultingRev,
+      dirty: hasNewerEdit,
+      conflictId: null,
+    })
+    // Recorded as 'local' (the merge preserved the local edits); the desktop
+    // shows no per-winner label and the authoritative 'merged' outcome lives in
+    // the server's conflict_snapshots. ponytail: keeps the winner CHECK and the
+    // migration additive rather than rebuilding the table for a cosmetic value.
+    this.store.set(
+      "UPDATE cloud_conflicts SET winner = 'local', status = 'resolved', resolvedAt = ? WHERE conflict_id = ? AND status = 'pending'",
+      [new Date().toISOString(), conflictId],
+    )
+  }
+
   public recordPushConflict(input: CloudPushConflictInput): void {
     const localPayload = sanitizeNullablePayload(input.outboxRow.payload)
     const cloudPayload = sanitizeCloudSnapshotPayload(input.cloudPayload)
@@ -697,6 +764,7 @@ export class CloudSyncRepository {
       localOp: input.outboxRow.op,
       cloudOp: cloudPayload.length === 0 ? "tombstone" : "upsert",
       cloudWriter: input.cloudWriter ?? null,
+      autoMergeable: input.autoMergeable ?? false,
     })
   }
 
@@ -1199,6 +1267,9 @@ export class CloudSyncRepository {
       // attribute changes. Renders "unknown author"; add if we ever put a
       // writer on ChangeEnvelope.
       cloudWriter: null,
+      // Pull-created conflicts have no server merge outcome, so auto-merge is
+      // never offered for them (the server never computed a base for this side).
+      autoMergeable: false,
     })
   }
 
@@ -1208,8 +1279,9 @@ export class CloudSyncRepository {
       `INSERT INTO cloud_conflicts (
          conflict_id, server_conflict_id, workspace_id, kind, record_id, base_rev,
          local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op,
-         cloud_writer_user_id, cloud_writer_device_id, cloud_writer_name, cloud_writer_device_label
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         cloud_writer_user_id, cloud_writer_device_id, cloud_writer_name, cloud_writer_device_label,
+         auto_mergeable
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(conflict_id) DO UPDATE SET
          server_conflict_id = excluded.server_conflict_id,
          local_payload = excluded.local_payload, cloud_payload = excluded.cloud_payload,
@@ -1218,12 +1290,14 @@ export class CloudSyncRepository {
          cloud_writer_user_id = excluded.cloud_writer_user_id,
          cloud_writer_device_id = excluded.cloud_writer_device_id,
          cloud_writer_name = excluded.cloud_writer_name,
-         cloud_writer_device_label = excluded.cloud_writer_device_label`,
+         cloud_writer_device_label = excluded.cloud_writer_device_label,
+         auto_mergeable = excluded.auto_mergeable`,
       [
         input.conflictId, input.serverConflictId, input.workspaceId, input.kind, input.recordId, input.baseRev,
         toBuffer(input.localPayload), toBuffer(input.cloudPayload), input.localRev, input.cloudRev,
         input.localOp, input.cloudOp,
         writer?.userId || null, writer?.deviceId || null, writer?.name || null, writer?.deviceLabel || null,
+        input.autoMergeable ? 1 : 0,
       ],
     )
     this.upsertRecordState(input.workspaceId, input.kind, input.recordId, {
@@ -1512,6 +1586,7 @@ function rowToCloudConflict(row: CloudConflictDbRow): CloudConflict {
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
     cloudWriter: cloudWriterFromRow(row),
+    autoMergeable: row.auto_mergeable === 1,
   }
 }
 

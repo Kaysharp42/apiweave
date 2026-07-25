@@ -14,4 +14,7 @@ export interface ConflictListItem {
   readonly created_at: string;
   readonly resolved_at?: string | null;
   readonly cloud_writer?: ConflictWriter | null;
+  // The server reported this conflict as cleanly 3-way auto-mergeable, so the
+  // UI may offer a one-click Auto-merge. Absent on legacy/pull conflicts.
+  readonly auto_mergeable?: boolean;
 }

@@ -1,0 +1,11 @@
+-- Whether a push conflict can be cleanly 3-way auto-merged by the server
+-- (PushOutcome.auto_mergeable). Stored so the conflict UI can offer a one-click
+-- "Auto-merge" resolution. Defaults to 0: pre-existing rows and pull-created
+-- conflicts (no server outcome) are treated as not auto-mergeable.
+--
+-- A merged resolution is recorded with winner = 'local' (the existing CHECK
+-- vocabulary): the local edits survive the merge rather than being discarded,
+-- the desktop never surfaces a per-winner label (only unresolved conflicts are
+-- listed), and the authoritative 'merged' outcome is recorded server-side in
+-- conflict_snapshots. This keeps the migration additive (no table rebuild).
+ALTER TABLE cloud_conflicts ADD COLUMN auto_mergeable INTEGER NOT NULL DEFAULT 0;

@@ -204,6 +204,71 @@ describe("conflict-ui-bridge", () => {
     ).rejects.toThrow(ErrCloudConflictStale)
   })
 
+  it("auto-merges via the server and applies the returned merged payload", async () => {
+    insertConflict("conflict-merge")
+    const merged = { name: "Merged Workflow", graph: { nodes: [], edges: [] }, variables: {}, workspaceId: WORKSPACE_ID }
+    resolver.resolveConflict.mockResolvedValueOnce({
+      resultingRev: 10,
+      winnerPayload: Buffer.from(JSON.stringify(merged)),
+    })
+
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-merge", winner: "merged", device_id: "device-1" },
+    })
+
+    expect(result.ok).toBe(true)
+    // The server was asked for a MERGED resolution against the server snapshot.
+    expect(resolver.resolveConflict).toHaveBeenCalledWith({
+      conflict_id: "conflict-merge",
+      winner: "merged",
+      device_id: "device-1",
+    })
+    // The server-computed merged payload is applied locally as resulting_rev.
+    expect(store.get<{ name: string; rev: number }>(
+      "SELECT name, rev FROM workflows WHERE id = ?",
+      ["workflow-1"],
+    )).toEqual({ name: "Merged Workflow", rev: 10 })
+    // A merge is recorded with winner 'local' (the local edits survived); the
+    // authoritative 'merged' outcome lives server-side.
+    expect(store.get<{ winner: string; status: string }>(
+      "SELECT winner, status FROM cloud_conflicts WHERE conflict_id = ?",
+      ["conflict-merge"],
+    )).toEqual({ winner: "local", status: "resolved" })
+    expect(store.get<{ server_rev: number; local_rev: number; dirty: number; conflict_id: string | null }>(
+      "SELECT server_rev, local_rev, dirty, conflict_id FROM cloud_record_state WHERE record_id = ?",
+      ["workflow-1"],
+    )).toEqual({ server_rev: 10, local_rev: 10, dirty: 0, conflict_id: null })
+    // The blocked outbox is cleared.
+    expect(store.get("SELECT id FROM cloud_outbox WHERE record_id = ?", ["workflow-1"])).toBeUndefined()
+  })
+
+  it("rejects auto-merge when the conflict has no server snapshot", async () => {
+    // A pull-created conflict (server_conflict_id NULL) cannot be auto-merged.
+    store.set(
+      `INSERT INTO cloud_conflicts (
+        conflict_id, server_conflict_id, workspace_id, kind, record_id, base_rev,
+        local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "conflict-pull", null, WORKSPACE_ID, "workflow", "workflow-1", 5,
+        Buffer.from(JSON.stringify({ name: "Local" })), Buffer.from(JSON.stringify({ name: "Cloud" })),
+        7, 9, "upsert", "upsert",
+      ],
+    )
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-pull", winner: "merged", device_id: "device-1" },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.message).toContain("Auto-merge is not available")
+    }
+    expect(resolver.resolveConflict).not.toHaveBeenCalled()
+  })
+
   it("errors if the Go SyncService resolve call fails", async () => {
     insertConflict("conflict-4")
     resolver.resolveConflict.mockRejectedValueOnce(new Error("sync service down"))

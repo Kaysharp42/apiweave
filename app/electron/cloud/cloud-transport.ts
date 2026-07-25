@@ -469,6 +469,7 @@ export class CloudSyncProvider implements SyncProvider {
               deviceLabel: outcome.cloudWriter.deviceLabel,
             }
           : null,
+        autoMergeable: outcome.autoMergeable,
       })
       return "blocked"
     } else if (outcome.status === PushOutcome_Status.REJECTED) {
