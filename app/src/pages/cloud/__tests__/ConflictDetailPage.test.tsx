@@ -141,6 +141,41 @@ describe("ConflictDetailPage", () => {
     },
   );
 
+  it("offers per-field picking for residual paths and forwards the picks on merge", async () => {
+    const fieldPickConflict: Conflict = { ...workflowConflict, merge_residual_paths: ["name"] };
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-get") return { ok: true, data: fieldPickConflict };
+      if (action === "conflict-resolve") return { ok: true, data: fieldPickConflict };
+      return { ok: true, data: [] };
+    });
+    const user = userEvent.setup();
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep local" });
+    expect(screen.getByText("Choose a version for each conflicting field")).toBeInTheDocument();
+
+    // The merge is blocked until every residual path has a pick.
+    const mergeButton = screen.getByRole("button", { name: "Merge with selections" });
+    expect(mergeButton).toBeDisabled();
+
+    // Pick the Local side for the one overlapping field.
+    const radios = screen.getAllByRole("radio");
+    await user.click(radios[1]!);
+    expect(mergeButton).toBeEnabled();
+
+    await user.click(mergeButton);
+    await user.click(screen.getByRole("button", { name: "Merge" }));
+
+    await waitFor(() => expect(screen.getByText("conflicts index")).toBeInTheDocument());
+    expect(invokeMock).toHaveBeenCalledWith("cloud", "conflict-resolve", {
+      conflict_id: "conflict-1",
+      winner: "merged",
+      device_id: "desktop",
+      resolutions: [{ path: "name", side: "local" }],
+    });
+    expect(toastSuccess).toHaveBeenCalledWith("Merged both copies");
+  });
+
   it("removes the resolved detail page from back navigation history", async () => {
     invokeMock.mockImplementation(async (_domain: string, action: string) => {
       if (action === "conflict-list") return { ok: true, data: [workflowConflict] };

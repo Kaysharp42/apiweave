@@ -96,6 +96,20 @@ export function ConflictDetailPage() {
     return computeConflictDiff(conflict.kind, views.local, views.cloud);
   }, [conflict, views]);
 
+  // Overlapping leaf paths the server could not auto-merge — the user must pick a
+  // winning side per path. The diff (cloud=before, local=after) supplies the
+  // display values; its path scheme matches the server's residual paths.
+  const residualEntries = useMemo(() => {
+    const paths = conflict?.merge_residual_paths ?? [];
+    if (paths.length === 0) return [];
+    const byPath = new Map(diff.map((entry) => [entry.path, entry]));
+    return paths.map((path) => byPath.get(path) ?? { path, kind: "change" as const, before: undefined, after: undefined, label: path });
+  }, [conflict, diff]);
+
+  const [picks, setPicks] = useState<Record<string, "local" | "cloud">>({});
+  useEffect(() => setPicks({}), [conflictId]);
+  const allPicked = residualEntries.length > 0 && residualEntries.every((entry) => picks[entry.path] !== undefined);
+
   function returnToConflictList(): void {
     if (location.state === "conflict-list") {
       navigate(-1);
@@ -104,7 +118,10 @@ export function ConflictDetailPage() {
     navigate("/cloud/conflicts", { replace: true });
   }
 
-  async function resolve(choice: ConflictWinner): Promise<void> {
+  async function resolve(
+    choice: ConflictWinner,
+    resolutions?: readonly { readonly path: string; readonly side: "local" | "cloud" }[],
+  ): Promise<void> {
     if (resolving || !conflict) return;
     setResolving(true);
     try {
@@ -112,8 +129,9 @@ export function ConflictDetailPage() {
         conflict_id: conflict.id,
         winner: choice,
         device_id: deviceId || "desktop",
+        ...(resolutions && resolutions.length > 0 ? { resolutions } : {}),
       });
-      toast.success(choice === "merged" ? "Auto-merged both copies" : `Kept ${choice} copy`);
+      toast.success(choice === "merged" ? "Merged both copies" : `Kept ${choice} copy`);
       returnToConflictList();
     } catch (err) {
       const message =
@@ -180,6 +198,9 @@ export function ConflictDetailPage() {
             </span>
           ) : null}
         </div>
+        {residualEntries.length > 0 && conflict.winner === null ? (
+          <FieldPicker entries={residualEntries} picks={picks} onPick={(path, side) => setPicks((prev) => ({ ...prev, [path]: side }))} disabled={disabled} />
+        ) : null}
         <DiffView entries={diff} />
         <details className="mt-4 rounded-sm border border-border dark:border-border-dark">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
@@ -203,6 +224,17 @@ export function ConflictDetailPage() {
             onClick={() => setPendingChoice("merged")}
           >
             Auto-merge
+          </Button>
+        ) : residualEntries.length > 0 && conflict.winner === null ? (
+          <Button
+            variant="secondary"
+            intent="success"
+            icon={<GitMerge className="h-4 w-4" aria-hidden="true" />}
+            disabled={disabled || !allPicked}
+            loading={resolving && pendingChoice === "merged"}
+            onClick={() => setPendingChoice("merged")}
+          >
+            Merge with selections
           </Button>
         ) : (
           <span />
@@ -232,15 +264,22 @@ export function ConflictDetailPage() {
         open={pendingChoice !== null}
         onClose={() => setPendingChoice(null)}
         onConfirm={() => {
-          if (pendingChoice) void resolve(pendingChoice);
+          if (!pendingChoice) return;
+          if (pendingChoice === "merged" && residualEntries.length > 0) {
+            void resolve("merged", residualEntries.map((entry) => ({ path: entry.path, side: picks[entry.path]! })));
+          } else {
+            void resolve(pendingChoice);
+          }
         }}
-        title={pendingChoice === "merged" ? "Auto-merge both copies?" : "Resolve whole record?"}
+        title={pendingChoice === "merged" ? "Merge both copies?" : "Resolve whole record?"}
         message={
           pendingChoice === "merged"
-            ? "Combine both copies into a new cloud revision, keeping every non-overlapping change from local and cloud."
+            ? residualEntries.length > 0
+              ? "Combine both copies into a new cloud revision, using your per-field selections for the overlapping changes and keeping every non-overlapping change from both sides."
+              : "Combine both copies into a new cloud revision, keeping every non-overlapping change from local and cloud."
             : `Keep the ${pendingChoice ?? "selected"} copy and store the rejected copy for audit.`
         }
-        confirmLabel={pendingChoice === "merged" ? "Auto-merge" : "Resolve conflict"}
+        confirmLabel={pendingChoice === "merged" ? "Merge" : "Resolve conflict"}
         intent={pendingChoice === "merged" ? "info" : "warning"}
       />
     </div>
@@ -316,6 +355,86 @@ function DiffValue({ label, value }: { readonly label: string; readonly value: u
       <span className="mr-1 font-semibold not-italic text-text-secondary dark:text-text-secondary-dark">{label}:</span>
       {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
     </pre>
+  );
+}
+
+// FieldPicker asks the user to choose a winning side for each overlapping leaf
+// the server could not auto-merge. Every path must be picked before the merge
+// can be submitted (enforced by the caller's `allPicked`; the server re-checks).
+function FieldPicker({
+  entries,
+  picks,
+  onPick,
+  disabled,
+}: {
+  readonly entries: readonly ConflictDiffEntry[];
+  readonly picks: Record<string, "local" | "cloud">;
+  readonly onPick: (path: string, side: "local" | "cloud") => void;
+  readonly disabled: boolean;
+}) {
+  return (
+    <div className="mb-4 rounded-sm border border-warning/50 bg-warning/5 p-4 dark:border-warning-dark/50">
+      <div className="mb-1 flex items-center gap-2">
+        <GitMerge className="h-4 w-4 text-warning dark:text-warning-dark" aria-hidden="true" />
+        <h2 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
+          Choose a version for each conflicting field
+        </h2>
+      </div>
+      <p className="mb-3 text-xs text-text-secondary dark:text-text-secondary-dark">
+        Both sides changed these {entries.length === 1 ? "field" : "fields"}. Pick which value to keep; everything else merges automatically.
+      </p>
+      <ul className="flex flex-col gap-3">
+        {entries.map((entry) => (
+          <li key={entry.path} className="rounded-sm border border-border bg-surface p-3 dark:border-border-dark dark:bg-surface-dark">
+            <div className="mb-2 text-sm font-medium text-text-primary dark:text-text-primary-dark">{entry.label}</div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <ResidualChoice path={entry.path} side="cloud" value={entry.before} selected={picks[entry.path] === "cloud"} onSelect={onPick} disabled={disabled} />
+              <ResidualChoice path={entry.path} side="local" value={entry.after} selected={picks[entry.path] === "local"} onSelect={onPick} disabled={disabled} />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ResidualChoice({
+  path,
+  side,
+  value,
+  selected,
+  onSelect,
+  disabled,
+}: {
+  readonly path: string;
+  readonly side: "local" | "cloud";
+  readonly value: unknown;
+  readonly selected: boolean;
+  readonly onSelect: (path: string, side: "local" | "cloud") => void;
+  readonly disabled: boolean;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer flex-col gap-1 rounded-sm border p-2 ${
+        selected
+          ? "border-primary bg-primary/5 dark:border-primary-dark"
+          : "border-border dark:border-border-dark"
+      } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+    >
+      <span className="flex items-center gap-2 text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">
+        <input
+          type="radio"
+          name={`pick:${path}`}
+          checked={selected}
+          disabled={disabled}
+          onChange={() => onSelect(path, side)}
+        />
+        {side === "cloud" ? "Cloud" : "Local"}
+      </span>
+      <span className="max-h-32 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-text-primary dark:text-text-primary-dark">
+        {value === undefined ? "not present" : typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+      </span>
+    </label>
   );
 }
 

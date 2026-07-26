@@ -15,10 +15,20 @@ type ConflictWinner = "local" | "cloud" | "merged"
 type ConflictKind = "workspace" | "project" | "collection" | "workflow" | "environment"
 type JsonRecord = Record<string, unknown>
 
+// One per-leaf pick for a MERGED resolution: choose which side wins an
+// overlapping path the server reported in merge_residual_paths.
+export interface FieldResolution {
+  readonly path: string
+  readonly side: "local" | "cloud"
+}
+
 export interface ResolveConflictInput {
   readonly conflict_id: string
   readonly winner: ConflictWinner
   readonly device_id: string
+  // Field-level picks for a MERGED resolution. Ignored for keep-local/keep-cloud
+  // and for a clean (residual-free) auto-merge.
+  readonly resolutions?: readonly FieldResolution[]
 }
 
 // The server's resolution outcome, used to converge locally. winnerPayload is
@@ -44,6 +54,7 @@ export interface ConflictUiBridgeOptions {
 }
 
 const winnerSchema = z.enum(["local", "cloud", "merged"])
+const resolutionSchema = z.object({ path: z.string().min(1), side: z.enum(["local", "cloud"]) })
 const kindSchema = z.enum(["workspace", "project", "collection", "workflow", "environment"])
 const conflictWriterSchema = z
   .object({
@@ -69,6 +80,9 @@ const conflictListItemSchema = z.object({
   // auto_mergeable: the server reported this conflict as cleanly 3-way
   // mergeable, so the UI may offer a one-click Auto-merge.
   auto_mergeable: z.boolean(),
+  // merge_residual_paths: overlapping leaf paths for per-field picking. Non-empty
+  // => the UI offers a per-path winner choice that completes the merge.
+  merge_residual_paths: z.array(z.string()),
 })
 const conflictSchema = conflictListItemSchema.extend({
   local_payload: z.record(z.string(), z.unknown()),
@@ -88,7 +102,12 @@ export function registerConflictUiHandlers(router: IpcRouter, options: ConflictU
     handle: ({ conflict_id }) => bridge.get(conflict_id),
   })
   router.register(CLOUD_CONFLICT_DOMAIN, CONFLICT_RESOLVE_ACTION, {
-    input: z.object({ conflict_id: z.string().min(1), winner: winnerSchema, device_id: z.string().min(1) }),
+    input: z.object({
+      conflict_id: z.string().min(1),
+      winner: winnerSchema,
+      device_id: z.string().min(1),
+      resolutions: z.array(resolutionSchema).optional(),
+    }),
     output: conflictSchema,
     handle: (input) => bridge.resolve(input),
   })
@@ -192,6 +211,7 @@ function conflictToListItem(conflict: CloudConflict, repository: CloudSyncReposi
     resolved_at: conflict.resolvedAt,
     cloud_writer: conflict.cloudWriter,
     auto_mergeable: conflict.autoMergeable,
+    merge_residual_paths: [...conflict.mergeResidualPaths],
   }
 }
 

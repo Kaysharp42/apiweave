@@ -419,11 +419,11 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
    */
   public getConflictResolver(): SyncConflictResolver {
     return {
-      resolveConflict: async ({ conflict_id, winner }) => {
+      resolveConflict: async ({ conflict_id, winner, resolutions }) => {
         if (this.activeConfig === null) {
           throw new Error("Cloud configuration is unavailable")
         }
-        const response = await this.createClient(this.activeConfig).resolveConflict(conflict_id, winner)
+        const response = await this.createClient(this.activeConfig).resolveConflict(conflict_id, winner, resolutions)
         return { resultingRev: Number(response.resultingRev), winnerPayload: response.winnerPayload }
       },
       // Best-effort convergence accelerator: push (flush a keep-local/merged

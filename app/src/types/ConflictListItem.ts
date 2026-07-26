@@ -17,4 +17,8 @@ export interface ConflictListItem {
   // The server reported this conflict as cleanly 3-way auto-mergeable, so the
   // UI may offer a one-click Auto-merge. Absent on legacy/pull conflicts.
   readonly auto_mergeable?: boolean;
+  // Overlapping leaf paths both sides changed differently on an otherwise
+  // mergeable conflict. Non-empty => the UI offers per-field picking. Absent on
+  // legacy/pull conflicts.
+  readonly merge_residual_paths?: readonly string[];
 }

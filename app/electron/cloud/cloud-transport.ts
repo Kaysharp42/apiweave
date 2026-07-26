@@ -470,6 +470,7 @@ export class CloudSyncProvider implements SyncProvider {
             }
           : null,
         autoMergeable: outcome.autoMergeable,
+        mergeResidualPaths: outcome.mergeResidualPaths,
       })
       return "blocked"
     } else if (outcome.status === PushOutcome_Status.REJECTED) {

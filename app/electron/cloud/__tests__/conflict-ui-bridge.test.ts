@@ -244,6 +244,48 @@ describe("conflict-ui-bridge", () => {
     expect(store.get("SELECT id FROM cloud_outbox WHERE record_id = ?", ["workflow-1"])).toBeUndefined()
   })
 
+  it("surfaces residual paths and forwards field-level picks to the server for a merged resolve", async () => {
+    insertConflict("conflict-fieldpick", null, ["name", "nodes.n1.config.method"])
+    const merged = { name: "Local Workflow", graph: { nodes: [], edges: [] }, variables: {}, workspaceId: WORKSPACE_ID }
+    resolver.resolveConflict.mockResolvedValueOnce({
+      resultingRev: 11,
+      winnerPayload: Buffer.from(JSON.stringify(merged)),
+    })
+
+    // The detail exposes the residual paths so the UI can render a picker.
+    const detail = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-get",
+      payload: { conflict_id: "conflict-fieldpick" },
+    })
+    expect(detail.ok).toBe(true)
+    if (detail.ok) {
+      expect((detail.data as { merge_residual_paths: string[] }).merge_residual_paths).toEqual([
+        "name",
+        "nodes.n1.config.method",
+      ])
+    }
+
+    const resolutions = [
+      { path: "name", side: "local" as const },
+      { path: "nodes.n1.config.method", side: "cloud" as const },
+    ]
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-fieldpick", winner: "merged", device_id: "device-1", resolutions },
+    })
+
+    expect(result.ok).toBe(true)
+    // The picks ride along to the server, which recomputes the merge with them.
+    expect(resolver.resolveConflict).toHaveBeenCalledWith({
+      conflict_id: "conflict-fieldpick",
+      winner: "merged",
+      device_id: "device-1",
+      resolutions,
+    })
+  })
+
   it("rejects auto-merge when the conflict has no server snapshot", async () => {
     // A pull-created conflict (server_conflict_id NULL) cannot be auto-merged.
     store.set(
@@ -306,15 +348,19 @@ describe("conflict-ui-bridge", () => {
   })
 })
 
-function insertConflict(id: string, winner: "local" | "cloud" | null = null): void {
+function insertConflict(
+  id: string,
+  winner: "local" | "cloud" | null = null,
+  residualPaths: readonly string[] = [],
+): void {
   const local = { name: "Local Workflow", graph: { nodes: [], edges: [] }, variables: {} }
   const cloud = { name: "Cloud Workflow", graph: { nodes: [], edges: [] }, variables: {} }
   storeRef().set(
     `INSERT INTO cloud_conflicts (
       conflict_id, server_conflict_id, workspace_id, kind, record_id, base_rev,
       local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op,
-      winner, status, createdAt, resolvedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      winner, status, createdAt, resolvedAt, merge_residual_paths
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       id,
@@ -332,6 +378,7 @@ function insertConflict(id: string, winner: "local" | "cloud" | null = null): vo
       winner === null ? "pending" : "resolved",
       new Date().toISOString(),
       winner === null ? null : new Date().toISOString(),
+      JSON.stringify(residualPaths),
     ],
   )
 }

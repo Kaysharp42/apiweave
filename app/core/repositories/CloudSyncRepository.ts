@@ -122,6 +122,10 @@ export interface CloudConflict {
   // True when the server reported this conflict as cleanly 3-way auto-mergeable
   // (PushOutcome.auto_mergeable), so the UI can offer a one-click Auto-merge.
   readonly autoMergeable: boolean
+  // Leaf paths both sides changed differently on an otherwise-mergeable conflict
+  // (PushOutcome.merge_residual_paths). Non-empty => the UI offers per-field
+  // picking; the merge completes with those picks server-side.
+  readonly mergeResidualPaths: readonly string[]
 }
 
 export interface CloudPushConflictInput {
@@ -131,6 +135,7 @@ export interface CloudPushConflictInput {
   readonly cloudRev: number
   readonly cloudWriter?: CloudConflictWriter | null
   readonly autoMergeable?: boolean
+  readonly mergeResidualPaths?: readonly string[]
 }
 
 interface SettingRow extends SqliteRow {
@@ -207,6 +212,7 @@ interface CloudConflictDbRow extends SqliteRow {
   readonly cloud_writer_name: string | null
   readonly cloud_writer_device_label: string | null
   readonly auto_mergeable: number
+  readonly merge_residual_paths: string
 }
 
 // Maps a conflict kind to the local table holding its display name.
@@ -765,6 +771,7 @@ export class CloudSyncRepository {
       cloudOp: cloudPayload.length === 0 ? "tombstone" : "upsert",
       cloudWriter: input.cloudWriter ?? null,
       autoMergeable: input.autoMergeable ?? false,
+      mergeResidualPaths: input.mergeResidualPaths ?? [],
     })
   }
 
@@ -1270,6 +1277,7 @@ export class CloudSyncRepository {
       // Pull-created conflicts have no server merge outcome, so auto-merge is
       // never offered for them (the server never computed a base for this side).
       autoMergeable: false,
+      mergeResidualPaths: [],
     })
   }
 
@@ -1280,8 +1288,8 @@ export class CloudSyncRepository {
          conflict_id, server_conflict_id, workspace_id, kind, record_id, base_rev,
          local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op,
          cloud_writer_user_id, cloud_writer_device_id, cloud_writer_name, cloud_writer_device_label,
-         auto_mergeable
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         auto_mergeable, merge_residual_paths
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(conflict_id) DO UPDATE SET
          server_conflict_id = excluded.server_conflict_id,
          local_payload = excluded.local_payload, cloud_payload = excluded.cloud_payload,
@@ -1291,13 +1299,14 @@ export class CloudSyncRepository {
          cloud_writer_device_id = excluded.cloud_writer_device_id,
          cloud_writer_name = excluded.cloud_writer_name,
          cloud_writer_device_label = excluded.cloud_writer_device_label,
-         auto_mergeable = excluded.auto_mergeable`,
+         auto_mergeable = excluded.auto_mergeable,
+         merge_residual_paths = excluded.merge_residual_paths`,
       [
         input.conflictId, input.serverConflictId, input.workspaceId, input.kind, input.recordId, input.baseRev,
         toBuffer(input.localPayload), toBuffer(input.cloudPayload), input.localRev, input.cloudRev,
         input.localOp, input.cloudOp,
         writer?.userId || null, writer?.deviceId || null, writer?.name || null, writer?.deviceLabel || null,
-        input.autoMergeable ? 1 : 0,
+        input.autoMergeable ? 1 : 0, JSON.stringify(input.mergeResidualPaths ?? []),
       ],
     )
     this.upsertRecordState(input.workspaceId, input.kind, input.recordId, {
@@ -1587,6 +1596,19 @@ function rowToCloudConflict(row: CloudConflictDbRow): CloudConflict {
     resolvedAt: row.resolvedAt,
     cloudWriter: cloudWriterFromRow(row),
     autoMergeable: row.auto_mergeable === 1,
+    mergeResidualPaths: parseResidualPaths(row.merge_residual_paths),
+  }
+}
+
+// Parses the JSON string-array column, tolerating legacy NULL/empty/malformed
+// values by yielding an empty list (never offer picking on garbage).
+function parseResidualPaths(value: string | null): readonly string[] {
+  if (value === null || value === "") return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === "string") : []
+  } catch {
+    return []
   }
 }
 

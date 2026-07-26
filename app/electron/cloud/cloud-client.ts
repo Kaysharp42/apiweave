@@ -36,6 +36,7 @@ import {
   PushDeltaSchema,
   PushDeltasRequestSchema,
   PushDeltasResponseSchema,
+  MergeSide,
   ResolveConflictRequestSchema,
   ResolveConflictResponseSchema,
   SyncService,
@@ -449,11 +450,16 @@ export class CloudClient {
   public async resolveConflict(
     conflictId: string,
     winner: "local" | "cloud" | "merged",
+    resolutions: readonly { readonly path: string; readonly side: "local" | "cloud" }[] = [],
   ): Promise<ResolveConflictResponse> {
     const request = create(ResolveConflictRequestSchema, {
       conflictId,
       winner: conflictWinnerEnum(winner),
       deviceId: this.tokenStore.getDeviceId() ?? "",
+      resolutions: resolutions.map((r) => ({
+        path: r.path,
+        side: r.side === "local" ? MergeSide.LOCAL : MergeSide.CLOUD,
+      })),
     })
     try {
       const json = await this.call(
