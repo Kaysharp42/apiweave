@@ -427,6 +427,7 @@ export class CloudSyncProvider implements SyncProvider {
     }
   }
 
+  // fallow-ignore-next-line complexity -- push outcomes map distinct server states to durable local transitions
   private async pushRow(binding: CloudWorkspaceBindingRef, row: OutboxRow): Promise<"applied" | "blocked"> {
     if (this.stopped) return "blocked"
     let response

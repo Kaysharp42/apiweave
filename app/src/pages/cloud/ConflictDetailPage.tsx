@@ -38,6 +38,7 @@ export function redactEnvironmentPayload(
   return { ...payload, secrets: redactedSecrets };
 }
 
+// fallow-ignore-next-line complexity -- the page coordinates loading, diffing, field picks, and resolution confirmation
 export function ConflictDetailPage() {
   const { conflictId = "" } = useParams<{ conflictId: string }>();
   const location = useLocation();
@@ -138,6 +139,7 @@ export function ConflictDetailPage() {
     navigate("/cloud/conflicts", { replace: true });
   }
 
+  // fallow-ignore-next-line complexity -- merged, local, and cloud resolution share one guarded UI action
   async function resolve(
     choice: ConflictWinner,
     resolutions?: readonly { readonly path: string; readonly side: "local" | "cloud" }[],

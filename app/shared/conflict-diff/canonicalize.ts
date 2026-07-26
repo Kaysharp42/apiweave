@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- record-kind canonicalizers intentionally share the same normalization shape
 import type { JsonValue } from "../types/JsonValue"
 import type { CanonicalConflictPayload } from "../types/CanonicalConflictPayload"
 

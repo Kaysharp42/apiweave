@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- this table's presentation columns are intentionally distinct from other tables
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";

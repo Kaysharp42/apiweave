@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- persistence models and SQLite rows intentionally mirror each other
 import type { KVStore, SqliteRow } from "../db"
 import { generateId } from "../id"
 import { slugify } from "./helpers"
@@ -1292,6 +1293,7 @@ export class CloudSyncRepository {
     })
   }
 
+  // fallow-ignore-next-line complexity -- conflict persistence has separate legacy and current metadata fields
   private saveConflict(input: Omit<CloudConflict, "winner" | "status" | "createdAt" | "resolvedAt">): void {
     const writer = input.cloudWriter
     this.store.set(

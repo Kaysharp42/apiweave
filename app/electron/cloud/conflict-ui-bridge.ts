@@ -135,6 +135,7 @@ export class ConflictUiBridge {
     return conflictToDetail(this.mustGet(conflictId), this.repository)
   }
 
+  // fallow-ignore-next-line complexity -- merged, remote, and offline-local resolution have distinct authorization paths
   public async resolve(input: ResolveConflictInput): Promise<z.infer<typeof conflictSchema>> {
     const conflict = this.mustGet(input.conflict_id)
     if (conflict.status === "resolved") {

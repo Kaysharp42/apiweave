@@ -132,6 +132,7 @@ function isPlainRecord(value: unknown): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+// fallow-ignore-next-line complexity -- recursive structural comparison necessarily branches by JSON value shape
 function deepEqualJson(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
   if (a === b) return true
   if (a === undefined || b === undefined) return false
