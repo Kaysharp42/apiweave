@@ -1,0 +1,11 @@
+-- Leaf paths (e.g. "nodes.n1.config.method", "name") both sides changed
+-- differently on a push conflict that is otherwise 3-way auto-mergeable
+-- (PushOutcome.merge_residual_paths). Stored as a JSON string array so the
+-- conflict UI can offer per-field picking: the user chooses a winning side for
+-- each path and the merge is completed server-side with those picks.
+--
+-- Defaults to '[]': pre-existing rows and pull-created conflicts (no server
+-- outcome) carry no residual paths. Empty together with auto_mergeable = 1 means
+-- a clean auto-merge; empty with auto_mergeable = 0 means fall back to
+-- whole-record keep-local / keep-cloud.
+ALTER TABLE cloud_conflicts ADD COLUMN merge_residual_paths TEXT NOT NULL DEFAULT '[]';

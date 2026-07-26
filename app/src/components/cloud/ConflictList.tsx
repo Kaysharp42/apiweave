@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- this table's presentation columns are intentionally distinct from other tables
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -7,6 +8,31 @@ import { invoke } from "../../utils/apiweaveClient";
 import type { ConflictListItem } from "../../types/cloud";
 
 const POLL_MS = 10_000;
+
+const RELATIVE_DIVISIONS: { amount: number; unit: Intl.RelativeTimeFormatUnit }[] = [
+  { amount: 60, unit: "second" },
+  { amount: 60, unit: "minute" },
+  { amount: 24, unit: "hour" },
+  { amount: 7, unit: "day" },
+  { amount: 4.34524, unit: "week" },
+  { amount: 12, unit: "month" },
+  { amount: Number.POSITIVE_INFINITY, unit: "year" },
+];
+const relativeFormatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+
+/** ISO timestamp → "2 hours ago"; "" when unparseable. */
+function relativeTime(iso: string): string {
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) return "";
+  let duration = (timestamp - Date.now()) / 1000;
+  for (const division of RELATIVE_DIVISIONS) {
+    if (Math.abs(duration) < division.amount) {
+      return relativeFormatter.format(Math.round(duration), division.unit);
+    }
+    duration /= division.amount;
+  }
+  return "";
+}
 
 export function ConflictList() {
   const navigate = useNavigate();
@@ -65,6 +91,7 @@ export function ConflictList() {
                 <th className="px-3 py-2">Record</th>
                 <th className="px-3 py-2">Local rev</th>
                 <th className="px-3 py-2">Cloud rev</th>
+                <th className="px-3 py-2">Detected</th>
                 <th className="px-3 py-2 text-right">Action</th>
               </tr>
             </thead>
@@ -84,6 +111,12 @@ export function ConflictList() {
                   </td>
                   <td className="px-3 py-2 text-text-secondary dark:text-text-secondary-dark">
                     {conflict.cloud_rev}
+                  </td>
+                  <td
+                    className="px-3 py-2 text-text-secondary dark:text-text-secondary-dark"
+                    title={new Date(conflict.created_at).toLocaleString()}
+                  >
+                    {relativeTime(conflict.created_at)}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <Button

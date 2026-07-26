@@ -14,7 +14,7 @@ describe("conflict-ui-bridge", () => {
   let db: Database
   let store: KVStore
   let router: IpcRouter
-  let resolver: SyncConflictResolver & { resolveConflict: ReturnType<typeof vi.fn> }
+  let resolver: SyncConflictResolver & { resolveConflict: ReturnType<typeof vi.fn>; nudgeSync: ReturnType<typeof vi.fn> }
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), "conflict-ui-test-"))
@@ -26,7 +26,7 @@ describe("conflict-ui-bridge", () => {
       "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
       [WORKSPACE_ID, "Conflicts", "conflicts", "cloud", "bi-directional", "{}"],
     )
-    resolver = { resolveConflict: vi.fn().mockResolvedValue(undefined) }
+    resolver = { resolveConflict: vi.fn().mockResolvedValue(undefined), nudgeSync: vi.fn() }
     router = new IpcRouter()
     registerConflictUiHandlers(router, { store, syncService: resolver })
     await router.dispatch({ domain: "cloud", action: "conflict-list", payload: {} })
@@ -204,6 +204,137 @@ describe("conflict-ui-bridge", () => {
     ).rejects.toThrow(ErrCloudConflictStale)
   })
 
+  it("auto-merges via the server and applies the returned merged payload", async () => {
+    insertConflict("conflict-merge")
+    const merged = { name: "Merged Workflow", graph: { nodes: [], edges: [] }, variables: {}, workspaceId: WORKSPACE_ID }
+    resolver.resolveConflict.mockResolvedValueOnce({
+      resultingRev: 10,
+      winnerPayload: Buffer.from(JSON.stringify(merged)),
+    })
+
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-merge", winner: "merged", device_id: "device-1" },
+    })
+
+    expect(result.ok).toBe(true)
+    // The server was asked for a MERGED resolution against the server snapshot.
+    expect(resolver.resolveConflict).toHaveBeenCalledWith({
+      conflict_id: "conflict-merge",
+      winner: "merged",
+      device_id: "device-1",
+    })
+    // The server-computed merged payload is applied locally as resulting_rev.
+    expect(store.get<{ name: string; rev: number }>(
+      "SELECT name, rev FROM workflows WHERE id = ?",
+      ["workflow-1"],
+    )).toEqual({ name: "Merged Workflow", rev: 10 })
+    // A merge is recorded with winner 'local' (the local edits survived); the
+    // authoritative 'merged' outcome lives server-side.
+    expect(store.get<{ winner: string; status: string }>(
+      "SELECT winner, status FROM cloud_conflicts WHERE conflict_id = ?",
+      ["conflict-merge"],
+    )).toEqual({ winner: "local", status: "resolved" })
+    expect(store.get<{ server_rev: number; local_rev: number; dirty: number; conflict_id: string | null }>(
+      "SELECT server_rev, local_rev, dirty, conflict_id FROM cloud_record_state WHERE record_id = ?",
+      ["workflow-1"],
+    )).toEqual({ server_rev: 10, local_rev: 10, dirty: 0, conflict_id: null })
+    // The blocked outbox is cleared.
+    expect(store.get("SELECT id FROM cloud_outbox WHERE record_id = ?", ["workflow-1"])).toBeUndefined()
+  })
+
+  it("surfaces residual paths and forwards field-level picks to the server for a merged resolve", async () => {
+    insertConflict("conflict-fieldpick", null, ["name", "nodes.n1.config.method"])
+    const merged = { name: "Local Workflow", graph: { nodes: [], edges: [] }, variables: {}, workspaceId: WORKSPACE_ID }
+    resolver.resolveConflict.mockResolvedValueOnce({
+      resultingRev: 11,
+      winnerPayload: Buffer.from(JSON.stringify(merged)),
+    })
+
+    // The detail exposes the residual paths so the UI can render a picker.
+    const detail = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-get",
+      payload: { conflict_id: "conflict-fieldpick" },
+    })
+    expect(detail.ok).toBe(true)
+    if (detail.ok) {
+      expect((detail.data as { merge_residual_paths: string[] }).merge_residual_paths).toEqual([
+        "name",
+        "nodes.n1.config.method",
+      ])
+    }
+
+    const resolutions = [
+      { path: "name", side: "local" as const },
+      { path: "nodes.n1.config.method", side: "cloud" as const },
+    ]
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-fieldpick", winner: "merged", device_id: "device-1", resolutions },
+    })
+
+    expect(result.ok).toBe(true)
+    // The picks ride along to the server, which recomputes the merge with them.
+    expect(resolver.resolveConflict).toHaveBeenCalledWith({
+      conflict_id: "conflict-fieldpick",
+      winner: "merged",
+      device_id: "device-1",
+      resolutions,
+    })
+  })
+
+  it("rejects auto-merge when the conflict has no server snapshot", async () => {
+    // A pull-created conflict (server_conflict_id NULL) cannot be auto-merged.
+    store.set(
+      `INSERT INTO cloud_conflicts (
+        conflict_id, server_conflict_id, workspace_id, kind, record_id, base_rev,
+        local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "conflict-pull", null, WORKSPACE_ID, "workflow", "workflow-1", 5,
+        Buffer.from(JSON.stringify({ name: "Local" })), Buffer.from(JSON.stringify({ name: "Cloud" })),
+        7, 9, "upsert", "upsert",
+      ],
+    )
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-pull", winner: "merged", device_id: "device-1" },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.message).toContain("Auto-merge is not available")
+    }
+    expect(resolver.resolveConflict).not.toHaveBeenCalled()
+  })
+
+  it("nudges an immediate sync cycle after a successful resolve", async () => {
+    insertConflict("conflict-nudge")
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-nudge", winner: "local", device_id: "device-1" },
+    })
+    expect(result.ok).toBe(true)
+    expect(resolver.nudgeSync).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not nudge a sync when the resolve fails", async () => {
+    insertConflict("conflict-nonudge")
+    resolver.resolveConflict.mockRejectedValueOnce(new Error("boom"))
+    await expect(
+      router.dispatch({
+        domain: "cloud",
+        action: "conflict-resolve",
+        payload: { conflict_id: "conflict-nonudge", winner: "cloud", device_id: "device-1" },
+      }),
+    ).rejects.toThrow("boom")
+    expect(resolver.nudgeSync).not.toHaveBeenCalled()
+  })
+
   it("errors if the Go SyncService resolve call fails", async () => {
     insertConflict("conflict-4")
     resolver.resolveConflict.mockRejectedValueOnce(new Error("sync service down"))
@@ -217,15 +348,19 @@ describe("conflict-ui-bridge", () => {
   })
 })
 
-function insertConflict(id: string, winner: "local" | "cloud" | null = null): void {
+function insertConflict(
+  id: string,
+  winner: "local" | "cloud" | null = null,
+  residualPaths: readonly string[] = [],
+): void {
   const local = { name: "Local Workflow", graph: { nodes: [], edges: [] }, variables: {} }
   const cloud = { name: "Cloud Workflow", graph: { nodes: [], edges: [] }, variables: {} }
   storeRef().set(
     `INSERT INTO cloud_conflicts (
       conflict_id, server_conflict_id, workspace_id, kind, record_id, base_rev,
       local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op,
-      winner, status, createdAt, resolvedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      winner, status, createdAt, resolvedAt, merge_residual_paths
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       id,
@@ -243,6 +378,7 @@ function insertConflict(id: string, winner: "local" | "cloud" | null = null): vo
       winner === null ? "pending" : "resolved",
       new Date().toISOString(),
       winner === null ? null : new Date().toISOString(),
+      JSON.stringify(residualPaths),
     ],
   )
 }

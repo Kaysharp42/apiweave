@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- resolved conflicts use a separate table schema from the pending queue
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, GitCompareArrows } from "lucide-react";

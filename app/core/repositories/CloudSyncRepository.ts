@@ -1,9 +1,11 @@
+// fallow-ignore-file code-duplication -- persistence models and SQLite rows intentionally mirror each other
 import type { KVStore, SqliteRow } from "../db"
 import { generateId } from "../id"
 import { slugify } from "./helpers"
 import { sanitizeCloudSnapshotPayload } from "../sync/cloud-mutations"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import type { WorkspaceOrigin } from "@shared/types/WorkspaceOrigin"
+import { canonicalizeSyncPayload } from "@shared/conflict-diff"
 
 export type CloudOutboxKind = "workspace" | "project" | "workflow" | "environment"
 export type CloudOutboxOp = "upsert" | "tombstone"
@@ -85,7 +87,20 @@ export interface CloudChangeEnvelope {
 }
 
 export type CloudApplyResult = "applied" | "ignored" | "conflict"
+// The stored resolution outcome. A server-side auto-merge is recorded as
+// 'local' (local edits survived the merge); 'merged' is not a stored value on
+// the desktop — see migration 011 and resolveConflictMerged.
 export type CloudConflictWinner = "local" | "cloud"
+
+// Cloud-side writer attribution (who wrote the cloud copy), resolved by the
+// server and carried on a push-conflict outcome. Every field may be empty when
+// the server could not attribute the write (legacy snapshot, deleted user).
+export interface CloudConflictWriter {
+  readonly userId: string
+  readonly deviceId: string
+  readonly name: string
+  readonly deviceLabel: string
+}
 
 export interface CloudConflict {
   readonly conflictId: string
@@ -104,6 +119,14 @@ export interface CloudConflict {
   readonly status: "pending" | "resolved"
   readonly createdAt: string
   readonly resolvedAt: string | null
+  readonly cloudWriter: CloudConflictWriter | null
+  // True when the server reported this conflict as cleanly 3-way auto-mergeable
+  // (PushOutcome.auto_mergeable), so the UI can offer a one-click Auto-merge.
+  readonly autoMergeable: boolean
+  // Leaf paths both sides changed differently on an otherwise-mergeable conflict
+  // (PushOutcome.merge_residual_paths). Non-empty => the UI offers per-field
+  // picking; the merge completes with those picks server-side.
+  readonly mergeResidualPaths: readonly string[]
 }
 
 export interface CloudPushConflictInput {
@@ -111,6 +134,9 @@ export interface CloudPushConflictInput {
   readonly outboxRow: CloudOutboxRow
   readonly cloudPayload: Uint8Array
   readonly cloudRev: number
+  readonly cloudWriter?: CloudConflictWriter | null
+  readonly autoMergeable?: boolean
+  readonly mergeResidualPaths?: readonly string[]
 }
 
 interface SettingRow extends SqliteRow {
@@ -182,6 +208,12 @@ interface CloudConflictDbRow extends SqliteRow {
   readonly status: "pending" | "resolved"
   readonly createdAt: string
   readonly resolvedAt: string | null
+  readonly cloud_writer_user_id: string | null
+  readonly cloud_writer_device_id: string | null
+  readonly cloud_writer_name: string | null
+  readonly cloud_writer_device_label: string | null
+  readonly auto_mergeable: number
+  readonly merge_residual_paths: string
 }
 
 // Maps a conflict kind to the local table holding its display name.
@@ -560,6 +592,178 @@ export class CloudSyncRepository {
     )
   }
 
+  // Pending conflicts that originated from a push (they carry a server snapshot
+  // id). These are the only ones the desktop can reconcile against the server —
+  // pull-detected conflicts have no server_conflict_id and no snapshot to query.
+  public listPendingServerConflicts(): readonly CloudConflict[] {
+    return this.store
+      .query<CloudConflictDbRow>(
+        "SELECT * FROM cloud_conflicts WHERE status = 'pending' AND server_conflict_id IS NOT NULL ORDER BY datetime(createdAt) ASC",
+      )
+      .map(rowToCloudConflict)
+  }
+
+  // Clears a local conflict once its server snapshot has been resolved on another
+  // surface (web or another device). The desktop's SyncService has no "is this
+  // resolved?" RPC, so it reuses FetchLoser as the probe. The server's contract
+  // (apiweave-cloud apps/api/internal/sync/store.go FetchLoser, and
+  // proto/apiweave/v1/sync_service.proto) is:
+  //   - success  => the conflict HAS been resolved; the response carries the
+  //     resolved-conflict loser_payload (winner != "unresolved", resolved_at set).
+  //   - error code INVALID_ARGUMENT ("conflict not resolved") => still PENDING.
+  //   - error code NOT_FOUND => unknown/expired snapshot (treat as still pending).
+  // On success we infer the winner by matching the loser payload against our
+  // stored sides, then converge to the server's outcome. A winner=local
+  // resolution is applied by the server at cloud_rev + 1 (its ResolveConflict
+  // takes a row lock asserting curRev == snapshot cloud_rev, then writes
+  // resultingRev = curRev + 1); winner=cloud leaves the record at cloud_rev.
+  // Returns what happened, or "missing"/"ambiguous" when no action was taken.
+  public reconcileRemoteResolvedConflict(
+    conflictId: string,
+    loserPayload: Uint8Array,
+  ): "local" | "cloud" | "ambiguous" | "missing" {
+    return this.store.transaction((store) =>
+      new CloudSyncRepository(store).reconcileRemoteResolvedInTransaction(conflictId, loserPayload),
+    )
+  }
+
+  private reconcileRemoteResolvedInTransaction(
+    conflictId: string,
+    loserPayload: Uint8Array,
+  ): "local" | "cloud" | "ambiguous" | "missing" {
+    const conflict = this.getConflict(conflictId)
+    if (conflict === undefined || conflict.status !== "pending") {
+      return "missing"
+    }
+    const winner = this.inferRemoteWinner(conflict, loserPayload)
+    if (winner === undefined) {
+      return "ambiguous"
+    }
+    if (winner === "cloud") {
+      // Cloud won: apply the cloud copy and discard local, exactly as a local
+      // keep-cloud would. The server's rev did not advance, so nothing pulled
+      // this cycle fights the applied state.
+      this.resolveConflictInTransaction(conflictId, "cloud")
+      return "cloud"
+    }
+    this.convergeRemoteKeepLocal(conflict)
+    return "local"
+  }
+
+  // Determines which side the server kept by matching the loser payload it
+  // returned against our stored sides (canonicalized to neutralize per-surface
+  // id remaps and volatile fields). If the loser is the cloud copy, local won;
+  // if the loser is the local copy, cloud won. Checks local first so a
+  // no-difference conflict resolves as cloud (the no-rev-bump outcome).
+  private inferRemoteWinner(
+    conflict: CloudConflict,
+    loserPayload: Uint8Array,
+  ): "local" | "cloud" | undefined {
+    const loser = canonicalConflictKey(conflict.kind, loserPayload)
+    if (loser === canonicalConflictKey(conflict.kind, conflict.localPayload)) {
+      return "cloud"
+    }
+    if (loser === canonicalConflictKey(conflict.kind, conflict.cloudPayload)) {
+      return "local"
+    }
+    return undefined
+  }
+
+  // Local won on another surface: the server already applied our local copy as
+  // cloud_rev + 1. Drop the blocked outbox, clear the conflict, and advance the
+  // record's server_rev so the matching pulled change is ignored. Any newer
+  // local edit queued behind the conflict is re-pushed on top of the new rev.
+  private convergeRemoteKeepLocal(conflict: CloudConflict): void {
+    const resultingRev = conflict.cloudRev + 1
+    const queued = this.listOutboxForRecord(conflict.workspaceId, conflict.kind, conflict.recordId)
+    const latestLocal = queued.at(-1)
+    this.store.delete(
+      "DELETE FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ?",
+      [conflict.workspaceId, conflict.kind, conflict.recordId],
+    )
+    const hasNewerEdit = latestLocal !== undefined
+      && !payloadsEquivalent(conflict.kind, latestLocal.payload, conflict.localPayload ?? new Uint8Array())
+    if (hasNewerEdit) {
+      this.enqueueOutbox({
+        workspace_id: conflict.workspaceId,
+        kind: conflict.kind,
+        record_id: conflict.recordId,
+        expected_rev: resultingRev,
+        op: latestLocal.op,
+        payload: latestLocal.payload,
+      })
+    }
+    this.upsertRecordState(conflict.workspaceId, conflict.kind, conflict.recordId, {
+      serverRev: resultingRev,
+      localRev: hasNewerEdit ? resultingRev + 1 : resultingRev,
+      dirty: hasNewerEdit,
+      conflictId: null,
+    })
+    this.store.set(
+      "UPDATE cloud_conflicts SET winner = 'local', status = 'resolved', resolvedAt = ? WHERE conflict_id = ? AND status = 'pending'",
+      [new Date().toISOString(), conflict.conflictId],
+    )
+  }
+
+  // Converges after a server-side auto-merge (winner = MERGED). The server
+  // combined both sides and applied the merged payload as resultingRev; we apply
+  // that same payload locally, drop the blocked outbox, and clear the conflict.
+  // Any newer local edit queued behind the conflict is re-pushed on top of the
+  // merged rev so it is not lost.
+  public resolveConflictMerged(conflictId: string, resultingRev: number, mergedPayload: Uint8Array): void {
+    this.store.transaction((store) => {
+      new CloudSyncRepository(store).resolveConflictMergedInTransaction(conflictId, resultingRev, mergedPayload)
+    })
+  }
+
+  private resolveConflictMergedInTransaction(conflictId: string, resultingRev: number, mergedPayload: Uint8Array): void {
+    const conflict = this.getConflict(conflictId)
+    if (conflict === undefined || conflict.status !== "pending") {
+      return
+    }
+    const queued = this.listOutboxForRecord(conflict.workspaceId, conflict.kind, conflict.recordId)
+    const latestLocal = queued.at(-1)
+    this.store.delete(
+      "DELETE FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ?",
+      [conflict.workspaceId, conflict.kind, conflict.recordId],
+    )
+    this.applyRecord({
+      cursor: 0n,
+      workspaceId: conflict.workspaceId,
+      kind: cloudKindToRecordKind(conflict.kind),
+      recordId: conflict.recordId,
+      rev: BigInt(resultingRev),
+      op: outboxOpToChangeOp("upsert"),
+      payload: mergedPayload,
+    }, true)
+    const hasNewerEdit = latestLocal !== undefined
+      && !payloadsEquivalent(conflict.kind, latestLocal.payload, mergedPayload)
+    if (hasNewerEdit) {
+      this.enqueueOutbox({
+        workspace_id: conflict.workspaceId,
+        kind: conflict.kind,
+        record_id: conflict.recordId,
+        expected_rev: resultingRev,
+        op: latestLocal.op,
+        payload: latestLocal.payload,
+      })
+    }
+    this.upsertRecordState(conflict.workspaceId, conflict.kind, conflict.recordId, {
+      serverRev: resultingRev,
+      localRev: hasNewerEdit ? resultingRev + 1 : resultingRev,
+      dirty: hasNewerEdit,
+      conflictId: null,
+    })
+    // Recorded as 'local' (the merge preserved the local edits); the desktop
+    // shows no per-winner label and the authoritative 'merged' outcome lives in
+    // the server's conflict_snapshots. This keeps the winner CHECK and the
+    // migration additive rather than rebuilding the table for a cosmetic value.
+    this.store.set(
+      "UPDATE cloud_conflicts SET winner = 'local', status = 'resolved', resolvedAt = ? WHERE conflict_id = ? AND status = 'pending'",
+      [new Date().toISOString(), conflictId],
+    )
+  }
+
   public recordPushConflict(input: CloudPushConflictInput): void {
     const localPayload = sanitizeNullablePayload(input.outboxRow.payload)
     const cloudPayload = sanitizeCloudSnapshotPayload(input.cloudPayload)
@@ -577,6 +781,9 @@ export class CloudSyncRepository {
       cloudRev,
       localOp: input.outboxRow.op,
       cloudOp: cloudPayload.length === 0 ? "tombstone" : "upsert",
+      cloudWriter: input.cloudWriter ?? null,
+      autoMergeable: input.autoMergeable ?? false,
+      mergeResidualPaths: input.mergeResidualPaths ?? [],
     })
   }
 
@@ -1075,24 +1282,44 @@ export class CloudSyncRepository {
       cloudRev: Number(change.rev),
       localOp: latest.op,
       cloudOp: changeOpToOutboxOp(change.op),
+      // NB: pull-created conflicts carry no writer — PullChanges doesn't
+      // attribute changes. Renders "unknown author"; add if we ever put a
+      // writer on ChangeEnvelope.
+      cloudWriter: null,
+      // Pull-created conflicts have no server merge outcome, so auto-merge is
+      // never offered for them (the server never computed a base for this side).
+      autoMergeable: false,
+      mergeResidualPaths: [],
     })
   }
 
+  // fallow-ignore-next-line complexity -- conflict persistence has separate legacy and current metadata fields
   private saveConflict(input: Omit<CloudConflict, "winner" | "status" | "createdAt" | "resolvedAt">): void {
+    const writer = input.cloudWriter
     this.store.set(
       `INSERT INTO cloud_conflicts (
          conflict_id, server_conflict_id, workspace_id, kind, record_id, base_rev,
-         local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         local_payload, cloud_payload, local_rev, cloud_rev, local_op, cloud_op,
+         cloud_writer_user_id, cloud_writer_device_id, cloud_writer_name, cloud_writer_device_label,
+         auto_mergeable, merge_residual_paths
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(conflict_id) DO UPDATE SET
          server_conflict_id = excluded.server_conflict_id,
          local_payload = excluded.local_payload, cloud_payload = excluded.cloud_payload,
          local_rev = excluded.local_rev, cloud_rev = excluded.cloud_rev,
-         local_op = excluded.local_op, cloud_op = excluded.cloud_op`,
+         local_op = excluded.local_op, cloud_op = excluded.cloud_op,
+         cloud_writer_user_id = excluded.cloud_writer_user_id,
+         cloud_writer_device_id = excluded.cloud_writer_device_id,
+         cloud_writer_name = excluded.cloud_writer_name,
+         cloud_writer_device_label = excluded.cloud_writer_device_label,
+         auto_mergeable = excluded.auto_mergeable,
+         merge_residual_paths = excluded.merge_residual_paths`,
       [
         input.conflictId, input.serverConflictId, input.workspaceId, input.kind, input.recordId, input.baseRev,
         toBuffer(input.localPayload), toBuffer(input.cloudPayload), input.localRev, input.cloudRev,
         input.localOp, input.cloudOp,
+        writer?.userId || null, writer?.deviceId || null, writer?.name || null, writer?.deviceLabel || null,
+        input.autoMergeable ? 1 : 0, JSON.stringify(input.mergeResidualPaths ?? []),
       ],
     )
     this.upsertRecordState(input.workspaceId, input.kind, input.recordId, {
@@ -1119,6 +1346,17 @@ function parsePayload(data: Uint8Array): Record<string, unknown> {
     return {}
   }
   return parsed as Record<string, unknown>
+}
+
+// A comparison key for a conflict side: the canonicalized payload as stable
+// JSON, or a distinct marker for an absent/tombstone side. Canonicalization
+// neutralizes per-surface id remaps and volatile fields so a local copy and its
+// server-stored twin (which differ only in mapped workspace ids) compare equal.
+function canonicalConflictKey(kind: CloudOutboxKind, payload: Uint8Array | null): string {
+  if (payload === null || payload.length === 0) {
+    return "tombstone"
+  }
+  return JSON.stringify(canonicalizeSyncPayload(kind, parsePayload(payload)))
 }
 
 function payloadsEquivalent(kind: CloudOutboxKind, localPayload: Uint8Array | null, cloudPayload: Uint8Array): boolean {
@@ -1369,6 +1607,40 @@ function rowToCloudConflict(row: CloudConflictDbRow): CloudConflict {
     status: row.status,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
+    cloudWriter: cloudWriterFromRow(row),
+    autoMergeable: row.auto_mergeable === 1,
+    mergeResidualPaths: parseResidualPaths(row.merge_residual_paths),
+  }
+}
+
+// Parses the JSON string-array column, tolerating legacy NULL/empty/malformed
+// values by yielding an empty list (never offer picking on garbage).
+function parseResidualPaths(value: string | null): readonly string[] {
+  if (value === null || value === "") return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === "string") : []
+  } catch {
+    return []
+  }
+}
+
+// Reassembles the cloud writer from its columns, returning null when the
+// server carried no attribution (all columns NULL — legacy or pull conflict).
+function cloudWriterFromRow(row: CloudConflictDbRow): CloudConflictWriter | null {
+  if (
+    row.cloud_writer_user_id === null &&
+    row.cloud_writer_device_id === null &&
+    row.cloud_writer_name === null &&
+    row.cloud_writer_device_label === null
+  ) {
+    return null
+  }
+  return {
+    userId: row.cloud_writer_user_id ?? "",
+    deviceId: row.cloud_writer_device_id ?? "",
+    name: row.cloud_writer_name ?? "",
+    deviceLabel: row.cloud_writer_device_label ?? "",
   }
 }
 

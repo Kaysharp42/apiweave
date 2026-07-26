@@ -1,5 +1,6 @@
 import type { ConflictKind } from "./ConflictKind";
 import type { ConflictWinner } from "./ConflictWinner";
+import type { ConflictWriter } from "./ConflictWriter";
 
 export interface ConflictListItem {
   readonly id: string;
@@ -12,4 +13,12 @@ export interface ConflictListItem {
   readonly winner: ConflictWinner | null;
   readonly created_at: string;
   readonly resolved_at?: string | null;
+  readonly cloud_writer?: ConflictWriter | null;
+  // The server reported this conflict as cleanly 3-way auto-mergeable, so the
+  // UI may offer a one-click Auto-merge. Absent on legacy/pull conflicts.
+  readonly auto_mergeable?: boolean;
+  // Overlapping leaf paths both sides changed differently on an otherwise
+  // mergeable conflict. Non-empty => the UI offers per-field picking. Absent on
+  // legacy/pull conflicts.
+  readonly merge_residual_paths?: readonly string[];
 }

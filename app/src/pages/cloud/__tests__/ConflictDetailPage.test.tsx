@@ -31,12 +31,14 @@ const workflowConflict: Conflict = {
   created_at: "2026-07-11T12:00:00.000Z",
   local_payload: {
     name: "Local API smoke test",
-    graph: { nodes: [{ id: "local-node", type: "start" }], edges: [] },
+    nodes: [{ nodeId: "local-node", type: "start", position: { x: 0, y: 0 } }],
+    edges: [],
     variables: { host: "local.example" },
   },
   cloud_payload: {
     name: "Cloud API smoke test",
-    graph: { nodes: [{ id: "cloud-node", type: "start" }], edges: [] },
+    nodes: [{ nodeId: "cloud-node", type: "start", position: { x: 0, y: 0 } }],
+    edges: [],
     variables: { host: "cloud.example" },
   },
 };
@@ -77,13 +79,46 @@ describe("ConflictDetailPage", () => {
     setIpc(invokeMock);
   });
 
-  it("renders a side-by-side diff with both records", async () => {
+  it("renders a GitHub-style diff of the changed nodes and fields", async () => {
     renderPage("/cloud/conflicts/conflict-1");
 
-    expect(await screen.findByLabelText("Local workflow definition")).toHaveTextContent("Local API smoke test");
-    expect(screen.getByLabelText("Cloud workflow definition")).toHaveTextContent("Cloud API smoke test");
-    expect(screen.getByLabelText("Local workflow definition")).toHaveTextContent("local-node");
-    expect(screen.getByLabelText("Cloud workflow definition")).toHaveTextContent("cloud-node");
+    await screen.findByRole("button", { name: "Keep local" });
+    expect(screen.getByText('Node "local-node" added')).toBeInTheDocument();
+    expect(screen.getByText('Node "cloud-node" removed')).toBeInTheDocument();
+    expect(screen.getByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("Cloud API smoke test")).toBeInTheDocument();
+    expect(screen.getByText("Local API smoke test")).toBeInTheDocument();
+  });
+
+  it("shows the cloud-side author when the server attributed it", async () => {
+    const attributed = {
+      ...workflowConflict,
+      cloud_writer: { userId: "u2", deviceId: "d2", name: "Grace", deviceLabel: "Cloud Desktop" },
+    };
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-get") return { ok: true, data: attributed };
+      return { ok: true, data: [] };
+    });
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep local" });
+    expect(screen.getByText("Cloud edited by Grace · Cloud Desktop")).toBeInTheDocument();
+  });
+
+  it("falls back to unknown author when the cloud writer is absent", async () => {
+    renderPage("/cloud/conflicts/conflict-1");
+    await screen.findByRole("button", { name: "Keep local" });
+    expect(screen.getByText("Cloud edited by an unknown author")).toBeInTheDocument();
+  });
+
+  it("keeps the raw JSON available behind the technical-detail toggle", async () => {
+    const user = userEvent.setup();
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep local" });
+    await user.click(screen.getByText("Technical detail (raw JSON)"));
+    expect(await screen.findByLabelText("Local record JSON")).toHaveTextContent("Local API smoke test");
+    expect(screen.getByLabelText("Cloud record JSON")).toHaveTextContent("Cloud API smoke test");
   });
 
   it.each(["local", "cloud"] as const)(
@@ -92,7 +127,7 @@ describe("ConflictDetailPage", () => {
       const user = userEvent.setup();
       renderPage("/cloud/conflicts/conflict-1");
 
-      await screen.findByLabelText("Local workflow definition");
+      await screen.findByRole("button", { name: "Keep local" });
       await user.click(screen.getByRole("button", { name: `Keep ${winner}` }));
       await user.click(screen.getByRole("button", { name: "Resolve conflict" }));
 
@@ -106,6 +141,61 @@ describe("ConflictDetailPage", () => {
     },
   );
 
+  it("offers per-field picking for residual paths and forwards the picks on merge", async () => {
+    const fieldPickConflict: Conflict = { ...workflowConflict, merge_residual_paths: ["name"] };
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-get") return { ok: true, data: fieldPickConflict };
+      if (action === "conflict-resolve") return { ok: true, data: fieldPickConflict };
+      return { ok: true, data: [] };
+    });
+    const user = userEvent.setup();
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep local" });
+    expect(screen.getByText("Choose a version for each conflicting field")).toBeInTheDocument();
+
+    // The merge is blocked until every residual path has a pick.
+    const mergeButton = screen.getByRole("button", { name: "Merge with selections" });
+    expect(mergeButton).toBeDisabled();
+
+    // Pick the Local side for the one overlapping field.
+    const radios = screen.getAllByRole("radio");
+    await user.click(radios[1]!);
+    expect(mergeButton).toBeEnabled();
+
+    await user.click(mergeButton);
+    await user.click(screen.getByRole("button", { name: "Merge" }));
+
+    await waitFor(() => expect(screen.getByText("conflicts index")).toBeInTheDocument());
+    expect(invokeMock).toHaveBeenCalledWith("cloud", "conflict-resolve", {
+      conflict_id: "conflict-1",
+      winner: "merged",
+      device_id: "desktop",
+      resolutions: [{ path: "name", side: "local" }],
+    });
+    expect(toastSuccess).toHaveBeenCalledWith("Merged both copies");
+  });
+
+  it("blocks the merge and warns when a residual path has no matching diff entry", async () => {
+    const mismatchConflict: Conflict = { ...workflowConflict, merge_residual_paths: ["nonexistent.deep.path"] };
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-get") return { ok: true, data: mismatchConflict };
+      return { ok: true, data: [] };
+    });
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep local" });
+    // The drift warning surfaces and the per-field picker does not.
+    expect(screen.getByText("Merge unavailable for this conflict")).toBeInTheDocument();
+    expect(screen.queryByText("Choose a version for each conflicting field")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+
+    // The merge is blocked; the whole-record fallbacks remain enabled.
+    expect(screen.getByRole("button", { name: "Merge with selections" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Keep local" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Keep cloud" })).toBeEnabled();
+  });
+
   it("removes the resolved detail page from back navigation history", async () => {
     invokeMock.mockImplementation(async (_domain: string, action: string) => {
       if (action === "conflict-list") return { ok: true, data: [workflowConflict] };
@@ -117,7 +207,7 @@ describe("ConflictDetailPage", () => {
     renderHistoryPage();
 
     await user.click(await screen.findByRole("button", { name: "Open" }));
-    await screen.findByLabelText("Local workflow definition");
+    await screen.findByRole("button", { name: "Keep local" });
     await user.click(screen.getByRole("button", { name: "Keep local" }));
     await user.click(screen.getByRole("button", { name: "Resolve conflict" }));
 
@@ -129,12 +219,12 @@ describe("ConflictDetailPage", () => {
   it("redacts environment secret references in the diff view", async () => {
     renderPage("/cloud/conflicts/env-conflict");
 
-    expect(await screen.findByLabelText("Local record JSON")).toHaveTextContent("Local env");
+    await screen.findByRole("button", { name: "Keep local" });
     const page = document.body;
     expect(within(page).queryByText(/super-secret-value/)).not.toBeInTheDocument();
     expect(within(page).queryByText(/ciphertext-value/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Local record JSON")).toHaveTextContent("environment:env-1:API_KEY");
-    expect(screen.getByLabelText("Cloud record JSON")).toHaveTextContent("environment:env-1:TOKEN");
+    expect(page).toHaveTextContent("environment:env-1:API_KEY");
+    expect(page).toHaveTextContent("environment:env-1:TOKEN");
   });
 
   it("errors on double-submit for the same conflict as a no-op toast", async () => {
@@ -148,7 +238,7 @@ describe("ConflictDetailPage", () => {
     const user = userEvent.setup();
     renderPage("/cloud/conflicts/conflict-1");
 
-    await screen.findByLabelText("Local workflow definition");
+    await screen.findByRole("button", { name: "Keep local" });
     await user.click(screen.getByRole("button", { name: "Keep local" }));
     await user.click(screen.getByRole("button", { name: "Resolve conflict" }));
 

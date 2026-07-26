@@ -1,5 +1,6 @@
 export type { ConflictWinner } from "./ConflictWinner";
 export type { ConflictKind } from "./ConflictKind";
+export type { ConflictWriter } from "./ConflictWriter";
 export type { ConflictPayload } from "./ConflictPayload";
 export type { ConflictListItem } from "./ConflictListItem";
 export type { Conflict } from "./Conflict";

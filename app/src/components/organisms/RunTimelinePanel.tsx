@@ -7,7 +7,6 @@ import {
   buildTimeline,
   formatTimelineDuration,
   timelineBadgeStatus,
-  type TimelineRow,
 } from "../../utils/runTimeline";
 import { Modal } from "../molecules/Modal";
 import { StatusBadge } from "../molecules/StatusBadge";
@@ -15,7 +14,7 @@ import { EmptyState } from "../molecules/EmptyState";
 import { Badge } from "../atoms/Badge";
 import { Spinner } from "../atoms/Spinner";
 import { SecretResolutionIndicator } from "../molecules/SecretResolutionIndicator";
-import type { RunTimelineProps } from "../../types";
+import type { RunTimelineProps, TimelineRow } from "../../types";
 
 function rowColor(status: string): string {
   switch (status) {

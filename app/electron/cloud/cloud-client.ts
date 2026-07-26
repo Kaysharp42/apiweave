@@ -36,9 +36,12 @@ import {
   PushDeltaSchema,
   PushDeltasRequestSchema,
   PushDeltasResponseSchema,
+  MergeSide,
   ResolveConflictRequestSchema,
+  ResolveConflictResponseSchema,
   SyncService,
   type ChangeEnvelope,
+  type ResolveConflictResponse,
   type FetchLoserResponse,
   type HelloRequest,
   type HelloResponse,
@@ -322,6 +325,19 @@ const METHOD_LIST_SYNC_WORKSPACES = "ListSyncWorkspaces"
 const METHOD_ENSURE_SYNC_WORKSPACE = "EnsureSyncWorkspace"
 const METHOD_REVOKE_DEVICE = "RevokeDevice"
 const METHOD_RESOLVE_CONFLICT = "ResolveConflict"
+
+// Maps a winner string to the proto enum. MERGED requests a server-computed
+// 3-way auto-merge (only valid when the conflict is cleanly auto-mergeable).
+function conflictWinnerEnum(winner: "local" | "cloud" | "merged"): ConflictWinner {
+  switch (winner) {
+    case "local":
+      return ConflictWinner.LOCAL
+    case "cloud":
+      return ConflictWinner.CLOUD
+    case "merged":
+      return ConflictWinner.MERGED
+  }
+}
 const METHOD_FETCH_LOSER = "FetchLoser"
 
 export interface CloudClientEvents {
@@ -431,18 +447,27 @@ export class CloudClient {
     )
   }
 
-  public async resolveConflict(conflictId: string, winner: "local" | "cloud"): Promise<void> {
+  public async resolveConflict(
+    conflictId: string,
+    winner: "local" | "cloud" | "merged",
+    resolutions: readonly { readonly path: string; readonly side: "local" | "cloud" }[] = [],
+  ): Promise<ResolveConflictResponse> {
     const request = create(ResolveConflictRequestSchema, {
       conflictId,
-      winner: winner === "local" ? ConflictWinner.LOCAL : ConflictWinner.CLOUD,
+      winner: conflictWinnerEnum(winner),
       deviceId: this.tokenStore.getDeviceId() ?? "",
+      resolutions: resolutions.map((r) => ({
+        path: r.path,
+        side: r.side === "local" ? MergeSide.LOCAL : MergeSide.CLOUD,
+      })),
     })
     try {
-      await this.call(
+      const json = await this.call(
         SyncService.typeName,
         METHOD_RESOLVE_CONFLICT,
         toJson(ResolveConflictRequestSchema, request),
       )
+      return fromJson(ResolveConflictResponseSchema, json, { ignoreUnknownFields: true })
     } catch (error) {
       // Aborted (HTTP 409) here means "keep local" hit the server's rev guard:
       // the record moved past the snapshot's cloud_rev. Surface it as a stale

@@ -11,18 +11,41 @@ export const CONFLICT_GET_ACTION = "conflict-get"
 export const CONFLICT_RESOLVE_ACTION = "conflict-resolve"
 export const CONFLICT_FETCH_LOSER_ACTION = "conflict-fetch-loser"
 
-type ConflictWinner = "local" | "cloud"
+type ConflictWinner = "local" | "cloud" | "merged"
 type ConflictKind = "workspace" | "project" | "collection" | "workflow" | "environment"
 type JsonRecord = Record<string, unknown>
+
+// One per-leaf pick for a MERGED resolution: choose which side wins an
+// overlapping path the server reported in merge_residual_paths.
+export interface FieldResolution {
+  readonly path: string
+  readonly side: "local" | "cloud"
+}
 
 export interface ResolveConflictInput {
   readonly conflict_id: string
   readonly winner: ConflictWinner
   readonly device_id: string
+  // Field-level picks for a MERGED resolution. Ignored for keep-local/keep-cloud
+  // and for a clean (residual-free) auto-merge.
+  readonly resolutions?: readonly FieldResolution[]
+}
+
+// The server's resolution outcome, used to converge locally. winnerPayload is
+// the applied record (the merged payload for a MERGED resolution), at
+// resultingRev.
+export interface ResolveConflictOutcome {
+  readonly resultingRev: number
+  readonly winnerPayload: Uint8Array
 }
 
 export interface SyncConflictResolver {
-  readonly resolveConflict: (input: ResolveConflictInput) => Promise<void>
+  readonly resolveConflict: (input: ResolveConflictInput) => Promise<ResolveConflictOutcome>
+  // Optional best-effort trigger to run a sync cycle immediately after a
+  // resolve, so a keep-local re-push / merged re-push propagates and the view
+  // settles in seconds instead of on the next periodic sync. Fire-and-forget:
+  // the periodic sync remains the correctness guarantee, so it must not throw.
+  readonly nudgeSync?: () => void
 }
 
 export interface ConflictUiBridgeOptions {
@@ -30,8 +53,17 @@ export interface ConflictUiBridgeOptions {
   readonly syncService: SyncConflictResolver
 }
 
-const winnerSchema = z.enum(["local", "cloud"])
+const winnerSchema = z.enum(["local", "cloud", "merged"])
+const resolutionSchema = z.object({ path: z.string().min(1), side: z.enum(["local", "cloud"]) })
 const kindSchema = z.enum(["workspace", "project", "collection", "workflow", "environment"])
+const conflictWriterSchema = z
+  .object({
+    userId: z.string(),
+    deviceId: z.string(),
+    name: z.string(),
+    deviceLabel: z.string(),
+  })
+  .nullable()
 const conflictListItemSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
@@ -43,6 +75,14 @@ const conflictListItemSchema = z.object({
   winner: winnerSchema.nullable(),
   created_at: z.string(),
   resolved_at: z.string().nullable().optional(),
+  // cloud_writer attributes the cloud copy; null for legacy/pull conflicts.
+  cloud_writer: conflictWriterSchema.optional(),
+  // auto_mergeable: the server reported this conflict as cleanly 3-way
+  // mergeable, so the UI may offer a one-click Auto-merge.
+  auto_mergeable: z.boolean(),
+  // merge_residual_paths: overlapping leaf paths for per-field picking. Non-empty
+  // => the UI offers a per-path winner choice that completes the merge.
+  merge_residual_paths: z.array(z.string()),
 })
 const conflictSchema = conflictListItemSchema.extend({
   local_payload: z.record(z.string(), z.unknown()),
@@ -62,7 +102,12 @@ export function registerConflictUiHandlers(router: IpcRouter, options: ConflictU
     handle: ({ conflict_id }) => bridge.get(conflict_id),
   })
   router.register(CLOUD_CONFLICT_DOMAIN, CONFLICT_RESOLVE_ACTION, {
-    input: z.object({ conflict_id: z.string().min(1), winner: winnerSchema, device_id: z.string().min(1) }),
+    input: z.object({
+      conflict_id: z.string().min(1),
+      winner: winnerSchema,
+      device_id: z.string().min(1),
+      resolutions: z.array(resolutionSchema).optional(),
+    }),
     output: conflictSchema,
     handle: (input) => bridge.resolve(input),
   })
@@ -90,10 +135,27 @@ export class ConflictUiBridge {
     return conflictToDetail(this.mustGet(conflictId), this.repository)
   }
 
+  // fallow-ignore-next-line complexity -- merged, remote, and offline-local resolution have distinct authorization paths
   public async resolve(input: ResolveConflictInput): Promise<z.infer<typeof conflictSchema>> {
     const conflict = this.mustGet(input.conflict_id)
     if (conflict.status === "resolved") {
       throw new ConflictError("Conflict already resolved", { conflict_id: input.conflict_id })
+    }
+
+    if (input.winner === "merged") {
+      // Auto-merge is computed server-side, so it needs a reachable server and a
+      // server snapshot. Unlike keep-local it cannot self-heal offline — fail
+      // loudly if unavailable, and converge to the server-returned merged copy.
+      if (conflict.serverConflictId === null) {
+        throw new ValidationError("Auto-merge is not available for this conflict", { conflict_id: input.conflict_id })
+      }
+      const outcome = await this.options.syncService.resolveConflict({
+        ...input,
+        conflict_id: conflict.serverConflictId,
+      })
+      this.repository.resolveConflictMerged(input.conflict_id, outcome.resultingRev, outcome.winnerPayload)
+      this.options.syncService.nudgeSync?.()
+      return this.get(input.conflict_id)
     }
 
     if (conflict.serverConflictId !== null) {
@@ -115,6 +177,7 @@ export class ConflictUiBridge {
     }
 
     this.repository.resolveConflict(input.conflict_id, input.winner)
+    this.options.syncService.nudgeSync?.()
     return this.get(input.conflict_id)
   }
 
@@ -147,6 +210,9 @@ function conflictToListItem(conflict: CloudConflict, repository: CloudSyncReposi
     winner: conflict.winner,
     created_at: conflict.createdAt,
     resolved_at: conflict.resolvedAt,
+    cloud_writer: conflict.cloudWriter,
+    auto_mergeable: conflict.autoMergeable,
+    merge_residual_paths: [...conflict.mergeResidualPaths],
   }
 }
 

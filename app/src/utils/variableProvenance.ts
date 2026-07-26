@@ -1,11 +1,11 @@
 import type { Node } from "reactflow";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type {
-  VariableProvenanceMap,
   VariableProvenance,
-  ProvenanceProducer,
-  ProvenanceConsumer,
 } from "../types/VariableProvenance";
+import type { VariableProvenanceMap } from "../types/VariableProvenanceMap";
+import type { ProvenanceProducer } from "../types/ProvenanceProducer";
+import type { ProvenanceConsumer } from "../types/ProvenanceConsumer";
 
 const VARIABLE_REF_RE = /\{\{\s*variables\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 
