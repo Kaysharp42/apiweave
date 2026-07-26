@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, GitCompareArrows, GitMerge } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Cloud,
+  GitCompareArrows,
+  GitMerge,
+  Laptop,
+} from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../../components/atoms/Button";
@@ -107,7 +116,7 @@ export function ConflictDetailPage() {
   // server residual path should map to a diff entry. A path with no matching
   // entry means the two diff engines have drifted: surface a warning and block
   // the merge instead of offering a blind "not present" pick for a field we
-  // can't display (the FieldPicker below receives only matched entries).
+  // can't display (the merge workspace receives only matched entries).
   const { residualEntries, unmatchedPaths } = useMemo<{
     readonly residualEntries: readonly ConflictDiffEntry[];
     readonly unmatchedPaths: readonly string[];
@@ -130,6 +139,12 @@ export function ConflictDetailPage() {
     hasResiduals
     && unmatchedPaths.length === 0
     && residualEntries.every((entry) => picks[entry.path] !== undefined);
+
+  function acceptAll(side: "local" | "cloud"): void {
+    const next: Record<string, "local" | "cloud"> = {};
+    for (const entry of residualEntries) next[entry.path] = side;
+    setPicks(next);
+  }
 
   function returnToConflictList(): void {
     if (location.state === "conflict-list") {
@@ -210,23 +225,26 @@ export function ConflictDetailPage() {
         {error && <Badge variant="warning">{error}</Badge>}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">local rev {conflict.local_rev}</Badge>
-          <Badge variant="secondary">cloud rev {conflict.cloud_rev}</Badge>
-          {conflict.winner === null ? (
-            <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
-              Cloud edited by {cloudWriterLabel(conflict.cloud_writer)}
-            </span>
-          ) : null}
-        </div>
+      <div className="flex-1 overflow-y-auto p-4 lg:p-6">
         {unmatchedPaths.length > 0 && conflict.winner === null ? (
           <ResidualMismatchWarning paths={unmatchedPaths} />
         ) : null}
-        {residualEntries.length > 0 && conflict.winner === null ? (
-          <FieldPicker entries={residualEntries} picks={picks} onPick={(path, side) => setPicks((prev) => ({ ...prev, [path]: side }))} disabled={disabled} />
-        ) : null}
-        <DiffView entries={diff} />
+        <MergeWorkspace
+          entries={diff}
+          residualPaths={residualPaths}
+          picks={picks}
+          cloudRev={conflict.cloud_rev}
+          localRev={conflict.local_rev}
+          cloudWriter={cloudWriterLabel(conflict.cloud_writer)}
+          mergeAvailable={
+            conflict.winner === null
+            && unmatchedPaths.length === 0
+            && (Boolean(conflict.auto_mergeable) || hasResiduals)
+          }
+          disabled={disabled}
+          onPick={(path, side) => setPicks((prev) => ({ ...prev, [path]: side }))}
+          onAcceptAll={acceptAll}
+        />
         <details className="mt-4 rounded-sm border border-border dark:border-border-dark">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
             Technical detail (raw JSON)
@@ -238,7 +256,7 @@ export function ConflictDetailPage() {
         </details>
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-raised px-6 py-4 dark:border-border-dark dark:bg-surface-dark-raised">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised lg:px-6">
         {conflict.auto_mergeable && conflict.winner === null ? (
           <Button
             variant="secondary"
@@ -248,7 +266,7 @@ export function ConflictDetailPage() {
             loading={resolving && pendingChoice === "merged"}
             onClick={() => setPendingChoice("merged")}
           >
-            Auto-merge
+            Apply auto-merge
           </Button>
         ) : hasResiduals && conflict.winner === null ? (
           <Button
@@ -259,12 +277,12 @@ export function ConflictDetailPage() {
             loading={resolving && pendingChoice === "merged"}
             onClick={() => setPendingChoice("merged")}
           >
-            Merge with selections
+            Apply merged result
           </Button>
         ) : (
           <span />
         )}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"
             intent="warning"
@@ -272,7 +290,7 @@ export function ConflictDetailPage() {
             loading={resolving && pendingChoice === "local"}
             onClick={() => setPendingChoice("local")}
           >
-            Keep local
+            Keep Local copy
           </Button>
           <Button
             variant="primary"
@@ -280,7 +298,7 @@ export function ConflictDetailPage() {
             loading={resolving && pendingChoice === "cloud"}
             onClick={() => setPendingChoice("cloud")}
           >
-            Keep cloud
+            Keep Cloud copy
           </Button>
         </div>
       </div>
@@ -338,7 +356,29 @@ const DIFF_BADGE_VARIANT: Record<ConflictDiffEntry["kind"], "success" | "error" 
   change: "warning",
 };
 
-function DiffView({ entries }: { readonly entries: readonly ConflictDiffEntry[] }) {
+function MergeWorkspace({
+  entries,
+  residualPaths,
+  picks,
+  cloudRev,
+  localRev,
+  cloudWriter,
+  mergeAvailable,
+  disabled,
+  onPick,
+  onAcceptAll,
+}: {
+  readonly entries: readonly ConflictDiffEntry[];
+  readonly residualPaths: readonly string[];
+  readonly picks: Record<string, "local" | "cloud">;
+  readonly cloudRev: number;
+  readonly localRev: number;
+  readonly cloudWriter: string;
+  readonly mergeAvailable: boolean;
+  readonly disabled: boolean;
+  readonly onPick: (path: string, side: "local" | "cloud") => void;
+  readonly onAcceptAll: (side: "local" | "cloud") => void;
+}) {
   if (entries.length === 0) {
     return (
       <p className="rounded-sm border border-border bg-surface-overlay p-4 text-sm text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
@@ -346,38 +386,209 @@ function DiffView({ entries }: { readonly entries: readonly ConflictDiffEntry[] 
       </p>
     );
   }
+  const residualSet = new Set(residualPaths);
+  const pickedCount = residualPaths.filter((path) => picks[path] !== undefined).length;
+  const unresolvedCount = residualPaths.length - pickedCount;
+
   return (
-    <ul className="flex flex-col gap-2">
-      {entries.map((entry) => (
-        <li
-          key={entry.path}
-          className="rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay"
-        >
-          <div className="mb-2 flex items-center gap-2">
-            <Badge variant={DIFF_BADGE_VARIANT[entry.kind]} size="sm">{entry.kind}</Badge>
-            <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">{entry.label}</span>
-          </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <DiffValue label="Cloud" value={entry.before} />
-            <DiffValue label="Local" value={entry.after} />
-          </div>
-        </li>
-      ))}
-    </ul>
+    <section aria-labelledby="merge-workspace-heading">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 id="merge-workspace-heading" className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
+            Merge changes
+          </h2>
+          <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+            Compare Cloud and Local, then build the result in the middle pane.
+          </p>
+        </div>
+        {residualPaths.length > 0 ? (
+          <Badge variant={unresolvedCount === 0 ? "success" : "warning"}>
+            {unresolvedCount === 0
+              ? `${pickedCount} resolved`
+              : `${unresolvedCount} unresolved`}
+          </Badge>
+        ) : mergeAvailable ? (
+          <Badge variant="success"><Check className="h-3 w-3" aria-hidden="true" />ready to merge</Badge>
+        ) : (
+          <Badge variant="warning">whole-record choice</Badge>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised" data-testid="conflict-merge-workspace">
+        <div className="hidden grid-cols-3 border-b border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay lg:grid">
+          <MergePaneHeader
+            icon={<Cloud className="h-4 w-4" aria-hidden="true" />}
+            title="Cloud copy"
+            subtitle={`Incoming · revision ${cloudRev} · ${cloudWriter}`}
+            action={residualPaths.length > 0 ? (
+              <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onAcceptAll("cloud")}>Accept all Cloud</Button>
+            ) : null}
+          />
+          <MergePaneHeader
+            icon={<GitMerge className="h-4 w-4" aria-hidden="true" />}
+            title="Merge result"
+            subtitle={mergeAvailable ? "New Cloud revision after apply" : "Choose one complete copy"}
+            result
+          />
+          <MergePaneHeader
+            icon={<Laptop className="h-4 w-4" aria-hidden="true" />}
+            title="Local copy"
+            subtitle={`Current device · revision ${localRev}`}
+            action={residualPaths.length > 0 ? (
+              <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onAcceptAll("local")}>Accept all Local</Button>
+            ) : null}
+          />
+        </div>
+
+        <ul>
+          {entries.map((entry) => {
+            const residual = residualSet.has(entry.path);
+            const selectedSide = picks[entry.path];
+            return (
+              <li key={entry.path} className="border-b border-border last:border-b-0 dark:border-border-dark">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 bg-surface-overlay/70 px-3 py-2 dark:bg-surface-dark-overlay/70">
+                  <Badge variant={DIFF_BADGE_VARIANT[entry.kind]} size="sm">{entry.kind}</Badge>
+                  <span className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">{entry.label}</span>
+                  <code className="min-w-0 break-all text-[10px] text-text-muted dark:text-text-muted-dark">{entry.path}</code>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 lg:divide-x lg:divide-border lg:dark:divide-border-dark">
+                  <MergeValueCell label="Cloud copy" value={entry.before} />
+                  <MergeResultCell
+                    entry={entry}
+                    residual={residual}
+                    selectedSide={selectedSide}
+                    mergeAvailable={mergeAvailable}
+                    disabled={disabled}
+                    onPick={onPick}
+                  />
+                  <MergeValueCell label="Local copy" value={entry.after} />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </section>
   );
 }
 
-function DiffValue({ label, value }: { readonly label: string; readonly value: unknown }) {
+function MergePaneHeader({
+  icon,
+  title,
+  subtitle,
+  action,
+  result = false,
+}: {
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly action?: ReactNode;
+  readonly result?: boolean;
+}) {
+  return (
+    <div className={`flex min-w-0 items-center justify-between gap-2 px-3 py-2.5 ${result ? "bg-primary/5" : ""}`}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-xs font-semibold text-text-primary dark:text-text-primary-dark">
+          {icon}{title}
+        </div>
+        <p className="mt-0.5 truncate text-[10px] text-text-secondary dark:text-text-secondary-dark">{subtitle}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function MergeValueCell({ label, value }: { readonly label: string; readonly value: unknown }) {
+  return (
+    <div className="min-h-24 min-w-0 bg-surface-raised p-3 dark:bg-surface-dark-raised">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark lg:hidden">{label}</p>
+      <ConflictValue value={value} />
+    </div>
+  );
+}
+
+function MergeResultCell({
+  entry,
+  residual,
+  selectedSide,
+  mergeAvailable,
+  disabled,
+  onPick,
+}: {
+  readonly entry: ConflictDiffEntry;
+  readonly residual: boolean;
+  readonly selectedSide: "local" | "cloud" | undefined;
+  readonly mergeAvailable: boolean;
+  readonly disabled: boolean;
+  readonly onPick: (path: string, side: "local" | "cloud") => void;
+}) {
+  const selectedValue = selectedSide === "cloud" ? entry.before : selectedSide === "local" ? entry.after : undefined;
+
+  return (
+    <div className="min-h-24 min-w-0 border-y border-border bg-primary/5 p-3 dark:border-border-dark lg:border-y-0">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark lg:hidden">Merge result</p>
+      {residual ? (
+        <div className="grid gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              size="xs"
+              variant={selectedSide === "cloud" ? "secondary" : "ghost"}
+              disabled={disabled}
+              aria-pressed={selectedSide === "cloud"}
+              aria-label={`Accept Cloud for ${entry.label}`}
+              icon={<ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />}
+              onClick={() => onPick(entry.path, "cloud")}
+            >
+              Accept Cloud
+            </Button>
+            <Button
+              size="xs"
+              variant={selectedSide === "local" ? "secondary" : "ghost"}
+              disabled={disabled}
+              aria-pressed={selectedSide === "local"}
+              aria-label={`Accept Local for ${entry.label}`}
+              icon={<ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />}
+              onClick={() => onPick(entry.path, "local")}
+            >
+              Accept Local
+            </Button>
+          </div>
+          {selectedSide ? (
+            <div>
+              <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-status-success dark:text-[var(--aw-status-success)]">
+                <Check className="h-3 w-3" aria-hidden="true" />Accepted {selectedSide}
+              </p>
+              <ConflictValue value={selectedValue} />
+            </div>
+          ) : (
+            <p className="text-xs text-status-warning dark:text-[var(--aw-status-warning)]">Choose which value enters the result.</p>
+          )}
+        </div>
+      ) : mergeAvailable ? (
+        <div className="flex gap-2 text-xs text-text-secondary dark:text-text-secondary-dark">
+          <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-success dark:text-[var(--aw-status-success)]" aria-hidden="true" />
+          <span><strong className="font-semibold text-text-primary dark:text-text-primary-dark">Included automatically.</strong> The server preserves the side changed from the common base.</span>
+        </div>
+      ) : (
+        <div className="flex gap-2 text-xs text-text-secondary dark:text-text-secondary-dark">
+          <GitCompareArrows className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span><strong className="font-semibold text-text-primary dark:text-text-primary-dark">Whole-record decision.</strong> Keep the complete Cloud or Local copy below.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConflictValue({ value }: { readonly value: unknown }) {
   if (value === undefined) {
     return (
-      <div className="rounded-sm border border-dashed border-border p-2 text-xs text-text-muted dark:border-border-dark">
-        <span className="mr-1 font-semibold">{label}:</span>not present
-      </div>
+      <span className="inline-flex rounded-sm border border-dashed border-border px-2 py-1 text-xs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
+        Not present
+      </span>
     );
   }
   return (
-    <pre className="max-h-40 overflow-auto rounded-sm border border-border bg-surface p-2 font-mono text-xs leading-relaxed text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
-      <span className="mr-1 font-semibold not-italic text-text-secondary dark:text-text-secondary-dark">{label}:</span>
+    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-text-primary dark:text-text-primary-dark">
       {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
     </pre>
   );
@@ -398,86 +609,6 @@ function ResidualMismatchWarning({ paths }: { readonly paths: readonly string[] 
         (<span className="font-mono">{paths.join(", ")}</span>). Resolve by keeping the local or cloud copy instead.
       </p>
     </div>
-  );
-}
-
-// FieldPicker asks the user to choose a winning side for each overlapping leaf
-// the server could not auto-merge. Every path must be picked before the merge
-// can be submitted (enforced by the caller's `allPicked`; the server re-checks).
-function FieldPicker({
-  entries,
-  picks,
-  onPick,
-  disabled,
-}: {
-  readonly entries: readonly ConflictDiffEntry[];
-  readonly picks: Record<string, "local" | "cloud">;
-  readonly onPick: (path: string, side: "local" | "cloud") => void;
-  readonly disabled: boolean;
-}) {
-  return (
-    <div className="mb-4 rounded-sm border border-warning/50 bg-warning/5 p-4 dark:border-warning-dark/50">
-      <div className="mb-1 flex items-center gap-2">
-        <GitMerge className="h-4 w-4 text-warning dark:text-warning-dark" aria-hidden="true" />
-        <h2 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
-          Choose a version for each conflicting field
-        </h2>
-      </div>
-      <p className="mb-3 text-xs text-text-secondary dark:text-text-secondary-dark">
-        Both sides changed these {entries.length === 1 ? "field" : "fields"}. Pick which value to keep; everything else merges automatically.
-      </p>
-      <ul className="flex flex-col gap-3">
-        {entries.map((entry) => (
-          <li key={entry.path} className="rounded-sm border border-border bg-surface p-3 dark:border-border-dark dark:bg-surface-dark">
-            <div className="mb-2 text-sm font-medium text-text-primary dark:text-text-primary-dark">{entry.label}</div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <ResidualChoice path={entry.path} side="cloud" value={entry.before} selected={picks[entry.path] === "cloud"} onSelect={onPick} disabled={disabled} />
-              <ResidualChoice path={entry.path} side="local" value={entry.after} selected={picks[entry.path] === "local"} onSelect={onPick} disabled={disabled} />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ResidualChoice({
-  path,
-  side,
-  value,
-  selected,
-  onSelect,
-  disabled,
-}: {
-  readonly path: string;
-  readonly side: "local" | "cloud";
-  readonly value: unknown;
-  readonly selected: boolean;
-  readonly onSelect: (path: string, side: "local" | "cloud") => void;
-  readonly disabled: boolean;
-}) {
-  return (
-    <label
-      className={`flex cursor-pointer flex-col gap-1 rounded-sm border p-2 ${
-        selected
-          ? "border-primary bg-primary/5 dark:border-primary-dark"
-          : "border-border dark:border-border-dark"
-      } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
-    >
-      <span className="flex items-center gap-2 text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">
-        <input
-          type="radio"
-          name={`pick:${path}`}
-          checked={selected}
-          disabled={disabled}
-          onChange={() => onSelect(path, side)}
-        />
-        {side === "cloud" ? "Cloud" : "Local"}
-      </span>
-      <span className="max-h-32 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-text-primary dark:text-text-primary-dark">
-        {value === undefined ? "not present" : typeof value === "string" ? value : JSON.stringify(value, null, 2)}
-      </span>
-    </label>
   );
 }
 

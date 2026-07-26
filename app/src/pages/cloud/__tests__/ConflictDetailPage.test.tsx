@@ -79,10 +79,14 @@ describe("ConflictDetailPage", () => {
     setIpc(invokeMock);
   });
 
-  it("renders a GitHub-style diff of the changed nodes and fields", async () => {
+  it("renders an IntelliJ-style Cloud, result, and Local merge workspace", async () => {
     renderPage("/cloud/conflicts/conflict-1");
 
-    await screen.findByRole("button", { name: "Keep local" });
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    expect(screen.getByTestId("conflict-merge-workspace")).toBeInTheDocument();
+    expect(screen.getAllByText("Cloud copy").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Merge result").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Local copy").length).toBeGreaterThan(0);
     expect(screen.getByText('Node "local-node" added')).toBeInTheDocument();
     expect(screen.getByText('Node "cloud-node" removed')).toBeInTheDocument();
     expect(screen.getByText("Name")).toBeInTheDocument();
@@ -101,21 +105,21 @@ describe("ConflictDetailPage", () => {
     });
     renderPage("/cloud/conflicts/conflict-1");
 
-    await screen.findByRole("button", { name: "Keep local" });
-    expect(screen.getByText("Cloud edited by Grace · Cloud Desktop")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    expect(screen.getByText("Incoming · revision 4 · Grace · Cloud Desktop")).toBeInTheDocument();
   });
 
   it("falls back to unknown author when the cloud writer is absent", async () => {
     renderPage("/cloud/conflicts/conflict-1");
-    await screen.findByRole("button", { name: "Keep local" });
-    expect(screen.getByText("Cloud edited by an unknown author")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    expect(screen.getByText("Incoming · revision 4 · an unknown author")).toBeInTheDocument();
   });
 
   it("keeps the raw JSON available behind the technical-detail toggle", async () => {
     const user = userEvent.setup();
     renderPage("/cloud/conflicts/conflict-1");
 
-    await screen.findByRole("button", { name: "Keep local" });
+    await screen.findByRole("button", { name: "Keep Local copy" });
     await user.click(screen.getByText("Technical detail (raw JSON)"));
     expect(await screen.findByLabelText("Local record JSON")).toHaveTextContent("Local API smoke test");
     expect(screen.getByLabelText("Cloud record JSON")).toHaveTextContent("Cloud API smoke test");
@@ -127,8 +131,8 @@ describe("ConflictDetailPage", () => {
       const user = userEvent.setup();
       renderPage("/cloud/conflicts/conflict-1");
 
-      await screen.findByRole("button", { name: "Keep local" });
-      await user.click(screen.getByRole("button", { name: `Keep ${winner}` }));
+      await screen.findByRole("button", { name: "Keep Local copy" });
+      await user.click(screen.getByRole("button", { name: `Keep ${winner === "local" ? "Local" : "Cloud"} copy` }));
       await user.click(screen.getByRole("button", { name: "Resolve conflict" }));
 
       await waitFor(() => expect(screen.getByText("conflicts index")).toBeInTheDocument());
@@ -151,16 +155,16 @@ describe("ConflictDetailPage", () => {
     const user = userEvent.setup();
     renderPage("/cloud/conflicts/conflict-1");
 
-    await screen.findByRole("button", { name: "Keep local" });
-    expect(screen.getByText("Choose a version for each conflicting field")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    expect(screen.getByText("1 unresolved")).toBeInTheDocument();
 
     // The merge is blocked until every residual path has a pick.
-    const mergeButton = screen.getByRole("button", { name: "Merge with selections" });
+    const mergeButton = screen.getByRole("button", { name: "Apply merged result" });
     expect(mergeButton).toBeDisabled();
 
-    // Pick the Local side for the one overlapping field.
-    const radios = screen.getAllByRole("radio");
-    await user.click(radios[1]!);
+    // Accept the Local side into the middle result pane.
+    await user.click(screen.getByRole("button", { name: "Accept Local for Name" }));
+    expect(screen.getByText("Accepted local")).toBeInTheDocument();
     expect(mergeButton).toBeEnabled();
 
     await user.click(mergeButton);
@@ -184,16 +188,15 @@ describe("ConflictDetailPage", () => {
     });
     renderPage("/cloud/conflicts/conflict-1");
 
-    await screen.findByRole("button", { name: "Keep local" });
-    // The drift warning surfaces and the per-field picker does not.
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    // The drift warning surfaces and the result picker does not.
     expect(screen.getByText("Merge unavailable for this conflict")).toBeInTheDocument();
-    expect(screen.queryByText("Choose a version for each conflicting field")).not.toBeInTheDocument();
-    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /Accept Local for/ })).not.toBeInTheDocument();
 
     // The merge is blocked; the whole-record fallbacks remain enabled.
-    expect(screen.getByRole("button", { name: "Merge with selections" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Keep local" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Keep cloud" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Apply merged result" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Keep Local copy" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Keep Cloud copy" })).toBeEnabled();
   });
 
   it("removes the resolved detail page from back navigation history", async () => {
@@ -207,8 +210,8 @@ describe("ConflictDetailPage", () => {
     renderHistoryPage();
 
     await user.click(await screen.findByRole("button", { name: "Open" }));
-    await screen.findByRole("button", { name: "Keep local" });
-    await user.click(screen.getByRole("button", { name: "Keep local" }));
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    await user.click(screen.getByRole("button", { name: "Keep Local copy" }));
     await user.click(screen.getByRole("button", { name: "Resolve conflict" }));
 
     await user.click(await screen.findByRole("button", { name: "Back to app" }));
@@ -219,7 +222,7 @@ describe("ConflictDetailPage", () => {
   it("redacts environment secret references in the diff view", async () => {
     renderPage("/cloud/conflicts/env-conflict");
 
-    await screen.findByRole("button", { name: "Keep local" });
+    await screen.findByRole("button", { name: "Keep Local copy" });
     const page = document.body;
     expect(within(page).queryByText(/super-secret-value/)).not.toBeInTheDocument();
     expect(within(page).queryByText(/ciphertext-value/)).not.toBeInTheDocument();
@@ -238,8 +241,8 @@ describe("ConflictDetailPage", () => {
     const user = userEvent.setup();
     renderPage("/cloud/conflicts/conflict-1");
 
-    await screen.findByRole("button", { name: "Keep local" });
-    await user.click(screen.getByRole("button", { name: "Keep local" }));
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    await user.click(screen.getByRole("button", { name: "Keep Local copy" }));
     await user.click(screen.getByRole("button", { name: "Resolve conflict" }));
 
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("Conflict already resolved"));
@@ -256,8 +259,8 @@ describe("ConflictDetailPage", () => {
     renderPage("/cloud/conflicts/conflict-1");
 
     expect(await screen.findByText("Conflict already resolved")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Keep local" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Keep cloud" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Keep Local copy" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Keep Cloud copy" })).toBeDisabled();
   });
 });
 
