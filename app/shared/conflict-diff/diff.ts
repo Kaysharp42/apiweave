@@ -113,7 +113,7 @@ function makeEntry(
   return { path, kind, before, after, label: humanizePath(path) }
 }
 
-/** `workflowCount` / `scope-id` / `a.b_c` -> `A b c` per segment, joined with " › ". */
+/** Title-cases each dot-path segment and joins with " › ": `workflowCount` -> `Workflow count`, `secrets.apiKey.reference` -> `Secrets › Api key › Reference`. */
 export function humanizePath(path: string): string {
   if (path === "") return "(entire record)"
   return path

@@ -1838,9 +1838,9 @@ describe("CloudSyncProvider", () => {
     const SERVER_CONFLICT_ID = "srv-conflict-remote"
     const encode = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value))
     const localPayload = (): Uint8Array =>
-      encode({ name: "Local", graph: { nodes: [], edges: [] }, variables: {} })
+      encode({ name: "Local", nodes: [], edges: [], variables: {} })
     const cloudPayload = (): Uint8Array =>
-      encode({ name: "Cloud", graph: { nodes: [], edges: [] }, variables: {} })
+      encode({ name: "Cloud", nodes: [], edges: [], variables: {} })
 
     // Reproduces the desktop state after a push conflict: the original edit sits
     // blocked in the outbox and a server-linked conflict snapshot is recorded.
@@ -1911,7 +1911,7 @@ describe("CloudSyncProvider", () => {
 
     it("keep-local re-pushes a newer local edit made behind the conflict", () => {
       const repository = new CloudSyncRepository(store)
-      seedPushConflict(repository, encode({ name: "Newer", graph: { nodes: [], edges: [] }, variables: {} }))
+      seedPushConflict(repository, encode({ name: "Newer", nodes: [], edges: [], variables: {} }))
 
       const outcome = repository.reconcileRemoteResolvedConflict(SERVER_CONFLICT_ID, cloudPayload())
 

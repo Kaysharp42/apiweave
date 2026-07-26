@@ -99,16 +99,36 @@ export function ConflictDetailPage() {
   // Overlapping leaf paths the server could not auto-merge — the user must pick a
   // winning side per path. The diff (cloud=before, local=after) supplies the
   // display values; its path scheme matches the server's residual paths.
-  const residualEntries = useMemo(() => {
-    const paths = conflict?.merge_residual_paths ?? [];
-    if (paths.length === 0) return [];
+  const residualPaths = conflict?.merge_residual_paths ?? [];
+  const hasResiduals = residualPaths.length > 0;
+  // The desktop diff's dotted path notation is kept in lockstep with the
+  // server's 3-way merge (see app/shared/conflict-diff/diff.ts), so every
+  // server residual path should map to a diff entry. A path with no matching
+  // entry means the two diff engines have drifted: surface a warning and block
+  // the merge instead of offering a blind "not present" pick for a field we
+  // can't display (the FieldPicker below receives only matched entries).
+  const { residualEntries, unmatchedPaths } = useMemo<{
+    readonly residualEntries: readonly ConflictDiffEntry[];
+    readonly unmatchedPaths: readonly string[];
+  }>(() => {
+    if (!hasResiduals) return { residualEntries: [], unmatchedPaths: [] };
     const byPath = new Map(diff.map((entry) => [entry.path, entry]));
-    return paths.map((path) => byPath.get(path) ?? { path, kind: "change" as const, before: undefined, after: undefined, label: path });
-  }, [conflict, diff]);
+    const matched: ConflictDiffEntry[] = [];
+    const unmatched: string[] = [];
+    for (const path of residualPaths) {
+      const entry = byPath.get(path);
+      if (entry === undefined) unmatched.push(path);
+      else matched.push(entry);
+    }
+    return { residualEntries: matched, unmatchedPaths: unmatched };
+  }, [hasResiduals, residualPaths, diff]);
 
   const [picks, setPicks] = useState<Record<string, "local" | "cloud">>({});
   useEffect(() => setPicks({}), [conflictId]);
-  const allPicked = residualEntries.length > 0 && residualEntries.every((entry) => picks[entry.path] !== undefined);
+  const allPicked =
+    hasResiduals
+    && unmatchedPaths.length === 0
+    && residualEntries.every((entry) => picks[entry.path] !== undefined);
 
   function returnToConflictList(): void {
     if (location.state === "conflict-list") {
@@ -198,6 +218,9 @@ export function ConflictDetailPage() {
             </span>
           ) : null}
         </div>
+        {unmatchedPaths.length > 0 && conflict.winner === null ? (
+          <ResidualMismatchWarning paths={unmatchedPaths} />
+        ) : null}
         {residualEntries.length > 0 && conflict.winner === null ? (
           <FieldPicker entries={residualEntries} picks={picks} onPick={(path, side) => setPicks((prev) => ({ ...prev, [path]: side }))} disabled={disabled} />
         ) : null}
@@ -225,7 +248,7 @@ export function ConflictDetailPage() {
           >
             Auto-merge
           </Button>
-        ) : residualEntries.length > 0 && conflict.winner === null ? (
+        ) : hasResiduals && conflict.winner === null ? (
           <Button
             variant="secondary"
             intent="success"
@@ -355,6 +378,24 @@ function DiffValue({ label, value }: { readonly label: string; readonly value: u
       <span className="mr-1 font-semibold not-italic text-text-secondary dark:text-text-secondary-dark">{label}:</span>
       {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
     </pre>
+  );
+}
+
+// Renders when a server residual path has no matching desktop diff entry -- the
+// two diff engines have drifted. We refuse a blind "not present" pick and block
+// the merge; the keep-local / keep-cloud buttons stay enabled so the conflict is
+// resolved as a whole record instead.
+function ResidualMismatchWarning({ paths }: { readonly paths: readonly string[] }) {
+  return (
+    <div className="mb-4 rounded-sm border border-warning/50 bg-warning/5 p-4 dark:border-warning-dark/50">
+      <h2 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
+        Merge unavailable for this conflict
+      </h2>
+      <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+        The server flagged {paths.length === 1 ? "a field" : `${paths.length} fields`} for per-field picking that this view could not display
+        (<span className="font-mono">{paths.join(", ")}</span>). Resolve by keeping the local or cloud copy instead.
+      </p>
+    </div>
   );
 }
 

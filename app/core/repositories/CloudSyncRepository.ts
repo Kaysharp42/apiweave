@@ -603,9 +603,20 @@ export class CloudSyncRepository {
   }
 
   // Clears a local conflict once its server snapshot has been resolved on another
-  // surface (web or another device). The server tells us only the loser payload
-  // (via FetchLoser); we infer the winner by matching it against our stored
-  // sides, then converge to the server's outcome. Returns what happened.
+  // surface (web or another device). The desktop's SyncService has no "is this
+  // resolved?" RPC, so it reuses FetchLoser as the probe. The server's contract
+  // (apiweave-cloud apps/api/internal/sync/store.go FetchLoser, and
+  // proto/apiweave/v1/sync_service.proto) is:
+  //   - success  => the conflict HAS been resolved; the response carries the
+  //     resolved-conflict loser_payload (winner != "unresolved", resolved_at set).
+  //   - error code INVALID_ARGUMENT ("conflict not resolved") => still PENDING.
+  //   - error code NOT_FOUND => unknown/expired snapshot (treat as still pending).
+  // On success we infer the winner by matching the loser payload against our
+  // stored sides, then converge to the server's outcome. A winner=local
+  // resolution is applied by the server at cloud_rev + 1 (its ResolveConflict
+  // takes a row lock asserting curRev == snapshot cloud_rev, then writes
+  // resultingRev = curRev + 1); winner=cloud leaves the record at cloud_rev.
+  // Returns what happened, or "missing"/"ambiguous" when no action was taken.
   public reconcileRemoteResolvedConflict(
     conflictId: string,
     loserPayload: Uint8Array,
@@ -744,7 +755,7 @@ export class CloudSyncRepository {
     })
     // Recorded as 'local' (the merge preserved the local edits); the desktop
     // shows no per-winner label and the authoritative 'merged' outcome lives in
-    // the server's conflict_snapshots. ponytail: keeps the winner CHECK and the
+    // the server's conflict_snapshots. This keeps the winner CHECK and the
     // migration additive rather than rebuilding the table for a cosmetic value.
     this.store.set(
       "UPDATE cloud_conflicts SET winner = 'local', status = 'resolved', resolvedAt = ? WHERE conflict_id = ? AND status = 'pending'",
@@ -1270,7 +1281,7 @@ export class CloudSyncRepository {
       cloudRev: Number(change.rev),
       localOp: latest.op,
       cloudOp: changeOpToOutboxOp(change.op),
-      // ponytail: pull-created conflicts carry no writer — PullChanges doesn't
+      // NB: pull-created conflicts carry no writer — PullChanges doesn't
       // attribute changes. Renders "unknown author"; add if we ever put a
       // writer on ChangeEnvelope.
       cloudWriter: null,
@@ -1341,7 +1352,7 @@ function parsePayload(data: Uint8Array): Record<string, unknown> {
 // server-stored twin (which differ only in mapped workspace ids) compare equal.
 function canonicalConflictKey(kind: CloudOutboxKind, payload: Uint8Array | null): string {
   if (payload === null || payload.length === 0) {
-    return " tombstone"
+    return "tombstone"
   }
   return JSON.stringify(canonicalizeSyncPayload(kind, parsePayload(payload)))
 }

@@ -176,6 +176,26 @@ describe("ConflictDetailPage", () => {
     expect(toastSuccess).toHaveBeenCalledWith("Merged both copies");
   });
 
+  it("blocks the merge and warns when a residual path has no matching diff entry", async () => {
+    const mismatchConflict: Conflict = { ...workflowConflict, merge_residual_paths: ["nonexistent.deep.path"] };
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-get") return { ok: true, data: mismatchConflict };
+      return { ok: true, data: [] };
+    });
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep local" });
+    // The drift warning surfaces and the per-field picker does not.
+    expect(screen.getByText("Merge unavailable for this conflict")).toBeInTheDocument();
+    expect(screen.queryByText("Choose a version for each conflicting field")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+
+    // The merge is blocked; the whole-record fallbacks remain enabled.
+    expect(screen.getByRole("button", { name: "Merge with selections" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Keep local" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Keep cloud" })).toBeEnabled();
+  });
+
   it("removes the resolved detail page from back navigation history", async () => {
     invokeMock.mockImplementation(async (_domain: string, action: string) => {
       if (action === "conflict-list") return { ok: true, data: [workflowConflict] };

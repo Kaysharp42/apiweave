@@ -94,3 +94,63 @@ describe("humanizePath", () => {
     expect(humanizePath("")).toBe("(entire record)")
   })
 })
+
+// The server's PushOutcome.merge_residual_paths and the desktop's
+// computeConflictDiff path scheme are kept in lockstep (see
+// app/shared/conflict-diff/diff.ts and apiweave-cloud's
+// apps/api/internal/sync/diff.go, which mirrors this engine). These cases pin
+// the desktop half: every path shape the server may emit as a residual must
+// appear verbatim as a desktop diff entry's `path`, so a MERGED resolution
+// with field-level picks submits paths the server recognizes.
+describe("merge_residual_paths contract - diff paths match the server residual notation", () => {
+  const node = (nodeId: string, extra: Record<string, unknown> = {}) => ({
+    nodeId,
+    type: "http-request",
+    position: { x: 0, y: 0 },
+    ...extra,
+  })
+  const edge = (edgeId: string, extra: Record<string, unknown> = {}) => ({
+    edgeId,
+    source: "n1",
+    target: "n2",
+    ...extra,
+  })
+  const pathOf = (diff: ReturnType<typeof computeConflictDiff>, path: string) =>
+    diff.find((entry) => entry.path === path)
+
+  it("workflow node field: nodes.<nodeId>.<field...>", () => {
+    const cloud = { nodes: [node("n1", { config: { method: "GET" } })], edges: [] }
+    const local = { nodes: [node("n1", { config: { method: "POST" } })], edges: [] }
+    expect(pathOf(computeConflictDiff("workflow", local, cloud), "nodes.n1.config.method")).toBeDefined()
+  })
+
+  it("workflow edge field: edges.<edgeId>.<field...>", () => {
+    const cloud = { nodes: [], edges: [edge("e1", { target: "n2" })] }
+    const local = { nodes: [], edges: [edge("e1", { target: "n3" })] }
+    expect(pathOf(computeConflictDiff("workflow", local, cloud), "edges.e1.target")).toBeDefined()
+  })
+
+  it("workflow whole node (modify-vs-delete): nodes.<nodeId>", () => {
+    const cloud = { nodes: [node("n1")], edges: [] }
+    const local = { nodes: [], edges: [] }
+    expect(pathOf(computeConflictDiff("workflow", local, cloud), "nodes.n1")).toBeDefined()
+  })
+
+  it("workflow whole edge (modify-vs-delete): edges.<edgeId>", () => {
+    const cloud = { nodes: [], edges: [edge("e1")] }
+    const local = { nodes: [], edges: [] }
+    expect(pathOf(computeConflictDiff("workflow", local, cloud), "edges.e1")).toBeDefined()
+  })
+
+  it("generic top-level scalar: <field>", () => {
+    const cloud = { name: "Cloud" }
+    const local = { name: "Local" }
+    expect(pathOf(computeConflictDiff("project", local, cloud), "name")).toBeDefined()
+  })
+
+  it("generic nested leaf: <path>.<path>...", () => {
+    const cloud = { secrets: { apiKey: { reference: "project:col-1:oldKey" } } }
+    const local = { secrets: { apiKey: { reference: "project:col-1:apiKey" } } }
+    expect(pathOf(computeConflictDiff("environment", local, cloud), "secrets.apiKey.reference")).toBeDefined()
+  })
+})
