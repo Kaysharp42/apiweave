@@ -4,7 +4,7 @@ Visual API Test Story Builder. Build, run, and inspect API test workflows on a c
 
 ## What Is APIWeave?
 
-APIWeave is a local-first, open-source desktop app for visual API testing. You assemble test workflows on a ReactFlow canvas from drag-and-drop nodes (HTTP request, assertion, delay, merge, start, end), chain requests with extracted variables and dynamic functions, run them against an environment, and inspect results node by node. Projects group workflows into ordered runs. Environments and secrets live on your machine, encrypted at rest. Webhooks and the MCP server are not part of the desktop app — you run the workflow from the UI or from a local agent.
+APIWeave is a local-first, open-source desktop app for visual API testing. You assemble test workflows on a ReactFlow canvas from drag-and-drop nodes (HTTP request, assertion, delay, merge, start, end), chain requests with extracted variables and dynamic functions, run them against an environment, and inspect results node by node. Projects group workflows into ordered runs. Environments and secrets live on your machine, encrypted at rest. An optional MCP bridge lets a local agent drive the same app; there are no webhooks or remote triggers.
 
 APIWeave ships as a single-process Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
 

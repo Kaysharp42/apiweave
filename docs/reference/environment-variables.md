@@ -37,8 +37,6 @@ Variables the Electron main process reads from the host environment. In a packag
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `APIWEAVE_FRONTEND_DIST` | No | resolved from `app.getAppPath()` | Absolute path to the renderer's `dist/` directory. Override to point the main process at a custom build of the renderer. |
-| `APIWEAVE_MCP_PORT` | No | first free loopback port | Port the local MCP bridge binds to. Override to pin a specific port. The bridge is opt-in; this variable is only consulted when the bridge is enabled. |
-| `APIWEAVE_MCP_DISABLE` | No | unset | Set to `1` or `true` to prevent the MCP bridge from starting, even if it is enabled in the app settings. Useful for scripted runs and CI. |
 | `APIWEAVE_LOG_LEVEL` | No | `info` | Main process log level. One of `debug`, `info`, `warn`, `error`. |
 | `APIWEAVE_DB_PATH` | No | `<userData>/apiweave.db` | Override the SQLite database path. Use a different file to run a second instance against an isolated database. |
 | `APIWEAVE_KEYFILE_PATH` | No | `<userData>/keyfile` | Override the secret store keyfile path. Use the same override as `APIWEAVE_DB_PATH` to keep the keyfile and the database together. |
@@ -73,15 +71,11 @@ The main process needs write access to the database file. The default `<userData
 
 The keyfile and the database must travel together. If you copy the database to a new machine and forget the keyfile, the secret store is unreadable. Override both variables in lockstep, or copy the whole user data directory.
 
-### Mistake 4: Setting `APIWEAVE_MCP_PORT` to a port the OS already has bound
-
-The bridge binds only to `127.0.0.1`, but the port still has to be free. If the override collides with another process, the bridge fails to start. The **MCP** panel in the app shows the actual port; check it after launch.
-
 ## Troubleshooting
 
 - **If the renderer shows stale build-time configuration**, rebuild the renderer (`npm run build:renderer` from `app/`). The desktop app always loads the built bundle.
 - **If the main process refuses to start with a database error**, the directory pointed at by `APIWEAVE_DB_PATH` is not writable. Check permissions and free disk space.
-- **If the MCP bridge fails to bind**, the port in `APIWEAVE_MCP_PORT` is in use, or the bridge was disabled in **Settings**. Re-enable the bridge in **Settings**, change the port, or set `APIWEAVE_MCP_DISABLE=1` to suppress the bridge entirely.
+- **If an MCP client cannot connect**, enable the bridge in **Settings** and copy the live loopback URL from the **MCP** panel. APIWeave prefers port `47271` and automatically selects a free fallback if that port is occupied.
 - **If a stored secret value seems unreadable after moving the database to a new machine**, the keyfile from the source machine is not on the destination. Copy the keyfile too, or re-enter the secrets through the write flow.
 
 ## Related

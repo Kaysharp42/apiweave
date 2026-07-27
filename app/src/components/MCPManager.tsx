@@ -62,7 +62,7 @@ function MCPContent({
 
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
-              API Key
+              Access token
             </span>
             <Badge
               variant={config.apiKeyConfigured ? "success" : "warning"}
@@ -352,7 +352,7 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
           id: 1,
           method: "initialize",
           params: {
-            protocolVersion: "2024-11-05",
+            protocolVersion: "2025-06-18",
             capabilities: {},
             clientInfo: { name: "apiweave-ui", version: "0.1.0" },
           },

@@ -63,12 +63,14 @@ class FakeSecretStore implements SecretWriteStore {
 
 let db: InitializedDatabase
 let router: IpcRouter
+let runRepository: RunRepository
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
   const workspaces = new WorkspaceRepository(db.kvStore)
   const workflows = new WorkflowRepository(db.kvStore)
   const runs = new RunRepository(db.kvStore)
+  runRepository = runs
   const environments = new EnvironmentRepository(db.kvStore)
   const collections = new CollectionRepository(db.kvStore)
   const existence: ScopeExistence = {
@@ -136,6 +138,12 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     }
   })
 
+  it("every whitelisted tool declares read/write intent", () => {
+    for (const spec of MCP_TOOLS) {
+      expect(["read", "write"], `${spec.domain}.${spec.action}`).toContain(spec.intent)
+    }
+  })
+
   it("excludes keystore mutations and Electron shell/dialog ops", () => {
     const names = new Set(MCP_TOOLS.map((t) => `${t.domain}.${t.action}`))
     for (const excluded of [
@@ -167,6 +175,18 @@ describe("MCP bridge — second transport, parity by construction", () => {
     expect(names).toContain("server_info")
     expect(names).not.toContain("secrets_set")
     expect(names).not.toContain("runs_openArtifact")
+    const workflowList = tools.find((tool) => tool.name === "workflows_list")
+    const workspaceDelete = tools.find((tool) => tool.name === "workspaces_delete")
+    const runCreate = tools.find((tool) => tool.name === "runs_create")
+    expect(workflowList?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    })
+    expect(workspaceDelete?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
+    expect(runCreate?.annotations).toMatchObject({ readOnlyHint: false, openWorldHint: true })
+    expect(workflowList?.outputSchema).toMatchObject({ type: "object" })
     await client.close()
   })
 
@@ -186,7 +206,71 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const viaIpc = await dispatchOk("workflows", "list", { workspaceId: workspace.workspaceId })
 
     expect(viaTool).toEqual(viaIpc)
+    expect((toolResult as { structuredContent?: unknown }).structuredContent).toEqual({ result: viaIpc })
     expect(viaTool.items.map((w: { workflowId: string }) => w.workflowId)).toContain(created.workflowId)
+    await client.close()
+  })
+
+  it("projects run tools to metadata and drops bodies, headers, URLs, values and assertion messages", async () => {
+    const secret = "opaque-value-that-must-never-cross-mcp"
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "run projection",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      variables: { harmlessName: secret },
+      nodeStatuses: {
+        request: { status: "failed", statusCode: 401, variables: { token: secret }, error: secret, message: secret },
+      },
+      error: secret,
+      failureMessage: secret,
+      results: [
+        {
+          nodeId: "request",
+          status: "failed",
+          duration: 12,
+          request: { method: "GET", url: `https://user:${secret}@example.test/?token=${secret}` },
+          response: {
+            statusCode: 401,
+            headers: { authorization: `Bearer ${secret}` },
+            cookies: { session: secret },
+            body: { innocuousKey: secret },
+          },
+          error: secret,
+          assertions: [{ outcome: "fail", message: `actual: ${secret}` }],
+        },
+      ],
+    })
+
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId },
+    })
+    const text = textOf(result as { content: Array<{ type: string; text?: string }> })
+    const parsed = JSON.parse(text) as Record<string, unknown>
+
+    expect(text).not.toContain(secret)
+    expect(text).not.toContain("headers")
+    expect(text).not.toContain("cookies")
+    expect(text).not.toContain("url")
+    expect(text).not.toContain("variables")
+    expect(text).not.toContain("message")
+    expect(text).not.toContain("error\"")
+    expect(parsed["hasError"]).toBe(true)
+    expect(parsed["nodeStatuses"]).toEqual({ request: { status: "failed", statusCode: 401, hasError: true } })
+    expect(parsed["results"]).toEqual([
+      expect.objectContaining({
+        nodeId: "request",
+        status: "failed",
+        hasError: true,
+        response: { statusCode: 401 },
+        assertions: [{ outcome: "fail" }],
+      }),
+    ])
+    expect((result as { structuredContent?: unknown }).structuredContent).toEqual({ result: parsed })
     await client.close()
   })
 
@@ -254,15 +338,21 @@ describe("McpHost — loopback bind, bearer auth, port fallback", () => {
     }
   })
 
-  async function post(port: number, headers: Record<string, string>, body: unknown): Promise<{ status: number; text: string }> {
-    const payload = JSON.stringify(body)
+  async function request(
+    port: number,
+    method: string,
+    path: string,
+    headers: Record<string, string>,
+    body?: unknown,
+  ): Promise<{ status: number; text: string }> {
+    const payload = body === undefined ? "" : JSON.stringify(body)
     return await new Promise((resolve, reject) => {
       const req = http.request(
         {
           host: "127.0.0.1",
           port,
-          path: "/mcp",
-          method: "POST",
+          path,
+          method,
           // Streamable HTTP requires the client to accept both JSON and the SSE type.
           headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
         },
@@ -277,6 +367,10 @@ describe("McpHost — loopback bind, bearer auth, port fallback", () => {
     })
   }
 
+  function post(port: number, headers: Record<string, string>, body: unknown): Promise<{ status: number; text: string }> {
+    return request(port, "POST", "/mcp", headers, body)
+  }
+
   const listBody = { jsonrpc: "2.0", method: "tools/list", id: 1 }
 
   it("rejects missing and wrong tokens, accepts the correct one", async () => {
@@ -289,6 +383,29 @@ describe("McpHost — loopback bind, bearer auth, port fallback", () => {
     const ok = await post(port, { authorization: `Bearer ${token}` }, listBody)
     expect(ok.status).toBe(200)
     expect(ok.text).toContain("workflows_list")
+  })
+
+  it("rejects hostile browser origins and accepts native or loopback callers", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0 })
+    const { token, port } = await host.start()
+    const authorization = `Bearer ${token}`
+
+    expect((await post(port, { authorization, origin: "https://attacker.example" }, listBody)).status).toBe(403)
+    expect((await post(port, { authorization, origin: "null" }, listBody)).status).toBe(403)
+    expect((await post(port, { authorization, origin: "app://local" }, listBody)).status).toBe(200)
+    expect((await post(port, { authorization, origin: `http://127.0.0.1:${port}` }, listBody)).status).toBe(200)
+    expect((await post(port, { authorization }, listBody)).status).toBe(200)
+  })
+
+  it("returns bounded errors for wrong paths, methods and declared oversized bodies", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, maxBodyBytes: 32 })
+    const { token, port } = await host.start()
+    const authorization = `Bearer ${token}`
+
+    expect((await request(port, "POST", "/wrong", { authorization }, listBody)).status).toBe(404)
+    expect((await request(port, "GET", "/mcp", {}, undefined)).status).toBe(401)
+    expect((await request(port, "GET", "/mcp", { authorization }, undefined)).status).toBe(405)
+    expect((await post(port, { authorization }, { payload: "x".repeat(64) })).status).toBe(413)
   })
 
   it("binds 127.0.0.1 only and persists { token, port }", async () => {

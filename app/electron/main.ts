@@ -32,7 +32,7 @@ import { LocalOnlySyncProvider, SwitchableSyncProvider } from "../core/sync"
 import { RunScheduler, SafeHttp, DynamicFunctions } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
-import { MCP_TOOLS, toolName } from "../core/mcp/tools"
+import { MCP_SERVER_INFO_TOOL, MCP_TOOLS, toolName } from "../core/mcp/tools"
 import type { McpStatus } from "@shared/types/McpStatus"
 import type { MCPTool } from "@shared/types/MCPTool"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
@@ -339,7 +339,10 @@ if (!hasSingleInstanceLock) {
     ipcMain.handle(
       "mcp:listTools",
       requireTrustedSender(
-        (): readonly MCPTool[] => MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
+        (): readonly MCPTool[] => [
+          { name: MCP_SERVER_INFO_TOOL.name, description: MCP_SERVER_INFO_TOOL.description },
+          ...MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
+        ],
       ),
     )
 

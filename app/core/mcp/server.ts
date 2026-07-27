@@ -1,6 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { z } from "zod"
 import type { IpcRouter } from "../ipc/router"
 import { registerBridgeTools } from "./bridge"
+import { MCP_SERVER_INFO_TOOL, toolAnnotations } from "./tools"
 
 export const MCP_SERVER_NAME = "APIWeave"
 
@@ -19,16 +21,21 @@ export function createMcpServer(router: IpcRouter, version: string): McpServer {
   registerBridgeTools(server, router)
 
   server.registerTool(
-    "server_info",
-    { description: "Return APIWeave MCP server name, version and transport." },
-    () => ({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({ name: MCP_SERVER_NAME, version, transport: "loopback-http" }),
-        },
-      ],
-    }),
+    MCP_SERVER_INFO_TOOL.name,
+    {
+      description: MCP_SERVER_INFO_TOOL.description,
+      outputSchema: z.object({
+        result: z.object({ name: z.string(), version: z.string(), transport: z.string() }),
+      }),
+      annotations: toolAnnotations(MCP_SERVER_INFO_TOOL),
+    },
+    () => {
+      const result = { name: MCP_SERVER_NAME, version, transport: "loopback-http" }
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+        structuredContent: { result },
+      }
+    },
   )
 
   return server

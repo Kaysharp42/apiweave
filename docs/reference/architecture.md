@@ -70,7 +70,7 @@ A user clicking **Run** in the canvas triggers this sequence:
 5. Progress events are streamed from the main process to the renderer over IPC. The renderer updates node colors and result payloads in real time. No polling.
 6. When the run reaches a terminal state, the run repository records the final status and the renderer marks the run complete.
 
-A local AI agent calling through the MCP bridge follows the same path. The agent's tool call is mapped to an IPC handler invocation, the rest of the pipeline is identical, and the agent sees the same progress events the renderer would.
+A local AI agent calling through the MCP bridge follows the same service path. The agent's tool call is mapped to a whitelisted IPC handler invocation and receives a secret-safe response projection. Live progress events currently go only to the renderer; an MCP client re-reads `runs_get` for current run metadata.
 
 ## Request Lifecycle
 

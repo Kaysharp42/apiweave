@@ -19,6 +19,7 @@ export interface McpHostOptions {
   readonly tokenFilePath: string
   readonly version: string
   readonly preferredPort?: number
+  readonly maxBodyBytes?: number
 }
 
 /**
@@ -32,6 +33,7 @@ export class McpHost {
   private readonly tokenFilePath: string
   private readonly version: string
   private readonly preferredPort: number
+  private readonly maxBodyBytes: number
 
   private httpServer: http.Server | null = null
   private token: string | null = null
@@ -47,6 +49,7 @@ export class McpHost {
     this.tokenFilePath = options.tokenFilePath
     this.version = options.version
     this.preferredPort = options.preferredPort ?? DEFAULT_MCP_PORT
+    this.maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_MCP_BODY_BYTES
   }
 
   isRunning(): boolean {
@@ -116,22 +119,28 @@ export class McpHost {
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    if (!this.authorized(req)) {
-      return json(res, 401, { error: "unauthorized" })
-    }
-
     const url = new URL(req.url ?? "/", `http://${LOOPBACK_HOST}`)
     if (url.pathname !== MCP_PATH) {
       return json(res, 404, { error: "not_found" })
+    }
+    if (!isAllowedOrigin(req.headers["origin"])) {
+      return json(res, 403, { error: "forbidden_origin" })
+    }
+    if (!this.authorized(req)) {
+      return json(res, 401, { error: "unauthorized" })
     }
     if (req.method !== "POST") {
       // Stateless JSON transport: the whole protocol rides on POST.
       return json(res, 405, { error: "method_not_allowed" })
     }
+    if (isOversizedContentLength(req.headers["content-length"], this.maxBodyBytes)) {
+      req.resume()
+      return json(res, 413, { error: "payload_too_large" })
+    }
 
     let body: unknown
     try {
-      body = await readJson(req)
+      body = await readJson(req, this.maxBodyBytes)
     } catch (error) {
       if (error instanceof Error && error.message === "payload_too_large") {
         return json(res, 413, { error: "payload_too_large" })
@@ -178,9 +187,15 @@ function listen(server: http.Server, port: number): Promise<number> {
   })
 }
 
-const MAX_MCP_BODY_BYTES = 10 * 1024 * 1024 // 10MB
+const DEFAULT_MAX_MCP_BODY_BYTES = 10 * 1024 * 1024 // 10MB
 
-function readJson(req: http.IncomingMessage): Promise<unknown> {
+function isOversizedContentLength(value: string | undefined, maxBodyBytes: number): boolean {
+  if (value === undefined) return false
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > maxBodyBytes
+}
+
+function readJson(req: http.IncomingMessage, maxBodyBytes: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let received = 0
@@ -188,9 +203,8 @@ function readJson(req: http.IncomingMessage): Promise<unknown> {
     req.on("data", (chunk: Buffer) => {
       if (tooLarge) return
       received += chunk.length
-      if (received > MAX_MCP_BODY_BYTES) {
+      if (received > maxBodyBytes) {
         tooLarge = true
-        req.destroy()
         reject(new Error("payload_too_large"))
         return
       }
@@ -211,6 +225,19 @@ function readJson(req: http.IncomingMessage): Promise<unknown> {
     })
     req.on("error", reject)
   })
+}
+
+/** Native MCP clients normally omit Origin; browser-like callers must be local. */
+function isAllowedOrigin(origin: string | string[] | undefined): boolean {
+  if (origin === undefined) return true
+  if (Array.isArray(origin)) return false
+  try {
+    const parsed = new URL(origin)
+    if (parsed.protocol === "app:" && parsed.hostname === "local" && parsed.port === "") return true
+    return parsed.protocol === "http:" && (parsed.hostname === LOOPBACK_HOST || parsed.hostname === "localhost")
+  } catch {
+    return false
+  }
 }
 
 function json(res: http.ServerResponse, status: number, payload: unknown): void {
