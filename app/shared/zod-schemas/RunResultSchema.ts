@@ -2,6 +2,8 @@ import { z } from "zod"
 import { JsonValueSchema } from "./JsonValueSchema"
 import { RunnerNodeStatusSchema } from "./RunnerNodeStatusSchema"
 import { TimestampSchema } from "./TimestampSchema"
+import { AssertionEvaluationSchema } from "./AssertionEvaluationSchema"
+import { ExtractorOutcomeSchema } from "./ExtractorOutcomeSchema"
 
 export const RunResultSchema = z
   .object({
@@ -19,6 +21,7 @@ export const RunResultSchema = z
     request: JsonValueSchema.nullable().optional(),
     response: JsonValueSchema.nullable().optional(),
     error: z.string().nullable().optional(),
-    assertions: z.array(JsonValueSchema).nullable().optional(),
+    assertions: z.array(AssertionEvaluationSchema).nullable().optional(),
+    extractorOutcomes: z.array(ExtractorOutcomeSchema).optional(),
   })
   .strict()

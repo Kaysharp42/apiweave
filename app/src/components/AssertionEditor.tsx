@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./atoms/Button";
 import type { AssertionEditorProps } from "../types";
+import type { AssertionValue } from "../types";
 
 export default function AssertionEditor({
   value,
@@ -55,7 +56,12 @@ export default function AssertionEditor({
       <div className="grid grid-cols-2 gap-2">
         <select
           value={source}
-          onChange={(e) => onChange({ ...local, source: e.target.value })}
+          onChange={(e) =>
+            onChange({
+              ...local,
+              source: e.target.value as AssertionValue["source"],
+            })
+          }
           onKeyDown={handleKey}
           aria-label="Assertion source"
           className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
@@ -88,7 +94,12 @@ export default function AssertionEditor({
       <div className="grid grid-cols-2 gap-2">
         <select
           value={operator}
-          onChange={(e) => onChange({ ...local, operator: e.target.value })}
+          onChange={(e) =>
+            onChange({
+              ...local,
+              operator: e.target.value as AssertionValue["operator"],
+            })
+          }
           onKeyDown={handleKey}
           aria-label="Assertion operator"
           className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"

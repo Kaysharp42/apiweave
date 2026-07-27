@@ -162,7 +162,7 @@ export function AssertionConfigPanel({
       appendAssertions([
         {
           source: "prev",
-          path: "response.responseTimeMs",
+          path: "response.duration",
           operator: "lt",
           expectedValue: "1000",
         },
@@ -233,7 +233,7 @@ export function AssertionConfigPanel({
                   value={assertion.source}
                   onChange={(value) =>
                     updateAssertion(index, {
-                      source: value,
+                      source: value as AssertionItem["source"],
                       path: value === "status" ? "" : assertion.path,
                     })
                   }
@@ -272,7 +272,7 @@ export function AssertionConfigPanel({
                     size="xs"
                     onClick={() =>
                       updateAssertion(index, {
-                        operator,
+                        operator: operator as AssertionItem["operator"],
                         expectedValue: VALUELESS_OPERATORS.includes(operator)
                           ? ""
                           : assertion.expectedValue,

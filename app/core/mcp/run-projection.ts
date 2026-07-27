@@ -91,11 +91,26 @@ function projectResult(result: RunResult): JsonValue {
       ...(typeof statusCode === "number" ? { statusCode } : {}),
       ...(typeof truncated === "boolean" ? { truncated } : {}),
     },
-    assertions: (result.assertions ?? []).flatMap((assertion) => {
-      if (!isRecord(assertion)) return []
-      const outcome = assertion["outcome"]
-      return typeof outcome === "string" ? [{ outcome }] : []
-    }),
+    assertions: (result.assertions ?? []).map((assertion) => ({
+      ruleIndex: assertion.ruleIndex,
+      source: assertion.source,
+      path: assertion.path,
+      operator: assertion.operator,
+      sourceNodeId: assertion.sourceNodeId,
+      expectedState: assertion.expectedState,
+      expectedType: assertion.expectedType,
+      actualState: assertion.actualState,
+      actualType: assertion.actualType,
+      outcome: assertion.outcome,
+      reasonCode: assertion.reasonCode,
+    })),
+    extractorOutcomes: (result.extractorOutcomes ?? []).map((outcome) => ({
+      producerNodeId: outcome.producerNodeId,
+      variableName: outcome.variableName,
+      path: outcome.path,
+      matched: outcome.matched,
+      observedType: outcome.observedType,
+    })),
   }
 }
 

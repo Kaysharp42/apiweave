@@ -72,6 +72,7 @@ describe("WorkflowExecutor", () => {
       const workflow: WorkflowGraph = {
         nodes: [
           { nodeId: "start", type: "start" },
+          { nodeId: "prev_node", type: "http-request" },
           {
             nodeId: "assert1",
             type: "assertion",
@@ -82,6 +83,7 @@ describe("WorkflowExecutor", () => {
         edges: [
           { edgeId: "e1", source: "start", target: "assert1" },
           { edgeId: "e2", source: "assert1", target: "end" },
+          { edgeId: "e3", source: "prev_node", target: "assert1" },
         ],
       }
       const executor = new WorkflowExecutor(makeDeps())
@@ -98,13 +100,17 @@ describe("WorkflowExecutor", () => {
       const workflow: WorkflowGraph = {
         nodes: [
           { nodeId: "start", type: "start" },
+          { nodeId: "prev_node", type: "http-request" },
           {
             nodeId: "assert1",
             type: "assertion",
             config: { path: "body.value", operator: "equals", expected: 99, source: "prev" },
           },
         ],
-        edges: [{ edgeId: "e1", source: "start", target: "assert1" }],
+        edges: [
+          { edgeId: "e1", source: "start", target: "assert1" },
+          { edgeId: "e2", source: "prev_node", target: "assert1" },
+        ],
       }
       const executor = new WorkflowExecutor(makeDeps())
       ;(executor as unknown as { results: Map<string, unknown> }).results.set("prev_node", {
@@ -119,13 +125,17 @@ describe("WorkflowExecutor", () => {
       const workflow: WorkflowGraph = {
         nodes: [
           { nodeId: "start", type: "start" },
+          { nodeId: "prev_node", type: "http-request" },
           {
             nodeId: "assert1",
             type: "assertion",
             config: { path: "Content-Type", operator: "contains", expected: "json", source: "headers" },
           },
         ],
-        edges: [{ edgeId: "e1", source: "start", target: "assert1" }],
+        edges: [
+          { edgeId: "e1", source: "start", target: "assert1" },
+          { edgeId: "e2", source: "prev_node", target: "assert1" },
+        ],
       }
       const executor = new WorkflowExecutor(makeDeps())
       ;(executor as unknown as { results: Map<string, unknown> }).results.set("prev_node", {
@@ -140,13 +150,17 @@ describe("WorkflowExecutor", () => {
       const workflow: WorkflowGraph = {
         nodes: [
           { nodeId: "start", type: "start" },
+          { nodeId: "prev_node", type: "http-request" },
           {
             nodeId: "assert1",
             type: "assertion",
             config: { path: "session", operator: "equals", expected: "abc", source: "cookies" },
           },
         ],
-        edges: [{ edgeId: "e1", source: "start", target: "assert1" }],
+        edges: [
+          { edgeId: "e1", source: "start", target: "assert1" },
+          { edgeId: "e2", source: "prev_node", target: "assert1" },
+        ],
       }
       const executor = new WorkflowExecutor(makeDeps())
       ;(executor as unknown as { results: Map<string, unknown> }).results.set("prev_node", {
@@ -155,6 +169,232 @@ describe("WorkflowExecutor", () => {
       })
       const output = await executor.executeWorkflow(workflow)
       expect(output.nodeStatuses["assert1"]).toBe("passed")
+    })
+
+    it("resolves each branched assertion from its own HTTP predecessor", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((request, response) => {
+        const finish = () => {
+          response.statusCode = request.url === "/first" ? 201 : 202
+          response.end("{}")
+        }
+        if (request.url === "/second") setTimeout(finish, 10)
+        else finish()
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "http_first", type: "http-request", config: { url: `http://127.0.0.1:${port}/first` } },
+            { nodeId: "delay_first", type: "delay", config: { duration: 60 } },
+            { nodeId: "http_second", type: "http-request", config: { url: `http://127.0.0.1:${port}/second` } },
+            {
+              nodeId: "assert_first",
+              type: "assertion",
+              config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 201 }] },
+            },
+            {
+              nodeId: "assert_second",
+              type: "assertion",
+              config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 202 }] },
+            },
+          ],
+          edges: [
+            { edgeId: "start-first", source: "start", target: "http_first" },
+            { edgeId: "first-delay", source: "http_first", target: "delay_first" },
+            { edgeId: "delay-assert", source: "delay_first", target: "assert_first" },
+            { edgeId: "start-second", source: "start", target: "http_second" },
+            { edgeId: "second-assert", source: "http_second", target: "assert_second" },
+          ],
+        }
+
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+
+        expect(output.nodeStatuses["assert_first"]).toBe("passed")
+        expect(output.nodeStatuses["assert_second"]).toBe("passed")
+        expect(output.results.find((result) => result.nodeId === "assert_first")?.assertions?.[0]?.sourceNodeId).toBe("http_first")
+        expect(output.results.find((result) => result.nodeId === "assert_second")?.assertions?.[0]?.sourceNodeId).toBe("http_second")
+      } finally {
+        server.close()
+      }
+    })
+
+    it("records ambiguous HTTP predecessors instead of choosing one", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "http_a", type: "http-request" },
+          { nodeId: "http_b", type: "http-request" },
+          {
+            nodeId: "assert1",
+            type: "assertion",
+            config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }] },
+          },
+        ],
+        edges: [
+          { edgeId: "start-assert", source: "start", target: "assert1" },
+          { edgeId: "a-assert", source: "http_a", target: "assert1" },
+          { edgeId: "b-assert", source: "http_b", target: "assert1" },
+        ],
+      }
+      const executor = new WorkflowExecutor(makeDeps())
+      const results = (executor as unknown as { results: Map<string, unknown> }).results
+      results.set("http_a", { type: "http-request", statusCode: 200 })
+      results.set("http_b", { type: "http-request", statusCode: 200 })
+
+      const output = await executor.executeWorkflow(workflow)
+      const evaluation = output.results.find((result) => result.nodeId === "assert1")?.assertions?.[0]
+
+      expect(output.status).toBe("failed")
+      expect(evaluation).toMatchObject({
+        actualState: "ambiguous-source",
+        outcome: "fail",
+        reasonCode: "ambiguous-source",
+      })
+    })
+
+    it("persists every rule while honoring failureMode and expected templates", async () => {
+      const workflow: WorkflowGraph = {
+        variables: { expectedValue: 42 },
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "http_1", type: "http-request" },
+          {
+            nodeId: "assert1",
+            type: "assertion",
+            config: {
+              failureMode: "first",
+              assertions: [
+                { source: "prev", path: "response.body.token", operator: "equals", expectedValue: "wrong" },
+                { source: "prev", path: "response.body.value", operator: "equals", expectedValue: "{{variables.expectedValue}}" },
+              ],
+            },
+          },
+        ],
+        edges: [
+          { edgeId: "start-assert", source: "start", target: "assert1" },
+          { edgeId: "http-assert", source: "http_1", target: "assert1" },
+        ],
+      }
+      const executor = new WorkflowExecutor(makeDeps())
+      ;(executor as unknown as { results: Map<string, unknown> }).results.set("http_1", {
+        type: "http-request",
+        body: { token: "raw-secret-token", value: 42 },
+      })
+
+      const output = await executor.executeWorkflow(workflow)
+      const result = output.results.find((item) => item.nodeId === "assert1")
+
+      expect(result?.assertions).toHaveLength(2)
+      expect(result?.assertions?.[0]).toMatchObject({ outcome: "fail", reasonCode: "comparison-failed" })
+      expect(result?.assertions?.[1]).toMatchObject({ outcome: "skipped", reasonCode: "skipped-after-failure" })
+      expect(output.failedNodes).toContain("assert1")
+      expect(JSON.stringify(result?.assertions)).not.toContain("raw-secret-token")
+      expect(result?.assertions?.[1]?.expectedState).toBe("resolved-template")
+    })
+
+    it("resolves an expected-value template before comparison", async () => {
+      const workflow: WorkflowGraph = {
+        variables: { actual: 42, expected: 42, secretActual: "resolved-secret-value" },
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "assert1",
+            type: "assertion",
+            config: {
+              assertions: [
+                { source: "variables", path: "actual", operator: "equals", expectedValue: "{{variables.expected}}" },
+                { source: "variables", path: "secretActual", operator: "equals", expectedValue: "{{secrets.API_KEY}}" },
+              ],
+            },
+          },
+        ],
+        edges: [{ edgeId: "start-assert", source: "start", target: "assert1" }],
+      }
+
+      const output = await new WorkflowExecutor(
+        makeDeps({ secrets: { API_KEY: "resolved-secret-value" } }),
+      ).executeWorkflow(workflow)
+
+      expect(output.status).toBe("passed")
+      const evaluations = output.results.find((result) => result.nodeId === "assert1")?.assertions
+      expect(evaluations?.[0]).toMatchObject({
+        expectedState: "resolved-template",
+        outcome: "pass",
+        reasonCode: "passed",
+      })
+      expect(evaluations?.[1]).toMatchObject({ expectedState: "resolved-template", outcome: "pass" })
+      expect(JSON.stringify(evaluations)).not.toContain("resolved-secret-value")
+    })
+
+    it("preserves a canonical null expected value in structured evidence", async () => {
+      const workflow: WorkflowGraph = {
+        variables: { actualNull: null },
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "assert1",
+            type: "assertion",
+            config: {
+              failureMode: "all",
+              assertions: [
+                { source: "variables", path: "actualNull", operator: "equals", expectedValue: null },
+                { source: "variables", path: "missing", operator: "equals", expectedValue: null },
+              ],
+            },
+          },
+        ],
+        edges: [{ edgeId: "start-assert", source: "start", target: "assert1" }],
+      }
+
+      const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+      const evaluations = output.results.find((result) => result.nodeId === "assert1")?.assertions
+
+      expect(evaluations?.[0]).toMatchObject({ expectedType: "null", actualType: "null", outcome: "pass" })
+      expect(evaluations?.[1]).toMatchObject({ expectedType: "null", actualState: "missing", outcome: "fail" })
+    })
+
+    it("honors assertion continueOnFail and response.duration in milliseconds", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "http_1", type: "http-request" },
+          {
+            nodeId: "assert1",
+            type: "assertion",
+            config: {
+              continueOnFail: true,
+              failureMode: "all",
+              assertions: [
+                { source: "prev", path: "response.duration", operator: "lt", expectedValue: 100 },
+                { source: "prev", path: "response.duration", operator: "lt", expectedValue: 1000 },
+              ],
+            },
+          },
+          { nodeId: "delay", type: "delay", config: { duration: 0 } },
+        ],
+        edges: [
+          { edgeId: "start-assert", source: "start", target: "assert1" },
+          { edgeId: "http-assert", source: "http_1", target: "assert1" },
+          { edgeId: "assert-delay", source: "assert1", target: "delay" },
+        ],
+      }
+      const executor = new WorkflowExecutor({ ...makeDeps(), baseUrl: "http://harness" })
+      ;(executor as unknown as { results: Map<string, unknown> }).results.set("http_1", {
+        type: "http-request",
+        duration: 250,
+      })
+
+      const output = await executor.executeWorkflow(workflow)
+
+      expect(output.status).toBe("failed")
+      expect(output.nodeStatuses["delay"]).toBe("passed")
+      expect(output.results.find((result) => result.nodeId === "assert1")?.assertions).toEqual([
+        expect.objectContaining({ outcome: "fail", actualType: "number" }),
+        expect.objectContaining({ outcome: "pass", actualType: "number" }),
+      ])
     })
   })
 
@@ -194,7 +434,7 @@ describe("WorkflowExecutor", () => {
       const executor = new WorkflowExecutor(makeDeps())
       const output = await executor.executeWorkflow(workflow)
       expect(output.nodeStatuses["delay1"]).toBe("passed")
-      expect(output.results.find((r) => r.nodeId === "delay1")?.duration).toBe(2)
+      expect(output.results.find((r) => r.nodeId === "delay1")?.duration).toBe(2000)
     })
   })
 
@@ -221,13 +461,37 @@ describe("WorkflowExecutor", () => {
       // Simulate extraction by calling the private method
       const extractors = { userId: "body.id", token: "body.token" }
       const response = { status: "success", body: { id: 42, token: "abc" } }
-      ;(executor as unknown as { extractVariables: (e: Record<string, string>, r: unknown) => void }).extractVariables(
+      const outcomes = (executor as unknown as {
+        extractVariables: (nodeId: string, e: Record<string, string>, r: unknown) => unknown
+      }).extractVariables(
+        "http_1",
         extractors,
         response,
       )
       const vars = (executor as unknown as { workflowVariables: Record<string, unknown> }).workflowVariables
       expect(vars["userId"]).toBe(42)
       expect(vars["token"]).toBe("abc")
+      expect(outcomes).toEqual([
+        { producerNodeId: "http_1", variableName: "userId", path: "body.id", matched: true, observedType: "number" },
+        { producerNodeId: "http_1", variableName: "token", path: "body.token", matched: true, observedType: "string" },
+      ])
+    })
+
+    it("records missing and null extractor outcomes without values", () => {
+      const executor = new WorkflowExecutor(makeDeps())
+      const outcomes = (executor as unknown as {
+        extractVariables: (nodeId: string, e: Record<string, string>, r: unknown) => unknown
+      }).extractVariables(
+        "http_1",
+        { missing: "body.missing", nullable: "body.nullable" },
+        { status: "success", body: { nullable: null } },
+      )
+
+      expect(outcomes).toEqual([
+        { producerNodeId: "http_1", variableName: "missing", path: "body.missing", matched: false, observedType: null },
+        { producerNodeId: "http_1", variableName: "nullable", path: "body.nullable", matched: true, observedType: "null" },
+      ])
+      expect(JSON.stringify(outcomes)).not.toContain("value")
     })
   })
 
@@ -240,6 +504,12 @@ describe("WorkflowExecutor", () => {
       expect(compare(42, "equals", 42)).toBe(true)
       expect(compare(42, "equals", "42")).toBe(true)
       expect(compare(42, "equals", 99)).toBe(false)
+    })
+
+    it("distinguishes an expected JSON null from a missing value", () => {
+      expect(compare(null, "equals", null)).toBe(true)
+      expect(compare(undefined, "equals", null)).toBe(false)
+      expect(compare(undefined, "notEquals", null)).toBe(true)
     })
 
     it("contains", () => {
@@ -370,8 +640,11 @@ describe("WorkflowExecutor", () => {
         },
       })
 
-      await expect(executor.executeWorkflow(workflow)).rejects.toThrow("URL is required for HTTP request")
+      const output = await executor.executeWorkflow(workflow)
 
+      expect(output.status).toBe("failed")
+      expect(output.failedNodes).toContain("http_1")
+      expect(output.failureMessage).toBe("Node http_1 failed")
       expect(events).toContainEqual({
         nodeId: "http_1",
         status: "failed",
@@ -429,7 +702,7 @@ describe("WorkflowExecutor", () => {
   })
 
   describe("cycle protection", () => {
-    it("fails a cyclic graph with a step-budget error instead of hanging", async () => {
+    it("returns structured failure evidence for a cyclic graph instead of hanging", async () => {
       const workflow: WorkflowGraph = {
         nodes: [
           { nodeId: "start", type: "start" },
@@ -441,7 +714,10 @@ describe("WorkflowExecutor", () => {
         ],
       }
       const executor = new WorkflowExecutor({ ...makeDeps(), baseUrl: "http://harness" })
-      await expect(executor.executeWorkflow(workflow)).rejects.toThrow(/step budget|possible cycle/i)
+      const output = await executor.executeWorkflow(workflow)
+      expect(output.status).toBe("failed")
+      expect(output.failedNodes).toContain("start")
+      expect(output.failureMessage).toMatch(/cycle detected/i)
     })
   })
 })

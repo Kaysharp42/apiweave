@@ -6,6 +6,8 @@ import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { generateId } from "../id"
 import { mustExist, parseJson, toJson } from "./helpers"
+import { AssertionEvaluationSchema } from "@shared/zod-schemas/AssertionEvaluationSchema"
+import { RunResultSchema } from "@shared/zod-schemas/RunResultSchema"
 
 export type RunCreate = Pick<Run, "workspaceId" | "workflowId"> &
   Partial<Pick<Run, "status" | "trigger" | "variables" | "selectedEnvironmentId" | "nodeStatuses">>
@@ -223,6 +225,30 @@ export class RunRepository {
     return this.update(runId, { results: [...results] })
   }
 
+  /** Persist the executor's final evidence without rewriting per-node progress. */
+  public updateExecutionEvidence(
+    runId: string,
+    evidence: {
+      readonly results: readonly RunResult[]
+      readonly extractedVariables: Readonly<Record<string, JsonValue>>
+      readonly failedNodes: readonly string[]
+      readonly failureMessage: string | null
+    },
+  ): Run | undefined {
+    this.store.set(
+      "UPDATE runs SET extracted_variables_json = json(?), " +
+        "response_metadata_json = json_set(response_metadata_json, '$.results', json(?), '$.failedNodes', json(?), '$.failureMessage', ?) WHERE id = ?",
+      [
+        toJson(evidence.extractedVariables),
+        toJson(evidence.results),
+        toJson(evidence.failedNodes),
+        evidence.failureMessage,
+        runId,
+      ],
+    )
+    return this.getById(runId)
+  }
+
   /**
    * Patch safe secret-resolution metadata (`$.resolvedSecrets`) into the run's
    * metadata blob — a targeted `json_set`, NOT a whole-row write, so it never
@@ -299,7 +325,7 @@ export class RunRepository {
 }
 
 function rowToRun(row: RunRow): Run {
-  const metadata = parseJson<RunMetadata>(row.response_metadata_json)
+  const metadata = normalizeRunMetadata(parseJson<unknown>(row.response_metadata_json))
   return {
     runId: row.id,
     workspaceId: row.workspace_id,
@@ -324,4 +350,75 @@ function rowToRun(row: RunRow): Run {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
+}
+
+function normalizeRunMetadata(value: unknown): RunMetadata {
+  const metadata = isRecord(value) ? value : {}
+  return {
+    selectedEnvironmentId: typeof metadata["selectedEnvironmentId"] === "string" ? metadata["selectedEnvironmentId"] : null,
+    trigger: metadata["trigger"] === "schedule" ? "schedule" : "manual",
+    results: normalizeRunResults(metadata["results"]),
+    duration: typeof metadata["duration"] === "number" ? metadata["duration"] : null,
+    error: typeof metadata["error"] === "string" ? metadata["error"] : null,
+    failedNodes: Array.isArray(metadata["failedNodes"])
+      ? metadata["failedNodes"].filter((item): item is string => typeof item === "string")
+      : null,
+    failureMessage: typeof metadata["failureMessage"] === "string" ? metadata["failureMessage"] : null,
+    resumeFromRunId: typeof metadata["resumeFromRunId"] === "string" ? metadata["resumeFromRunId"] : null,
+    resumeFromNodeIds: Array.isArray(metadata["resumeFromNodeIds"])
+      ? metadata["resumeFromNodeIds"].filter((item): item is string => typeof item === "string")
+      : null,
+    resumeMode: metadata["resumeMode"] === "single" || metadata["resumeMode"] === "all-failed"
+      ? metadata["resumeMode"]
+      : null,
+    resolvedSecrets: Array.isArray(metadata["resolvedSecrets"])
+      ? metadata["resolvedSecrets"].flatMap((item) => {
+          if (!isRecord(item) || typeof item["name"] !== "string" || typeof item["resolved"] !== "boolean") return []
+          const scopeType = item["scopeType"] === "environment" || item["scopeType"] === "workspace"
+            ? item["scopeType"]
+            : null
+          return [{ name: item["name"], resolved: item["resolved"], scopeType }]
+        })
+      : [],
+  }
+}
+
+function normalizeRunResults(value: unknown): RunResult[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return []
+    const assertions = Array.isArray(item["assertions"])
+      ? item["assertions"].flatMap((assertion, index) => {
+          const current = AssertionEvaluationSchema.safeParse(assertion)
+          if (current.success) return [current.data]
+          if (!isRecord(assertion)) return []
+          const outcome = assertion["outcome"] === "pass" ? "pass" as const : "fail" as const
+          return [{
+            ruleIndex: index,
+            source: "prev" as const,
+            path: "",
+            operator: "equals" as const,
+            sourceNodeId: null,
+            expectedState: "legacy" as const,
+            expectedType: null,
+            actualState: "not-evaluated" as const,
+            actualType: null,
+            outcome,
+            reasonCode: "legacy-result" as const,
+          }]
+        })
+      : item["assertions"] === null
+        ? null
+        : undefined
+    const candidate = {
+      ...item,
+      ...(assertions === undefined ? {} : { assertions }),
+    }
+    const parsed = RunResultSchema.safeParse(candidate)
+    return parsed.success ? [parsed.data] : []
+  })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

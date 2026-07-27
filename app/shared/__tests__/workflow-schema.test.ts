@@ -119,4 +119,21 @@ describe("WorkflowSchema", () => {
 
     expect(WorkflowNodeSchema.safeParse(node).success).toBe(true)
   })
+
+  it("rejects assertion sources and operators outside the shared closed enums", () => {
+    const base = {
+      nodeId: "assertion-closed-enums",
+      type: "assertion",
+      position: { x: 0, y: 0 },
+    }
+
+    expect(WorkflowNodeSchema.safeParse({
+      ...base,
+      config: { assertions: [{ source: "response", path: "body.id", operator: "equals", expectedValue: 1 }] },
+    }).success).toBe(false)
+    expect(WorkflowNodeSchema.safeParse({
+      ...base,
+      config: { assertions: [{ source: "prev", path: "body.id", operator: "matchesRegex", expectedValue: ".*" }] },
+    }).success).toBe(false)
+  })
 })

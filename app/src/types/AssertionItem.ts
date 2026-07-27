@@ -1,6 +1,9 @@
+import type { AssertionOperator } from "@shared/types/AssertionOperator";
+import type { AssertionSource } from "@shared/types/AssertionSource";
+
 export interface AssertionItem {
-  source: string;
+  source: AssertionSource;
   path: string;
-  operator: string;
+  operator: AssertionOperator;
   expectedValue: string;
 }

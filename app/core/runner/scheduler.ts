@@ -2,6 +2,7 @@ import type { Run } from "@shared/types/Run"
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { RunResult } from "@shared/types/RunResult"
 import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
@@ -188,21 +189,37 @@ export class RunScheduler {
         ...(run.resumeFromNodeIds ? { startNodeIds: run.resumeFromNodeIds } : {}),
       })
 
-      this.deps.runs.updateResults(runId, output.results)
+      const extractedVariables = sanitizeFinalVariables(output)
+      const failureMessage = safeFailureMessage(output.failedNodes)
+      this.deps.runs.updateExecutionEvidence(runId, {
+        results: sanitizeRunResults(output.results),
+        extractedVariables,
+        failedNodes: output.failedNodes,
+        failureMessage,
+      })
 
       const status: Run["status"] = output.status === "passed" ? "completed" : "failed"
       this.deps.runs.updateStatus(
         runId,
         status,
-        status === "failed" ? "Workflow execution failed" : undefined,
+        status === "failed" ? failureMessage ?? "Workflow execution failed" : undefined,
       )
       this.emitFinished(runId, status)
-    } catch (error) {
+    } catch {
       if (controller.signal.aborted) {
         this.deps.runs.updateStatus(runId, "cancelled")
         this.emitFinished(runId, "cancelled")
       } else {
-        this.deps.runs.updateStatus(runId, "failed", String(error))
+        const existing = this.deps.runs.getById(runId)
+        if (existing) {
+          this.deps.runs.updateExecutionEvidence(runId, {
+            results: existing.results,
+            extractedVariables: sanitizeVariablesForExport(existing.variables),
+            failedNodes: existing.failedNodes ?? [],
+            failureMessage: "Workflow execution failed",
+          })
+        }
+        this.deps.runs.updateStatus(runId, "failed", "Workflow execution failed")
         this.emitFinished(runId, "failed")
       }
     } finally {
@@ -263,16 +280,72 @@ export class RunScheduler {
     // secret-looking keys/values the same way exports do before this snapshot
     // goes out over IPC and into run history (readable via runs.get/list, incl. MCP).
     const sanitizedVariables = sanitizeVariablesForExport(event.variables as Record<string, JsonValue>)
-    const sanitizedEvent: RunProgressEvent = { ...event, variables: sanitizedVariables }
+    const sanitizedError = event.error ? safeErrorClass(event.error) : undefined
+    const sanitizedEvent: RunProgressEvent = {
+      ...event,
+      variables: sanitizedVariables,
+      ...(sanitizedError ? { error: sanitizedError } : {}),
+    }
     this.deps.emitProgress?.(runId, sanitizedEvent)
     this.deps.runs.appendNodeStatus(runId, event.nodeId, {
       status: event.status,
       variables: sanitizedVariables,
-      ...(event.error ? { error: event.error } : {}),
+      ...(sanitizedError ? { error: sanitizedError } : {}),
       ...(event.message ? { message: event.message } : {}),
       ...(event.statusCode !== undefined ? { statusCode: event.statusCode } : {}),
     })
   }
+}
+
+function sanitizeFinalVariables(output: Awaited<ReturnType<WorkflowExecutor["executeWorkflow"]>>): Record<string, JsonValue> {
+  const variables = sanitizeVariablesForExport(output.extractedVariables as Record<string, JsonValue>)
+  for (const result of output.results) {
+    for (const outcome of result.extractorOutcomes ?? []) {
+      if (!outcome.matched || !(outcome.variableName in variables)) continue
+      if (variables[outcome.variableName] !== "<SECRET>") variables[outcome.variableName] = "<EXTRACTED>"
+    }
+  }
+  return variables
+}
+
+function safeFailureMessage(failedNodes: readonly string[]): string | null {
+  if (failedNodes.length === 0) return null
+  return failedNodes.length === 1
+    ? "Workflow execution failed in 1 node"
+    : `Workflow execution failed in ${failedNodes.length} nodes`
+}
+
+function sanitizeRunResults(results: readonly RunResult[]): RunResult[] {
+  return results.map((result) => ({
+    ...result,
+    request: sanitizeRequestMetadata(result.request),
+    ...(typeof result.error === "string" ? { error: safeErrorClass(result.error) } : {}),
+  }))
+}
+
+function sanitizeRequestMetadata(request: JsonValue | undefined): JsonValue {
+  if (request === null || typeof request !== "object" || Array.isArray(request)) return request ?? null
+  const url = request["url"]
+  if (typeof url !== "string") return request
+  try {
+    const parsed = new URL(url)
+    const safeUrl = `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search ? "?<REDACTED>" : ""}`
+    return { ...request, url: safeUrl }
+  } catch {
+    return { ...request, url: "<URL>" }
+  }
+}
+
+function safeErrorClass(error: string): string {
+  const normalized = error.toLowerCase()
+  if (normalized.includes("ssrf blocked")) return "SSRF blocked"
+  if (normalized.includes("timeout") || normalized.includes("timed out") || normalized.includes("aborted")) {
+    return "Request timed out"
+  }
+  if (normalized.includes("url is required") || normalized.includes("failed to build request")) {
+    return "Request configuration invalid"
+  }
+  return "Node execution failed"
 }
 
 /** Recursively collect every string value within a node config (mirrors Python _iter_config_values). */

@@ -267,7 +267,7 @@ describe("MCP bridge — second transport, parity by construction", () => {
         status: "failed",
         hasError: true,
         response: { statusCode: 401 },
-        assertions: [{ outcome: "fail" }],
+        assertions: [expect.objectContaining({ outcome: "fail" })],
       }),
     ])
     expect((result as { structuredContent?: unknown }).structuredContent).toEqual({ result: parsed })
