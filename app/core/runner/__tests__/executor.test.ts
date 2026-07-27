@@ -472,8 +472,8 @@ describe("WorkflowExecutor", () => {
       expect(vars["userId"]).toBe(42)
       expect(vars["token"]).toBe("abc")
       expect(outcomes).toEqual([
-        { producerNodeId: "http_1", variableName: "userId", path: "body.id", matched: true, observedType: "number" },
-        { producerNodeId: "http_1", variableName: "token", path: "body.token", matched: true, observedType: "string" },
+        { producerNodeId: "http_1", variableName: "userId", path: "body.id", matched: true, observedType: "number", failureReason: null },
+        { producerNodeId: "http_1", variableName: "token", path: "body.token", matched: true, observedType: "string", failureReason: null },
       ])
     })
 
@@ -483,13 +483,14 @@ describe("WorkflowExecutor", () => {
         extractVariables: (nodeId: string, e: Record<string, string>, r: unknown) => unknown
       }).extractVariables(
         "http_1",
-        { missing: "body.missing", nullable: "body.nullable" },
-        { status: "success", body: { nullable: null } },
+        { missing: "body.missing", nullable: "body.nullable", wrongType: "body.items[0].id" },
+        { status: "success", body: { nullable: null, items: {} } },
       )
 
       expect(outcomes).toEqual([
-        { producerNodeId: "http_1", variableName: "missing", path: "body.missing", matched: false, observedType: null },
-        { producerNodeId: "http_1", variableName: "nullable", path: "body.nullable", matched: true, observedType: "null" },
+        { producerNodeId: "http_1", variableName: "missing", path: "body.missing", matched: false, observedType: null, failureReason: "path-missing" },
+        { producerNodeId: "http_1", variableName: "nullable", path: "body.nullable", matched: true, observedType: "null", failureReason: null },
+        { producerNodeId: "http_1", variableName: "wrongType", path: "body.items[0].id", matched: false, observedType: null, failureReason: "type-mismatch" },
       ])
       expect(JSON.stringify(outcomes)).not.toContain("value")
     })

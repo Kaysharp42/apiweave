@@ -6,6 +6,10 @@ import type {
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { McpStatus } from "@shared/types/McpStatus";
 import type { MCPTool } from "@shared/types/MCPTool";
+import type { AssertionApplyResult } from "@shared/types/AssertionApplyResult";
+import type { AssertionItem } from "@shared/types/AssertionItem";
+import type { AssertionSuggestionResult } from "@shared/types/AssertionSuggestionResult";
+import type { AssertionValidationResult } from "@shared/types/AssertionValidationResult";
 import type { AuthenticatedRequestInit } from "../types";
 import type { Project } from "../types/Project";
 import type { DryRunResult } from "../types/DryRunResult";
@@ -251,6 +255,47 @@ export const apiweave = {
       }),
     dryRun: (workspaceId: string, bundle: unknown) =>
       invoke<DryRunResult>("workflows", "dryRun", { workspaceId, bundle }),
+  },
+  assertions: {
+    suggest: (
+      workspaceId: string,
+      workflowId: string,
+      runId: string,
+      sourceNodeId: string,
+    ) => invoke<AssertionSuggestionResult>("assertions", "suggest", {
+      workspaceId,
+      workflowId,
+      runId,
+      sourceNodeId,
+    }),
+    validate: (
+      workspaceId: string,
+      workflowId: string,
+      sourceNodeId: string,
+      rules: readonly AssertionItem[],
+      runId?: string,
+    ) => invoke<AssertionValidationResult>("assertions", "validate", {
+      workspaceId,
+      workflowId,
+      sourceNodeId,
+      rules,
+      ...(runId !== undefined ? { runId } : {}),
+    }),
+    apply: (
+      workspaceId: string,
+      workflowId: string,
+      expectedRevision: number,
+      assertionNodeId: string,
+      mode: "append" | "replace",
+      rules: readonly AssertionItem[],
+    ) => invoke<AssertionApplyResult>("assertions", "apply", {
+      workspaceId,
+      workflowId,
+      expectedRevision,
+      assertionNodeId,
+      mode,
+      rules,
+    }),
   },
   environments: {
     create: (

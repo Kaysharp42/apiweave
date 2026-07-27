@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { VariableProvenanceMap } from "../types/VariableProvenanceMap";
+import type { VariableProvenanceMap } from "@shared/types/VariableProvenanceMap";
 
 interface VariableProvenanceState {
   provenance: VariableProvenanceMap;

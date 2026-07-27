@@ -110,6 +110,7 @@ function projectResult(result: RunResult): JsonValue {
       path: outcome.path,
       matched: outcome.matched,
       observedType: outcome.observedType,
+      failureReason: outcome.failureReason ?? null,
     })),
   }
 }

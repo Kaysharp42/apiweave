@@ -19,6 +19,8 @@ import { ScopeResolver, type ScopeExistence } from "../../services/scope_resolve
 import { WorkspaceService } from "../../services/workspace_service"
 import { CollectionService } from "../../services/collection_service"
 import { WorkflowService } from "../../services/workflow_service"
+import { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
+import { AssertionAuthoringService } from "../../services/assertion_authoring_service"
 import { EnvironmentService } from "../../services/environment_service"
 import { RunService } from "../../services/run_service"
 import { SecretService, type SecretWriteStore, type SecretUpsert } from "../../services/secret_service"
@@ -26,7 +28,7 @@ import { ProjectExportService } from "../../services/project_export_service"
 import type { SecretMetadata, SecretScopeType } from "../../secrets/scoped_secret_resolver"
 import { IpcRouter } from "../../ipc/router"
 import { registerAllHandlers, type HandlerDeps } from "../../ipc/handlers"
-import { MCP_TOOLS } from "../tools"
+import { MCP_TOOLS, toolName } from "../tools"
 import { createMcpServer } from "../server"
 import { McpHost } from "../host"
 
@@ -81,12 +83,16 @@ beforeEach(() => {
   const permissions = new LocalOwnerProvider()
   const sync = new LocalOnlySyncProvider()
   const secretStore = new FakeSecretStore()
+  const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
+  const runService = new RunService(runs, sync, permissions, scopeResolver)
   const deps: HandlerDeps = {
     workspaces: new WorkspaceService(workspaces, sync, scopeResolver),
     collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
-    workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
+    workflows: workflowService,
+    workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
+    assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
-    runs: new RunService(runs, sync, permissions, scopeResolver),
+    runs: runService,
     secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
       collections,
@@ -144,6 +150,23 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     }
   })
 
+  it("uses unique public names and maps explicit diagnostic and assertion names", () => {
+    const names = MCP_TOOLS.map(toolName)
+    expect(new Set(names).size).toBe(names.length)
+    expect(MCP_TOOLS.find((spec) => toolName(spec) === "workflow_diagnose")).toMatchObject({
+      domain: "workflows",
+      action: "diagnose",
+      intent: "read",
+    })
+    expect(MCP_TOOLS.find((spec) => toolName(spec) === "assertion_suggest")).toMatchObject({
+      domain: "assertions",
+      action: "suggest",
+      intent: "read",
+    })
+    expect(MCP_TOOLS.find((spec) => toolName(spec) === "assertion_validate")).toMatchObject({ intent: "read" })
+    expect(MCP_TOOLS.find((spec) => toolName(spec) === "assertion_apply")).toMatchObject({ intent: "write" })
+  })
+
   it("excludes keystore mutations and Electron shell/dialog ops", () => {
     const names = new Set(MCP_TOOLS.map((t) => `${t.domain}.${t.action}`))
     for (const excluded of [
@@ -172,12 +195,17 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const { tools } = await client.listTools()
     const names = tools.map((t) => t.name)
     expect(names).toContain("workflows_list")
+    expect(names).toContain("workflow_diagnose")
+    expect(names).toContain("assertion_suggest")
+    expect(names).toContain("assertion_validate")
+    expect(names).toContain("assertion_apply")
     expect(names).toContain("server_info")
     expect(names).not.toContain("secrets_set")
     expect(names).not.toContain("runs_openArtifact")
     const workflowList = tools.find((tool) => tool.name === "workflows_list")
     const workspaceDelete = tools.find((tool) => tool.name === "workspaces_delete")
     const runCreate = tools.find((tool) => tool.name === "runs_create")
+    const workflowDiagnose = tools.find((tool) => tool.name === "workflow_diagnose")
     expect(workflowList?.annotations).toMatchObject({
       readOnlyHint: true,
       destructiveHint: false,
@@ -186,6 +214,12 @@ describe("MCP bridge — second transport, parity by construction", () => {
     })
     expect(workspaceDelete?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
     expect(runCreate?.annotations).toMatchObject({ readOnlyHint: false, openWorldHint: true })
+    expect(workflowDiagnose?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    })
     expect(workflowList?.outputSchema).toMatchObject({ type: "object" })
     await client.close()
   })
@@ -282,6 +316,179 @@ describe("MCP bridge — second transport, parity by construction", () => {
     })
     expect((result as { isError?: boolean }).isError).toBe(true)
     expect(textOf(result as { content: Array<{ type: string; text?: string }> })).toContain("not_found")
+    await client.close()
+  })
+
+  it("diagnoses static and run evidence with IPC parity and no value leakage", async () => {
+    const secret = "diagnosis-secret-value"
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "diagnose",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        {
+          nodeId: "login",
+          type: "http-request",
+          position: { x: 100, y: 0 },
+          config: { method: "POST", url: "https://example.test/login", extractors: { token: "response.body.token" } },
+        },
+        { nodeId: "end", type: "end", position: { x: 200, y: 0 }, config: {} },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "login" },
+        { edgeId: "e2", source: "login", target: "end" },
+      ],
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      variables: { token: secret },
+      error: secret,
+      failureMessage: secret,
+      results: [{
+        nodeId: "login",
+        status: "failed",
+        duration: 12,
+        request: { url: `https://example.test/?token=${secret}` },
+        response: { statusCode: 401, headers: { authorization: secret }, body: { token: secret } },
+        error: secret,
+        extractorOutcomes: [{
+          producerNodeId: "login",
+          variableName: "token",
+          path: "response.body.token",
+          matched: false,
+          observedType: null,
+        }],
+      }],
+    })
+
+    const ipc = await dispatchOk("workflows", "diagnose", {
+      workspaceId: workspace.workspaceId,
+      workflowId: workflow.workflowId,
+      runId: run.runId,
+    })
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "workflow_diagnose",
+      arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, runId: run.runId },
+    })
+    const text = textOf(result as { content: Array<{ type: string; text?: string }> })
+    const viaMcp = JSON.parse(text) as { diagnostics: Array<{ code: string }> }
+
+    expect(viaMcp).toEqual(ipc)
+    expect(viaMcp.diagnostics.map((item) => item.code)).toEqual(expect.arrayContaining([
+      "extractor_path_missing",
+      "http_request_failed",
+    ]))
+    expect(text).not.toContain(secret)
+    expect(text).not.toContain('"headers":')
+    expect(text).not.toContain('"body":')
+    expect(text).not.toContain('"url":')
+    expect(text).not.toContain("failureMessage")
+    expect((result as { structuredContent?: unknown }).structuredContent).toEqual({ result: viaMcp })
+    await client.close()
+  })
+
+  it("hides a same-workspace run that belongs to another workflow", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const first = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "first",
+    })
+    const second = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "second",
+    })
+    const foreignRun = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: second.workflowId })
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "workflow_diagnose",
+      arguments: { workspaceId: workspace.workspaceId, workflowId: first.workflowId, runId: foreignRun.runId },
+    })
+
+    expect((result as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(result as { content: Array<{ type: string; text?: string }> })).toContain("not_found")
+    await client.close()
+  })
+
+  it("suggests, validates, and revision-applies assertions through the shared IPC/MCP path", async () => {
+    const secret = "Bearer mcp-observed-secret"
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "author assertions",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        { nodeId: "request", type: "http-request", position: { x: 100, y: 0 }, config: {} },
+        { nodeId: "assert", type: "assertion", position: { x: 200, y: 0 }, config: { assertions: [] } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "request" },
+        { edgeId: "e2", source: "request", target: "assert" },
+      ],
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      results: [{
+        nodeId: "request",
+        status: "passed",
+        duration: 37,
+        response: {
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+          body: { ready: true, token: secret },
+        },
+      }],
+    })
+
+    const suggestArgs = {
+      workspaceId: workspace.workspaceId,
+      workflowId: workflow.workflowId,
+      runId: run.runId,
+      sourceNodeId: "request",
+    }
+    const viaIpc = await dispatchOk("assertions", "suggest", suggestArgs)
+    const client = await connectClient()
+    const suggested = await client.callTool({ name: "assertion_suggest", arguments: suggestArgs })
+    const viaMcp = JSON.parse(textOf(suggested as { content: Array<{ type: string; text?: string }> }))
+    expect(viaMcp).toEqual(viaIpc)
+    expect(JSON.stringify(viaMcp)).not.toContain(secret)
+
+    const validateArgs = {
+      ...suggestArgs,
+      rules: [{ source: "prev", path: "body.ready", operator: "exists" }],
+    }
+    const validatedIpc = await dispatchOk("assertions", "validate", validateArgs)
+    const validated = await client.callTool({ name: "assertion_validate", arguments: validateArgs })
+    expect(JSON.parse(textOf(validated as { content: Array<{ type: string; text?: string }> }))).toEqual(validatedIpc)
+
+    const applyArgs = {
+      workspaceId: workspace.workspaceId,
+      workflowId: workflow.workflowId,
+      expectedRevision: workflow.rev,
+      assertionNodeId: "assert",
+      mode: "append",
+      rules: [{ source: "prev", path: "response.body.ready", operator: "exists" }],
+    }
+    const applied = await client.callTool({ name: "assertion_apply", arguments: applyArgs })
+    const appliedBody = JSON.parse(textOf(applied as { content: Array<{ type: string; text?: string }> })) as {
+      revision: number
+      workflow: { nodes: Array<{ nodeId: string; config?: { assertions?: unknown[] } }> }
+    }
+    const persisted = await dispatchOk<{ rev: number; nodes: Array<{ nodeId: string; config?: { assertions?: unknown[] } }> }>(
+      "workflows",
+      "get",
+      { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+    )
+    expect(appliedBody.revision).toBe(persisted.rev)
+    expect(appliedBody.workflow.nodes.find((node) => node.nodeId === "assert")?.config?.assertions).toEqual([
+      { source: "prev", path: "response.body.ready", operator: "exists" },
+    ])
+
+    const stale = await client.callTool({ name: "assertion_apply", arguments: applyArgs })
+    expect((stale as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(stale as { content: Array<{ type: string; text?: string }> })).toContain("conflict")
     await client.close()
   })
 })

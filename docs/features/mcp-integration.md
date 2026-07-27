@@ -84,6 +84,7 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 
 - `workflows_list`
 - `workflows_get`
+- `workflow_diagnose`
 - `workflows_create`
 - `workflows_update`
 - `workflows_delete`
@@ -114,6 +115,12 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 - `environments_setVariable`
 - `environments_deleteVariable`
 
+### Assertions
+
+- `assertion_suggest` (read) — derive deterministic assertion candidates from one HTTP node's stored run result without changing the workflow.
+- `assertion_validate` (read) — canonicalize and validate assertion rules against the workflow graph and, optionally, run evidence; returns a safe preview.
+- `assertion_apply` (write) — apply validated rules to one existing assertion node under a revision guard.
+
 ### Runs
 
 - `runs_create`
@@ -131,6 +138,23 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 
 Secret mutation handlers and Electron file/shell operations are deliberately
 not exposed.
+
+## Workflow Diagnosis
+
+`workflow_diagnose` performs deterministic analysis without calling a model or
+changing the workflow. Pass `workspaceId`, `workflowId`, and optionally a
+specific `runId`. Without a run it reports static topology, reachability,
+cycles, assertion sources and branches, extractor paths, and variable
+provenance issues. With a run it also correlates HTTP status/transport failures,
+extractor missing paths and traversal type mismatches, assertion reason codes,
+truncated evidence, skipped nodes, and unresolved secret-reference metadata.
+
+Findings are coded and sorted by severity. Their evidence includes structural
+metadata such as node IDs, source/path/operator, status code, JSON type, and
+match state. It never includes request or response payloads, headers, cookies,
+URLs, variable values, assertion actual/expected values, secret values, or raw
+error messages. A supplied run must belong to the requested workflow and
+workspace; mismatches return `not_found`.
 
 ## Run Responses
 
@@ -246,7 +270,9 @@ Checked-in templates are available under `mcp-configs/`.
 4. Call `runs_create` with `workspaceId`, `workflowId`, and optionally
    `selectedEnvironmentId`.
 5. Re-read `runs_get` until the run is terminal.
-6. Summarize node status metadata. Ask the user to inspect the desktop response
+6. Call `workflow_diagnose` with the terminal `runId` for coded, value-free
+   findings and proposed remediations.
+7. Summarize node status metadata. Ask the user to inspect the desktop response
    panel when diagnosis requires raw payload content.
 
 ## Troubleshooting

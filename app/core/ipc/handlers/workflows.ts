@@ -4,6 +4,7 @@ import {
   WorkflowNodeSchema,
   WorkflowEdgeSchema,
   JsonValueSchema,
+  WorkflowDiagnosisSchema,
 } from "@shared/zod-schemas"
 import { canonicalizeNodeConfig } from "../../repositories/helpers"
 import type { IpcRouter } from "../router"
@@ -41,9 +42,10 @@ const updateInput = z
   .strict()
 
 const idInput = z.object({ workspaceId: ws, workflowId: z.string().min(1) }).strict()
+const diagnoseInput = idInput.extend({ runId: z.string().min(1).optional() }).strict()
 
 export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): void {
-  const { workflows } = deps
+  const { workflows, workflowAnalysis } = deps
 
   router.register("workflows", "create", {
     input: createInput,
@@ -55,6 +57,12 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
     input: idInput,
     output: WorkflowSchema,
     handle: (i) => workflows.get(i.workspaceId, i.workflowId),
+  })
+
+  router.register("workflows", "diagnose", {
+    input: diagnoseInput,
+    output: WorkflowDiagnosisSchema,
+    handle: (i) => workflowAnalysis.diagnose(i.workspaceId, i.workflowId, i.runId),
   })
 
   router.register("workflows", "list", {

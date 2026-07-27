@@ -1,4 +1,4 @@
-import type { VariableProvenance } from "./VariableProvenance";
+import type { VariableProvenance } from "@shared/types/VariableProvenance";
 
 export interface VariableProvenanceModalProps {
   isOpen: boolean;

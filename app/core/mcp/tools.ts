@@ -52,6 +52,10 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   // Workflows
   tool("workflows", "list", "read", "List workflows in a workspace."),
   tool("workflows", "get", "read", "Get a workflow's full graph (secret values redacted to references)."),
+  tool("workflows", "diagnose", "read", "Diagnose workflow graph and optional stored-run failures without exposing response or secret values.", { name: "workflow_diagnose" }),
+  tool("assertions", "suggest", "read", "Suggest deterministic assertions from one stored HTTP result without changing the workflow.", { name: "assertion_suggest" }),
+  tool("assertions", "validate", "read", "Validate and preview canonical assertion rules without changing the workflow.", { name: "assertion_validate" }),
+  tool("assertions", "apply", "write", "Apply validated rules to one assertion node when the workflow revision still matches.", { name: "assertion_apply" }),
   tool("workflows", "create", "write", "Create a workflow from nodes, edges and variables."),
   tool("workflows", "update", "write", "Update a workflow's graph, variables or metadata.", { idempotent: true }),
   tool("workflows", "delete", "write", "Delete a workflow.", { destructive: true, idempotent: true }),

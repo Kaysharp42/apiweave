@@ -8,6 +8,8 @@ import type { SecretService } from "../../services/secret_service"
 import type { ProjectExportService } from "../../services/project_export_service"
 import type { ImportService } from "../../services/import_service"
 import type { CloudSyncControl } from "../../services/cloud_sync_control"
+import type { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
+import type { AssertionAuthoringService } from "../../services/assertion_authoring_service"
 
 /**
  * The service bundle every handler module registers against. Constructed once at
@@ -19,6 +21,8 @@ export interface HandlerDeps {
   readonly workspaces: WorkspaceService
   readonly collections: CollectionService
   readonly workflows: WorkflowService
+  readonly workflowAnalysis: WorkflowAnalysisService
+  readonly assertionAuthoring: AssertionAuthoringService
   readonly environments: EnvironmentService
   readonly runs: RunService
   readonly secrets: SecretService

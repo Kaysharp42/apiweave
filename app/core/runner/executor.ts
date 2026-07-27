@@ -1275,8 +1275,9 @@ export class WorkflowExecutor {
     const outcomes: ExtractorOutcome[] = []
     for (const [varName, varPath] of Object.entries(extractors)) {
       try {
-        const value = this.getNestedValue(response, varPath)
-        const matched = value !== undefined
+        const resolution = this.resolveExtractorValue(response, varPath)
+        const value = resolution.value
+        const matched = resolution.failureReason === null
         if (matched) {
           this.workflowVariables[varName] = value
         }
@@ -1286,6 +1287,7 @@ export class WorkflowExecutor {
           path: varPath,
           matched,
           observedType: jsonValueType(value),
+          failureReason: resolution.failureReason,
         })
       } catch {
         outcomes.push({
@@ -1294,10 +1296,44 @@ export class WorkflowExecutor {
           path: varPath,
           matched: false,
           observedType: null,
+          failureReason: "path-missing",
         })
       }
     }
     return outcomes
+  }
+
+  private resolveExtractorValue(
+    obj: unknown,
+    path: string,
+  ): { readonly value: unknown; readonly failureReason: "path-missing" | "type-mismatch" | null } {
+    if (obj === null || obj === undefined || !path) return { value: undefined, failureReason: "path-missing" }
+    const parts = path.split(".")
+    let value: unknown = obj
+    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+      const part = parts[partIndex]!
+      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
+      if (typeof value !== "object" || value === null) {
+        return { value: undefined, failureReason: "type-mismatch" }
+      }
+      if (arrayMatch) {
+        const key = arrayMatch[1]!
+        if (!(key in value)) return { value: undefined, failureReason: "path-missing" }
+        const candidate = (value as Record<string, unknown>)[key]
+        if (!Array.isArray(candidate)) return { value: undefined, failureReason: "type-mismatch" }
+        const arrayIndex = Number.parseInt(arrayMatch[2]!, 10)
+        if (arrayIndex >= candidate.length) return { value: undefined, failureReason: "path-missing" }
+        value = candidate[arrayIndex]
+      } else {
+        if (!(part in value)) return { value: undefined, failureReason: "path-missing" }
+        value = (value as Record<string, unknown>)[part]
+      }
+      if (value === undefined) return { value: undefined, failureReason: "path-missing" }
+      if (value === null && partIndex < parts.length - 1) {
+        return { value: undefined, failureReason: "type-mismatch" }
+      }
+    }
+    return { value, failureReason: null }
   }
 
   private getNestedValue(obj: unknown, path: string): unknown {

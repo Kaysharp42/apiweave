@@ -400,6 +400,7 @@ describe("RunScheduler", () => {
           path: "body.token",
           matched: true,
           observedType: "string",
+          failureReason: null,
         },
         {
           producerNodeId: "http_1",
@@ -407,6 +408,7 @@ describe("RunScheduler", () => {
           path: "body.session",
           matched: true,
           observedType: "string",
+          failureReason: null,
         },
       ])
     })

@@ -21,6 +21,8 @@ import {
   WorkspaceService,
   CollectionService,
   WorkflowService,
+  AssertionAuthoringService,
+  WorkflowAnalysisService,
   EnvironmentService,
   RunService,
   SecretService,
@@ -249,12 +251,16 @@ if (!hasSingleInstanceLock) {
 
     // Services over the scoped repos; RunService drives the scheduler so
     // runs.create actually executes and runs.cancel aborts a live run.
+    const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
+    const runService = new RunService(runs, sync, permissions, scopeResolver, scheduler)
     const deps: HandlerDeps = {
       workspaces: new WorkspaceService(workspaces, sync, scopeResolver, () => cloud.syncNewWorkspace()),
       collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
-      workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
+      workflows: workflowService,
+      workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
+      assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
       environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
-      runs: new RunService(runs, sync, permissions, scopeResolver, scheduler),
+      runs: runService,
       secrets: secretService,
       projects: new ProjectExportService(
         collections,

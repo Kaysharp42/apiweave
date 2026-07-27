@@ -8,5 +8,6 @@ export const ExtractorOutcomeSchema = z
     path: z.string(),
     matched: z.boolean(),
     observedType: JsonValueTypeSchema.nullable(),
+    failureReason: z.enum(["path-missing", "type-mismatch"]).nullable().optional(),
   })
   .strict()
