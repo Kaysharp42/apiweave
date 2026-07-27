@@ -494,6 +494,87 @@ describe("MCP bridge — second transport, parity by construction", () => {
   })
 })
 
+describe("MCP resources — read-only safe run snapshot", () => {
+  const runUri = (workspaceId: string, runId: string): string =>
+    `apiweave://workspaces/${workspaceId}/runs/${runId}`
+
+  it("advertises the run resource template via resources/templates/list", async () => {
+    const client = await connectClient()
+    const { resourceTemplates } = await client.listResourceTemplates()
+    const run = resourceTemplates.find((t) => t.name === "run-snapshot")
+    expect(run?.uriTemplate).toBe("apiweave://workspaces/{workspaceId}/runs/{runId}")
+    expect(run?.mimeType).toBe("application/json")
+    await client.close()
+  })
+
+  it("reads a metadata-only snapshot and drops bodies, headers, URLs, values and messages", async () => {
+    const secret = "resource-secret-must-never-cross-mcp"
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "snapshot",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      duration: 842,
+      startedAt: "2026-07-27T12:00:00.000Z",
+      variables: { token: secret },
+      error: secret,
+      failureMessage: secret,
+      nodeStatuses: { login: { status: "passed", statusCode: 200 } },
+      results: [
+        {
+          nodeId: "login",
+          status: "passed",
+          duration: 184,
+          request: { method: "GET", url: `https://user:${secret}@example.test/?token=${secret}` },
+          response: { statusCode: 200, headers: { authorization: `Bearer ${secret}` }, body: { token: secret } },
+        },
+      ],
+    })
+
+    const client = await connectClient()
+    const uri = runUri(workspace.workspaceId, run.runId)
+    const result = await client.readResource({ uri })
+    expect(result.contents).toHaveLength(1)
+    const content = result.contents[0] as { uri: string; mimeType?: string; text: string }
+    expect(content.uri).toBe(uri)
+    expect(content.mimeType).toBe("application/json")
+
+    expect(content.text).not.toContain(secret)
+    expect(content.text).not.toContain("headers")
+    expect(content.text).not.toContain("cookies")
+    expect(content.text).not.toContain("url")
+    expect(content.text).not.toContain("message")
+
+    const snapshot = JSON.parse(content.text) as Record<string, unknown>
+    expect(snapshot).toMatchObject({
+      runId: run.runId,
+      workflowId: workflow.workflowId,
+      status: "failed",
+      terminal: true,
+      durationMs: 842,
+      hasError: true,
+      nodes: { login: { status: "passed", statusCode: 200, durationMs: 184 } },
+    })
+    await client.close()
+  })
+
+  it("hides a run in another workspace (existence-hiding read)", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "owned",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+
+    const client = await connectClient()
+    await expect(client.readResource({ uri: runUri("ws-not-mine", run.runId) })).rejects.toThrow(/not_found/)
+    await client.close()
+  })
+})
+
 describe("MCP bridge — inherited secret masking holds across read/export tools", () => {
   const PLAINTEXT = "super-secret-value-1234"
 

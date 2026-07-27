@@ -115,6 +115,62 @@ function projectResult(result: RunResult): JsonValue {
   }
 }
 
+const TERMINAL_STATUSES: ReadonlySet<Run["status"]> = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+])
+
+/**
+ * The safe run-snapshot resource projection (plan §"Run resource"). Same
+ * secret-safety posture as {@link projectRunToolResult} — metadata only, never
+ * bodies/headers/cookies/URLs/values — but shaped as a compact current snapshot
+ * with a per-node map for agent context.
+ *
+ * ponytail: no `latestSequence`/`events` here — those need the run event broker,
+ * which lands in Phase 6. A one-shot read has no monotonic sequence to report.
+ */
+export function projectRunSnapshot(value: unknown): Record<string, JsonValue> {
+  const run = RunSchema.parse(value)
+  return {
+    runId: run.runId,
+    workspaceId: run.workspaceId,
+    workflowId: run.workflowId,
+    status: run.status,
+    terminal: TERMINAL_STATUSES.has(run.status),
+    startedAt: run.startedAt ?? null,
+    completedAt: run.completedAt ?? null,
+    durationMs: run.duration ?? null,
+    hasError: Boolean(run.error || run.failureMessage),
+    nodes: projectSnapshotNodes(run),
+  }
+}
+
+/** Merge per-node status/statusCode (nodeStatuses) with durationMs (results). */
+function projectSnapshotNodes(run: Run): Record<string, JsonValue> {
+  const nodes: Record<string, { status?: string; statusCode?: number; durationMs?: number }> = {}
+  for (const [nodeId, entry] of Object.entries(run.nodeStatuses)) {
+    if (typeof entry === "string") {
+      nodes[nodeId] = { status: entry }
+      continue
+    }
+    if (!isRecord(entry)) continue
+    const node: { status?: string; statusCode?: number } = {}
+    if (typeof entry["status"] === "string") node.status = entry["status"]
+    if (typeof entry["statusCode"] === "number") node.statusCode = entry["statusCode"]
+    nodes[nodeId] = node
+  }
+  for (const result of run.results) {
+    const node = (nodes[result.nodeId] ??= {})
+    if (result.status) node.status = result.status
+    node.durationMs = result.duration
+    const response = isRecord(result.response) ? result.response : null
+    if (typeof response?.["statusCode"] === "number") node.statusCode = response["statusCode"]
+  }
+  return nodes as Record<string, JsonValue>
+}
+
 function isRecord(value: unknown): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }

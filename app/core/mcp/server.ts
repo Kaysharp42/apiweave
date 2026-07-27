@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 import type { IpcRouter } from "../ipc/router"
 import { registerBridgeTools } from "./bridge"
+import { registerResources } from "./resources"
 import { MCP_PROMPTS } from "./prompts"
 import { MCP_SERVER_INFO_TOOL, toolAnnotations } from "./tools"
 
@@ -20,6 +21,7 @@ export function createMcpServer(router: IpcRouter, version: string): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version })
 
   registerBridgeTools(server, router)
+  registerResources(server, router)
 
   server.registerTool(
     MCP_SERVER_INFO_TOOL.name,

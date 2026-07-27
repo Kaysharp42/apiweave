@@ -17,6 +17,7 @@ import { EmptyState } from "./molecules/EmptyState";
 import type { MCPConfig } from "../types/MCPConfig";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
+import type { MCPResource } from "@shared/types/MCPResource";
 import { mcp } from "../utils/apiweaveClient";
 
 type TabKey = "status" | "tools" | "resources" | "prompts" | "connect";
@@ -180,16 +181,39 @@ function MCPContent({
     case "resources":
       return (
         <div className="p-4">
-          <EmptyState
-            icon={
-              <BookOpen
-                className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
-                strokeWidth={1.5}
-              />
-            }
-            title="Resources"
-            description="MCP resources provide read-only data snapshots for agent context."
-          />
+          {config.resources.length === 0 ? (
+            <EmptyState
+              icon={
+                <BookOpen
+                  className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+                  strokeWidth={1.5}
+                />
+              }
+              title="Resources"
+              description="MCP resources provide read-only data snapshots for agent context."
+            />
+          ) : (
+            <div className="space-y-2">
+              {config.resources.map((resource: MCPResource) => (
+                <div
+                  key={resource.name}
+                  className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <code className="text-sm font-mono text-primary dark:text-primary-light">
+                      {resource.name}
+                    </code>
+                  </div>
+                  <code className="mt-1 block text-xs font-mono text-text-muted dark:text-text-muted-dark break-all">
+                    {resource.uriTemplate}
+                  </code>
+                  <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+                    {resource.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     case "prompts":
@@ -326,10 +350,11 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
         setError("The MCP server is only available in the desktop app.");
         return;
       }
-      const [status, tools, prompts] = await Promise.all([
+      const [status, tools, prompts, resources] = await Promise.all([
         mcp.getStatus(),
         mcp.listTools(),
         mcp.listPrompts(),
+        mcp.listResources(),
       ]);
       setConfig({
         enabled: status.running,
@@ -338,10 +363,11 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
         apiKeyConfigured: status.config?.token != null,
         token: status.config?.token ?? "",
         toolCount: tools.length,
-        resourceCount: 0,
+        resourceCount: resources.length,
         promptCount: prompts.length,
         tools: [...tools],
         prompts: [...prompts],
+        resources: [...resources],
       });
     } catch {
       setError("Failed to load MCP server status.");

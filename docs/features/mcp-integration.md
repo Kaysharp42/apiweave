@@ -36,9 +36,10 @@ selects a free loopback port and shows the live URL in the MCP panel. There is
 no Python server, bundled stdio server, remote endpoint, webhook, or public
 trigger.
 
-The current transport is stateless and returns JSON responses. It exposes tools
-only. MCP resources, prompts, resource subscriptions, and live run notifications
-are planned but are not part of the current server.
+The current transport is stateless and returns JSON responses. It exposes tools,
+prompts, and read-only resources. Resource subscriptions and live run
+notifications are planned but are not part of the current server — poll the run
+resource or `runs_get` instead (see Resources below).
 
 ## Enable The Bridge
 
@@ -176,6 +177,25 @@ The current MCP server does not stream renderer progress events. After calling
 `runs_create`, re-read `runs_get` until `status` is one of `completed`, `failed`,
 `cancelled`, or `interrupted`. Keep polling moderate; the bridge is local but
 does not apply a transport rate limit.
+
+## Resources
+
+The bridge ships one MCP resource template, discoverable via the standard
+`resources/templates/list` request and readable via `resources/read`:
+
+- `run-snapshot` — `apiweave://workspaces/{workspaceId}/runs/{runId}`
+
+A read returns the same safe, metadata-only run snapshot the run tools return
+(status, terminal flag, timings, and a per-node map of status, HTTP status code,
+and duration). It never includes response bodies, headers, cookies, request
+URLs, variable values, assertion actual values, or secret values. Reads enforce
+workspace ownership; a run in another workspace returns `not_found`.
+
+Resource change notifications (`notifications/resources/updated`) are not yet
+supported. **Polling fallback:** clients that cannot subscribe — or cannot
+display resources at all — should re-read the resource (or call `runs_get`)
+until `terminal` is `true`. Keep polling moderate; the bridge is local but does
+not apply a transport rate limit.
 
 ## Prompts
 
@@ -335,8 +355,8 @@ Checked-in templates are available under `mcp-configs/`.
   `workflow_run` and `run_get_status` belonged to the removed backend.
 - **No raw response body:** This is intentional. MCP run tools expose safe
   metadata; inspect the body in the desktop UI.
-- **No resources or prompts:** They are not registered in the current stateless
-  server. Their tabs in the MCP panel describe planned capability categories.
+- **No resource updates:** Change notifications are not yet supported. Poll the
+  run resource or `runs_get` until the run is terminal.
 
 ## Related
 
