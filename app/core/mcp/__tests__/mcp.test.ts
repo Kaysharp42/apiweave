@@ -29,6 +29,7 @@ import type { SecretMetadata, SecretScopeType } from "../../secrets/scoped_secre
 import { IpcRouter } from "../../ipc/router"
 import { registerAllHandlers, type HandlerDeps } from "../../ipc/handlers"
 import { MCP_TOOLS, toolName } from "../tools"
+import { MCP_PROMPTS, AUTHOR_ASSERTIONS_PROMPT } from "../prompts"
 import { createMcpServer } from "../server"
 import { McpHost } from "../host"
 
@@ -527,6 +528,108 @@ describe("MCP bridge — inherited secret masking holds across read/export tools
       const text = textOf((await call) as { content: Array<{ type: string; text?: string }> })
       expect(text).not.toContain(PLAINTEXT)
     }
+    await client.close()
+  })
+})
+
+describe("MCP prompts — agent-mediated assertion authoring (no embedded LLM)", () => {
+  it("ships exactly the author_assertions prompt with canonical guidance", () => {
+    expect(MCP_PROMPTS.map((p) => p.name)).toEqual(["author_assertions"])
+    const { messages } = AUTHOR_ASSERTIONS_PROMPT.build({})
+    const text = messages.map((m) => (m.content.type === "text" ? m.content.text : "")).join("")
+    // Canonical sources + operators are pulled from the shared enums — assert a few hold.
+    for (const source of ["prev", "variables", "status", "cookies", "headers"]) {
+      expect(text).toContain(source)
+    }
+    for (const operator of ["equals", "exists", "count", "gte"]) {
+      expect(text).toContain(operator)
+    }
+    // The flow: validate → approve → apply, plus the secret-literal safety rule.
+    expect(text).toContain("assertion_validate")
+    expect(text).toContain("assertion_apply")
+    expect(text).toContain("expectedRevision")
+    expect(text).toContain("{{secrets.NAME}}")
+    expect(text).toContain("approval")
+  })
+
+  it("weaves supplied context but embeds none by default", () => {
+    const bare = AUTHOR_ASSERTIONS_PROMPT.build({})
+    const bareText = bare.messages.map((m) => (m.content.type === "text" ? m.content.text : "")).join("")
+    expect(bareText).not.toContain("workspaceId: ")
+    expect(bareText).toContain("No workflow/run context was supplied")
+
+    const withCtx = AUTHOR_ASSERTIONS_PROMPT.build({ workspaceId: "ws-1", workflowId: "wf-2", runId: "run-3" })
+    const ctxText = withCtx.messages.map((m) => (m.content.type === "text" ? m.content.text : "")).join("")
+    expect(ctxText).toContain("workspaceId: ws-1")
+    expect(ctxText).toContain("workflowId: wf-2")
+    expect(ctxText).toContain("runId: run-3")
+  })
+
+  it("discovers and reads the prompt over an in-memory MCP client", async () => {
+    const client = await connectClient()
+    const { prompts } = await client.listPrompts()
+    expect(prompts.map((p) => p.name)).toContain("author_assertions")
+
+    const result = await client.getPrompt({ name: "author_assertions", arguments: { workflowId: "wf-42" } })
+    const text = result.messages.map((m) => (m.content.type === "text" ? m.content.text : "")).join("")
+    expect(text).toContain("workflowId: wf-42")
+    expect(text).toContain("assertion_validate")
+    await client.close()
+  })
+
+  it("an agent following the prompt validates then revision-applies over the same client", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "prompt-driven authoring",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        { nodeId: "request", type: "http-request", position: { x: 100, y: 0 }, config: {} },
+        { nodeId: "assert", type: "assertion", position: { x: 200, y: 0 }, config: { assertions: [] } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "request" },
+        { edgeId: "e2", source: "request", target: "assert" },
+      ],
+    })
+
+    const client = await connectClient()
+    // Step 1: the client fetches the prompt (the natural-language steering text).
+    await client.getPrompt({
+      name: "author_assertions",
+      arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, assertionNodeId: "assert" },
+    })
+
+    // Step 2: validate the translated rules before mutating anything.
+    const rules = [{ source: "status", path: "", operator: "equals", expectedValue: 200 }]
+    const validated = await client.callTool({
+      name: "assertion_validate",
+      arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, sourceNodeId: "request", rules },
+    })
+    const validation = JSON.parse(textOf(validated as { content: Array<{ type: string; text?: string }> })) as {
+      valid: boolean
+    }
+    expect(validation.valid).toBe(true)
+
+    // Step 3: apply under the current revision.
+    const applied = await client.callTool({
+      name: "assertion_apply",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: workflow.workflowId,
+        expectedRevision: workflow.rev,
+        assertionNodeId: "assert",
+        mode: "append",
+        rules,
+      },
+    })
+    expect((applied as { isError?: boolean }).isError).toBeFalsy()
+    const persisted = await dispatchOk<{ nodes: Array<{ nodeId: string; config?: { assertions?: unknown[] } }> }>(
+      "workflows",
+      "get",
+      { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+    )
+    expect(persisted.nodes.find((n) => n.nodeId === "assert")?.config?.assertions).toEqual(rules)
     await client.close()
   })
 })

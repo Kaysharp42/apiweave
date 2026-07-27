@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 import type { IpcRouter } from "../ipc/router"
 import { registerBridgeTools } from "./bridge"
+import { MCP_PROMPTS } from "./prompts"
 import { MCP_SERVER_INFO_TOOL, toolAnnotations } from "./tools"
 
 export const MCP_SERVER_NAME = "APIWeave"
@@ -37,6 +38,14 @@ export function createMcpServer(router: IpcRouter, version: string): McpServer {
       }
     },
   )
+
+  for (const prompt of MCP_PROMPTS) {
+    server.registerPrompt(
+      prompt.name,
+      { description: prompt.description, argsSchema: prompt.argsSchema },
+      (args) => prompt.build(args),
+    )
+  }
 
   return server
 }

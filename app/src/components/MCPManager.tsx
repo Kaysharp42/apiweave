@@ -16,6 +16,7 @@ import { PanelTabs } from "./molecules/PanelTabs";
 import { EmptyState } from "./molecules/EmptyState";
 import type { MCPConfig } from "../types/MCPConfig";
 import type { MCPTool } from "@shared/types/MCPTool";
+import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import { mcp } from "../utils/apiweaveClient";
 
 type TabKey = "status" | "tools" | "resources" | "prompts" | "connect";
@@ -194,16 +195,36 @@ function MCPContent({
     case "prompts":
       return (
         <div className="p-4">
-          <EmptyState
-            icon={
-              <MessageSquare
-                className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
-                strokeWidth={1.5}
-              />
-            }
-            title="Prompts"
-            description="MCP prompts are pre-built templates for common APIWeave tasks."
-          />
+          {config.prompts.length === 0 ? (
+            <EmptyState
+              icon={
+                <MessageSquare
+                  className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+                  strokeWidth={1.5}
+                />
+              }
+              title="Prompts"
+              description="MCP prompts are pre-built templates for common APIWeave tasks."
+            />
+          ) : (
+            <div className="space-y-2">
+              {config.prompts.map((prompt: MCPPrompt) => (
+                <div
+                  key={prompt.name}
+                  className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <code className="text-sm font-mono text-primary dark:text-primary-light">
+                      {prompt.name}
+                    </code>
+                  </div>
+                  <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+                    {prompt.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     case "connect":
@@ -305,9 +326,10 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
         setError("The MCP server is only available in the desktop app.");
         return;
       }
-      const [status, tools] = await Promise.all([
+      const [status, tools, prompts] = await Promise.all([
         mcp.getStatus(),
         mcp.listTools(),
+        mcp.listPrompts(),
       ]);
       setConfig({
         enabled: status.running,
@@ -317,8 +339,9 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
         token: status.config?.token ?? "",
         toolCount: tools.length,
         resourceCount: 0,
-        promptCount: 0,
+        promptCount: prompts.length,
         tools: [...tools],
+        prompts: [...prompts],
       });
     } catch {
       setError("Failed to load MCP server status.");

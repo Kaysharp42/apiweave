@@ -3,6 +3,7 @@ import type { ContractResult } from "@shared/contract/errors"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
 import type { McpStatus } from "@shared/types/McpStatus"
 import type { MCPTool } from "@shared/types/MCPTool"
+import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import { CLOUD_STATUS_CHANGED_CHANNEL, INVOKE_CHANNEL, runProgressChannel } from "../core/ipc/channels"
 
 /**
@@ -65,6 +66,7 @@ type McpBridge = {
   readonly enable: () => Promise<McpStatus>
   readonly disable: () => Promise<McpStatus>
   readonly listTools: () => Promise<readonly MCPTool[]>
+  readonly listPrompts: () => Promise<readonly MCPPrompt[]>
 }
 
 const mcpBridge: McpBridge = {
@@ -72,6 +74,7 @@ const mcpBridge: McpBridge = {
   enable: () => ipcRenderer.invoke("mcp:enable") as Promise<McpStatus>,
   disable: () => ipcRenderer.invoke("mcp:disable") as Promise<McpStatus>,
   listTools: () => ipcRenderer.invoke("mcp:listTools") as Promise<readonly MCPTool[]>,
+  listPrompts: () => ipcRenderer.invoke("mcp:listPrompts") as Promise<readonly MCPPrompt[]>,
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_MCP__", mcpBridge)

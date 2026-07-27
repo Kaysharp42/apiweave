@@ -35,8 +35,10 @@ import { RunScheduler, SafeHttp, DynamicFunctions } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
 import { MCP_SERVER_INFO_TOOL, MCP_TOOLS, toolName } from "../core/mcp/tools"
+import { MCP_PROMPTS } from "../core/mcp/prompts"
 import type { McpStatus } from "@shared/types/McpStatus"
 import type { MCPTool } from "@shared/types/MCPTool"
+import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import { CLOUD_STATUS_CHANGED_CHANNEL } from "../core/ipc/channels"
@@ -349,6 +351,13 @@ if (!hasSingleInstanceLock) {
           { name: MCP_SERVER_INFO_TOOL.name, description: MCP_SERVER_INFO_TOOL.description },
           ...MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
         ],
+      ),
+    )
+    ipcMain.handle(
+      "mcp:listPrompts",
+      requireTrustedSender(
+        (): readonly MCPPrompt[] =>
+          MCP_PROMPTS.map((spec) => ({ name: spec.name, description: spec.description })),
       ),
     )
 

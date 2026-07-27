@@ -177,6 +177,54 @@ The current MCP server does not stream renderer progress events. After calling
 `cancelled`, or `interrupted`. Keep polling moderate; the bridge is local but
 does not apply a transport rate limit.
 
+## Prompts
+
+The bridge ships one MCP prompt, discoverable via the standard `prompts/list`
+request and readable via `prompts/get`:
+
+- `author_assertions` — steers the connected agent to turn a natural-language
+  assertion request into canonical rules, validate and preview them, get the
+  user's approval, then apply them under a revision guard.
+
+APIWeave embeds no model. The prompt is pure instruction text: your agent does
+the language-to-rules translation, and APIWeave only validates and persists the
+result. All arguments (`workspaceId`, `workflowId`, `assertionNodeId`, `runId`)
+are optional so the prompt is discoverable before any data exists; supplied
+values are woven into the instruction text but no workspace or run data is
+embedded until you pass them.
+
+The prompt directs the agent through this flow:
+
+1. Inspect with `workflows_get`, and (if a run exists) `runs_get`,
+   `workflow_diagnose`, and `assertion_suggest`.
+2. Translate the user's intent into canonical `{ source, path, operator,
+   expectedValue? }` rules.
+3. Call `assertion_validate` and show the returned preview and issues.
+4. Ask the user to approve the previewed rules.
+5. Call `assertion_apply` with `expectedRevision` from the workflow's current
+   `rev`. A stale revision returns a conflict; re-read and retry.
+
+### Example rule shapes
+
+The agent produces these canonical rules from plain-language requests:
+
+- **Status** — "it should return 200":
+  `{ "source": "status", "path": "", "operator": "equals", "expectedValue": 200 }`
+- **Body path** — "the response must include a token":
+  `{ "source": "prev", "path": "response.body.token", "operator": "exists" }`
+- **Header** — "the response should be JSON":
+  `{ "source": "headers", "path": "content-type", "operator": "contains", "expectedValue": "application/json" }`
+- **Count** — "there should be three items":
+  `{ "source": "prev", "path": "response.body.items", "operator": "count", "expectedValue": 3 }`
+- **Latency** — "it must respond within half a second":
+  `{ "source": "prev", "path": "response.duration", "operator": "lte", "expectedValue": 500 }`
+
+Secret-looking literals (tokens, passwords, API keys) are rejected in
+`expectedValue`. To compare against a secret, use a `{{secrets.NAME}}`
+reference. `assertion_apply` re-validates and enforces the revision guard
+regardless of what the agent sends, so an agent that ignores the prompt still
+cannot apply invalid or stale rules.
+
 ## Client Configuration
 
 Always replace the example URL if the MCP panel shows a fallback port. Replace
