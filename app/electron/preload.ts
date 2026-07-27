@@ -5,6 +5,7 @@ import type { McpStatus } from "@shared/types/McpStatus"
 import type { MCPTool } from "@shared/types/MCPTool"
 import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import type { MCPResource } from "@shared/types/MCPResource"
+import type { McpTestResult } from "@shared/types/McpTestResult"
 import { CLOUD_STATUS_CHANGED_CHANNEL, INVOKE_CHANNEL, runProgressChannel } from "../core/ipc/channels"
 
 /**
@@ -69,6 +70,7 @@ type McpBridge = {
   readonly listTools: () => Promise<readonly MCPTool[]>
   readonly listPrompts: () => Promise<readonly MCPPrompt[]>
   readonly listResources: () => Promise<readonly MCPResource[]>
+  readonly testConnection: () => Promise<McpTestResult>
 }
 
 const mcpBridge: McpBridge = {
@@ -78,6 +80,7 @@ const mcpBridge: McpBridge = {
   listTools: () => ipcRenderer.invoke("mcp:listTools") as Promise<readonly MCPTool[]>,
   listPrompts: () => ipcRenderer.invoke("mcp:listPrompts") as Promise<readonly MCPPrompt[]>,
   listResources: () => ipcRenderer.invoke("mcp:listResources") as Promise<readonly MCPResource[]>,
+  testConnection: () => ipcRenderer.invoke("mcp:testConnection") as Promise<McpTestResult>,
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_MCP__", mcpBridge)

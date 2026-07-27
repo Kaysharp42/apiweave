@@ -8,6 +8,7 @@ import type { McpStatus } from "@shared/types/McpStatus";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
+import type { McpTestResult } from "@shared/types/McpTestResult";
 import type { AssertionApplyResult } from "@shared/types/AssertionApplyResult";
 import type { AssertionItem } from "@shared/types/AssertionItem";
 import type { AssertionSuggestionResult } from "@shared/types/AssertionSuggestionResult";
@@ -70,6 +71,7 @@ type McpBridge = {
   readonly listTools: () => Promise<readonly MCPTool[]>;
   readonly listPrompts: () => Promise<readonly MCPPrompt[]>;
   readonly listResources: () => Promise<readonly MCPResource[]>;
+  readonly testConnection: () => Promise<McpTestResult>;
 };
 
 declare global {
@@ -582,6 +584,9 @@ export const mcp = {
     getMcpBridge()?.listPrompts() ?? Promise.resolve([]),
   listResources: (): Promise<readonly MCPResource[]> =>
     getMcpBridge()?.listResources() ?? Promise.resolve([]),
+  testConnection: (): Promise<McpTestResult> =>
+    getMcpBridge()?.testConnection() ??
+    Promise.resolve({ ok: false, status: null }),
 } as const;
 
 export const API_BASE_URL = "ipc://apiweave";

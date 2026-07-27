@@ -36,10 +36,15 @@ selects a free loopback port and shows the live URL in the MCP panel. There is
 no Python server, bundled stdio server, remote endpoint, webhook, or public
 trigger.
 
-The current transport is stateless and returns JSON responses. It exposes tools,
-prompts, and read-only resources. Resource subscriptions and live run
-notifications are planned but are not part of the current server — poll the run
-resource or `runs_get` instead (see Resources below).
+The transport is hybrid. A sessionless (non-`initialize`) POST is served as a
+stateless one-shot with a JSON response — the simple poll fallback for clients
+that cannot hold a session. An `initialize` POST opens a retained,
+bearer-authenticated session keyed by a server-issued `Mcp-Session-Id`: POST
+carries client→server messages, GET opens the server→client SSE stream, and
+DELETE tears the session down. Sessions are bounded (excess `initialize`
+requests get `503`) and idle-evicted. Retained sessions can subscribe to the run
+resource and receive `notifications/resources/updated`; the notification is a
+change signal, so the client re-reads the resource for the new snapshot.
 
 ## Enable The Bridge
 
@@ -173,10 +178,11 @@ Run tools return operational metadata suitable for an agent to monitor a run:
 Run responses intentionally omit raw request/response and variable content. Use
 the desktop response inspector when those payloads are needed.
 
-The current MCP server does not stream renderer progress events. After calling
-`runs_create`, re-read `runs_get` until `status` is one of `completed`, `failed`,
-`cancelled`, or `interrupted`. Keep polling moderate; the bridge is local but
-does not apply a transport rate limit.
+Run tools do not push updates themselves. A session client can subscribe to the
+run resource for `notifications/resources/updated` change signals (see
+Resources); otherwise, after calling `runs_create`, re-read `runs_get` until
+`status` is one of `completed`, `failed`, `cancelled`, or `interrupted`. Keep
+polling moderate; the bridge is local but does not apply a transport rate limit.
 
 ## Resources
 
@@ -186,16 +192,22 @@ The bridge ships one MCP resource template, discoverable via the standard
 - `run-snapshot` — `apiweave://workspaces/{workspaceId}/runs/{runId}`
 
 A read returns the same safe, metadata-only run snapshot the run tools return
-(status, terminal flag, timings, and a per-node map of status, HTTP status code,
-and duration). It never includes response bodies, headers, cookies, request
-URLs, variable values, assertion actual values, or secret values. Reads enforce
-workspace ownership; a run in another workspace returns `not_found`.
+(status, terminal flag, `latestSequence`, timings, and a per-node map of status,
+HTTP status code, and duration). It never includes response bodies, headers,
+cookies, request URLs, variable values, assertion actual values, or secret
+values. Reads enforce workspace ownership; a run in another workspace returns
+`not_found`.
 
-Resource change notifications (`notifications/resources/updated`) are not yet
-supported. **Polling fallback:** clients that cannot subscribe — or cannot
-display resources at all — should re-read the resource (or call `runs_get`)
-until `terminal` is `true`. Keep polling moderate; the bridge is local but does
-not apply a transport rate limit.
+**Subscriptions.** A retained session (opened by an `initialize` POST) can
+`resources/subscribe` to a run URI and receive `notifications/resources/updated`
+whenever that run advances. The notification carries no payload — re-read the
+resource and compare `latestSequence` for the new snapshot. Notifications go
+only to sessions subscribed to that exact run URI.
+
+**Polling fallback:** clients that cannot subscribe — or cannot display
+resources at all — should re-read the resource (or call `runs_get`) until
+`terminal` is `true`. Keep polling moderate; the bridge is local but does not
+apply a transport rate limit.
 
 ## Prompts
 
@@ -355,8 +367,10 @@ Checked-in templates are available under `mcp-configs/`.
   `workflow_run` and `run_get_status` belonged to the removed backend.
 - **No raw response body:** This is intentional. MCP run tools expose safe
   metadata; inspect the body in the desktop UI.
-- **No resource updates:** Change notifications are not yet supported. Poll the
-  run resource or `runs_get` until the run is terminal.
+- **No resource updates:** Change notifications require a retained session
+  (opened with `initialize`) and a `resources/subscribe` on the run URI. Clients
+  that cannot subscribe should poll the run resource or `runs_get` until the run
+  is terminal.
 
 ## Related
 

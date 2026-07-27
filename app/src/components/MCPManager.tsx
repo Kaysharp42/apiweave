@@ -383,31 +383,11 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
   const testConnection = async () => {
     setTesting(true);
     setTestResult(null);
-    if (!config?.baseUrl) {
-      setTestResult("error");
-      setTesting(false);
-      return;
-    }
+    // Probe from the trusted main process: a renderer fetch carries an
+    // app-scheme Origin the host rejects, so it would always report failure.
     try {
-      const response = await fetch(config.baseUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-          Authorization: `Bearer ${config.token}`,
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "initialize",
-          params: {
-            protocolVersion: "2025-06-18",
-            capabilities: {},
-            clientInfo: { name: "apiweave-ui", version: "0.1.0" },
-          },
-        }),
-      });
-      setTestResult(response.ok ? "success" : "error");
+      const result = await mcp.testConnection();
+      setTestResult(result.ok ? "success" : "error");
     } catch {
       setTestResult("error");
     } finally {

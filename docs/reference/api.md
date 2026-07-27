@@ -51,7 +51,7 @@ The renderer never calls services directly. Every renderer call routes through a
 
 **Streamed events.** The runner publishes progress events to the renderer over a separate IPC channel. The renderer subscribes once on mount and unsubscribes on unmount. The renderer does not poll for status.
 
-MCP does not currently receive that event channel. MCP clients re-read the metadata-only `runs_get` tool while a run is active.
+The same run transitions also reach MCP through a shared event broker: a session client that subscribes to the run resource receives `notifications/resources/updated` change signals and re-reads the snapshot, while simpler clients re-read the metadata-only `runs_get` tool while a run is active.
 
 ## Rate Limits
 

@@ -41,6 +41,7 @@ import type { McpStatus } from "@shared/types/McpStatus"
 import type { MCPTool } from "@shared/types/MCPTool"
 import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import type { MCPResource } from "@shared/types/MCPResource"
+import type { McpTestResult } from "@shared/types/McpTestResult"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import { CLOUD_STATUS_CHANGED_CHANNEL } from "../core/ipc/channels"
@@ -374,6 +375,50 @@ if (!hasSingleInstanceLock) {
     ipcMain.handle(
       "mcp:listResources",
       requireTrustedSender((): readonly MCPResource[] => MCP_RESOURCES.map((spec) => ({ ...spec }))),
+    )
+    // Probe the endpoint from the trusted main process: a renderer fetch sends an
+    // app-scheme Origin that the host's DNS-rebinding guard rejects, so it can
+    // only ever report failure. Main sends no Origin and is accepted.
+    ipcMain.handle(
+      "mcp:testConnection",
+      requireTrustedSender(async (): Promise<McpTestResult> => {
+        const config = mcpHost?.getConfig()
+        if (!mcpHost?.isRunning() || config === null || config === undefined) {
+          return { ok: false, status: null }
+        }
+        const authHeaders = { Authorization: `Bearer ${config.token}` }
+        try {
+          const response = await fetch(config.url, {
+            method: "POST",
+            headers: {
+              ...authHeaders,
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "initialize",
+              params: {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "apiweave-ui", version: app.getVersion() },
+              },
+            }),
+          })
+          // initialize opens a retained session; DELETE it so a probe never leaks.
+          const session = response.headers.get("mcp-session-id")
+          if (session !== null) {
+            await fetch(config.url, {
+              method: "DELETE",
+              headers: { ...authHeaders, "mcp-session-id": session },
+            }).catch(() => undefined)
+          }
+          return { ok: response.ok, status: response.status }
+        } catch {
+          return { ok: false, status: null }
+        }
+      }),
     )
 
     // Restore the user's persisted MCP choice on launch.
