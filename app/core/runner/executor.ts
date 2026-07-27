@@ -5,7 +5,7 @@ import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError } from "./safe_http"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
-import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
+import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
 import type { RunResult } from "@shared/types/RunResult"
 import type { JsonValue } from "@shared/types/JsonValue"
@@ -20,7 +20,7 @@ import type { JsonValueType } from "@shared/types/JsonValueType"
  *
  * Processes workflow nodes in graph order, resolves templates, executes HTTP requests,
  * evaluates assertions, handles delays and merge nodes, and writes field-level updates.
- * Emits `node.completed` events for the renderer (decision #6, (c)).
+ * Emits `node.status` events for the renderer (decision #6, (c)).
  */
 
 // -------------------- Types --------------------
@@ -79,7 +79,7 @@ export interface ExecutorDeps {
   readonly baseUrl?: string
   readonly secrets?: Readonly<Record<string, string>>
   readonly environmentVariables?: Readonly<Record<string, unknown>>
-  readonly emitProgress?: (event: RunProgressEvent) => void
+  readonly emitProgress?: (event: RunEvent) => void
 }
 
 export interface ExecuteOptions {
@@ -1511,7 +1511,7 @@ export class WorkflowExecutor {
     this.nodeStatuses.set(nodeId, status)
     if (this.deps.emitProgress) {
       this.deps.emitProgress({
-        kind: "node.completed",
+        kind: "node.status",
         runId: this.activeRunId,
         nodeId,
         status,

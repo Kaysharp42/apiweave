@@ -5,6 +5,9 @@ import { rmSync, readFileSync } from "node:fs"
 import http from "node:http"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { ResourceUpdatedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
+import { RunEventBroker } from "../../runner/run_event_broker"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import {
   CollectionRepository,
@@ -128,9 +131,22 @@ async function connectClient(): Promise<Client> {
   return client
 }
 
+/** Like connectClient, but the server is wired to a broker so run resources
+ *  advertise subscriptions and emit update notifications. */
+async function connectClientWithBroker(broker: RunEventBroker): Promise<Client> {
+  const server = createMcpServer(router, "test", broker)
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+  await server.connect(serverTransport as never)
+  const client = new Client({ name: "test-client", version: "1.0.0" })
+  await client.connect(clientTransport as never)
+  return client
+}
+
 function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
   return result.content.map((c) => c.text ?? "").join("")
 }
+
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20))
 
 describe("MCP whitelist — derived from the IPC registry, drops the right surface", () => {
   it("every whitelisted tool maps to a real IPC handler (no dangling entry)", () => {
@@ -575,6 +591,103 @@ describe("MCP resources — read-only safe run snapshot", () => {
   })
 })
 
+describe("MCP resources — live subscriptions over the run event broker", () => {
+  const runUri = (workspaceId: string, runId: string): string =>
+    `apiweave://workspaces/${workspaceId}/runs/${runId}`
+
+  async function seedRun(): Promise<{ workspaceId: string; runId: string }> {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "subscribed",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    return { workspaceId: workspace.workspaceId, runId: run.runId }
+  }
+
+  it("advertises subscribe capability only when a broker is wired", async () => {
+    const withBroker = await connectClientWithBroker(new RunEventBroker({ now: () => "t" }))
+    expect(withBroker.getServerCapabilities()?.resources?.subscribe).toBe(true)
+    await withBroker.close()
+
+    const withoutBroker = await connectClient()
+    expect(withoutBroker.getServerCapabilities()?.resources?.subscribe).toBeFalsy()
+    await withoutBroker.close()
+  })
+
+  it("notifies a subscriber on each transition of its run and re-reads a newer sequence", async () => {
+    let n = 0
+    const broker = new RunEventBroker({ now: () => `t${++n}` })
+    const { workspaceId, runId } = await seedRun()
+    const uri = runUri(workspaceId, runId)
+
+    const client = await connectClientWithBroker(broker)
+    const notified: string[] = []
+    client.setNotificationHandler(ResourceUpdatedNotificationSchema, (note) => {
+      notified.push(note.params.uri)
+    })
+    await client.subscribeResource({ uri })
+
+    broker.publish(runId, { kind: "run.started", runId })
+    broker.publish(runId, { kind: "node.status", runId, nodeId: "a", status: "passed", variables: {} })
+    await tick()
+
+    expect(notified.filter((u) => u === uri).length).toBeGreaterThanOrEqual(2)
+    const read = await client.readResource({ uri })
+    const snapshot = JSON.parse((read.contents[0] as { text: string }).text) as { latestSequence: number }
+    expect(snapshot.latestSequence).toBe(broker.getLatestSequence(runId))
+    expect(snapshot.latestSequence).toBeGreaterThan(0)
+    await client.close()
+  })
+
+  it("does not notify a client about a run it did not subscribe to (isolation)", async () => {
+    const broker = new RunEventBroker({ now: () => "t" })
+    const a = await seedRun()
+    const b = await seedRun()
+
+    const client = await connectClientWithBroker(broker)
+    const notified: string[] = []
+    client.setNotificationHandler(ResourceUpdatedNotificationSchema, (note) => {
+      notified.push(note.params.uri)
+    })
+    await client.subscribeResource({ uri: runUri(a.workspaceId, a.runId) })
+
+    broker.publish(b.runId, { kind: "run.started", runId: b.runId })
+    await tick()
+    expect(notified).toHaveLength(0)
+
+    broker.publish(a.runId, { kind: "run.started", runId: a.runId })
+    await tick()
+    expect(notified).toEqual([runUri(a.workspaceId, a.runId)])
+    await client.close()
+  })
+
+  it("stops notifying after unsubscribe and after the session closes (no listener leak)", async () => {
+    const broker = new RunEventBroker({ now: () => "t" })
+    const { workspaceId, runId } = await seedRun()
+    const uri = runUri(workspaceId, runId)
+
+    const client = await connectClientWithBroker(broker)
+    const notified: string[] = []
+    client.setNotificationHandler(ResourceUpdatedNotificationSchema, (note) => {
+      notified.push(note.params.uri)
+    })
+    await client.subscribeResource({ uri })
+    await client.unsubscribeResource({ uri })
+
+    broker.publish(runId, { kind: "run.started", runId })
+    await tick()
+    expect(notified).toHaveLength(0)
+
+    // A fresh subscription then a session close must also detach the listener.
+    const client2 = await connectClientWithBroker(broker)
+    await client2.subscribeResource({ uri })
+    await client2.close()
+    // No throw and no delivery target — the broker fan-out stays clean.
+    expect(() => broker.publish(runId, { kind: "run.finished", runId, status: "completed" })).not.toThrow()
+  })
+})
+
 describe("MCP bridge — inherited secret masking holds across read/export tools", () => {
   const PLAINTEXT = "super-secret-value-1234"
 
@@ -795,7 +908,11 @@ describe("McpHost — loopback bind, bearer auth, port fallback", () => {
 
     expect((await request(port, "POST", "/wrong", { authorization }, listBody)).status).toBe(404)
     expect((await request(port, "GET", "/mcp", {}, undefined)).status).toBe(401)
-    expect((await request(port, "GET", "/mcp", { authorization }, undefined)).status).toBe(405)
+    // GET/DELETE without an established session are bad requests (no session to drive).
+    expect((await request(port, "GET", "/mcp", { authorization }, undefined)).status).toBe(400)
+    expect((await request(port, "DELETE", "/mcp", { authorization }, undefined)).status).toBe(400)
+    // A truly unsupported method is still 405.
+    expect((await request(port, "PUT", "/mcp", { authorization }, listBody)).status).toBe(405)
     expect((await post(port, { authorization }, { payload: "x".repeat(64) })).status).toBe(413)
   })
 
@@ -844,5 +961,151 @@ describe("McpHost — loopback bind, bearer auth, port fallback", () => {
 
     expect(host.isRunning()).toBe(false)
     await expect(post(info.port, { authorization: `Bearer ${info.token}` }, listBody)).rejects.toThrow()
+  })
+})
+
+describe("McpHost — stateful sessions and live run subscriptions over HTTP", () => {
+  let host: McpHost | null = null
+  let broker: RunEventBroker
+  const tokenPath = join(tmpdir(), `apiweave-mcp-session-${process.pid}.json`)
+  const clients: Client[] = []
+
+  beforeEach(() => {
+    broker = new RunEventBroker({ now: () => "2026-07-27T00:00:00.000Z" })
+  })
+
+  afterEach(async () => {
+    for (const c of clients.splice(0)) {
+      try {
+        await c.close()
+      } catch {
+        /* ignore */
+      }
+    }
+    if (host) await host.stop()
+    host = null
+    try {
+      rmSync(tokenPath)
+    } catch {
+      /* ignore */
+    }
+  })
+
+  async function connectHttp(port: number, token: string): Promise<Client> {
+    const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
+      requestInit: { headers: { authorization: `Bearer ${token}` } },
+    })
+    const client = new Client({ name: "http-client", version: "1.0.0" })
+    await client.connect(transport)
+    clients.push(client)
+    return client
+  }
+
+  async function seedRun(): Promise<{ workspaceId: string; runId: string }> {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "http-subscribed",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    return { workspaceId: workspace.workspaceId, runId: run.runId }
+  }
+
+  it("initializes a session and lists tools over the retained transport", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, broker })
+    const { token, port } = await host.start()
+
+    const client = await connectHttp(port, token)
+    const { tools } = await client.listTools()
+    expect(tools.map((t) => t.name)).toContain("workflows_list")
+    expect(host.getSessionCount()).toBe(1)
+  })
+
+  it("gives two clients isolated sessions", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, broker })
+    const { token, port } = await host.start()
+
+    const a = await connectHttp(port, token)
+    const b = await connectHttp(port, token)
+    const idA = (a.transport as StreamableHTTPClientTransport).sessionId
+    const idB = (b.transport as StreamableHTTPClientTransport).sessionId
+    expect(idA).toBeDefined()
+    expect(idB).toBeDefined()
+    expect(idA).not.toBe(idB)
+    expect(host.getSessionCount()).toBe(2)
+  })
+
+  it("delivers resource-updated notifications only to a subscribed session", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, broker })
+    const { token, port } = await host.start()
+    const { workspaceId, runId } = await seedRun()
+    const uri = `apiweave://workspaces/${workspaceId}/runs/${runId}`
+
+    const client = await connectHttp(port, token)
+    const notified: string[] = []
+    client.setNotificationHandler(ResourceUpdatedNotificationSchema, (note) => {
+      notified.push(note.params.uri)
+    })
+    await client.subscribeResource({ uri })
+
+    broker.publish(runId, { kind: "run.started", runId })
+    broker.publish(runId, { kind: "run.finished", runId, status: "completed" })
+
+    // The notification rides the GET SSE stream — allow it to arrive.
+    for (let i = 0; i < 50 && notified.length < 1; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    expect(notified).toContain(uri)
+
+    const read = await client.readResource({ uri })
+    const snapshot = JSON.parse((read.contents[0] as { text: string }).text) as { latestSequence: number }
+    expect(snapshot.latestSequence).toBe(broker.getLatestSequence(runId))
+  })
+
+  it("removes a session on DELETE (terminateSession) with no leaked listener", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, broker })
+    const { token, port } = await host.start()
+    const { workspaceId, runId } = await seedRun()
+
+    const client = await connectHttp(port, token)
+    await client.subscribeResource({ uri: `apiweave://workspaces/${workspaceId}/runs/${runId}` })
+    expect(host.getSessionCount()).toBe(1)
+
+    await (client.transport as StreamableHTTPClientTransport).terminateSession()
+    for (let i = 0; i < 50 && host.getSessionCount() > 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    expect(host.getSessionCount()).toBe(0)
+    // Broker fan-out stays clean after the subscribing session is gone (its
+    // resource-subscription listener was detached on session close).
+    expect(() => broker.publish(runId, { kind: "run.finished", runId, status: "completed" })).not.toThrow()
+  })
+
+  it("evicts an idle session after the idle timeout", async () => {
+    host = new McpHost({
+      router,
+      tokenFilePath: tokenPath,
+      version: "test",
+      preferredPort: 0,
+      broker,
+      idleTimeoutMs: 80,
+    })
+    const { token, port } = await host.start()
+    await connectHttp(port, token)
+    expect(host.getSessionCount()).toBe(1)
+
+    for (let i = 0; i < 50 && host.getSessionCount() > 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    expect(host.getSessionCount()).toBe(0)
+  })
+
+  it("rejects a new session past the max-sessions limit", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, broker, maxSessions: 1 })
+    const { token, port } = await host.start()
+
+    await connectHttp(port, token)
+    expect(host.getSessionCount()).toBe(1)
+    await expect(connectHttp(port, token)).rejects.toThrow()
   })
 })

@@ -601,7 +601,7 @@ describe("WorkflowExecutor", () => {
   })
 
   describe("event emission", () => {
-    it("emits node.completed events", async () => {
+    it("emits node.status events", async () => {
       const events: Array<{ nodeId: string; status: string }> = []
       const workflow: WorkflowGraph = {
         nodes: [
@@ -635,7 +635,7 @@ describe("WorkflowExecutor", () => {
       const executor = new WorkflowExecutor({
         ...makeDeps(),
         emitProgress: (event) => {
-          if (event.kind === "node.completed") {
+          if (event.kind === "node.status") {
             events.push({ nodeId: event.nodeId, status: event.status, error: event.error })
           }
         },

@@ -31,7 +31,7 @@ import {
 } from "../core/services"
 import { LocalOwnerProvider } from "../core/auth"
 import { LocalOnlySyncProvider, SwitchableSyncProvider } from "../core/sync"
-import { RunScheduler, SafeHttp, DynamicFunctions } from "../core/runner"
+import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
 import { MCP_SERVER_INFO_TOOL, MCP_TOOLS, toolName } from "../core/mcp/tools"
@@ -231,6 +231,14 @@ if (!hasSingleInstanceLock) {
     const rng = new CryptoRandomProvider()
     const http = new SafeHttp({ allowLoopback: true })
     const functions = new DynamicFunctions(clock, rng)
+    // Single run-event broker: the scheduler publishes raw transitions; the
+    // broker stamps seq/ts and fans out to the renderer (IPC) and MCP sessions.
+    const runEvents = new RunEventBroker({ now: () => clock.isoNow() })
+    runEvents.subscribe((event) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        emitRunProgress(mainWindow.webContents, event)
+      }
+    })
     scheduler = new RunScheduler({
       runs,
       workflows,
@@ -241,11 +249,7 @@ if (!hasSingleInstanceLock) {
       rng,
       resolveSecret: (name, chain) =>
         secretService.resolvePlaintext(name, chain).then((r) => ({ plaintext: r.plaintext, scopeType: r.scopeType })),
-      emitProgress: (_runId, event) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          emitRunProgress(mainWindow.webContents, event)
-        }
-      },
+      emitProgress: (runId, event) => runEvents.publish(runId, event),
     })
 
     const interrupted = scheduler.reconcileOnStartup()
@@ -331,7 +335,12 @@ if (!hasSingleInstanceLock) {
       "mcp:enable",
       requireTrustedSender(async () => {
         if (mcpHost === null) {
-          mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+          mcpHost = new McpHost({
+            router: ipcRouter,
+            tokenFilePath: mcpTokenPath,
+            version: app.getVersion(),
+            broker: runEvents,
+          })
         }
         await mcpHost.start()
         writeMcpEnabled(true)
@@ -369,7 +378,12 @@ if (!hasSingleInstanceLock) {
 
     // Restore the user's persisted MCP choice on launch.
     if (readMcpEnabled()) {
-      mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+      mcpHost = new McpHost({
+        router: ipcRouter,
+        tokenFilePath: mcpTokenPath,
+        version: app.getVersion(),
+        broker: runEvents,
+      })
       void mcpHost
         .start()
         .then(() => console.info("[mcp] auto-started local MCP server from persisted setting"))

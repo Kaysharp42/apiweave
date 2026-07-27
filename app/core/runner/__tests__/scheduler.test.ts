@@ -6,7 +6,7 @@ import { RunScheduler, type SchedulerDeps } from "../scheduler"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
-import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
+import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 
@@ -106,7 +106,7 @@ describe("RunScheduler", () => {
         ],
         edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
       }).workflowId
-      const events: RunProgressEvent[] = []
+      const events: RunEvent[] = []
       const scheduler = makeScheduler({
         emitProgress: (_runId, event) => events.push(event),
       })
@@ -116,7 +116,7 @@ describe("RunScheduler", () => {
       await new Promise((resolve) => setTimeout(resolve, 300))
 
       const failed = events.find(
-        (event) => event.kind === "node.completed" && event.nodeId === "http_1" && event.status === "failed",
+        (event) => event.kind === "node.status" && event.nodeId === "http_1" && event.status === "failed",
       )
       expect(failed).toBeDefined()
       expect(failed?.error).not.toContain("{{env.BASE_URL}}")
@@ -289,10 +289,10 @@ describe("RunScheduler", () => {
   })
 
   describe("event emission", () => {
-    it("emits node.completed events plus a terminal run.finished, all with the real runId", async () => {
+    it("emits node.status events plus a terminal run.finished, all with the real runId", async () => {
       const ws = seedWorkspace()
       const wf = seedWorkflow(ws)
-      const events: RunProgressEvent[] = []
+      const events: RunEvent[] = []
       const scheduler = makeScheduler({
         emitProgress: (_runId, event) => events.push(event),
       })
@@ -304,7 +304,7 @@ describe("RunScheduler", () => {
       expect(events.length).toBeGreaterThan(0)
       expect(events.every((e) => e.runId === runId)).toBe(true)
 
-      const nodeEvents = events.filter((e) => e.kind === "node.completed")
+      const nodeEvents = events.filter((e) => e.kind === "node.status")
       expect(nodeEvents.some((e) => e.nodeId === "start")).toBe(true)
       expect(nodeEvents.some((e) => e.nodeId === "end")).toBe(true)
 
@@ -325,7 +325,7 @@ describe("RunScheduler", () => {
       // that the terminal event's status is exactly the run's final DB status.
       const ws = seedWorkspace()
       const wf = seedWorkflow(ws, 2000)
-      const events: RunProgressEvent[] = []
+      const events: RunEvent[] = []
       const scheduler = makeScheduler({
         emitProgress: (_runId, event) => events.push(event),
       })
@@ -340,7 +340,7 @@ describe("RunScheduler", () => {
       expect(finished[0]?.status).toBe(runs.getById(runId)?.status)
     })
 
-    it("redacts secret-looking extracted variables from node.completed events and persisted nodeStatuses", async () => {
+    it("redacts secret-looking extracted variables from node.status events and persisted nodeStatuses", async () => {
       const ws = seedWorkspace()
       const { createServer } = await import("node:http")
       const server = createServer((_req, res) => {
@@ -369,7 +369,7 @@ describe("RunScheduler", () => {
         edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
       }).workflowId
 
-      const events: RunProgressEvent[] = []
+      const events: RunEvent[] = []
       const scheduler = makeScheduler({
         emitProgress: (_runId, event) => events.push(event),
       })
@@ -379,7 +379,7 @@ describe("RunScheduler", () => {
       server.close()
 
       // "running" fires before extraction; the terminal "passed"/"failed" event carries the extracted variable.
-      const httpEvents = events.filter((e) => e.kind === "node.completed" && e.nodeId === "http_1")
+      const httpEvents = events.filter((e) => e.kind === "node.status" && e.nodeId === "http_1")
       const httpEvent = httpEvents[httpEvents.length - 1]
       expect(httpEvent && "variables" in httpEvent ? httpEvent.variables : undefined).toMatchObject({ api_key: "<SECRET>" })
       expect(JSON.stringify(httpEvents)).not.toContain("super-secret-value-xyz")

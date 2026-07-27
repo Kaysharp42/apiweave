@@ -1,6 +1,6 @@
 import type { Run } from "@shared/types/Run"
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
-import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
+import type { RunEvent, RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunRepository } from "../repositories/RunRepository"
@@ -23,7 +23,7 @@ export interface SchedulerDeps {
   readonly functions: DynamicFunctions
   readonly clock: ClockProvider
   readonly rng: RngProvider
-  readonly emitProgress?: (runId: string, event: RunProgressEvent) => void
+  readonly emitProgress?: (runId: string, event: RunEvent) => void
   readonly concurrencyCap?: number
   /** Trusted runtime secret resolver — opens sealed boxes down the env > workspace
    * chain. Returns the plaintext plus which scope won (or null/null when unset),
@@ -99,6 +99,9 @@ export class RunScheduler {
     if (idx >= 0) {
       this.queue.splice(idx, 1)
       this.deps.runs.updateStatus(runId, "cancelled")
+      // A queued run never reached executeRun, so nothing else will publish its
+      // terminal event — do it here or a subscriber waits forever (Phase 6).
+      this.emitFinished(runId, "cancelled")
       return true
     }
     return false
@@ -122,6 +125,16 @@ export class RunScheduler {
     }
     for (const runId of this.activeRuns.keys()) {
       this.deps.runs.updateStatus(runId, "interrupted")
+      // The abort above may not have driven executeRun's catch to a terminal
+      // publish before the grace window closed — publish once here (the broker
+      // dedups a later duplicate terminal).
+      this.emitFinished(runId, "interrupted")
+    }
+    // Runs still queued never started; mark and publish a terminal so any
+    // subscriber unwinds rather than hanging on a run that will never run.
+    for (const runId of this.queue) {
+      this.deps.runs.updateStatus(runId, "interrupted")
+      this.emitFinished(runId, "interrupted")
     }
     this.queue.length = 0
   }
@@ -144,6 +157,7 @@ export class RunScheduler {
     const controller = new AbortController()
     this.activeRuns.set(runId, controller)
     this.deps.runs.updateStatus(runId, "running")
+    this.deps.emitProgress?.(runId, { kind: "run.started", runId })
 
     try {
       const run = this.deps.runs.getById(runId)
@@ -228,7 +242,7 @@ export class RunScheduler {
     }
   }
 
-  private emitFinished(runId: string, status: "completed" | "failed" | "cancelled" | "interrupted"): void {
+  private emitFinished(runId: string, status: RunTerminalStatus): void {
     this.deps.emitProgress?.(runId, { kind: "run.finished", runId, status })
   }
 
@@ -272,16 +286,16 @@ export class RunScheduler {
     return { ...(Object.keys(secrets).length > 0 ? { secrets } : {}), resolvedSecrets }
   }
 
-  private handleProgress(runId: string, event: RunProgressEvent): void {
-    // The executor only ever hands us node events; the terminal event is emitted
-    // separately by emitFinished. Narrow so appendNodeStatus stays node-only.
-    if (event.kind !== "node.completed") return
+  private handleProgress(runId: string, event: RunEvent): void {
+    // The executor only ever hands us node events; started/terminal events are
+    // emitted separately. Narrow so appendNodeStatus stays node-only.
+    if (event.kind !== "node.status") return
     // A workflow can extract a token/password/api-key into a variable; redact
     // secret-looking keys/values the same way exports do before this snapshot
     // goes out over IPC and into run history (readable via runs.get/list, incl. MCP).
     const sanitizedVariables = sanitizeVariablesForExport(event.variables as Record<string, JsonValue>)
     const sanitizedError = event.error ? safeErrorClass(event.error) : undefined
-    const sanitizedEvent: RunProgressEvent = {
+    const sanitizedEvent: RunEvent = {
       ...event,
       variables: sanitizedVariables,
       ...(sanitizedError ? { error: sanitizedError } : {}),

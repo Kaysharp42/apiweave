@@ -128,10 +128,13 @@ const TERMINAL_STATUSES: ReadonlySet<Run["status"]> = new Set([
  * bodies/headers/cookies/URLs/values — but shaped as a compact current snapshot
  * with a per-node map for agent context.
  *
- * ponytail: no `latestSequence`/`events` here — those need the run event broker,
- * which lands in Phase 6. A one-shot read has no monotonic sequence to report.
+ * `latestSequence` is the broker's monotonic per-run counter (Phase 6) so a
+ * subscribed client can tell whether a re-read reflects a newer state; it is 0
+ * when the broker never saw the run (e.g. a historical run after restart).
+ * `events` stays omitted — the subscription model is notify-then-re-read, not
+ * an event stream, so the snapshot carries current state only.
  */
-export function projectRunSnapshot(value: unknown): Record<string, JsonValue> {
+export function projectRunSnapshot(value: unknown, latestSequence = 0): Record<string, JsonValue> {
   const run = RunSchema.parse(value)
   return {
     runId: run.runId,
@@ -139,6 +142,7 @@ export function projectRunSnapshot(value: unknown): Record<string, JsonValue> {
     workflowId: run.workflowId,
     status: run.status,
     terminal: TERMINAL_STATUSES.has(run.status),
+    latestSequence,
     startedAt: run.startedAt ?? null,
     completedAt: run.completedAt ?? null,
     durationMs: run.duration ?? null,

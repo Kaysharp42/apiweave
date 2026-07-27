@@ -175,7 +175,7 @@ describe("Task 20: run progress streams over IPC events", () => {
     expect(order).toEqual(["save", "create"]);
   });
 
-  it("(b) a node.completed event repaints that node's executionStatus", async () => {
+  it("(b) a node.status event repaints that node's executionStatus", async () => {
     const { result } = mount();
     await act(async () => {
       await result.current.runWorkflow();
@@ -183,11 +183,13 @@ describe("Task 20: run progress streams over IPC events", () => {
 
     act(() => {
       captured.cb?.({
-        kind: "node.completed",
+        kind: "node.status",
         runId: "run-1",
         nodeId: "http_1",
         status: "running",
         variables: {},
+        seq: 1,
+        ts: "2026-07-27T00:00:00.000Z",
       });
     });
 
@@ -195,7 +197,7 @@ describe("Task 20: run progress streams over IPC events", () => {
     expect(node?.data?.["executionStatus"]).toBe("running");
   });
 
-  it("(b2) a failed node.completed event paints the error detail", async () => {
+  it("(b2) a failed node.status event paints the error detail", async () => {
     const { result } = mount();
     await act(async () => {
       await result.current.runWorkflow();
@@ -203,12 +205,14 @@ describe("Task 20: run progress streams over IPC events", () => {
 
     act(() => {
       captured.cb?.({
-        kind: "node.completed",
+        kind: "node.status",
         runId: "run-1",
         nodeId: "http_1",
         status: "failed",
         variables: {},
         error: "URL is required for HTTP request",
+        seq: 1,
+        ts: "2026-07-27T00:00:00.000Z",
       });
     });
 
@@ -230,6 +234,8 @@ describe("Task 20: run progress streams over IPC events", () => {
         kind: "run.finished",
         runId: "run-1",
         status: "completed",
+        seq: 2,
+        ts: "2026-07-27T00:00:00.000Z",
       });
       // let the hydrate/refresh microtasks settle
       await Promise.resolve();

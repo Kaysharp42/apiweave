@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 import type { IpcRouter } from "../ipc/router"
+import type { RunEventBroker } from "../runner/run_event_broker"
 import { registerBridgeTools } from "./bridge"
 import { registerResources } from "./resources"
 import { MCP_PROMPTS } from "./prompts"
@@ -17,11 +18,11 @@ export const MCP_SERVER_NAME = "APIWeave"
  * native `tools/list` already enumerates every tool with its schema + description,
  * which is exactly what an agent needs to discover the surface.
  */
-export function createMcpServer(router: IpcRouter, version: string): McpServer {
+export function createMcpServer(router: IpcRouter, version: string, broker?: RunEventBroker): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version })
 
   registerBridgeTools(server, router)
-  registerResources(server, router)
+  registerResources(server, router, broker)
 
   server.registerTool(
     MCP_SERVER_INFO_TOOL.name,
