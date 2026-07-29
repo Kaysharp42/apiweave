@@ -428,7 +428,7 @@ const FEATURES = [
   {
     Icon: Boxes,
     title: "MCP server",
-    body: "40 local tools over token-gated loopback HTTP. AI agents manage workflows and monitor secret-safe run metadata.",
+    body: "44 local tools over token-gated loopback HTTP. AI agents manage workflows and monitor secret-safe run metadata.",
   },
   {
     Icon: FileCode2,
@@ -481,7 +481,8 @@ function Features() {
 const MCP_DOMAINS = [
   { name: "Server", count: 1 },
   { name: "Workspaces", count: 5 },
-  { name: "Workflows", count: 7 },
+  { name: "Workflows", count: 8 },
+  { name: "Assertions", count: 3 },
   { name: "Projects", count: 11 },
   { name: "Environments", count: 7 },
   { name: "Runs", count: 7 },
@@ -508,7 +509,7 @@ function McpSection() {
           </h2>
           <p className="mt-3 text-text-secondary dark:text-text-secondary-dark leading-relaxed">
             AI agents create, run, and inspect API test workflows
-            programmatically. 40 scoped tools use token-gated Streamable HTTP
+            programmatically. 44 scoped tools use token-gated Streamable HTTP
             on your machine. Point Claude, Cursor, or another local MCP client
             at the loopback URL shown by APIWeave.
           </p>
@@ -538,7 +539,7 @@ function McpSection() {
                 MCP Server
               </div>
               <div className="font-mono text-xs text-text-muted dark:text-text-muted-dark mt-1">
-                40 scoped tools
+                44 scoped tools
               </div>
             </div>
           </div>

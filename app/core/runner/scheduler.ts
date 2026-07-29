@@ -312,14 +312,11 @@ export class RunScheduler {
 }
 
 function sanitizeFinalVariables(output: Awaited<ReturnType<WorkflowExecutor["executeWorkflow"]>>): Record<string, JsonValue> {
-  const variables = sanitizeVariablesForExport(output.extractedVariables as Record<string, JsonValue>)
-  for (const result of output.results) {
-    for (const outcome of result.extractorOutcomes ?? []) {
-      if (!outcome.matched || !(outcome.variableName in variables)) continue
-      if (variables[outcome.variableName] !== "<SECRET>") variables[outcome.variableName] = "<EXTRACTED>"
-    }
-  }
-  return variables
+  // Redact secret-looking keys/values only (same posture as the failure path and
+  // per-node snapshots). Real extracted values are kept for the trusted local run
+  // history — the MCP run projection never exposes variables, so there is nothing
+  // to mask them from over the wire.
+  return sanitizeVariablesForExport(output.extractedVariables as Record<string, JsonValue>)
 }
 
 function safeFailureMessage(failedNodes: readonly string[]): string | null {

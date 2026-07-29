@@ -391,8 +391,10 @@ describe("RunScheduler", () => {
       expect(JSON.stringify(persisted)).not.toContain("super-secret-value-xyz")
 
       const completedRun = runs.getById(runId)
-      expect(completedRun?.variables).toMatchObject({ api_key: "<SECRET>", sessionId: "<EXTRACTED>" })
-      expect(JSON.stringify(completedRun?.variables)).not.toContain("x7Q9aB3c")
+      // Secret-looking extracted values are redacted; ordinary extracted values are
+      // kept for the trusted local run history (MCP never exposes variables).
+      expect(completedRun?.variables).toMatchObject({ api_key: "<SECRET>", sessionId: "x7Q9aB3c" })
+      expect(JSON.stringify(completedRun?.variables)).not.toContain("super-secret-value-xyz")
       expect(completedRun?.results.find((result) => result.nodeId === "http_1")?.extractorOutcomes).toEqual([
         {
           producerNodeId: "http_1",

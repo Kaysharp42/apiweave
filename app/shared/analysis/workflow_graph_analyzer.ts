@@ -171,11 +171,14 @@ function statusCodeOf(result: RunResult): number | undefined {
 }
 
 function pathTargetsResponseBody(path: string): boolean {
+  // Persisted graphs are read without re-validation, so a path may be non-string.
+  if (typeof path !== "string") return false
   const normalized = path.startsWith("response.") ? path.slice("response.".length) : path
   return normalized === "body" || normalized.startsWith("body.") || normalized.startsWith("body[")
 }
 
 function isValidRuntimePath(path: string, includeDuration: boolean): boolean {
+  if (typeof path !== "string") return false
   const normalized = path.startsWith("response.") ? path.slice("response.".length) : path
   const parts = normalized.split(".")
   if (parts.length === 0 || parts.some((part) => part.length === 0)) return false
@@ -478,7 +481,10 @@ function addDataflowDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnos
   for (const node of workflow.nodes) {
     if (node.type !== "http-request") continue
     for (const [variableName, path] of Object.entries(node.config?.extractors ?? {})) {
-      if (!path.startsWith("response.") || !isValidRuntimePath(path, false)) {
+      // Persisted graphs are read without re-validation, so a drifted/imported
+      // config can carry a non-string extractor value — treat it as invalid
+      // rather than letting `path.startsWith` throw.
+      if (typeof path !== "string" || !path.startsWith("response.") || !isValidRuntimePath(path, false)) {
         diagnostics.push(diagnostic(
           "extractor_path_invalid",
           "error",
