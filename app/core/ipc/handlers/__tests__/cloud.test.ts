@@ -11,7 +11,9 @@ import {
   type CloudSyncStatus,
   type CloudUnbindWorkspaceInput,
   type CloudUnlinkInput,
+  type CloudCreateTeamWorkspaceInput,
 } from "../../../services/cloud_sync_control"
+import type { Workspace } from "@shared/types/Workspace"
 
 class FakeCloudSyncControl implements CloudSyncControl {
   public readonly linkSpy = vi.fn<(input: CloudLinkInput) => Promise<CloudSyncStatus>>()
@@ -20,6 +22,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
   public readonly unbindSpy = vi.fn<(input: CloudUnbindWorkspaceInput) => void>()
   public readonly refreshCatalogSpy = vi.fn<() => Promise<void>>()
   public readonly initializeSpy = vi.fn<(input: CloudInitializeWorkspaceInput) => Promise<void>>()
+  public readonly createTeamWorkspaceSpy = vi.fn<(input: CloudCreateTeamWorkspaceInput) => Promise<void>>()
   private current: CloudSyncStatus = {
     linked: false,
     active: false,
@@ -32,6 +35,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
     workspaceIds: [],
     bindings: [],
     workspaceCatalog: [],
+    teamCatalog: [],
   }
 
   public status(): CloudSyncStatus {
@@ -67,6 +71,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
         canPush: true,
         canResolveConflicts: true,
       }],
+      teamCatalog: [],
     }
     await this.linkSpy(input)
     return this.current
@@ -90,6 +95,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
       workspaceIds: [],
       bindings: [],
       workspaceCatalog: [],
+      teamCatalog: [],
     }
     return this.current
   }
@@ -110,9 +116,27 @@ class FakeCloudSyncControl implements CloudSyncControl {
       workspaceIds: [...this.current.workspaceIds, input.cloudWorkspaceId],
       bindings: this.current.bindings,
       workspaceCatalog: this.current.workspaceCatalog,
+      teamCatalog: this.current.teamCatalog,
     }
     await this.bindSpy(input)
     return this.current
+  }
+
+  public async createTeamWorkspace(input: CloudCreateTeamWorkspaceInput): Promise<Workspace> {
+    await this.createTeamWorkspaceSpy(input)
+    return {
+      workspaceId: "workspace-team",
+      name: input.name,
+      slug: input.slug,
+      description: input.description ?? null,
+      isPersonal: false,
+      origin: "team",
+      syncMode: "bi-directional",
+      deletedAt: null,
+      rev: 1,
+      createdAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "2026-07-29T00:00:00.000Z",
+    }
   }
 
   public unbindWorkspace(input: CloudUnbindWorkspaceInput): CloudSyncStatus {
@@ -228,6 +252,36 @@ describe("cloud IPC handlers", () => {
     expect(cloud.refreshCatalogSpy).toHaveBeenCalledOnce()
     expect(cloud.unbindSpy).toHaveBeenCalledWith({ workspaceId: "workspace-2" })
     expect(cloud.initializeSpy).toHaveBeenCalledWith({ workspaceId: "workspace-2" })
+  })
+
+  it("validates Team ownership before creating a Team workspace", async () => {
+    const cloud = new FakeCloudSyncControl()
+    const router = new IpcRouter()
+    registerCloudHandlers(router, { cloud } as never)
+
+    const created = await router.dispatch({
+      domain: "cloud",
+      action: "createTeamWorkspace",
+      payload: { name: "Checkout", slug: "checkout", teamId: "team-platform" },
+    })
+    const ambiguous = await router.dispatch({
+      domain: "cloud",
+      action: "createTeamWorkspace",
+      payload: {
+        name: "Checkout",
+        slug: "checkout",
+        teamId: "team-platform",
+        newTeamName: "Payments",
+      },
+    })
+
+    expect(created).toMatchObject({ ok: true, data: { origin: "team", name: "Checkout" } })
+    expect(cloud.createTeamWorkspaceSpy).toHaveBeenCalledWith({
+      name: "Checkout",
+      slug: "checkout",
+      teamId: "team-platform",
+    })
+    expect(ambiguous).toMatchObject({ ok: false, error: { code: "validation" } })
   })
 
   it("maps a different-account relink to a safe conflict response", async () => {

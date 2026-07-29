@@ -13,9 +13,14 @@ import type { Workspace } from "../../../types/Workspace";
 const mockSwitchTo = vi.fn();
 const mockRefresh = vi.fn<() => Promise<void>>();
 const authState = vi.hoisted(() => ({ isSingleUser: false }));
+const cloudState = vi.hoisted(() => ({ status: null as import("../../../types").CloudSyncStatus | null }));
 
 vi.mock("../../../auth/useAuth", () => ({
   useAuth: () => ({ isSingleUser: authState.isSingleUser }),
+}));
+
+vi.mock("../../../hooks/useCloudSync", () => ({
+  useCloudSync: () => ({ status: cloudState.status }),
 }));
 
 const defaultContext: WorkspaceContextValue = {
@@ -80,6 +85,7 @@ describe("OrgWorkspaceSwitcher", () => {
     vi.clearAllMocks();
     mockRefresh.mockResolvedValue(undefined);
     authState.isSingleUser = false;
+    cloudState.status = null;
     setContext({
       availableWorkspaces: [],
       currentWorkspace: null,
@@ -156,6 +162,54 @@ describe("OrgWorkspaceSwitcher", () => {
     await user.click(mainOption);
 
     expect(mockSwitchTo).toHaveBeenCalledWith("main");
+  });
+
+  it("shows the Team source when workspace names are duplicated", async () => {
+    const user = userEvent.setup();
+    const personalWs = makeWorkspace({ name: "Kyra", isPersonal: true });
+    const teamWs = makeWorkspace({
+      workspaceId: "ws-team",
+      slug: "kyra-team",
+      name: "Kyra",
+      isPersonal: false,
+    });
+    cloudState.status = {
+      linked: true,
+      active: true,
+      linkState: "linked",
+      syncState: "idle",
+      state: "idle",
+      pendingCount: 0,
+      deadLetterCount: 0,
+      conflictCount: 0,
+      workspaceIds: ["cloud-team-ws"],
+      bindings: [{
+        workspaceId: "ws-team",
+        workspaceName: "Kyra",
+        cloudWorkspaceId: "cloud-team-ws",
+        cloudWorkspaceName: "Kyra",
+        teamId: "team-kyra",
+        teamName: "Kyra Team",
+        syncMode: "bi-directional",
+        initializationState: "initialized",
+        pendingCount: 0,
+        deadLetterCount: 0,
+        conflictCount: 0,
+        boundAt: "2026-07-29T00:00:00Z",
+      }],
+      workspaceCatalog: [],
+      teamCatalog: [],
+    };
+    setContext({
+      availableWorkspaces: [makeEntry(personalWs), makeEntry(teamWs)],
+      currentWorkspace: teamWs,
+    });
+
+    renderSwitcher();
+    expect(screen.getByText("Team · Kyra Team")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("Switch workspace"));
+    expect(screen.getAllByText("Kyra")).toHaveLength(3);
+    expect(screen.getAllByText("Team · Kyra Team").length).toBeGreaterThanOrEqual(1);
   });
 
   it("closes dropdown on Escape key", async () => {

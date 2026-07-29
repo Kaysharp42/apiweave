@@ -741,6 +741,16 @@ describe("DesktopCloudSyncControl", () => {
           capabilities: { canPull: true, canPush: true, canResolveConflicts: true },
         }],
       })
+    nock("https://api.test")
+      .post("/apiweave.v1.DeviceService/ListSyncTeams", {})
+      .reply(200, {
+        teams: [{
+          teamId: "team-platform",
+          teamName: "Platform",
+          isPersonal: false,
+          capabilities: { canCreateWorkspaces: true },
+        }],
+      })
     const control = new DesktopCloudSyncControl({
       store,
       keyfilePath,
@@ -754,6 +764,7 @@ describe("DesktopCloudSyncControl", () => {
 
     const refreshed = await control.refreshWorkspaceCatalog()
     expect(refreshed.workspaceCatalog).toMatchObject([{ workspaceName: "Current Cloud Name" }])
+    expect(refreshed.teamCatalog).toMatchObject([{ teamName: "Platform", canCreateWorkspaces: true }])
 
     const unbound = control.unbindWorkspace({ workspaceId: WORKSPACE_ID })
     expect(unbound).toMatchObject({ active: false, workspaceIds: [], bindings: [] })

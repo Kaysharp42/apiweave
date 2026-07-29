@@ -1,6 +1,8 @@
 import { createHash, generateKeyPairSync } from "node:crypto"
 import { hostname } from "node:os"
 import type { KVStore } from "../../core/db"
+import { generateId } from "../../core/id"
+import type { Workspace } from "@shared/types/Workspace"
 import { CloudSyncRepository, WorkspaceRepository } from "../../core/repositories"
 import { CloudFirstSyncService } from "../../core/services/cloud_first_sync_service"
 import {
@@ -15,6 +17,7 @@ import {
   CloudAccountMismatchError,
   type CloudAccountIdentity,
   type CloudBindWorkspaceInput,
+  type CloudCreateTeamWorkspaceInput,
   type CloudDeadLetterInput,
   type CloudInitializeWorkspaceInput,
   type CloudLinkInput,
@@ -25,6 +28,7 @@ import {
   type CloudUnlinkInput,
   type CloudWorkspaceBindingStatus,
   type CloudWorkspaceCatalogEntry,
+  type CloudTeamCatalogEntry,
 } from "../../core/services/cloud_sync_control"
 import { LocalOnlySyncProvider } from "../../core/sync"
 import {
@@ -65,6 +69,7 @@ export interface DesktopCloudSyncControlOptions {
 
 const KEY_PUBLIC_CONFIG = "cloud.public_config"
 const KEY_WORKSPACE_CATALOG = "cloud.workspace_catalog"
+const KEY_TEAM_CATALOG = "cloud.team_catalog"
 const KEY_ACCOUNT_IDENTITY = "cloud.account_identity"
 const KEY_AUTHENTICATION_REQUIRED = "cloud.authentication_required"
 
@@ -75,6 +80,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   private activeProvider: CloudSyncProvider | null = null
   private activeConfig: DesktopCloudConfig | null
   private workspaceCatalog: readonly CloudWorkspaceCatalogEntry[]
+  private teamCatalog: readonly CloudTeamCatalogEntry[]
   private linkController: AbortController | null = null
   private reconcileInFlight: Promise<void> | null = null
 
@@ -84,6 +90,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     this.firstSyncService = new CloudFirstSyncService(options.store)
     this.activeConfig = this.loadPersistedConfig()
     this.workspaceCatalog = this.loadWorkspaceCatalog()
+    this.teamCatalog = this.loadTeamCatalog()
     this.activateIfReady(true)
   }
 
@@ -139,6 +146,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       workspaceIds: bindings.map((binding) => binding.cloudWorkspaceId),
       bindings,
       workspaceCatalog: this.workspaceCatalog,
+      teamCatalog: this.teamCatalog,
     }
   }
 
@@ -196,6 +204,13 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       this.tokenStore.setAccessToken(result.accessToken)
       this.activeConfig = config
       this.workspaceCatalog = catalog
+      try {
+        this.teamCatalog = (await this.createClient(config).listSyncTeams()).teams.map(toTeamCatalogEntry)
+        this.repository.setSetting(KEY_TEAM_CATALOG, JSON.stringify(this.teamCatalog))
+      } catch {
+        this.teamCatalog = []
+        this.repository.deleteSetting(KEY_TEAM_CATALOG)
+      }
       this.activateIfReady(false, true)
       // Link once, everything syncs: provision local-only workspaces, download
       // accessible cloud-only ones, pair Personal — no manual binding.
@@ -252,12 +267,14 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       this.tokenStore.clearTokens()
       repository.clearCloudDeviceState()
       repository.deleteSetting(KEY_WORKSPACE_CATALOG)
+      repository.deleteSetting(KEY_TEAM_CATALOG)
       repository.deleteSetting(KEY_PUBLIC_CONFIG)
       repository.deleteSetting(KEY_ACCOUNT_IDENTITY)
       repository.deleteSetting(KEY_AUTHENTICATION_REQUIRED)
     })
     this.activeConfig = null
     this.workspaceCatalog = []
+    this.teamCatalog = []
     setState("idle")
     this.notifyStatusChanged()
     return this.status()
@@ -296,6 +313,77 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     return this.status()
   }
 
+  public async createTeamWorkspace(input: CloudCreateTeamWorkspaceInput): Promise<Workspace> {
+    const deviceId = this.tokenStore.getDeviceId()
+    if (deviceId === undefined || !this.tokenStore.hasTokens() || this.activeConfig === null) {
+      throw new Error("Connect APIWeave Cloud before creating a Team workspace")
+    }
+
+    const client = this.createClient(this.activeConfig)
+    let team: CloudTeamCatalogEntry
+    if (input.newTeamName !== undefined) {
+      const createdTeam = await client.createTeam(
+        input.newTeamName,
+        `${slugify(input.newTeamName)}-${generateId().slice(-8).toLowerCase()}`,
+      )
+      team = {
+        teamId: createdTeam.id,
+        teamName: createdTeam.name,
+        isPersonal: false,
+        canCreateWorkspaces: true,
+      }
+      this.teamCatalog = [...this.teamCatalog, team]
+      this.repository.setSetting(KEY_TEAM_CATALOG, JSON.stringify(this.teamCatalog))
+    } else {
+      const selectedTeam = this.teamCatalog.find((candidate) => candidate.teamId === input.teamId)
+      if (selectedTeam === undefined) {
+        throw new Error("The selected Team is no longer available")
+      }
+      team = selectedTeam
+      if (team.isPersonal || !team.canCreateWorkspaces) {
+        throw new Error("You do not have permission to create Workspaces in this Team")
+      }
+    }
+
+    const localSlug = this.uniqueLocalSlug(input.slug)
+    const provisioned = await client.createSyncWorkspace({
+      requestId: generateId(),
+      teamId: team.teamId,
+      name: input.name,
+      slug: localSlug,
+    })
+    const catalogEntry = toCatalogEntry(provisioned)
+    const local = new WorkspaceRepository(this.options.store).createWithId({
+      id: catalogEntry.workspaceId,
+      name: input.name,
+      slug: localSlug,
+      description: input.description ?? null,
+      isPersonal: false,
+      origin: "team",
+      syncMode: "none",
+    })
+    this.firstSyncService.bindAndSnapshot({
+      workspaceId: local.workspaceId,
+      cloudWorkspaceId: catalogEntry.workspaceId,
+      cloudWorkspaceName: catalogEntry.workspaceName,
+      teamId: team.teamId,
+      teamName: team.teamName,
+      syncMode: "bi-directional",
+      deviceId,
+    })
+    this.workspaceCatalog = [
+      ...this.workspaceCatalog.filter((entry) => entry.workspaceId !== catalogEntry.workspaceId),
+      catalogEntry,
+    ]
+    this.repository.setSetting(KEY_WORKSPACE_CATALOG, JSON.stringify(this.workspaceCatalog))
+    this.activateIfReady(false, true)
+    void this.requireActiveProvider().initializeWorkspace(local.workspaceId)
+      .catch(() => undefined)
+      .finally(() => this.notifyStatusChanged())
+    this.notifyStatusChanged()
+    return local
+  }
+
   public unbindWorkspace(input: CloudUnbindWorkspaceInput): CloudSyncStatus {
     this.repository.removeWorkspaceBinding(input.workspaceId)
     this.activateIfReady(false, true)
@@ -320,10 +408,17 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       throw new Error("Cloud account must be linked before refreshing workspaces")
     }
     try {
-      const response = await this.createClient(this.activeConfig).listSyncWorkspaces()
+      const client = this.createClient(this.activeConfig)
+      const [response, teamResponse] = await Promise.all([
+        client.listSyncWorkspaces(),
+        client.listSyncTeams(),
+      ])
       const catalog = response.workspaces.map(toCatalogEntry)
+      const teams = teamResponse.teams.map(toTeamCatalogEntry)
       this.repository.setSetting(KEY_WORKSPACE_CATALOG, JSON.stringify(catalog))
+      this.repository.setSetting(KEY_TEAM_CATALOG, JSON.stringify(teams))
       this.workspaceCatalog = catalog
+      this.teamCatalog = teams
       await this.reconcile()
       setState("idle")
       return this.status()
@@ -592,6 +687,29 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     }
   }
 
+  private loadTeamCatalog(): readonly CloudTeamCatalogEntry[] {
+    const value = this.repository.getSetting(KEY_TEAM_CATALOG)
+    if (value === undefined) return []
+    try {
+      const parsed = JSON.parse(value) as unknown
+      return Array.isArray(parsed) ? parsed.filter(isTeamCatalogEntry) : []
+    } catch {
+      return []
+    }
+  }
+
+  private uniqueLocalSlug(source: string): string {
+    const repository = new WorkspaceRepository(this.options.store)
+    const base = slugify(source)
+    let candidate = base
+    let suffix = 2
+    while (repository.getBySlug(candidate) !== undefined) {
+      candidate = `${base}-${suffix}`
+      suffix += 1
+    }
+    return candidate
+  }
+
   private loadAccountIdentity(): CloudAccountIdentity | undefined {
     const value = this.repository.getSetting(KEY_ACCOUNT_IDENTITY)
     if (value === undefined) {
@@ -680,6 +798,15 @@ function toCatalogEntry(workspace: import("@apiweave/proto/apiweave/v1/device_pb
   }
 }
 
+function toTeamCatalogEntry(team: import("@apiweave/proto/apiweave/v1/device_pb").SyncTeam): CloudTeamCatalogEntry {
+  return {
+    teamId: team.teamId,
+    teamName: team.teamName,
+    isPersonal: team.isPersonal,
+    canCreateWorkspaces: team.capabilities?.canCreateWorkspaces ?? false,
+  }
+}
+
 function isCatalogEntry(value: unknown): value is CloudWorkspaceCatalogEntry {
   if (typeof value !== "object" || value === null) {
     return false
@@ -694,6 +821,23 @@ function isCatalogEntry(value: unknown): value is CloudWorkspaceCatalogEntry {
     && typeof entry["canPull"] === "boolean"
     && typeof entry["canPush"] === "boolean"
     && typeof entry["canResolveConflicts"] === "boolean"
+}
+
+function isTeamCatalogEntry(value: unknown): value is CloudTeamCatalogEntry {
+  if (typeof value !== "object" || value === null) return false
+  const entry = value as Record<string, unknown>
+  return typeof entry["teamId"] === "string"
+    && typeof entry["teamName"] === "string"
+    && typeof entry["isPersonal"] === "boolean"
+    && typeof entry["canCreateWorkspaces"] === "boolean"
+}
+
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "team"
 }
 
 function isAccountIdentity(value: unknown): value is CloudAccountIdentity {

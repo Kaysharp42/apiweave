@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { WorkspaceSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import { ConflictError, NotFoundError } from "../errors"
 import type { HandlerDeps } from "./common"
@@ -24,6 +25,12 @@ const workspaceCatalogEntrySchema = z
     canResolveConflicts: z.boolean(),
   })
   .strict()
+const teamCatalogEntrySchema = z.object({
+  teamId: z.string().min(1),
+  teamName: z.string().min(1),
+  isPersonal: z.boolean(),
+  canCreateWorkspaces: z.boolean(),
+}).strict()
 const accountSchema = z.object({
   accountId: z.string().min(1),
   email: z.string().min(1).optional(),
@@ -70,6 +77,7 @@ const statusSchema = z
     workspaceIds: z.array(z.string()),
     bindings: z.array(bindingSchema),
     workspaceCatalog: z.array(workspaceCatalogEntrySchema),
+    teamCatalog: z.array(teamCatalogEntrySchema),
   })
   .strict()
 
@@ -87,6 +95,22 @@ const bindWorkspaceInput = z
     syncMode: z.enum(["push", "bi-directional"]).optional(),
   })
   .strict()
+
+const createTeamWorkspaceInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  slug: z.string().trim().min(1),
+  description: z.string().trim().max(500).nullable().optional(),
+  teamId: z.string().min(1).optional(),
+  newTeamName: z.string().trim().min(1).max(80).optional(),
+}).strict().superRefine((input, ctx) => {
+  if ((input.teamId === undefined) === (input.newTeamName === undefined)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Choose an existing Team or enter a new Team name",
+      path: ["teamId"],
+    })
+  }
+})
 
 const unlinkInput = z
   .object({
@@ -150,6 +174,12 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
     input: bindWorkspaceInput,
     output: statusSchema,
     handle: (input) => required(control).bindWorkspace(input),
+  })
+
+  router.register("cloud", "createTeamWorkspace", {
+    input: createTeamWorkspaceInput,
+    output: WorkspaceSchema,
+    handle: (input) => required(control).createTeamWorkspace(input),
   })
 
   router.register("cloud", "unbindWorkspace", {

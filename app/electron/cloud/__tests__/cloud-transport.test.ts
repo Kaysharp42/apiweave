@@ -174,7 +174,7 @@ describe("CloudSyncProvider", () => {
       expect(atomicTokenStore.getRefreshToken()).toBe("atomic-refresh")
     })
 
-    it("routes catalog, revoke, resolve, and loser RPCs through the authenticated client", async () => {
+    it("routes catalog, Team creation, Workspace creation, revoke, resolve, and loser RPCs through the authenticated client", async () => {
       nock(API_BASE)
         .post("/apiweave.v1.DeviceService/ListSyncWorkspaces", {})
         .reply(200, {
@@ -189,6 +189,34 @@ describe("CloudSyncProvider", () => {
             futureWorkspaceField: "ignored",
           }],
           futureCatalogField: "ignored",
+        })
+      nock(API_BASE)
+        .post("/apiweave.v1.DeviceService/ListSyncTeams", {})
+        .reply(200, {
+          teams: [{
+            teamId: "team-platform",
+            teamName: "Platform",
+            isPersonal: false,
+            capabilities: { canCreateWorkspaces: true },
+          }],
+        })
+      nock(API_BASE)
+        .post("/apiweave.v1.TeamService/CreateTeam", { name: "Payments", slug: "payments-1234" })
+        .reply(201, { id: "team-payments", rev: "1", name: "Payments", slug: "payments-1234" })
+      nock(API_BASE)
+        .post("/apiweave.v1.DeviceService/CreateSyncWorkspace", {
+          requestId: "request-workspace",
+          teamId: "team-platform",
+          name: "Checkout",
+          slug: "checkout",
+        })
+        .reply(200, {
+          workspaceId: "workspace-checkout",
+          workspaceName: "Checkout",
+          teamId: "team-platform",
+          teamName: "Platform",
+          effectiveRole: "SYNC_WORKSPACE_ROLE_ADMIN",
+          capabilities: { canPull: true, canPush: true, canResolveConflicts: true },
         })
       nock(API_BASE)
         .post("/apiweave.v1.DeviceService/RevokeDevice", { deviceId: "device-123" })
@@ -208,6 +236,14 @@ describe("CloudSyncProvider", () => {
         })
 
       const catalog = await client.listSyncWorkspaces()
+      const teams = await client.listSyncTeams()
+      const team = await client.createTeam("Payments", "payments-1234")
+      const workspace = await client.createSyncWorkspace({
+        requestId: "request-workspace",
+        teamId: "team-platform",
+        name: "Checkout",
+        slug: "checkout",
+      })
       await client.revokeDevice("device-123")
       await client.resolveConflict("conflict-123", "local")
       const loser = await client.fetchLoser("conflict-123")
@@ -216,6 +252,9 @@ describe("CloudSyncProvider", () => {
         workspaceId: CLOUD_WORKSPACE_ID,
         effectiveRole: 5,
       })
+      expect(teams.teams[0]).toMatchObject({ teamName: "Platform", capabilities: { canCreateWorkspaces: true } })
+      expect(team).toMatchObject({ id: "team-payments", name: "Payments" })
+      expect(workspace).toMatchObject({ workspaceId: "workspace-checkout", teamName: "Platform" })
       expect(Buffer.from(loser.loserPayload).toString("utf8")).toBe("loser-copy")
       expect(nock.isDone()).toBe(true)
     })

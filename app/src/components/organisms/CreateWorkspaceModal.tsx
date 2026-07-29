@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { LayoutGrid } from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Cloud, LayoutGrid, Plus, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
@@ -10,8 +10,7 @@ import API_BASE_URL from "../../utils/apiweaveClient";
 import { isDesktopShell } from "../../utils/isDesktopShell";
 import type { CreateWorkspaceModalProps, Workspace } from "../../types";
 
-// Workspace slugs use hyphens (backend SLUG_PATTERN: start/end alphanumeric,
-// lowercase letters/numbers/hyphens) — unlike org slugs, which use underscores.
+// Workspace slugs use lowercase letters, numbers, and hyphens.
 function toWorkspaceSlug(value: string): string {
   const slug = value
     .trim()
@@ -28,8 +27,6 @@ function isValidWorkspaceSlug(value: string): boolean {
 export function CreateWorkspaceModal({
   isOpen,
   onClose,
-  orgId,
-  orgName,
   onCreated,
 }: CreateWorkspaceModalProps) {
   const [name, setName] = useState("");
@@ -37,6 +34,10 @@ export function CreateWorkspaceModal({
   const [description, setDescription] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<Awaited<ReturnType<typeof apiweave.cloud.status>> | null>(null);
+  const [owner, setOwner] = useState<"personal" | "existing" | "new">("personal");
+  const [teamId, setTeamId] = useState("");
+  const [newTeamName, setNewTeamName] = useState("");
 
   useEffect(() => {
     if (!isOpen) {
@@ -45,7 +46,31 @@ export function CreateWorkspaceModal({
       setDescription("");
       setServerError(null);
       setIsSubmitting(false);
+      setCloudStatus(null);
+      setOwner("personal");
+      setTeamId("");
+      setNewTeamName("");
+      return;
     }
+    let cancelled = false;
+    void apiweave.cloud.status()
+      .then((status) => status.linked && status.teamCatalog.length === 0
+        ? apiweave.cloud.refreshWorkspaceCatalog()
+        : status)
+      .then((status) => {
+        if (cancelled) return;
+        setCloudStatus(status);
+        const firstTeam = status.teamCatalog.find(
+          (team) => !team.isPersonal && team.canCreateWorkspaces,
+        );
+        setTeamId(firstTeam?.teamId ?? "");
+      })
+      .catch(() => {
+        if (!cancelled) setCloudStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   const trimmedName = name.trim();
@@ -54,7 +79,14 @@ export function CreateWorkspaceModal({
     trimmedSlug && !isValidWorkspaceSlug(trimmedSlug)
       ? "Use lowercase letters, numbers, and hyphens; start and end with a letter or number."
       : null;
-  const canSubmit = Boolean(trimmedName && trimmedSlug && !slugError);
+  const canUseTeams = cloudStatus?.linked === true;
+  const availableTeams = cloudStatus?.teamCatalog.filter(
+    (team) => !team.isPersonal && team.canCreateWorkspaces,
+  ) ?? [];
+  const hasOwner = owner === "personal"
+    || (owner === "existing" && canUseTeams && Boolean(teamId))
+    || (owner === "new" && canUseTeams && Boolean(newTeamName.trim()));
+  const canSubmit = Boolean(trimmedName && trimmedSlug && !slugError && hasOwner);
 
   const handleNameChange = (value: string): void => {
     setName(value);
@@ -69,25 +101,28 @@ export function CreateWorkspaceModal({
     setServerError(null);
 
     try {
-      // Desktop is IPC-only and single-user: create a non-personal workspace
-      // directly (a bare REST POST would default to isPersonal and just return
-      // the existing Personal). When linked, cloud sync provisions it. The web
-      // path stays a team/user REST create.
       const workspace = isDesktopShell()
-        ? await apiweave.workspaces.create({
-            name: trimmedName,
-            slug: trimmedSlug,
-            description: description.trim() || null,
-            isPersonal: false,
-          })
+        ? owner === "personal"
+          ? await apiweave.workspaces.create({
+              name: trimmedName,
+              slug: trimmedSlug,
+              description: description.trim() || null,
+              isPersonal: false,
+            })
+          : await apiweave.cloud.createTeamWorkspace({
+              name: trimmedName,
+              slug: trimmedSlug,
+              description: description.trim() || null,
+              ...(owner === "existing" ? { teamId } : { newTeamName: newTeamName.trim() }),
+            })
         : await authenticatedJson<Workspace>(`${API_BASE_URL}/api/workspaces`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: trimmedName,
               slug: trimmedSlug,
-              ownerType: orgId ? "organization" : "user",
-              orgId: orgId ?? null,
+              ownerType: "user",
+              orgId: null,
               description: description.trim() || null,
             }),
           });
@@ -109,7 +144,7 @@ export function CreateWorkspaceModal({
       isOpen={isOpen}
       onClose={isSubmitting ? () => undefined : onClose}
       title="Create workspace"
-      size="sm"
+      size="md"
       headerExtra={
         <LayoutGrid
           className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark"
@@ -138,9 +173,7 @@ export function CreateWorkspaceModal({
         className="space-y-4 p-5"
       >
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-          {orgId
-            ? `A team-owned workspace in ${orgName ?? "this organization"}. Members organize workflows into projects here.`
-            : "A personal workspace only you own. Organize workflows into projects here."}
+          Choose who owns this Workspace. You can keep it personal or place it in a Cloud Team.
         </p>
 
         {serverError && (
@@ -148,6 +181,79 @@ export function CreateWorkspaceModal({
             {serverError}
           </div>
         )}
+
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
+            Where should this Workspace live?
+          </legend>
+          <OwnershipOption
+            checked={owner === "personal"}
+            description={canUseTeams
+              ? "Only you. It syncs through your personal Cloud space."
+              : "Stored on this device. You can connect Cloud later."}
+            icon={<UserRound className="h-4 w-4" aria-hidden="true" />}
+            label="Personal"
+            onChange={() => setOwner("personal")}
+          />
+          <OwnershipOption
+            checked={owner === "existing"}
+            description={canUseTeams
+              ? "Share ownership with a Team you can create Workspaces in."
+              : "Connect APIWeave Cloud to choose a Team."}
+            disabled={!canUseTeams || availableTeams.length === 0}
+            icon={<Users className="h-4 w-4" aria-hidden="true" />}
+            label="Existing Cloud Team"
+            onChange={() => setOwner("existing")}
+          />
+          {owner === "existing" && canUseTeams && (
+            <div className="pl-10">
+              <label className="mb-1 block text-xs font-medium text-text-secondary dark:text-text-secondary-dark" htmlFor="workspace-team">
+                Team
+              </label>
+              <select
+                id="workspace-team"
+                value={teamId}
+                onChange={(event) => setTeamId(event.target.value)}
+                disabled={isSubmitting}
+                className="h-10 w-full rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+              >
+                {availableTeams.map((team) => (
+                  <option key={team.teamId} value={team.teamId}>{team.teamName}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <OwnershipOption
+            checked={owner === "new"}
+            description={canUseTeams
+              ? "Create a Team, then place this Workspace inside it."
+              : "Connect APIWeave Cloud to create a Team."}
+            disabled={!canUseTeams}
+            icon={<Plus className="h-4 w-4" aria-hidden="true" />}
+            label="New Cloud Team"
+            onChange={() => setOwner("new")}
+          />
+          {owner === "new" && canUseTeams && (
+            <div className="pl-10">
+              <label className="mb-1 block text-xs font-medium text-text-secondary dark:text-text-secondary-dark" htmlFor="new-team-name">
+                Team name
+              </label>
+              <Input
+                id="new-team-name"
+                value={newTeamName}
+                onChange={(event) => setNewTeamName(event.target.value)}
+                placeholder="Platform Engineering"
+                disabled={isSubmitting}
+              />
+            </div>
+          )}
+          {canUseTeams && availableTeams.length === 0 ? (
+            <p className="flex items-center gap-1.5 pl-10 text-xs text-text-muted dark:text-text-muted-dark">
+              <Cloud className="h-3.5 w-3.5" aria-hidden="true" />
+              No existing Team allows Workspace creation. Create a new Team instead.
+            </p>
+          ) : null}
+        </fieldset>
 
         <FormField label="Workspace name" required>
           <Input
@@ -187,5 +293,43 @@ export function CreateWorkspaceModal({
         </FormField>
       </form>
     </Modal>
+  );
+}
+
+function OwnershipOption({
+  checked,
+  description,
+  disabled = false,
+  icon,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  description: string;
+  disabled?: boolean;
+  icon: ReactNode;
+  label: string;
+  onChange: () => void;
+}) {
+  return (
+    <label className={`flex min-h-14 items-start gap-3 rounded-sm border p-3 transition-colors ${
+      checked
+        ? "border-primary bg-primary/5 dark:border-primary-light dark:bg-primary-light/10"
+        : "border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
+    } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"}`}>
+      <input
+        type="radio"
+        name="workspace-owner"
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+        className="mt-1 accent-primary"
+      />
+      <span className="mt-0.5 text-text-secondary dark:text-text-secondary-dark">{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">{label}</span>
+        <span className="mt-0.5 block text-xs text-text-secondary dark:text-text-secondary-dark">{description}</span>
+      </span>
+    </label>
   );
 }

@@ -4,7 +4,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { ChevronDown, User, Plus, ListTree } from "lucide-react";
+import { ChevronDown, HardDrive, UserRound, Users, Plus, ListTree } from "lucide-react";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useAuth } from "../../auth/useAuth";
 import { isDesktopShell } from "../../utils/isDesktopShell";
@@ -12,6 +12,7 @@ import { Button } from "../atoms/Button";
 import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
 import type { Workspace } from "../../types";
+import { useCloudSync } from "../../hooks/useCloudSync";
 
 export function OrgWorkspaceSwitcher() {
   const {
@@ -22,6 +23,7 @@ export function OrgWorkspaceSwitcher() {
     isLoading,
   } = useWorkspace();
   const { isSingleUser } = useAuth();
+  const cloud = useCloudSync();
   const [open, setOpen] = useState(false);
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -134,7 +136,11 @@ export function OrgWorkspaceSwitcher() {
   if (personalWorkspace) flatList.push(personalWorkspace);
   flatList.push(...otherWorkspaces);
 
+  const currentEntry = currentWorkspace
+    ? availableWorkspaces.find((entry) => entry.workspace.workspaceId === currentWorkspace.workspaceId)
+    : undefined;
   const displayLabel = currentWorkspace?.name ?? "Personal";
+  const displaySource = currentEntry ? workspaceSource(currentEntry, cloud.status) : "Personal workspace";
 
   return (
     <div className="relative" ref={wrapperRef}>
@@ -144,13 +150,16 @@ export function OrgWorkspaceSwitcher() {
         size="sm"
         onClick={() => setOpen((prev) => !prev)}
         onKeyDown={handleTriggerKeyDown}
-        className="max-w-[14rem] truncate text-xs font-medium"
+        className="max-w-[18rem] text-xs font-medium"
         aria-label="Switch workspace"
         aria-haspopup="listbox"
         aria-expanded={open}
         icon={<ChevronDown className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />}
       >
         <span className="truncate">{displayLabel}</span>
+        <span className="truncate text-[10px] font-normal text-text-muted dark:text-text-muted-dark">
+          {displaySource}
+        </span>
       </Button>
 
       {open && (
@@ -174,7 +183,8 @@ export function OrgWorkspaceSwitcher() {
                   currentWorkspace?.workspaceId ===
                   personalWorkspace.workspace.workspaceId
                 }
-                icon={<User className="w-4 h-4 flex-shrink-0" />}
+                icon={<UserRound className="w-4 h-4 flex-shrink-0" />}
+                source={workspaceSource(personalWorkspace, cloud.status)}
                 onSelect={handleSelect}
                 onKeyDown={handleItemKeyDown}
                 itemRef={(el) => {
@@ -185,6 +195,7 @@ export function OrgWorkspaceSwitcher() {
 
             {otherWorkspaces.map((entry, index) => {
               const flatIndex = personalWorkspace ? index + 1 : index;
+              const source = workspaceSource(entry, cloud.status);
               return (
                 <WorkspaceItem
                   key={entry.workspace.workspaceId}
@@ -194,7 +205,12 @@ export function OrgWorkspaceSwitcher() {
                     currentWorkspace?.workspaceId ===
                     entry.workspace.workspaceId
                   }
-                  icon={<User className="w-4 h-4 flex-shrink-0" />}
+                  icon={source.startsWith("Team ·")
+                    ? <Users className="w-4 h-4 flex-shrink-0" />
+                    : source === "On this device"
+                      ? <HardDrive className="w-4 h-4 flex-shrink-0" />
+                      : <UserRound className="w-4 h-4 flex-shrink-0" />}
+                  source={source}
                   onSelect={handleSelect}
                   onKeyDown={handleItemKeyDown}
                   itemRef={(el) => {
@@ -260,6 +276,7 @@ interface WorkspaceItemProps {
   index: number;
   isActive: boolean;
   icon: React.ReactNode;
+  source: string;
   onSelect: (entry: WorkspaceEntry) => void;
   onKeyDown: (
     event: ReactKeyboardEvent<HTMLButtonElement>,
@@ -273,6 +290,7 @@ function WorkspaceItem({
   index,
   isActive,
   icon,
+  source,
   onSelect,
   onKeyDown,
   itemRef,
@@ -304,10 +322,30 @@ function WorkspaceItem({
         <div className="truncate text-sm font-medium">
           {entry.workspace.name}
         </div>
+        <div className="truncate text-xs text-text-muted dark:text-text-muted-dark">
+          {source}
+        </div>
       </div>
       {isActive && (
         <span className="flex h-2 w-2 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />
       )}
     </button>
   );
+}
+
+function workspaceSource(
+  entry: WorkspaceEntry,
+  status: import("../../types").CloudSyncStatus | null,
+): string {
+  if (entry.workspace.isPersonal) return "Personal workspace";
+  const binding = status?.bindings?.find(
+    (candidate) => candidate.workspaceId === entry.workspace.workspaceId,
+  );
+  const catalog = status?.workspaceCatalog?.find(
+    (candidate) => candidate.workspaceId === binding?.cloudWorkspaceId,
+  );
+  const teamName = binding?.teamName ?? catalog?.teamName;
+  if (teamName && teamName !== "Personal") return `Team · ${teamName}`;
+  if (binding) return "Personal Cloud space";
+  return "On this device";
 }

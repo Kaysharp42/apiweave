@@ -21,6 +21,7 @@ const base: CloudSyncStatus = {
   workspaceIds: [],
   bindings: [],
   workspaceCatalog: [],
+  teamCatalog: [],
 };
 
 function binding(overrides: Partial<CloudSyncStatus["bindings"][number]> = {}) {

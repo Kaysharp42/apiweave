@@ -23,6 +23,7 @@ import type { Workflow } from "../types/Workflow";
 import type { Workspace } from "../types/Workspace";
 import type {
   CloudBindWorkspaceInput,
+  CloudCreateTeamWorkspaceInput,
   CloudSyncStatus,
 } from "../types/cloud";
 
@@ -513,6 +514,8 @@ export const apiweave = {
       invoke<CloudSyncStatus>("cloud", "unlink", localOnly ? { localOnly } : {}),
     bindWorkspace: (input: CloudBindWorkspaceInput) =>
       invoke<CloudSyncStatus>("cloud", "bindWorkspace", input),
+    createTeamWorkspace: (input: CloudCreateTeamWorkspaceInput) =>
+      invoke<Workspace>("cloud", "createTeamWorkspace", input),
     unbindWorkspace: (workspaceId: string) =>
       invoke<CloudSyncStatus>("cloud", "unbindWorkspace", { workspaceId }),
     initializeWorkspace: (workspaceId: string) =>
