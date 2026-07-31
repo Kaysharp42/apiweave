@@ -44,7 +44,6 @@ interface PaletteItem {
   cookies?: string;
   body?: string;
   timeout?: number;
-  workflowId?: string;
   openapiMeta?: Record<string, unknown> | null;
 }
 
@@ -59,7 +58,6 @@ interface NodeTemplate {
   label: string;
   description: string;
   method?: string;
-  workflowId?: string;
   template?: Record<string, unknown>;
 }
 
@@ -115,6 +113,11 @@ const nodeTemplates: { category: string; nodes: NodeTemplate[] }[] = [
         description: "Add a delay before next step",
       },
       { type: "merge", label: "Merge", description: "Merge parallel branches" },
+      {
+        type: "workflow",
+        label: "Call Workflow",
+        description: "Run another workflow as a step",
+      },
       { type: "end", label: "End", description: "Mark the end of workflow" },
     ],
   },
@@ -148,45 +151,29 @@ export default function AddNodesPanel({
 
     importedGroups.forEach((group: ImportedGroup) => {
       const items = (group.items ?? []) as PaletteItem[];
-      const importedNodes: NodeTemplate[] = items.map((item) =>
-        item.method === "WORKFLOW"
-          ? {
-              type: "workflow",
-              label: item.label ?? "Workflow",
-              description: "Sub-workflow",
-              method: "WORKFLOW",
-              workflowId: item.workflowId,
-              template: {
-                type: "workflow",
-                label: item.label ?? "Workflow",
-                config: {
-                  workflowId: item.workflowId,
-                  workflowName: item.label,
-                },
-              },
-            }
-          : {
-              type: "http-request",
-              label: item.label ?? item.url ?? "Request",
-              description: item.url ?? "",
+      const importedNodes: NodeTemplate[] = items.map(
+        (item): NodeTemplate => ({
+          type: "http-request",
+          label: item.label ?? item.url ?? "Request",
+          description: item.url ?? "",
+          method: item.method ?? "GET",
+          template: {
+            type: "http-request",
+            label: item.label ?? item.url ?? "Request",
+            config: {
               method: item.method ?? "GET",
-              template: {
-                type: "http-request",
-                label: item.label ?? item.url ?? "Request",
-                config: {
-                  method: item.method ?? "GET",
-                  url: item.url ?? "",
-                  queryParams: item.queryParams ?? "",
-                  pathVariables: item.pathVariables ?? "",
-                  headers: item.headers ?? "",
-                  cookies: item.cookies ?? "",
-                  body: item.body ?? "",
-                  timeout: item.timeout ?? 30,
-                  openapiMeta: item.openapiMeta ?? null,
-                },
-              },
+              url: item.url ?? "",
+              queryParams: item.queryParams ?? "",
+              pathVariables: item.pathVariables ?? "",
+              headers: item.headers ?? "",
+              cookies: item.cookies ?? "",
+              body: item.body ?? "",
+              timeout: item.timeout ?? 30,
+              openapiMeta: item.openapiMeta ?? null,
             },
-      ) as NodeTemplate[];
+          },
+        }),
+      );
       sections.push({
         key: `imported-${group.id}`,
         title: group.title,
@@ -215,7 +202,7 @@ export default function AddNodesPanel({
 
   const onDragStart = (event: DragEvent, node: NodeTemplate) => {
     event.dataTransfer.setData("application/reactflow", node.type);
-    if (node.method && node.method !== "WORKFLOW") {
+    if (node.method) {
       event.dataTransfer.setData("application/reactflow-method", node.method);
     }
     if (node.template) {
@@ -396,16 +383,11 @@ function NodeSection({
               title={`Drag ${node.label} to canvas`}
             >
               <div className="flex items-center gap-1.5 text-sm text-text-primary dark:text-text-primary-dark">
-                {node.method && node.method !== "WORKFLOW" && (
+                {node.method && (
                   <span
                     className={`inline-block px-1.5 py-0.5 text-[10px] font-mono border rounded-sm ${methodBadge[node.method] ?? "text-primary bg-primary/10 border-primary/30"}`}
                   >
                     {node.method}
-                  </span>
-                )}
-                {node.method === "WORKFLOW" && (
-                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded-sm">
-                    WF
                   </span>
                 )}
                 <span className="font-medium truncate">{node.label}</span>

@@ -6,6 +6,7 @@ import { HTTPNodeDataSchema } from "./HTTPNodeDataSchema"
 import { MergeNodeDataSchema } from "./MergeNodeDataSchema"
 import { PositionSchema } from "./PositionSchema"
 import { StartNodeDataSchema } from "./StartNodeDataSchema"
+import { WorkflowCallNodeDataSchema } from "./WorkflowCallNodeDataSchema"
 
 /**
  * Base shape every workflow-node discrimination member shares: identity,
@@ -72,6 +73,12 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
     .extend({
       type: z.literal("end"),
       config: EndNodeDataSchema.optional(),
+    })
+    .strict(),
+  baseNode
+    .extend({
+      type: z.literal("workflow"),
+      config: WorkflowCallNodeDataSchema.optional(),
     })
     .strict(),
 ])

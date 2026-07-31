@@ -98,6 +98,65 @@ describe("WorkflowService — scope + permission round-trip (QA: task-12-service
   })
 })
 
+describe("WorkflowService — Call Workflow node target validation", () => {
+  function callWorkflowNode(targetWorkflowId: string) {
+    return [
+      { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+      { nodeId: "call1", type: "workflow", position: { x: 1, y: 0 }, config: { targetWorkflowId } },
+    ] as const
+  }
+
+  it("rejects a target workflow from another workspace as not_found", async () => {
+    const wsA = seedWorkspace("a")
+    const wsB = seedWorkspace("b")
+    const foreignTarget = workflows.create({ workspaceId: wsB, name: "Foreign target" })
+    const service = new WorkflowService(workflows, sync, permissions, scopeResolver)
+
+    await expect(
+      service.create(wsA, { name: "caller", nodes: [...callWorkflowNode(foreignTarget.workflowId)] }),
+    ).rejects.toMatchObject({ code: "not_found" })
+
+    const created = await service.create(wsA, { name: "caller" })
+    await expect(
+      service.update(wsA, created.workflowId, { nodes: [...callWorkflowNode(foreignTarget.workflowId)] }),
+    ).rejects.toMatchObject({ code: "not_found" })
+  })
+
+  it("rejects a direct self-call but accepts a valid same-workspace target", async () => {
+    const ws = seedWorkspace("a")
+    const service = new WorkflowService(workflows, sync, permissions, scopeResolver)
+    const target = await service.create(ws, { name: "target" })
+    const created = await service.create(ws, { name: "caller" })
+
+    await expect(
+      service.update(ws, created.workflowId, { nodes: [...callWorkflowNode(created.workflowId)] }),
+    ).rejects.toMatchObject({ code: "validation" })
+
+    const updated = await service.update(ws, created.workflowId, {
+      nodes: [...callWorkflowNode(target.workflowId)],
+    })
+    expect(updated.nodes.find((n) => n.nodeId === "call1")?.config).toMatchObject({
+      targetWorkflowId: target.workflowId,
+    })
+  })
+
+  it("does not walk the transitive call graph — an indirect cycle is accepted at write time", async () => {
+    // A -> B is fine on its own. B -> A (closing the loop) is ALSO accepted at
+    // write time, by design: assertCallWorkflowTargetsInWorkspace only checks
+    // direct self-reference, not the full call graph (see the comment on that
+    // method). The runner's depth-bounded recursion guard is what actually
+    // stops this from hanging at execution time — covered in executor.test.ts.
+    const ws = seedWorkspace("a")
+    const service = new WorkflowService(workflows, sync, permissions, scopeResolver)
+    const a = await service.create(ws, { name: "A" })
+    const b = await service.create(ws, { name: "B", nodes: [...callWorkflowNode(a.workflowId)] })
+
+    await expect(
+      service.update(ws, a.workflowId, { nodes: [...callWorkflowNode(b.workflowId)] }),
+    ).resolves.toMatchObject({ workflowId: a.workflowId })
+  })
+})
+
 describe("CollectionService — membership + delete conflict", () => {
   it("refuses to delete a collection while workflows are still attached", async () => {
     const ws = seedWorkspace("a")

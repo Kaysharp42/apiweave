@@ -5,6 +5,7 @@ export const NODE_MODAL_TYPE_LABELS: Record<string, string> = {
   merge: "Merge",
   start: "Start",
   end: "End",
+  workflow: "Call Workflow",
 };
 
 export const getNodeModalTypeName = (type: string): string =>

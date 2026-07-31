@@ -32,6 +32,7 @@ import DelayNode from "./nodes/DelayNode";
 import StartNode from "./nodes/StartNode";
 import EndNode from "./nodes/EndNode";
 import MergeNode from "./nodes/MergeNode";
+import CallWorkflowNode from "./nodes/CallWorkflowNode";
 import CustomEdge from "./CustomEdge";
 import AddNodesPanel from "./AddNodesPanel";
 import NodeModal from "./NodeModal";
@@ -88,6 +89,7 @@ const nodeTypes: NodeTypes = {
   start: StartNode as NodeTypes[string],
   end: EndNode as NodeTypes[string],
   merge: MergeNode as NodeTypes[string],
+  workflow: CallWorkflowNode as NodeTypes[string],
 };
 
 const edgeTypes: EdgeTypes = {
@@ -971,7 +973,8 @@ export function WorkflowCanvas({
               | "delay"
               | "merge"
               | "start"
-              | "end",
+              | "end"
+              | "workflow",
             data: {
               ...modalNode.data,
               label: String(modalNode.data.label || ""),
@@ -982,6 +985,8 @@ export function WorkflowCanvas({
           onSave={(node) =>
             handleModalSave(node as Node<WorkflowCanvasNodeData>)
           }
+          workspaceId={scope.workspaceId ?? ""}
+          currentWorkflowId={workflowId ?? ""}
         />
       )}
 

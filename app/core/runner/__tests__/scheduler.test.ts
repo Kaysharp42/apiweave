@@ -174,6 +174,56 @@ describe("RunScheduler", () => {
       })
     })
 
+    it("runs a Call Workflow node against another workflow in the same workspace, end to end", async () => {
+      const ws = seedWorkspace()
+      const target = workflows.create({
+        workspaceId: ws,
+        name: "target-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "end" }],
+        variables: { issuedId: "sub-value" },
+      })
+      const callerId = workflows.create({
+        workspaceId: ws,
+        name: "caller-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "call1",
+            type: "workflow",
+            position: { x: 1, y: 0 },
+            config: { targetWorkflowId: target.workflowId, outputMapping: { callerId: "issuedId" } },
+          },
+          { nodeId: "end", type: "end", position: { x: 2, y: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "call1" },
+          { edgeId: "e2", source: "call1", target: "end" },
+        ],
+      }).workflowId
+
+      const scheduler = makeScheduler()
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId: callerId })
+
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      const persistedRun = runs.getById(runId)
+      expect(persistedRun?.status).toBe("completed")
+      expect(persistedRun?.variables).toMatchObject({ callerId: "sub-value" })
+      const callResult = persistedRun?.results.find((r) => r.nodeId === "call1")
+      expect(callResult?.status).toBe("passed")
+      expect(callResult?.subWorkflow).toMatchObject({
+        workflowId: target.workflowId,
+        status: "passed",
+        nodeCount: 2,
+        failedNodeCount: 0,
+        outputVariableNames: ["callerId"],
+      })
+    })
+
     it("resolves {{secrets.*}} through the runtime resolver and substitutes plaintext into the outgoing request", async () => {
       const ws = seedWorkspace()
       // The renderer seals against the scope public key (publicKeyFromSeed(seed));

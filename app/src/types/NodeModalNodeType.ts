@@ -4,4 +4,5 @@ export type NodeModalNodeType =
   | "delay"
   | "merge"
   | "start"
-  | "end";
+  | "end"
+  | "workflow";

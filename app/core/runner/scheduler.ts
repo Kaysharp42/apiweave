@@ -7,7 +7,7 @@ import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps } from "./executor"
+import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp } from "./safe_http"
 import { NotFoundError } from "../ipc/errors"
@@ -201,6 +201,16 @@ export class RunScheduler {
           : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
         emitProgress: (event) => this.handleProgress(runId, event),
+        resolveWorkflow: (workflowId): ResolvedSubWorkflow | undefined => {
+          const target = this.deps.workflows.getByIdInWorkspace(workflowId, run.workspaceId)
+          if (!target) return undefined
+          return {
+            name: target.name,
+            nodes: target.nodes as unknown as WorkflowGraph["nodes"],
+            edges: target.edges as unknown as WorkflowGraph["edges"],
+            variables: target.variables as Record<string, unknown>,
+          }
+        },
       }
 
       const executor = new WorkflowExecutor(executorDeps)

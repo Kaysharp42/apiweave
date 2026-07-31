@@ -127,7 +127,7 @@ Every node has:
 | Field      | Type   | Required | Description |
 |-----------|--------|----------|-------------|
 | nodeId    | string | yes | Unique ID. Convention: \`{type}_{unix_timestamp_ms}\` e.g. \`httpRequest_1738900000000\` |
-| type      | string | yes | One of: \`start\`, \`end\`, \`http-request\`, \`assertion\`, \`delay\`, \`merge\`, \`condition\` |
+| type      | string | yes | One of: \`start\`, \`end\`, \`http-request\`, \`assertion\`, \`delay\`, \`merge\`, \`workflow\` |
 | label     | string | no  | Display name shown on the canvas |
 | position  | object | yes | \`{ "x": number, "y": number }\` — canvas coordinates |
 | config    | object | yes | Node-type-specific configuration (see below) |
