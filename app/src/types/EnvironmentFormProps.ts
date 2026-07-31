@@ -15,6 +15,8 @@ export interface EnvironmentFormProps {
   availableWorkspaces?: WorkspaceOption[];
   /** Whether to show the allowed-workspace selector (org scope only). */
   showAllowedWorkspaces?: boolean;
+  /** Sibling environments in the same workspace, for the base-environment picker. */
+  availableEnvironments?: ScopedEnvironment[];
   className?: string;
 }
 

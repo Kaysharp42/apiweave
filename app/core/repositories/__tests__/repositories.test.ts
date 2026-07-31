@@ -278,6 +278,41 @@ describe("EnvironmentRepository", () => {
     const cleared = environments.deleteVariable(env.environmentId, "host")
     expect(cleared?.variables).toEqual({})
   })
+
+  it("resolves inherited variables base-first, override-last, across a multi-level chain", () => {
+    const workspaceId = seedWorkspace()
+    const base = environments.create({ workspaceId, name: "base", variables: { host: "api.base", region: "eu" } })
+    const mid = environments.create({
+      workspaceId,
+      name: "mid",
+      baseEnvironmentId: base.environmentId,
+      variables: { host: "api.mid" },
+    })
+    const leaf = environments.create({
+      workspaceId,
+      name: "leaf",
+      baseEnvironmentId: mid.environmentId,
+      variables: { token: "leaf-token" },
+    })
+
+    expect(environments.resolveEffectiveVariables(leaf.environmentId)).toEqual({
+      host: "api.mid",
+      region: "eu",
+      token: "leaf-token",
+    })
+    expect(environments.resolveEffectiveVariables(base.environmentId)).toEqual(base.variables)
+  })
+
+  it("stops walking the base chain instead of looping when a cycle is present on disk", () => {
+    const workspaceId = seedWorkspace()
+    const a = environments.create({ workspaceId, name: "a", variables: { k: "a" } })
+    const b = environments.create({ workspaceId, name: "b", baseEnvironmentId: a.environmentId, variables: { k: "b" } })
+    // Force a cycle directly through the repository, bypassing service-level validation,
+    // to prove the depth-bounded walk in resolveEffectiveVariables can't hang or overflow.
+    environments.update(a.environmentId, { baseEnvironmentId: b.environmentId })
+
+    expect(() => environments.resolveEffectiveVariables(a.environmentId)).not.toThrow()
+  })
 })
 
 describe("CollectionRepository", () => {

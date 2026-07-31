@@ -176,7 +176,8 @@ export class RunScheduler {
       }
 
       const selectedEnvironmentId = run.selectedEnvironmentId ?? workflow.selectedEnvironmentId ?? null
-      const environment = selectedEnvironmentId ? this.deps.environments?.getById(selectedEnvironmentId) : undefined
+      const environments = this.deps.environments
+      const environment = selectedEnvironmentId ? environments?.getById(selectedEnvironmentId) : undefined
       if (selectedEnvironmentId && (environment === undefined || environment.workspaceId !== run.workspaceId)) {
         throw new Error(`environment ${selectedEnvironmentId} not found for run ${runId}`)
       }
@@ -191,7 +192,13 @@ export class RunScheduler {
         rng: this.deps.rng,
         http: this.deps.http,
         functions: this.deps.functions,
-        ...(environment ? { environmentVariables: environment.variables as Record<string, unknown> } : {}),
+        ...(environment && environments
+          ? {
+              environmentVariables: environments.resolveEffectiveVariables(
+                environment.environmentId,
+              ) as Record<string, unknown>,
+            }
+          : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
         emitProgress: (event) => this.handleProgress(runId, event),
       }

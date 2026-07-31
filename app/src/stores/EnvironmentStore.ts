@@ -31,6 +31,7 @@ function normalizeScopedEnvironment(raw: Partial<ScopedEnvironment>): ScopedEnvi
   };
   if (raw.description !== undefined) env.description = raw.description;
   if (raw.swaggerDocUrl !== undefined) env.swaggerDocUrl = raw.swaggerDocUrl;
+  if (raw.baseEnvironmentId !== undefined) env.baseEnvironmentId = raw.baseEnvironmentId;
   if (raw.ownerType !== undefined) env.ownerType = raw.ownerType;
   return env;
 }

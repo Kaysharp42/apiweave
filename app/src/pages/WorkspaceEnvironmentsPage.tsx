@@ -96,6 +96,7 @@ export default function WorkspaceEnvironmentsPage() {
             name: data.name,
             description: data.description || undefined,
             swaggerDocUrl: data.swaggerDocUrl || undefined,
+            baseEnvironmentId: data.baseEnvironmentId,
             variables: data.variables,
           }),
         },
@@ -124,6 +125,7 @@ export default function WorkspaceEnvironmentsPage() {
             name: data.name,
             description: data.description || undefined,
             swaggerDocUrl: data.swaggerDocUrl || undefined,
+            baseEnvironmentId: data.baseEnvironmentId,
             variables: data.variables,
           }),
         },
@@ -248,6 +250,7 @@ export default function WorkspaceEnvironmentsPage() {
             submitting={saving}
             availableWorkspaces={orgWorkspaces}
             showAllowedWorkspaces={false}
+            availableEnvironments={environments}
           />
         )}
 
@@ -260,6 +263,7 @@ export default function WorkspaceEnvironmentsPage() {
             submitting={saving}
             availableWorkspaces={orgWorkspaces}
             showAllowedWorkspaces={false}
+            availableEnvironments={environments}
           />
         )}
 

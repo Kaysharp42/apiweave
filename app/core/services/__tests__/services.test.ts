@@ -151,6 +151,47 @@ describe("EnvironmentService — variable ops", () => {
   })
 })
 
+describe("EnvironmentService — base environment inheritance", () => {
+  it("rejects a base environment from another workspace as not_found", async () => {
+    const wsA = seedWorkspace("a")
+    const wsB = seedWorkspace("b")
+    const foreignBase = environments.create({ workspaceId: wsB, name: "Foreign base" })
+    const service = new EnvironmentService(environments, sync, permissions, scopeResolver)
+
+    await expect(
+      service.create(wsA, { name: "Env", baseEnvironmentId: foreignBase.environmentId }),
+    ).rejects.toMatchObject({ code: "validation" })
+
+    const created = await service.create(wsA, { name: "Env" })
+    await expect(
+      service.update(wsA, created.environmentId, { baseEnvironmentId: foreignBase.environmentId }),
+    ).rejects.toMatchObject({ code: "validation" })
+  })
+
+  it("rejects self-reference and cycles, but accepts a valid multi-level chain", async () => {
+    const ws = seedWorkspace("a")
+    const service = new EnvironmentService(environments, sync, permissions, scopeResolver)
+
+    const base = await service.create(ws, { name: "base", variables: { region: "eu" } })
+    const mid = await service.create(ws, { name: "mid", baseEnvironmentId: base.environmentId, variables: { host: "mid" } })
+
+    await expect(service.update(ws, mid.environmentId, { baseEnvironmentId: mid.environmentId })).rejects.toMatchObject({
+      code: "validation",
+    })
+    // base -> mid would close the loop mid already opened (mid's base is base).
+    await expect(service.update(ws, base.environmentId, { baseEnvironmentId: mid.environmentId })).rejects.toMatchObject({
+      code: "validation",
+    })
+
+    const leaf = await service.create(ws, { name: "leaf", baseEnvironmentId: mid.environmentId, variables: { token: "t" } })
+    expect(environments.resolveEffectiveVariables(leaf.environmentId)).toEqual({
+      region: "eu",
+      host: "mid",
+      token: "t",
+    })
+  })
+})
+
 describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awecollection-roundtrip)", () => {
   const clock = () => "2026-01-01T00:00:00.000Z"
 

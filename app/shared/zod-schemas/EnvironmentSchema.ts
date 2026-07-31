@@ -10,6 +10,7 @@ export const EnvironmentSchema = z
     name: z.string().min(1),
     description: z.string().nullable().optional(),
     swaggerDocUrl: z.string().nullable().optional(),
+    baseEnvironmentId: z.string().min(1).nullable().optional(),
     variables: z.record(z.string(), JsonValueSchema).default({}),
     secrets: z.record(z.string(), JsonValueSchema).default({}),
     isDefault: z.boolean().default(false),
