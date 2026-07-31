@@ -168,6 +168,7 @@ export function EnvironmentForm({
               hint="Inherit variables from another environment; your own variables override matching names"
             >
               <select
+                aria-label="Base Environment"
                 value={form.baseEnvironmentId ?? ""}
                 onChange={(e) =>
                   updateField("baseEnvironmentId", e.target.value || null)
