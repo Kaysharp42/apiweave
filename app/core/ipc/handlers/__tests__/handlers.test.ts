@@ -4,6 +4,7 @@ import type { InitializedDatabase } from "../../../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   RunRepository,
   WorkflowRepository,
   WorkspaceRepository,
@@ -17,6 +18,7 @@ import { WorkflowService } from "../../../services/workflow_service"
 import { WorkflowAnalysisService } from "../../../services/workflow_analysis_service"
 import { AssertionAuthoringService } from "../../../services/assertion_authoring_service"
 import { EnvironmentService } from "../../../services/environment_service"
+import { NodePresetService } from "../../../services/node_preset_service"
 import { RunService } from "../../../services/run_service"
 import { SecretService, type SecretWriteStore, type SecretUpsert } from "../../../services/secret_service"
 import { ProjectExportService } from "../../../services/project_export_service"
@@ -67,6 +69,7 @@ beforeEach(() => {
   const workflows = new WorkflowRepository(db.kvStore)
   const runs = new RunRepository(db.kvStore)
   const environments = new EnvironmentRepository(db.kvStore)
+  const nodePresets = new NodePresetRepository(db.kvStore)
   const collections = new CollectionRepository(db.kvStore)
   const existence: ScopeExistence = {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
@@ -86,6 +89,7 @@ beforeEach(() => {
     workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
     assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
+    nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
     runs: runService,
     secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
@@ -180,6 +184,88 @@ describe("IPC handlers — dispatch envelope + authorize + validate (QA: task-13
       payload: { workspaceId: workspace.workspaceId, collectionId: collection.collectionId },
     })
     expect(res).toMatchObject({ ok: false, error: { code: "conflict" } })
+  })
+})
+
+describe("IPC handlers — nodePresets domain", () => {
+  it("round-trips create/list/update/delete through the router", async () => {
+    const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await ok<{ presetId: string; nodeType: string; config: Record<string, unknown> }>(
+      "nodePresets",
+      "create",
+      {
+        workspaceId: workspace.workspaceId,
+        name: "Standard auth headers",
+        nodeType: "http-request",
+        config: { headers: [{ key: "Authorization", value: "Bearer {{secrets.TOKEN}}" }] },
+      },
+    )
+    expect(created).toMatchObject({ nodeType: "http-request" })
+
+    const listed = await ok<{ items: { presetId: string }[]; total: number }>("nodePresets", "list", {
+      workspaceId: workspace.workspaceId,
+    })
+    expect(listed.total).toBe(1)
+    expect(listed.items[0]?.presetId).toBe(created.presetId)
+
+    const renamed = await ok<{ name: string }>("nodePresets", "update", {
+      workspaceId: workspace.workspaceId,
+      presetId: created.presetId,
+      name: "Auth headers",
+    })
+    expect(renamed.name).toBe("Auth headers")
+
+    expect(
+      await ok("nodePresets", "delete", { workspaceId: workspace.workspaceId, presetId: created.presetId }),
+    ).toBeNull()
+    expect((await ok<{ total: number }>("nodePresets", "list", { workspaceId: workspace.workspaceId })).total).toBe(0)
+  })
+
+  it("accepts a legacy string headers config and stores it canonicalised", async () => {
+    const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await ok<{ config: Record<string, unknown> }>("nodePresets", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "Legacy",
+      nodeType: "http-request",
+      config: { headers: "Accept: application/json" },
+    })
+    expect(created.config).toEqual({ headers: [{ key: "Accept", value: "application/json" }] })
+  })
+
+  it("rejects an unknown node type and a config the node type would refuse", async () => {
+    const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+
+    // `start` carries no config, so it is not a preset node type at all.
+    expect(
+      await router.dispatch({
+        domain: "nodePresets",
+        action: "create",
+        payload: { workspaceId: workspace.workspaceId, name: "Nope", nodeType: "start" },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "validation" } })
+
+    expect(
+      await router.dispatch({
+        domain: "nodePresets",
+        action: "create",
+        payload: {
+          workspaceId: workspace.workspaceId,
+          name: "Nope",
+          nodeType: "delay",
+          config: { url: "https://api.test" },
+        },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "validation" } })
+  })
+
+  it("hides an unknown workspace as not_found", async () => {
+    expect(
+      await router.dispatch({
+        domain: "nodePresets",
+        action: "list",
+        payload: { workspaceId: "ws-unknown" },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "not_found" } })
   })
 })
 

@@ -4,6 +4,7 @@ import type { InitializedDatabase } from "../../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   RunRepository,
   WorkflowRepository,
   WorkspaceRepository,
@@ -13,6 +14,7 @@ import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { CollectionService } from "../collection_service"
 import { EnvironmentService } from "../environment_service"
+import { NodePresetService } from "../node_preset_service"
 import { ProjectExportService } from "../project_export_service"
 import { RunService } from "../run_service"
 import { WorkflowService } from "../workflow_service"
@@ -23,6 +25,7 @@ let workflows: WorkflowRepository
 let runs: RunRepository
 let environments: EnvironmentRepository
 let collections: CollectionRepository
+let presets: NodePresetRepository
 let scopeResolver: ScopeResolver
 const permissions = new LocalOwnerProvider()
 const sync = new LocalOnlySyncProvider()
@@ -34,6 +37,7 @@ beforeEach(() => {
   runs = new RunRepository(db.kvStore)
   environments = new EnvironmentRepository(db.kvStore)
   collections = new CollectionRepository(db.kvStore)
+  presets = new NodePresetRepository(db.kvStore)
   const existence: ScopeExistence = {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: (id) => environments.getById(id) !== undefined,
@@ -248,6 +252,75 @@ describe("EnvironmentService — base environment inheritance", () => {
       host: "mid",
       token: "t",
     })
+  })
+})
+
+describe("NodePresetService — workspace-scoped preset library", () => {
+  function service(): NodePresetService {
+    return new NodePresetService(presets, permissions, scopeResolver)
+  }
+
+  it("creates, lists, updates, and deletes within one workspace", async () => {
+    const ws = seedWorkspace("a")
+    const svc = service()
+
+    const created = await svc.create(ws, {
+      name: "Standard auth headers",
+      nodeType: "http-request",
+      config: { headers: [{ key: "Authorization", value: "Bearer {{secrets.TOKEN}}" }] },
+    })
+    expect(created).toMatchObject({ workspaceId: ws, nodeType: "http-request" })
+
+    expect((await svc.list(ws)).items.map((p) => p.presetId)).toEqual([created.presetId])
+
+    const renamed = await svc.update(ws, created.presetId, { name: "Auth headers" })
+    expect(renamed.name).toBe("Auth headers")
+
+    await svc.delete(ws, created.presetId)
+    expect((await svc.list(ws)).total).toBe(0)
+  })
+
+  it("hides another workspace's preset as not_found on update and delete", async () => {
+    const wsA = seedWorkspace("a")
+    const wsB = seedWorkspace("b")
+    const svc = service()
+    const foreign = await svc.create(wsB, { name: "Foreign", nodeType: "delay", config: { duration: 10 } })
+
+    expect((await svc.list(wsA)).total).toBe(0)
+    await expect(svc.update(wsA, foreign.presetId, { name: "Stolen" })).rejects.toMatchObject({ code: "not_found" })
+    await expect(svc.delete(wsA, foreign.presetId)).rejects.toMatchObject({ code: "not_found" })
+  })
+
+  it("rejects a config the node type would not accept", async () => {
+    const ws = seedWorkspace("a")
+    const svc = service()
+
+    // `url` is an http-request field; DelayNodeDataSchema is strict.
+    await expect(
+      svc.create(ws, { name: "Bad", nodeType: "delay", config: { url: "https://api.test" } }),
+    ).rejects.toMatchObject({ code: "validation" })
+
+    // Same guard on update, including a nodeType-only patch that would strand
+    // an http-request config on a delay preset.
+    const httpPreset = await svc.create(ws, {
+      name: "Fetch",
+      nodeType: "http-request",
+      config: { url: "https://api.test" },
+    })
+    await expect(svc.update(ws, httpPreset.presetId, { nodeType: "delay" })).rejects.toMatchObject({
+      code: "validation",
+    })
+  })
+
+  it("canonicalises a legacy string headers config instead of rejecting it", async () => {
+    const ws = seedWorkspace("a")
+    const created = await service().create(ws, {
+      name: "Legacy",
+      nodeType: "http-request",
+      config: { headers: "Accept: application/json" } as never,
+    })
+
+    expect(created.config).toEqual({ headers: [{ key: "Accept", value: "application/json" }] })
   })
 })
 

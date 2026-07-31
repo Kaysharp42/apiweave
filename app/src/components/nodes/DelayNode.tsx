@@ -56,6 +56,7 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
       status={data.executionStatus ?? "idle"}
       selected={selected ?? false}
       nodeId={id}
+      presetNodeType="delay"
       handleLeft={{ type: "target" }}
       handleRight={{ type: "source" }}
       collapsible={true}

@@ -14,6 +14,8 @@ import type { AssertionItem } from "@shared/types/AssertionItem";
 import type { AssertionSuggestionResult } from "@shared/types/AssertionSuggestionResult";
 import type { AssertionValidationResult } from "@shared/types/AssertionValidationResult";
 import type { AuthenticatedRequestInit } from "../types";
+import type { NodePreset } from "../types/NodePreset";
+import type { NodePresetNodeType } from "../types/NodePresetNodeType";
 import type { Project } from "../types/Project";
 import type { DryRunResult } from "../types/DryRunResult";
 import type { ImportResult } from "../types/ImportResult";
@@ -350,6 +352,32 @@ export const apiweave = {
         environmentId,
         name,
       }),
+  },
+  nodePresets: {
+    create: (input: {
+      readonly workspaceId: string;
+      readonly name: string;
+      readonly nodeType: NodePresetNodeType;
+      readonly config?: Record<string, unknown>;
+    }) => invoke<NodePreset>("nodePresets", "create", input),
+    list: (workspaceId: string) =>
+      invoke<ListResult<NodePreset>>("nodePresets", "list", { workspaceId }),
+    update: (
+      workspaceId: string,
+      presetId: string,
+      patch: {
+        readonly name?: string;
+        readonly nodeType?: NodePresetNodeType;
+        readonly config?: Record<string, unknown>;
+      },
+    ) =>
+      invoke<NodePreset>("nodePresets", "update", {
+        workspaceId,
+        presetId,
+        ...patch,
+      }),
+    delete: (workspaceId: string, presetId: string) =>
+      invoke<null>("nodePresets", "delete", { workspaceId, presetId }),
   },
   runs: {
     create: (

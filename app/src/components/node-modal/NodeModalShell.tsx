@@ -11,6 +11,7 @@ import { Badge } from "../atoms/Badge";
 import { Modal } from "../molecules/Modal";
 import { PanelTabs } from "../molecules/PanelTabs";
 import { getNodeIcon } from "./nodeModalUtils";
+import { getNodeModalTypeName } from "../../utils/nodeModalMeta";
 import type {
   NodeModalRequestBarProps,
   NodeModalResponsePaneProps,
@@ -91,7 +92,7 @@ export function NodeModalShell({
     () => typeof window !== "undefined" && window.innerWidth < 768,
   );
   const Icon = getNodeIcon(nodeType);
-  const typeLabel = nodeType === "http-request" ? "HTTP Request" : nodeType;
+  const typeLabel = getNodeModalTypeName(nodeType);
 
   return (
     <Modal

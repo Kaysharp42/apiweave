@@ -405,6 +405,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
       status={data.executionStatus ?? "idle"}
       selected={selected ?? false}
       nodeId={id}
+      presetNodeType="assertion"
       handleLeft={{ type: "target" }}
       collapsible={true}
       defaultExpanded={false}

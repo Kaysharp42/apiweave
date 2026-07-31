@@ -9,6 +9,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { NodeActionMenu } from "./NodeActionMenu";
+import useCanvasStore from "../../../stores/CanvasStore";
 import type { NodeStatus } from "../../../types/NodeStatus";
 import type { BaseNodeProps } from "../../../types/BaseNodeProps";
 
@@ -27,6 +28,7 @@ export function BaseNode({
   collapsible = true,
   defaultExpanded = false,
   showMenu = true,
+  presetNodeType,
   statusBadgeText = "",
   titleExtra = null,
   className = "",
@@ -183,12 +185,14 @@ export function BaseNode({
                 nodeId={nodeId}
                 collapsible={collapsible}
                 isExpanded={isExpanded}
-                onDuplicate={() => {
-                  // Will be wired up after CanvasStore migration
-                }}
-                onCopy={() => {
-                  // Will be wired up after CanvasStore migration
-                }}
+                presetable={presetNodeType !== undefined}
+                onDuplicate={(id: string) =>
+                  useCanvasStore.getState().duplicateNode(id)
+                }
+                onCopy={(id: string) => useCanvasStore.getState().copyNode(id)}
+                onSaveAsPreset={(id: string) =>
+                  useCanvasStore.getState().savePresetFromNode(id)
+                }
                 onToggleExpand={(nextExpanded: boolean) =>
                   setIsExpanded(nextExpanded)
                 }

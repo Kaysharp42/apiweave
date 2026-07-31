@@ -1,4 +1,4 @@
-import { useState, useMemo, type DragEvent } from "react";
+import { useEffect, useState, useMemo, type DragEvent } from "react";
 import { Popover, Transition } from "@headlessui/react";
 import {
   X,
@@ -8,14 +8,20 @@ import {
   Globe,
   GitBranch,
   CheckCircle,
+  Bookmark,
   Package,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { usePalette } from "../contexts/PaletteContext";
+import useNodePresetStore from "../stores/NodePresetStore";
 import {
   getNextNodeFilterValue,
   shouldClearNodeFilter,
 } from "../utils/nodeFilterBehavior";
+import { presetDragTemplate } from "../utils/nodePresets";
+import { NODE_MODAL_TYPE_LABELS } from "../utils/nodeModalMeta";
 import type { AddNodesPanelProps } from "../types";
 
 const methodBadge: Record<string, string> = {
@@ -59,6 +65,8 @@ interface NodeTemplate {
   description: string;
   method?: string;
   template?: Record<string, unknown>;
+  /** Set only on saved-preset entries — enables the per-item delete affordance. */
+  presetId?: string;
 }
 
 interface NodeSection {
@@ -137,9 +145,31 @@ export default function AddNodesPanel({
   isModalOpen = false,
   showVariablesPanel = false,
   onShowVariablesPanel = () => {},
+  workspaceId = "",
 }: AddNodesPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const { importedGroups } = usePalette();
+  const presets = useNodePresetStore((s) => s.presets);
+  const loadedWorkspaceId = useNodePresetStore((s) => s.loadedWorkspaceId);
+
+  useEffect(() => {
+    if (!workspaceId || loadedWorkspaceId === workspaceId) return;
+    void useNodePresetStore.getState().fetchPresets(workspaceId);
+  }, [workspaceId, loadedWorkspaceId]);
+
+  const deletePreset = (presetId: string, name: string) => {
+    void useNodePresetStore
+      .getState()
+      .deletePreset(workspaceId, presetId)
+      .then(() => toast.success(`Deleted preset "${name}"`))
+      .catch((err: unknown) =>
+        toast.error(
+          err instanceof Error
+            ? `Could not delete preset: ${err.message}`
+            : "Could not delete preset",
+        ),
+      );
+  };
 
   const allSections = useMemo<NodeSection[]>(() => {
     const sections: NodeSection[] = nodeTemplates.map((cat) => ({
@@ -148,6 +178,31 @@ export default function AddNodesPanel({
       icon: sectionIcons[cat.category] ?? Package,
       nodes: cat.nodes as NodeTemplate[],
     }));
+
+    // Saved presets: persisted and workspace-wide, unlike the ephemeral
+    // Swagger-imported groups below. Only shown once the workspace's presets
+    // have actually loaded and there is at least one.
+    if (workspaceId && loadedWorkspaceId === workspaceId && presets.length > 0) {
+      sections.push({
+        key: "saved-presets",
+        title: "Saved Presets",
+        icon: Bookmark,
+        nodes: presets.map((preset): NodeTemplate => {
+          const template = presetDragTemplate(preset);
+          const method = template.config["method"];
+          return {
+            type: preset.nodeType,
+            label: preset.name,
+            description: NODE_MODAL_TYPE_LABELS[preset.nodeType] ?? "Node",
+            ...(preset.nodeType === "http-request" && typeof method === "string"
+              ? { method }
+              : {}),
+            template,
+            presetId: preset.presetId,
+          };
+        }),
+      });
+    }
 
     importedGroups.forEach((group: ImportedGroup) => {
       const items = (group.items ?? []) as PaletteItem[];
@@ -183,7 +238,7 @@ export default function AddNodesPanel({
     });
 
     return sections;
-  }, [importedGroups]);
+  }, [importedGroups, presets, loadedWorkspaceId, workspaceId]);
 
   const filteredSections = useMemo(() => {
     if (!searchQuery.trim()) return allSections;
@@ -329,6 +384,7 @@ export default function AddNodesPanel({
                           onDragStart(e, node);
                           setTimeout(() => close(), 100);
                         }}
+                        onDeletePreset={deletePreset}
                         defaultOpen={!searchQuery}
                       />
                     ))
@@ -348,6 +404,7 @@ interface NodeSectionProps {
   icon: LucideIcon;
   nodes: NodeTemplate[];
   onDragStart: (event: DragEvent, node: NodeTemplate) => void;
+  onDeletePreset?: (presetId: string, name: string) => void;
   defaultOpen: boolean;
 }
 
@@ -356,6 +413,7 @@ function NodeSection({
   icon: Icon,
   nodes,
   onDragStart,
+  onDeletePreset,
   defaultOpen,
 }: NodeSectionProps) {
   return (
@@ -376,7 +434,7 @@ function NodeSection({
         <div className="space-y-0.5">
           {nodes.map((node) => (
             <div
-              key={`${node.type}-${node.label}`}
+              key={node.presetId ?? `${node.type}-${node.label}`}
               draggable
               onDragStart={(e) => onDragStart(e, node)}
               className="group flex flex-col gap-0.5 px-2.5 py-1.5 rounded-sm cursor-grab border border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay active:cursor-grabbing transition-colors motion-reduce:transition-none"
@@ -391,6 +449,17 @@ function NodeSection({
                   </span>
                 )}
                 <span className="font-medium truncate">{node.label}</span>
+                {node.presetId && onDeletePreset && (
+                  <button
+                    type="button"
+                    onClick={() => onDeletePreset(node.presetId!, node.label)}
+                    className="ml-auto flex-shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-colors hover:bg-status-error/10 hover:text-status-error focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark"
+                    title={`Delete preset "${node.label}"`}
+                    aria-label={`Delete preset ${node.label}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
               {node.description && (
                 <span className="text-xs text-text-muted dark:text-text-muted-dark truncate">

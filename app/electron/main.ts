@@ -9,6 +9,7 @@ import { initDatabase, type InitializedDatabase } from "../core/db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   RunRepository,
   SecretRepository,
   WorkflowRepository,
@@ -24,6 +25,7 @@ import {
   AssertionAuthoringService,
   WorkflowAnalysisService,
   EnvironmentService,
+  NodePresetService,
   RunService,
   SecretService,
   ProjectExportService,
@@ -198,6 +200,7 @@ if (!hasSingleInstanceLock) {
     const runs = new RunRepository(database.kvStore)
     const environments = new EnvironmentRepository(database.kvStore)
     const collections = new CollectionRepository(database.kvStore)
+    const nodePresets = new NodePresetRepository(database.kvStore)
     const secretStore = new SecretRepository(database.kvStore)
 
     // Auth + sync seams: single-owner always-allow, local-only no-op.
@@ -269,6 +272,7 @@ if (!hasSingleInstanceLock) {
       workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
       assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
       environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
+      nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
       runs: runService,
       secrets: secretService,
       projects: new ProjectExportService(

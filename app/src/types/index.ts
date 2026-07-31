@@ -145,6 +145,8 @@ export type { WorkflowCallConfigPanelProps } from "./WorkflowCallConfigPanelProp
 export type { StartNodeProps } from "./StartNodeProps";
 export type { EndNodeProps } from "./EndNodeProps";
 export type { NodeModalNodeType } from "./NodeModalNodeType";
+export type { NodePreset } from "./NodePreset";
+export type { NodePresetNodeType } from "./NodePresetNodeType";
 export type { NodeModalData } from "./NodeModalData";
 export type { NodeModalNode } from "./NodeModalNode";
 export type { NodeModalHTTPRequestConfig } from "./NodeModalHTTPRequestConfig";

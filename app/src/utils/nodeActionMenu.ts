@@ -3,11 +3,18 @@ import type { NodeActionMenuItem } from "../types";
 export const buildNodeActionMenuItems = ({
   collapsible = false,
   isExpanded = false,
+  presetable = false,
 } = {}): NodeActionMenuItem[] => {
   const items: NodeActionMenuItem[] = [
     { key: "duplicate", label: "Duplicate" },
     { key: "copy", label: "Copy" },
   ];
+
+  // Only the configurable node types can become a preset — a start/end node
+  // has no config worth naming and reusing.
+  if (presetable) {
+    items.push({ key: "save-preset", label: "Save as preset" });
+  }
 
   if (collapsible) {
     items.push({

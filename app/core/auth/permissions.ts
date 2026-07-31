@@ -16,6 +16,8 @@ export const RESOURCE_COLLECTIONS = "collections"
 export const RESOURCE_ENVIRONMENTS = "environments"
 export const RESOURCE_RUNS = "runs"
 export const RESOURCE_SECRETS = "secrets"
+/** Workspace-scoped reusable node presets (FEATURE-IDEAS §6.2). */
+export const RESOURCE_NODE_PRESETS = "node_presets"
 
 export type Resource =
   | typeof RESOURCE_WORKFLOWS
@@ -23,6 +25,7 @@ export type Resource =
   | typeof RESOURCE_ENVIRONMENTS
   | typeof RESOURCE_RUNS
   | typeof RESOURCE_SECRETS
+  | typeof RESOURCE_NODE_PRESETS
 
 export const ACTION_CREATE = "create"
 export const ACTION_READ = "read"
@@ -85,6 +88,12 @@ export const PERMISSIONS_BY_RESOURCE: Readonly<Record<Resource, readonly string[
     permission(RESOURCE_SECRETS, ACTION_UPDATE),
     permission(RESOURCE_SECRETS, ACTION_DELETE),
   ],
+  node_presets: [
+    permission(RESOURCE_NODE_PRESETS, ACTION_READ),
+    permission(RESOURCE_NODE_PRESETS, ACTION_CREATE),
+    permission(RESOURCE_NODE_PRESETS, ACTION_UPDATE),
+    permission(RESOURCE_NODE_PRESETS, ACTION_DELETE),
+  ],
 }
 
 export const ALL_PERMISSIONS: readonly string[] = Object.values(PERMISSIONS_BY_RESOURCE).flat()
@@ -95,6 +104,7 @@ export const ACTIONS_BY_RESOURCE: Readonly<Record<Resource, readonly string[]>> 
   environments: PERMISSIONS_BY_RESOURCE.environments.map((p) => p.split(":")[1]!),
   runs: PERMISSIONS_BY_RESOURCE.runs.map((p) => p.split(":")[1]!),
   secrets: PERMISSIONS_BY_RESOURCE.secrets.map((p) => p.split(":")[1]!),
+  node_presets: PERMISSIONS_BY_RESOURCE.node_presets.map((p) => p.split(":")[1]!),
 }
 
 /** Workspace role hierarchy — kept for the cloud-provider seam. Local-only ignores it. */
@@ -126,6 +136,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_ENVIRONMENTS, ACTION_READ),
     permission(RESOURCE_RUNS, ACTION_READ),
     permission(RESOURCE_SECRETS, ACTION_READ),
+    permission(RESOURCE_NODE_PRESETS, ACTION_READ),
   ],
   triage: [
     permission(RESOURCE_WORKFLOWS, ACTION_READ),
@@ -135,6 +146,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_ENVIRONMENTS, ACTION_READ),
     permission(RESOURCE_RUNS, ACTION_READ),
     permission(RESOURCE_SECRETS, ACTION_READ),
+    permission(RESOURCE_NODE_PRESETS, ACTION_READ),
   ],
   write: [
     permission(RESOURCE_WORKFLOWS, ACTION_READ),
@@ -152,6 +164,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_ENVIRONMENTS, ACTION_UPDATE),
     permission(RESOURCE_RUNS, ACTION_READ),
     permission(RESOURCE_SECRETS, ACTION_READ),
+    ...PERMISSIONS_BY_RESOURCE.node_presets,
   ],
   maintain: [
     permission(RESOURCE_WORKFLOWS, ACTION_READ),
@@ -173,6 +186,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_ENVIRONMENTS, ACTION_UPDATE),
     permission(RESOURCE_RUNS, ACTION_READ),
     permission(RESOURCE_SECRETS, ACTION_READ),
+    ...PERMISSIONS_BY_RESOURCE.node_presets,
   ],
   admin: ALL_PERMISSIONS,
 }

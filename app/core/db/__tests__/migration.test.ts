@@ -31,6 +31,7 @@ describe("database migrations", () => {
         "cloud_workspace_bindings",
         "collections",
         "environments",
+        "node_presets",
         "run_responses",
         "runs",
         "scoped_keys",

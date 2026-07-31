@@ -3,6 +3,7 @@ import type { HandlerDeps } from "./common"
 import { registerWorkspaceHandlers } from "./workspaces"
 import { registerWorkflowHandlers } from "./workflows"
 import { registerEnvironmentHandlers } from "./environments"
+import { registerNodePresetHandlers } from "./node-presets"
 import { registerRunHandlers } from "./runs"
 import { registerSecretHandlers } from "./secrets"
 import { registerProjectHandlers } from "./projects"
@@ -23,6 +24,7 @@ export function registerAllHandlers(router: IpcRouter, deps: HandlerDeps): void 
   registerWorkflowHandlers(router, deps)
   registerAssertionHandlers(router, deps)
   registerEnvironmentHandlers(router, deps)
+  registerNodePresetHandlers(router, deps)
   registerRunHandlers(router, deps)
   registerSecretHandlers(router, deps)
   registerProjectHandlers(router, deps)

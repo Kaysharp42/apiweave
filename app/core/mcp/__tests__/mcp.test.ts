@@ -12,6 +12,7 @@ import { initDatabase, type InitializedDatabase } from "../../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   RunRepository,
   WorkflowRepository,
   WorkspaceRepository,
@@ -25,6 +26,7 @@ import { WorkflowService } from "../../services/workflow_service"
 import { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import { AssertionAuthoringService } from "../../services/assertion_authoring_service"
 import { EnvironmentService } from "../../services/environment_service"
+import { NodePresetService } from "../../services/node_preset_service"
 import { RunService } from "../../services/run_service"
 import { SecretService, type SecretWriteStore, type SecretUpsert } from "../../services/secret_service"
 import { ProjectExportService } from "../../services/project_export_service"
@@ -78,6 +80,7 @@ beforeEach(() => {
   const runs = new RunRepository(db.kvStore)
   runRepository = runs
   const environments = new EnvironmentRepository(db.kvStore)
+  const nodePresets = new NodePresetRepository(db.kvStore)
   const collections = new CollectionRepository(db.kvStore)
   const existence: ScopeExistence = {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
@@ -96,6 +99,7 @@ beforeEach(() => {
     workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
     assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
+    nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
     runs: runService,
     secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
