@@ -65,6 +65,29 @@ no separate backend, worker, or database server, and no Docker stack to run.
   desktop team corresponds to a Cloud Workspace. The desktop app is fully usable
   without a Cloud account. Cloud never builds or runs tests, never stores run
   history, and rejects `secrets` and `runs` fields on sync and conflict paths.
+- **Cloud conflict resolution.** When a local and a Cloud copy diverge, the
+  conflict list shows a semantic diff per field, detection time, and the
+  author of the Cloud-side change. Resolutions cover keep-local, take-remote,
+  and field-level picking; mergeable conflicts auto-merge, and conflicts
+  resolved on another machine are reconciled on the next sync.
+- **Team-aware workspace switching.** The workspace switcher labels every
+  workspace with its source (Personal workspace, Personal Cloud space,
+  Team · <Team name>, On this device) so duplicate names stay distinguishable.
+  The creation dialog offers Personal or Team ownership, consults the
+  server-authoritative `canCreateWorkspaces` capability, and creates Team-owned
+  Cloud Workspaces from the desktop.
+- **Run event broker.** Run lifecycle events stream through a broker, and MCP
+  clients can subscribe to resources over the bridge instead of polling.
+- **Rebuilt assertion engine.** Assertions resolve the upstream HTTP result
+  through graph predecessors, persist structured value-free evidence for every
+  configured rule (including rules skipped by `failureMode: "first"`), support
+  header and cookie sources, expected-value templates with secret references,
+  and canonical JSON comparison semantics.
+- **MCP safety hardening.** Streamable HTTP requests are origin-validated
+  against DNS rebinding, every tool carries intent annotations (read-only,
+  destructive, idempotent, open-world) plus output schemas and structured
+  content, and run projections redact bodies, headers, cookies, URLs, variable
+  values, raw errors, and assertion actual values.
 - **Keyboard shortcuts and dark mode.** `Ctrl+N`, `Ctrl+S` (flush to disk now;
   auto-save still runs), `Ctrl+R`/`F5` (run), `Ctrl+J` (JSON editor), plus
   context-aware copy and paste.
