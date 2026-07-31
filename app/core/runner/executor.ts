@@ -5,17 +5,22 @@ import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError } from "./safe_http"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
-import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
+import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
 import type { RunResult } from "@shared/types/RunResult"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { AssertionEvaluation } from "@shared/types/AssertionEvaluation"
+import type { AssertionOperator } from "@shared/types/AssertionOperator"
+import type { AssertionSource } from "@shared/types/AssertionSource"
+import type { ExtractorOutcome } from "@shared/types/ExtractorOutcome"
+import type { JsonValueType } from "@shared/types/JsonValueType"
 
 /**
  * Workflow executor — ported from `backend/app/runner/executor.py`.
  *
  * Processes workflow nodes in graph order, resolves templates, executes HTTP requests,
  * evaluates assertions, handles delays and merge nodes, and writes field-level updates.
- * Emits `node.completed` events for the renderer (decision #6, (c)).
+ * Emits `node.status` events for the renderer (decision #6, (c)).
  */
 
 // -------------------- Types --------------------
@@ -74,7 +79,7 @@ export interface ExecutorDeps {
   readonly baseUrl?: string
   readonly secrets?: Readonly<Record<string, string>>
   readonly environmentVariables?: Readonly<Record<string, unknown>>
-  readonly emitProgress?: (event: RunProgressEvent) => void
+  readonly emitProgress?: (event: RunEvent) => void
 }
 
 export interface ExecuteOptions {
@@ -103,6 +108,8 @@ export interface NodeResult {
   readonly startedAt?: string
   readonly completedAt?: string
   readonly secretRefs?: readonly string[]
+  readonly assertionEvaluations?: readonly AssertionEvaluation[]
+  readonly extractorOutcomes?: readonly ExtractorOutcome[]
   readonly [key: string]: unknown
 }
 
@@ -115,6 +122,8 @@ export interface ExecutorOutput {
   readonly extractedVariables: Readonly<Record<string, unknown>>
   readonly outputs: Readonly<Record<string, unknown>>
   readonly results: readonly RunResult[]
+  readonly failedNodes: readonly string[]
+  readonly failureMessage: string | null
 }
 
 // -------------------- Internal sentinel --------------------
@@ -139,6 +148,7 @@ export class WorkflowExecutor {
   private readonly branchResults = new Map<string, ReadonlyArray<readonly [string, NodeResult]>>()
   private currentBranchContext: ReadonlyArray<readonly [string, NodeResult]> = []
   private readonly mergeCompleted = new Set<string>()
+  private workflowNodes = new Map<string, WorkflowNode>()
   private activeRunId = "harness"
   private stepCount = 0
   private maxSteps = 0
@@ -170,6 +180,7 @@ export class WorkflowExecutor {
     for (const node of workflow.nodes) {
       nodes.set(node.nodeId, node)
     }
+    this.workflowNodes = nodes
     const edges = workflow.edges
 
     // ponytail: global step budget guards against cyclic graphs (start->delay->start)
@@ -240,9 +251,12 @@ export class WorkflowExecutor {
     if (cancelSignal?.aborted) return
 
     if (++this.stepCount > this.maxSteps) {
-      throw new Error(
-        `Workflow exceeded step budget (${this.maxSteps}) — possible cycle in graph at node '${nodeId}'`,
-      )
+      const message = `Workflow graph cycle detected at node ${nodeId}`
+      this.hasFailures = true
+      this.failedNodes.add(nodeId)
+      if (!this.firstErrorMessage) this.firstErrorMessage = message
+      this.updateNodeStatus(nodeId, "failed", { status: "error", error: message })
+      throw new StopBranch(message)
     }
 
     // Set branch context if predecessor is a merge
@@ -291,6 +305,10 @@ export class WorkflowExecutor {
     if (node.type === "assertion" && this.results.has(nodeId)) {
       const assertionResult = this.results.get(nodeId)!
       const outcome = assertionResult.assertionOutcome ?? "pass"
+      const assertionContinueOnFail =
+        typeof node.config?.["continueOnFail"] === "boolean"
+          ? node.config["continueOnFail"]
+          : continueOnFail
 
       const handleEdges = nextEdges.filter((e) => e.sourceHandle === "pass" || e.sourceHandle === "fail")
       const legacyEdges = nextEdges.filter((e) => !e.sourceHandle)
@@ -310,9 +328,9 @@ export class WorkflowExecutor {
         if (outcome === "fail") {
           this.hasFailures = true
           this.failedNodes.add(nodeId)
-          if (!continueOnFail) {
+          if (!assertionContinueOnFail) {
             const errorMsg = assertionResult.message ?? "Assertion failed"
-            throw new Error(errorMsg)
+            throw new StopBranch(errorMsg)
           }
         }
         nextEdges = legacyEdges
@@ -419,7 +437,7 @@ export class WorkflowExecutor {
       } else if (nodeType === "delay") {
         result = await this.executeDelay(node, cancelSignal)
       } else if (nodeType === "assertion") {
-        result = await this.executeAssertion(node)
+        result = await this.executeAssertion(node, edges)
       } else if (nodeType === "merge") {
         result = await this.executeMerge(node, edges)
       } else {
@@ -436,6 +454,9 @@ export class WorkflowExecutor {
         executionStatus = "warning"
       } else if (executionStatus === "failed" && nodeType === "assertion") {
         executionStatus = "error"
+        this.hasFailures = true
+        this.failedNodes.add(nodeId)
+        if (!this.firstErrorMessage) this.firstErrorMessage = result.message ?? "Assertion failed"
       }
 
       // Check if merge was completed by another branch
@@ -455,6 +476,7 @@ export class WorkflowExecutor {
         const errorMsg = (result.error as string | undefined) ?? `Node ${nodeId} failed`
         this.hasFailures = true
         this.failedNodes.add(nodeId)
+        if (!this.firstErrorMessage) this.firstErrorMessage = `Node ${nodeId} failed`
         throw new StopBranch(errorMsg)
       }
 
@@ -471,6 +493,9 @@ export class WorkflowExecutor {
       this.updateNodeStatus(nodeId, "failed", errorResult)
       this.results.set(nodeId, errorResult)
       this.failedNodes.add(nodeId)
+      this.hasFailures = true
+      if (!this.firstErrorMessage) this.firstErrorMessage = `Node ${nodeId} failed`
+      if (!continueOnFail) throw new StopBranch(errorResult.error ?? `Node ${nodeId} failed`)
       throw error
     }
   }
@@ -492,6 +517,10 @@ export class WorkflowExecutor {
     const formDataEntries = config["formDataEntries"] as readonly FormDataEntryLike[] | undefined
     const urlEncodedEntries = config["urlEncodedEntries"] as KVField
     const fileUploads = config["fileUploads"] as readonly FileUploadLike[] | undefined
+    const extractors = config["extractors"] as Record<string, string> | undefined
+    const withExtractorOutcomes = (result: NodeResult): NodeResult => extractors
+      ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) }
+      : result
 
     if (!url) {
       throw new Error("URL is required for HTTP request")
@@ -535,7 +564,7 @@ export class WorkflowExecutor {
     try {
       fetchBody = await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
     } catch (bodyError) {
-      return { status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url, duration: 0 }
+      return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url, duration: 0 })
     }
 
     try {
@@ -594,17 +623,12 @@ export class WorkflowExecutor {
         },
       }
 
-      const extractors = config["extractors"] as Record<string, string> | undefined
-      if (extractors) {
-        this.extractVariables(extractors, result)
-      }
-
-      return result
+      return withExtractorOutcomes(result)
     } catch (error) {
       if (error instanceof SafeUrlError) {
-        return { status: "error", error: `SSRF blocked: ${error.message}`, method, url, duration: 0 }
+        return withExtractorOutcomes({ status: "error", error: `SSRF blocked: ${error.message}`, method, url, duration: 0 })
       }
-      return { status: "error", error: String(error), method, url, duration: Date.now() - startTime }
+      return withExtractorOutcomes({ status: "error", error: String(error), method, url, duration: Date.now() - startTime })
     }
   }
 
@@ -620,12 +644,12 @@ export class WorkflowExecutor {
         : baseDurationMs
 
     if (this.deps.baseUrl) {
-      return { status: "success", duration: 0, message: "Delayed for 0 seconds (harness mode)" }
+      return { status: "success", duration: 0, message: "Delayed for 0 ms (harness mode)" }
     }
 
     return new Promise<NodeResult>((resolve) => {
       const timer = setTimeout(() => {
-        resolve({ status: "success", duration: durationMs / 1000, message: `Delayed for ${durationMs / 1000} seconds` })
+        resolve({ status: "success", duration: durationMs, message: `Delayed for ${durationMs} ms` })
       }, durationMs)
 
       if (cancelSignal) {
@@ -643,134 +667,248 @@ export class WorkflowExecutor {
 
   // -------------------- Assertion --------------------
 
-  private async executeAssertion(node: WorkflowNode): Promise<NodeResult> {
+  private async executeAssertion(node: WorkflowNode, edges: readonly WorkflowEdge[]): Promise<NodeResult> {
     const config = node.config ?? {}
+    type AssertionDef = {
+      readonly field?: string
+      readonly path?: string
+      readonly operator: string
+      readonly expected?: unknown
+      readonly expectedValue?: unknown
+      readonly source?: string
+    }
 
-    type AssertionDef = { field?: string; path?: string; operator: string; expected?: unknown; expectedValue?: unknown; source?: string }
-    let assertions: AssertionDef[]
+    const configured = config["assertions"]
+    let assertions: readonly AssertionDef[] = Array.isArray(configured) ? configured as AssertionDef[] : []
 
-    const configAssertions = config["assertions"]
-    if (Array.isArray(configAssertions)) {
-      assertions = configAssertions as AssertionDef[]
-    } else {
+    // Read compatibility for configs saved before assertions became an array.
+    if (assertions.length === 0) {
       const path = (config["path"] as string | undefined) ?? (config["field"] as string | undefined)
       const operator = config["operator"] as string | undefined
-      if (path && operator) {
+      if (path !== undefined && operator !== undefined) {
         assertions = [{
-          field: (config["field"] as string | undefined) ?? path,
-          path: (config["path"] as string | undefined) ?? path,
+          path,
           operator,
           expected: config["expected"],
           source: (config["source"] as string | undefined) ?? "prev",
         }]
-      } else {
-        assertions = []
       }
     }
 
     if (assertions.length === 0) {
-      return { status: "success", assertionOutcome: "pass", message: "No assertions configured" }
-    }
-
-    const failedAssertions: Array<{ index: number; message: string }> = []
-    const passedAssertions: Array<{ index: number; message: string }> = []
-
-    for (let idx = 0; idx < assertions.length; idx++) {
-      const assertion = assertions[idx]!
-      try {
-        const result = this.evaluateAssertion(assertion)
-        if (result.passed) {
-          passedAssertions.push({ index: idx, message: result.message })
-        } else {
-          failedAssertions.push({ index: idx, message: result.message })
-        }
-      } catch (error) {
-        failedAssertions.push({ index: idx, message: `Error evaluating assertion: ${String(error)}` })
+      return {
+        status: "success",
+        assertionOutcome: "pass",
+        message: "No assertions configured",
+        assertionEvaluations: [],
       }
     }
 
-    const outcome: "pass" | "fail" = failedAssertions.length > 0 ? "fail" : "pass"
+    const evaluations: AssertionEvaluation[] = []
+    const failureMode = config["failureMode"] === "all" ? "all" : "first"
+    let stopped = false
 
-    if (failedAssertions.length > 0) {
-      const failedDetails = failedAssertions.map((f) => `Assertion ${f.index + 1}: ${f.message}`).join("\n")
+    for (let index = 0; index < assertions.length; index++) {
+      const assertion = assertions[index]!
+      if (stopped) {
+        evaluations.push(this.buildSkippedAssertionEvaluation(index, assertion))
+        continue
+      }
+
+      const evaluation = this.evaluateAssertion(node.nodeId, index, assertion, edges)
+      evaluations.push(evaluation)
+      if (evaluation.outcome === "fail" && failureMode === "first") stopped = true
+    }
+
+    const failedCount = evaluations.filter((evaluation) => evaluation.outcome === "fail").length
+    if (failedCount > 0) {
       return {
         status: "failed",
-        assertionOutcome: outcome,
-        message: `Assertion failed: ${failedAssertions.length}/${assertions.length} assertions failed\n${failedDetails}`,
+        assertionOutcome: "fail",
+        message: `Assertion failed: ${failedCount}/${assertions.length} rules failed`,
+        assertionEvaluations: evaluations,
       }
     }
 
     return {
       status: "success",
-      assertionOutcome: outcome,
+      assertionOutcome: "pass",
       message: `All ${assertions.length} assertions passed`,
+      assertionEvaluations: evaluations,
     }
   }
 
-  private evaluateAssertion(assertion: {
-    field?: string
-    path?: string
-    operator: string
-    expected?: unknown
-    expectedValue?: unknown
-    source?: string
-  }): { passed: boolean; message: string } {
-    const source = assertion.source ?? "prev"
-    const path = assertion.field ?? assertion.path ?? ""
-    const operator = assertion.operator
-    // Renderer editors persist `expectedValue`; older single-assertion configs
-    // use `expected`. Accept either so saved rules are actually enforced.
-    const expected = assertion.expectedValue ?? assertion.expected
+  private evaluateAssertion(
+    assertionNodeId: string,
+    ruleIndex: number,
+    assertion: {
+      readonly field?: string
+      readonly path?: string
+      readonly operator: string
+      readonly expected?: unknown
+      readonly expectedValue?: unknown
+      readonly source?: string
+    },
+    edges: readonly WorkflowEdge[],
+  ): AssertionEvaluation {
+    const source = toAssertionSource(assertion.source)
+    const path = assertion.path ?? assertion.field ?? ""
+    const operator = toAssertionOperator(assertion.operator)
+    const rawExpected = assertion.expectedValue !== undefined ? assertion.expectedValue : assertion.expected
+    const expected = this.resolveAssertionExpected(operator, rawExpected)
+    const base = {
+      ruleIndex,
+      source,
+      path,
+      operator,
+      expectedState: expected.state,
+      expectedType: jsonValueType(expected.value),
+    } as const
+
+    if (expected.state === "unresolved-template") {
+      return {
+        ...base,
+        sourceNodeId: null,
+        actualState: "not-evaluated",
+        actualType: null,
+        outcome: "fail",
+        reasonCode: "template-unresolved",
+      }
+    }
 
     let actual: unknown
-
-    if (source === "prev") {
-      const lastResult = this.findLastHttpResult()
-      if (!lastResult) {
-        return { passed: false, message: "No previous HTTP request result found" }
-      }
-
-      let cleanPath = path
-      if (path.startsWith("response.")) {
-        cleanPath = path.slice(9)
-      }
-
-      actual = this.getNestedValue(lastResult, cleanPath)
-    } else if (source === "headers") {
-      const lastResult = this.findLastHttpResult()
-      if (!lastResult) {
-        return { passed: false, message: "No previous HTTP request result found" }
-      }
-      actual = this.getResponseHeader(lastResult, path)
-    } else if (source === "cookies") {
-      const lastResult = this.findLastHttpResult()
-      if (!lastResult) {
-        return { passed: false, message: "No previous HTTP request result found" }
-      }
-      actual = this.getResponseCookie(lastResult, path)
-    } else if (source === "variables") {
+    let sourceNodeId: string | null = null
+    if (source === "variables") {
       actual = this.workflowVariables[path]
-    } else if (source === "status") {
-      const lastResult = [...this.results.values()].pop()
-      actual = lastResult?.statusCode
     } else {
-      return { passed: false, message: `Unknown source: ${source}` }
+      const resolution = this.resolveAssertionHttpSource(assertionNodeId, edges)
+      if (resolution.state !== "resolved") {
+        return {
+          ...base,
+          sourceNodeId: null,
+          actualState: resolution.state,
+          actualType: null,
+          outcome: "fail",
+          reasonCode: resolution.state === "ambiguous-source" ? "ambiguous-source" : "source-unavailable",
+        }
+      }
+
+      sourceNodeId = resolution.nodeId
+      if (source === "prev") {
+        const cleanPath = path.startsWith("response.") ? path.slice(9) : path
+        actual = this.getNestedValue(resolution.result, cleanPath)
+      } else if (source === "headers") {
+        actual = this.getResponseHeader(resolution.result, path)
+      } else if (source === "cookies") {
+        actual = this.getResponseCookie(resolution.result, path)
+      } else {
+        actual = resolution.result.statusCode
+      }
     }
 
+    const actualState = actual === undefined ? "missing" : "present"
     try {
-      const passed = this.compareValues(actual, operator, expected)
-      const message = `${source}.${path} ${operator} ${String(expected)}: ${String(actual)}`
-      return { passed, message }
-    } catch (error) {
-      return { passed: false, message: `Comparison error: ${String(error)}` }
+      const passed = this.compareValues(actual, operator, expected.value)
+      return {
+        ...base,
+        sourceNodeId,
+        actualState,
+        actualType: jsonValueType(actual),
+        outcome: passed ? "pass" : "fail",
+        reasonCode: passed ? "passed" : "comparison-failed",
+      }
+    } catch {
+      return {
+        ...base,
+        sourceNodeId,
+        actualState,
+        actualType: jsonValueType(actual),
+        outcome: "fail",
+        reasonCode: "comparison-error",
+      }
     }
   }
 
-  private findLastHttpResult(): NodeResult | undefined {
-    for (const result of [...this.results.values()].reverse()) {
-      if (result.type === "http-request") return result
+  private buildSkippedAssertionEvaluation(
+    ruleIndex: number,
+    assertion: {
+      readonly field?: string
+      readonly path?: string
+      readonly operator: string
+      readonly expected?: unknown
+      readonly expectedValue?: unknown
+      readonly source?: string
+    },
+  ): AssertionEvaluation {
+    const operator = toAssertionOperator(assertion.operator)
+    const rawExpected = assertion.expectedValue !== undefined ? assertion.expectedValue : assertion.expected
+    const expected = this.resolveAssertionExpected(operator, rawExpected)
+    return {
+      ruleIndex,
+      source: toAssertionSource(assertion.source),
+      path: assertion.path ?? assertion.field ?? "",
+      operator,
+      sourceNodeId: null,
+      expectedState: expected.state,
+      expectedType: jsonValueType(expected.value),
+      actualState: "not-evaluated",
+      actualType: null,
+      outcome: "skipped",
+      reasonCode: "skipped-after-failure",
     }
-    return undefined
+  }
+
+  private resolveAssertionExpected(
+    operator: AssertionOperator,
+    rawExpected: unknown,
+  ): {
+    readonly state: AssertionEvaluation["expectedState"]
+    readonly value: unknown
+  } {
+    if (operator === "exists" || operator === "notExists") {
+      return { state: "not-required", value: undefined }
+    }
+    if (typeof rawExpected !== "string" || !rawExpected.includes("{{")) {
+      return { state: "literal", value: rawExpected }
+    }
+    const value = this.substituteVariables(rawExpected)
+    return value.includes("{{")
+      ? { state: "unresolved-template", value: undefined }
+      : { state: "resolved-template", value }
+  }
+
+  private resolveAssertionHttpSource(
+    assertionNodeId: string,
+    edges: readonly WorkflowEdge[],
+  ):
+    | { readonly state: "resolved"; readonly nodeId: string; readonly result: NodeResult }
+    | { readonly state: "source-unavailable" | "ambiguous-source" } {
+    const queue = edges.filter((edge) => edge.target === assertionNodeId).map((edge) => edge.source)
+    const visited = new Set<string>()
+    const sourceIds = new Set<string>()
+
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!
+      if (visited.has(nodeId)) continue
+      visited.add(nodeId)
+      const node = this.workflowNodes.get(nodeId)
+      if (node?.type === "http-request") {
+        sourceIds.add(nodeId)
+        continue
+      }
+      for (const edge of edges) {
+        if (edge.target === nodeId) queue.push(edge.source)
+      }
+    }
+
+    if (sourceIds.size !== 1) {
+      return { state: sourceIds.size > 1 ? "ambiguous-source" : "source-unavailable" }
+    }
+    const nodeId = [...sourceIds][0]!
+    const result = this.results.get(nodeId)
+    return result?.type === "http-request"
+      ? { state: "resolved", nodeId, result }
+      : { state: "source-unavailable" }
   }
 
   /** Case-insensitive lookup of a response header value. */
@@ -803,6 +941,8 @@ export class WorkflowExecutor {
   private compareValues(actual: unknown, operator: string, expected: unknown): boolean {
     if (operator === "exists") return actual !== null && actual !== undefined
     if (operator === "notExists") return actual === null || actual === undefined
+    if (operator === "equals" && (actual == null || expected == null)) return actual === expected
+    if (operator === "notEquals" && (actual == null || expected == null)) return actual !== expected
 
     if (operator === "count") {
       let actualCount: number
@@ -1127,24 +1267,81 @@ export class WorkflowExecutor {
 
   // -------------------- Extraction --------------------
 
-  private extractVariables(extractors: Record<string, string>, response: NodeResult): void {
+  private extractVariables(
+    producerNodeId: string,
+    extractors: Record<string, string>,
+    response: NodeResult,
+  ): ExtractorOutcome[] {
+    const outcomes: ExtractorOutcome[] = []
     for (const [varName, varPath] of Object.entries(extractors)) {
       try {
-        const value = this.getNestedValue(response, varPath)
-        if (value !== undefined && value !== null) {
+        const resolution = this.resolveExtractorValue(response, varPath)
+        const value = resolution.value
+        const matched = resolution.failureReason === null
+        if (matched) {
           this.workflowVariables[varName] = value
         }
+        outcomes.push({
+          producerNodeId,
+          variableName: varName,
+          path: varPath,
+          matched,
+          observedType: jsonValueType(value),
+          failureReason: resolution.failureReason,
+        })
       } catch {
-        // Extraction failed — skip
+        outcomes.push({
+          producerNodeId,
+          variableName: varName,
+          path: varPath,
+          matched: false,
+          observedType: null,
+          failureReason: "path-missing",
+        })
       }
     }
+    return outcomes
+  }
+
+  private resolveExtractorValue(
+    obj: unknown,
+    path: string,
+  ): { readonly value: unknown; readonly failureReason: "path-missing" | "type-mismatch" | null } {
+    if (obj === null || obj === undefined || !path) return { value: undefined, failureReason: "path-missing" }
+    const parts = path.split(".")
+    let value: unknown = obj
+    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+      const part = parts[partIndex]!
+      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
+      if (typeof value !== "object" || value === null) {
+        return { value: undefined, failureReason: "type-mismatch" }
+      }
+      if (arrayMatch) {
+        const key = arrayMatch[1]!
+        if (!(key in value)) return { value: undefined, failureReason: "path-missing" }
+        const candidate = (value as Record<string, unknown>)[key]
+        if (!Array.isArray(candidate)) return { value: undefined, failureReason: "type-mismatch" }
+        const arrayIndex = Number.parseInt(arrayMatch[2]!, 10)
+        if (arrayIndex >= candidate.length) return { value: undefined, failureReason: "path-missing" }
+        value = candidate[arrayIndex]
+      } else {
+        if (!(part in value)) return { value: undefined, failureReason: "path-missing" }
+        value = (value as Record<string, unknown>)[part]
+      }
+      if (value === undefined) return { value: undefined, failureReason: "path-missing" }
+      if (value === null && partIndex < parts.length - 1) {
+        return { value: undefined, failureReason: "type-mismatch" }
+      }
+    }
+    return { value, failureReason: null }
   }
 
   private getNestedValue(obj: unknown, path: string): unknown {
     if (!obj || !path) return undefined
     const parts = path.split(".")
     let value: unknown = obj
-    for (const part of parts) {
+    for (let index = 0; index < parts.length; index++) {
+      const part = parts[index]!
       const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
       if (arrayMatch) {
         const key = arrayMatch[1]!
@@ -1164,7 +1361,8 @@ export class WorkflowExecutor {
       } else {
         return undefined
       }
-      if (value === undefined || value === null) return undefined
+      if (value === undefined) return undefined
+      if (value === null && index < parts.length - 1) return undefined
     }
     return value
   }
@@ -1313,7 +1511,7 @@ export class WorkflowExecutor {
     this.nodeStatuses.set(nodeId, status)
     if (this.deps.emitProgress) {
       this.deps.emitProgress({
-        kind: "node.completed",
+        kind: "node.status",
         runId: this.activeRunId,
         nodeId,
         status,
@@ -1340,6 +1538,8 @@ export class WorkflowExecutor {
       extractedVariables: { ...this.workflowVariables },
       outputs: this.buildOutputs(),
       results: this.buildRunResults(),
+      failedNodes: [...this.failedNodes],
+      failureMessage: this.firstErrorMessage,
     }
     if (caseName !== undefined && seed !== undefined) {
       return { ...result, caseName, seed }
@@ -1374,7 +1574,8 @@ export class WorkflowExecutor {
           ...(result.body !== undefined ? { body: result.body } : {}),
         }),
         error: typeof result.error === "string" ? result.error : null,
-        assertions: result.type === "assertion" ? [toJsonValue({ message: result.message, outcome: result.assertionOutcome })] : null,
+        assertions: result.type === "assertion" ? [...(result.assertionEvaluations ?? [])] : null,
+        ...(result.extractorOutcomes ? { extractorOutcomes: [...result.extractorOutcomes] } : {}),
       })
     }
     return results
@@ -1401,6 +1602,51 @@ export class WorkflowExecutor {
 function toJsonValue(value: unknown): JsonValue {
   if (value === undefined) return null
   return JSON.parse(JSON.stringify(value)) as JsonValue
+}
+
+function toAssertionSource(value: string | undefined): AssertionSource {
+  switch (value) {
+    case "variables":
+    case "status":
+    case "cookies":
+    case "headers":
+      return value
+    case "prev":
+    default:
+      return "prev"
+  }
+}
+
+function toAssertionOperator(value: string): AssertionOperator {
+  switch (value) {
+    case "notEquals":
+    case "contains":
+    case "notContains":
+    case "gt":
+    case "gte":
+    case "lt":
+    case "lte":
+    case "count":
+    case "exists":
+    case "notExists":
+      return value
+    case "equals":
+    default:
+      return "equals"
+  }
+}
+
+function jsonValueType(value: unknown): JsonValueType | null {
+  if (value === undefined) return null
+  if (value === null) return "null"
+  if (Array.isArray(value)) return "array"
+  switch (typeof value) {
+    case "object": return "object"
+    case "boolean": return "boolean"
+    case "number": return "number"
+    case "string": return "string"
+    default: return null
+  }
 }
 
 /** Collect every {{secrets.NAME}} referenced by a node's config (names only). */

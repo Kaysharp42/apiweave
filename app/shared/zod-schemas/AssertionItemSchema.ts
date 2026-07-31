@@ -1,5 +1,7 @@
 import { z } from "zod"
 import { JsonValueSchema } from "./JsonValueSchema"
+import { AssertionOperatorSchema } from "./AssertionOperatorSchema"
+import { AssertionSourceSchema } from "./AssertionSourceSchema"
 
 /**
  * Assertion config as produced by BOTH renderer editors (the inline
@@ -11,21 +13,9 @@ import { JsonValueSchema } from "./JsonValueSchema"
  */
 export const AssertionItemSchema = z
   .object({
-    source: z.string().optional(),
-    path: z.string().optional(),
-    operator: z.enum([
-      "equals",
-      "notEquals",
-      "contains",
-      "notContains",
-      "gt",
-      "gte",
-      "lt",
-      "lte",
-      "count",
-      "exists",
-      "notExists",
-    ]),
+    source: AssertionSourceSchema,
+    path: z.string(),
+    operator: AssertionOperatorSchema,
     expectedValue: JsonValueSchema.optional(),
   })
   .strict()

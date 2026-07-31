@@ -1,4 +1,5 @@
 import type { Workflow } from "@shared/types/Workflow"
+import type { AssertionItem } from "@shared/types/AssertionItem"
 import type {
   CollectionRepository,
   EnvironmentRepository,
@@ -9,7 +10,8 @@ import type {
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
 import { recordWorkflowTombstone, recordWorkflowUpsert } from "../sync/cloud-mutations"
-import { NotFoundError } from "../ipc/errors"
+import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
+import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
@@ -57,6 +59,46 @@ export class WorkflowService {
     }
     const updated = this.workflows.update(workflowId, patch)
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+    recordWorkflowUpsert(this.syncProvider, updated)
+    await this.syncProvider.push()
+    return updated
+  }
+
+  async applyAssertions(
+    workspaceId: string,
+    workflowId: string,
+    expectedRevision: number,
+    assertionNodeId: string,
+    mode: "append" | "replace",
+    rules: readonly AssertionItem[],
+  ): Promise<Workflow> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    const existing = this.mustGet(workspaceId, workflowId)
+    if (existing.rev !== expectedRevision) {
+      throw new ConflictError("workflow revision is stale", {
+        expectedRevision,
+        currentRevision: existing.rev,
+      })
+    }
+    if (!existing.nodes.some((node) => node.nodeId === assertionNodeId && node.type === "assertion")) {
+      throw new ValidationError(`node ${assertionNodeId} is not an assertion node`)
+    }
+
+    const canonicalRules = AssertionItemSchema.array().parse(rules)
+    const updated = this.workflows.updateAssertionRules(
+      workflowId,
+      expectedRevision,
+      assertionNodeId,
+      mode,
+      canonicalRules,
+    )
+    if (updated === undefined) {
+      const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
+      throw new ConflictError("workflow revision changed before assertions could be applied", {
+        expectedRevision,
+        currentRevision: current?.rev,
+      })
+    }
     recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated

@@ -11,5 +11,7 @@ export type { CloudAccountIdentity } from "./CloudAccountIdentity";
 export type { CloudDeviceStatus } from "./CloudDeviceStatus";
 export type { CloudWorkspaceBinding } from "./CloudWorkspaceBinding";
 export type { CloudWorkspaceCatalogEntry } from "./CloudWorkspaceCatalogEntry";
+export type { CloudTeamCatalogEntry } from "./CloudTeamCatalogEntry";
+export type { CloudCreateTeamWorkspaceInput } from "./CloudCreateTeamWorkspaceInput";
 export type { CloudSyncStatus } from "./CloudSyncStatus";
 export type { CloudBindWorkspaceInput } from "./CloudBindWorkspaceInput";

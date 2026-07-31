@@ -15,6 +15,8 @@ import { ScopeResolver } from "../../../services/scope_resolver"
 import { WorkspaceService } from "../../../services/workspace_service"
 import { CollectionService } from "../../../services/collection_service"
 import { WorkflowService } from "../../../services/workflow_service"
+import { WorkflowAnalysisService } from "../../../services/workflow_analysis_service"
+import { AssertionAuthoringService } from "../../../services/assertion_authoring_service"
 import { EnvironmentService } from "../../../services/environment_service"
 import { RunService } from "../../../services/run_service"
 import { SecretService, type SecretWriteStore } from "../../../services/secret_service"
@@ -169,12 +171,16 @@ function buildRouter(): IpcRouter {
     listByScope: () => [],
     getByScopeAndName: () => null,
   }
+  const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
+  const runService = new RunService(runs, sync, permissions, scopeResolver)
   const deps: HandlerDeps = {
     workspaces: new WorkspaceService(workspaces, sync, scopeResolver),
     collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
-    workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
+    workflows: workflowService,
+    workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
+    assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
-    runs: new RunService(runs, sync, permissions, scopeResolver),
+    runs: runService,
     secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver),
   }

@@ -289,7 +289,7 @@ app/core/mcp/
 - The MCP bridge MUST NOT call any HTTP endpoint. It calls IPC handlers directly.
 - Both the renderer and the MCP bridge go through the same service layer. The MCP bridge never has its own service implementations.
 - Secrets are NEVER returned by MCP read tools. Read and export tools redact persisted secrets at the response layer.
-- The token file is rewritten on every install. The static token is the only auth surface.
+- The token file persists per installation and is reused when the bridge is re-enabled. The static token is the only auth surface.
 
 ### Testing/Verification Baseline
 

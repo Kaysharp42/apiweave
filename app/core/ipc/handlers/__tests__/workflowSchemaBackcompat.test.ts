@@ -368,4 +368,68 @@ describe("canonicalizeExistingWorkflows — idempotent on-disk rewrite", () => {
     const touched = canonicalizeExistingWorkflows(db.kvStore)
     expect(touched).toBe(0)
   })
+
+  it("rewrites legacy single-rule assertion configs into the closed canonical shape", () => {
+    const workspaces = new WorkspaceRepository(db.kvStore)
+    workspaces.create({ name: "Personal", slug: "personal" })
+    const workspace = workspaces.listAll()[0]!
+    const legacyJson = JSON.stringify({
+      nodes: [
+        {
+          nodeId: "assert-1",
+          type: "assertion",
+          position: { x: 0, y: 0 },
+          config: {
+            field: "body.id",
+            operator: "not_equals",
+            expected: 7,
+          },
+        },
+      ],
+      edges: [],
+    })
+    db.kvStore.set(
+      "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json) VALUES (?, ?, ?, ?, ?, ?, '{}', '{}')",
+      ["wf-legacy-assertion", workspace.workspaceId, workspace.workspaceId, "Legacy assertion", "legacy-assertion", legacyJson],
+    )
+
+    expect(canonicalizeExistingWorkflows(db.kvStore)).toBe(1)
+    const row = db.kvStore.get<{ graph_json: string }>(
+      "SELECT graph_json FROM workflows WHERE id = ?",
+      ["wf-legacy-assertion"],
+    )!
+    const graph = JSON.parse(row.graph_json) as { nodes: Array<{ config: unknown }> }
+    expect(graph.nodes[0]?.config).toEqual({
+      assertions: [{ source: "prev", path: "body.id", operator: "notEquals", expectedValue: 7 }],
+    })
+    expect(canonicalizeExistingWorkflows(db.kvStore)).toBe(0)
+  })
+
+  it("preserves unsupported legacy assertion operators instead of deleting the rule", () => {
+    const workspaces = new WorkspaceRepository(db.kvStore)
+    workspaces.create({ name: "Personal", slug: "personal" })
+    const workspace = workspaces.listAll()[0]!
+    const legacyJson = JSON.stringify({
+      nodes: [{
+        nodeId: "assert-regex",
+        type: "assertion",
+        position: { x: 0, y: 0 },
+        config: {
+          assertions: [{ source: "prev", path: "body.id", operator: "matches_regex", expectedValue: "^[0-9]+$" }],
+        },
+      }],
+      edges: [],
+    })
+    db.kvStore.set(
+      "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json) VALUES (?, ?, ?, ?, ?, ?, '{}', '{}')",
+      ["wf-unsupported-assertion", workspace.workspaceId, workspace.workspaceId, "Unsupported", "unsupported", legacyJson],
+    )
+
+    expect(canonicalizeExistingWorkflows(db.kvStore)).toBe(0)
+    const row = db.kvStore.get<{ graph_json: string }>(
+      "SELECT graph_json FROM workflows WHERE id = ?",
+      ["wf-unsupported-assertion"],
+    )!
+    expect(row.graph_json).toBe(legacyJson)
+  })
 })

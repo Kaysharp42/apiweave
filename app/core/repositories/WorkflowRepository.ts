@@ -3,6 +3,7 @@ import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { AssertionItem } from "@shared/types/AssertionItem"
 import { generateId } from "../id"
 import {
   canonicalizeWorkflowGraph,
@@ -141,6 +142,42 @@ export class WorkflowRepository {
       [merged.name, slugify(merged.name, workflowId), toJson(graph), toJson(merged.variables), toJson(settings), workflowId],
     )
     return this.getById(workflowId)
+  }
+
+  /** Compare-and-swap only one assertion node's rules against the current graph revision. */
+  public updateAssertionRules(
+    workflowId: string,
+    expectedRevision: number,
+    assertionNodeId: string,
+    mode: "append" | "replace",
+    rules: readonly AssertionItem[],
+  ): Workflow | undefined {
+    return this.store.transaction(() => {
+      const existing = this.getById(workflowId)
+      if (existing === undefined || existing.rev !== expectedRevision) return undefined
+
+      let found = false
+      const nodes = existing.nodes.map((node) => {
+        if (node.nodeId !== assertionNodeId || node.type !== "assertion") return node
+        found = true
+        const current = node.config?.assertions ?? []
+        return {
+          ...node,
+          config: {
+            ...(node.config ?? {}),
+            assertions: mode === "append" ? [...current, ...rules] : [...rules],
+          },
+        }
+      })
+      if (!found) return undefined
+
+      const graph = canonicalWorkflow({ nodes, edges: existing.edges })
+      const result = this.store.set(
+        "UPDATE workflows SET graph_json = ? WHERE id = ? AND rev = ?",
+        [toJson(graph), workflowId, expectedRevision],
+      )
+      return result.changes === 1 ? this.getById(workflowId) : undefined
+    })
   }
 
   public delete(workflowId: string): boolean {

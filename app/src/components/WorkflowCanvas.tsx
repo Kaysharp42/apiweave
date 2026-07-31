@@ -315,9 +315,9 @@ export function WorkflowCanvas({
           id = nextConfigRefId++;
           configRefMap.set(cfg as object, id);
         }
-        parts.push(`${node.id}:${id}`);
+        parts.push(`${node.id}:${id}:${JSON.stringify(node.data?.label ?? null)}`);
       } else {
-        parts.push(`${node.id}:0`);
+        parts.push(`${node.id}:0:${JSON.stringify(node.data?.label ?? null)}`);
       }
     }
     return parts.join("|");

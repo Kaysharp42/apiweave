@@ -1,4 +1,5 @@
 import type { SyncWorkspaceRole } from "@apiweave/proto/apiweave/v1/device_pb"
+import type { Workspace } from "@shared/types/Workspace"
 
 export type CloudLinkState = "unlinked" | "linking" | "linked" | "authenticationRequired"
 export type CloudSyncState = "idle" | "initializing" | "syncing" | "conflict" | "error" | "offline"
@@ -97,6 +98,21 @@ export interface CloudWorkspaceCatalogEntry {
   readonly canResolveConflicts: boolean
 }
 
+export interface CloudTeamCatalogEntry {
+  readonly teamId: string
+  readonly teamName: string
+  readonly isPersonal: boolean
+  readonly canCreateWorkspaces: boolean
+}
+
+export interface CloudCreateTeamWorkspaceInput {
+  readonly name: string
+  readonly slug: string
+  readonly description?: string | null
+  readonly teamId?: string
+  readonly newTeamName?: string
+}
+
 export interface CloudSyncStatus {
   readonly linked: boolean
   readonly active: boolean
@@ -114,6 +130,7 @@ export interface CloudSyncStatus {
   readonly workspaceIds: readonly string[]
   readonly bindings: readonly CloudWorkspaceBindingStatus[]
   readonly workspaceCatalog: readonly CloudWorkspaceCatalogEntry[]
+  readonly teamCatalog: readonly CloudTeamCatalogEntry[]
 }
 
 export interface CloudSyncControl {
@@ -122,6 +139,7 @@ export interface CloudSyncControl {
   readonly cancelLink: () => CloudSyncStatus
   readonly unlink: (input: CloudUnlinkInput) => Promise<CloudSyncStatus>
   readonly bindWorkspace: (input: CloudBindWorkspaceInput) => Promise<CloudSyncStatus>
+  readonly createTeamWorkspace: (input: CloudCreateTeamWorkspaceInput) => Promise<Workspace>
   readonly initializeWorkspace: (input: CloudInitializeWorkspaceInput) => Promise<CloudSyncStatus>
   readonly unbindWorkspace: (input: CloudUnbindWorkspaceInput) => CloudSyncStatus
   readonly refreshWorkspaceCatalog: () => Promise<CloudSyncStatus>

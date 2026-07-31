@@ -4,6 +4,7 @@ import type { CloudLinkState } from "./CloudLinkState";
 import type { CloudSyncState } from "./CloudSyncState";
 import type { CloudWorkspaceBinding } from "./CloudWorkspaceBinding";
 import type { CloudWorkspaceCatalogEntry } from "./CloudWorkspaceCatalogEntry";
+import type { CloudTeamCatalogEntry } from "./CloudTeamCatalogEntry";
 
 export interface CloudSyncStatus {
   readonly linked: boolean;
@@ -22,4 +23,5 @@ export interface CloudSyncStatus {
   readonly workspaceIds: readonly string[];
   readonly bindings: readonly CloudWorkspaceBinding[];
   readonly workspaceCatalog: readonly CloudWorkspaceCatalogEntry[];
+  readonly teamCatalog: readonly CloudTeamCatalogEntry[];
 }

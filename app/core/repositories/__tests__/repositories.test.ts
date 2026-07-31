@@ -225,6 +225,44 @@ describe("RunRepository", () => {
     expect(runs.getLatestRun(workflowId, otherWorkspaceId)).toBeUndefined()
     expect(runs.getLatestFailedRun(workflowId, otherWorkspaceId)).toBeUndefined()
   })
+
+  it("adapts old run metadata defaults and aggregate assertion results on read", () => {
+    const { runId } = seedRun()
+    db.kvStore.set("UPDATE runs SET response_metadata_json = ? WHERE id = ?", [
+      JSON.stringify({
+        results: [{
+          nodeId: "assert_1",
+          status: "failed",
+          duration: 4,
+          assertions: [{ outcome: "fail", message: "actual: sensitive-value" }],
+        }],
+      }),
+      runId,
+    ])
+
+    const run = runs.getById(runId)
+    expect(run?.trigger).toBe("manual")
+    expect(run?.resolvedSecrets).toEqual([])
+    expect(run?.results[0]?.assertions).toEqual([expect.objectContaining({
+      ruleIndex: 0,
+      outcome: "fail",
+      reasonCode: "legacy-result",
+      actualState: "not-evaluated",
+    })])
+    expect(JSON.stringify(run?.results[0]?.assertions)).not.toContain("sensitive-value")
+  })
+
+  it("reads an old run row whose metadata blob is empty", () => {
+    const { runId } = seedRun()
+    db.kvStore.set("UPDATE runs SET response_metadata_json = '{}' WHERE id = ?", [runId])
+
+    expect(runs.getById(runId)).toMatchObject({
+      trigger: "manual",
+      results: [],
+      failedNodes: null,
+      resolvedSecrets: [],
+    })
+  })
 })
 
 describe("EnvironmentRepository", () => {

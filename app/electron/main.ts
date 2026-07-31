@@ -21,6 +21,8 @@ import {
   WorkspaceService,
   CollectionService,
   WorkflowService,
+  AssertionAuthoringService,
+  WorkflowAnalysisService,
   EnvironmentService,
   RunService,
   SecretService,
@@ -29,12 +31,17 @@ import {
 } from "../core/services"
 import { LocalOwnerProvider } from "../core/auth"
 import { LocalOnlySyncProvider, SwitchableSyncProvider } from "../core/sync"
-import { RunScheduler, SafeHttp, DynamicFunctions } from "../core/runner"
+import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
-import { MCP_TOOLS, toolName } from "../core/mcp/tools"
+import { MCP_SERVER_INFO_TOOL, MCP_TOOLS, toolName } from "../core/mcp/tools"
+import { MCP_PROMPTS } from "../core/mcp/prompts"
+import { MCP_RESOURCES } from "../core/mcp/resources"
 import type { McpStatus } from "@shared/types/McpStatus"
 import type { MCPTool } from "@shared/types/MCPTool"
+import type { MCPPrompt } from "@shared/types/MCPPrompt"
+import type { MCPResource } from "@shared/types/MCPResource"
+import type { McpTestResult } from "@shared/types/McpTestResult"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import { CLOUD_STATUS_CHANGED_CHANNEL } from "../core/ipc/channels"
@@ -225,6 +232,14 @@ if (!hasSingleInstanceLock) {
     const rng = new CryptoRandomProvider()
     const http = new SafeHttp({ allowLoopback: true })
     const functions = new DynamicFunctions(clock, rng)
+    // Single run-event broker: the scheduler publishes raw transitions; the
+    // broker stamps seq/ts and fans out to the renderer (IPC) and MCP sessions.
+    const runEvents = new RunEventBroker({ now: () => clock.isoNow() })
+    runEvents.subscribe((event) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        emitRunProgress(mainWindow.webContents, event)
+      }
+    })
     scheduler = new RunScheduler({
       runs,
       workflows,
@@ -235,11 +250,7 @@ if (!hasSingleInstanceLock) {
       rng,
       resolveSecret: (name, chain) =>
         secretService.resolvePlaintext(name, chain).then((r) => ({ plaintext: r.plaintext, scopeType: r.scopeType })),
-      emitProgress: (_runId, event) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          emitRunProgress(mainWindow.webContents, event)
-        }
-      },
+      emitProgress: (runId, event) => runEvents.publish(runId, event),
     })
 
     const interrupted = scheduler.reconcileOnStartup()
@@ -249,12 +260,16 @@ if (!hasSingleInstanceLock) {
 
     // Services over the scoped repos; RunService drives the scheduler so
     // runs.create actually executes and runs.cancel aborts a live run.
+    const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
+    const runService = new RunService(runs, sync, permissions, scopeResolver, scheduler)
     const deps: HandlerDeps = {
       workspaces: new WorkspaceService(workspaces, sync, scopeResolver, () => cloud.syncNewWorkspace()),
       collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
-      workflows: new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments),
+      workflows: workflowService,
+      workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
+      assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
       environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
-      runs: new RunService(runs, sync, permissions, scopeResolver, scheduler),
+      runs: runService,
       secrets: secretService,
       projects: new ProjectExportService(
         collections,
@@ -321,7 +336,12 @@ if (!hasSingleInstanceLock) {
       "mcp:enable",
       requireTrustedSender(async () => {
         if (mcpHost === null) {
-          mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+          mcpHost = new McpHost({
+            router: ipcRouter,
+            tokenFilePath: mcpTokenPath,
+            version: app.getVersion(),
+            broker: runEvents,
+          })
         }
         await mcpHost.start()
         writeMcpEnabled(true)
@@ -339,13 +359,76 @@ if (!hasSingleInstanceLock) {
     ipcMain.handle(
       "mcp:listTools",
       requireTrustedSender(
-        (): readonly MCPTool[] => MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
+        (): readonly MCPTool[] => [
+          { name: MCP_SERVER_INFO_TOOL.name, description: MCP_SERVER_INFO_TOOL.description },
+          ...MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
+        ],
       ),
+    )
+    ipcMain.handle(
+      "mcp:listPrompts",
+      requireTrustedSender(
+        (): readonly MCPPrompt[] =>
+          MCP_PROMPTS.map((spec) => ({ name: spec.name, description: spec.description })),
+      ),
+    )
+    ipcMain.handle(
+      "mcp:listResources",
+      requireTrustedSender((): readonly MCPResource[] => MCP_RESOURCES.map((spec) => ({ ...spec }))),
+    )
+    // Probe the endpoint from the trusted main process: a renderer fetch sends an
+    // app-scheme Origin that the host's DNS-rebinding guard rejects, so it can
+    // only ever report failure. Main sends no Origin and is accepted.
+    ipcMain.handle(
+      "mcp:testConnection",
+      requireTrustedSender(async (): Promise<McpTestResult> => {
+        const config = mcpHost?.getConfig()
+        if (!mcpHost?.isRunning() || config === null || config === undefined) {
+          return { ok: false, status: null }
+        }
+        const authHeaders = { Authorization: `Bearer ${config.token}` }
+        try {
+          const response = await fetch(config.url, {
+            method: "POST",
+            headers: {
+              ...authHeaders,
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "initialize",
+              params: {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "apiweave-ui", version: app.getVersion() },
+              },
+            }),
+          })
+          // initialize opens a retained session; DELETE it so a probe never leaks.
+          const session = response.headers.get("mcp-session-id")
+          if (session !== null) {
+            await fetch(config.url, {
+              method: "DELETE",
+              headers: { ...authHeaders, "mcp-session-id": session },
+            }).catch(() => undefined)
+          }
+          return { ok: response.ok, status: response.status }
+        } catch {
+          return { ok: false, status: null }
+        }
+      }),
     )
 
     // Restore the user's persisted MCP choice on launch.
     if (readMcpEnabled()) {
-      mcpHost = new McpHost({ router: ipcRouter, tokenFilePath: mcpTokenPath, version: app.getVersion() })
+      mcpHost = new McpHost({
+        router: ipcRouter,
+        tokenFilePath: mcpTokenPath,
+        version: app.getVersion(),
+        broker: runEvents,
+      })
       void mcpHost
         .start()
         .then(() => console.info("[mcp] auto-started local MCP server from persisted setting"))

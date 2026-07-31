@@ -3,11 +3,9 @@ import type { SqliteRow } from "./sqlite-types"
 import { canonicalizeWorkflowGraph } from "../repositories/helpers"
 
 /**
- * One-shot in-place rewrite of every workflow's `graph_json`: any persisted
- * `http-request` node whose `headers` / `cookies` / `queryParams` /
- * `pathVariables` survived in a non-canonical shape (`string`,
- * `Record<string,string>`, or a non-conforming array) is rewritten to the
- * `KeyValuePair[]` form the strict `WorkflowNodeSchema` now mandates.
+ * In-place rewrite of every workflow's `graph_json`. Legacy HTTP key/value
+ * fields and pre-array assertion configs are rewritten to the closed shapes
+ * mandated by `WorkflowNodeSchema`.
  *
  * Idempotent. {@link canonicalizeWorkflowGraph} returns the SAME graph when
  * no node drifted, so this walks every workflow row, rewrites only those

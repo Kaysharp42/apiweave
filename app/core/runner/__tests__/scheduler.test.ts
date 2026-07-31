@@ -6,7 +6,7 @@ import { RunScheduler, type SchedulerDeps } from "../scheduler"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
-import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
+import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 
@@ -90,7 +90,7 @@ describe("RunScheduler", () => {
       const env = environments.create({
         workspaceId: ws,
         name: "dev",
-        variables: { BASE_URL: "http://169.254.169.254" },
+        variables: { BASE_URL: "http://169.254.169.254/auth?token=opaque-credential" },
       })
       const workflowId = workflows.create({
         workspaceId: ws,
@@ -101,12 +101,12 @@ describe("RunScheduler", () => {
             nodeId: "http_1",
             type: "http-request",
             position: { x: 1, y: 0 },
-            config: { method: "GET", url: "{{env.BASE_URL}}/auth/authenticate" },
+            config: { method: "GET", url: "{{env.BASE_URL}}" },
           },
         ],
         edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
       }).workflowId
-      const events: RunProgressEvent[] = []
+      const events: RunEvent[] = []
       const scheduler = makeScheduler({
         emitProgress: (_runId, event) => events.push(event),
       })
@@ -116,17 +116,19 @@ describe("RunScheduler", () => {
       await new Promise((resolve) => setTimeout(resolve, 300))
 
       const failed = events.find(
-        (event) => event.kind === "node.completed" && event.nodeId === "http_1" && event.status === "failed",
+        (event) => event.kind === "node.status" && event.nodeId === "http_1" && event.status === "failed",
       )
       expect(failed).toBeDefined()
       expect(failed?.error).not.toContain("{{env.BASE_URL}}")
-      expect(failed?.error).toContain("http://169.254.169.254/auth/authenticate")
-      expect(runs.getById(runId)?.results[0]).toMatchObject({
+      expect(failed?.error).toBe("SSRF blocked")
+      const persistedRun = runs.getById(runId)
+      expect(persistedRun?.results[0]).toMatchObject({
         nodeId: "http_1",
         status: "failed",
-        error: "SSRF blocked: URL blocked by safety policy: http://169.254.169.254/auth/authenticate",
-        request: { url: "http://169.254.169.254/auth/authenticate" },
+        error: "SSRF blocked",
+        request: { url: "http://169.254.169.254/auth?<REDACTED>" },
       })
+      expect(JSON.stringify(persistedRun)).not.toContain("opaque-credential")
     })
 
     it("resolves {{secrets.*}} through the runtime resolver and substitutes plaintext into the outgoing request", async () => {
@@ -287,10 +289,10 @@ describe("RunScheduler", () => {
   })
 
   describe("event emission", () => {
-    it("emits node.completed events plus a terminal run.finished, all with the real runId", async () => {
+    it("emits node.status events plus a terminal run.finished, all with the real runId", async () => {
       const ws = seedWorkspace()
       const wf = seedWorkflow(ws)
-      const events: RunProgressEvent[] = []
+      const events: RunEvent[] = []
       const scheduler = makeScheduler({
         emitProgress: (_runId, event) => events.push(event),
       })
@@ -302,7 +304,7 @@ describe("RunScheduler", () => {
       expect(events.length).toBeGreaterThan(0)
       expect(events.every((e) => e.runId === runId)).toBe(true)
 
-      const nodeEvents = events.filter((e) => e.kind === "node.completed")
+      const nodeEvents = events.filter((e) => e.kind === "node.status")
       expect(nodeEvents.some((e) => e.nodeId === "start")).toBe(true)
       expect(nodeEvents.some((e) => e.nodeId === "end")).toBe(true)
 
@@ -323,7 +325,7 @@ describe("RunScheduler", () => {
       // that the terminal event's status is exactly the run's final DB status.
       const ws = seedWorkspace()
       const wf = seedWorkflow(ws, 2000)
-      const events: RunProgressEvent[] = []
+      const events: RunEvent[] = []
       const scheduler = makeScheduler({
         emitProgress: (_runId, event) => events.push(event),
       })
@@ -338,12 +340,12 @@ describe("RunScheduler", () => {
       expect(finished[0]?.status).toBe(runs.getById(runId)?.status)
     })
 
-    it("redacts secret-looking extracted variables from node.completed events and persisted nodeStatuses", async () => {
+    it("redacts secret-looking extracted variables from node.status events and persisted nodeStatuses", async () => {
       const ws = seedWorkspace()
       const { createServer } = await import("node:http")
       const server = createServer((_req, res) => {
         res.setHeader("content-type", "application/json")
-        res.end(JSON.stringify({ token: "super-secret-value-xyz" }))
+        res.end(JSON.stringify({ token: "super-secret-value-xyz", session: "x7Q9aB3c" }))
       })
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
       const port = (server.address() as { port: number }).port
@@ -360,14 +362,14 @@ describe("RunScheduler", () => {
             config: {
               method: "GET",
               url: `http://127.0.0.1:${port}/login`,
-              extractors: { api_key: "body.token" },
+              extractors: { api_key: "body.token", sessionId: "body.session" },
             } as never,
           },
         ],
         edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
       }).workflowId
 
-      const events: RunProgressEvent[] = []
+      const events: RunEvent[] = []
       const scheduler = makeScheduler({
         emitProgress: (_runId, event) => events.push(event),
       })
@@ -377,7 +379,7 @@ describe("RunScheduler", () => {
       server.close()
 
       // "running" fires before extraction; the terminal "passed"/"failed" event carries the extracted variable.
-      const httpEvents = events.filter((e) => e.kind === "node.completed" && e.nodeId === "http_1")
+      const httpEvents = events.filter((e) => e.kind === "node.status" && e.nodeId === "http_1")
       const httpEvent = httpEvents[httpEvents.length - 1]
       expect(httpEvent && "variables" in httpEvent ? httpEvent.variables : undefined).toMatchObject({ api_key: "<SECRET>" })
       expect(JSON.stringify(httpEvents)).not.toContain("super-secret-value-xyz")
@@ -387,6 +389,90 @@ describe("RunScheduler", () => {
       const persisted = runs.getById(runId)?.nodeStatuses?.["http_1"] as Record<string, unknown> | undefined
       expect(persisted?.["variables"]).toMatchObject({ api_key: "<SECRET>" })
       expect(JSON.stringify(persisted)).not.toContain("super-secret-value-xyz")
+
+      const completedRun = runs.getById(runId)
+      // Secret-looking extracted values are redacted; ordinary extracted values are
+      // kept for the trusted local run history (MCP never exposes variables).
+      expect(completedRun?.variables).toMatchObject({ api_key: "<SECRET>", sessionId: "x7Q9aB3c" })
+      expect(JSON.stringify(completedRun?.variables)).not.toContain("super-secret-value-xyz")
+      expect(completedRun?.results.find((result) => result.nodeId === "http_1")?.extractorOutcomes).toEqual([
+        {
+          producerNodeId: "http_1",
+          variableName: "api_key",
+          path: "body.token",
+          matched: true,
+          observedType: "string",
+          failureReason: null,
+        },
+        {
+          producerNodeId: "http_1",
+          variableName: "sessionId",
+          path: "body.session",
+          matched: true,
+          observedType: "string",
+          failureReason: null,
+        },
+      ])
+    })
+
+    it("persists structured assertion evaluations and final failure evidence", async () => {
+      const ws = seedWorkspace()
+      const { createServer } = await import("node:http")
+      const server = createServer((_req, res) => {
+        res.setHeader("content-type", "application/json")
+        res.end(JSON.stringify({ value: 42 }))
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "assertion-evidence-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: { method: "GET", url: `http://127.0.0.1:${port}/value` },
+          },
+          {
+            nodeId: "assert_1",
+            type: "assertion",
+            position: { x: 2, y: 0 },
+            config: {
+              assertions: [
+                { source: "prev", path: "response.body.value", operator: "equals", expectedValue: 99 },
+              ],
+            },
+          },
+          { nodeId: "end", type: "end", position: { x: 3, y: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "http_1" },
+          { edgeId: "e2", source: "http_1", target: "assert_1" },
+          { edgeId: "e3", source: "assert_1", target: "end" },
+        ],
+      }).workflowId
+      const scheduler = makeScheduler()
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      server.close()
+
+      const run = runs.getById(runId)
+      expect(run?.status).toBe("failed")
+      expect(run?.failedNodes).toContain("assert_1")
+      expect(run?.failureMessage).toBe("Workflow execution failed in 1 node")
+      expect(run?.nodeStatuses["end"]).toBeUndefined()
+      expect(run?.results.find((result) => result.nodeId === "assert_1")?.assertions).toEqual([
+        expect.objectContaining({
+          ruleIndex: 0,
+          sourceNodeId: "http_1",
+          outcome: "fail",
+          reasonCode: "comparison-failed",
+          actualType: "number",
+        }),
+      ])
     })
   })
 

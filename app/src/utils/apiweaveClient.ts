@@ -6,6 +6,13 @@ import type {
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { McpStatus } from "@shared/types/McpStatus";
 import type { MCPTool } from "@shared/types/MCPTool";
+import type { MCPPrompt } from "@shared/types/MCPPrompt";
+import type { MCPResource } from "@shared/types/MCPResource";
+import type { McpTestResult } from "@shared/types/McpTestResult";
+import type { AssertionApplyResult } from "@shared/types/AssertionApplyResult";
+import type { AssertionItem } from "@shared/types/AssertionItem";
+import type { AssertionSuggestionResult } from "@shared/types/AssertionSuggestionResult";
+import type { AssertionValidationResult } from "@shared/types/AssertionValidationResult";
 import type { AuthenticatedRequestInit } from "../types";
 import type { Project } from "../types/Project";
 import type { DryRunResult } from "../types/DryRunResult";
@@ -16,6 +23,7 @@ import type { Workflow } from "../types/Workflow";
 import type { Workspace } from "../types/Workspace";
 import type {
   CloudBindWorkspaceInput,
+  CloudCreateTeamWorkspaceInput,
   CloudSyncStatus,
 } from "../types/cloud";
 
@@ -62,6 +70,9 @@ type McpBridge = {
   readonly enable: () => Promise<McpStatus>;
   readonly disable: () => Promise<McpStatus>;
   readonly listTools: () => Promise<readonly MCPTool[]>;
+  readonly listPrompts: () => Promise<readonly MCPPrompt[]>;
+  readonly listResources: () => Promise<readonly MCPResource[]>;
+  readonly testConnection: () => Promise<McpTestResult>;
 };
 
 declare global {
@@ -251,6 +262,47 @@ export const apiweave = {
       }),
     dryRun: (workspaceId: string, bundle: unknown) =>
       invoke<DryRunResult>("workflows", "dryRun", { workspaceId, bundle }),
+  },
+  assertions: {
+    suggest: (
+      workspaceId: string,
+      workflowId: string,
+      runId: string,
+      sourceNodeId: string,
+    ) => invoke<AssertionSuggestionResult>("assertions", "suggest", {
+      workspaceId,
+      workflowId,
+      runId,
+      sourceNodeId,
+    }),
+    validate: (
+      workspaceId: string,
+      workflowId: string,
+      sourceNodeId: string,
+      rules: readonly AssertionItem[],
+      runId?: string,
+    ) => invoke<AssertionValidationResult>("assertions", "validate", {
+      workspaceId,
+      workflowId,
+      sourceNodeId,
+      rules,
+      ...(runId !== undefined ? { runId } : {}),
+    }),
+    apply: (
+      workspaceId: string,
+      workflowId: string,
+      expectedRevision: number,
+      assertionNodeId: string,
+      mode: "append" | "replace",
+      rules: readonly AssertionItem[],
+    ) => invoke<AssertionApplyResult>("assertions", "apply", {
+      workspaceId,
+      workflowId,
+      expectedRevision,
+      assertionNodeId,
+      mode,
+      rules,
+    }),
   },
   environments: {
     create: (
@@ -462,6 +514,8 @@ export const apiweave = {
       invoke<CloudSyncStatus>("cloud", "unlink", localOnly ? { localOnly } : {}),
     bindWorkspace: (input: CloudBindWorkspaceInput) =>
       invoke<CloudSyncStatus>("cloud", "bindWorkspace", input),
+    createTeamWorkspace: (input: CloudCreateTeamWorkspaceInput) =>
+      invoke<Workspace>("cloud", "createTeamWorkspace", input),
     unbindWorkspace: (workspaceId: string) =>
       invoke<CloudSyncStatus>("cloud", "unbindWorkspace", { workspaceId }),
     initializeWorkspace: (workspaceId: string) =>
@@ -529,6 +583,13 @@ export const mcp = {
     Promise.resolve({ running: false, config: null }),
   listTools: (): Promise<readonly MCPTool[]> =>
     getMcpBridge()?.listTools() ?? Promise.resolve([]),
+  listPrompts: (): Promise<readonly MCPPrompt[]> =>
+    getMcpBridge()?.listPrompts() ?? Promise.resolve([]),
+  listResources: (): Promise<readonly MCPResource[]> =>
+    getMcpBridge()?.listResources() ?? Promise.resolve([]),
+  testConnection: (): Promise<McpTestResult> =>
+    getMcpBridge()?.testConnection() ??
+    Promise.resolve({ ok: false, status: null }),
 } as const;
 
 export const API_BASE_URL = "ipc://apiweave";

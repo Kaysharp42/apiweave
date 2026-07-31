@@ -17,14 +17,23 @@ import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf"
 import { EmptySchema } from "@bufbuild/protobuf/wkt"
 import { UlidSchema } from "@apiweave/proto/apiweave/v1/common_pb"
 import {
+  CreateSyncWorkspaceRequestSchema,
   DeviceService,
   EnsureSyncWorkspaceRequestSchema,
   RevokeDeviceRequestSchema,
+  SyncTeamListSchema,
   SyncWorkspaceListSchema,
   SyncWorkspaceSchema,
+  type SyncTeamList,
   type SyncWorkspace,
   type SyncWorkspaceList,
 } from "@apiweave/proto/apiweave/v1/device_pb"
+import {
+  CreateTeamRequestSchema,
+  TeamSchema,
+  TeamService,
+  type Team,
+} from "@apiweave/proto/apiweave/v1/team_pb"
 import {
   ConflictWinner,
   FetchLoserRequestSchema,
@@ -322,7 +331,10 @@ const METHOD_HELLO = "Hello"
 const METHOD_PULL_CHANGES = "PullChanges"
 const METHOD_PUSH_DELTAS = "PushDeltas"
 const METHOD_LIST_SYNC_WORKSPACES = "ListSyncWorkspaces"
+const METHOD_LIST_SYNC_TEAMS = "ListSyncTeams"
 const METHOD_ENSURE_SYNC_WORKSPACE = "EnsureSyncWorkspace"
+const METHOD_CREATE_SYNC_WORKSPACE = "CreateSyncWorkspace"
+const METHOD_CREATE_TEAM = "CreateTeam"
 const METHOD_REVOKE_DEVICE = "RevokeDevice"
 const METHOD_RESOLVE_CONFLICT = "ResolveConflict"
 
@@ -418,6 +430,15 @@ export class CloudClient {
     return fromJson(SyncWorkspaceListSchema, json, { ignoreUnknownFields: true })
   }
 
+  public async listSyncTeams(): Promise<SyncTeamList> {
+    const json = await this.call(
+      DeviceService.typeName,
+      METHOD_LIST_SYNC_TEAMS,
+      toJson(EmptySchema, create(EmptySchema)),
+    )
+    return fromJson(SyncTeamListSchema, json, { ignoreUnknownFields: true })
+  }
+
   public async ensureSyncWorkspace(params: {
     workspaceId: string
     name: string
@@ -436,6 +457,31 @@ export class CloudClient {
       toJson(EnsureSyncWorkspaceRequestSchema, request),
     )
     return fromJson(SyncWorkspaceSchema, json, { ignoreUnknownFields: true })
+  }
+
+  public async createSyncWorkspace(params: {
+    requestId: string
+    teamId: string
+    name: string
+    slug: string
+  }): Promise<SyncWorkspace> {
+    const request = create(CreateSyncWorkspaceRequestSchema, params)
+    const json = await this.call(
+      DeviceService.typeName,
+      METHOD_CREATE_SYNC_WORKSPACE,
+      toJson(CreateSyncWorkspaceRequestSchema, request),
+    )
+    return fromJson(SyncWorkspaceSchema, json, { ignoreUnknownFields: true })
+  }
+
+  public async createTeam(name: string, slug: string): Promise<Team> {
+    const request = create(CreateTeamRequestSchema, { name, slug })
+    const json = await this.call(
+      TeamService.typeName,
+      METHOD_CREATE_TEAM,
+      toJson(CreateTeamRequestSchema, request),
+    )
+    return fromJson(TeamSchema, json, { ignoreUnknownFields: true })
   }
 
   public async revokeDevice(deviceId: string): Promise<void> {

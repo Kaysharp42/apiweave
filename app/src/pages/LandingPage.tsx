@@ -428,7 +428,7 @@ const FEATURES = [
   {
     Icon: Boxes,
     title: "MCP server",
-    body: "40+ scoped tools across 8 domains over stdio and Streamable HTTP. AI agents create, run, and inspect workflows end-to-end.",
+    body: "44 local tools over token-gated loopback HTTP. AI agents manage workflows and monitor secret-safe run metadata.",
   },
   {
     Icon: FileCode2,
@@ -479,14 +479,14 @@ function Features() {
 }
 
 const MCP_DOMAINS = [
-  { name: "Workflows", count: 9 },
+  { name: "Server", count: 1 },
+  { name: "Workspaces", count: 5 },
+  { name: "Workflows", count: 8 },
+  { name: "Assertions", count: 3 },
+  { name: "Projects", count: 11 },
   { name: "Environments", count: 7 },
-  { name: "Collections", count: 12 },
   { name: "Runs", count: 7 },
-  { name: "Projects", count: 5 },
-  { name: "Imports", count: 6 },
-  { name: "Secrets", count: 4 },
-  { name: "Webhooks", count: 5 },
+  { name: "Secrets", count: 2 },
 ] as const;
 
 function McpSection() {
@@ -509,9 +509,9 @@ function McpSection() {
           </h2>
           <p className="mt-3 text-text-secondary dark:text-text-secondary-dark leading-relaxed">
             AI agents create, run, and inspect API test workflows
-            programmatically. 40+ scoped tools across 8 domains, over stdio or
-            Streamable HTTP. Point Claude, Cursor, or any MCP client at your
-            instance — they do the rest.
+            programmatically. 44 scoped tools use token-gated Streamable HTTP
+            on your machine. Point Claude, Cursor, or another local MCP client
+            at the loopback URL shown by APIWeave.
           </p>
         </div>
 
@@ -539,7 +539,7 @@ function McpSection() {
                 MCP Server
               </div>
               <div className="font-mono text-xs text-text-muted dark:text-text-muted-dark mt-1">
-                40+ scoped tools
+                44 scoped tools
               </div>
             </div>
           </div>
@@ -587,24 +587,13 @@ function McpSection() {
               </h3>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-3 border border-border dark:border-border-dark rounded-sm p-3">
-                  <Terminal className="w-4 h-4 text-primary dark:text-primary-light shrink-0" />
-                  <div className="min-w-0">
-                    <span className="font-mono text-xs font-semibold text-text-primary dark:text-text-primary-dark">
-                      stdio
-                    </span>
-                    <span className="text-xs text-text-secondary dark:text-text-secondary-dark ml-2">
-                      local CLI &amp; desktop agents — service-token auth
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 border border-border dark:border-border-dark rounded-sm p-3">
                   <Globe className="w-4 h-4 text-primary dark:text-primary-light shrink-0" />
                   <div className="min-w-0">
                     <span className="font-mono text-xs font-semibold text-text-primary dark:text-text-primary-dark">
                       Streamable HTTP
                     </span>
                     <span className="text-xs text-text-secondary dark:text-text-secondary-dark ml-2">
-                      IDE, browser &amp; remote agents — mounted at /mcp
+                      local agents · bearer token · mounted at /mcp
                     </span>
                   </div>
                 </div>
@@ -625,20 +614,18 @@ function McpSection() {
        and assert the token comes back"
 
 agent calls:
-  → workflow_create(name="login-test")
-  → workflow_update(nodes=[
+  → workflows_create(name="login-test")
+  → workflows_update(nodes=[
       HTTP POST /login,
       Assertion status==200,
       Assertion body.token exists
     ])
-  → workflow_run(workflow_id="wf_...")
+  → runs_create(workflowId="wf_...")
 
-  ← run_get_status → "completed"
-  ← run_get_results →
-      ✓ POST /login    200 OK
-      ✓ status == 200
-      ✓ token extracted
-      run artifacts: JUnit + HTML`}</code>
+  ← runs_get → "completed"
+      ✓ POST /login    200
+      ✓ assertions passed
+      secret-safe metadata only`}</code>
             </pre>
           </div>
         </div>

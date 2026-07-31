@@ -1,6 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { z } from "zod"
 import type { IpcRouter } from "../ipc/router"
+import type { RunEventBroker } from "../runner/run_event_broker"
 import { registerBridgeTools } from "./bridge"
+import { registerResources } from "./resources"
+import { MCP_PROMPTS } from "./prompts"
+import { MCP_SERVER_INFO_TOOL, toolAnnotations } from "./tools"
 
 export const MCP_SERVER_NAME = "APIWeave"
 
@@ -13,23 +18,37 @@ export const MCP_SERVER_NAME = "APIWeave"
  * native `tools/list` already enumerates every tool with its schema + description,
  * which is exactly what an agent needs to discover the surface.
  */
-export function createMcpServer(router: IpcRouter, version: string): McpServer {
+export function createMcpServer(router: IpcRouter, version: string, broker?: RunEventBroker): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version })
 
   registerBridgeTools(server, router)
+  registerResources(server, router, broker)
 
   server.registerTool(
-    "server_info",
-    { description: "Return APIWeave MCP server name, version and transport." },
-    () => ({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({ name: MCP_SERVER_NAME, version, transport: "loopback-http" }),
-        },
-      ],
-    }),
+    MCP_SERVER_INFO_TOOL.name,
+    {
+      description: MCP_SERVER_INFO_TOOL.description,
+      outputSchema: z.object({
+        result: z.object({ name: z.string(), version: z.string(), transport: z.string() }),
+      }),
+      annotations: toolAnnotations(MCP_SERVER_INFO_TOOL),
+    },
+    () => {
+      const result = { name: MCP_SERVER_NAME, version, transport: "loopback-http" }
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+        structuredContent: { result },
+      }
+    },
   )
+
+  for (const prompt of MCP_PROMPTS) {
+    server.registerPrompt(
+      prompt.name,
+      { description: prompt.description, argsSchema: prompt.argsSchema },
+      (args) => prompt.build(args),
+    )
+  }
 
   return server
 }

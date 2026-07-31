@@ -139,7 +139,7 @@ A quick checklist after first launch:
 |------|-------|
 | Database (SQLite) | `<userData>/apiweave.db` |
 | Secret keyfile | `<userData>/keyfile` |
-| MCP token (when enabled) | `<userData>/mcp.token` |
+| MCP token (when enabled) | `<userData>/mcp-token` |
 | Run artifacts (JUnit, HTML) | `<userData>/artifacts/` |
 | App logs (renderer + main) | The terminal that launched Electron, or the OS console |
 
@@ -160,7 +160,7 @@ Move on to [Your First Workflow](first-workflow.md) for a 5-minute tour of the c
 - **If the Linux AppImage fails with a FUSE error** (common on Arch), install FUSE 2 (`sudo pacman -S fuse2`) or run with `--appimage-extract-and-run`. The `.pacman` package has no such requirement.
 - **If the app opens to a blank window**, your GPU driver may not be compatible with the renderer's WebGL canvas. Launch with `apiweave --disable-gpu` to use the software rasterizer.
 - **If the data directory is read-only**, the OS user account does not have write permission to the user data path. Check the OS-level permission on the path and the disk's free space.
-- **If the MCP bridge refuses to start**, another process is already bound to the chosen loopback port. Change the port in the MCP settings, or stop the conflicting process.
+- **If the MCP bridge refuses to start**, another process is already bound to the preferred loopback port. APIWeave automatically selects a free fallback port; check the live URL in the **MCP** panel, or stop the conflicting process to reclaim `47271`.
 
 ## Related
 

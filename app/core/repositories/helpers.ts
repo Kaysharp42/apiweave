@@ -6,6 +6,7 @@
  */
 
 import type { JsonValue } from "@shared/types/JsonValue"
+import { AssertionNodeDataSchema } from "@shared/zod-schemas/AssertionNodeDataSchema"
 
 /** Parse a JSON column into a known shape. The DB is local and only ever
  * is written by us, so we trust the stored JSON rather than re-validating here
@@ -143,22 +144,59 @@ function toKeyValuePairs(value: unknown): readonly KeyValuePair[] {
 }
 
 /**
- * Return a new node with `config.{headers,cookies,queryParams,pathVariables}`
- * rewritten to canonical `KeyValuePair[]` form, or the SAME reference when
- * nothing needed to change (so the DB migration pass writes back only the
- * rows whose `graph_json` actually drifted — keeps the migration idempotent
- * and cheap to run on every startup).
- *
- * Non-http-request nodes are returned unchanged: only `http-request` nodes
- * carry those fields, and only those nodes' fields carry the legacy
- * string/Record shapes that need normalising.
+ * Return a new node with legacy HTTP key/value fields or assertion rules
+ * rewritten to their closed canonical shapes, or the SAME reference when
+ * nothing needed to change. The startup pass therefore writes back only rows
+ * whose `graph_json` actually drifted.
  */
 export function canonicalizeNodeConfig(node: unknown): unknown {
   if (!isPlainObject(node)) return node
   const n = node as { type?: unknown; config?: unknown }
-  if (n.type !== "http-request") return node
   const cfg = n.config
   if (!isPlainObject(cfg)) return node
+
+  if (n.type === "assertion") {
+    if (AssertionNodeDataSchema.safeParse(cfg).success) return node
+
+    const rawAssertions = Array.isArray(cfg["assertions"])
+      ? cfg["assertions"]
+      : typeof cfg["operator"] === "string"
+        ? [cfg]
+        : []
+    let unsupportedOperator = false
+    const assertions = rawAssertions.flatMap((raw) => {
+      if (!isPlainObject(raw) || typeof raw["operator"] !== "string") return []
+      const expectedValue = raw["expectedValue"] ?? raw["expected"]
+      const operator = normalizeAssertionOperator(raw["operator"])
+      if (operator === null) {
+        unsupportedOperator = true
+        return []
+      }
+      return [{
+        source: normalizeAssertionSource(raw["source"]),
+        path: typeof raw["path"] === "string"
+          ? raw["path"]
+          : typeof raw["field"] === "string"
+            ? raw["field"]
+            : "",
+        operator,
+        ...(expectedValue === undefined ? {} : { expectedValue }),
+      }]
+    })
+    // Preserve unsupported rules byte-for-byte rather than silently weakening
+    // a fail-closed workflow into an empty, passing assertion node.
+    if (unsupportedOperator) return node
+    const nextConfig = {
+      assertions,
+      ...(typeof cfg["continueOnFail"] === "boolean" ? { continueOnFail: cfg["continueOnFail"] } : {}),
+      ...(cfg["failureMode"] === "first" || cfg["failureMode"] === "all"
+        ? { failureMode: cfg["failureMode"] }
+        : {}),
+    }
+    return { ...n, config: nextConfig }
+  }
+
+  if (n.type !== "http-request") return node
 
   let changed = false
   const nextConfig: Record<string, unknown> = { ...cfg }
@@ -195,4 +233,27 @@ export function canonicalizeWorkflowGraph(graph: unknown): JsonValue {
   return changed
     ? ({ ...(graph as Record<string, unknown>), nodes: nextNodes } as JsonValue)
     : (graph as JsonValue)
+}
+
+function normalizeAssertionSource(value: unknown): "prev" | "variables" | "status" | "cookies" | "headers" {
+  return value === "variables" || value === "status" || value === "cookies" || value === "headers"
+    ? value
+    : "prev"
+}
+
+type CanonicalAssertionOperator = "equals" | "notEquals" | "contains" | "notContains" | "gt" | "gte" | "lt" | "lte" | "count" | "exists" | "notExists"
+
+function normalizeAssertionOperator(value: string): CanonicalAssertionOperator | null {
+  const aliases: Record<string, CanonicalAssertionOperator> = {
+    not_equals: "notEquals",
+    not_contains: "notContains",
+    greater_than: "gt",
+    greater_than_or_equal: "gte",
+    less_than: "lt",
+    less_than_or_equal: "lte",
+    not_exists: "notExists",
+  }
+  const canonical = ["equals", "notEquals", "contains", "notContains", "gt", "gte", "lt", "lte", "count", "exists", "notExists"]
+  if (canonical.includes(value)) return value as CanonicalAssertionOperator
+  return aliases[value] ?? null
 }

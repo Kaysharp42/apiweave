@@ -16,6 +16,8 @@ import { PanelTabs } from "./molecules/PanelTabs";
 import { EmptyState } from "./molecules/EmptyState";
 import type { MCPConfig } from "../types/MCPConfig";
 import type { MCPTool } from "@shared/types/MCPTool";
+import type { MCPPrompt } from "@shared/types/MCPPrompt";
+import type { MCPResource } from "@shared/types/MCPResource";
 import { mcp } from "../utils/apiweaveClient";
 
 type TabKey = "status" | "tools" | "resources" | "prompts" | "connect";
@@ -62,7 +64,7 @@ function MCPContent({
 
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
-              API Key
+              Access token
             </span>
             <Badge
               variant={config.apiKeyConfigured ? "success" : "warning"}
@@ -179,31 +181,74 @@ function MCPContent({
     case "resources":
       return (
         <div className="p-4">
-          <EmptyState
-            icon={
-              <BookOpen
-                className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
-                strokeWidth={1.5}
-              />
-            }
-            title="Resources"
-            description="MCP resources provide read-only data snapshots for agent context."
-          />
+          {config.resources.length === 0 ? (
+            <EmptyState
+              icon={
+                <BookOpen
+                  className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+                  strokeWidth={1.5}
+                />
+              }
+              title="Resources"
+              description="MCP resources provide read-only data snapshots for agent context."
+            />
+          ) : (
+            <div className="space-y-2">
+              {config.resources.map((resource: MCPResource) => (
+                <div
+                  key={resource.name}
+                  className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <code className="text-sm font-mono text-primary dark:text-primary-light">
+                      {resource.name}
+                    </code>
+                  </div>
+                  <code className="mt-1 block text-xs font-mono text-text-muted dark:text-text-muted-dark break-all">
+                    {resource.uriTemplate}
+                  </code>
+                  <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+                    {resource.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     case "prompts":
       return (
         <div className="p-4">
-          <EmptyState
-            icon={
-              <MessageSquare
-                className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
-                strokeWidth={1.5}
-              />
-            }
-            title="Prompts"
-            description="MCP prompts are pre-built templates for common APIWeave tasks."
-          />
+          {config.prompts.length === 0 ? (
+            <EmptyState
+              icon={
+                <MessageSquare
+                  className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+                  strokeWidth={1.5}
+                />
+              }
+              title="Prompts"
+              description="MCP prompts are pre-built templates for common APIWeave tasks."
+            />
+          ) : (
+            <div className="space-y-2">
+              {config.prompts.map((prompt: MCPPrompt) => (
+                <div
+                  key={prompt.name}
+                  className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <code className="text-sm font-mono text-primary dark:text-primary-light">
+                      {prompt.name}
+                    </code>
+                  </div>
+                  <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+                    {prompt.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     case "connect":
@@ -305,9 +350,11 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
         setError("The MCP server is only available in the desktop app.");
         return;
       }
-      const [status, tools] = await Promise.all([
+      const [status, tools, prompts, resources] = await Promise.all([
         mcp.getStatus(),
         mcp.listTools(),
+        mcp.listPrompts(),
+        mcp.listResources(),
       ]);
       setConfig({
         enabled: status.running,
@@ -316,9 +363,11 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
         apiKeyConfigured: status.config?.token != null,
         token: status.config?.token ?? "",
         toolCount: tools.length,
-        resourceCount: 0,
-        promptCount: 0,
+        resourceCount: resources.length,
+        promptCount: prompts.length,
         tools: [...tools],
+        prompts: [...prompts],
+        resources: [...resources],
       });
     } catch {
       setError("Failed to load MCP server status.");
@@ -334,31 +383,11 @@ export default function MCPManager({ className = "" }: MCPManagerProps) {
   const testConnection = async () => {
     setTesting(true);
     setTestResult(null);
-    if (!config?.baseUrl) {
-      setTestResult("error");
-      setTesting(false);
-      return;
-    }
+    // Probe from the trusted main process: a renderer fetch carries an
+    // app-scheme Origin the host rejects, so it would always report failure.
     try {
-      const response = await fetch(config.baseUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-          Authorization: `Bearer ${config.token}`,
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "initialize",
-          params: {
-            protocolVersion: "2024-11-05",
-            capabilities: {},
-            clientInfo: { name: "apiweave-ui", version: "0.1.0" },
-          },
-        }),
-      });
-      setTestResult(response.ok ? "success" : "error");
+      const result = await mcp.testConnection();
+      setTestResult(result.ok ? "success" : "error");
     } catch {
       setTestResult("error");
     } finally {

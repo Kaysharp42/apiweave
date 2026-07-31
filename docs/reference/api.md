@@ -1,6 +1,6 @@
 # IPC API Reference
 
-*A short tour of the typed IPC handler registry that backs both the renderer and the local MCP bridge. This is a map of the surface area, not a full reference. The handler registry is the single source of truth: the preload script exposes the same channel to the renderer, and the local MCP bridge maps tool calls to the same handlers.*
+*A short tour of the typed IPC handler registry used by the renderer and the local MCP bridge. The bridge exposes an explicit, secret-safe whitelist over these handlers rather than the complete renderer surface.*
 
 ## Prerequisites
 
@@ -14,17 +14,16 @@ For the local MCP bridge, the per-tool schema is in the running server's `tools/
 
 ## Surface Shape
 
-The IPC surface is grouped by resource, and the renderer and the local MCP bridge share the same grouping. Every operation is a typed envelope with a single channel name.
+The IPC surface is grouped by resource. Every operation is a typed envelope with a single channel name. MCP tool names use the same groups, but only handlers listed in `app/core/mcp/tools.ts` are exposed.
 
 | Group | Channel prefix | What it covers |
 |-------|---------------|----------------|
-| Workflows | `workflows.*` | CRUD, validation, run trigger, resume, add node |
-| Runs | `runs.*` | Status, results, node results, cancel, latest failed |
-| Projects | `projects.*` | CRUD, ordered run, `.awecollection` export and import |
-| Environments | `environments.*` | CRUD, default flag, OpenAPI/Swagger URL |
-| Secrets | `secrets.*` | Metadata-only read, Libsodium sealed-box write, rotate, delete, public key |
-| MCP | `mcp.*` | Bridge status, token rotation, port, on/off toggle |
-| App | `app.*` | Settings, about, version, log level |
+| Workspaces | `workspaces.*` | CRUD for local workspaces |
+| Workflows | `workflows.*` | CRUD, project attachment, selected environment |
+| Runs | `runs.*` | Create, metadata/results, lists, latest, cancel |
+| Projects | `projects.*` | CRUD, workflow membership, `.awecollection` export/import |
+| Environments | `environments.*` | CRUD and variable mutation |
+| Secrets | `secrets.*` | Metadata reads plus sealed-box writes for trusted renderer IPC |
 
 The renderer never calls services directly. Every renderer call routes through a handler in `app/core/ipc/handlers/`, and the handler delegates to a service. The MCP bridge follows the same rule: every tool call maps to a handler, and the handler delegates to the same service.
 
@@ -32,13 +31,13 @@ The renderer never calls services directly. Every renderer call routes through a
 
 | Group | Path | What it covers |
 |-------|------|----------------|
-| Workflows | `app/core/ipc/handlers/workflows.ts` | List, get, create, update, delete, add node, export, import, import dry-run, run, resume |
-| Runs | `app/core/ipc/handlers/runs.ts` | Get status, get results, get node result, list, cancel, latest failed |
-| Projects | `app/core/ipc/handlers/projects.ts` | List, get, create, update, delete, list workflows, add workflow, remove workflow, reorder, export, import, import dry-run, run |
+| Workflows | `app/core/ipc/handlers/workflows.ts` | List, get, create, update, delete, project attachment, selected environment |
+| Runs | `app/core/ipc/handlers/runs.ts` | Create, get, list, latest, latest failed, cancel, renderer artifact actions |
+| Projects | `app/core/ipc/handlers/projects.ts` | CRUD, workflow membership, export, import, import dry-run |
 | Collections | `app/core/ipc/handlers/collections.ts` | Legacy alias surface; new code uses the projects group |
 | Environments | `app/core/ipc/handlers/environments.ts` | List, get, create, update, delete |
-| Secrets | `app/core/ipc/handlers/secrets.ts` | List (metadata only), get (metadata only), write (sealed box), rotate (sealed box), delete, get public key |
-| Workspaces | `app/core/ipc/handlers/workspaces.ts` | List, get, current |
+| Secrets | `app/core/ipc/handlers/secrets.ts` | Metadata list/resolve, sealed-box set, delete, public key |
+| Workspaces | `app/core/ipc/handlers/workspaces.ts` | List, get, create, update, delete |
 | Common | `app/core/ipc/handlers/common.ts` | Shared types, error shapes, helpers |
 | Index | `app/core/ipc/handlers/index.ts` | Registration entry point for `registerAllHandlers` |
 
@@ -52,9 +51,11 @@ The renderer never calls services directly. Every renderer call routes through a
 
 **Streamed events.** The runner publishes progress events to the renderer over a separate IPC channel. The renderer subscribes once on mount and unsubscribes on unmount. The renderer does not poll for status.
 
+The same run transitions also reach MCP through a shared event broker: a session client that subscribes to the run resource receives `notifications/resources/updated` change signals and re-reads the snapshot, while simpler clients re-read the metadata-only `runs_get` tool while a run is active.
+
 ## Rate Limits
 
-None at the IPC layer. The runner's outbound HTTP path enforces SSRF guards and per-host limits, but the IPC layer itself has no rate limit. The local MCP bridge has no rate limit because it is loopback-only.
+None at the IPC layer. The runner's outbound HTTP path enforces SSRF guards and per-host limits. The local MCP bridge has no call-rate limit, but it requires bearer authentication, validates browser origins, and rejects request bodies above 10 MB.
 
 ## Versioning
 

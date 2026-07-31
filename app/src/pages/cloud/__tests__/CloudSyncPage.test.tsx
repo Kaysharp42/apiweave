@@ -20,6 +20,7 @@ const base: CloudSyncStatus = {
   workspaceIds: [],
   bindings: [],
   workspaceCatalog: [],
+  teamCatalog: [],
   account: { accountId: "acc-1", email: "user@example.com" },
 };
 

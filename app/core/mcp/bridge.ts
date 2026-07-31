@@ -3,7 +3,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { ZodRawShape } from "zod"
 import type { IpcRouter } from "../ipc/router"
-import { MCP_TOOLS, toolName, type McpToolSpec } from "./tools"
+import { projectRunToolResult } from "./run-projection"
+import { MCP_TOOLS, toolAnnotations, toolName, type McpToolSpec } from "./tools"
 
 /**
  * Register every whitelisted IPC handler as an MCP tool on `server`. Each tool
@@ -25,10 +26,16 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
     // inputs are `.strict()` ZodObjects; NoInput (optional empty object) has no
     // shape, so a zero-arg tool gets an empty shape.
     const inputSchema: ZodRawShape = reg.input instanceof z.ZodObject ? reg.input.shape : {}
+    const outputValueSchema = spec.resultProjection === "run" ? z.unknown() : reg.output
 
     server.registerTool(
       toolName(spec),
-      { description: spec.description, inputSchema },
+      {
+        description: spec.description,
+        inputSchema,
+        outputSchema: z.object({ result: outputValueSchema }),
+        annotations: toolAnnotations(spec),
+      },
       (args: Record<string, unknown>) => dispatchAsTool(router, spec, args),
     )
   }
@@ -52,7 +59,11 @@ async function dispatchAsTool(
   }
 
   if (result.ok) {
-    return { content: [{ type: "text", text: JSON.stringify(result.data, null, 2) }] }
+    const data = spec.resultProjection === "run" ? projectRunToolResult(result.data) : result.data
+    return {
+      content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+      structuredContent: { result: data },
+    }
   }
   return {
     content: [{ type: "text", text: `Error [${result.error.code}]: ${result.error.message}` }],

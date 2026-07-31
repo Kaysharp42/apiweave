@@ -279,7 +279,7 @@ export default function useWorkflowPolling({
 
   const handleEvent = useCallback(
     (event: RunProgressEvent) => {
-      if (event.kind === "node.completed") {
+      if (event.kind === "node.status") {
         setNodes((nds) =>
           selectiveNodeUpdate(nds, {
             [event.nodeId]: {
@@ -290,6 +290,7 @@ export default function useWorkflowPolling({
         );
         return;
       }
+      if (event.kind === "run.started") return; // canvas already reset on enqueue
       // run.finished
       stopStream();
       setIsRunning(false);
