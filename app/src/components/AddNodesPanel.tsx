@@ -10,6 +10,7 @@ import {
   CheckCircle,
   Bookmark,
   Package,
+  Pencil,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
@@ -156,6 +157,20 @@ export default function AddNodesPanel({
     if (!workspaceId || loadedWorkspaceId === workspaceId) return;
     void useNodePresetStore.getState().fetchPresets(workspaceId);
   }, [workspaceId, loadedWorkspaceId]);
+
+  const renamePreset = (presetId: string, name: string, previous: string) => {
+    void useNodePresetStore
+      .getState()
+      .renamePreset(workspaceId, presetId, name)
+      .then(() => toast.success(`Renamed preset to "${name}"`))
+      .catch((err: unknown) =>
+        toast.error(
+          err instanceof Error
+            ? `Could not rename "${previous}": ${err.message}`
+            : `Could not rename "${previous}"`,
+        ),
+      );
+  };
 
   const deletePreset = (presetId: string, name: string) => {
     void useNodePresetStore
@@ -384,6 +399,7 @@ export default function AddNodesPanel({
                           onDragStart(e, node);
                           setTimeout(() => close(), 100);
                         }}
+                        onRenamePreset={renamePreset}
                         onDeletePreset={deletePreset}
                         defaultOpen={!searchQuery}
                       />
@@ -404,6 +420,7 @@ interface NodeSectionProps {
   icon: LucideIcon;
   nodes: NodeTemplate[];
   onDragStart: (event: DragEvent, node: NodeTemplate) => void;
+  onRenamePreset?: (presetId: string, name: string, previous: string) => void;
   onDeletePreset?: (presetId: string, name: string) => void;
   defaultOpen: boolean;
 }
@@ -413,9 +430,20 @@ function NodeSection({
   icon: Icon,
   nodes,
   onDragStart,
+  onRenamePreset,
   onDeletePreset,
   defaultOpen,
 }: NodeSectionProps) {
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+
+  const commitRename = (presetId: string, previous: string) => {
+    const trimmed = draftName.trim();
+    setEditingPresetId(null);
+    if (!trimmed || trimmed === previous) return;
+    onRenamePreset?.(presetId, trimmed, previous);
+  };
+
   return (
     <div className="collapse collapse-arrow rounded-none border-b border-border dark:border-border-dark last:border-b-0">
       <input
@@ -435,7 +463,7 @@ function NodeSection({
           {nodes.map((node) => (
             <div
               key={node.presetId ?? `${node.type}-${node.label}`}
-              draggable
+              draggable={node.presetId !== editingPresetId}
               onDragStart={(e) => onDragStart(e, node)}
               className="group flex flex-col gap-0.5 px-2.5 py-1.5 rounded-sm cursor-grab border border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay active:cursor-grabbing transition-colors motion-reduce:transition-none"
               title={`Drag ${node.label} to canvas`}
@@ -448,17 +476,63 @@ function NodeSection({
                     {node.method}
                   </span>
                 )}
-                <span className="font-medium truncate">{node.label}</span>
-                {node.presetId && onDeletePreset && (
-                  <button
-                    type="button"
-                    onClick={() => onDeletePreset(node.presetId!, node.label)}
-                    className="ml-auto flex-shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-colors hover:bg-status-error/10 hover:text-status-error focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark"
-                    title={`Delete preset "${node.label}"`}
-                    aria-label={`Delete preset ${node.label}`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                {node.presetId === editingPresetId ? (
+                  <input
+                    // The row turns into this input on an explicit rename
+                    // click, so focus has to follow it — otherwise the field is
+                    // unreachable by keyboard.
+                    autoFocus
+                    type="text"
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Escape must not bubble: the palette lives in a Popover
+                      // that closes on Escape, which would unmount the row
+                      // mid-edit.
+                      e.stopPropagation();
+                      if (e.key === "Enter") {
+                        commitRename(node.presetId!, node.label);
+                      } else if (e.key === "Escape") {
+                        setEditingPresetId(null);
+                      }
+                    }}
+                    // Blur cancels rather than saves: the popover closes on any
+                    // outside click, so a save-on-blur would write on teardown.
+                    onBlur={() => setEditingPresetId(null)}
+                    aria-label={`New name for ${node.label}`}
+                    className="min-w-0 flex-1 rounded-sm border border-border bg-surface-raised px-1.5 py-0.5 text-sm text-text-primary transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
+                  />
+                ) : (
+                  <span className="font-medium truncate">{node.label}</span>
+                )}
+                {node.presetId && node.presetId !== editingPresetId && (
+                  <span className="ml-auto flex flex-shrink-0 items-center gap-0.5">
+                    {onRenamePreset && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDraftName(node.label);
+                          setEditingPresetId(node.presetId!);
+                        }}
+                        className="rounded-sm p-0.5 text-text-muted opacity-0 transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
+                        title={`Rename preset "${node.label}"`}
+                        aria-label={`Rename preset ${node.label}`}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onDeletePreset && (
+                      <button
+                        type="button"
+                        onClick={() => onDeletePreset(node.presetId!, node.label)}
+                        className="rounded-sm p-0.5 text-text-muted opacity-0 transition-colors hover:bg-status-error/10 hover:text-status-error focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark"
+                        title={`Delete preset "${node.label}"`}
+                        aria-label={`Delete preset ${node.label}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </span>
                 )}
               </div>
               {node.description && (

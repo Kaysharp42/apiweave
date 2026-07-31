@@ -25,6 +25,11 @@ interface NodePresetState {
     nodeType: NodePresetNodeType;
     config: Record<string, unknown>;
   }) => Promise<NodePreset>;
+  renamePreset: (
+    workspaceId: string,
+    presetId: string,
+    name: string,
+  ) => Promise<NodePreset>;
   deletePreset: (workspaceId: string, presetId: string) => Promise<void>;
 }
 
@@ -70,6 +75,19 @@ const useNodePresetStore = create<NodePresetState>()((set, get) => ({
       set((s) => ({ presets: [...s.presets, created].sort(byName) }));
     }
     return created;
+  },
+
+  renamePreset: async (workspaceId: string, presetId: string, name: string) => {
+    const updated = await apiweave.nodePresets.update(workspaceId, presetId, {
+      name,
+    });
+    // Re-sorted because the list is name-ordered, so a rename can move the row.
+    set((s) => ({
+      presets: s.presets
+        .map((p) => (p.presetId === presetId ? updated : p))
+        .sort(byName),
+    }));
+    return updated;
   },
 
   deletePreset: async (workspaceId: string, presetId: string) => {

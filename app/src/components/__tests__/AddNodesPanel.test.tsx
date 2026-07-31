@@ -11,6 +11,7 @@ import type { NodePreset } from "../../types/NodePreset";
 // ---------------------------------------------------------------------------
 
 const mockList = vi.fn();
+const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 
 vi.mock("../../utils/apiweaveClient", () => ({
@@ -18,6 +19,7 @@ vi.mock("../../utils/apiweaveClient", () => ({
   apiweave: {
     nodePresets: {
       list: (...args: unknown[]) => mockList(...args),
+      update: (...args: unknown[]) => mockUpdate(...args),
       delete: (...args: unknown[]) => mockDelete(...args),
     },
   },
@@ -73,6 +75,7 @@ describe("AddNodesPanel — saved presets section", () => {
     });
     mockList.mockResolvedValue({ items: [], total: 0 });
     mockDelete.mockResolvedValue(null);
+    mockUpdate.mockResolvedValue(preset());
   });
 
   it("loads the workspace's presets on mount", async () => {
@@ -132,13 +135,62 @@ describe("AddNodesPanel — saved presets section", () => {
     );
   });
 
-  it("offers no delete affordance on the built-in node templates", async () => {
+  it("renames a preset through the store and re-renders under the new name", async () => {
+    mockList.mockResolvedValue({ items: [preset()], total: 1 });
+    mockUpdate.mockResolvedValue(preset({ name: "Auth headers v2", rev: 2 }));
+    renderPanel();
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    await openPalette();
+
+    await userEvent.click(
+      screen.getByLabelText("Rename preset Standard auth headers"),
+    );
+    const input = screen.getByLabelText("New name for Standard auth headers");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Auth headers v2{Enter}");
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith("ws-1", "preset-1", {
+        name: "Auth headers v2",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        within(savedPresetsSection()).getByText("Auth headers v2"),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("cancels a rename on Escape, leaving the name and IPC untouched", async () => {
+    mockList.mockResolvedValue({ items: [preset()], total: 1 });
+    renderPanel();
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    await openPalette();
+
+    await userEvent.click(
+      screen.getByLabelText("Rename preset Standard auth headers"),
+    );
+    await userEvent.type(
+      screen.getByLabelText("New name for Standard auth headers"),
+      " renamed{Escape}",
+    );
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(
+      within(savedPresetsSection()).getByText("Standard auth headers"),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no rename or delete affordance on the built-in node templates", async () => {
     renderPanel();
     await openPalette();
 
     expect(screen.getByText("GET Request")).toBeInTheDocument();
     expect(
       screen.queryByLabelText(/^Delete preset/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/^Rename preset/),
     ).not.toBeInTheDocument();
   });
 });
