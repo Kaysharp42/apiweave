@@ -156,9 +156,12 @@ describe("workflow canvas adapters", () => {
       id: "edge-assertion-delay",
       sourceHandle: "pass",
       targetHandle: null,
-      animated: true,
       style: { stroke: "var(--aw-status-success)", strokeWidth: 2 },
     });
+    // Pass/fail is carried by colour and label, never by perpetual motion.
+    // ReactFlow's `animated` flag dashes and marches an edge forever, which put
+    // the canvas in motion whether or not a run was happening.
+    expect(canvas.edges[2]?.animated).toBeUndefined();
     expect(canvas.variables).toEqual(workflow.variables);
     expect(canvas.selectedEnvironmentId).toBe("environment-1");
   });

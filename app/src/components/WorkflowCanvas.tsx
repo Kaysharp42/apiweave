@@ -13,6 +13,7 @@ import ReactFlow, {
   ControlButton,
   Background,
   BackgroundVariant,
+  ConnectionLineType,
   useNodesState,
   useEdgesState,
   addEdge,
@@ -103,6 +104,14 @@ const edgeTypes: EdgeTypes = {
 const reactFlowStyle = { width: "100%", height: "100%" };
 
 const defaultEdgeOptions = { type: "custom" as const, animated: false };
+
+// The connection being dragged is an intent, not a connection yet — dashed, in
+// the "you can touch this" accent.
+const connectionLineStyle = {
+  stroke: "var(--aw-primary)",
+  strokeWidth: 1.5,
+  strokeDasharray: "4 4",
+};
 
 const fitViewOptions = {
   padding: 0.25,
@@ -558,7 +567,6 @@ export function WorkflowCanvas({
             id: `reactflow__edge-${params.source}${params.sourceHandle || ""}-${params.target}${params.targetHandle || ""}`,
             ...params,
             type: "custom",
-            animated: true,
             label,
             style: { stroke: color, strokeWidth: 2 },
             labelStyle: {
@@ -885,6 +893,22 @@ export function WorkflowCanvas({
     requestAnimationFrame(() => rfInstanceRef.current?.fitView(fitViewOptions));
   }, [setNodes]);
 
+  /**
+   * Fit the view once a run finishes, so no edge endpoint is left outside the
+   * viewport with its result unread. The reference animation this redesign
+   * draws from ended with a dashed edge running off-canvas to nothing; a run
+   * that finishes off-screen is the same failure.
+   */
+  const wasRunningRef = useRef(false);
+  useEffect(() => {
+    if (wasRunningRef.current && !isRunning) {
+      requestAnimationFrame(() =>
+        rfInstanceRef.current?.fitView(fitViewOptions),
+      );
+    }
+    wasRunningRef.current = isRunning;
+  }, [isRunning]);
+
   return (
     <main
       className="w-full h-full min-h-0 relative overflow-hidden bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark transition-colors duration-300"
@@ -921,6 +945,8 @@ export function WorkflowCanvas({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
+        connectionLineType={ConnectionLineType.Bezier}
+        connectionLineStyle={connectionLineStyle}
         fitView
         fitViewOptions={fitViewOptions}
         minZoom={0.02}
@@ -928,11 +954,12 @@ export function WorkflowCanvas({
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Control"
       >
+        {/* The grid should be felt, not read. */}
         <Background
           variant={BackgroundVariant.Dots}
-          gap={16}
-          size={0.8}
-          color="var(--aw-border)"
+          gap={20}
+          size={1}
+          color="color-mix(in srgb, var(--aw-text-muted) 22%, transparent)"
         />
 
         <Controls

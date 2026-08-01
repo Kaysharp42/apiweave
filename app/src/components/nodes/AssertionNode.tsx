@@ -1,6 +1,7 @@
 import { memo, useState, useCallback, useMemo } from "react";
-import { Handle, Position, useReactFlow } from "reactflow";
+import { useReactFlow } from "reactflow";
 import { BaseNode } from "../atoms/flow/BaseNode";
+import { NodeHandle } from "../atoms/flow/NodeHandle";
 import AssertionEditor from "../AssertionEditor";
 import { Info, ListChecks, Pencil, Trash2 } from "lucide-react";
 import type {
@@ -264,13 +265,14 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
           className="group absolute"
           style={{ top: "50%", right: 0, transform: "translateY(-20px)" }}
         >
-          <Handle
+          {/* Pinned to their semantic colours — these two sockets mean pass and
+              fail regardless of the node's own state. */}
+          <NodeHandle
             type="source"
-            position={Position.Right}
+            position="right"
             id="pass"
-            className="!bg-[var(--aw-status-success)] !w-3.5 !h-3.5 !border-2 !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-dark)] !rounded-full"
+            color="var(--aw-status-success)"
             style={{ position: "relative" }}
-            title="Pass &mdash; all assertions passed"
           />
           <div
             className="absolute text-xs font-semibold pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity motion-reduce:transition-none text-[var(--aw-status-success)]"
@@ -284,13 +286,12 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
           className="group absolute"
           style={{ top: "50%", right: 0, transform: "translateY(20px)" }}
         >
-          <Handle
+          <NodeHandle
             type="source"
-            position={Position.Right}
+            position="right"
             id="fail"
-            className="!bg-[var(--aw-status-error)] !w-3.5 !h-3.5 !border-2 !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-dark)] !rounded-full"
+            color="var(--aw-status-error)"
             style={{ position: "relative" }}
-            title="Fail &mdash; one or more assertions failed"
           />
           <div
             className="absolute text-xs font-semibold pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity motion-reduce:transition-none text-[var(--aw-status-error)]"

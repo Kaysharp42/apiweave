@@ -36,13 +36,24 @@
   color: var(--aw-text-primary);
 }
 
-/* Edge styling */
+/* ──────────────────────────────────────────────
+   Edges — state comes from the source node (DESIGN.md §7).
+   CustomEdge sets the stroke inline per state; these rules are the
+   baseline for edges ReactFlow draws itself.
+   ────────────────────────────────────────────── */
 .react-flow__edge-path {
   stroke: var(--aw-border);
 }
 
 .dark .react-flow__edge-path {
-  stroke: var(--aw-text-muted);
+  stroke: color-mix(in srgb, var(--aw-text-muted) 70%, transparent);
+}
+
+/* The travelling dot on an active edge. One GPU-composited element per
+   active edge — never a stroke-dashoffset animation across every edge. */
+.aw-edge-flow-dot {
+  offset-rotate: 0deg;
+  offset-distance: 0%;
 }
 
 .react-flow__edge-text {
@@ -148,24 +159,70 @@
   border: 1px solid var(--aw-primary);
 }
 
-/* Node handles — token-based styling */
-.react-flow__handle {
+/* ──────────────────────────────────────────────
+   Handles — a socket at rest, an affordance on approach.
+
+   The Handle element is a 20px transparent hit area; the visible dot is
+   the `.aw-node-handle__dot` child. Never make the visual the hit area —
+   an 8px pointer target is undraggable.
+   ────────────────────────────────────────────── */
+.react-flow__handle.aw-node-handle {
+  background-color: transparent;
+  border: 0;
+}
+
+.aw-node-handle__dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--aw-radius-node-rail);
+  pointer-events: none;
+
+  /* A resting handle reads as a socket, not a button. `--aw-handle-color`
+     is set by callers that pin a handle to a semantic colour — the
+     assertion node's pass/fail sockets. */
+  background-color: var(
+    --aw-handle-color,
+    color-mix(in srgb, var(--aw-text-muted) 70%, transparent)
+  );
+  transition:
+    background-color var(--aw-dur-fast) var(--aw-ease-standard),
+    box-shadow var(--aw-dur-fast) var(--aw-ease-standard),
+    width var(--aw-dur-fast) var(--aw-ease-standard),
+    height var(--aw-dur-fast) var(--aw-ease-standard);
+}
+
+/* On approach the accent appears: "you can touch this". */
+.react-flow__node:hover .aw-node-handle .aw-node-handle__dot,
+.react-flow__handle-connecting .aw-node-handle__dot,
+.react-flow__handle.connectionindicator:hover .aw-node-handle__dot {
+  width: 10px;
+  height: 10px;
+  background-color: var(--aw-handle-color, var(--aw-primary));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--aw-primary) 35%, transparent);
+}
+
+.react-flow__handle.aw-node-handle:focus-visible {
+  outline: var(--aw-focus-ring-width) solid var(--aw-primary);
+  outline-offset: 1px;
+  border-radius: var(--aw-radius-node-rail);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aw-node-handle__dot {
+    transition: none;
+  }
+}
+
+/* Handles that are not the redesigned socket (any left elsewhere) keep the
+   previous accent styling so nothing regresses to invisible. */
+.react-flow__handle:not(.aw-node-handle) {
   background-color: var(--aw-primary);
   border-color: var(--aw-surface-raised);
   border-width: 1px;
-}
-
-.react-flow__handle:hover {
-  background-color: var(--aw-primary);
-}
-
-.dark .react-flow__handle {
-  background-color: var(--aw-primary);
-  border-color: var(--aw-surface-raised);
-}
-
-.dark .react-flow__handle:hover {
-  background-color: var(--aw-primary-hover);
 }
 
 /* ──────────────────────────────────────────────

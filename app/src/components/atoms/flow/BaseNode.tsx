@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { Handle, Position } from "reactflow";
 import {
   Check,
   ChevronDown,
@@ -11,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { NodeActionMenu } from "./NodeActionMenu";
+import { NodeHandle } from "./NodeHandle";
 import { NodeRunStrip } from "./NodeRunStrip";
 import useCanvasStore from "../../../stores/CanvasStore";
 import type { NodeStatus } from "../../../types/NodeStatus";
@@ -39,6 +39,8 @@ interface StatusPresentation {
   glowRest: string;
   affordance: React.ReactNode;
   ariaLabel: string;
+  /** Socket colour for the outgoing edge, so handle and edge agree. Null keeps the resting socket. */
+  handleColor: string | null;
 }
 
 const AFFORDANCE_CLASS = "w-4 h-4 flex-shrink-0";
@@ -56,6 +58,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Idle",
+    handleColor: null,
   },
   running: {
     border: "border-[color-mix(in_srgb,var(--aw-status-running)_70%,transparent)]",
@@ -70,6 +73,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Running",
+    handleColor: "var(--aw-status-running)",
   },
   success: {
     border: "border-[color-mix(in_srgb,var(--aw-status-success)_40%,transparent)]",
@@ -86,6 +90,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Success",
+    handleColor: "var(--aw-status-success)",
   },
   error: {
     border: "border-[color-mix(in_srgb,var(--aw-status-error)_70%,transparent)]",
@@ -100,6 +105,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Error",
+    handleColor: "var(--aw-status-error)",
   },
   warning: {
     border: "border-[color-mix(in_srgb,var(--aw-status-warning)_70%,transparent)]",
@@ -113,6 +119,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Warning",
+    handleColor: "var(--aw-status-warning)",
   },
   skipped: {
     border: "border-border dark:border-border-dark",
@@ -127,6 +134,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Skipped",
+    handleColor: null,
   },
 };
 
@@ -224,12 +232,11 @@ export function BaseNode({
   return (
     <>
       {handleLeft && (
-        <Handle
+        <NodeHandle
           type={handleLeft.type ?? "target"}
-          position={Position.Left}
-          id={handleLeft.id ?? ""}
-          style={handleLeft.style ?? {}}
-          className="!w-3 !h-3 !bg-[var(--aw-primary)] !border !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-raised)] !rounded-full"
+          position="left"
+          {...(handleLeft.id && { id: handleLeft.id })}
+          {...(handleLeft.style && { style: handleLeft.style })}
         />
       )}
 
@@ -356,12 +363,14 @@ export function BaseNode({
       </div>
 
       {handleRight && (
-        <Handle
+        <NodeHandle
           type={handleRight.type ?? "source"}
-          position={Position.Right}
-          id={handleRight.id ?? ""}
-          style={handleRight.style ?? {}}
-          className="!w-3 !h-3 !bg-[var(--aw-primary)] !border !border-[var(--aw-surface-raised)] dark:!border-[var(--aw-surface-raised)] !rounded-full"
+          position="right"
+          {...(handleRight.id && { id: handleRight.id })}
+          {...(handleRight.style && { style: handleRight.style })}
+          // The source socket agrees with the edge leaving it: once this node
+          // has a state, its outgoing edge carries that state's colour.
+          {...(config.handleColor && { color: config.handleColor })}
         />
       )}
 
