@@ -44,7 +44,7 @@ export function formatSize(bytes: number | null | undefined): string | null {
 }
 
 /**
- * `2 passed`, `1 of 3 passed`, `2 failed` — the assertion vocabulary.
+ * `2 passed`, `1/3 passed` — the assertion pass vocabulary.
  *
  * Returns null when there is nothing to count, so the caller can fall back to
  * the placeholder rather than rendering `0 of 0`.
