@@ -22,7 +22,8 @@ The IPC surface is grouped by resource. Every operation is a typed envelope with
 | Workflows | `workflows.*` | CRUD, project attachment, selected environment |
 | Runs | `runs.*` | Create, metadata/results, lists, latest, cancel |
 | Projects | `projects.*` | CRUD, workflow membership, `.awecollection` export/import |
-| Environments | `environments.*` | CRUD and variable mutation |
+| Environments | `environments.*` | CRUD and variable mutation, including the `baseEnvironmentId` inheritance link |
+| Node presets | `nodePresets.*` | Workspace-scoped library of reusable node configurations (create, list, update, delete) |
 | Secrets | `secrets.*` | Metadata reads plus sealed-box writes for trusted renderer IPC |
 
 The renderer never calls services directly. Every renderer call routes through a handler in `app/core/ipc/handlers/`, and the handler delegates to a service. The MCP bridge follows the same rule: every tool call maps to a handler, and the handler delegates to the same service.
@@ -36,6 +37,7 @@ The renderer never calls services directly. Every renderer call routes through a
 | Projects | `app/core/ipc/handlers/projects.ts` | CRUD, workflow membership, export, import, import dry-run |
 | Collections | `app/core/ipc/handlers/collections.ts` | Legacy alias surface; new code uses the projects group |
 | Environments | `app/core/ipc/handlers/environments.ts` | List, get, create, update, delete |
+| Node presets | `app/core/ipc/handlers/node-presets.ts` | Create, list, update, delete; config canonicalised and validated per node type |
 | Secrets | `app/core/ipc/handlers/secrets.ts` | Metadata list/resolve, sealed-box set, delete, public key |
 | Workspaces | `app/core/ipc/handlers/workspaces.ts` | List, get, create, update, delete |
 | Common | `app/core/ipc/handlers/common.ts` | Shared types, error shapes, helpers |

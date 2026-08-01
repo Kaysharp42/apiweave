@@ -26,7 +26,23 @@ no separate backend, worker, or database server, and no Docker stack to run.
   node templates. A **Save** toolbar button and the `Ctrl+S` shortcut flush the
   workflow to disk immediately, bypassing the debounce; auto-save still runs in
   the background.
-- **Six node types.** HTTP Request, Assertion, Delay, Merge, Start, and End.
+- **Seven node types.** HTTP Request, Assertion, Delay, Merge, Call Workflow,
+  Start, and End.
+- **Call Workflow node.** Runs another workflow in the same workspace inline as
+  one step, mapping caller variables in and the sub-workflow's variables back
+  out. The sub-workflow shares the run's environment and secrets, so only
+  `{{variables.*}}` need mapping, and a `{{secrets.*}}` reference in an input
+  mapping is refused rather than copied into a plain child variable. Execution
+  is inline: no child run row and no new run-history surface, with the calling
+  node's result carrying the sub-workflow summary. A cross-workspace target or a
+  direct self-call is rejected on save; nesting is capped at 8 levels so a cycle
+  created by editing a target later fails the node cleanly instead of hanging.
+- **Node presets.** A workspace-scoped library of saved node configurations
+  (`node_presets` table, `nodePresets.*` IPC domain, `nodePresets_*` MCP tools).
+  Save any configurable node from its `⋯` menu, then drag it onto any canvas in
+  the workspace; rename and delete from the palette. Configs are canonicalised
+  and validated against the node type on write. Presets are local-only — there
+  is no sync record type for them, so they never leave the machine.
 - **Workflow variables and extractors.** JSONPath extractors pull values from a
   response into workflow variables; four placeholder namespaces plus dynamic
   functions resolve values before a request goes out.
@@ -39,6 +55,13 @@ no separate backend, worker, or database server, and no Docker stack to run.
   checks for `{{secrets.*}}`. Each workspace has exactly one default environment
   (`isDefault = true`); a run uses the environment you select for that workflow,
   or falls back to the default when you have not selected one.
+- **Environment inheritance.** An environment can extend a base environment in
+  the same workspace (`baseEnvironmentId`), and the run resolves the chain
+  base-first with each descendant overriding the names it redefines. Plain
+  variables only — the `environment > workspace` secret scope chain is
+  unchanged and secrets are never inherited. Self-reference, cross-workspace
+  bases, and cycles are rejected, and chains are bounded at 8 levels. The base
+  link is not yet part of the Cloud sync payload, so it stays on this machine.
 - **Encrypted secret store.** Per-scope Libsodium sealed-box ingress plus
   envelope encryption at rest. The keyfile is stored under the user's app data
   directory. The `{{secrets.NAME}}` placeholder resolves through a local scope

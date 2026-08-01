@@ -7,12 +7,18 @@ separate Cloud control plane. Priorities shift based on user feedback.
 ## Shipped
 
 The local-first desktop rewrite. Single Electron process: ReactFlow canvas,
-six node types, workflow variables and extractors, projects with `.awecollection`
+seven node types, workflow variables and extractors, projects with `.awecollection`
 export (references only), explicit per-run environment selection, the encrypted
 local secret store with `environment > workspace` scope chain, in-process runner with
 resume and lineage, the opt-in local MCP bridge, OpenAPI/Swagger/HAR/cURL
 import, and optional APIWeave Cloud structure sync. See the
 [Changelog](CHANGELOG.md) for the full current surface.
+
+Reuse primitives (v0.6.0): a **Call Workflow** node that runs another workflow
+inline as one step, **environment inheritance** from a base environment for
+plain variables, and a workspace-scoped **node preset** library. All three are
+desktop-local for now — a preset never syncs, and an environment's base link is
+not yet part of the Cloud payload.
 
 ## Next
 

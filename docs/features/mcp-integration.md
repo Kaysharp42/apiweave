@@ -121,6 +121,17 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 - `environments_setVariable`
 - `environments_deleteVariable`
 
+`environments_create` and `environments_update` accept `baseEnvironmentId`, the
+environment this one inherits plain variables from; `null` clears it. See
+[Reuse Primitives for Agents](#reuse-primitives-for-agents).
+
+### Node Presets
+
+- `nodePresets_list`
+- `nodePresets_create`
+- `nodePresets_update`
+- `nodePresets_delete`
+
 ### Assertions
 
 - `assertion_suggest` (read) — derive deterministic assertion candidates from one HTTP node's stored run result without changing the workflow.
@@ -144,6 +155,75 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 
 Secret mutation handlers and Electron file/shell operations are deliberately
 not exposed.
+
+## Reuse Primitives for Agents
+
+Three reuse features are reachable over MCP. Each has one caveat an agent should
+know before it writes anything.
+
+### Sub-workflows (the `workflow` node)
+
+`workflows_create` and `workflows_update` accept a node of `type: "workflow"`
+that runs another workflow in the same workspace as one step:
+
+```json
+{
+  "nodeId": "call-auth",
+  "type": "workflow",
+  "position": { "x": 120, "y": 0 },
+  "config": {
+    "targetWorkflowId": "wf_abc123",
+    "inputMapping": { "tenant": "{{variables.tenantId}}" },
+    "outputMapping": { "authToken": "accessToken" }
+  }
+}
+```
+
+`inputMapping` is `target variable = caller expression`; `outputMapping` is
+`caller variable = sub-workflow variable`. A target outside the workspace, or
+the calling workflow itself, is rejected on write. An indirect cycle is not
+rejected on write — the runner caps nesting at 8 levels and fails the node
+instead. A `{{secrets.NAME}}` on the right-hand side of an input mapping fails
+the node by design; the sub-workflow resolves secrets itself.
+
+The sub-workflow runs inside the caller's run, so there is no second run to
+poll: `runs_get` reports the calling node's status, and the run tools never
+expose a child run id because none exists.
+
+**Reading a mapping back is lossy.** The redaction pass that protects MCP reads
+works on key names anywhere in a config, so a mapping entry whose *variable
+name* looks secret-ish — `token`, `apiKey`, `password`, `secret` — comes back as
+`<SECRET>` from `workflows_get` even though the mapping itself is not a secret.
+The stored workflow is unaffected; only the MCP read is redacted. Write the
+mapping you intend rather than round-tripping one you read.
+
+**`workflow_diagnose` does not analyze these nodes.** It reports topology,
+reachability, cycles, assertion and extractor findings for HTTP and assertion
+nodes; a Call Workflow node with an unset or dangling `targetWorkflowId` will
+not appear in its findings. Read the node's `config` from `workflows_get` to
+check a target yourself.
+
+### Environment inheritance
+
+Set `baseEnvironmentId` on create or update to inherit plain variables from
+another environment in the same workspace; `environments_get` reports the link.
+The effective set an agent should reason about is the whole chain merged from
+the root down, with each descendant overriding the names it redefines — the
+tools return each environment's *own* variables, not the resolved set, so
+resolve the chain yourself if you need the effective values. Secrets are not
+inherited, self-reference and cycles are rejected, and chains are followed at
+most 8 levels deep. See [Environment Inheritance](environments-and-secrets.md#environment-inheritance).
+
+### Node presets
+
+`nodePresets_*` manages the workspace's library of saved node configurations.
+Reads pass through the same blanket redaction every MCP read gets, so a preset's
+name, node type, and ids come back intact while its request body, URL, and
+header values report `<SECRET>`. An agent can therefore catalogue the library,
+create presets from configuration it wrote itself, and rename or delete them —
+but it cannot faithfully copy an existing preset's config into a workflow,
+because it never receives the literal values. Applying a preset to a canvas
+stays a desktop action. See [Node Presets](node-presets.md).
 
 ## Workflow Diagnosis
 
@@ -367,6 +447,12 @@ Checked-in templates are available under `mcp-configs/`.
   `workflow_run` and `run_get_status` belonged to the removed backend.
 - **No raw response body:** This is intentional. MCP run tools expose safe
   metadata; inspect the body in the desktop UI.
+- **A preset's config comes back as `<SECRET>`:** Also intentional, and it is
+  why an agent cannot re-apply an existing preset. Drag the preset onto the
+  canvas in the desktop app instead.
+- **A Call Workflow node is missing from `workflow_diagnose`:** The analyzer
+  covers HTTP and assertion nodes. Check `targetWorkflowId` on the node config
+  from `workflows_get`.
 - **No resource updates:** Change notifications require a retained session
   (opened with `initialize`) and a `resources/subscribe` on the run URI. Clients
   that cannot subscribe should poll the run resource or `runs_get` until the run
@@ -377,4 +463,6 @@ Checked-in templates are available under `mcp-configs/`.
 - [Architecture](../reference/architecture.md)
 - [IPC API Reference](../reference/api.md)
 - [Environments and Secrets](environments-and-secrets.md)
+- [Node Presets](node-presets.md)
+- [Workflows and Nodes](workflows-and-nodes.md)
 - [Variables and Extractors](variables-and-extractors.md)
