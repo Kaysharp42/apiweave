@@ -113,7 +113,7 @@ const CallWorkflowNode = ({ id, data, selected = false }: WorkflowCallNodeProps)
                       `, ${result.subWorkflow.failedNodeCount} failed`}
                   </div>
                   {result.subWorkflow.outputVariableNames.length > 0 && (
-                    <div className="mt-1 text-text-muted dark:text-text-muted-dark">
+                    <div className="mt-1 text-[var(--aw-node-text-muted)]">
                       Mapped: {result.subWorkflow.outputVariableNames.join(", ")}
                     </div>
                   )}

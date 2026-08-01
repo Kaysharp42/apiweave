@@ -509,7 +509,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                   ))}
                 </div>
               ) : (
-                <div className="text-xs italic py-2 text-text-muted dark:text-text-muted-dark">
+                <div className="text-xs italic py-2 text-[var(--aw-node-text-muted)]">
                   No assertions yet. Add one above.
                 </div>
               )}

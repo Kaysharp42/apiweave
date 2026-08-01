@@ -41,6 +41,11 @@ interface StatusPresentation {
   ariaLabel: string;
   /** Socket colour for the outgoing edge, so handle and edge agree. Null keeps the resting socket. */
   handleColor: string | null;
+  /**
+   * Slab background. Light mode cannot express state as luminance, so it takes
+   * a 6% body tint instead; dark mode has the glow and stays neutral.
+   */
+  surface: string;
 }
 
 const AFFORDANCE_CLASS = "w-4 h-4 flex-shrink-0";
@@ -53,11 +58,12 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
     glowRest: "",
     affordance: (
       <Circle
-        className={`${AFFORDANCE_CLASS} text-text-muted dark:text-text-muted-dark`}
+        className={`${AFFORDANCE_CLASS} text-[var(--aw-node-text-muted)]`}
         aria-hidden="true"
       />
     ),
     ariaLabel: "Idle",
+    surface: "bg-surface-raised dark:bg-surface-dark-raised",
     handleColor: null,
   },
   running: {
@@ -73,6 +79,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Running",
+    surface: "bg-[color-mix(in_srgb,var(--aw-status-running)_6%,var(--aw-surface-raised))] dark:bg-surface-dark-raised",
     handleColor: "var(--aw-status-running)",
   },
   success: {
@@ -90,6 +97,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Success",
+    surface: "bg-[color-mix(in_srgb,var(--aw-status-success)_6%,var(--aw-surface-raised))] dark:bg-surface-dark-raised",
     handleColor: "var(--aw-status-success)",
   },
   error: {
@@ -105,6 +113,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Error",
+    surface: "bg-[color-mix(in_srgb,var(--aw-status-error)_6%,var(--aw-surface-raised))] dark:bg-surface-dark-raised",
     handleColor: "var(--aw-status-error)",
   },
   warning: {
@@ -119,6 +128,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
       />
     ),
     ariaLabel: "Warning",
+    surface: "bg-[color-mix(in_srgb,var(--aw-status-warning)_6%,var(--aw-surface-raised))] dark:bg-surface-dark-raised",
     handleColor: "var(--aw-status-warning)",
   },
   skipped: {
@@ -129,11 +139,12 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
     // Never a check. A skipped node did not succeed.
     affordance: (
       <Minus
-        className={`${AFFORDANCE_CLASS} text-text-muted dark:text-text-muted-dark`}
+        className={`${AFFORDANCE_CLASS} text-[var(--aw-node-text-muted)]`}
         aria-hidden="true"
       />
     ),
     ariaLabel: "Skipped",
+    surface: "bg-surface-raised dark:bg-surface-dark-raised",
     handleColor: null,
   },
 };
@@ -194,7 +205,7 @@ export function BaseNode({
       )}
 
       {!running && status === "skipped" && (
-        <div className="px-3 py-2 font-mono text-xs leading-tight text-text-muted dark:text-text-muted-dark">
+        <div className="px-3 py-2 font-mono text-xs leading-tight text-[var(--aw-node-text-muted)]">
           skipped
         </div>
       )}
@@ -208,7 +219,7 @@ export function BaseNode({
           </span>
           {restLine.argument && (
             <span
-              className="truncate text-text-muted dark:text-text-muted-dark"
+              className="truncate text-[var(--aw-node-text-muted)]"
               title={restLine.argument}
             >
               {restLine.argument}
@@ -274,7 +285,8 @@ export function BaseNode({
 
         <div
           className={[
-            "relative flex flex-col rounded-node border min-w-[180px] max-w-node overflow-hidden bg-surface-raised dark:bg-surface-dark-raised shadow-node-raised",
+            "relative flex flex-col rounded-node border min-w-[180px] max-w-node overflow-hidden shadow-node-raised",
+            config.surface,
             "transition-colors duration-aw-fast ease-aw-standard motion-reduce:transition-none",
             config.border,
             className,

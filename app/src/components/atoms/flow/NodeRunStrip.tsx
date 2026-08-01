@@ -96,16 +96,16 @@ export function NodeRunStrip({
 
       {hasMetrics && (
         <div
-          className="flex items-center gap-1.5 text-[11px] leading-none text-text-muted dark:text-text-muted-dark tabular-nums"
+          className="flex items-center gap-1.5 text-[11px] leading-none text-[var(--aw-node-text-muted)] tabular-nums"
           role="group"
           aria-label="Node metrics"
         >
           {metrics.map((metric, index) => (
             <span key={metric.label} className="flex items-center gap-1.5">
+              {/* No opacity on the separator — dimming it drops it back below
+                  the contrast floor the muted token exists to clear. */}
               {index > 0 && (
-                <span aria-hidden="true" className="opacity-60">
-                  {METRIC_SEPARATOR}
-                </span>
+                <span aria-hidden="true">{METRIC_SEPARATOR}</span>
               )}
               <span
                 className="truncate"

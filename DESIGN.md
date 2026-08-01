@@ -158,7 +158,7 @@ The palette is intentionally restrained. One ink-teal accent on a zinc-neutral b
 
 - **Ink** (#09090b / #fafafa dark): Primary text, headings. Full contrast against respective surfaces. Body text passes 4.5:1 minimum.
 - **Mist** (#52525b / #a1a1aa dark): Secondary text — labels, descriptions, metadata. Passes 3:1 minimum against raised surfaces.
-- **Dust** (#a1a1aa / #71717a dark): Placeholder text, hints, disabled content. Passes 4.5:1 against raised surfaces.
+- **Dust** (#a1a1aa / #71717a dark): Placeholder text, hints, disabled content. **2.56:1 on white** — it does not pass 4.5:1, and does not clear the 3:1 non-text floor either. Use it only where the meaning survives not reading it: an input placeholder beside a label, a disabled control. Never for content. The node layer needs muted *content* — the metrics row, the rest line's argument — so it uses `--aw-node-text-muted` (zinc-500, 4.83:1) instead. `src/components/__tests__/node-layer-contrast.test.ts` enforces this.
 
 ### Semantic Status
 

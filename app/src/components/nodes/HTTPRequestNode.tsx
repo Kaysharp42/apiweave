@@ -190,7 +190,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
                 {warning.sourceUrl}
               </a>
             ) : (
-              <div className="pl-4 text-text-muted dark:text-text-muted-dark">
+              <div className="pl-4 text-[var(--aw-node-text-muted)]">
                 Unavailable
               </div>
             )}
@@ -483,7 +483,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
             />
           </div>
 
-          <div className="flex gap-1.5 text-[11px] flex-wrap text-text-muted dark:text-text-muted-dark">
+          <div className="flex gap-1.5 text-[11px] flex-wrap text-[var(--aw-node-text-muted)]">
             {headerCount > 0 && (
               <span className="px-1.5 py-0.5 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay">
                 {headerCount} header{headerCount > 1 ? "s" : ""}
@@ -512,7 +512,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                 >
                   Query Params{" "}
-                  <span className="font-normal text-text-muted dark:text-text-muted-dark">
+                  <span className="font-normal text-[var(--aw-node-text-muted)]">
                     (key=value)
                   </span>
                 </label>
@@ -535,7 +535,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                 >
                   Path Variables{" "}
-                  <span className="font-normal text-text-muted dark:text-text-muted-dark">
+                  <span className="font-normal text-[var(--aw-node-text-muted)]">
                     (Use :varName in URL)
                   </span>
                 </label>
@@ -558,7 +558,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                 >
                   Headers{" "}
-                  <span className="font-normal text-text-muted dark:text-text-muted-dark">
+                  <span className="font-normal text-[var(--aw-node-text-muted)]">
                     (key=value)
                   </span>
                 </label>
@@ -581,7 +581,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
                 >
                   Cookies{" "}
-                  <span className="font-normal text-text-muted dark:text-text-muted-dark">
+                  <span className="font-normal text-[var(--aw-node-text-muted)]">
                     (key=value)
                   </span>
                 </label>
@@ -663,7 +663,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                             <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-[var(--aw-status-success)]/10 text-status-success dark:text-status-success-dark">
                               {varName}
                             </code>
-                            <span className="text-text-muted dark:text-text-muted-dark">
+                            <span className="text-[var(--aw-node-text-muted)]">
                               &larr;
                             </span>
                             <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-[var(--aw-status-info)]/10 text-status-info dark:text-status-info-dark">
@@ -688,7 +688,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                       },
                     )
                   ) : (
-                    <div className="text-xs italic text-text-muted dark:text-text-muted-dark">
+                    <div className="text-xs italic text-[var(--aw-node-text-muted)]">
                       No extractors configured
                     </div>
                   )}
@@ -712,7 +712,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                 variables={variables}
               />
 
-              <div className="text-xs p-1.5 rounded-node-ctl space-y-0.5 bg-[var(--aw-status-info)]/5 text-text-muted dark:text-text-muted-dark">
+              <div className="text-xs p-1.5 rounded-node-ctl space-y-0.5 bg-[var(--aw-status-info)]/5 text-[var(--aw-node-text-muted)]">
                 <div>
                   <strong className="text-text-primary dark:text-text-primary-dark">
                     Variable Reference:

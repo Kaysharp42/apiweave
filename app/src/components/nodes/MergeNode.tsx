@@ -22,7 +22,7 @@ const BranchMapping = ({ branches }: { branches: BranchInfo[] }) => (
         <span className="font-medium truncate text-text-primary dark:text-text-primary-dark">
           {b.edgeLabel ?? b.label ?? `Branch ${b.index}`}
         </span>
-        <span className="mx-1 text-text-muted dark:text-text-muted-dark">
+        <span className="mx-1 text-[var(--aw-node-text-muted)]">
           {"\u2192"}
         </span>
         <code className="font-mono text-[var(--aw-branch-edge)]">
@@ -30,7 +30,7 @@ const BranchMapping = ({ branches }: { branches: BranchInfo[] }) => (
         </code>
         {b.nodeId && (
           <>
-            <span className="mx-1 text-text-muted dark:text-text-muted-dark">
+            <span className="mx-1 text-[var(--aw-node-text-muted)]">
               {"\u2192"}
             </span>
             <span className="font-medium truncate text-text-primary dark:text-text-primary-dark">
@@ -39,13 +39,13 @@ const BranchMapping = ({ branches }: { branches: BranchInfo[] }) => (
           </>
         )}
         {b.statusCode && b.statusCode !== "N/A" && (
-          <span className="ml-1 text-text-muted dark:text-text-muted-dark">
+          <span className="ml-1 text-[var(--aw-node-text-muted)]">
             ({b.statusCode})
           </span>
         )}
       </div>
     ))}
-    <div className="text-xs italic mt-1 text-text-muted dark:text-text-muted-dark">
+    <div className="text-xs italic mt-1 text-[var(--aw-node-text-muted)]">
       Example:{" "}
       <code className="font-mono text-[var(--aw-branch-edge)]">
         {"{{prev[0].response.body.id}}"}
@@ -249,7 +249,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
                   )}
 
                   {result.mergedAt && (
-                    <div className="text-xs mt-2 text-text-muted dark:text-text-muted-dark">
+                    <div className="text-xs mt-2 text-[var(--aw-node-text-muted)]">
                       {new Date(result.mergedAt).toLocaleTimeString()}
                     </div>
                   )}
@@ -272,7 +272,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
                         <div>
                           This node merges {data.incomingBranchCount} branches
                         </div>
-                        <div className="italic mt-1 text-text-muted dark:text-text-muted-dark">
+                        <div className="italic mt-1 text-[var(--aw-node-text-muted)]">
                           Use{" "}
                           <code className="font-mono text-[var(--aw-branch-edge)]">
                             {"{{prev[0]}}"}

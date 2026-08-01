@@ -168,6 +168,7 @@ var(--aw-radius-lg)         /* 0.25rem border radius */
 Node-layer only (see DESIGN.md §7):
 
 ```css
+var(--aw-node-text-muted)     /* muted node content — 4.83:1, unlike --aw-text-muted */
 var(--aw-radius-node)         /* 14px — the node slab */
 var(--aw-shadow-node-raised)  /* inner top highlight + soft drop */
 var(--aw-glow-running)        /* amber state ring + halo */

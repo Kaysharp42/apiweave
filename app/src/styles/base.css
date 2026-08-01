@@ -90,6 +90,15 @@
      stays sharp; the node family is scoped so it never has to move.
      ────────────────────────────────────────── */
 
+  /* Node supporting text.
+     --aw-text-muted is #a1a1aa, which is 2.56:1 on white — fine for a
+     placeholder inside a bordered input, but the node layer uses muted text
+     for real content: the metrics row, the rest line's argument, the skipped
+     label, and the idle status glyph. Those need to be read. zinc-500 is
+     4.83:1 and still visibly quieter than --aw-text-secondary at 7.73:1.
+     Dark mode keeps --aw-text-muted, which is already 3.67:1 there. */
+  --aw-node-text-muted: #71717a;
+
   /* Node radius */
   --aw-radius-node: 14px; /* the node slab                        */
   --aw-radius-node-tile: 8px; /* 28px icon tile                       */
@@ -180,6 +189,8 @@
      Radius and motion tokens are theme-independent and inherit from
      :root. Only elevation and glow are retuned here.
      ────────────────────────────────────────── */
+
+  --aw-node-text-muted: var(--aw-text-muted);
 
   --aw-shadow-node-raised:
     inset 0 1px 0 0 rgb(255 255 255 / 5%), 0 8px 24px -12px rgb(0 0 0 / 80%);
