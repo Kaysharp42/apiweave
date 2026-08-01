@@ -133,27 +133,34 @@ async function installRunnableIpc(
       const listeners: ((event: unknown) => void)[] = [];
       const ok = (data: unknown) => ({ ok: true as const, data });
 
+      // A `domain.action` lookup rather than an if-chain. The chain was one
+      // branch per route, so every route the harness learned to answer pushed
+      // its complexity up; a table stays flat no matter how many it grows.
+      const routes: Record<string, () => { ok: true; data: unknown }> = {
+        "workspaces.list": () => ok([workspace]),
+        "workflows.list": () => ok({ items: [workflow], total: 1 }),
+        "workflows.get": () => ok(workflow),
+        "workflows.update": () => ok(workflow),
+        "runs.create": () => ok({ runId: "run-evidence-1" }),
+        "runs.get": () =>
+          ok({ runId: "run-evidence-1", nodeStatuses: {}, results: [] }),
+        "runs.getLatest": () => ok(null),
+        "runs.getLatestFailed": () => ok(null),
+        "secrets.list": () => ok([]),
+        "cloud.status": () =>
+          ok({
+            linked: false, active: false, linkState: "unlinked", syncState: "idle",
+            state: "idle", pendingCount: 0, deadLetterCount: 0, conflictCount: 0,
+            workspaceIds: [], bindings: [], workspaceCatalog: [], teamCatalog: [],
+          }),
+      };
+
       window.__APIWEAVE_IPC__ = {
         invoke: async (domain: string, action: string) => {
-          if (domain === "workspaces" && action === "list") return ok([workspace]);
-          if (domain === "workflows" && action === "list")
-            return ok({ items: [workflow], total: 1 });
-          if (domain === "workflows" && (action === "get" || action === "update"))
-            return ok(workflow);
-          if (domain === "runs" && action === "create")
-            return ok({ runId: "run-evidence-1" });
-          if (domain === "runs" && action === "get")
-            return ok({ runId: "run-evidence-1", nodeStatuses: {}, results: [] });
-          if (domain === "runs" && (action === "getLatest" || action === "getLatestFailed"))
-            return ok(null);
-          if (domain === "secrets" && action === "list") return ok([]);
+          const route = routes[`${domain}.${action}`];
+          if (route) return route();
+          // Anything else that only needs to not explode: an empty page.
           if (action.startsWith("list")) return ok({ items: [], total: 0 });
-          if (domain === "cloud" && action === "status")
-            return ok({
-              linked: false, active: false, linkState: "unlinked", syncState: "idle",
-              state: "idle", pendingCount: 0, deadLetterCount: 0, conflictCount: 0,
-              workspaceIds: [], bindings: [], workspaceCatalog: [], teamCatalog: [],
-            });
           return {
             ok: false as const,
             error: { code: "not_found" as const, message: `Unhandled ${domain}.${action}` },

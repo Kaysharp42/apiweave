@@ -4,6 +4,9 @@ import { BaseNode } from "../atoms/flow/BaseNode";
 import { NodeHandle } from "../atoms/flow/NodeHandle";
 import AssertionEditor from "../AssertionEditor";
 import { Info, ListChecks, Pencil, Trash2 } from "lucide-react";
+import { NodeField } from "../atoms/flow/NodeField";
+import { NodeSelectField } from "../atoms/flow/NodeSelectField";
+import { nodeInputClass } from "../atoms/flow/nodeControlClasses";
 import type {
   AssertionNodeProps,
   AssertionItem,
@@ -12,9 +15,88 @@ import type {
 type AssertionSource = AssertionItem["source"];
 type AssertionOperator = AssertionItem["operator"];
 
+const ASSERTION_SOURCES = [
+  { value: "prev", label: "Previous Node Result (prev.*)" },
+  { value: "variables", label: "Workflow Variables (variables.*)" },
+  { value: "status", label: "HTTP Status Code" },
+  { value: "cookies", label: "Cookies" },
+  { value: "headers", label: "Response Headers" },
+] as const;
+
+const ASSERTION_OPERATORS = [
+  { value: "equals", label: "Equals (==)" },
+  { value: "notEquals", label: "Not Equals (!=)" },
+  { value: "contains", label: "Contains" },
+  { value: "notContains", label: "Does Not Contain" },
+  { value: "gt", label: "Greater Than (>)" },
+  { value: "gte", label: "Greater Than or Equal (>=)" },
+  { value: "lt", label: "Less Than (<)" },
+  { value: "lte", label: "Less Than or Equal (<=)" },
+  { value: "count", label: "Count (array length)" },
+  { value: "exists", label: "Exists" },
+  { value: "notExists", label: "Does Not Exist" },
+] as const;
+
+/** What the path field is called, and shows, per assertion source. */
+const PATH_LABELS: Record<AssertionSource, string> = {
+  prev: "JSONPath (e.g., body.status)",
+  variables: "Variable name",
+  cookies: "Cookie name",
+  headers: "Header name",
+  status: "HTTP Status Code",
+};
+
+const PATH_PLACEHOLDERS: Record<AssertionSource, string> = {
+  prev: "body.status",
+  variables: "tokenId",
+  cookies: "Set-Cookie",
+  headers: "Set-Cookie",
+  status: "",
+};
+
 interface AssertionFormProps {
   onAdd: (assertion: AssertionItem) => void;
 }
+
+interface BranchHandleProps {
+  id: "pass" | "fail";
+  label: string;
+  color: string;
+  /** Pixels above (negative) or below the node's vertical centre. */
+  offsetY: number;
+}
+
+/**
+ * One of the assertion node's two outgoing sockets, with the name of the branch
+ * revealed on hover. Both sockets are the same object in two colours, so they
+ * are one component rather than two copies.
+ */
+const BranchHandle = ({ id, label, color, offsetY }: BranchHandleProps) => (
+  <div
+    className="group absolute"
+    style={{ top: "50%", right: 0, transform: `translateY(${offsetY}px)` }}
+  >
+    <NodeHandle
+      type="source"
+      position="right"
+      id={id}
+      color={color}
+      style={{ position: "relative" }}
+    />
+    <div
+      className="absolute text-xs font-semibold pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity motion-reduce:transition-none"
+      style={{
+        right: 14,
+        top: -4,
+        lineHeight: "1",
+        whiteSpace: "nowrap",
+        color,
+      }}
+    >
+      {label}
+    </div>
+  </div>
+);
 
 interface FormErrors {
   path: string;
@@ -97,122 +179,57 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
 
   return (
     <div className="space-y-1.5 p-2 rounded-node-ctl border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
-      <div>
-        <label
-          htmlFor="assertion-source"
-          className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
-        >
-          Assert On
-        </label>
-        <select
-          id="assertion-source"
-          value={source}
-          onChange={(e) => setSource(e.target.value as AssertionSource)}
-          className="nodrag w-full px-1.5 py-0.5 border rounded-node-ctl text-xs border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer"
-        >
-          <option value="prev">Previous Node Result (prev.*)</option>
-          <option value="variables">Workflow Variables (variables.*)</option>
-          <option value="status">HTTP Status Code</option>
-          <option value="cookies">Cookies</option>
-          <option value="headers">Response Headers</option>
-        </select>
-      </div>
+      <NodeSelectField
+        id="assertion-source"
+        label="Assert On"
+        value={source}
+        onChange={(next) => setSource(next as AssertionSource)}
+        options={ASSERTION_SOURCES}
+      />
 
       {source !== "status" && (
-        <div>
-          <label
-            htmlFor="assertion-path"
-            className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
-          >
-            {source === "prev"
-              ? "JSONPath (e.g., body.status)"
-              : source === "variables"
-                ? "Variable name"
-                : source === "cookies"
-                  ? "Cookie name"
-                  : "Header name"}
-          </label>
+        <NodeField
+          htmlFor="assertion-path"
+          label={PATH_LABELS[source]}
+          error={errors.path}
+        >
           <input
             id="assertion-path"
             type="text"
-            placeholder={
-              source === "prev"
-                ? "body.status"
-                : source === "variables"
-                  ? "tokenId"
-                  : "Set-Cookie"
-            }
+            placeholder={PATH_PLACEHOLDERS[source]}
             value={path}
             onChange={(e) => setPath(e.target.value)}
-            className={
-              `nodrag w-full px-1.5 py-0.5 border rounded-node-ctl text-xs focus-visible:outline-2 focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ` +
-              (errors.path
-                ? "border-[var(--aw-status-error)] text-[var(--aw-status-error)] bg-[var(--aw-status-error)]/5 focus-visible:outline-[var(--aw-status-error)]"
-                : "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-[var(--aw-primary)]")
-            }
+            className={nodeInputClass({ invalid: Boolean(errors.path) })}
           />
-          {errors.path && (
-            <div className="text-xs mt-1 text-[var(--aw-status-error)]">
-              {errors.path}
-            </div>
-          )}
-        </div>
+        </NodeField>
       )}
 
-      <div>
-        <label
-          htmlFor="assertion-operator"
-          className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
-        >
-          Operator
-        </label>
-        <select
-          id="assertion-operator"
-          value={operator}
-          onChange={(e) => setOperator(e.target.value as AssertionOperator)}
-          className="nodrag w-full px-1.5 py-0.5 border rounded-node-ctl text-xs border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer"
-        >
-          <option value="equals">Equals (==)</option>
-          <option value="notEquals">Not Equals (!=)</option>
-          <option value="contains">Contains</option>
-          <option value="notContains">Does Not Contain</option>
-          <option value="gt">Greater Than (&gt;)</option>
-          <option value="gte">Greater Than or Equal (&gt;=)</option>
-          <option value="lt">Less Than (&lt;)</option>
-          <option value="lte">Less Than or Equal (&lt;=)</option>
-          <option value="count">Count (array length)</option>
-          <option value="exists">Exists</option>
-          <option value="notExists">Does Not Exist</option>
-        </select>
-      </div>
+      <NodeSelectField
+        id="assertion-operator"
+        label="Operator"
+        value={operator}
+        onChange={(next) => setOperator(next as AssertionOperator)}
+        options={ASSERTION_OPERATORS}
+      />
 
       {!["exists", "notExists"].includes(operator) && (
-        <div>
-          <label
-            htmlFor="assertion-expected-value"
-            className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
-          >
-            {operator === "count" ? "Expected Count" : "Expected Value"}
-          </label>
+        <NodeField
+          htmlFor="assertion-expected-value"
+          label={operator === "count" ? "Expected Count" : "Expected Value"}
+          error={errors.expectedValue}
+        >
           <input
             id="assertion-expected-value"
             type="text"
             placeholder={operator === "count" ? "5" : "200"}
             value={expectedValue}
             onChange={(e) => setExpectedValue(e.target.value)}
-            className={
-              `nodrag w-full px-1.5 py-0.5 border rounded-node-ctl text-xs font-mono focus-visible:outline-2 focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ` +
-              (errors.expectedValue
-                ? "border-[var(--aw-status-error)] text-[var(--aw-status-error)] bg-[var(--aw-status-error)]/5 focus-visible:outline-[var(--aw-status-error)]"
-                : "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-[var(--aw-primary)]")
-            }
+            className={nodeInputClass({
+              invalid: Boolean(errors.expectedValue),
+              mono: true,
+            })}
           />
-          {errors.expectedValue && (
-            <div className="text-xs mt-1 text-[var(--aw-status-error)]">
-              {errors.expectedValue}
-            </div>
-          )}
-        </div>
+        </NodeField>
       )}
 
       <button
@@ -261,45 +278,20 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
   const extraHandles = useMemo(
     () => (
       <>
-        <div
-          className="group absolute"
-          style={{ top: "50%", right: 0, transform: "translateY(-20px)" }}
-        >
-          {/* Pinned to their semantic colours — these two sockets mean pass and
-              fail regardless of the node's own state. */}
-          <NodeHandle
-            type="source"
-            position="right"
-            id="pass"
-            color="var(--aw-status-success)"
-            style={{ position: "relative" }}
-          />
-          <div
-            className="absolute text-xs font-semibold pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity motion-reduce:transition-none text-[var(--aw-status-success)]"
-            style={{ right: 14, top: -4, lineHeight: "1", whiteSpace: "nowrap" }}
-          >
-            Pass
-          </div>
-        </div>
-
-        <div
-          className="group absolute"
-          style={{ top: "50%", right: 0, transform: "translateY(20px)" }}
-        >
-          <NodeHandle
-            type="source"
-            position="right"
-            id="fail"
-            color="var(--aw-status-error)"
-            style={{ position: "relative" }}
-          />
-          <div
-            className="absolute text-xs font-semibold pointer-events-none select-none text-right opacity-0 group-hover:opacity-100 transition-opacity motion-reduce:transition-none text-[var(--aw-status-error)]"
-            style={{ right: 14, top: -4, lineHeight: "1", whiteSpace: "nowrap" }}
-          >
-            Fail
-          </div>
-        </div>
+        {/* Pinned to their semantic colours — these two sockets mean pass and
+            fail regardless of the node's own state. */}
+        <BranchHandle
+          id="pass"
+          label="Pass"
+          color="var(--aw-status-success)"
+          offsetY={-20}
+        />
+        <BranchHandle
+          id="fail"
+          label="Fail"
+          color="var(--aw-status-error)"
+          offsetY={20}
+        />
       </>
     ),
     [],

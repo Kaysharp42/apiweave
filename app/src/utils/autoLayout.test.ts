@@ -90,6 +90,37 @@ function buildGraph(count: number): { nodes: Node[]; edges: Edge[] } {
   return { nodes, edges };
 }
 
+function rectFor(node: Node): Rect {
+  return {
+    x: node.position.x,
+    y: node.position.y,
+    width: NODE_W,
+    height: NODE_H,
+  };
+}
+
+/**
+ * The first node the curve passes under, ignoring the two it connects.
+ * Samples 61 points along the curve; returns as soon as one lands inside.
+ */
+function nodeUnderCurve(
+  cubic: number[],
+  laidOut: Node[],
+  edge: Edge,
+): string | undefined {
+  const others = laidOut.filter(
+    (node) => node.id !== edge.source && node.id !== edge.target,
+  );
+
+  for (let step = 0; step <= 60; step++) {
+    const { x, y } = cubicPointAt(cubic, step / 60);
+    const hit = others.find((node) => contains(rectFor(node), x, y));
+    if (hit) return hit.id;
+  }
+
+  return undefined;
+}
+
 function edgesCuttingUnderNodes(count: number): string[] {
   const { nodes, edges } = buildGraph(count);
   const laidOut = autoLayout(nodes, edges);
@@ -112,25 +143,8 @@ function edgesCuttingUnderNodes(count: number): string[] {
       targetPosition: Position.Left,
     });
 
-    const cubic = parseCubic(path);
-
-    for (let step = 0; step <= 60; step++) {
-      const { x, y } = cubicPointAt(cubic, step / 60);
-      for (const node of laidOut) {
-        if (node.id === edge.source || node.id === edge.target) continue;
-        const rect: Rect = {
-          x: node.position.x,
-          y: node.position.y,
-          width: NODE_W,
-          height: NODE_H,
-        };
-        if (contains(rect, x, y)) {
-          offenders.push(`${edge.id} passes under ${node.id}`);
-          step = 61;
-          break;
-        }
-      }
-    }
+    const hit = nodeUnderCurve(parseCubic(path), laidOut, edge);
+    if (hit) offenders.push(`${edge.id} passes under ${hit}`);
   }
 
   return offenders;

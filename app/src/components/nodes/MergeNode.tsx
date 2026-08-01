@@ -10,6 +10,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
+import { OpenNodeEditorButton } from "../atoms/flow/OpenNodeEditorButton";
 import type { MergeNodeProps, BranchInfo } from "../../types/MergeNodeProps";
 
 const BranchMapping = ({ branches }: { branches: BranchInfo[] }) => (
@@ -187,25 +188,12 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
                   <option value="first">First Completes</option>
                   <option value="conditional">Conditional Merge</option>
                 </select>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const node = document.querySelector(
-                      `[data-id="${id}"]`,
-                    ) as HTMLElement | null;
-                    node?.dispatchEvent(
-                      new MouseEvent("dblclick", {
-                        bubbles: true,
-                        cancelable: true,
-                        view: window,
-                      }),
-                    );
-                  }}
-                  className="mt-1 nodrag cursor-pointer text-[var(--aw-primary)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-                  aria-label="Open merge node editor to change strategy"
-                >
-                  Change strategy
-                </button>
+                <OpenNodeEditorButton
+                  nodeId={id}
+                  label="Change strategy"
+                  ariaLabel="Open merge node editor to change strategy"
+                  className="mt-1"
+                />
               </div>
 
               {result && (

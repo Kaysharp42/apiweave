@@ -9,6 +9,7 @@ import {
 } from "reactflow";
 import { X } from "lucide-react";
 import type { NodeStatus } from "../types/NodeStatus";
+import type { EdgePresentation } from "../types/EdgePresentation";
 
 interface CustomEdgeData {
   animated?: boolean;
@@ -17,14 +18,6 @@ interface CustomEdgeData {
 type CustomEdgeProps = EdgeProps<CustomEdgeData>;
 
 const EMPTY_EDGE_STYLE: CSSProperties = {};
-
-export interface EdgePresentation {
-  stroke: string;
-  strokeWidth: number;
-  dash: string | undefined;
-  /** Whether control is currently passing through this edge. */
-  flowing: boolean;
-}
 
 /**
  * An edge takes its state from the node it leaves. Idle plumbing is a

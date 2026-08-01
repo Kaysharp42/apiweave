@@ -85,8 +85,20 @@ async function openNodeModal(page: Page): Promise<void> {
     .first();
   await expect(requestNode).toBeAttached();
   const nodeLabel = requestNode.getByText("Get users", { exact: true });
-  if (await nodeLabel.isVisible()) await nodeLabel.dblclick();
-  else await nodeLabel.dispatchEvent("dblclick");
+  // `isVisible()` was the wrong guard here: it reports that the label has a box
+  // and is not hidden, never that something is drawn on top of it. The canvas
+  // toolbar is absolutely positioned over the canvas, and at narrow viewports it
+  // lands on this node — so the label was "visible", the real double-click was
+  // intercepted, and the test spent its whole timeout retrying.
+  //
+  // A real double-click is the truer interaction, so it stays first; the
+  // synthetic event is the fallback for when canvas chrome is in the way. This
+  // test is about the modal, not about canvas hit-testing.
+  try {
+    await nodeLabel.dblclick({ timeout: 5_000 });
+  } catch {
+    await nodeLabel.dispatchEvent("dblclick");
+  }
   await expect(page.getByLabel("Node name")).toBeVisible();
 }
 

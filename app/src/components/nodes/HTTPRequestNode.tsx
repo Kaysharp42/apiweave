@@ -28,6 +28,11 @@ import {
   stringifyBody,
   stringifyKeyValuePairs,
 } from "../node-modal/httpRequestConfigCompat";
+import { NodeField } from "../atoms/flow/NodeField";
+import {
+  NODE_TEXTAREA_CLASS,
+  nodeInputClass,
+} from "../atoms/flow/nodeControlClasses";
 import type { NodeStatus } from "../../types/NodeStatus";
 import type { HttpMethod } from "@shared/types/HttpMethod";
 import type {
@@ -35,6 +40,54 @@ import type {
   HTTPRequestNodeProps,
   SchemaWarning,
 } from "../../types/HTTPRequestNodeProps";
+
+/**
+ * The four `key=value` textareas in the expanded body. They differ only in
+ * label, placeholder and which config key they write, so they are a table
+ * rather than four near-identical JSX blocks.
+ */
+const KEY_VALUE_FIELDS = [
+  {
+    configKey: "queryParams",
+    label: "Query Params",
+    hint: "(key=value)",
+    ariaLabel: "Query parameters",
+    placeholder: "page=1\nlimit=10",
+  },
+  {
+    configKey: "pathVariables",
+    label: "Path Variables",
+    hint: "(Use :varName in URL)",
+    ariaLabel: "Path variables",
+    placeholder: "userId={{prev.response.body.id}}",
+  },
+  {
+    configKey: "headers",
+    label: "Headers",
+    hint: "(key=value)",
+    ariaLabel: "Headers",
+    placeholder:
+      "Content-Type=application/json\nAuthorization=Bearer {{variables.token}}",
+  },
+  {
+    configKey: "cookies",
+    label: "Cookies",
+    hint: "(key=value)",
+    ariaLabel: "Cookies",
+    placeholder: "session={{prev.response.cookies.session}}",
+  },
+] as const;
+
+const VARIABLE_CODE_CLASS =
+  "px-1 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay";
+
+/** The cheat sheet under the expanded body: what a reference looks like. */
+const VARIABLE_REFERENCE_EXAMPLES = [
+  { label: "Body", expression: "{{prev.response.body.token}}" },
+  { label: "Array", expression: "{{prev.response.body.data[0].city}}" },
+  { label: "Header", expression: "{{prev.response.headers.content-type}}" },
+  { label: "Cookie", expression: "{{prev.response.cookies.session}}" },
+] as const;
 
 const HTTP_METHODS: HttpMethod[] = [
   "GET",
@@ -506,109 +559,34 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
 
           {isExpanded && (
             <div className="space-y-1.5 pt-1 border-t border-border dark:border-border-dark">
-              <div>
-                <label
-                  htmlFor="http-request-query-params"
-                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
+              {KEY_VALUE_FIELDS.map((field) => (
+                <NodeField
+                  key={field.configKey}
+                  htmlFor={`http-request-${field.configKey}`}
+                  label={field.label}
+                  hint={field.hint}
                 >
-                  Query Params{" "}
-                  <span className="font-normal text-[var(--aw-node-text-muted)]">
-                    (key=value)
-                  </span>
-                </label>
-                <textarea
-                  id="http-request-query-params"
-                  aria-label="Query parameters"
-                  className="nodrag w-full px-1.5 py-1 border rounded-node-ctl text-xs font-mono border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-                  rows={2}
-                  placeholder={"page=1\nlimit=10"}
-                  value={stringifyKeyValuePairs(data.config?.queryParams)}
-                  onChange={(e) =>
-                    updateNodeData("queryParams", e.target.value)
-                  }
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="http-request-path-variables"
-                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
-                >
-                  Path Variables{" "}
-                  <span className="font-normal text-[var(--aw-node-text-muted)]">
-                    (Use :varName in URL)
-                  </span>
-                </label>
-                <textarea
-                  id="http-request-path-variables"
-                  aria-label="Path variables"
-                  className="nodrag w-full px-1.5 py-1 border rounded-node-ctl text-xs font-mono border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-                  rows={2}
-                  placeholder={"userId={{prev.response.body.id}}"}
-                  value={stringifyKeyValuePairs(data.config?.pathVariables)}
-                  onChange={(e) =>
-                    updateNodeData("pathVariables", e.target.value)
-                  }
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="http-request-headers"
-                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
-                >
-                  Headers{" "}
-                  <span className="font-normal text-[var(--aw-node-text-muted)]">
-                    (key=value)
-                  </span>
-                </label>
-                <textarea
-                  id="http-request-headers"
-                  aria-label="Headers"
-                  className="nodrag w-full px-1.5 py-1 border rounded-node-ctl text-xs font-mono border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-                  rows={2}
-                  placeholder={
-                    "Content-Type=application/json\nAuthorization=Bearer {{variables.token}}"
-                  }
-                  value={stringifyKeyValuePairs(data.config?.headers)}
-                  onChange={(e) => updateNodeData("headers", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="http-request-cookies"
-                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
-                >
-                  Cookies{" "}
-                  <span className="font-normal text-[var(--aw-node-text-muted)]">
-                    (key=value)
-                  </span>
-                </label>
-                <textarea
-                  id="http-request-cookies"
-                  aria-label="Cookies"
-                  className="nodrag w-full px-1.5 py-1 border rounded-node-ctl text-xs font-mono border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-                  rows={2}
-                  placeholder={"session={{prev.response.cookies.session}}"}
-                  value={stringifyKeyValuePairs(data.config?.cookies)}
-                  onChange={(e) => updateNodeData("cookies", e.target.value)}
-                />
-              </div>
+                  <textarea
+                    id={`http-request-${field.configKey}`}
+                    aria-label={field.ariaLabel}
+                    className={NODE_TEXTAREA_CLASS}
+                    rows={2}
+                    placeholder={field.placeholder}
+                    value={stringifyKeyValuePairs(data.config?.[field.configKey])}
+                    onChange={(e) =>
+                      updateNodeData(field.configKey, e.target.value)
+                    }
+                  />
+                </NodeField>
+              ))}
 
               {method !== "GET" && (
-                <div>
-                  <label
-                    htmlFor="http-request-body"
-                    className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
-                  >
-                    Body
-                  </label>
+                <NodeField htmlFor="http-request-body" label="Body">
                   <div className="relative">
                     <textarea
                       id="http-request-body"
                       aria-label="Request body"
-                      className="nodrag w-full px-1.5 py-1 border rounded-node-ctl text-xs font-mono border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                      className={NODE_TEXTAREA_CLASS}
                       rows={3}
                       placeholder={'{\n  "key": "value"\n}'}
                       value={stringifyBody(data.config?.body)}
@@ -621,28 +599,25 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                       />
                     </div>
                   </div>
-                </div>
+                </NodeField>
               )}
 
-              <div>
-                <label
-                  htmlFor="http-request-timeout"
-                  className="block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark"
-                >
-                  Timeout (seconds)
-                </label>
+              <NodeField
+                htmlFor="http-request-timeout"
+                label="Timeout (seconds)"
+              >
                 <input
                   id="http-request-timeout"
                   type="number"
                   aria-label="Timeout in seconds"
-                  className="nodrag w-16 px-1.5 py-0.5 border rounded-node-ctl text-xs border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                  className={nodeInputClass({ width: "w-16" })}
                   value={data.config?.timeout ?? 30}
                   onChange={(e) =>
                     updateNodeData("timeout", parseInt(e.target.value))
                   }
                   min="1"
                 />
-              </div>
+              </NodeField>
 
               <div className="border-t pt-2 mt-2 border-border dark:border-border-dark">
                 <div className="block text-xs font-semibold mb-1 flex items-center gap-1 text-text-secondary dark:text-text-secondary-dark">
@@ -719,30 +694,14 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   </strong>
                 </div>
                 <div className="pl-2 space-y-0.5">
-                  <div>
-                    &bull; Body:{" "}
-                    <code
-                      className="px-1 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay"
-                    >{`{{prev.response.body.token}}`}</code>
-                  </div>
-                  <div>
-                    &bull; Array:{" "}
-                    <code
-                      className="px-1 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay"
-                    >{`{{prev.response.body.data[0].city}}`}</code>
-                  </div>
-                  <div>
-                    &bull; Header:{" "}
-                    <code
-                      className="px-1 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay"
-                    >{`{{prev.response.headers.content-type}}`}</code>
-                  </div>
-                  <div>
-                    &bull; Cookie:{" "}
-                    <code
-                      className="px-1 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay"
-                    >{`{{prev.response.cookies.session}}`}</code>
-                  </div>
+                  {VARIABLE_REFERENCE_EXAMPLES.map((example) => (
+                    <div key={example.label}>
+                      &bull; {example.label}:{" "}
+                      <code className={VARIABLE_CODE_CLASS}>
+                        {example.expression}
+                      </code>
+                    </div>
+                  ))}
                   {variables && Object.keys(variables).length > 0 && (
                     <div className="mt-1 space-y-0.5">
                       <div
@@ -754,7 +713,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                         <div key={v}>
                           &bull;{" "}
                           <code
-                            className="px-1 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay"
+                            className={VARIABLE_CODE_CLASS}
                           >{`{{variables.${v}}}`}</code>
                         </div>
                       ))}
