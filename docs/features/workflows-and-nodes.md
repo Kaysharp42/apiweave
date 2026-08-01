@@ -19,6 +19,8 @@
   - [Assertion](#assertion)
   - [Delay](#delay)
   - [Merge](#merge)
+  - [Call Workflow](#call-workflow)
+- [Reusing a Node Configuration](#reusing-a-node-configuration)
 - [Canvas Actions](#canvas-actions)
 - [Resume Behavior](#resume-behavior)
 - [Lineage Hydration on Repeated Resume](#lineage-hydration-on-repeated-resume)
@@ -51,7 +53,7 @@ A simple login flow looks like this on the canvas:
 
 ## Node Types
 
-APIWeave ships six node types. Each does one job. Two of them (Start, End) mark flow boundaries; the rest do work.
+APIWeave ships seven node types. Each does one job. Two of them (Start, End) mark flow boundaries; the rest do work.
 
 ### Start
 
@@ -129,6 +131,46 @@ APIWeave ships six node types. Each does one job. Two of them (Start, End) mark 
 
 **Handles:** many inputs (one per upstream branch), one output.
 
+### Call Workflow
+
+**Purpose:** Runs another workflow in the same workspace as a single step, so a flow you wrote once (a login, a tenant setup, a cleanup) is reused instead of duplicated.
+
+| Field | What it does |
+| --- | --- |
+| `target workflow` | The workflow to run. The picker lists workflows in the current workspace and excludes the current one |
+| `input mapping` | `target variable = caller expression`. Each entry names a variable the sub-workflow will read as `{{variables.NAME}}`, set from an expression resolved in the *caller's* context |
+| `output mapping` | `caller variable = sub-workflow variable`. Each entry copies one of the sub-workflow's final variables back into the caller's scope |
+
+**Handles:** one input, one output.
+
+How the call behaves:
+
+- **It runs inline, inside the current run.** There is no second entry in run history. The calling node's result carries a summary: the target, its status, how many nodes it had, how many failed, and which output variables were mapped back. Open the node to see it.
+- **The sub-workflow shares the run's environment and secrets.** It resolves `{{env.*}}` and `{{secrets.*}}` on its own, so those need no mapping. Only workflow variables (`{{variables.*}}`) have to be passed, because each execution keeps its own variable map.
+- **Secrets cannot be passed through an input mapping.** A `{{secrets.NAME}}` on the right-hand side fails the node rather than copying a secret value into a plain child variable. Let the sub-workflow read the secret directly.
+- **The caller's variables only change where you asked.** An output mapping entry is applied when the sub-workflow actually produced that variable; anything you did not map stays inside the sub-workflow.
+- **A failed sub-workflow fails the calling node**, which then follows the workflow's `continueOnFail` setting like any other failure.
+
+A login flow reused by a checkout flow:
+
+```text
+[ Start ] -> [ Call Workflow: Authenticate ] -> [ HTTP Request: POST /cart ] -> [ End ]
+                       |
+                       +-- input mapping:  tenant = {{variables.tenantId}}
+                       +-- output mapping: authToken = accessToken
+```
+
+The checkout flow then uses `{{variables.authToken}}` in its own request headers.
+
+**Cycle guards.** Saving a node whose target is in another workspace, or whose target is the calling workflow itself, is rejected. An indirect cycle (A calls B, B calls A) is *not* rejected at save time — you can create one by editing B after saving A, which no save-time check could catch. Instead the runner caps nesting at 8 levels and fails the node with "Call Workflow recursion depth exceeded", so a cycle ends the run cleanly instead of hanging it.
+
+## Reusing a Node Configuration
+
+Two ways to avoid rebuilding the same node:
+
+- **Copy/paste** (`Ctrl+C` / `Ctrl+V`) duplicates a node inside the session you are working in. It does not survive a restart.
+- **Presets** save a node's configuration under a name, in the workspace, permanently. Use the `⋯` menu on any configured node, choose **Save as preset**, and it appears in the **Saved Presets** section of the Add Nodes panel, ready to drag into any workflow in that workspace. See [Node Presets](node-presets.md) for the full flow, including rename, delete, and what a preset does and does not carry.
+
 ## Canvas Actions
 
 The top toolbar exposes the actions that operate on the whole workflow.
@@ -193,10 +235,14 @@ The copy and paste shortcuts are context-aware. When the cursor is inside a text
 - **If Run from failed replays too much of the workflow**, the failed node sits upstream of nodes whose results you wanted to keep. Re-run the whole flow, or split the workflow so the failing call is isolated.
 - **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in any scope in the chain. Open **Secrets** for the selected environment or your user store, add the key through the Libsodium write flow, and re-run.
 - **If paste drops a node on top of the source**, copy and paste are canvas-only; click on the canvas first so the focus is not in a text field.
+- **If a Call Workflow node fails with "no target workflow configured"**, the node was dropped but never pointed at a workflow. Open it and pick a target from the picker.
+- **If a Call Workflow node fails with "recursion depth exceeded"**, the call graph loops (A calls B, B calls A) or nests deeper than 8 levels. Open the target chain and break the loop.
+- **If a variable the sub-workflow produced is missing in the caller**, it was not in the output mapping, or the name on the right-hand side does not match the variable the sub-workflow actually ends with. Run the sub-workflow on its own and check its final variables.
 
 ## Related
 
 - [Concepts](../getting-started/concepts.md)
 - [Variables and Extractors](variables-and-extractors.md)
+- [Node Presets](node-presets.md)
 - [Projects](projects.md)
 - [Environments and Secrets](environments-and-secrets.md)

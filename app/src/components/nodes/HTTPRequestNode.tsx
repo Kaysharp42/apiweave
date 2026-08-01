@@ -520,6 +520,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
       }
       selected={selected ?? false}
       nodeId={id}
+      presetNodeType="http-request"
       handleLeft={{ type: "target" }}
       handleRight={{ type: "source" }}
       collapsible={true}

@@ -13,6 +13,7 @@ export interface CanvasState {
   duplicateNode: (nodeId: string) => void;
   copyNode: (nodeId: string) => void;
   pasteNode: () => void;
+  savePresetFromNode: (nodeId: string) => void;
   clearPendingAction: () => void;
   setClipboardNode: (nodeData: ClipboardNodeData | null) => void;
   hydrateClipboard: () => void;

@@ -23,6 +23,7 @@ import {
   AssertionConfigPanel,
   DelayConfigPanel,
   MergeConfigPanel,
+  WorkflowCallConfigPanel,
   NodeModalShell,
 } from "./node-modal";
 import { normalizeHttpRequestConfig } from "./node-modal/httpRequestConfigCompat";
@@ -32,6 +33,7 @@ import type { NodeModalProps } from "../types/NodeModalProps";
 import type { NodeModalNodeType } from "../types/NodeModalNodeType";
 import type { NodeModalHTTPRequestConfig } from "../types/NodeModalHTTPRequestConfig";
 import type { NodeModalMergeConfig } from "../types/NodeModalMergeConfig";
+import type { NodeModalWorkflowCallConfig } from "../types/NodeModalWorkflowCallConfig";
 import type {
   NodeModalAssertionConfig,
   NodeModalAssertionTabKey,
@@ -99,7 +101,14 @@ function formatDelayBadge(duration: number | undefined): string {
   return `~${Number.isInteger(seconds) ? seconds.toFixed(0) : seconds.toFixed(1)}s`;
 }
 
-export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
+export function NodeModal({
+  open,
+  node,
+  onClose,
+  onSave,
+  workspaceId,
+  currentWorkflowId,
+}: NodeModalProps) {
   const workingDataRef = useRef<Record<string, unknown>>({ ...node.data });
   const nameLabelRef = useRef<HTMLElement | null>(null);
   const [activeTab, setActiveTab] = useState<NodeModalHttpTabKey>("params");
@@ -184,6 +193,7 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
     const assertionConfig = config as Partial<NodeModalAssertionConfig>;
     const delayConfig = config as Partial<NodeModalDelayConfig>;
     const mergeConfig = config as Partial<NodeModalMergeConfig>;
+    const workflowCallConfig = config as Partial<NodeModalWorkflowCallConfig>;
 
     return (
       <div className="flex w-full min-w-0 items-center justify-between gap-3">
@@ -216,6 +226,15 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
               <Badge variant="success" size="sm">
                 <GitMerge className="h-3 w-3" />
                 Strategy: {mergeConfig.mergeStrategy ?? "all"}
+              </Badge>
+            </Tooltip>
+          )}
+          {node.type === "workflow" && (
+            <Tooltip content="The workflow this node runs as a single step.">
+              <Badge variant={workflowCallConfig.targetWorkflowId ? "info" : "outline"} size="sm">
+                {workflowCallConfig.targetWorkflowName ??
+                  workflowCallConfig.targetWorkflowId ??
+                  "No target"}
               </Badge>
             </Tooltip>
           )}
@@ -272,6 +291,19 @@ export function NodeModal({ open, node, onClose, onSave }: NodeModalProps) {
           }
           workingDataRef={workingDataRef}
           activeTab={mergeActiveTab}
+        />
+      );
+    }
+
+    if (node.type === "workflow") {
+      return (
+        <WorkflowCallConfigPanel
+          initialConfig={
+            (node.data.config || {}) as Partial<NodeModalWorkflowCallConfig>
+          }
+          workingDataRef={workingDataRef}
+          workspaceId={workspaceId}
+          currentWorkflowId={currentWorkflowId}
         />
       );
     }

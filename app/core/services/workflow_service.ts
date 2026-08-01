@@ -31,6 +31,7 @@ export class WorkflowService {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_WORKFLOWS)
     this.assertCollectionInWorkspace(input.collectionId, workspaceId)
     this.assertEnvironmentInWorkspace(input.selectedEnvironmentId, workspaceId)
+    this.assertCallWorkflowTargetsInWorkspace(input.nodes, workspaceId, undefined)
     const created = this.workflows.create({ ...input, workspaceId })
     recordWorkflowUpsert(this.syncProvider, created)
     await this.syncProvider.push()
@@ -56,6 +57,9 @@ export class WorkflowService {
     if ("collectionId" in patch) this.assertCollectionInWorkspace(patch.collectionId ?? null, workspaceId)
     if ("selectedEnvironmentId" in patch) {
       this.assertEnvironmentInWorkspace(patch.selectedEnvironmentId ?? null, workspaceId)
+    }
+    if ("nodes" in patch) {
+      this.assertCallWorkflowTargetsInWorkspace(patch.nodes, workspaceId, workflowId)
     }
     const updated = this.workflows.update(workflowId, patch)
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
@@ -166,6 +170,34 @@ export class WorkflowService {
     const env = this.environments?.getById(environmentId)
     if (!env || env.workspaceId !== workspaceId) {
       throw new NotFoundError(`environment ${environmentId} not found`)
+    }
+  }
+
+  /**
+   * Reject a Call Workflow node whose target doesn't exist in `workspaceId`,
+   * or that targets the workflow currently being saved (direct self-call).
+   * This does NOT walk the transitive call graph across other workflows —
+   * indirect cycles (A calls B calls A) are caught instead by the runner's
+   * depth-bounded recursion guard (`executor.ts`, `MAX_CALL_DEPTH`), which
+   * also covers a cycle introduced later by editing a target workflow that
+   * already passed this check.
+   */
+  private assertCallWorkflowTargetsInWorkspace(
+    nodes: Workflow["nodes"] | undefined,
+    workspaceId: string,
+    selfWorkflowId: string | undefined,
+  ): void {
+    if (nodes === undefined) return
+    for (const node of nodes) {
+      if (node.type !== "workflow") continue
+      const targetWorkflowId = node.config?.targetWorkflowId
+      if (!targetWorkflowId) continue
+      if (selfWorkflowId !== undefined && targetWorkflowId === selfWorkflowId) {
+        throw new ValidationError(`node ${node.nodeId} cannot call its own workflow`)
+      }
+      if (!this.workflows.getByIdInWorkspace(targetWorkflowId, workspaceId)) {
+        throw new NotFoundError(`target workflow ${targetWorkflowId} not found`)
+      }
     }
   }
 }

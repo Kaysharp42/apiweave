@@ -3,6 +3,7 @@ import type { WorkspaceService } from "../../services/workspace_service"
 import type { CollectionService } from "../../services/collection_service"
 import type { WorkflowService } from "../../services/workflow_service"
 import type { EnvironmentService } from "../../services/environment_service"
+import type { NodePresetService } from "../../services/node_preset_service"
 import type { RunService } from "../../services/run_service"
 import type { SecretService } from "../../services/secret_service"
 import type { ProjectExportService } from "../../services/project_export_service"
@@ -24,6 +25,7 @@ export interface HandlerDeps {
   readonly workflowAnalysis: WorkflowAnalysisService
   readonly assertionAuthoring: AssertionAuthoringService
   readonly environments: EnvironmentService
+  readonly nodePresets: NodePresetService
   readonly runs: RunService
   readonly secrets: SecretService
   readonly projects: ProjectExportService

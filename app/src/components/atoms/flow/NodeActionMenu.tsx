@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BookmarkPlus,
   ChevronsDownUp,
   Copy,
   Files,
@@ -16,6 +17,7 @@ import type { NodeActionMenuProps } from "../../../types/NodeActionMenuProps";
 const ACTION_ICONS: Record<string, LucideIcon> = {
   duplicate: Files,
   copy: Copy,
+  "save-preset": BookmarkPlus,
   "toggle-expand": ChevronsDownUp,
 };
 
@@ -23,8 +25,10 @@ export function NodeActionMenu({
   nodeId,
   collapsible = false,
   isExpanded = false,
+  presetable = false,
   onDuplicate,
   onCopy,
+  onSaveAsPreset,
   onToggleExpand,
   triggerClassName = "",
 }: NodeActionMenuProps) {
@@ -34,8 +38,8 @@ export function NodeActionMenu({
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const menuItems = useMemo(
-    () => buildNodeActionMenuItems({ collapsible, isExpanded }),
-    [collapsible, isExpanded],
+    () => buildNodeActionMenuItems({ collapsible, isExpanded, presetable }),
+    [collapsible, isExpanded, presetable],
   );
 
   useEffect(() => {
@@ -97,6 +101,8 @@ export function NodeActionMenu({
       onDuplicate?.(nodeId);
     } else if (actionKey === "copy") {
       onCopy?.(nodeId);
+    } else if (actionKey === "save-preset") {
+      onSaveAsPreset?.(nodeId);
     } else if (actionKey === "toggle-expand") {
       onToggleExpand?.(getNextNodeExpandedState(isExpanded));
     }

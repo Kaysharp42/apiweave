@@ -31,9 +31,17 @@ A workflow is a graph of connected nodes that you build on the canvas. Workflows
 
 ## Node
 
-A node is a single-purpose step inside a workflow. Each node type does one job: call an API, assert a value, wait, merge parallel branches, or mark a flow boundary. You drag nodes from the palette onto the canvas and configure them in their own panel or modal.
+A node is a single-purpose step inside a workflow. Each node type does one job: call an API, assert a value, wait, merge parallel branches, run another workflow, or mark a flow boundary. You drag nodes from the palette onto the canvas and configure them in their own panel or modal.
 
-APIWeave ships six node types: **HTTP Request**, **Assertion**, **Delay**, **Merge**, **Start**, and **End**.
+APIWeave ships seven node types: **HTTP Request**, **Assertion**, **Delay**, **Merge**, **Call Workflow**, **Start**, and **End**.
+
+## Node Preset
+
+A node preset is a node's configuration saved under a name and reusable across every workflow in the workspace — a standard auth header block, a house assertion set. Presets live in the local database, so they survive a restart, unlike copy/paste (session-only) and Swagger-imported palette groups (window-only). See [Node Presets](../features/node-presets.md).
+
+## Base Environment
+
+An environment can extend a **base environment** in the same workspace, inheriting its plain variables and overriding only the ones that differ (`base → staging → staging-eu`). Secrets are never inherited; they keep resolving through the fixed `environment > workspace` scope chain. See [Environment Inheritance](../features/environments-and-secrets.md#environment-inheritance).
 
 ## Edge
 

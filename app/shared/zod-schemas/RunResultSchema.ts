@@ -23,5 +23,16 @@ export const RunResultSchema = z
     error: z.string().nullable().optional(),
     assertions: z.array(AssertionEvaluationSchema).nullable().optional(),
     extractorOutcomes: z.array(ExtractorOutcomeSchema).optional(),
+    // Call Workflow summary only — never the sub-workflow's own raw per-node
+    // results, which would bypass the top-level redaction pass in scheduler.ts.
+    subWorkflow: z
+      .object({
+        workflowId: z.string().min(1),
+        status: z.enum(["passed", "failed"]),
+        nodeCount: z.number().int().nonnegative(),
+        failedNodeCount: z.number().int().nonnegative(),
+        outputVariableNames: z.array(z.string()),
+      })
+      .optional(),
   })
   .strict()

@@ -8,6 +8,8 @@ export { EnvironmentRepository } from "./EnvironmentRepository"
 export type { EnvironmentCreate, EnvironmentUpdate } from "./EnvironmentRepository"
 export { CollectionRepository } from "./CollectionRepository"
 export type { CollectionCreate, CollectionUpdate } from "./CollectionRepository"
+export { NodePresetRepository } from "./NodePresetRepository"
+export type { NodePresetCreate, NodePresetUpdate } from "./NodePresetRepository"
 export { SecretRepository } from "./SecretRepository"
 export { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository, ErrForbiddenCloudPayload, ErrUnknownCloudKind }
   from "./CloudSyncRepository"

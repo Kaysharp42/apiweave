@@ -7,7 +7,7 @@ import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps } from "./executor"
+import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp } from "./safe_http"
 import { NotFoundError } from "../ipc/errors"
@@ -176,7 +176,8 @@ export class RunScheduler {
       }
 
       const selectedEnvironmentId = run.selectedEnvironmentId ?? workflow.selectedEnvironmentId ?? null
-      const environment = selectedEnvironmentId ? this.deps.environments?.getById(selectedEnvironmentId) : undefined
+      const environments = this.deps.environments
+      const environment = selectedEnvironmentId ? environments?.getById(selectedEnvironmentId) : undefined
       if (selectedEnvironmentId && (environment === undefined || environment.workspaceId !== run.workspaceId)) {
         throw new Error(`environment ${selectedEnvironmentId} not found for run ${runId}`)
       }
@@ -191,9 +192,25 @@ export class RunScheduler {
         rng: this.deps.rng,
         http: this.deps.http,
         functions: this.deps.functions,
-        ...(environment ? { environmentVariables: environment.variables as Record<string, unknown> } : {}),
+        ...(environment && environments
+          ? {
+              environmentVariables: environments.resolveEffectiveVariables(
+                environment.environmentId,
+              ) as Record<string, unknown>,
+            }
+          : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
         emitProgress: (event) => this.handleProgress(runId, event),
+        resolveWorkflow: (workflowId): ResolvedSubWorkflow | undefined => {
+          const target = this.deps.workflows.getByIdInWorkspace(workflowId, run.workspaceId)
+          if (!target) return undefined
+          return {
+            name: target.name,
+            nodes: target.nodes as unknown as WorkflowGraph["nodes"],
+            edges: target.edges as unknown as WorkflowGraph["edges"],
+            variables: target.variables as Record<string, unknown>,
+          }
+        },
       }
 
       const executor = new WorkflowExecutor(executorDeps)

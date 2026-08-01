@@ -15,6 +15,7 @@ const mutableFields = {
   name: z.string().min(1),
   description: z.string().nullable().optional(),
   swaggerDocUrl: z.string().nullable().optional(),
+  baseEnvironmentId: z.string().min(1).nullable().optional(),
   variables: z.record(z.string(), JsonValueSchema).optional(),
   isDefault: z.boolean().optional(),
 }

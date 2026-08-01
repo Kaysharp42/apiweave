@@ -34,10 +34,11 @@ Start with installation, build your first workflow, then read the concepts gloss
 
 Jump straight to the feature guide. Each one is self-contained: concepts, prerequisites, worked examples, and troubleshooting for that feature.
 
-- [Workflows and Nodes](features/workflows-and-nodes.md): canvas, the six node types, toolbar actions, resume after a failed run.
+- [Workflows and Nodes](features/workflows-and-nodes.md): canvas, the seven node types, toolbar actions, resume after a failed run.
 - [Variables and Extractors](features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
+- [Node Presets](features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Projects](features/projects.md): ordered groups of workflows, project runs, and `.awecollection` export and import (references only).
-- [Environments and Secrets](features/environments-and-secrets.md): local environments, the encrypted secret store, and the metadata-only display.
+- [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](features/mcp-integration.md): the local loopback HTTP bridge for AI agents on the same machine.
 - [Swagger and OpenAPI Import](features/swagger-import.md): turn a spec into reusable request templates.
 
@@ -59,13 +60,14 @@ Three docs that take a new user from zero to a working workflow. Read in order t
 
 ## Features
 
-The six feature guides cover everything you can do with APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
+The feature guides cover everything you can do with APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
 
 - [Features Index](features/README.md)
 - [Workflows and Nodes](features/workflows-and-nodes.md): build, edit, and run workflows on the canvas.
 - [Variables and Extractors](features/variables-and-extractors.md): pass data between steps with the four placeholder namespaces.
+- [Node Presets](features/node-presets.md): a saved, workspace-wide library of reusable node configurations.
 - [Projects](features/projects.md): group workflows into ordered runs and export them as `.awecollection` bundles.
-- [Environments and Secrets](features/environments-and-secrets.md): local environments, the encrypted secret store, and the metadata-only display.
+- [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](features/mcp-integration.md): the loopback HTTP bridge for local AI agents.
 - [Swagger and OpenAPI Import](features/swagger-import.md): import endpoints from a spec.
 

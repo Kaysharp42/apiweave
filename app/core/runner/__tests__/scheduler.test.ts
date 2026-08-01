@@ -131,6 +131,99 @@ describe("RunScheduler", () => {
       expect(JSON.stringify(persistedRun)).not.toContain("opaque-credential")
     })
 
+    it("resolves inherited variables from a base environment, with the child overriding on conflict", async () => {
+      const ws = seedWorkspace()
+      const base = environments.create({
+        workspaceId: ws,
+        name: "base",
+        variables: { BASE_URL: "http://169.254.169.254/base-only", REGION: "eu" },
+      })
+      const child = environments.create({
+        workspaceId: ws,
+        name: "staging",
+        baseEnvironmentId: base.environmentId,
+        variables: { BASE_URL: "http://169.254.169.254/child-override" },
+      })
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "inherit-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: { method: "GET", url: "{{env.BASE_URL}}?region={{env.REGION}}" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }).workflowId
+      const scheduler = makeScheduler()
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId, selectedEnvironmentId: child.environmentId })
+
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      const persistedRun = runs.getById(runId)
+      // BASE_URL comes from the child (override wins); REGION is inherited from the base
+      // untouched. The query string is redacted (SSRF-blocked target), same as the sibling
+      // test above — assert on the path, which still proves both resolutions happened.
+      expect(persistedRun?.results[0]).toMatchObject({
+        nodeId: "http_1",
+        request: { url: "http://169.254.169.254/child-override?<REDACTED>" },
+      })
+    })
+
+    it("runs a Call Workflow node against another workflow in the same workspace, end to end", async () => {
+      const ws = seedWorkspace()
+      const target = workflows.create({
+        workspaceId: ws,
+        name: "target-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "end" }],
+        variables: { issuedId: "sub-value" },
+      })
+      const callerId = workflows.create({
+        workspaceId: ws,
+        name: "caller-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "call1",
+            type: "workflow",
+            position: { x: 1, y: 0 },
+            config: { targetWorkflowId: target.workflowId, outputMapping: { callerId: "issuedId" } },
+          },
+          { nodeId: "end", type: "end", position: { x: 2, y: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "call1" },
+          { edgeId: "e2", source: "call1", target: "end" },
+        ],
+      }).workflowId
+
+      const scheduler = makeScheduler()
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId: callerId })
+
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      const persistedRun = runs.getById(runId)
+      expect(persistedRun?.status).toBe("completed")
+      expect(persistedRun?.variables).toMatchObject({ callerId: "sub-value" })
+      const callResult = persistedRun?.results.find((r) => r.nodeId === "call1")
+      expect(callResult?.status).toBe("passed")
+      expect(callResult?.subWorkflow).toMatchObject({
+        workflowId: target.workflowId,
+        status: "passed",
+        nodeCount: 2,
+        failedNodeCount: 0,
+        outputVariableNames: ["callerId"],
+      })
+    })
+
     it("resolves {{secrets.*}} through the runtime resolver and substitutes plaintext into the outgoing request", async () => {
       const ws = seedWorkspace()
       // The renderer seals against the scope public key (publicKeyFromSeed(seed));

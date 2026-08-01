@@ -721,4 +721,132 @@ describe("WorkflowExecutor", () => {
       expect(output.failureMessage).toMatch(/cycle detected/i)
     })
   })
+
+  describe("call workflow nodes", () => {
+    function callerWorkflow(config: Record<string, unknown>): WorkflowGraph {
+      return {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "call1", type: "workflow", config },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "call1" },
+          { edgeId: "e2", source: "call1", target: "end" },
+        ],
+      }
+    }
+
+    it("fails clearly when no target workflow is configured", async () => {
+      const executor = new WorkflowExecutor(makeDeps())
+      const output = await executor.executeWorkflow(callerWorkflow({}))
+      expect(output.status).toBe("failed")
+      expect(output.failedNodes).toContain("call1")
+    })
+
+    it("fails clearly when the runner has no resolveWorkflow dependency wired", async () => {
+      const executor = new WorkflowExecutor(makeDeps())
+      const output = await executor.executeWorkflow(callerWorkflow({ targetWorkflowId: "wf-1" }))
+      expect(output.status).toBe("failed")
+      expect(output.failedNodes).toContain("call1")
+    })
+
+    it("fails clearly when the target workflow cannot be resolved", async () => {
+      const executor = new WorkflowExecutor({ ...makeDeps(), resolveWorkflow: () => undefined })
+      const output = await executor.executeWorkflow(callerWorkflow({ targetWorkflowId: "missing" }))
+      expect(output.status).toBe("failed")
+      expect(output.failedNodes).toContain("call1")
+    })
+
+    it("maps caller variables in, runs the sub-workflow, and maps its outputs back out", async () => {
+      const executor = new WorkflowExecutor({
+        ...makeDeps(),
+        resolveWorkflow: (workflowId) =>
+          workflowId === "sub-1"
+            ? {
+                name: "Authenticate",
+                nodes: [
+                  { nodeId: "start", type: "start" },
+                  { nodeId: "end", type: "end" },
+                ],
+                edges: [{ edgeId: "e1", source: "start", target: "end" }],
+              }
+            : undefined,
+      })
+      const workflow: WorkflowGraph = {
+        ...callerWorkflow({
+          targetWorkflowId: "sub-1",
+          // Round-trips the caller's variable through the child and back so
+          // both mapping directions are exercised in one assertion: the
+          // input mapping resolves `{{variables.callerUser}}` in THIS
+          // executor's scope and seeds the child's `username` variable; the
+          // output mapping then reads that same value back off the child's
+          // `extractedVariables` under a different caller-side name.
+          inputMapping: { username: "{{variables.callerUser}}" },
+          outputMapping: { echoedUser: "username" },
+        }),
+        variables: { callerUser: "kay" },
+      }
+      const output = await executor.executeWorkflow(workflow)
+      expect(output.status).toBe("passed")
+      expect(output.extractedVariables["echoedUser"]).toBe("kay")
+      const result = output.results.find((r) => r.nodeId === "call1")
+      expect(result?.status).toBe("passed")
+      expect(result?.subWorkflow).toMatchObject({
+        workflowId: "sub-1",
+        status: "passed",
+        nodeCount: 2,
+        failedNodeCount: 0,
+        outputVariableNames: ["echoedUser"],
+      })
+      // Raw per-node sub-workflow results must never be embedded on the
+      // caller's node result — only the summary above (see the redaction-gap
+      // rationale on `NodeResult.subWorkflow`).
+      expect(result).not.toHaveProperty("subWorkflow.results")
+    })
+
+    it("propagates a sub-workflow's own extracted variable through outputMapping", async () => {
+      const executor = new WorkflowExecutor({
+        ...makeDeps(),
+        resolveWorkflow: () => ({
+          name: "Sub",
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [{ edgeId: "e1", source: "start", target: "end" }],
+          variables: { issuedToken: "sub-token-value" },
+        }),
+      })
+      const output = await executor.executeWorkflow(
+        callerWorkflow({
+          targetWorkflowId: "sub-1",
+          outputMapping: { callerToken: "issuedToken" },
+        }),
+      )
+      expect(output.status).toBe("passed")
+      expect(output.extractedVariables["callerToken"]).toBe("sub-token-value")
+    })
+
+    it("fails instead of hanging when a chain of Call Workflow nodes cycles back on itself", async () => {
+      const executor = new WorkflowExecutor({
+        ...makeDeps(),
+        resolveWorkflow: () => ({
+          name: "Self-caller",
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "call1", type: "workflow", config: { targetWorkflowId: "self" } },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "call1" },
+            { edgeId: "e2", source: "call1", target: "end" },
+          ],
+        }),
+      })
+      const output = await executor.executeWorkflow(callerWorkflow({ targetWorkflowId: "self" }))
+      expect(output.status).toBe("failed")
+      expect(output.failedNodes).toContain("call1")
+    })
+  })
 })

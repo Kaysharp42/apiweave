@@ -1,4 +1,4 @@
-import { useState, useMemo, type DragEvent } from "react";
+import { useEffect, useState, useMemo, type DragEvent } from "react";
 import { Popover, Transition } from "@headlessui/react";
 import {
   X,
@@ -8,14 +8,21 @@ import {
   Globe,
   GitBranch,
   CheckCircle,
+  Bookmark,
   Package,
+  Pencil,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { usePalette } from "../contexts/PaletteContext";
+import useNodePresetStore from "../stores/NodePresetStore";
 import {
   getNextNodeFilterValue,
   shouldClearNodeFilter,
 } from "../utils/nodeFilterBehavior";
+import { presetDragTemplate } from "../utils/nodePresets";
+import { NODE_MODAL_TYPE_LABELS } from "../utils/nodeModalMeta";
 import type { AddNodesPanelProps } from "../types";
 
 const methodBadge: Record<string, string> = {
@@ -44,7 +51,6 @@ interface PaletteItem {
   cookies?: string;
   body?: string;
   timeout?: number;
-  workflowId?: string;
   openapiMeta?: Record<string, unknown> | null;
 }
 
@@ -59,8 +65,9 @@ interface NodeTemplate {
   label: string;
   description: string;
   method?: string;
-  workflowId?: string;
   template?: Record<string, unknown>;
+  /** Set only on saved-preset entries — enables the per-item delete affordance. */
+  presetId?: string;
 }
 
 interface NodeSection {
@@ -115,6 +122,11 @@ const nodeTemplates: { category: string; nodes: NodeTemplate[] }[] = [
         description: "Add a delay before next step",
       },
       { type: "merge", label: "Merge", description: "Merge parallel branches" },
+      {
+        type: "workflow",
+        label: "Call Workflow",
+        description: "Run another workflow as a step",
+      },
       { type: "end", label: "End", description: "Mark the end of workflow" },
     ],
   },
@@ -134,9 +146,45 @@ export default function AddNodesPanel({
   isModalOpen = false,
   showVariablesPanel = false,
   onShowVariablesPanel = () => {},
+  workspaceId = "",
 }: AddNodesPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const { importedGroups } = usePalette();
+  const presets = useNodePresetStore((s) => s.presets);
+  const loadedWorkspaceId = useNodePresetStore((s) => s.loadedWorkspaceId);
+
+  useEffect(() => {
+    if (!workspaceId || loadedWorkspaceId === workspaceId) return;
+    void useNodePresetStore.getState().fetchPresets(workspaceId);
+  }, [workspaceId, loadedWorkspaceId]);
+
+  const renamePreset = (presetId: string, name: string, previous: string) => {
+    void useNodePresetStore
+      .getState()
+      .renamePreset(workspaceId, presetId, name)
+      .then(() => toast.success(`Renamed preset to "${name}"`))
+      .catch((err: unknown) =>
+        toast.error(
+          err instanceof Error
+            ? `Could not rename "${previous}": ${err.message}`
+            : `Could not rename "${previous}"`,
+        ),
+      );
+  };
+
+  const deletePreset = (presetId: string, name: string) => {
+    void useNodePresetStore
+      .getState()
+      .deletePreset(workspaceId, presetId)
+      .then(() => toast.success(`Deleted preset "${name}"`))
+      .catch((err: unknown) =>
+        toast.error(
+          err instanceof Error
+            ? `Could not delete preset: ${err.message}`
+            : "Could not delete preset",
+        ),
+      );
+  };
 
   const allSections = useMemo<NodeSection[]>(() => {
     const sections: NodeSection[] = nodeTemplates.map((cat) => ({
@@ -146,47 +194,56 @@ export default function AddNodesPanel({
       nodes: cat.nodes as NodeTemplate[],
     }));
 
+    // Saved presets: persisted and workspace-wide, unlike the ephemeral
+    // Swagger-imported groups below. Only shown once the workspace's presets
+    // have actually loaded and there is at least one.
+    if (workspaceId && loadedWorkspaceId === workspaceId && presets.length > 0) {
+      sections.push({
+        key: "saved-presets",
+        title: "Saved Presets",
+        icon: Bookmark,
+        nodes: presets.map((preset): NodeTemplate => {
+          const template = presetDragTemplate(preset);
+          const method = template.config["method"];
+          return {
+            type: preset.nodeType,
+            label: preset.name,
+            description: NODE_MODAL_TYPE_LABELS[preset.nodeType] ?? "Node",
+            ...(preset.nodeType === "http-request" && typeof method === "string"
+              ? { method }
+              : {}),
+            template,
+            presetId: preset.presetId,
+          };
+        }),
+      });
+    }
+
     importedGroups.forEach((group: ImportedGroup) => {
       const items = (group.items ?? []) as PaletteItem[];
-      const importedNodes: NodeTemplate[] = items.map((item) =>
-        item.method === "WORKFLOW"
-          ? {
-              type: "workflow",
-              label: item.label ?? "Workflow",
-              description: "Sub-workflow",
-              method: "WORKFLOW",
-              workflowId: item.workflowId,
-              template: {
-                type: "workflow",
-                label: item.label ?? "Workflow",
-                config: {
-                  workflowId: item.workflowId,
-                  workflowName: item.label,
-                },
-              },
-            }
-          : {
-              type: "http-request",
-              label: item.label ?? item.url ?? "Request",
-              description: item.url ?? "",
+      const importedNodes: NodeTemplate[] = items.map(
+        (item): NodeTemplate => ({
+          type: "http-request",
+          label: item.label ?? item.url ?? "Request",
+          description: item.url ?? "",
+          method: item.method ?? "GET",
+          template: {
+            type: "http-request",
+            label: item.label ?? item.url ?? "Request",
+            config: {
               method: item.method ?? "GET",
-              template: {
-                type: "http-request",
-                label: item.label ?? item.url ?? "Request",
-                config: {
-                  method: item.method ?? "GET",
-                  url: item.url ?? "",
-                  queryParams: item.queryParams ?? "",
-                  pathVariables: item.pathVariables ?? "",
-                  headers: item.headers ?? "",
-                  cookies: item.cookies ?? "",
-                  body: item.body ?? "",
-                  timeout: item.timeout ?? 30,
-                  openapiMeta: item.openapiMeta ?? null,
-                },
-              },
+              url: item.url ?? "",
+              queryParams: item.queryParams ?? "",
+              pathVariables: item.pathVariables ?? "",
+              headers: item.headers ?? "",
+              cookies: item.cookies ?? "",
+              body: item.body ?? "",
+              timeout: item.timeout ?? 30,
+              openapiMeta: item.openapiMeta ?? null,
             },
-      ) as NodeTemplate[];
+          },
+        }),
+      );
       sections.push({
         key: `imported-${group.id}`,
         title: group.title,
@@ -196,7 +253,7 @@ export default function AddNodesPanel({
     });
 
     return sections;
-  }, [importedGroups]);
+  }, [importedGroups, presets, loadedWorkspaceId, workspaceId]);
 
   const filteredSections = useMemo(() => {
     if (!searchQuery.trim()) return allSections;
@@ -215,7 +272,7 @@ export default function AddNodesPanel({
 
   const onDragStart = (event: DragEvent, node: NodeTemplate) => {
     event.dataTransfer.setData("application/reactflow", node.type);
-    if (node.method && node.method !== "WORKFLOW") {
+    if (node.method) {
       event.dataTransfer.setData("application/reactflow-method", node.method);
     }
     if (node.template) {
@@ -342,6 +399,8 @@ export default function AddNodesPanel({
                           onDragStart(e, node);
                           setTimeout(() => close(), 100);
                         }}
+                        onRenamePreset={renamePreset}
+                        onDeletePreset={deletePreset}
                         defaultOpen={!searchQuery}
                       />
                     ))
@@ -361,6 +420,8 @@ interface NodeSectionProps {
   icon: LucideIcon;
   nodes: NodeTemplate[];
   onDragStart: (event: DragEvent, node: NodeTemplate) => void;
+  onRenamePreset?: (presetId: string, name: string, previous: string) => void;
+  onDeletePreset?: (presetId: string, name: string) => void;
   defaultOpen: boolean;
 }
 
@@ -369,8 +430,20 @@ function NodeSection({
   icon: Icon,
   nodes,
   onDragStart,
+  onRenamePreset,
+  onDeletePreset,
   defaultOpen,
 }: NodeSectionProps) {
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+
+  const commitRename = (presetId: string, previous: string) => {
+    const trimmed = draftName.trim();
+    setEditingPresetId(null);
+    if (!trimmed || trimmed === previous) return;
+    onRenamePreset?.(presetId, trimmed, previous);
+  };
+
   return (
     <div className="collapse collapse-arrow rounded-none border-b border-border dark:border-border-dark last:border-b-0">
       <input
@@ -389,26 +462,78 @@ function NodeSection({
         <div className="space-y-0.5">
           {nodes.map((node) => (
             <div
-              key={`${node.type}-${node.label}`}
-              draggable
+              key={node.presetId ?? `${node.type}-${node.label}`}
+              draggable={node.presetId !== editingPresetId}
               onDragStart={(e) => onDragStart(e, node)}
               className="group flex flex-col gap-0.5 px-2.5 py-1.5 rounded-sm cursor-grab border border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay active:cursor-grabbing transition-colors motion-reduce:transition-none"
               title={`Drag ${node.label} to canvas`}
             >
               <div className="flex items-center gap-1.5 text-sm text-text-primary dark:text-text-primary-dark">
-                {node.method && node.method !== "WORKFLOW" && (
+                {node.method && (
                   <span
                     className={`inline-block px-1.5 py-0.5 text-[10px] font-mono border rounded-sm ${methodBadge[node.method] ?? "text-primary bg-primary/10 border-primary/30"}`}
                   >
                     {node.method}
                   </span>
                 )}
-                {node.method === "WORKFLOW" && (
-                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded-sm">
-                    WF
+                {node.presetId === editingPresetId ? (
+                  <input
+                    // The row turns into this input on an explicit rename
+                    // click, so focus has to follow it — otherwise the field is
+                    // unreachable by keyboard.
+                    autoFocus
+                    type="text"
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Escape must not bubble: the palette lives in a Popover
+                      // that closes on Escape, which would unmount the row
+                      // mid-edit.
+                      e.stopPropagation();
+                      if (e.key === "Enter") {
+                        commitRename(node.presetId!, node.label);
+                      } else if (e.key === "Escape") {
+                        setEditingPresetId(null);
+                      }
+                    }}
+                    // Blur cancels rather than saves: the popover closes on any
+                    // outside click, so a save-on-blur would write on teardown.
+                    onBlur={() => setEditingPresetId(null)}
+                    aria-label={`New name for ${node.label}`}
+                    className="min-w-0 flex-1 rounded-sm border border-border bg-surface-raised px-1.5 py-0.5 text-sm text-text-primary transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
+                  />
+                ) : (
+                  <span className="font-medium truncate">{node.label}</span>
+                )}
+                {node.presetId && node.presetId !== editingPresetId && (
+                  <span className="ml-auto flex flex-shrink-0 items-center gap-0.5">
+                    {onRenamePreset && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDraftName(node.label);
+                          setEditingPresetId(node.presetId!);
+                        }}
+                        className="rounded-sm p-0.5 text-text-muted opacity-0 transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
+                        title={`Rename preset "${node.label}"`}
+                        aria-label={`Rename preset ${node.label}`}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onDeletePreset && (
+                      <button
+                        type="button"
+                        onClick={() => onDeletePreset(node.presetId!, node.label)}
+                        className="rounded-sm p-0.5 text-text-muted opacity-0 transition-colors hover:bg-status-error/10 hover:text-status-error focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark"
+                        title={`Delete preset "${node.label}"`}
+                        aria-label={`Delete preset ${node.label}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </span>
                 )}
-                <span className="font-medium truncate">{node.label}</span>
               </div>
               {node.description && (
                 <span className="text-xs text-text-muted dark:text-text-muted-dark truncate">

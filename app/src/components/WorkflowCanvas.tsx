@@ -32,12 +32,14 @@ import DelayNode from "./nodes/DelayNode";
 import StartNode from "./nodes/StartNode";
 import EndNode from "./nodes/EndNode";
 import MergeNode from "./nodes/MergeNode";
+import CallWorkflowNode from "./nodes/CallWorkflowNode";
 import CustomEdge from "./CustomEdge";
 import AddNodesPanel from "./AddNodesPanel";
 import NodeModal from "./NodeModal";
 import HistoryModal from "./HistoryModal";
 import ImportToNodesPanel from "./ImportToNodesPanel";
 import WorkflowJsonEditor from "./WorkflowJsonEditor";
+import { PromptDialog } from "./molecules/PromptDialog";
 import { RunTimelinePanel } from "./organisms/RunTimelinePanel";
 import { AppContext } from "../App";
 import { useWorkflow } from "../contexts/WorkflowContext";
@@ -47,6 +49,7 @@ import useTabStore from "../stores/TabStore";
 import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
 import { computeProvenance } from "../utils/variableProvenance";
 import useCanvasStore from "../stores/CanvasStore";
+import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasDrop from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
@@ -64,6 +67,7 @@ import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
 import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
 import { workflowDetailUrl } from "../utils/apiweaveClient";
 import { autoLayout } from "../utils/autoLayout";
+import { asPresetNodeType } from "../utils/nodePresets";
 import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
@@ -88,6 +92,7 @@ const nodeTypes: NodeTypes = {
   start: StartNode as NodeTypes[string],
   end: EndNode as NodeTypes[string],
   merge: MergeNode as NodeTypes[string],
+  workflow: CallWorkflowNode as NodeTypes[string],
 };
 
 const edgeTypes: EdgeTypes = {
@@ -204,6 +209,11 @@ export function WorkflowCanvas({
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
+  // The node a pending "Save as preset" action is naming, held here (not in
+  // CanvasStore) because only the canvas can resolve a nodeId to its live
+  // type + config.
+  const [presetSource, setPresetSource] =
+    useState<Node<WorkflowCanvasNodeData> | null>(null);
   const environments = useEnvironmentStore((s) => s.environments);
   const selectedEnvMap = useEnvironmentStore(
     (s) => s.selectedEnvironmentByWorkflow,
@@ -406,6 +416,52 @@ export function WorkflowCanvas({
         void reloadWorkflowFromServer();
       });
   }, [reloadWorkflowFromServer, workflowId]);
+
+  // "Save as preset" reaches the canvas as a CanvasStore pending action (the
+  // same channel duplicate/copy use, since a node component can't see the
+  // graph). The canvas resolves the id to a live node and opens the name prompt;
+  // the IPC write happens on submit.
+  useEffect(() => {
+    return useCanvasStore.getState().registerPendingActionHandler((action) => {
+      if (action.type !== "save-preset" || !action.nodeId) return;
+      const node = nodesRef.current.find((n) => n.id === action.nodeId);
+      if (!node || asPresetNodeType(node.type) === null) {
+        toast.error("This node type can't be saved as a preset");
+        return;
+      }
+      setPresetSource(node);
+    });
+  }, []);
+
+  const handleSavePreset = useCallback(
+    (name: string) => {
+      const node = presetSource;
+      const nodeType = asPresetNodeType(node?.type);
+      setPresetSource(null);
+      if (!node || nodeType === null) return;
+      if (!scope.workspaceId) {
+        toast.error("No workspace selected");
+        return;
+      }
+      void useNodePresetStore
+        .getState()
+        .savePreset({
+          workspaceId: scope.workspaceId,
+          name,
+          nodeType,
+          config: (node.data.config as Record<string, unknown>) ?? {},
+        })
+        .then(() => toast.success(`Saved preset "${name}"`))
+        .catch((err: unknown) =>
+          toast.error(
+            err instanceof Error
+              ? `Could not save preset: ${err.message}`
+              : "Could not save preset",
+          ),
+        );
+    },
+    [presetSource, scope.workspaceId],
+  );
 
   // ── Node change handlers ────────────────────────────────────────────
 
@@ -957,6 +1013,21 @@ export function WorkflowCanvas({
         isModalOpen={!!modalNode}
         showVariablesPanel={showVariablesPanel}
         onShowVariablesPanel={onShowVariablesPanel}
+        workspaceId={scope.workspaceId ?? ""}
+      />
+
+      {/* Keyed by node id so each open re-mounts with that node's label
+          prefilled — PromptDialog seeds its input from `defaultValue` once. */}
+      <PromptDialog
+        key={`preset-${presetSource?.id ?? "none"}`}
+        open={presetSource !== null}
+        onClose={() => setPresetSource(null)}
+        onSubmit={handleSavePreset}
+        title="Save as preset"
+        message="Adds this node's configuration to the workspace preset library, ready to drag onto any canvas."
+        placeholder="e.g. Standard auth headers"
+        defaultValue={String(presetSource?.data.label ?? "")}
+        submitLabel="Save preset"
       />
 
       {modalNode && (
@@ -971,7 +1042,8 @@ export function WorkflowCanvas({
               | "delay"
               | "merge"
               | "start"
-              | "end",
+              | "end"
+              | "workflow",
             data: {
               ...modalNode.data,
               label: String(modalNode.data.label || ""),
@@ -982,6 +1054,8 @@ export function WorkflowCanvas({
           onSave={(node) =>
             handleModalSave(node as Node<WorkflowCanvasNodeData>)
           }
+          workspaceId={scope.workspaceId ?? ""}
+          currentWorkflowId={workflowId ?? ""}
         />
       )}
 

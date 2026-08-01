@@ -1,1 +1,5 @@
-export type CanvasActionType = "duplicate" | "copy" | "paste";
+export type CanvasActionType =
+  | "duplicate"
+  | "copy"
+  | "paste"
+  | "save-preset";

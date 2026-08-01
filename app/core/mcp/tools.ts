@@ -56,7 +56,7 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("assertions", "suggest", "read", "Suggest deterministic assertions from one stored HTTP result without changing the workflow.", { name: "assertion_suggest" }),
   tool("assertions", "validate", "read", "Validate and preview canonical assertion rules without changing the workflow.", { name: "assertion_validate" }),
   tool("assertions", "apply", "write", "Apply validated rules to one assertion node when the workflow revision still matches.", { name: "assertion_apply" }),
-  tool("workflows", "create", "write", "Create a workflow from nodes, edges and variables."),
+  tool("workflows", "create", "write", "Create a workflow from nodes, edges and variables. A `workflow` node runs another workflow in the same workspace as one step."),
   tool("workflows", "update", "write", "Update a workflow's graph, variables or metadata.", { idempotent: true }),
   tool("workflows", "delete", "write", "Delete a workflow.", { destructive: true, idempotent: true }),
   tool("workflows", "attachToCollection", "write", "Attach or detach a workflow to a collection.", { idempotent: true }),
@@ -75,11 +75,21 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   // Environments
   tool("environments", "list", "read", "List environments in a workspace."),
   tool("environments", "get", "read", "Get an environment by id."),
-  tool("environments", "create", "write", "Create an environment."),
-  tool("environments", "update", "write", "Update an environment.", { idempotent: true }),
+  tool("environments", "create", "write", "Create an environment. Set `baseEnvironmentId` to inherit plain variables from another environment in the same workspace."),
+  tool("environments", "update", "write", "Update an environment, including its `baseEnvironmentId` (null clears inheritance).", { idempotent: true }),
   tool("environments", "delete", "write", "Delete an environment.", { destructive: true, idempotent: true }),
   tool("environments", "setVariable", "write", "Set a variable on an environment.", { idempotent: true }),
   tool("environments", "deleteVariable", "write", "Delete a variable from an environment.", { destructive: true, idempotent: true }),
+
+  // Node presets — the workspace's reusable node configurations. Reads come back
+  // through the same blanket redaction every other MCP read gets, so a preset
+  // built from a real request reports `<SECRET>` for its body, URL and headers:
+  // an agent can catalogue and author presets, but cannot re-emit a redacted one
+  // into a workflow. Dragging a preset onto a canvas stays a desktop action.
+  tool("nodePresets", "list", "read", "List a workspace's saved node presets (reusable node configurations). Config values are redacted like any other MCP read."),
+  tool("nodePresets", "create", "write", "Save a reusable node preset in a workspace from a name, node type and config."),
+  tool("nodePresets", "update", "write", "Update a saved node preset's name, node type or config.", { idempotent: true }),
+  tool("nodePresets", "delete", "write", "Delete a saved node preset.", { destructive: true, idempotent: true }),
 
   // Runs
   tool("runs", "create", "write", "Trigger a workflow run and return a metadata-only run snapshot.", { openWorld: true, resultProjection: "run" }),

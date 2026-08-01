@@ -6,6 +6,7 @@ export { NodeOutputPanel } from "./NodeOutputPanel";
 export { AssertionConfigPanel } from "./AssertionConfigPanel";
 export { DelayConfigPanel } from "./DelayConfigPanel";
 export { MergeConfigPanel } from "./MergeConfigPanel";
+export { WorkflowCallConfigPanel } from "./WorkflowCallConfigPanel";
 export {
   NodeModalShell,
   NodeModalRequestBar,

@@ -11,6 +11,7 @@ import {
   Circle,
   Square,
   BadgeCheck,
+  Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -22,6 +23,7 @@ export const getNodeIcon = (type: NodeModalNodeType): LucideIcon => {
     merge: GitMerge,
     start: Circle,
     end: Square,
+    workflow: Workflow,
   };
   return iconMap[type] ?? Circle;
 };

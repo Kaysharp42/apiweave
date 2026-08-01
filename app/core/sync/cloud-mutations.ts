@@ -109,6 +109,12 @@ export function recordEnvironmentUpsert(syncProvider: SyncProvider, environment:
     kind: RecordKind.ENVIRONMENT,
     recordId: environment.environmentId,
     expectedRev: expectedRevForUpsert(environment.rev),
+    // `baseEnvironmentId` (environment inheritance) is deliberately ABSENT from
+    // this payload: the Cloud schema has no such field yet, so pushing it would
+    // fail validation server-side. It stays local until a follow-up pass adds
+    // it to `apiweave-proto` + `apiweave-cloud`. Until then a synced
+    // environment loses its inheritance link on the receiving machine — the
+    // same open question `.awecollection` import has for dangling references.
     payload: {
       environmentId: environment.environmentId,
       workspaceId: environment.workspaceId,

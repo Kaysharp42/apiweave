@@ -4,6 +4,7 @@ import type { InitializedDatabase } from "../../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   RunRepository,
   SecretRepository,
   WorkflowRepository,
@@ -16,6 +17,7 @@ let workflows: WorkflowRepository
 let runs: RunRepository
 let environments: EnvironmentRepository
 let collections: CollectionRepository
+let presets: NodePresetRepository
 let secrets: SecretRepository
 
 beforeEach(() => {
@@ -25,6 +27,7 @@ beforeEach(() => {
   runs = new RunRepository(db.kvStore)
   environments = new EnvironmentRepository(db.kvStore)
   collections = new CollectionRepository(db.kvStore)
+  presets = new NodePresetRepository(db.kvStore)
   secrets = new SecretRepository(db.kvStore)
 })
 
@@ -277,6 +280,112 @@ describe("EnvironmentRepository", () => {
 
     const cleared = environments.deleteVariable(env.environmentId, "host")
     expect(cleared?.variables).toEqual({})
+  })
+
+  it("resolves inherited variables base-first, override-last, across a multi-level chain", () => {
+    const workspaceId = seedWorkspace()
+    const base = environments.create({ workspaceId, name: "base", variables: { host: "api.base", region: "eu" } })
+    const mid = environments.create({
+      workspaceId,
+      name: "mid",
+      baseEnvironmentId: base.environmentId,
+      variables: { host: "api.mid" },
+    })
+    const leaf = environments.create({
+      workspaceId,
+      name: "leaf",
+      baseEnvironmentId: mid.environmentId,
+      variables: { token: "leaf-token" },
+    })
+
+    expect(environments.resolveEffectiveVariables(leaf.environmentId)).toEqual({
+      host: "api.mid",
+      region: "eu",
+      token: "leaf-token",
+    })
+    expect(environments.resolveEffectiveVariables(base.environmentId)).toEqual(base.variables)
+  })
+
+  it("stops walking the base chain instead of looping when a cycle is present on disk", () => {
+    const workspaceId = seedWorkspace()
+    const a = environments.create({ workspaceId, name: "a", variables: { k: "a" } })
+    const b = environments.create({ workspaceId, name: "b", baseEnvironmentId: a.environmentId, variables: { k: "b" } })
+    // Force a cycle directly through the repository, bypassing service-level validation,
+    // to prove the depth-bounded walk in resolveEffectiveVariables can't hang or overflow.
+    environments.update(a.environmentId, { baseEnvironmentId: b.environmentId })
+
+    expect(() => environments.resolveEffectiveVariables(a.environmentId)).not.toThrow()
+  })
+})
+
+describe("NodePresetRepository", () => {
+  it("round-trips a preset by id and lists a workspace's presets by name", () => {
+    const workspaceId = seedWorkspace()
+    const auth = presets.create({
+      workspaceId,
+      name: "Standard auth headers",
+      nodeType: "http-request",
+      config: { headers: [{ key: "Authorization", value: "Bearer {{secrets.TOKEN}}" }] },
+    })
+    expect(auth).toMatchObject({ workspaceId, name: "Standard auth headers", nodeType: "http-request", rev: 1 })
+    expect(presets.getById(auth.presetId)?.config).toEqual({
+      headers: [{ key: "Authorization", value: "Bearer {{secrets.TOKEN}}" }],
+    })
+
+    presets.create({ workspaceId, name: "Always wait", nodeType: "delay", config: { duration: 500 } })
+    expect(presets.listByWorkspace(workspaceId).items.map((p) => p.name)).toEqual([
+      "Always wait",
+      "Standard auth headers",
+    ])
+  })
+
+  it("scopes listByWorkspace to one workspace", () => {
+    const wsA = seedWorkspace()
+    const wsB = seedWorkspace()
+    presets.create({ workspaceId: wsA, name: "A", nodeType: "delay" })
+    presets.create({ workspaceId: wsB, name: "B", nodeType: "delay" })
+
+    expect(presets.listByWorkspace(wsA).items.map((p) => p.name)).toEqual(["A"])
+    expect(presets.listByWorkspace(wsB).total).toBe(1)
+  })
+
+  it("canonicalises a legacy string headers config on write, like the workflow graph does", () => {
+    const workspaceId = seedWorkspace()
+    const created = presets.create({
+      workspaceId,
+      name: "Legacy",
+      nodeType: "http-request",
+      // The pre-canonical shape the importers and older canvas paths produced.
+      config: { headers: "Accept: application/json\nX-Trace: 1" } as never,
+    })
+
+    expect(created.config).toEqual({
+      headers: [
+        { key: "Accept", value: "application/json" },
+        { key: "X-Trace", value: "1" },
+      ],
+    })
+  })
+
+  it("updates name/config and bumps rev; returns undefined for unknown ids", () => {
+    const workspaceId = seedWorkspace()
+    const created = presets.create({ workspaceId, name: "Wait", nodeType: "delay", config: { duration: 100 } })
+
+    const updated = presets.update(created.presetId, { name: "Wait longer", config: { duration: 2000 } })
+    expect(updated).toMatchObject({ name: "Wait longer", config: { duration: 2000 } })
+    expect(updated?.rev).toBeGreaterThan(created.rev)
+
+    expect(presets.update("nope", { name: "x" })).toBeUndefined()
+    expect(presets.delete("nope")).toBe(false)
+    expect(presets.delete(created.presetId)).toBe(true)
+    expect(presets.getById(created.presetId)).toBeUndefined()
+  })
+
+  it("is deleted with its workspace (FK cascade)", () => {
+    const workspaceId = seedWorkspace()
+    const created = presets.create({ workspaceId, name: "Doomed", nodeType: "delay" })
+    workspaces.delete(workspaceId)
+    expect(presets.getById(created.presetId)).toBeUndefined()
   })
 })
 

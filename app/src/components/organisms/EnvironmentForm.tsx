@@ -8,12 +8,17 @@ import { TextArea } from "../atoms/TextArea";
 import { FormField } from "../molecules/FormField";
 import { Card } from "../molecules/Card";
 import SecretsPanel from "../SecretsPanel";
+import {
+  getValidBaseEnvironmentOptions,
+  resolveInheritedVariables,
+} from "../../utils/environmentInheritance";
 import type { EnvironmentFormProps, EnvironmentFormData } from "../../types";
 
 const EMPTY_FORM: EnvironmentFormData = {
   name: "",
   description: "",
   swaggerDocUrl: "",
+  baseEnvironmentId: null,
   variables: {},
   allowedWorkspaceIds: [],
 };
@@ -25,6 +30,7 @@ export function EnvironmentForm({
   submitting = false,
   availableWorkspaces = [],
   showAllowedWorkspaces = false,
+  availableEnvironments = [],
   className = "",
 }: EnvironmentFormProps) {
   const [form, setForm] = useState<EnvironmentFormData>(EMPTY_FORM);
@@ -39,6 +45,7 @@ export function EnvironmentForm({
         name: environment.name,
         description: environment.description ?? "",
         swaggerDocUrl: environment.swaggerDocUrl ?? "",
+        baseEnvironmentId: environment.baseEnvironmentId ?? null,
         variables: { ...environment.variables },
         allowedWorkspaceIds: environment.allowedWorkspaceIds ?? [],
       });
@@ -95,6 +102,15 @@ export function EnvironmentForm({
     });
   }
 
+  const baseOptions = getValidBaseEnvironmentOptions(
+    environment?.environmentId,
+    availableEnvironments,
+  );
+  const inheritedGroups = resolveInheritedVariables(
+    form.baseEnvironmentId,
+    availableEnvironments,
+  );
+
   function validate(): boolean {
     if (!form.name.trim()) {
       setNameError("Name is required");
@@ -146,6 +162,67 @@ export function EnvironmentForm({
                 placeholder="https://api.example.com/openapi.json"
               />
             </FormField>
+
+            <FormField
+              label="Base Environment"
+              hint="Inherit variables from another environment; your own variables override matching names"
+            >
+              <select
+                aria-label="Base Environment"
+                value={form.baseEnvironmentId ?? ""}
+                onChange={(e) =>
+                  updateField("baseEnvironmentId", e.target.value || null)
+                }
+                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+              >
+                <option value="">None</option>
+                {baseOptions.map((opt) => (
+                  <option key={opt.environmentId} value={opt.environmentId}>
+                    {opt.name}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+
+            {inheritedGroups.length > 0 && (
+              <div className="space-y-2">
+                <div className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
+                  Inherited Variables
+                </div>
+                {inheritedGroups.map(({ source, variables }) => (
+                  <div key={source.environmentId} className="space-y-1">
+                    <p className="text-xs text-text-muted dark:text-text-muted-dark">
+                      from {source.name}
+                    </p>
+                    {Object.entries(variables).map(([key, value]) => (
+                      <div
+                        key={key}
+                        className={`flex items-center gap-2 p-2 rounded border border-dashed border-border dark:border-border-dark ${
+                          Object.prototype.hasOwnProperty.call(form.variables, key)
+                            ? "opacity-40"
+                            : ""
+                        }`}
+                      >
+                        <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
+                          {key}
+                        </span>
+                        <span className="text-text-muted dark:text-text-muted-dark">
+                          =
+                        </span>
+                        <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark flex-1 truncate">
+                          {value}
+                        </span>
+                        {Object.prototype.hasOwnProperty.call(form.variables, key) && (
+                          <span className="text-xs text-text-muted dark:text-text-muted-dark flex-shrink-0">
+                            overridden below
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div>
               <div className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">

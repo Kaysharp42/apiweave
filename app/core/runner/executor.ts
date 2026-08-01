@@ -27,7 +27,7 @@ import type { JsonValueType } from "@shared/types/JsonValueType"
 
 export interface WorkflowNode {
   readonly nodeId: string
-  readonly type: "http-request" | "assertion" | "delay" | "merge" | "start" | "end"
+  readonly type: "http-request" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
   readonly label?: string | null
   readonly config?: Record<string, unknown>
 }
@@ -71,6 +71,14 @@ interface FileUploadLike {
   readonly mimeType?: string
 }
 
+/** A target workflow as seen by a Call Workflow node — structural fields only, no run history. */
+export interface ResolvedSubWorkflow {
+  readonly name?: string | null
+  readonly nodes: readonly WorkflowNode[]
+  readonly edges: readonly WorkflowEdge[]
+  readonly variables?: Readonly<Record<string, unknown>>
+}
+
 export interface ExecutorDeps {
   readonly clock: ClockProvider
   readonly rng: RngProvider
@@ -80,6 +88,8 @@ export interface ExecutorDeps {
   readonly secrets?: Readonly<Record<string, string>>
   readonly environmentVariables?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: RunEvent) => void
+  /** Workspace-scoped workflow lookup for `type: "workflow"` nodes. Undefined disables the node type entirely. */
+  readonly resolveWorkflow?: (workflowId: string) => ResolvedSubWorkflow | undefined
 }
 
 export interface ExecuteOptions {
@@ -110,6 +120,14 @@ export interface NodeResult {
   readonly secretRefs?: readonly string[]
   readonly assertionEvaluations?: readonly AssertionEvaluation[]
   readonly extractorOutcomes?: readonly ExtractorOutcome[]
+  /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
+  readonly subWorkflow?: {
+    readonly workflowId: string
+    readonly status: "passed" | "failed"
+    readonly nodeCount: number
+    readonly failedNodeCount: number
+    readonly outputVariableNames: readonly string[]
+  }
   readonly [key: string]: unknown
 }
 
@@ -152,6 +170,12 @@ export class WorkflowExecutor {
   private activeRunId = "harness"
   private stepCount = 0
   private maxSteps = 0
+  // Set by a parent executor on a child it creates for a Call Workflow node.
+  // Bounds recursion regardless of write-time cycle validation — a cycle
+  // introduced by editing the target workflow after the caller was saved
+  // still can't hang or stack-overflow a run.
+  private callDepth = 0
+  private static readonly MAX_CALL_DEPTH = 8
 
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
@@ -440,6 +464,8 @@ export class WorkflowExecutor {
         result = await this.executeAssertion(node, edges)
       } else if (nodeType === "merge") {
         result = await this.executeMerge(node, edges)
+      } else if (nodeType === "workflow") {
+        result = await this.executeCallWorkflow(node)
       } else {
         result = { status: "skipped", message: `Unknown node type: ${nodeType}` }
       }
@@ -1072,6 +1098,84 @@ export class WorkflowExecutor {
     }
   }
 
+  // -------------------- Call Workflow --------------------
+
+  /**
+   * Runs a target workflow in-process to completion and maps its outputs back
+   * onto the caller's variable scope. There is no persisted child Run row —
+   * the sub-execution is inline, summarized on the calling node's own result.
+   * Only the summary (status, node/failure counts, output variable names) is
+   * embedded, never the sub-workflow's raw per-node results: those carry
+   * unredacted request/response detail that only the top-level
+   * `sanitizeRunResults` pass (scheduler.ts) knows how to scrub, and it only
+   * walks the top-level results array.
+   */
+  private async executeCallWorkflow(node: WorkflowNode): Promise<NodeResult> {
+    const config = (node.config ?? {}) as {
+      readonly targetWorkflowId?: string | null
+      readonly inputMapping?: Record<string, string>
+      readonly outputMapping?: Record<string, string>
+    }
+    const targetWorkflowId = config.targetWorkflowId
+    if (!targetWorkflowId) {
+      return { status: "error", error: "Call Workflow node has no target workflow configured" }
+    }
+    if (!this.deps.resolveWorkflow) {
+      return { status: "error", error: "Sub-workflow execution is not available in this context" }
+    }
+    if (this.callDepth >= WorkflowExecutor.MAX_CALL_DEPTH) {
+      return { status: "error", error: "Call Workflow recursion depth exceeded" }
+    }
+    const target = this.deps.resolveWorkflow(targetWorkflowId)
+    if (!target) {
+      return { status: "error", error: `Target workflow ${targetWorkflowId} not found` }
+    }
+
+    // The child executor shares `this.deps` (same run, same environment/secrets
+    // scope) — it can already resolve {{env.*}} and {{secrets.*}} on its own.
+    // inputMapping only needs to carry the caller's *workflow* variables
+    // ({{variables.*}}) across, since each executor instance has its own
+    // isolated `workflowVariables` map. Secrets are disallowed here so a
+    // secret value is never downgraded into a plain child variable when the
+    // child can already reach it directly and more safely via {{secrets.*}}.
+    const inputMapping = config.inputMapping ?? {}
+    const inputVariables: Record<string, unknown> = {}
+    for (const [targetVarName, sourceExpr] of Object.entries(inputMapping)) {
+      inputVariables[targetVarName] = this.substituteVariables(sourceExpr, { allowSecrets: false })
+    }
+
+    const childExecutor = new WorkflowExecutor(this.deps)
+    childExecutor.callDepth = this.callDepth + 1
+    const childOutput = await childExecutor.executeWorkflow({
+      nodes: target.nodes,
+      edges: target.edges,
+      variables: { ...(target.variables ?? {}), ...inputVariables },
+    })
+
+    const outputMapping = config.outputMapping ?? {}
+    for (const [callerVarName, subVarName] of Object.entries(outputMapping)) {
+      if (subVarName in childOutput.extractedVariables) {
+        this.workflowVariables[callerVarName] = childOutput.extractedVariables[subVarName]
+      }
+    }
+
+    const targetLabel = target.name ?? targetWorkflowId
+    return {
+      status: childOutput.status === "passed" ? "success" : "error",
+      message:
+        childOutput.status === "passed"
+          ? `Sub-workflow ${targetLabel} completed`
+          : `Sub-workflow ${targetLabel} failed in ${childOutput.failedNodes.length} node(s)`,
+      subWorkflow: {
+        workflowId: targetWorkflowId,
+        status: childOutput.status,
+        nodeCount: target.nodes.length,
+        failedNodeCount: childOutput.failedNodes.length,
+        outputVariableNames: Object.keys(outputMapping),
+      },
+    }
+  }
+
   /**
    * Gate a conditional merge: throws if the saved branch conditions do not
    * pass under the configured AND/OR logic. branchIndex is the zero-based
@@ -1576,6 +1680,9 @@ export class WorkflowExecutor {
         error: typeof result.error === "string" ? result.error : null,
         assertions: result.type === "assertion" ? [...(result.assertionEvaluations ?? [])] : null,
         ...(result.extractorOutcomes ? { extractorOutcomes: [...result.extractorOutcomes] } : {}),
+        ...(result.subWorkflow
+          ? { subWorkflow: { ...result.subWorkflow, outputVariableNames: [...result.subWorkflow.outputVariableNames] } }
+          : {}),
       })
     }
     return results

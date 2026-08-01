@@ -36,6 +36,28 @@ test("buildNodeActionMenuItems switches expand label when expanded", () => {
   assert.equal(items[2]!.label, "Collapse");
 });
 
+test("buildNodeActionMenuItems omits save-as-preset unless the node is presetable", () => {
+  assert.equal(
+    buildNodeActionMenuItems({ collapsible: true }).some(
+      (item) => item.key === "save-preset",
+    ),
+    false,
+  );
+});
+
+test("buildNodeActionMenuItems adds save-as-preset above the expand toggle", () => {
+  const items = buildNodeActionMenuItems({
+    collapsible: true,
+    presetable: true,
+  });
+
+  assert.deepEqual(
+    items.map((item) => item.key),
+    ["duplicate", "copy", "save-preset", "toggle-expand"],
+  );
+  assert.equal(items[2]!.label, "Save as preset");
+});
+
 test("getNextNodeExpandedState toggles expanded state", () => {
   assert.equal(getNextNodeExpandedState(true), false);
   assert.equal(getNextNodeExpandedState(false), true);

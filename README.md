@@ -4,7 +4,7 @@ Visual API Test Story Builder. Build, run, and inspect API test workflows on a c
 
 ## What Is APIWeave?
 
-APIWeave is a local-first, open-source desktop app for visual API testing. You assemble test workflows on a ReactFlow canvas from drag-and-drop nodes (HTTP request, assertion, delay, merge, start, end), chain requests with extracted variables and dynamic functions, run them against an environment, and inspect results node by node. Projects group workflows into ordered runs. Environments and secrets live on your machine, encrypted at rest. An optional MCP bridge lets a local agent drive the same app; there are no webhooks or remote triggers.
+APIWeave is a local-first, open-source desktop app for visual API testing. You assemble test workflows on a ReactFlow canvas from drag-and-drop nodes (HTTP request, assertion, delay, merge, call workflow, start, end), chain requests with extracted variables and dynamic functions, run them against an environment, and inspect results node by node. Projects group workflows into ordered runs. Environments and secrets live on your machine, encrypted at rest. An optional MCP bridge lets a local agent drive the same app; there are no webhooks or remote triggers.
 
 APIWeave ships as a single-process Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
 
@@ -50,10 +50,11 @@ The Linux binaries are built on Ubuntu (older glibc), so they run on Arch's newe
 
 The feature guides are the deep reference for everything you can do in APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
 
-- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the six node types, toolbar actions, resume after a failed run.
+- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the seven node types, toolbar actions, resume after a failed run.
 - [Variables and Extractors](docs/features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
+- [Node Presets](docs/features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Projects](docs/features/projects.md): ordered groups of workflows, project runs, and `.awecollection` v2 export and import (references only).
-- [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, the encrypted secret store, and the metadata-only display.
+- [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
 - [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
 

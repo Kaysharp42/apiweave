@@ -12,6 +12,7 @@ import { initDatabase, type InitializedDatabase } from "../../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   RunRepository,
   WorkflowRepository,
   WorkspaceRepository,
@@ -25,6 +26,7 @@ import { WorkflowService } from "../../services/workflow_service"
 import { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import { AssertionAuthoringService } from "../../services/assertion_authoring_service"
 import { EnvironmentService } from "../../services/environment_service"
+import { NodePresetService } from "../../services/node_preset_service"
 import { RunService } from "../../services/run_service"
 import { SecretService, type SecretWriteStore, type SecretUpsert } from "../../services/secret_service"
 import { ProjectExportService } from "../../services/project_export_service"
@@ -78,6 +80,7 @@ beforeEach(() => {
   const runs = new RunRepository(db.kvStore)
   runRepository = runs
   const environments = new EnvironmentRepository(db.kvStore)
+  const nodePresets = new NodePresetRepository(db.kvStore)
   const collections = new CollectionRepository(db.kvStore)
   const existence: ScopeExistence = {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
@@ -96,6 +99,7 @@ beforeEach(() => {
     workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
     assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
     environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
+    nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
     runs: runService,
     secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
@@ -722,6 +726,174 @@ describe("MCP bridge — inherited secret masking holds across read/export tools
       const text = textOf((await call) as { content: Array<{ type: string; text?: string }> })
       expect(text).not.toContain(PLAINTEXT)
     }
+    await client.close()
+  })
+})
+
+describe("MCP bridge — reuse primitives reach agents (presets, sub-workflows, inheritance)", () => {
+  it("whitelists the nodePresets domain with the right intents and annotations", () => {
+    const byName = new Map(MCP_TOOLS.map((spec) => [toolName(spec), spec]))
+    expect(byName.get("nodePresets_list")).toMatchObject({
+      domain: "nodePresets",
+      action: "list",
+      intent: "read",
+    })
+    expect(byName.get("nodePresets_create")).toMatchObject({ intent: "write" })
+    expect(byName.get("nodePresets_update")).toMatchObject({ intent: "write", idempotent: true })
+    expect(byName.get("nodePresets_delete")).toMatchObject({ intent: "write", destructive: true })
+  })
+
+  it("nodePresets_list returns the same body as the IPC dispatch it wraps", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await dispatchOk<{ presetId: string }>("nodePresets", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "Standard auth headers",
+      nodeType: "http-request",
+      config: { method: "GET", url: "https://api.example.test/ping" },
+    })
+
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "nodePresets_list",
+      arguments: { workspaceId: workspace.workspaceId },
+    })
+    const viaTool = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> }))
+    const viaIpc = await dispatchOk("nodePresets", "list", { workspaceId: workspace.workspaceId })
+
+    expect(viaTool).toEqual(viaIpc)
+    expect(viaTool.items.map((p: { presetId: string }) => p.presetId)).toContain(created.presetId)
+    await client.close()
+  })
+
+  it("redacts a preset's URL, body and header values on the way out, like any other MCP read", async () => {
+    const LEAK = "opaque-header-value-that-must-not-cross-mcp"
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    await dispatchOk("nodePresets", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "Promoted from a real request",
+      nodeType: "http-request",
+      config: {
+        method: "POST",
+        url: `https://api.example.test/login?token=${LEAK}`,
+        headers: [{ key: "Authorization", value: `Bearer ${LEAK}` }],
+        body: `{"password":"${LEAK}"}`,
+      },
+    })
+
+    const client = await connectClient()
+    const text = textOf(
+      (await client.callTool({
+        name: "nodePresets_list",
+        arguments: { workspaceId: workspace.workspaceId },
+      })) as { content: Array<{ type: string; text?: string }> },
+    )
+
+    expect(text).not.toContain(LEAK)
+    // The catalogue itself still reaches the agent — only the values are gone.
+    expect(text).toContain("Promoted from a real request")
+    await client.close()
+  })
+
+  it("environments_create accepts a base environment and the read reports the link", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const base = await dispatchOk<{ environmentId: string }>("environments", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "base",
+      variables: { HOST: "api.base.test" },
+    })
+
+    const client = await connectClient()
+    const created = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "environments_create",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            name: "staging",
+            baseEnvironmentId: base.environmentId,
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    )
+
+    expect(created.baseEnvironmentId).toBe(base.environmentId)
+    const read = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "environments_get",
+          arguments: { workspaceId: workspace.workspaceId, environmentId: created.environmentId },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    )
+    expect(read.baseEnvironmentId).toBe(base.environmentId)
+    await client.close()
+  })
+
+  // Cross-workspace target rejection is covered in services.test.ts, which can
+  // seed two real workspaces; this harness resolves a single local workspace.
+  it("workflows_create accepts a Call Workflow node and workflows_update refuses a self-call", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const target = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "Authenticate",
+    })
+
+    const client = await connectClient()
+    const nodesFor = (targetWorkflowId: string) => [
+      { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+      {
+        nodeId: "call1",
+        type: "workflow",
+        position: { x: 120, y: 0 },
+        config: {
+          targetWorkflowId,
+          inputMapping: { tenant: "{{variables.tenantId}}" },
+          // `cartId` reads back literally; `token` is a secret-looking KEY, so
+          // the bridge's blanket redaction rewrites its value on the way out.
+          outputMapping: { cartId: "cartId", token: "accessToken" },
+        },
+      },
+    ]
+
+    const created = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_create",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            name: "caller",
+            nodes: nodesFor(target.workflowId),
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    )
+    const callNode = created.nodes.find((n: { nodeId: string }) => n.nodeId === "call1")
+    expect(callNode.config.targetWorkflowId).toBe(target.workflowId)
+    expect(callNode.config.inputMapping).toEqual({ tenant: "{{variables.tenantId}}" })
+    expect(callNode.config.outputMapping).toEqual({ cartId: "cartId", token: "<SECRET>" })
+
+    // Redaction is a read-time projection for the less-trusted MCP caller: the
+    // stored mapping is intact, as the renderer's own (unredacted) read shows.
+    const viaIpc = await dispatchOk<{ nodes: Array<{ nodeId: string; config?: Record<string, unknown> }> }>(
+      "workflows",
+      "get",
+      { workspaceId: workspace.workspaceId, workflowId: created.workflowId },
+    )
+    expect(viaIpc.nodes.find((n) => n.nodeId === "call1")?.config?.["outputMapping"]).toEqual({
+      cartId: "cartId",
+      token: "accessToken",
+    })
+
+    const rejected = (await client.callTool({
+      name: "workflows_update",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: created.workflowId,
+        nodes: nodesFor(created.workflowId),
+      },
+    })) as { isError?: boolean; content: Array<{ type: string; text?: string }> }
+    expect(rejected.isError).toBe(true)
+    expect(textOf(rejected)).toContain("cannot call its own workflow")
     await client.close()
   })
 })

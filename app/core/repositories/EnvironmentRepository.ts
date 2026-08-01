@@ -5,10 +5,15 @@ import { generateId } from "../id"
 import { mustExist, parseJson, slugify, toJson } from "./helpers"
 
 export type EnvironmentCreate = Pick<Environment, "workspaceId" | "name"> &
-  Partial<Pick<Environment, "description" | "swaggerDocUrl" | "variables" | "secrets" | "isDefault">>
+  Partial<
+    Pick<Environment, "description" | "swaggerDocUrl" | "baseEnvironmentId" | "variables" | "secrets" | "isDefault">
+  >
 
 export type EnvironmentUpdate = Partial<
-  Pick<Environment, "name" | "description" | "swaggerDocUrl" | "variables" | "secrets" | "isDefault">
+  Pick<
+    Environment,
+    "name" | "description" | "swaggerDocUrl" | "baseEnvironmentId" | "variables" | "secrets" | "isDefault"
+  >
 >
 
 const COLUMNS = "id, workspace_id, scopeType, scopeId, name, variables_json, settings_json, rev, createdAt, updatedAt"
@@ -29,6 +34,7 @@ interface EnvironmentRow extends SqliteRow {
 interface EnvironmentSettings {
   readonly description: string | null
   readonly swaggerDocUrl: string | null
+  readonly baseEnvironmentId: string | null
   // Opaque passthrough. Secret material is sealed by the secrets subsystem
   // (Task 7) before it ever reaches here; the repository never reads it back
   // as plaintext and never writes plaintext into it.
@@ -44,6 +50,7 @@ export class EnvironmentRepository {
     const settings: EnvironmentSettings = {
       description: input.description ?? null,
       swaggerDocUrl: normalizeSwaggerUrl(input.swaggerDocUrl),
+      baseEnvironmentId: input.baseEnvironmentId ?? null,
       secrets: input.secrets ?? {},
       isDefault: input.isDefault ?? false,
     }
@@ -78,6 +85,7 @@ export class EnvironmentRepository {
     const settings: EnvironmentSettings = {
       description: merged.description ?? null,
       swaggerDocUrl: normalizeSwaggerUrl(merged.swaggerDocUrl),
+      baseEnvironmentId: merged.baseEnvironmentId ?? null,
       secrets: merged.secrets,
       isDefault: merged.isDefault,
     }
@@ -109,6 +117,29 @@ export class EnvironmentRepository {
   public delete(environmentId: string): boolean {
     return this.store.delete("DELETE FROM environments WHERE id = ?", [environmentId]).changes > 0
   }
+
+  /**
+   * Walks `baseEnvironmentId` from root to leaf and merges plain variables
+   * (base first, each descendant overrides its ancestors). Secrets are never
+   * part of this chain — they keep the existing environment > workspace scope
+   * resolution. Depth-bounded so a cycle that slipped past write-time
+   * validation can't hang or stack-overflow a run.
+   */
+  public resolveEffectiveVariables(environmentId: string, maxDepth = 8): Record<string, JsonValue> {
+    const chain: Environment[] = []
+    const seen = new Set<string>()
+    let current = this.getById(environmentId)
+    while (current !== undefined && !seen.has(current.environmentId) && chain.length < maxDepth) {
+      chain.push(current)
+      seen.add(current.environmentId)
+      current = current.baseEnvironmentId ? this.getById(current.baseEnvironmentId) : undefined
+    }
+    let effective: Record<string, JsonValue> = {}
+    for (const environment of chain.reverse()) {
+      effective = { ...effective, ...environment.variables }
+    }
+    return effective
+  }
 }
 
 function normalizeSwaggerUrl(url: string | null | undefined): string | null {
@@ -129,6 +160,7 @@ function rowToEnvironment(row: EnvironmentRow): Environment {
     name: row.name,
     description: settings.description,
     swaggerDocUrl: settings.swaggerDocUrl,
+    baseEnvironmentId: settings.baseEnvironmentId,
     variables: parseJson<Record<string, JsonValue>>(row.variables_json),
     secrets: settings.secrets,
     isDefault: settings.isDefault,

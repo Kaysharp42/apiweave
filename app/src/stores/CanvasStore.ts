@@ -14,6 +14,7 @@ interface CanvasState {
   duplicateNode: (nodeId: string) => void;
   copyNode: (nodeId: string) => void;
   pasteNode: () => void;
+  savePresetFromNode: (nodeId: string) => void;
   clearPendingAction: () => void;
   setClipboardNode: (nodeData: ClipboardNodeData | null) => void;
   hydrateClipboard: () => void;
@@ -76,6 +77,16 @@ const useCanvasStore = create<CanvasState>()((set) => ({
 
   pasteNode: () => {
     const action = { type: "paste" as CanvasActionType, timestamp: Date.now() };
+    set({ pendingAction: action });
+    notifyPendingActionHandlers(action);
+  },
+
+  savePresetFromNode: (nodeId: string) => {
+    const action = {
+      type: "save-preset" as CanvasActionType,
+      nodeId,
+      timestamp: Date.now(),
+    };
     set({ pendingAction: action });
     notifyPendingActionHandlers(action);
   },
