@@ -8,20 +8,34 @@ const CallWorkflowNode = ({ id, data, selected = false }: WorkflowCallNodeProps)
   const status = executionStatus ?? data.status ?? "idle";
   const result = executionResult ?? data.result;
 
-  const icon = useMemo(
-    () => (
-      <Workflow className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
-    ),
-    [],
-  );
+  const icon = useMemo(() => <Workflow className="w-4 h-4" />, []);
 
   const inputCount = Object.keys(config.inputMapping ?? {}).length;
   const outputCount = Object.keys(config.outputMapping ?? {}).length;
+
+  const targetName = config.targetWorkflowName ?? config.targetWorkflowId;
+
+  const typeChip = useMemo(() => {
+    if (inputCount === 0 && outputCount === 0) return null;
+
+    return (
+      <span
+        className="flex-shrink-0 flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-info)_12%,transparent)] text-[var(--aw-status-info)]"
+        title={`${inputCount} input${inputCount === 1 ? "" : "s"}, ${outputCount} output${outputCount === 1 ? "" : "s"}`}
+      >
+        <ArrowRightLeft className="w-2.5 h-2.5" aria-hidden="true" />
+        {inputCount}/{outputCount}
+      </span>
+    );
+  }, [inputCount, outputCount]);
+
+  const subWorkflow = result?.subWorkflow;
 
   return (
     <BaseNode
       title={label ?? "Call Workflow"}
       icon={icon}
+      tileHue="var(--aw-status-info)"
       status={status}
       selected={selected}
       nodeId={id}
@@ -30,45 +44,39 @@ const CallWorkflowNode = ({ id, data, selected = false }: WorkflowCallNodeProps)
       handleRight={{ type: "source" }}
       collapsible={true}
       defaultExpanded={false}
+      typeChip={typeChip}
+      restLine={
+        targetName
+          ? { operation: "calls", argument: targetName }
+          : { operation: "no target workflow" }
+      }
+      activityLine={{
+        operation: "running",
+        ...(targetName && { argument: targetName }),
+      }}
+      {...(subWorkflow && {
+        resultSummary: {
+          operation: `${subWorkflow.nodeCount} ${subWorkflow.nodeCount === 1 ? "node" : "nodes"}`,
+          ...(subWorkflow.failedNodeCount > 0 && {
+            argument: `${subWorkflow.failedNodeCount} failed`,
+          }),
+        },
+      })}
+      metrics={[
+        {
+          label: "nodes",
+          value: subWorkflow ? `${subWorkflow.nodeCount} nodes` : null,
+        },
+        // The sub-workflow summary carries counts, not a wall-clock duration.
+        { label: "duration", value: null },
+      ]}
+      progress={status === "running" ? "indeterminate" : null}
       className="min-w-[200px]"
     >
       {({ isExpanded }) => (
-        <div className="p-3 space-y-2">
-          {config.targetWorkflowId ? (
-            <div className="text-xs italic text-text-secondary dark:text-text-secondary-dark truncate">
-              Calls: {config.targetWorkflowName ?? config.targetWorkflowId}
-            </div>
-          ) : (
-            <div className="text-xs italic text-text-muted dark:text-text-muted-dark">
-              No target workflow configured
-            </div>
-          )}
-
-          {(inputCount > 0 || outputCount > 0) && (
-            <div className="flex items-center gap-1.5 text-xs text-text-muted dark:text-text-muted-dark">
-              <ArrowRightLeft className="w-3 h-3 flex-shrink-0" />
-              <span>
-                {inputCount} in &middot; {outputCount} out
-              </span>
-            </div>
-          )}
-
-          {!isExpanded && result?.subWorkflow && (
-            <div className="text-xs flex items-center gap-1 text-text-muted dark:text-text-muted-dark">
-              {result.subWorkflow.status === "passed" ? (
-                <CheckCircle className="w-3 h-3" style={{ color: "var(--aw-status-success)" }} />
-              ) : (
-                <XCircle className="w-3 h-3" style={{ color: "var(--aw-status-error)" }} />
-              )}
-              <span>{result.message}</span>
-            </div>
-          )}
-
+        <div className={isExpanded ? "p-3 space-y-2" : ""}>
           {isExpanded && (
-            <div
-              className="space-y-2 pt-1 border-t"
-              style={{ borderColor: "var(--aw-border)" }}
-            >
+            <div className="space-y-2 pt-1 border-t border-border dark:border-border-dark">
               <button
                 type="button"
                 onClick={() => {
@@ -83,27 +91,19 @@ const CallWorkflowNode = ({ id, data, selected = false }: WorkflowCallNodeProps)
                     }),
                   );
                 }}
-                className="nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-                style={{ color: "var(--aw-primary)" }}
+                className="nodrag cursor-pointer text-[var(--aw-primary)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                 aria-label="Open Call Workflow editor to change the target"
               >
                 {config.targetWorkflowId ? "Change target" : "Choose target workflow"}
               </button>
 
               {result?.subWorkflow && (
-                <div
-                  className="text-xs p-2 rounded-sm border"
-                  style={{
-                    backgroundColor: "var(--aw-surface-raised)",
-                    borderColor: "var(--aw-border)",
-                    color: "var(--aw-text-secondary)",
-                  }}
-                >
+                <div className="text-xs p-2 rounded-node-ctl border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark">
                   <div className="font-medium mb-1 flex items-center gap-2">
                     {result.subWorkflow.status === "passed" ? (
-                      <CheckCircle className="w-4 h-4" style={{ color: "var(--aw-status-success)" }} />
+                      <CheckCircle className="w-4 h-4 text-[var(--aw-status-success)]" />
                     ) : (
-                      <XCircle className="w-4 h-4" style={{ color: "var(--aw-status-error)" }} />
+                      <XCircle className="w-4 h-4 text-[var(--aw-status-error)]" />
                     )}
                     <span>{result.message}</span>
                   </div>

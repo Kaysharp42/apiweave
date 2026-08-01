@@ -17,11 +17,7 @@ const BranchMapping = ({ branches }: { branches: BranchInfo[] }) => (
     {branches.map((b) => (
       <div
         key={b.index}
-        className="text-xs p-1.5 rounded-sm border"
-        style={{
-          backgroundColor: "var(--aw-surface-raised)",
-          borderColor: "var(--aw-border)",
-        }}
+        className="text-xs p-1.5 rounded-node-ctl border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised"
       >
         <span className="font-medium truncate text-text-primary dark:text-text-primary-dark">
           {b.edgeLabel ?? b.label ?? `Branch ${b.index}`}
@@ -29,7 +25,7 @@ const BranchMapping = ({ branches }: { branches: BranchInfo[] }) => (
         <span className="mx-1 text-text-muted dark:text-text-muted-dark">
           {"\u2192"}
         </span>
-        <code className="font-mono" style={{ color: "var(--aw-branch-edge)" }}>
+        <code className="font-mono text-[var(--aw-branch-edge)]">
           prev[{b.index}]
         </code>
         {b.nodeId && (
@@ -51,7 +47,7 @@ const BranchMapping = ({ branches }: { branches: BranchInfo[] }) => (
     ))}
     <div className="text-xs italic mt-1 text-text-muted dark:text-text-muted-dark">
       Example:{" "}
-      <code className="font-mono" style={{ color: "var(--aw-branch-edge)" }}>
+      <code className="font-mono text-[var(--aw-branch-edge)]">
         {"{{prev[0].response.body.id}}"}
       </code>
     </div>
@@ -71,20 +67,15 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
   const status = executionStatus ?? data.status ?? "idle";
   const result = executionResult ?? data.result;
 
-  const icon = useMemo(
-    () => (
-      <GitMerge className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark" />
-    ),
-    [],
-  );
+  const icon = useMemo(() => <GitMerge className="w-4 h-4" />, []);
 
-  const titleExtra = useMemo(() => {
+  const typeChip = useMemo(() => {
     if (!(data.incomingBranchCount && data.incomingBranchCount > 1))
       return null;
 
     return (
       <span
-        className="text-xs px-1.5 py-0.5 rounded-sm font-mono border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark"
+        className="flex-shrink-0 text-[11px] px-1.5 py-0.5 rounded-node-chip font-mono bg-[color-mix(in_srgb,var(--aw-branch-edge)_12%,transparent)] text-[var(--aw-branch-edge)]"
         title={`Merging ${data.incomingBranchCount} branches`}
       >
         &larr; {data.incomingBranchCount}x
@@ -122,10 +113,15 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
   const { icon: stratIcon, desc: stratDesc } =
     strategyMeta[mergeStrategy as MergeStrategy] ?? strategyMeta.all;
 
+  const branchCount = data.incomingBranchCount ?? 0;
+  const mergedCount = result?.branchCount;
+  const branchWord = (count: number) => (count === 1 ? "branch" : "branches");
+
   return (
     <BaseNode
       title={label ?? "Merge"}
       icon={icon}
+      tileHue="var(--aw-branch-edge)"
       status={status}
       selected={selected}
       nodeId={id}
@@ -134,34 +130,44 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
       handleRight={{ type: "source" }}
       collapsible={true}
       defaultExpanded={false}
-      titleExtra={titleExtra}
+      typeChip={typeChip}
+      restLine={{ operation: stratDesc }}
+      activityLine={{
+        operation: "waiting on",
+        argument: `${branchCount} ${branchWord(branchCount)}`,
+      }}
+      {...(mergedCount !== undefined && {
+        resultSummary: {
+          operation: "merged",
+          argument: `${mergedCount} ${branchWord(mergedCount)}`,
+        },
+      })}
+      metrics={[
+        {
+          label: "branches",
+          value:
+            mergedCount !== undefined
+              ? `${mergedCount} ${branchWord(mergedCount)}`
+              : null,
+        },
+        // The merge result records when it merged, not how long it waited, so
+        // this cell holds the row's shape rather than inventing a duration.
+        { label: "duration", value: null },
+      ]}
+      progress={status === "running" ? "indeterminate" : null}
       className="min-w-[200px]"
     >
       {({ isExpanded }) => (
-        <div className="p-3 space-y-2">
-          <div className="flex items-center gap-1.5 text-xs italic text-text-secondary dark:text-text-secondary-dark">
-            {stratIcon}
-            <span>{stratDesc}</span>
-          </div>
-
-          {!isExpanded && result && (
-            <div className="text-xs flex items-center gap-1 text-text-muted dark:text-text-muted-dark">
-              <CheckCircle
-                className="w-3 h-3"
-                style={{ color: "var(--aw-status-success)" }}
-              />
-              <span>
-                {result.branchCount ?? 0} branch
-                {result.branchCount !== 1 ? "es" : ""} merged
-              </span>
+        <div className={isExpanded ? "p-3 space-y-2" : ""}>
+          {isExpanded && (
+            <div className="flex items-center gap-1.5 text-xs italic text-text-secondary dark:text-text-secondary-dark">
+              {stratIcon}
+              <span>{stratDesc}</span>
             </div>
           )}
 
           {isExpanded && (
-            <div
-              className="space-y-2 pt-1 border-t"
-              style={{ borderColor: "var(--aw-border)" }}
-            >
+            <div className="space-y-2 pt-1 border-t border-border dark:border-border-dark">
               <div className="text-xs">
                 <label
                   htmlFor="merge-strategy"
@@ -174,12 +180,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
                   value={mergeStrategy}
                   onChange={() => {}}
                   aria-readonly="true"
-                  className="w-full px-1.5 py-0.5 text-xs border rounded-sm cursor-default"
-                  style={{
-                    borderColor: "var(--aw-border)",
-                    backgroundColor: "var(--aw-surface-raised)",
-                    color: "var(--aw-text-primary)",
-                  }}
+                  className="w-full px-1.5 py-0.5 text-xs border rounded-node-ctl cursor-default border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                 >
                   <option value="all">Wait for All (AND)</option>
                   <option value="any">Wait for Any (OR)</option>
@@ -200,8 +201,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
                       }),
                     );
                   }}
-                  className="mt-1 nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-                  style={{ color: "var(--aw-primary)" }}
+                  className="mt-1 nodrag cursor-pointer text-[var(--aw-primary)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                   aria-label="Open merge node editor to change strategy"
                 >
                   Change strategy
@@ -210,18 +210,10 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
 
               {result && (
                 <div
-                  className="text-xs p-2 rounded-sm border"
-                  style={{
-                    backgroundColor: "var(--aw-surface-raised)",
-                    borderColor: "var(--aw-border)",
-                    color: "var(--aw-text-secondary)",
-                  }}
+                  className="text-xs p-2 rounded-node-ctl border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark"
                 >
                   <div className="font-medium mb-1 flex items-center gap-2">
-                    <CheckCircle
-                      className="w-4 h-4"
-                      style={{ color: "var(--aw-status-success)" }}
-                    />
+                    <CheckCircle className="w-4 h-4 text-[var(--aw-status-success)]" />
                     <span>
                       {result.mergeStrategy === "conditional"
                         ? "Conditions Passed:"
@@ -230,10 +222,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
                   </div>
                   {result.branchCount !== undefined && (
                     <div className="flex items-center gap-2">
-                      <SquareCheckBig
-                        className="w-4 h-4"
-                        style={{ color: "var(--aw-status-info)" }}
-                      />
+                      <SquareCheckBig className="w-4 h-4 text-[var(--aw-status-info)]" />
                       <span>
                         {result.branchCount} branch(es){" "}
                         {result.mergeStrategy === "conditional"
@@ -244,18 +233,12 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
                   )}
 
                   {result.warning && (
-                    <div className="mt-2 p-1.5 border rounded-sm bg-[var(--aw-status-warning)]/5 border-status-warning/30">
-                      <div
-                        className="text-xs flex items-center gap-1"
-                        style={{ color: "var(--aw-status-warning)" }}
-                      >
+                    <div className="mt-2 p-1.5 border rounded-node-ctl bg-[var(--aw-status-warning)]/5 border-status-warning/30">
+                      <div className="text-xs flex items-center gap-1 text-[var(--aw-status-warning)]">
                         <AlertTriangle className="w-3 h-3 flex-shrink-0" />
                         <span className="font-semibold">Strategy Warning:</span>
                       </div>
-                      <div
-                        className="text-xs mt-0.5"
-                        style={{ color: "var(--aw-status-warning)" }}
-                      >
+                      <div className="text-xs mt-0.5 text-[var(--aw-status-warning)]">
                         {result.warning}
                       </div>
                     </div>
@@ -276,11 +259,8 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
               {data.incomingBranchCount &&
                 data.incomingBranchCount > 1 &&
                 !result && (
-                  <div className="text-xs rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2">
-                    <div
-                      className="font-semibold mb-1 text-xs flex items-center gap-1"
-                      style={{ color: "var(--aw-branch-edge)" }}
-                    >
+                  <div className="text-xs rounded-node-ctl border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2">
+                    <div className="font-semibold mb-1 text-xs flex items-center gap-1 text-[var(--aw-branch-edge)]">
                       <GitMerge className="w-3 h-3" />
                       <span>Branch &rarr; Variable Mapping:</span>
                     </div>
@@ -294,17 +274,11 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
                         </div>
                         <div className="italic mt-1 text-text-muted dark:text-text-muted-dark">
                           Use{" "}
-                          <code
-                            className="font-mono"
-                            style={{ color: "var(--aw-branch-edge)" }}
-                          >
+                          <code className="font-mono text-[var(--aw-branch-edge)]">
                             {"{{prev[0]}}"}
                           </code>
                           ,{" "}
-                          <code
-                            className="font-mono"
-                            style={{ color: "var(--aw-branch-edge)" }}
-                          >
+                          <code className="font-mono text-[var(--aw-branch-edge)]">
                             {"{{prev[1]}}"}
                           </code>
                           , etc.

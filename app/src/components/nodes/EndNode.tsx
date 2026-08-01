@@ -7,32 +7,29 @@ const EndNode = ({ id, selected }: EndNodeProps) => {
   return (
     <BaseNode
       title="End"
-      icon={
-        <Square className="w-3.5 h-3.5 fill-current text-text-secondary dark:text-text-secondary-dark" />
-      }
+      icon={<Square className="w-3 h-3 fill-current" />}
+      // Deliberately neutral rather than the old "End = red". A terminal node
+      // is not a failed node, and red on this canvas means failure.
+      tileHue="var(--aw-text-secondary)"
       status="idle"
       selected={selected ?? false}
       nodeId={id}
       handleLeft={{ type: "target" }}
       collapsible={true}
       defaultExpanded={false}
+      restLine={{ operation: "final step" }}
       className="min-w-[160px]"
     >
-      {({ isExpanded }) => (
-        <div className="p-3">
-          {!isExpanded && (
-            <div className="text-xs text-text-muted dark:text-text-muted-dark">
-              Final step
-            </div>
-          )}
-          {isExpanded && (
-            <div className="text-xs leading-relaxed rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark">
+      {({ isExpanded }) =>
+        isExpanded ? (
+          <div className="p-3">
+            <div className="text-xs leading-relaxed rounded-node-ctl border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-2 text-text-secondary dark:text-text-secondary-dark">
               Final step of the workflow. Use it to mark completion after all
               required branches and assertions finish.
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        ) : null
+      }
     </BaseNode>
   );
 };

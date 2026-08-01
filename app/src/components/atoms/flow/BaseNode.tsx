@@ -191,7 +191,9 @@ export function BaseNode({
         </div>
       )}
 
-      {!running && status !== "skipped" && restLine && (
+      {/* The rest line is the collapsed node's identity. Expanded, the config
+          it summarises is on screen in full, so repeating it is noise. */}
+      {!running && status !== "skipped" && !isExpanded && restLine && (
         <div className="flex items-baseline gap-1.5 px-3 py-2 font-mono text-xs leading-tight">
           <span className="flex-shrink-0 text-text-secondary dark:text-text-secondary-dark">
             {restLine.operation}
@@ -334,12 +336,8 @@ export function BaseNode({
                 <button
                   type="button"
                   onClick={() => setIsExpanded(!isExpanded)}
-                  className="p-1 rounded-node-ctl text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer transition-colors motion-reduce:transition-none"
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    WebkitTapHighlightColor: "transparent",
-                  }}
+                  className="p-1 rounded-node-ctl border-none bg-transparent text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer transition-colors motion-reduce:transition-none"
+                  style={{ WebkitTapHighlightColor: "transparent" }}
                   aria-expanded={isExpanded}
                   title={isExpanded ? "Collapse" : "Expand"}
                 >

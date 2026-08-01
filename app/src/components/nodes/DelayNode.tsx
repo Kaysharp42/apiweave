@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo } from "react";
 import { useReactFlow } from "reactflow";
 import { Clock } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
+import { formatDuration } from "../../utils/formatNodeMetrics";
 import type { DelayNodeProps } from "../../types/DelayNodeProps";
 
 const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
@@ -30,30 +31,25 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
   const humanLabel =
     duration >= 1000 ? `${(duration / 1000).toFixed(1)}s` : `${duration}ms`;
 
-  const icon = useMemo(
-    () => (
-      <Clock
-        className="w-4 h-4"
-        style={{ color: "var(--aw-status-warning)" }}
-      />
-    ),
-    [],
-  );
+  const icon = useMemo(() => <Clock className="w-4 h-4" />, []);
 
-  const titleExtra = useMemo(
+  const typeChip = useMemo(
     () => (
-      <span className="text-xs font-mono px-1.5 py-0.5 rounded-sm bg-[var(--aw-status-warning)]/10 text-status-warning dark:text-status-warning-dark border border-status-warning/30">
+      <span className="flex-shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-warning)_12%,transparent)] text-[var(--aw-status-warning)]">
         {humanLabel}
       </span>
     ),
     [humanLabel],
   );
 
+  const status = data.executionStatus ?? "idle";
+
   return (
     <BaseNode
       title={data.label ?? "Delay"}
       icon={icon}
-      status={data.executionStatus ?? "idle"}
+      tileHue="var(--aw-status-warning)"
+      status={status}
       selected={selected ?? false}
       nodeId={id}
       presetNodeType="delay"
@@ -61,35 +57,22 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
       handleRight={{ type: "source" }}
       collapsible={true}
       defaultExpanded={false}
-      titleExtra={titleExtra}
+      typeChip={typeChip}
+      restLine={{ operation: "waits", argument: humanLabel }}
+      activityLine={{ operation: "waiting", argument: humanLabel }}
+      resultSummary={{ operation: "waited", argument: humanLabel }}
+      metrics={[{ label: "duration", value: formatDuration(duration) }]}
+      progress={status === "running" ? "indeterminate" : null}
       className="min-w-[180px]"
     >
-      {({ isExpanded }) => (
-        <div className="p-3 space-y-1.5">
-          <div className="text-xs text-text-muted dark:text-text-muted-dark">
-            Wait before next step
-          </div>
-
-          {!isExpanded && duration > 0 && (
-            <div className="text-xs px-1.5 py-0.5 rounded-sm inline-block bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark font-mono">
-              {humanLabel}
-            </div>
-          )}
-
-          {isExpanded && (
-            <div
-              className="flex items-center gap-1.5 pt-1 border-t"
-              style={{ borderColor: "var(--aw-border)" }}
-            >
+      {({ isExpanded }) =>
+        isExpanded ? (
+          <div className="p-3">
+            <div className="flex items-center gap-1.5">
               <input
                 type="number"
                 aria-label="Delay duration in milliseconds"
-                className="nodrag flex-1 px-1.5 py-0.5 border rounded-sm text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
-                style={{
-                  borderColor: "var(--aw-border)",
-                  backgroundColor: "var(--aw-surface-raised)",
-                  color: "var(--aw-text-primary)",
-                }}
+                className="nodrag flex-1 px-1.5 py-1 border border-border dark:border-border-dark rounded-node-ctl text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                 value={duration}
                 onChange={(e) => updateNodeData(parseInt(e.target.value) || 0)}
                 min="0"
@@ -98,9 +81,9 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
                 ms
               </span>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        ) : null
+      }
     </BaseNode>
   );
 };
