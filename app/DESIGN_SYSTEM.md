@@ -509,25 +509,27 @@ Shadows must be theme-aware (different opacity/multiplier for light vs. dark).
 
 ### 6. Radius Scale
 
-**Chrome scale** — sharp, Swiss. These are the shipped values in `base.css`:
+**Chrome scale** — sharp, Swiss. Two separate things share these names, and they do not have the same values:
 
-| Token         | Value            | Usage                              |
-| ------------- | ---------------- | ---------------------------------- |
-| `radius-sm`   | `0`              | Small buttons, tags, inline inputs |
-| `radius-md`   | 0.125rem (2px)   | Default buttons, inputs, badges    |
-| `radius-lg`   | 0.25rem (4px)    | Cards, panels, modals              |
-| `radius-xl`   | 0.5rem (8px)     | Large cards, feature containers    |
-| `radius-full` | 9999px           | Pills, avatars, toggle switches    |
+| CSS property      | Value          | Consumed by                                    |
+| ----------------- | -------------- | ---------------------------------------------- |
+| `--aw-radius-sm`  | `0`            | Raw CSS — ReactFlow controls, minimap, focus rings |
+| `--aw-radius-md`  | 0.125rem (2px) | Raw CSS — `.aw-focus-ring`                     |
+| `--aw-radius-lg`  | 0.25rem (4px)  | Raw CSS                                        |
+| `--aw-radius-xl`  | 0.5rem (8px)   | Raw CSS                                        |
+| `--aw-radius-full`| 9999px         | Raw CSS                                        |
 
-**Node scale** — the canvas only. A separate family so the chrome scale above never has to move:
+Tailwind's `rounded-sm` / `rounded-md` / `rounded-lg` / `rounded-xl` classes are **not** wired to these properties — `tailwind.config.js` extends `borderRadius` with the node family only, so the chrome classes keep Tailwind's stock scale (2px / 6px / 8px / 12px). Component markup uses the classes; raw CSS uses the properties.
 
-| Token               | Value  | Usage                                        |
-| ------------------- | ------ | -------------------------------------------- |
-| `radius-node`       | 14px   | The node slab                                |
-| `radius-node-tile`  | 8px    | The 28px icon tile                           |
-| `radius-node-ctl`   | 8px    | Method select, URL input, node menu items    |
-| `radius-node-chip`  | 6px    | Method pill, count badges, type chips        |
-| `radius-node-rail`  | 9999px | Progress rail, status dot, midpoint circles  |
+**Node scale** — the canvas only. A separate family, wired to Tailwind, so the chrome scale above never has to move:
+
+| Class              | Property                 | Value  | Usage                                       |
+| ------------------ | ------------------------ | ------ | ------------------------------------------- |
+| `rounded-node`     | `--aw-radius-node`       | 14px   | The node slab                               |
+| `rounded-node-tile`| `--aw-radius-node-tile`  | 8px    | The 28px icon tile                          |
+| `rounded-node-ctl` | `--aw-radius-node-ctl`   | 8px    | Method select, URL input, node menu items   |
+| `rounded-node-chip`| `--aw-radius-node-chip`  | 6px    | Method pill, count badges, type chips       |
+| `rounded-node-rail`| `--aw-radius-node-rail`  | 9999px | Progress rail, status dot, midpoint circles |
 
 `--aw-radius-sm` stays `0`. The node family is additive and scoped by name; using `rounded-node*` outside `components/nodes/` or `components/atoms/flow/` is a doctrine violation. See DESIGN.md §7.
 

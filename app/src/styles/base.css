@@ -84,6 +84,51 @@
   /* Focus ring */
   --aw-focus-ring-width: 2px;
   --aw-focus-ring-offset: 2px;
+
+  /* ── Node layer ──────────────────────────────
+     The canvas only. See DESIGN.md §7. The chrome radius scale above
+     stays sharp; the node family is scoped so it never has to move.
+     ────────────────────────────────────────── */
+
+  /* Node radius */
+  --aw-radius-node: 14px; /* the node slab                        */
+  --aw-radius-node-tile: 8px; /* 28px icon tile                       */
+  --aw-radius-node-ctl: 8px; /* method select, URL input, menu items  */
+  --aw-radius-node-chip: 6px; /* method pill, count badges, labels    */
+  --aw-radius-node-rail: 9999px; /* progress rail, status dot, midpoints  */
+
+  /* Node elevation — inner top highlight is what makes the slab read
+     as a lit object rather than a flat rectangle. */
+  --aw-shadow-node-raised:
+    inset 0 1px 0 0 rgb(255 255 255 / 90%), 0 4px 12px -6px rgb(9 9 11 / 10%);
+
+  /* Node glow — a state signal, never a decoration. Every value is
+     color-mixed from an existing --aw-status-* token, so the palette
+     stays single-sourced. Light mode expresses state as a tighter,
+     more saturated colored shadow; luminance glow is invisible on white. */
+  --aw-glow-running:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-running) 75%, transparent),
+    0 0 16px -8px color-mix(in srgb, var(--aw-status-running) 55%, transparent);
+  --aw-glow-error:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-error) 75%, transparent),
+    0 0 16px -8px color-mix(in srgb, var(--aw-status-error) 55%, transparent);
+  --aw-glow-warning:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-warning) 75%, transparent),
+    0 0 16px -8px color-mix(in srgb, var(--aw-status-warning) 55%, transparent);
+  --aw-glow-success:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-success) 75%, transparent),
+    0 0 16px -8px color-mix(in srgb, var(--aw-status-success) 55%, transparent);
+  --aw-glow-select: 0 0 0 2px color-mix(in srgb, var(--aw-primary) 60%, transparent);
+
+  /* Node motion — the canvas uses this four-step set rather than the
+     three ease-in-out chrome transitions above. */
+  --aw-ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* enter, expand   */
+  --aw-ease-in: cubic-bezier(0.7, 0, 0.84, 0); /* exit, collapse  */
+  --aw-ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* hover, colour   */
+  --aw-dur-instant: 100ms; /* press feedback            */
+  --aw-dur-fast: 180ms; /* hover, focus, colour      */
+  --aw-dur-normal: 260ms; /* run strip enter, expand   */
+  --aw-dur-settle: 600ms; /* success glow fade-out     */
 }
 
 /* ──────────────────────────────────────────────
@@ -130,6 +175,28 @@
   --aw-shadow-overlay: 0 2px 8px rgba(0, 0, 0, 0.4);
   --aw-shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.5);
   --aw-shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.6);
+
+  /* ── Node layer, dark ────────────────────────
+     Radius and motion tokens are theme-independent and inherit from
+     :root. Only elevation and glow are retuned here.
+     ────────────────────────────────────────── */
+
+  --aw-shadow-node-raised:
+    inset 0 1px 0 0 rgb(255 255 255 / 5%), 0 8px 24px -12px rgb(0 0 0 / 80%);
+
+  /* On a near-black surface, glow can be luminance: a wider, softer halo. */
+  --aw-glow-running:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-running) 55%, transparent),
+    0 0 28px -6px color-mix(in srgb, var(--aw-status-running) 45%, transparent);
+  --aw-glow-error:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-error) 55%, transparent),
+    0 0 28px -6px color-mix(in srgb, var(--aw-status-error) 45%, transparent);
+  --aw-glow-warning:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-warning) 55%, transparent),
+    0 0 28px -6px color-mix(in srgb, var(--aw-status-warning) 45%, transparent);
+  --aw-glow-success:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-success) 55%, transparent),
+    0 0 28px -6px color-mix(in srgb, var(--aw-status-success) 45%, transparent);
 }
 
 /* ──────────────────────────────────────────────

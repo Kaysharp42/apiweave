@@ -1,6 +1,9 @@
 /* Design system base styles (tokens, fonts, scrollbars) — must be first @import */
 @import "./styles/base.css";
 
+/* Node layer keyframes (canvas only — see DESIGN.md §7) */
+@import "./styles/node-motion.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -228,9 +231,7 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-
-  .animate-pulse-border {
-    animation: none !important;
-    border-color: var(--aw-status-running) !important;
-  }
 }
+
+/* Node layer reduced-motion rules live in styles/node-motion.css, next to
+   the keyframes they neutralise. */

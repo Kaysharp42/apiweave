@@ -1,0 +1,136 @@
+/*
+ * APIWeave Design System — Node Layer Motion
+ *
+ * Keyframes for the canvas only. See DESIGN.md §7 ("The Node Layer:
+ * The Living Run") for the doctrine these implement.
+ *
+ * Non-negotiables enforced here:
+ *   - Only `transform`, `opacity`, and `offset-distance` animate. Never
+ *     `width`, `height`, `top`, `left`, or `border-color` in a loop.
+ *   - The running breathe oscillates the opacity of a dedicated glow
+ *     layer, never `box-shadow` on the node itself — animating
+ *     `box-shadow` forces a repaint per frame on every visible node.
+ *   - Every looping animation is gated behind `prefers-reduced-motion`,
+ *     and every state stays legible from colour, glyph and copy alone.
+ *
+ * Keyframes are defined once here and referenced by name from
+ * `tailwind.config.js` `theme.extend.animation`, so there is a single
+ * source for each one.
+ */
+
+/* ──────────────────────────────────────────────
+   Running — the breathing glow layer
+   Opacity only, on a pseudo-element that owns the glow box-shadow.
+   ────────────────────────────────────────────── */
+@keyframes aw-node-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Success — the settle
+   Runs once, then the glow layer is removed. Success settles; failure
+   persists. On a finished canvas the only lit thing is what failed.
+   ────────────────────────────────────────────── */
+@keyframes aw-node-settle {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Indeterminate progress rail
+   The rail fill is 40% of the track and sweeps across it. `translateX`
+   percentages resolve against the fill's own width, hence 250%.
+   ────────────────────────────────────────────── */
+@keyframes aw-rail-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Active edge — the travelling dot
+   One GPU-composited element per active edge. Never animate
+   `stroke-dashoffset` across every edge; that repaints the whole SVG
+   layer each frame.
+   ────────────────────────────────────────────── */
+@keyframes aw-edge-flow {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Run strip entering
+   ────────────────────────────────────────────── */
+@keyframes aw-strip-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Reduced Motion — WCAG 2.3.3
+
+   `index.css` already clamps every animation globally under this query.
+   These rules are explicit rather than relying on that clamp, because a
+   clamped animation still lands on its final keyframe — which would
+   park the travelling dot at the target handle and leave the progress
+   rail stopped mid-track, both of which read as state that isn't there.
+
+   Under reduced motion the running node is a solid amber border, a
+   static glow, and a static spinner glyph. Nothing is lost but the
+   movement.
+   ────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  /* Static glow at full strength rather than mid-breath. */
+  .aw-node-glow {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+
+  /* The settle is a fade-out; skipping straight to "gone" is correct. */
+  .aw-node-glow--settling {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  /* An indeterminate rail cannot report progress without motion, so it
+     reports activity instead: a full, muted track. */
+  .aw-node-rail__fill--indeterminate {
+    animation: none !important;
+    transform: none !important;
+    width: 100% !important;
+    opacity: 0.5;
+  }
+
+  /* A parked dot claims control reached the target. Hide it; the edge's
+     colour and width still report that it is active. */
+  .aw-edge-flow-dot {
+    display: none !important;
+  }
+
+  .aw-strip-enter {
+    animation: none !important;
+  }
+}
