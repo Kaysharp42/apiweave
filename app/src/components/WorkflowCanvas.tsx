@@ -607,7 +607,14 @@ export function WorkflowCanvas({
                 );
                 return {
                   ...e,
-                  animated: true,
+                  // Not `animated`. ReactFlow's animated flag dashes and
+                  // marches the edge forever, so a canvas with parallel
+                  // branches was in permanent motion whether or not anything
+                  // was running. Motion is reserved for an edge control is
+                  // actually passing through (CustomEdge's travelling dot).
+                  // The reload path in `workflowCanvas.ts` never set it, so
+                  // this also stops branch edges from changing appearance
+                  // between drawing them and reopening the workflow.
                   style: {
                     stroke: branchEdgeColor,
                     strokeWidth: 1,
@@ -632,7 +639,6 @@ export function WorkflowCanvas({
               {
                 ...newEdge,
                 type: "custom",
-                animated: true,
                 style: {
                   stroke: branchEdgeColor,
                   strokeWidth: 1,
