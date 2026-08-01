@@ -11,10 +11,11 @@ import type { Node } from "reactflow";
 import { apiweave, onRunProgress, IpcError } from "../utils/apiweaveClient";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 
-/** The canvas colours nodes by `executionStatus` in {running, success, error}
- * (see WorkflowCanvas). Normalise both vocabularies onto that: the runner
- * stream speaks passed/failed, historical `runs.get` results speak
- * success/error — everything else passes through unchanged. */
+/** The canvas renders nodes by `executionStatus` in {running, success, error,
+ * warning, skipped} (see `BaseNode`'s statusConfig). Normalise both vocabularies
+ * onto that: the runner stream speaks passed/failed, historical `runs.get`
+ * results speak success/error — everything else, `skipped` included, passes
+ * through unchanged and is rendered as itself. */
 function canvasStatus(status: string): string {
   if (status === "passed") return "success";
   if (status === "failed") return "error";

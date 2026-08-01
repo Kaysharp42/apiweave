@@ -103,20 +103,10 @@
    movement.
    ────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  /* Static glow at full strength rather than mid-breath. */
-  .aw-node-glow {
-    animation: none !important;
-    opacity: 1 !important;
-  }
-
-  /* The settle is a fade-out; skipping straight to "gone" is correct. */
-  .aw-node-glow--settling {
-    animation: none !important;
-    opacity: 0 !important;
-  }
-
   /* An indeterminate rail cannot report progress without motion, so it
-     reports activity instead: a full, muted track. */
+     reports activity instead: a full, muted track. Without the width
+     override the clamped sweep would leave a 40% fill parked mid-track,
+     which reads as "40% done". */
   .aw-node-rail__fill--indeterminate {
     animation: none !important;
     transform: none !important;
@@ -129,8 +119,12 @@
   .aw-edge-flow-dot {
     display: none !important;
   }
-
-  .aw-strip-enter {
-    animation: none !important;
-  }
 }
+
+/*
+ * Everything else is neutralised at the point of use with Tailwind's
+ * `motion-reduce:animate-none`, which is the convention in this codebase.
+ * Those animations all rest at their correct static appearance — the glow
+ * layer sits at full opacity, the run strip at its final position — so
+ * disabling the animation is the whole fix and no override belongs here.
+ */

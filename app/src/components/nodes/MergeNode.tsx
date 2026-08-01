@@ -134,11 +134,6 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
       handleRight={{ type: "source" }}
       collapsible={true}
       defaultExpanded={false}
-      statusBadgeText={
-        status !== "idle"
-          ? status.charAt(0).toUpperCase() + status.slice(1)
-          : ""
-      }
       titleExtra={titleExtra}
       className="min-w-[200px]"
     >

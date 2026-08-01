@@ -513,11 +513,6 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
       title={data.label ?? "HTTP Request"}
       icon={icon}
       status={data.executionStatus ?? "idle"}
-      statusBadgeText={
-        data.executionStatus && data.executionStatus !== "idle"
-          ? data.executionStatus
-          : ""
-      }
       selected={selected ?? false}
       nodeId={id}
       presetNodeType="http-request"

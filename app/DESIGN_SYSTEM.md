@@ -217,7 +217,7 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 | `--aw-transition-normal` | 300ms — standard transitions                                   |
 | `--aw-transition-slow`   | 500ms — layout shifts                                          |
 
-`animate-pulse-border` is **retired.** It animated `border-color` in a loop, which forces a repaint per frame on every visible node. The running state is now a border color crossfade plus `animate-node-breathe` on a dedicated `::after` glow layer.
+`animate-pulse-border` is **retired.** It animated `border-color` in a loop, which forces a repaint per frame on every visible node. The running state is now a border color crossfade plus `animate-node-breathe` on a dedicated glow layer.
 
 ---
 
@@ -551,7 +551,7 @@ Tailwind's `rounded-sm` / `rounded-md` / `rounded-lg` / `rounded-xl` classes are
 The canvas uses the four-step easing/duration set in the Animations table above rather than the three `ease-in-out` steps. Motion there is a state report, not a flourish — see DESIGN.md §7.
 
 - **Only `transform`, `opacity`, and `box-shadow` on a dedicated layer animate.** Never `width`, `height`, `top`, `left`, or `border-color` in a loop.
-- **The running breathe oscillates the opacity of an `::after` glow layer**, never `box-shadow` on the node itself. Animating `box-shadow` forces a repaint per frame on every visible node.
+- **The running breathe oscillates the opacity of a dedicated glow layer**, never `box-shadow` on the node itself. Animating `box-shadow` forces a repaint per frame on every visible node. The layer is a positioned sibling of the node slab rather than a pseudo-element, because the slab clips its own overflow and would otherwise cut the halo off.
 - **The travelling edge dot is a `<circle>` with `offset-path`** — one GPU-composited element per active edge. Never animate `stroke-dashoffset` across every edge; that repaints the whole SVG layer each frame.
 - **Exits run at ~65% of their enter duration.**
 - **Every looping animation is gated behind `prefers-reduced-motion`.** Under reduced motion the running state is a solid amber border, a static glow, and a static spinner glyph. Every state stays fully legible from color, glyph, and copy — nothing depends on motion to be readable.

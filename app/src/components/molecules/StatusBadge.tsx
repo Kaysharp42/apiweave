@@ -5,6 +5,7 @@ import {
   Clock,
   AlertTriangle,
   Info,
+  MinusCircle,
   type LucideIcon,
 } from "lucide-react";
 import type { StatusBadgeProps } from "../../types";
@@ -54,6 +55,14 @@ export function StatusBadge({
       badgeClass:
         "border-status-warning/30 bg-status-warning/10 text-status-warning dark:border-[var(--aw-status-warning)]/30 dark:bg-[var(--aw-status-warning)]/10 dark:text-[var(--aw-status-warning)]",
       iconClass: "text-status-warning dark:text-[var(--aw-status-warning)]",
+    },
+    skipped: {
+      // Never a check — a skipped step did not succeed.
+      icon: MinusCircle,
+      text: "Skipped",
+      badgeClass:
+        "border-border bg-surface-raised text-text-muted dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-muted-dark",
+      iconClass: "text-text-muted dark:text-text-muted-dark",
     },
     info: {
       icon: Info,

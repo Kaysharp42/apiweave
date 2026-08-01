@@ -157,7 +157,7 @@ export function NodeActionMenu({
         }}
         onKeyDown={handleTriggerKeyDown}
         className={[
-          "p-1 rounded-sm text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+          "p-1 rounded-node-ctl text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
           triggerClassName,
         ]
           .filter(Boolean)
@@ -172,7 +172,7 @@ export function NodeActionMenu({
 
       {menuOpen && (
         <div
-          className="absolute right-0 mt-1 min-w-[144px] overflow-hidden rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node z-50 nodrag py-1"
+          className="absolute right-0 mt-1 min-w-[144px] overflow-hidden rounded-node-ctl border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay shadow-overlay z-50 nodrag py-1"
           role="menu"
         >
           {menuItems.map((item, index) => {
@@ -188,7 +188,9 @@ export function NodeActionMenu({
                 onClick={(event) => handleMenuAction(item.key, event)}
                 onKeyDown={(event) => handleMenuItemKeyDown(event, index)}
                 className={[
-                  "w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] flex items-center gap-2 cursor-pointer transition-colors motion-reduce:transition-none",
+                  // The menu sits on surface-overlay, so a surface-overlay hover
+                  // would be invisible; an accent tint reads in both themes.
+                  "w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-[color-mix(in_srgb,var(--aw-primary)_12%,transparent)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] flex items-center gap-2 cursor-pointer transition-colors motion-reduce:transition-none",
                   index > 0
                     ? "border-t border-border dark:border-border-dark"
                     : "",
