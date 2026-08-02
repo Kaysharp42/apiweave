@@ -137,7 +137,9 @@ export default {
         "node-breathe": "aw-node-breathe 2.4s ease-in-out infinite",
         "node-settle": "aw-node-settle var(--aw-dur-settle) var(--aw-ease-out) forwards",
         "rail-sweep": "aw-rail-sweep 1.4s linear infinite",
-        "edge-flow": "aw-edge-flow 1.6s linear infinite",
+        // Same duration and curve as the `.aw-edge-fill` reveal in
+        // `node-motion.css`, so the head never drifts off the colour it leads.
+        "edge-fill": "aw-edge-fill var(--aw-dur-edge-fill) var(--aw-ease-travel) forwards",
         "strip-enter": "aw-strip-enter var(--aw-dur-normal) var(--aw-ease-out)",
       },
     },

@@ -17,8 +17,10 @@ import { join } from "node:path";
  * because the second path lives inside a `setEdges` callback in a 900-line
  * component, where the cheapest honest guard is the one that reads the file.
  *
- * The travelling dot in `CustomEdge` is the sanctioned way to show an edge
- * carrying control, and it is mounted only while the source node is running.
+ * The sanctioned way to show an edge carrying control is `CustomEdge`'s
+ * one-shot fill: the state colour is revealed source→target and a head rides
+ * that reveal. It is mounted for exactly one traversal and is driven by the
+ * source node's live status, never by a flag stored on the edge.
  */
 
 const SCAN_DIRS = [join("src", "components"), join("src", "adapters")];
@@ -63,21 +65,49 @@ describe("connection layer motion", () => {
     expect(
       violations,
       "ReactFlow's `animated` flag dashes an edge forever, whether or not a run " +
-        "is happening. Use CustomEdge's travelling dot, which is mounted from the " +
+        "is happening. Use CustomEdge's one-shot fill, which is driven by the " +
         "source node's live status:\n" +
         violations.join("\n"),
     ).toEqual([]);
   });
 
-  it("keeps the travelling dot gated on the source node's run state", () => {
+  it("mounts the fill head for one traversal and no longer", () => {
     const source = readFileSync(join("src", "components", "CustomEdge.tsx"), "utf-8");
 
-    // The dot mounts only when the presentation for the *source node's* status
-    // says control is passing through — not from a flag stored on the edge.
-    expect(source).toMatch(/const flowing = presentation\.flowing;/);
-    expect(source).toMatch(/\{flowing && \(/);
+    // The head rides a fill that is in flight — not a per-edge flag, and not a
+    // loop. `filling` is set when the phase *becomes* traversed...
+    expect(source).toMatch(/\{filling && \(/);
+    // ...and cleared by the reveal's own transitionend, which is what keeps the
+    // head's lifetime tied to the reveal instead of to a duration copied into
+    // JS that can drift from the CSS one.
+    expect(source).toMatch(/onTransitionEnd/);
+    expect(source).toMatch(/stroke-dashoffset["']\)?\s*\)?\s*setFilling\(false\)/);
     // And it disappears entirely under reduced motion, rather than parking on
-    // the target handle and claiming control arrived.
+    // the target handle and claiming control is still arriving.
     expect(source).toMatch(/aw-edge-flow-dot[^"]*motion-reduce:hidden/);
+  });
+
+  it("never loops the edge fill", () => {
+    const config = readFileSync("tailwind.config.js", "utf-8");
+    // The declaration, not the comment above it that names the same keyframe.
+    const fill = config
+      .split("\n")
+      .find((line) => /^\s*"edge-fill":/.test(line));
+
+    expect(fill, "the edge fill animation must be registered").toBeDefined();
+    // A traversal happens once. `infinite` here would put the canvas back into
+    // perpetual motion by a different route than the `animated` flag above.
+    expect(fill).not.toContain("infinite");
+    expect(fill).toContain("forwards");
+  });
+
+  it("reveals the fill rather than snapping the edge to its final colour", () => {
+    const css = readFileSync(join("src", "styles", "node-motion.css"), "utf-8");
+
+    // The instant flip this replaced: the edge took its end colour the moment
+    // the source settled. The reveal has to be a transition on the overlay, and
+    // the colour crossfade has to be there too, or a status change still snaps.
+    expect(css).toMatch(/\.aw-edge-fill\s*\{[^}]*stroke-dashoffset\s+var\(--aw-dur-edge-fill\)/);
+    expect(css).toMatch(/\.aw-edge-fill\s*\{[^}]*stroke\s+var\(--aw-dur-fast\)/);
   });
 });

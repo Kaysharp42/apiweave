@@ -283,6 +283,7 @@ export function WorkflowCanvas({
     workspaceId: scope.workspaceId,
     workflowId,
     nodes,
+    edges,
     setNodes,
     selectedEnvironment,
     reactFlowInstanceRef,
@@ -899,21 +900,14 @@ export function WorkflowCanvas({
     requestAnimationFrame(() => rfInstanceRef.current?.fitView(fitViewOptions));
   }, [setNodes]);
 
-  /**
-   * Fit the view once a run finishes, so no edge endpoint is left outside the
-   * viewport with its result unread. The reference animation this redesign
-   * draws from ended with a dashed edge running off-canvas to nothing; a run
-   * that finishes off-screen is the same failure.
+  /*
+   * There is deliberately no auto-fit when a run finishes. Moving the camera
+   * out from under someone who is watching a specific node is a worse failure
+   * than an endpoint sitting off-screen: it discards where they chose to look,
+   * and it lands right as the last edges are still filling. The reference
+   * animation's camera never moves. Fitting the view stays a deliberate act —
+   * the auto-layout control and ReactFlow's own fit-view button.
    */
-  const wasRunningRef = useRef(false);
-  useEffect(() => {
-    if (wasRunningRef.current && !isRunning) {
-      requestAnimationFrame(() =>
-        rfInstanceRef.current?.fitView(fitViewOptions),
-      );
-    }
-    wasRunningRef.current = isRunning;
-  }, [isRunning]);
 
   return (
     <main

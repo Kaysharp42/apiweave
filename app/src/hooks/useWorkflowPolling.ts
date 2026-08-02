@@ -10,6 +10,8 @@ import { toast } from "sonner";
 import type { Node } from "reactflow";
 import { apiweave, onRunProgress, IpcError } from "../utils/apiweaveClient";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
+import useRunChoreography from "./useRunChoreography";
+import type { PacedEvent } from "../utils/runChoreography";
 
 /** The canvas renders nodes by `executionStatus` in {running, success, error,
  * warning, skipped} (see `BaseNode`'s statusConfig). Normalise both vocabularies
@@ -118,6 +120,9 @@ interface UseWorkflowPollingParams {
   workspaceId: string | null;
   workflowId: string | undefined;
   nodes: Node[];
+  // Topology only, for the playback: which node's traversal has to land before
+  // the next one is allowed to light up. Never read for anything else.
+  edges: readonly { source: string; target: string }[];
   setNodes: (updater: (nds: Node[]) => Node[]) => void;
   selectedEnvironment: string | null | undefined;
   reactFlowInstanceRef: MutableRefObject<{
@@ -164,6 +169,7 @@ export default function useWorkflowPolling({
   workspaceId,
   workflowId,
   nodes,
+  edges,
   setNodes,
   selectedEnvironment,
   reactFlowInstanceRef,
@@ -181,6 +187,9 @@ export default function useWorkflowPolling({
   // Synchronous guard against double-enqueue from rapid clicks/triggers: set
   // before awaiting runs.create, released once the run has started (or failed).
   const isStartingRef = useRef(false);
+  // The runner is done but the playback may not be. Distinguishes "cancel the
+  // run" from "skip the rest of the animation" — see `cancelRun`.
+  const runFinishedRef = useRef(false);
   const latestFailedRunRef = useRef<{
     runId: string | null;
     failedNodes: FailedNodeOption[];
@@ -242,6 +251,11 @@ export default function useWorkflowPolling({
       if (!workspaceId) return;
       try {
         const run = await apiweave.runs.get(workspaceId, runId);
+        // A second run can start while this one is still in flight — the
+        // playback deliberately trails the run, so the gap is wide enough to
+        // click Run again inside it. Landing these results on the next run's
+        // canvas would repaint it with the previous run's answers.
+        if (currentRunIdRef.current !== runId) return;
         const resolvedSecrets = run.resolvedSecrets;
         const statuses: NodeStatuses = {};
         for (const [nodeId, entry] of Object.entries(run.nodeStatuses ?? {})) {
@@ -278,27 +292,56 @@ export default function useWorkflowPolling({
     [workspaceId, setNodes],
   );
 
+  /** One node repaint, on the playback's schedule rather than the runner's. */
+  const releaseNodeStatus = useCallback(
+    (event: PacedEvent) => {
+      setNodes((nds) =>
+        selectiveNodeUpdate(nds, {
+          [event.nodeId]: {
+            status: event.status,
+            ...(event.result !== undefined ? { result: event.result } : {}),
+          },
+        }),
+      );
+    },
+    [setNodes],
+  );
+
+  const choreography = useRunChoreography({
+    edges,
+    release: releaseNodeStatus,
+  });
+
   const handleEvent = useCallback(
     (event: RunProgressEvent) => {
       if (event.kind === "node.status") {
-        setNodes((nds) =>
-          selectiveNodeUpdate(nds, {
-            [event.nodeId]: {
-              status: event.status,
-              result: resultFromStatusEntry(event),
-            },
-          }),
-        );
+        // Queued, not applied. The runner reports a 200ms node as running and
+        // done inside one frame; the canvas spaces those out so the edge
+        // leading into it has somewhere to happen.
+        choreography.enqueue({
+          nodeId: event.nodeId,
+          status: canvasStatus(event.status),
+          result: resultFromStatusEntry(event),
+        });
         return;
       }
       if (event.kind === "run.started") return; // canvas already reset on enqueue
       // run.finished
       stopStream();
-      setIsRunning(false);
-      void hydrateRunResults(event.runId);
+      runFinishedRef.current = true;
+      // `isRunning` and the hydration both wait for the playback. The toolbar
+      // saying "Run" while the canvas is still narrating is the same defect as
+      // the edges being out of step with the nodes, one level up; and hydration
+      // repaints every node at once, which would overtake the traversals still
+      // in flight.
+      const runId = event.runId;
+      choreography.whenSettled(() => {
+        setIsRunning(false);
+        void hydrateRunResults(runId);
+      });
       void refreshLatestFailedRun();
     },
-    [setNodes, stopStream, hydrateRunResults, refreshLatestFailedRun],
+    [choreography, stopStream, hydrateRunResults, refreshLatestFailedRun],
   );
 
   const executeWorkflow = useCallback(
@@ -403,6 +446,10 @@ export default function useWorkflowPolling({
 
       try {
         stopStream();
+        // Anything the previous run's playback had not finished telling is not
+        // context for this one.
+        choreography.reset();
+        runFinishedRef.current = false;
         setNodes((nds) =>
           nds.map((node) => ({
             ...node,
@@ -459,6 +506,7 @@ export default function useWorkflowPolling({
       reactFlowInstanceRef,
       stopStream,
       handleEvent,
+      choreography,
     ],
   );
 
@@ -468,6 +516,15 @@ export default function useWorkflowPolling({
   }, [workspaceId, workflowId, executeWorkflow]);
 
   const cancelRun = useCallback(async () => {
+    // The runner already finished and what is left on screen is the playback
+    // catching up. Cancel here means "skip the rest", not "stop the run":
+    // there is nothing left to stop, and asking the scheduler to cancel a
+    // finished run only earns an error toast.
+    if (runFinishedRef.current) {
+      choreography.flush();
+      return;
+    }
+
     const runId = currentRunIdRef.current;
     if (!workspaceId || !runId) return;
     try {
@@ -478,7 +535,7 @@ export default function useWorkflowPolling({
         error instanceof IpcError ? error.message : "Failed to cancel run";
       toast.error(detail);
     }
-  }, [workspaceId]);
+  }, [workspaceId, choreography]);
 
   const runFromFailedNodes = useCallback(
     (nodeIds: string[], sourceRunId: string, mode = "single") => {
@@ -561,6 +618,10 @@ export default function useWorkflowPolling({
             },
           };
         }
+        // Not paced: opening a finished run is reading a record, not watching
+        // it happen. Dropping the queue first stops a still-draining playback
+        // from repainting over the run just loaded.
+        choreography.reset();
         setNodes((nds) => selectiveNodeUpdate(nds, statuses));
         setCurrentRunId(fullRun.runId);
         currentRunIdRef.current = fullRun.runId;
@@ -568,7 +629,7 @@ export default function useWorkflowPolling({
         // ignore
       }
     },
-    [workspaceId, workflowId, setNodes],
+    [workspaceId, workflowId, setNodes, choreography],
   );
 
   useEffect(() => {

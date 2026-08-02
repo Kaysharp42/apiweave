@@ -1,4 +1,11 @@
-import { memo, useMemo, type CSSProperties } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -20,6 +27,19 @@ type CustomEdgeProps = EdgeProps<CustomEdgeData>;
 const EMPTY_EDGE_STYLE: CSSProperties = {};
 
 /**
+ * How far the colour creeps out of a working node before control actually
+ * leaves it. Small enough to read as "armed", not as "already arrived".
+ *
+ * The single source for this value: the dash overlay parks at `1 - ARM` and the
+ * travelling head starts its run from `ARM`, so the head never appears behind
+ * the colour it is supposed to be laying down.
+ */
+const ARM_FRACTION = 0.12;
+
+/** Untraversed plumbing vs. a path the run has taken. */
+const IDLE_WIDTH = 1;
+
+/**
  * An edge takes its state from the node it leaves. Idle plumbing is a
  * hairline; a live edge is the path the run is taking (DESIGN.md §7).
  */
@@ -30,7 +50,7 @@ export function presentationFor(status: NodeStatus): EdgePresentation {
         stroke: "var(--aw-status-running)",
         strokeWidth: 1.5,
         dash: undefined,
-        flowing: true,
+        phase: "armed",
       };
     case "success":
       return {
@@ -38,36 +58,48 @@ export function presentationFor(status: NodeStatus): EdgePresentation {
           "color-mix(in srgb, var(--aw-status-success) 55%, transparent)",
         strokeWidth: 1.5,
         dash: undefined,
-        flowing: false,
+        phase: "traversed",
       };
     case "error":
       return {
         stroke: "var(--aw-status-error)",
         strokeWidth: 1.5,
         dash: undefined,
-        flowing: false,
+        phase: "traversed",
       };
     case "warning":
       return {
         stroke: "var(--aw-status-warning)",
         strokeWidth: 1.5,
         dash: undefined,
-        flowing: false,
+        phase: "traversed",
       };
     case "skipped":
       return {
         stroke: "var(--aw-border)",
-        strokeWidth: 1,
+        strokeWidth: IDLE_WIDTH,
         dash: "2 6",
-        flowing: false,
+        phase: "resting",
       };
     default:
       return {
         stroke: "var(--aw-border)",
-        strokeWidth: 1,
+        strokeWidth: IDLE_WIDTH,
         dash: undefined,
-        flowing: false,
+        phase: "resting",
       };
+  }
+}
+
+/** Where the dash overlay parks for a phase, as a fraction of the path. */
+function revealOffset(presentation: EdgePresentation): number {
+  switch (presentation.phase) {
+    case "traversed":
+      return 0;
+    case "armed":
+      return 1 - ARM_FRACTION;
+    default:
+      return 1;
   }
 }
 
@@ -114,13 +146,68 @@ function CustomEdge({
   const presentation = presentationFor(sourceStatus);
 
   // The assertion pass/fail branches carry their own semantic colour, set by
-  // `workflowCanvas.ts`. Those keep it; only the width and the dot follow state.
+  // `workflowCanvas.ts`. That colour labels the *branch*, not the run, so it
+  // shows at rest too — dimmed underneath, full strength once traversed.
   const semanticStroke = style.stroke;
   const stroke = semanticStroke ?? presentation.stroke;
-  // Flow is a fact about the run, not a per-edge flag. The old `data.animated`
-  // marked assertion branches as permanently animated, which meant the canvas
-  // was always in motion whether or not anything was executing.
-  const flowing = presentation.flowing;
+
+  /**
+   * A traversal is in flight: the head is travelling and the colour behind it
+   * is being laid down. Cleared by the overlay's own `transitionend`, so the
+   * duration is stated once, in CSS, and nothing here can drift from it.
+   */
+  const [filling, setFilling] = useState(false);
+
+  /**
+   * What this edge showed the last time control finished passing through it.
+   * The new colour advances *over* it, so a node that succeeds and then fails
+   * on retry repaints from the source outward with its previous result still
+   * visible ahead of the head — rather than the whole path flipping at once.
+   */
+  const [trail, setTrail] = useState<string | null>(null);
+
+  const lastPhase = useRef(presentation.phase);
+  const lastTraversed = useRef<string | null>(
+    presentation.phase === "traversed" ? stroke : null,
+  );
+
+  useEffect(() => {
+    const previous = lastPhase.current;
+    lastPhase.current = presentation.phase;
+
+    // A run reset takes the canvas back to quiet: the previous run's colours
+    // are history, not context for the next one.
+    if (presentation.phase === "resting") {
+      lastTraversed.current = null;
+      setTrail(null);
+      setFilling(false);
+      return;
+    }
+
+    if (presentation.phase !== "traversed") {
+      setFilling(false);
+      return;
+    }
+
+    // Mounting straight into `traversed` is a finished run being reloaded.
+    // Nothing travelled, so nothing animates.
+    if (previous === "traversed") return;
+
+    setTrail(lastTraversed.current);
+    setFilling(true);
+  }, [presentation.phase]);
+
+  // Runs after the effect above, so a fill starting this commit still reads the
+  // *previous* traversed colour as its trail.
+  useEffect(() => {
+    if (presentation.phase === "traversed") lastTraversed.current = stroke;
+  }, [presentation.phase, stroke]);
+
+  const restStroke =
+    trail ??
+    (semanticStroke
+      ? `color-mix(in srgb, ${semanticStroke} 35%, transparent)`
+      : "var(--aw-border)");
 
   const onEdgeDelete = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -134,20 +221,54 @@ function CustomEdge({
         markerEnd={markerEnd ?? ""}
         style={{
           ...style,
-          stroke,
-          strokeWidth: presentation.strokeWidth,
+          stroke: restStroke,
+          strokeWidth: trail ? presentation.strokeWidth : IDLE_WIDTH,
           ...(presentation.dash ? { strokeDasharray: presentation.dash } : {}),
         }}
       />
 
-      {flowing && (
+      {/*
+        The state overlay. Always mounted, even at rest, because a reveal can
+        only animate on an element that was already there — mounting it at
+        `strokeDashoffset: 0` would snap the edge to its final colour, which is
+        the instant flip this replaces.
+
+        `pathLength={1}` normalises the dash maths to a fraction of the path, so
+        one offset value is correct for an edge of any length.
+      */}
+      <path
+        className="aw-edge-fill"
+        d={edgePath}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={presentation.strokeWidth}
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray={1}
+        strokeDashoffset={revealOffset(presentation)}
+        onTransitionEnd={(event) => {
+          if (event.propertyName === "stroke-dashoffset") setFilling(false);
+        }}
+      />
+
+      {/*
+        The head of the fill, not a courier doing laps. It is mounted only for
+        the length of one traversal and takes its duration from the same token
+        as the reveal, so the two stay locked together.
+      */}
+      {filling && (
         <circle
-          className="aw-edge-flow-dot animate-edge-flow motion-reduce:hidden"
+          className="aw-edge-flow-dot animate-edge-fill motion-reduce:hidden"
           r={3}
           cx={0}
           cy={0}
           fill={stroke}
-          style={{ offsetPath: `path("${edgePath}")` }}
+          style={
+            {
+              offsetPath: `path("${edgePath}")`,
+              "--aw-edge-arm": `${ARM_FRACTION * 100}%`,
+            } as CSSProperties
+          }
         />
       )}
 

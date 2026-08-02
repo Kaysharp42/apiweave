@@ -33,7 +33,18 @@
   --aw-primary-light: #0f766e;
   --aw-primary-hover: #0b4a59;
 
-  /* Status colors — desaturated, used sparingly */
+  /* Status colors — desaturated, used sparingly.
+     Running is amber because it is the one state whose outcome is not known
+     yet. It briefly shared the success hue, on the theory that a run in flight
+     and a run that passed are the same story at different stages — which holds
+     right up until a node fails. `video/apiweave anim 3.mp4` is what that costs:
+     a node sits there green-bordered with a green spinner and a green rail,
+     indistinguishable from success, and half a second later it is a red 400. A
+     colour that has to be taken back was never reporting, it was guessing.
+     Amber commits to nothing, so green means passed and red means failed and
+     neither has to be withdrawn.
+     Distinct from `warning` by hue (yellow vs orange) and, per the no-colour-only
+     rule, by glyph: a spinner is not a warning triangle. */
   --aw-status-success: #15803d;
   --aw-status-error: #b91c1c;
   --aw-status-warning: #b45309;
@@ -134,10 +145,18 @@
   --aw-ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* enter, expand   */
   --aw-ease-in: cubic-bezier(0.7, 0, 0.84, 0); /* exit, collapse  */
   --aw-ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* hover, colour   */
+  /* Travel — something crossing a distance, not an element arriving.
+     The expo curves above are wrong for this: --aw-ease-out is 85% done in
+     the first fifth of its duration, which on an edge reads as the colour
+     snapping to the far end and then dawdling. This one holds a near-even
+     speed through the middle so the distance is legible, and only softens
+     at the ends. */
+  --aw-ease-travel: cubic-bezier(0.45, 0.05, 0.3, 1);
   --aw-dur-instant: 100ms; /* press feedback            */
   --aw-dur-fast: 180ms; /* hover, focus, colour      */
   --aw-dur-normal: 260ms; /* run strip enter, expand   */
   --aw-dur-settle: 600ms; /* success glow fade-out     */
+  --aw-dur-edge-fill: 700ms; /* edge traversal, source→target */
 }
 
 /* ──────────────────────────────────────────────

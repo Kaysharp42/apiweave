@@ -69,11 +69,13 @@
 
 | Token            | Value                 | Usage                  |
 | ---------------- | --------------------- | ---------------------- |
-| `status-success` | `#16a34a` / `#4ade80` | Pass, success          |
-| `status-error`   | `#dc2626` / `#f87171` | Fail, error            |
-| `status-warning` | `#f59e0b` / `#fbbf24` | Warning, caution       |
-| `status-running` | `#eab308` / `#facc15` | In-progress, executing |
-| `status-info`    | `#2563eb` / `#3b82f6` | Informational          |
+| `status-success` | `#15803d` / `#4ade80` | Pass, success          |
+| `status-error`   | `#b91c1c` / `#f87171` | Fail, error            |
+| `status-warning` | `#b45309` / `#fbbf24` | Warning, caution       |
+| `status-running` | `#a16207` / `#facc15` | In-progress, executing |
+| `status-info`    | `#1d4ed8` / `#3b82f6` | Informational          |
+
+`status-running` must stay off the outcome hues. It was briefly set to the success green — a run in flight and a run that passed being "the same story at different stages" — and the result was a node that sat there green-bordered with a green spinner, indistinguishable from a pass, then flipped to a red `400`. A status colour that has to be withdrawn was never reporting. `status-hue.test.ts` guards the invariant, not the hex.
 
 ### HTTP Method Colors
 
@@ -205,20 +207,24 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 | `animate-node-breathe`   | Running node glow layer — 2.4s, `opacity` .55→1, infinite      |
 | `animate-node-settle`    | Success glow fade-out — 600ms, `opacity` 1→0, once             |
 | `animate-rail-sweep`     | Indeterminate progress rail — 1.4s, `transform`, infinite      |
-| `animate-edge-flow`      | Travelling dot on an active edge — 1.6s, `offset-distance`     |
+| `animate-edge-fill`      | Head of an edge traversal — 700ms, `offset-distance`, once     |
 | `animate-strip-enter`    | Run strip appearing — 260ms, `opacity` + `translateY`          |
 | `--aw-ease-out`          | `cubic-bezier(0.16, 1, 0.3, 1)` — enter, expand                |
 | `--aw-ease-in`           | `cubic-bezier(0.7, 0, 0.84, 0)` — exit, collapse               |
 | `--aw-ease-standard`     | `cubic-bezier(0.4, 0, 0.2, 1)` — hover, color                  |
+| `--aw-ease-travel`       | `cubic-bezier(0.45, 0.05, 0.3, 1)` — edge traversal            |
 | `--aw-dur-instant`       | 100ms — press feedback                                         |
 | `--aw-dur-fast`          | 180ms — hover, focus, color                                    |
 | `--aw-dur-normal`        | 260ms — run strip enter, expand                                |
 | `--aw-dur-settle`        | 600ms — success glow fade-out                                  |
+| `--aw-dur-edge-fill`     | 700ms — edge traversal, source→target (see note below)         |
 | `--aw-transition-fast`   | 150ms — micro-interactions                                     |
 | `--aw-transition-normal` | 300ms — standard transitions                                   |
 | `--aw-transition-slow`   | 500ms — layout shifts                                          |
 
 `animate-pulse-border` is **retired.** It animated `border-color` in a loop, which forces a repaint per frame on every visible node. The running state is now a border color crossfade plus `animate-node-breathe` on a dedicated glow layer.
+
+`--aw-dur-edge-fill` is the one token the app writes at runtime. The canvas does not mirror a run, it plays it back (`utils/runChoreography.ts`): a node cannot light up until the traversal into it has landed, and a node that lit up stays lit for `NODE_DWELL_MS`. A run whose nodes answer in 200ms would otherwise emit running and done inside one frame, leaving several 700ms traversals overlapping at unrelated positions, arriving at nodes that finished long ago. Because the playback trails the run, its tempo compresses as the backlog builds — down to a 240ms floor, never below, or a traversal stops reading as travel. `useRunChoreography` publishes the tempo in force onto `:root` so the CSS reveal and the scheduler always mean the same number. Never hardcode the duration in JS: read the token.
 
 ---
 
