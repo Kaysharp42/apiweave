@@ -12,6 +12,7 @@ import { apiweave, onRunProgress, IpcError } from "../utils/apiweaveClient";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import useRunChoreography from "./useRunChoreography";
 import type { PacedEvent } from "../utils/runChoreography";
+import type { RunResult } from "../types/RunResult";
 
 /** The canvas renders nodes by `executionStatus` in {running, success, error,
  * warning, skipped} (see `BaseNode`'s statusConfig). Normalise both vocabularies
@@ -69,6 +70,33 @@ function resultFromRunResult(result: unknown): unknown {
     ...(response ?? {}),
     ...(statusCode !== undefined ? { statusCode } : {}),
   };
+}
+
+/** Paint a finished run's per-node results onto `statuses`, in place. Shared by
+ * the live-finish hydration path and by opening a historical run — both read
+ * the same `Run.results` shape and attach `resolvedSecrets` the same way. */
+function applyRunResults(
+  statuses: NodeStatuses,
+  results: readonly RunResult[],
+  resolvedSecrets:
+    | readonly {
+        readonly name: string;
+        readonly scopeType: "environment" | "workspace" | null;
+        readonly resolved: boolean;
+      }[]
+    | undefined,
+): void {
+  for (const result of results) {
+    statuses[result.nodeId] = {
+      status: result.status,
+      result: {
+        ...(resultFromRunResult(result) as Record<string, unknown>),
+        ...(resolvedSecrets && resolvedSecrets.length > 0
+          ? { resolvedSecrets }
+          : {}),
+      },
+    };
+  }
 }
 
 function selectiveNodeUpdate(
@@ -273,17 +301,7 @@ export default function useWorkflowPolling({
             }
           }
         }
-        for (const result of run.results ?? []) {
-          statuses[result.nodeId] = {
-            status: result.status,
-            result: {
-              ...(resultFromRunResult(result) as Record<string, unknown>),
-              ...(resolvedSecrets && resolvedSecrets.length > 0
-                ? { resolvedSecrets }
-                : {}),
-            },
-          };
-        }
+        applyRunResults(statuses, run.results ?? [], resolvedSecrets);
         setNodes((nds) => selectiveNodeUpdate(nds, statuses));
       } catch {
         // ignore — the canvas keeps the streamed statuses
@@ -607,17 +625,7 @@ export default function useWorkflowPolling({
         const fullRun = await apiweave.runs.get(workspaceId, run.runId);
         const resolvedSecrets = fullRun.resolvedSecrets;
         const statuses: NodeStatuses = {};
-        for (const result of fullRun.results ?? []) {
-          statuses[result.nodeId] = {
-            status: result.status,
-            result: {
-              ...(resultFromRunResult(result) as Record<string, unknown>),
-              ...(resolvedSecrets && resolvedSecrets.length > 0
-                ? { resolvedSecrets }
-                : {}),
-            },
-          };
-        }
+        applyRunResults(statuses, fullRun.results ?? [], resolvedSecrets);
         // Not paced: opening a finished run is reading a record, not watching
         // it happen. Dropping the queue first stops a still-draining playback
         // from repainting over the run just loaded.

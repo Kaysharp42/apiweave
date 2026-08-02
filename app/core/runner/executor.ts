@@ -276,6 +276,40 @@ export class WorkflowExecutor {
   // -------------------- Node execution --------------------
 
   /**
+   * Record that `nodeId` failed and decide whether the branch keeps going.
+   *
+   * Shared by every call site that catches a node's own error and a
+   * downstream one propagating through it, so the bookkeeping — first error
+   * message, failed-node set, continue-on-fail — stays in one place. Always
+   * rethrows `StopBranch` (a signal, not a failure) and rethrows the original
+   * `error` when the branch isn't allowed to continue past it.
+   */
+  private recordNodeFailure(nodeId: string, error: unknown, continueOnFail: boolean): void {
+    if (error instanceof StopBranch) throw error
+    this.hasFailures = true
+    this.failedNodes.add(nodeId)
+    if (!this.firstErrorMessage) {
+      this.firstErrorMessage = String(error)
+    }
+    if (!continueOnFail) throw error
+  }
+
+  /**
+   * Wait for a traversal already in flight for `nodeId`, if one exists.
+   *
+   * Resolves `true` once the caller should stop (someone else is already
+   * handling this node); `false` means no traversal is running and the caller
+   * must start one.
+   */
+  private async joinInFlightRun(nodeId: string): Promise<boolean> {
+    const inFlight = this.nodeRuns.get(nodeId)
+    if (!inFlight) return false
+    const outcome = await inFlight
+    if (outcome instanceof StopBranch) throw outcome
+    return true
+  }
+
+  /**
    * Enter a node from one incoming path, running it at most once per run.
    *
    * Traversal walks every edge, so a node that two paths converge on used to be
@@ -316,12 +350,7 @@ export class WorkflowExecutor {
       return this.traverseFromNode(node, nodes, edges, cancelSignal, continueOnFail, ancestors)
     }
 
-    const inFlight = this.nodeRuns.get(nodeId)
-    if (inFlight) {
-      const outcome = await inFlight
-      if (outcome instanceof StopBranch) throw outcome
-      return
-    }
+    if (await this.joinInFlightRun(nodeId)) return
 
     // Resolved with the outcome rather than rejected: nothing is guaranteed to
     // await this handle, and a rejected promise nobody awaits is an unhandled
@@ -342,6 +371,7 @@ export class WorkflowExecutor {
     }
   }
 
+  // fallow-ignore-next-line complexity -- this is the pre-existing single-node traversal body (node exec, assertion routing, branch fan-out/fan-in), lifted out of the old executeFromNode by the run-dedup guard above it rather than newly written; splitting the traversal engine itself is a separate effort from that guard
   private async traverseFromNode(
     node: WorkflowNode,
     nodes: Map<string, WorkflowNode>,
@@ -388,13 +418,7 @@ export class WorkflowExecutor {
           return
         }
       } catch (error) {
-        if (error instanceof StopBranch) throw error
-        this.hasFailures = true
-        this.failedNodes.add(nodeId)
-        if (!this.firstErrorMessage) {
-          this.firstErrorMessage = String(error)
-        }
-        if (!continueOnFail) throw error
+        this.recordNodeFailure(nodeId, error, continueOnFail)
       }
     } else {
       this.updateNodeStatus(nodeId, "passed")
@@ -494,13 +518,7 @@ export class WorkflowExecutor {
           try {
             await this.executeFromNode(nextNodeId, nodes, edges, cancelSignal, continueOnFail, path)
           } catch (error) {
-            if (error instanceof StopBranch) throw error
-            this.hasFailures = true
-            this.failedNodes.add(nextNodeId)
-            if (!this.firstErrorMessage) {
-              this.firstErrorMessage = String(error)
-            }
-            if (!continueOnFail) throw error
+            this.recordNodeFailure(nextNodeId, error, continueOnFail)
           }
         }
       }

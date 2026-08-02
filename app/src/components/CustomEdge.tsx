@@ -1,5 +1,6 @@
 import {
   memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -17,6 +18,7 @@ import {
 import { X } from "lucide-react";
 import type { NodeStatus } from "../types/NodeStatus";
 import type { EdgePresentation } from "../types/EdgePresentation";
+import type { EdgePhase } from "../types/EdgePhase";
 
 interface CustomEdgeData {
   animated?: boolean;
@@ -103,6 +105,87 @@ function revealOffset(presentation: EdgePresentation): number {
   }
 }
 
+type FillAction =
+  /** A run reset takes the canvas back to quiet: the previous run's colours
+   * are history, not context for the next one. */
+  | { kind: "reset" }
+  /** Not yet traversed (idle or armed): no fill to show. */
+  | { kind: "hold" }
+  /** Mounting straight into `traversed` is a finished run being reloaded.
+   * Nothing travelled, so nothing animates. */
+  | { kind: "settled" }
+  /** Control just finished crossing: start the reveal. */
+  | { kind: "fill" };
+
+/** What a phase transition should do to the fill overlay, decided from the
+ * phase alone — the caller supplies the trail colour to paint. */
+function fillActionFor(phase: EdgePhase, previousPhase: EdgePhase): FillAction {
+  if (phase === "resting") return { kind: "reset" };
+  if (phase !== "traversed") return { kind: "hold" };
+  if (previousPhase === "traversed") return { kind: "settled" };
+  return { kind: "fill" };
+}
+
+interface EdgeFillState {
+  /**
+   * A traversal is in flight: the head is travelling and the colour behind it
+   * is being laid down. Cleared by the overlay's own `transitionend`, so the
+   * duration is stated once, in CSS, and nothing here can drift from it.
+   */
+  filling: boolean;
+  /**
+   * What this edge showed the last time control finished passing through it.
+   * The new colour advances *over* it, so a node that succeeds and then fails
+   * on retry repaints from the source outward with its previous result still
+   * visible ahead of the head — rather than the whole path flipping at once.
+   */
+  trail: string | null;
+  /** The overlay's own `transitionend` says the reveal has finished playing. */
+  stopFilling: () => void;
+}
+
+/** Owns the fill/trail state machine for one edge's phase transitions. Split
+ * out of `CustomEdge` so the render stays a single, easily-scanned hook call. */
+function useEdgeFill(phase: EdgePhase, stroke: string): EdgeFillState {
+  const [filling, setFilling] = useState(false);
+  const [trail, setTrail] = useState<string | null>(null);
+
+  const lastPhase = useRef(phase);
+  const lastTraversed = useRef<string | null>(phase === "traversed" ? stroke : null);
+
+  useEffect(() => {
+    const previous = lastPhase.current;
+    lastPhase.current = phase;
+
+    switch (fillActionFor(phase, previous).kind) {
+      case "reset":
+        lastTraversed.current = null;
+        setTrail(null);
+        setFilling(false);
+        break;
+      case "hold":
+        setFilling(false);
+        break;
+      case "settled":
+        break;
+      case "fill":
+        setTrail(lastTraversed.current);
+        setFilling(true);
+        break;
+    }
+  }, [phase]);
+
+  // Runs after the effect above, so a fill starting this commit still reads the
+  // *previous* traversed colour as its trail.
+  useEffect(() => {
+    if (phase === "traversed") lastTraversed.current = stroke;
+  }, [phase, stroke]);
+
+  const stopFilling = useCallback(() => setFilling(false), []);
+
+  return { filling, trail, stopFilling };
+}
+
 function CustomEdge({
   id,
   source,
@@ -113,7 +196,7 @@ function CustomEdge({
   sourcePosition,
   targetPosition,
   style = EMPTY_EDGE_STYLE,
-  markerEnd,
+  markerEnd = "",
 }: CustomEdgeProps) {
   const { deleteElements } = useReactFlow();
 
@@ -151,57 +234,7 @@ function CustomEdge({
   const semanticStroke = style.stroke;
   const stroke = semanticStroke ?? presentation.stroke;
 
-  /**
-   * A traversal is in flight: the head is travelling and the colour behind it
-   * is being laid down. Cleared by the overlay's own `transitionend`, so the
-   * duration is stated once, in CSS, and nothing here can drift from it.
-   */
-  const [filling, setFilling] = useState(false);
-
-  /**
-   * What this edge showed the last time control finished passing through it.
-   * The new colour advances *over* it, so a node that succeeds and then fails
-   * on retry repaints from the source outward with its previous result still
-   * visible ahead of the head — rather than the whole path flipping at once.
-   */
-  const [trail, setTrail] = useState<string | null>(null);
-
-  const lastPhase = useRef(presentation.phase);
-  const lastTraversed = useRef<string | null>(
-    presentation.phase === "traversed" ? stroke : null,
-  );
-
-  useEffect(() => {
-    const previous = lastPhase.current;
-    lastPhase.current = presentation.phase;
-
-    // A run reset takes the canvas back to quiet: the previous run's colours
-    // are history, not context for the next one.
-    if (presentation.phase === "resting") {
-      lastTraversed.current = null;
-      setTrail(null);
-      setFilling(false);
-      return;
-    }
-
-    if (presentation.phase !== "traversed") {
-      setFilling(false);
-      return;
-    }
-
-    // Mounting straight into `traversed` is a finished run being reloaded.
-    // Nothing travelled, so nothing animates.
-    if (previous === "traversed") return;
-
-    setTrail(lastTraversed.current);
-    setFilling(true);
-  }, [presentation.phase]);
-
-  // Runs after the effect above, so a fill starting this commit still reads the
-  // *previous* traversed colour as its trail.
-  useEffect(() => {
-    if (presentation.phase === "traversed") lastTraversed.current = stroke;
-  }, [presentation.phase, stroke]);
+  const { filling, trail, stopFilling } = useEdgeFill(presentation.phase, stroke);
 
   const restStroke =
     trail ??
@@ -218,12 +251,12 @@ function CustomEdge({
     <>
       <BaseEdge
         path={edgePath}
-        markerEnd={markerEnd ?? ""}
+        markerEnd={markerEnd}
         style={{
           ...style,
           stroke: restStroke,
           strokeWidth: trail ? presentation.strokeWidth : IDLE_WIDTH,
-          ...(presentation.dash ? { strokeDasharray: presentation.dash } : {}),
+          strokeDasharray: presentation.dash,
         }}
       />
 
@@ -247,7 +280,7 @@ function CustomEdge({
         strokeDasharray={1}
         strokeDashoffset={revealOffset(presentation)}
         onTransitionEnd={(event) => {
-          if (event.propertyName === "stroke-dashoffset") setFilling(false);
+          if (event.propertyName === "stroke-dashoffset") stopFilling();
         }}
       />
 

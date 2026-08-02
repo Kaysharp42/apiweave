@@ -27,12 +27,11 @@
  * when to come back. `useRunChoreography` owns the clock.
  */
 
-/** What the canvas is asked to show for one node. */
-export interface PacedEvent {
-  nodeId: string;
-  status: string;
-  result?: unknown;
-}
+import type { PacedEvent } from "../types/PacedEvent";
+import type { ChoreographyState } from "../types/ChoreographyState";
+import type { DrainResult } from "../types/DrainResult";
+
+export type { PacedEvent, ChoreographyState, DrainResult };
 
 /** Full-tempo traversal, and the default of `--aw-dur-edge-fill`. */
 export const EDGE_FILL_BASE_MS = 700;
@@ -66,26 +65,6 @@ export function fillDurationFor(backlog: number): number {
   const pressure = Math.max(0, backlog);
   const scaled = Math.round((EDGE_FILL_BASE_MS * 3) / (3 + pressure));
   return Math.min(EDGE_FILL_BASE_MS, Math.max(EDGE_FILL_MIN_MS, scaled));
-}
-
-export interface ChoreographyState {
-  /** target → sources, the only topology this needs. */
-  predecessors: Map<string, string[]>;
-  queue: PacedEvent[];
-  /** When each node was last shown working. */
-  shownWorkingAt: Map<string, number>;
-  /** When each node was last shown finished — the start of its outgoing fills. */
-  shownFinishedAt: Map<string, number>;
-  /**
-   * Tempo in force when each node was shown finished.
-   *
-   * Recorded rather than recomputed, because the tempo moves with the backlog
-   * and the backlog shrinks as the queue drains: recomputing would hand two
-   * branches off the same node two different gates, and they would leave
-   * together on screen but arrive apart. The duration a traversal runs at is
-   * fixed the moment it departs — which is also when CSS reads it.
-   */
-  fillAfter: Map<string, number>;
 }
 
 export function createChoreographyState(
@@ -146,19 +125,6 @@ export function readyAt(
     return working + NODE_DWELL_MS;
   }
   return arrivesAt(state, event.nodeId, now);
-}
-
-export interface DrainResult {
-  /** Apply these to the canvas, in order. */
-  released: PacedEvent[];
-  /** When to call `drain` again, or null if the queue is empty. */
-  nextAt: number | null;
-  /**
-   * Duration of the traversals this drain set in motion. Publish it before
-   * applying `released`, so the edges animate over the same interval the
-   * scheduler is about to wait.
-   */
-  fillMs: number;
 }
 
 /**

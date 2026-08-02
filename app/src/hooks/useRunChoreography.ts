@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type MutableRefObject,
+} from "react";
 import {
   createChoreographyState,
   drain,
@@ -11,6 +17,38 @@ import {
 
 /** The token `CustomEdge`'s reveal and its travelling head both animate over. */
 const FILL_VAR = "--aw-dur-edge-fill";
+
+/** Cancel a pending pump timer, if one is scheduled. Shared by every place
+ * that pre-empts the schedule: enqueuing more work, resetting, and flushing. */
+function clearPumpTimer(
+  timerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>,
+): void {
+  if (timerRef.current !== null) {
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
+}
+
+/** Run and clear every `whenSettled` callback. Shared by `pump` (the queue
+ * drained naturally) and `flush` (the queue was emptied early) — both are
+ * "nothing left to wait for" and owe the same callbacks the same thing. */
+function drainSettled(settledRef: MutableRefObject<(() => void)[]>): void {
+  const callbacks = settledRef.current;
+  settledRef.current = [];
+  for (const callback of callbacks) callback();
+}
+
+/** Published as a CSS custom property, not component state: `CustomEdge`
+ * reads it for its own animation duration, and neither side should re-render
+ * just because the tempo changed. Free functions, not hooks — they close over
+ * nothing React-owned, so there is nothing for `useCallback` to stabilise. */
+function setTempo(fillMs: number): void {
+  document.documentElement.style.setProperty(FILL_VAR, `${fillMs}ms`);
+}
+
+function clearTempo(): void {
+  document.documentElement.style.removeProperty(FILL_VAR);
+}
 
 interface UseRunChoreographyParams {
   edges: readonly { source: string; target: string }[];
@@ -79,19 +117,8 @@ export default function useRunChoreography({
     stateRef.current = next;
   }, [topologySignature]);
 
-  const setTempo = useCallback((fillMs: number) => {
-    document.documentElement.style.setProperty(FILL_VAR, `${fillMs}ms`);
-  }, []);
-
-  const clearTempo = useCallback(() => {
-    document.documentElement.style.removeProperty(FILL_VAR);
-  }, []);
-
   const pump = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearPumpTimer(timerRef);
 
     const state = stateRef.current;
     const now = Date.now();
@@ -108,10 +135,8 @@ export default function useRunChoreography({
       return;
     }
 
-    const callbacks = settledRef.current;
-    settledRef.current = [];
-    for (const callback of callbacks) callback();
-  }, [setTempo]);
+    drainSettled(settledRef);
+  }, []);
 
   const enqueue = useCallback(
     (event: PacedEvent) => {
@@ -122,31 +147,23 @@ export default function useRunChoreography({
   );
 
   const reset = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearPumpTimer(timerRef);
     resetChoreography(stateRef.current);
     settledRef.current = [];
     clearTempo();
-  }, [clearTempo]);
+  }, []);
 
   /** Skip to the end: apply what is left at once, then settle. */
   const flush = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearPumpTimer(timerRef);
 
     for (const event of flushQueue(stateRef.current, Date.now())) {
       releaseRef.current(event);
     }
     clearTempo();
 
-    const callbacks = settledRef.current;
-    settledRef.current = [];
-    for (const callback of callbacks) callback();
-  }, [clearTempo]);
+    drainSettled(settledRef);
+  }, []);
 
   const whenSettled = useCallback((callback: () => void) => {
     if (stateRef.current.queue.length === 0) {

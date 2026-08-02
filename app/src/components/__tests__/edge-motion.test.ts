@@ -81,7 +81,7 @@ describe("connection layer motion", () => {
     // head's lifetime tied to the reveal instead of to a duration copied into
     // JS that can drift from the CSS one.
     expect(source).toMatch(/onTransitionEnd/);
-    expect(source).toMatch(/stroke-dashoffset["']\)?\s*\)?\s*setFilling\(false\)/);
+    expect(source).toMatch(/stroke-dashoffset["']\)?\s*\)?\s*stopFilling\(\)/);
     // And it disappears entirely under reduced motion, rather than parking on
     // the target handle and claiming control is still arriving.
     expect(source).toMatch(/aw-edge-flow-dot[^"]*motion-reduce:hidden/);
