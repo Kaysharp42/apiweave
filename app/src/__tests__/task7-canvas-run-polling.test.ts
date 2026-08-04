@@ -102,12 +102,13 @@ describe("Task 20: run progress streams over IPC events", () => {
     vi.clearAllMocks();
   });
 
-  function mount() {
+  function mount(edges: { source: string; target: string }[] = []) {
     return renderHook(() =>
       useWorkflowPolling({
         workspaceId: "ws-1",
         workflowId: "wf-1",
         nodes: nodesBox.nodes,
+        edges,
         setNodes,
         selectedEnvironment: null,
         reactFlowInstanceRef: null,
@@ -160,6 +161,7 @@ describe("Task 20: run progress streams over IPC events", () => {
         workspaceId: "ws-1",
         workflowId: "wf-1",
         nodes: nodesBox.nodes,
+        edges: [],
         setNodes,
         selectedEnvironment: null,
         reactFlowInstanceRef: null,
@@ -251,6 +253,69 @@ describe("Task 20: run progress streams over IPC events", () => {
       statusCode: 200,
       body: { ok: true },
     });
+  });
+
+  /**
+   * The canvas plays a run back rather than mirroring it, so it is still
+   * narrating for a beat after the runner is done. `video/apiweave 4.mp4` shows
+   * the cost of not accounting for that: the toolbar flips back to "Run" at
+   * t=12.5s while nodes are still lighting up until t=15.5s.
+   */
+  it("(c2) keeps isRunning true while the playback is still catching up", async () => {
+    const { result } = mount([{ source: "start", target: "http_1" }]);
+    await act(async () => {
+      await result.current.runWorkflow();
+    });
+
+    await act(async () => {
+      // `http_1` is gated behind the traversal out of `start`, so it is still
+      // queued when the runner reports the run over.
+      captured.cb?.({
+        kind: "node.status",
+        runId: "run-1",
+        nodeId: "start",
+        status: "passed",
+        variables: {},
+        seq: 1,
+        ts: "2026-07-27T00:00:00.000Z",
+      });
+      captured.cb?.({
+        kind: "node.status",
+        runId: "run-1",
+        nodeId: "http_1",
+        status: "running",
+        variables: {},
+        seq: 2,
+        ts: "2026-07-27T00:00:00.000Z",
+      });
+      captured.cb?.({
+        kind: "run.finished",
+        runId: "run-1",
+        status: "completed",
+        seq: 3,
+        ts: "2026-07-27T00:00:00.000Z",
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The stream is closed — but the story is not finished being told.
+    expect(unsubscribe).toHaveBeenCalled();
+    expect(result.current.isRunning).toBe(true);
+
+    // Cancel now means "skip the rest": there is no run left to stop, and
+    // asking the scheduler to cancel a finished one only earns an error toast.
+    await act(async () => {
+      await result.current.cancelRun();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(invoke.mock.calls.find((c) => c[1] === "cancel")).toBeUndefined();
+    expect(result.current.isRunning).toBe(false);
+    // Skipped, not dropped: the queued state landed on the canvas.
+    const node = nodesBox.nodes.find((n) => n.id === "http_1");
+    expect(node?.data?.["executionStatus"]).toBeDefined();
   });
 
   it("(d) cancelRun routes through runs.cancel", async () => {

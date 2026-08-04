@@ -33,7 +33,18 @@
   --aw-primary-light: #0f766e;
   --aw-primary-hover: #0b4a59;
 
-  /* Status colors — desaturated, used sparingly */
+  /* Status colors — desaturated, used sparingly.
+     Running is amber because it is the one state whose outcome is not known
+     yet. It briefly shared the success hue, on the theory that a run in flight
+     and a run that passed are the same story at different stages — which holds
+     right up until a node fails. `video/apiweave anim 3.mp4` is what that costs:
+     a node sits there green-bordered with a green spinner and a green rail,
+     indistinguishable from success, and half a second later it is a red 400. A
+     colour that has to be taken back was never reporting, it was guessing.
+     Amber commits to nothing, so green means passed and red means failed and
+     neither has to be withdrawn.
+     Distinct from `warning` by hue (yellow vs orange) and, per the no-colour-only
+     rule, by glyph: a spinner is not a warning triangle. */
   --aw-status-success: #15803d;
   --aw-status-error: #b91c1c;
   --aw-status-warning: #b45309;
@@ -56,8 +67,8 @@
   /* Spacing / sizing */
   --aw-header-height: 48px;
   --aw-footer-height: 32px;
-  --aw-nav-collapsed: 56px;
-  --aw-nav-expanded: 180px;
+  --aw-nav-collapsed: 44px;
+  --aw-nav-expanded: 146px;
   --aw-sidebar-width: 380px;
 
   /* Transitions */
@@ -84,6 +95,68 @@
   /* Focus ring */
   --aw-focus-ring-width: 2px;
   --aw-focus-ring-offset: 2px;
+
+  /* ── Node layer ──────────────────────────────
+     The canvas only. See DESIGN.md §7. The chrome radius scale above
+     stays sharp; the node family is scoped so it never has to move.
+     ────────────────────────────────────────── */
+
+  /* Node supporting text.
+     --aw-text-muted is #a1a1aa, which is 2.56:1 on white — fine for a
+     placeholder inside a bordered input, but the node layer uses muted text
+     for real content: the metrics row, the rest line's argument, the skipped
+     label, and the idle status glyph. Those need to be read. zinc-500 is
+     4.83:1 and still visibly quieter than --aw-text-secondary at 7.73:1.
+     Dark mode keeps --aw-text-muted, which is already 3.67:1 there. */
+  --aw-node-text-muted: #71717a;
+
+  /* Node radius */
+  --aw-radius-node: 14px; /* the node slab                        */
+  --aw-radius-node-tile: 8px; /* 28px icon tile                       */
+  --aw-radius-node-ctl: 8px; /* method select, URL input, menu items  */
+  --aw-radius-node-chip: 6px; /* method pill, count badges, labels    */
+  --aw-radius-node-rail: 9999px; /* progress rail, status dot, midpoints  */
+
+  /* Node elevation — inner top highlight is what makes the slab read
+     as a lit object rather than a flat rectangle. */
+  --aw-shadow-node-raised:
+    inset 0 1px 0 0 rgb(255 255 255 / 90%), 0 4px 12px -6px rgb(9 9 11 / 10%);
+
+  /* Node glow — a state signal, never a decoration. Every value is
+     color-mixed from an existing --aw-status-* token, so the palette
+     stays single-sourced. Light mode expresses state as a tighter,
+     more saturated colored shadow; luminance glow is invisible on white. */
+  --aw-glow-running:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-running) 75%, transparent),
+    0 0 16px -8px color-mix(in srgb, var(--aw-status-running) 55%, transparent);
+  --aw-glow-error:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-error) 75%, transparent),
+    0 0 16px -8px color-mix(in srgb, var(--aw-status-error) 55%, transparent);
+  --aw-glow-warning:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-warning) 75%, transparent),
+    0 0 16px -8px color-mix(in srgb, var(--aw-status-warning) 55%, transparent);
+  --aw-glow-success:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-success) 75%, transparent),
+    0 0 16px -8px color-mix(in srgb, var(--aw-status-success) 55%, transparent);
+  --aw-glow-select: 0 0 0 2px color-mix(in srgb, var(--aw-primary) 60%, transparent);
+
+  /* Node motion — the canvas uses this four-step set rather than the
+     three ease-in-out chrome transitions above. */
+  --aw-ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* enter, expand   */
+  --aw-ease-in: cubic-bezier(0.7, 0, 0.84, 0); /* exit, collapse  */
+  --aw-ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* hover, colour   */
+  /* Travel — something crossing a distance, not an element arriving.
+     The expo curves above are wrong for this: --aw-ease-out is 85% done in
+     the first fifth of its duration, which on an edge reads as the colour
+     snapping to the far end and then dawdling. This one holds a near-even
+     speed through the middle so the distance is legible, and only softens
+     at the ends. */
+  --aw-ease-travel: cubic-bezier(0.45, 0.05, 0.3, 1);
+  --aw-dur-instant: 100ms; /* press feedback            */
+  --aw-dur-fast: 180ms; /* hover, focus, colour      */
+  --aw-dur-normal: 260ms; /* run strip enter, expand   */
+  --aw-dur-settle: 600ms; /* success glow fade-out     */
+  --aw-dur-edge-fill: 700ms; /* edge traversal, source→target */
 }
 
 /* ──────────────────────────────────────────────
@@ -130,6 +203,30 @@
   --aw-shadow-overlay: 0 2px 8px rgba(0, 0, 0, 0.4);
   --aw-shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.5);
   --aw-shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.6);
+
+  /* ── Node layer, dark ────────────────────────
+     Radius and motion tokens are theme-independent and inherit from
+     :root. Only elevation and glow are retuned here.
+     ────────────────────────────────────────── */
+
+  --aw-node-text-muted: var(--aw-text-muted);
+
+  --aw-shadow-node-raised:
+    inset 0 1px 0 0 rgb(255 255 255 / 5%), 0 8px 24px -12px rgb(0 0 0 / 80%);
+
+  /* On a near-black surface, glow can be luminance: a wider, softer halo. */
+  --aw-glow-running:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-running) 55%, transparent),
+    0 0 28px -6px color-mix(in srgb, var(--aw-status-running) 45%, transparent);
+  --aw-glow-error:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-error) 55%, transparent),
+    0 0 28px -6px color-mix(in srgb, var(--aw-status-error) 45%, transparent);
+  --aw-glow-warning:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-warning) 55%, transparent),
+    0 0 28px -6px color-mix(in srgb, var(--aw-status-warning) 45%, transparent);
+  --aw-glow-success:
+    0 0 0 1px color-mix(in srgb, var(--aw-status-success) 55%, transparent),
+    0 0 28px -6px color-mix(in srgb, var(--aw-status-success) 45%, transparent);
 }
 
 /* ──────────────────────────────────────────────

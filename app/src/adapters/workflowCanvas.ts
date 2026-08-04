@@ -37,7 +37,10 @@ export function workflowToCanvas(workflow: Workflow): CanvasWorkflowState {
     type: "custom",
     ...(edge.sourceHandle === "pass" || edge.sourceHandle === "fail"
       ? {
-          animated: true,
+          // Not `animated`. ReactFlow's animated flag dashes and marches the
+          // edge forever, which put the canvas in permanent motion whether or
+          // not anything was running. Pass/fail is carried by colour and label;
+          // motion is reserved for an edge control is actually passing through.
           style: {
             stroke: assertionEdgeColor(edge.sourceHandle),
             strokeWidth: 2,

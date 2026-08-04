@@ -72,7 +72,7 @@ export function WorkflowList({
 
   return (
     <>
-      <ul className="w-full list-none space-y-1 p-2 font-sans">
+      <ul className="w-full list-none space-y-0.5 p-1.5 font-sans">
         {workflows.map((workflow) => (
           <WorkflowItem
             key={workflow.workflowId}
@@ -93,7 +93,7 @@ export function WorkflowList({
         </div>
       )}
       {!pagination.hasMore && workflows.length > 0 && (
-        <div className="mx-3 mt-1 border-t border-border py-3 text-center font-mono text-xs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
+        <div className="mx-3 mt-0.5 border-t border-border py-2 text-center font-mono text-xxs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
           Showing all {pagination.total} workflow
           {pagination.total !== 1 ? "s" : ""}
         </div>

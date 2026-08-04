@@ -654,6 +654,91 @@ describe("WorkflowExecutor", () => {
     })
   })
 
+  /**
+   * Traversal walks every edge, so before this a node that two paths converged
+   * on was executed once per path. For an http-request node that is a request
+   * genuinely sent twice, and on the canvas it reads as the node going
+   * running → failed → running → failed (`video/apiweave 4.mp4`, t=13.7–14.4s).
+   * `merge` was the only node type immune, because it carries its own guard.
+   */
+  describe("a node reached by more than one path", () => {
+    /** start → a, start → b, a → join, b → join. No merge node. */
+    const diamond: WorkflowGraph = {
+      nodes: [
+        { nodeId: "start", type: "start" },
+        { nodeId: "a", type: "delay", config: { duration: 1 } },
+        { nodeId: "b", type: "delay", config: { duration: 1 } },
+        { nodeId: "join", type: "delay", config: { duration: 1 } },
+        { nodeId: "tail", type: "delay", config: { duration: 1 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "a" },
+        { edgeId: "e2", source: "start", target: "b" },
+        { edgeId: "e3", source: "a", target: "join" },
+        { edgeId: "e4", source: "b", target: "join" },
+        { edgeId: "e5", source: "join", target: "tail" },
+      ],
+    }
+
+    it("executes it once, not once per path", async () => {
+      const started: string[] = []
+      const executor = new WorkflowExecutor({
+        ...makeDeps(),
+        emitProgress: (event) => {
+          if (event.kind === "node.status" && event.status === "running") {
+            started.push(event.nodeId)
+          }
+        },
+      })
+
+      const output = await executor.executeWorkflow(diamond)
+
+      expect(output.status).toBe("passed")
+      expect(started.filter((id) => id === "join")).toEqual(["join"])
+    })
+
+    it("does not walk the downstream twice either", async () => {
+      const started: string[] = []
+      const executor = new WorkflowExecutor({
+        ...makeDeps(),
+        emitProgress: (event) => {
+          if (event.kind === "node.status" && event.status === "running") {
+            started.push(event.nodeId)
+          }
+        },
+      })
+
+      await executor.executeWorkflow(diamond)
+
+      // The second arrival joins the first rather than continuing past it, so
+      // everything after the join is walked once as well.
+      expect(started.filter((id) => id === "tail")).toEqual(["tail"])
+    })
+
+    it("still reports the join's failure to both paths", async () => {
+      const failing: WorkflowGraph = {
+        ...diamond,
+        nodes: diamond.nodes.map((node) =>
+          node.nodeId === "join" ? { nodeId: "join", type: "http-request", config: {} } : node,
+        ),
+      }
+      const statuses: string[] = []
+      const executor = new WorkflowExecutor({
+        ...makeDeps(),
+        emitProgress: (event) => {
+          if (event.kind === "node.status" && event.nodeId === "join") statuses.push(event.status)
+        },
+      })
+
+      const output = await executor.executeWorkflow(failing)
+
+      expect(output.status).toBe("failed")
+      expect(output.failedNodes).toContain("join")
+      // One running, one failed — the pair the video showed twice.
+      expect(statuses).toEqual(["running", "failed"])
+    })
+  })
+
   describe("per-node execution window + secret refs (5.1/5.3)", () => {
     it("stamps startedAt/completedAt on a completed delay node", async () => {
       const workflow: WorkflowGraph = {

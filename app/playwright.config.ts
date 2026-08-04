@@ -37,7 +37,14 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Defaults to Playwright's bundled Chromium. Set PW_CHANNEL to run
+        // against an installed browser instead — useful on machines where
+        // `npx playwright install chromium` has not been run:
+        //   PW_CHANNEL=msedge npx playwright test
+        ...(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}),
+      },
     },
   ],
 

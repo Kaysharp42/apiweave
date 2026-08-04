@@ -31,10 +31,6 @@ vi.mock("./AccountMenu", () => ({
   AccountMenu: () => null,
 }));
 
-vi.mock("../organisms/OrgWorkspaceSwitcher", () => ({
-  OrgWorkspaceSwitcher: () => null,
-}));
-
 function renderHeader() {
   render(
     <AppContext.Provider

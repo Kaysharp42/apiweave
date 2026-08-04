@@ -1,6 +1,7 @@
 import type { WorkflowCallNodeData } from "./WorkflowCallNodeData";
 
-export type { WorkflowCallNodeData, WorkflowCallNodeConfig } from "./WorkflowCallNodeData";
+export type { WorkflowCallNodeData } from "./WorkflowCallNodeData";
+export type { WorkflowCallNodeConfig } from "./WorkflowCallNodeConfig";
 export type { CallWorkflowResult } from "./CallWorkflowResult";
 
 export interface WorkflowCallNodeProps {

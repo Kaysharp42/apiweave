@@ -1,0 +1,153 @@
+/*
+ * APIWeave Design System — Node Layer Motion
+ *
+ * Keyframes for the canvas only. See DESIGN.md §7 ("The Node Layer:
+ * The Living Run") for the doctrine these implement.
+ *
+ * Non-negotiables enforced here:
+ *   - Only `transform`, `opacity`, and `offset-distance` animate. Never
+ *     `width`, `height`, `top`, `left`, or `border-color` in a loop.
+ *   - The running breathe oscillates the opacity of a dedicated glow
+ *     layer, never `box-shadow` on the node itself — animating
+ *     `box-shadow` forces a repaint per frame on every visible node.
+ *   - Every looping animation is gated behind `prefers-reduced-motion`,
+ *     and every state stays legible from colour, glyph and copy alone.
+ *
+ * Keyframes are defined once here and referenced by name from
+ * `tailwind.config.js` `theme.extend.animation`, so there is a single
+ * source for each one.
+ */
+
+/* ──────────────────────────────────────────────
+   Running — the breathing glow layer
+   Opacity only, on a pseudo-element that owns the glow box-shadow.
+   ────────────────────────────────────────────── */
+@keyframes aw-node-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Success — the settle
+   Runs once, then the glow layer is removed. Success settles; failure
+   persists. On a finished canvas the only lit thing is what failed.
+   ────────────────────────────────────────────── */
+@keyframes aw-node-settle {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Indeterminate progress rail
+   The rail fill is 40% of the track and sweeps across it. `translateX`
+   percentages resolve against the fill's own width, hence 250%.
+   ────────────────────────────────────────────── */
+@keyframes aw-rail-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Edge traversal — the fill and its head
+
+   Control passing through an edge is one event, so it gets one
+   one-shot animation, not a loop. The head starts where the armed
+   stub ended (`--aw-edge-arm`, set from `ARM_FRACTION` in
+   `CustomEdge.tsx`) so it never trails the colour it is laying down.
+
+   The reveal itself is a `stroke-dashoffset` transition on the overlay
+   path below. The standing rule against dashoffset is about *looping*
+   it on every edge forever, which repaints the whole SVG layer each
+   frame; this runs once, on the handful of edges a run actually passes
+   through, and stops.
+   ────────────────────────────────────────────── */
+@keyframes aw-edge-fill {
+  from {
+    offset-distance: var(--aw-edge-arm, 0%);
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+
+/* The state-coloured overlay. Both properties are stated here so the
+   reveal and the colour crossfade share one definition — a status
+   change never snaps. */
+.aw-edge-fill {
+  transition:
+    stroke-dashoffset var(--aw-dur-edge-fill) var(--aw-ease-travel),
+    stroke var(--aw-dur-fast) var(--aw-ease-standard);
+}
+
+/* ──────────────────────────────────────────────
+   Run strip entering
+   ────────────────────────────────────────────── */
+@keyframes aw-strip-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Reduced Motion — WCAG 2.3.3
+
+   `index.css` already clamps every animation globally under this query.
+   These rules are explicit rather than relying on that clamp, because a
+   clamped animation still lands on its final keyframe — which would
+   park the travelling dot at the target handle and leave the progress
+   rail stopped mid-track, both of which read as state that isn't there.
+
+   Under reduced motion the running node is a solid amber border, a
+   static glow, and a static spinner glyph. Nothing is lost but the
+   movement.
+   ────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  /* An indeterminate rail cannot report progress without motion, so it
+     reports activity instead: a full, muted track. Without the width
+     override the clamped sweep would leave a 40% fill parked mid-track,
+     which reads as "40% done". */
+  .aw-node-rail__fill--indeterminate {
+    animation: none !important;
+    transform: none !important;
+    width: 100% !important;
+    opacity: 0.5;
+  }
+
+  /* A parked head claims control is still arriving. Hide it; the filled
+     overlay already reports that the edge was traversed. */
+  .aw-edge-flow-dot {
+    display: none !important;
+  }
+
+  /* The reveal is deliberately *not* set to `transition: none`. The global
+     clamp in `index.css` takes it to 0.01ms, which lands the overlay fully
+     drawn — the correct end state — and still fires `transitionend`, which is
+     what unmounts the head in `CustomEdge.tsx`. Killing the transition
+     outright would suppress that event and strand the head mounted. */
+}
+
+/*
+ * Everything else is neutralised at the point of use with Tailwind's
+ * `motion-reduce:animate-none`, which is the convention in this codebase.
+ * Those animations all rest at their correct static appearance — the glow
+ * layer sits at full opacity, the run strip at its final position — so
+ * disabling the animation is the whole fix and no override belongs here.
+ */

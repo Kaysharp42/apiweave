@@ -69,11 +69,13 @@
 
 | Token            | Value                 | Usage                  |
 | ---------------- | --------------------- | ---------------------- |
-| `status-success` | `#16a34a` / `#4ade80` | Pass, success          |
-| `status-error`   | `#dc2626` / `#f87171` | Fail, error            |
-| `status-warning` | `#f59e0b` / `#fbbf24` | Warning, caution       |
-| `status-running` | `#eab308` / `#facc15` | In-progress, executing |
-| `status-info`    | `#2563eb` / `#3b82f6` | Informational          |
+| `status-success` | `#15803d` / `#4ade80` | Pass, success          |
+| `status-error`   | `#b91c1c` / `#f87171` | Fail, error            |
+| `status-warning` | `#b45309` / `#fbbf24` | Warning, caution       |
+| `status-running` | `#a16207` / `#facc15` | In-progress, executing |
+| `status-info`    | `#1d4ed8` / `#3b82f6` | Informational          |
+
+`status-running` must stay off the outcome hues. It was briefly set to the success green — a run in flight and a run that passed being "the same story at different stages" — and the result was a node that sat there green-bordered with a green spinner, indistinguishable from a pass, then flipped to a red `400`. A status colour that has to be withdrawn was never reporting. `status-hue.test.ts` guards the invariant, not the hex.
 
 ### HTTP Method Colors
 
@@ -162,7 +164,18 @@ var(--aw-primary)           /* Brand primary */
 var(--aw-status-success)    /* Success state */
 var(--aw-transition-normal) /* 300ms ease-in-out */
 var(--aw-shadow-node)       /* Node drop shadow */
-var(--aw-radius-lg)         /* 0.5rem border radius */
+var(--aw-radius-lg)         /* 0.25rem border radius */
+```
+
+Node-layer only (see DESIGN.md §7):
+
+```css
+var(--aw-node-text-muted)     /* muted node content — 4.83:1, unlike --aw-text-muted */
+var(--aw-radius-node)         /* 14px — the node slab */
+var(--aw-shadow-node-raised)  /* inner top highlight + soft drop */
+var(--aw-glow-running)        /* amber state ring + halo */
+var(--aw-ease-out)            /* cubic-bezier(0.16, 1, 0.3, 1) */
+var(--aw-dur-settle)          /* 600ms — success glow fade-out */
 ```
 
 These properties automatically switch values between light and dark themes.
@@ -171,22 +184,47 @@ These properties automatically switch values between light and dark themes.
 
 ## Shadows
 
-| Token                  | Usage               |
-| ---------------------- | ------------------- |
-| `shadow-node`          | Default node shadow |
-| `shadow-node-hover`    | Node hover state    |
-| `shadow-node-selected` | Node selected ring  |
+| Token                  | Usage                                                                |
+| ---------------------- | -------------------------------------------------------------------- |
+| `shadow-node`          | Legacy node shadow — still used outside the node shell               |
+| `shadow-node-hover`    | Node hover state                                                     |
+| `shadow-node-selected` | Node selected ring                                                   |
+| `shadow-node-raised`   | The node slab: inner top highlight + soft drop. Carried at rest       |
+| `shadow-glow-running`  | Running state ring + halo (amber). State signal only                 |
+| `shadow-glow-error`    | Error state ring + halo (red). Persists until the node re-runs        |
+| `shadow-glow-warning`  | Warning / retry state ring + halo                                    |
+| `shadow-glow-success`  | Success ring + halo — only during the 600ms settle                   |
+| `shadow-glow-select`   | Selection ring (ink-teal). Composes with any state glow               |
+
+Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the palette stays single-sourced. They apply to non-idle or selected **nodes** only — never to chrome, never to an idle node. See DESIGN.md §7.
 
 ---
 
 ## Animations
 
-| Token                    | Usage                               |
-| ------------------------ | ----------------------------------- |
-| `animate-pulse-border`   | Running/executing node border pulse |
-| `--aw-transition-fast`   | 150ms — micro-interactions          |
-| `--aw-transition-normal` | 300ms — standard transitions        |
-| `--aw-transition-slow`   | 500ms — layout shifts               |
+| Token                    | Usage                                                          |
+| ------------------------ | -------------------------------------------------------------- |
+| `animate-node-breathe`   | Running node glow layer — 2.4s, `opacity` .55→1, infinite      |
+| `animate-node-settle`    | Success glow fade-out — 600ms, `opacity` 1→0, once             |
+| `animate-rail-sweep`     | Indeterminate progress rail — 1.4s, `transform`, infinite      |
+| `animate-edge-fill`      | Head of an edge traversal — 700ms, `offset-distance`, once     |
+| `animate-strip-enter`    | Run strip appearing — 260ms, `opacity` + `translateY`          |
+| `--aw-ease-out`          | `cubic-bezier(0.16, 1, 0.3, 1)` — enter, expand                |
+| `--aw-ease-in`           | `cubic-bezier(0.7, 0, 0.84, 0)` — exit, collapse               |
+| `--aw-ease-standard`     | `cubic-bezier(0.4, 0, 0.2, 1)` — hover, color                  |
+| `--aw-ease-travel`       | `cubic-bezier(0.45, 0.05, 0.3, 1)` — edge traversal            |
+| `--aw-dur-instant`       | 100ms — press feedback                                         |
+| `--aw-dur-fast`          | 180ms — hover, focus, color                                    |
+| `--aw-dur-normal`        | 260ms — run strip enter, expand                                |
+| `--aw-dur-settle`        | 600ms — success glow fade-out                                  |
+| `--aw-dur-edge-fill`     | 700ms — edge traversal, source→target (see note below)         |
+| `--aw-transition-fast`   | 150ms — micro-interactions                                     |
+| `--aw-transition-normal` | 300ms — standard transitions                                   |
+| `--aw-transition-slow`   | 500ms — layout shifts                                          |
+
+`animate-pulse-border` is **retired.** It animated `border-color` in a loop, which forces a repaint per frame on every visible node. The running state is now a border color crossfade plus `animate-node-breathe` on a dedicated glow layer.
+
+`--aw-dur-edge-fill` is the one token the app writes at runtime. The canvas does not mirror a run, it plays it back (`utils/runChoreography.ts`): a node cannot light up until the traversal into it has landed, and a node that lit up stays lit for `NODE_DWELL_MS`. A run whose nodes answer in 200ms would otherwise emit running and done inside one frame, leaving several 700ms traversals overlapping at unrelated positions, arriving at nodes that finished long ago. Because the playback trails the run, its tempo compresses as the backlog builds — down to a 240ms floor, never below, or a traversal stops reading as travel. `useRunChoreography` publishes the tempo in force onto `:root` so the CSS reveal and the scheduler always mean the same number. Never hardcode the duration in JS: read the token.
 
 ---
 
@@ -256,6 +294,7 @@ These properties automatically switch values between light and dark themes.
 | `AssertionNode`   | `nodes/AssertionNode.tsx`       | Assertion node for response validation.                        |
 | `DelayNode`       | `nodes/DelayNode.tsx`           | Delay node for timing control.                                 |
 | `MergeNode`       | `nodes/MergeNode.tsx`           | Merge node for parallel branch synchronization.                |
+| `CallWorkflowNode`| `nodes/CallWorkflowNode.tsx`    | Invokes another workflow as a step.                            |
 | `StartNode`       | `nodes/StartNode.tsx`           | Workflow start node.                                           |
 | `EndNode`         | `nodes/EndNode.tsx`             | Workflow end node.                                             |
 
@@ -477,15 +516,29 @@ Shadows must be theme-aware (different opacity/multiplier for light vs. dark).
 
 ### 6. Radius Scale
 
-| Token         | Value          | Usage                              |
-| ------------- | -------------- | ---------------------------------- |
-| `radius-sm`   | 0.25rem (4px)  | Small buttons, tags, inline inputs |
-| `radius-md`   | 0.375rem (6px) | Default buttons, inputs, badges    |
-| `radius-lg`   | 0.5rem (8px)   | Cards, panels, modals              |
-| `radius-xl`   | 0.75rem (12px) | Large cards, feature containers    |
-| `radius-full` | 9999px         | Pills, avatars, toggle switches    |
+**Chrome scale** — sharp, Swiss. Two separate things share these names, and they do not have the same values:
 
-**Current values are preserved as baseline; contract confirms these exact values for redesign consistency.**
+| CSS property      | Value          | Consumed by                                    |
+| ----------------- | -------------- | ---------------------------------------------- |
+| `--aw-radius-sm`  | `0`            | Raw CSS — ReactFlow controls, minimap, focus rings |
+| `--aw-radius-md`  | 0.125rem (2px) | Raw CSS — `.aw-focus-ring`                     |
+| `--aw-radius-lg`  | 0.25rem (4px)  | Raw CSS                                        |
+| `--aw-radius-xl`  | 0.5rem (8px)   | Raw CSS                                        |
+| `--aw-radius-full`| 9999px         | Raw CSS                                        |
+
+Tailwind's `rounded-sm` / `rounded-md` / `rounded-lg` / `rounded-xl` classes are **not** wired to these properties — `tailwind.config.js` extends `borderRadius` with the node family only, so the chrome classes keep Tailwind's stock scale (2px / 6px / 8px / 12px). Component markup uses the classes; raw CSS uses the properties.
+
+**Node scale** — the canvas only. A separate family, wired to Tailwind, so the chrome scale above never has to move:
+
+| Class              | Property                 | Value  | Usage                                       |
+| ------------------ | ------------------------ | ------ | ------------------------------------------- |
+| `rounded-node`     | `--aw-radius-node`       | 14px   | The node slab                               |
+| `rounded-node-tile`| `--aw-radius-node-tile`  | 8px    | The 28px icon tile                          |
+| `rounded-node-ctl` | `--aw-radius-node-ctl`   | 8px    | Method select, URL input, node menu items   |
+| `rounded-node-chip`| `--aw-radius-node-chip`  | 6px    | Method pill, count badges, type chips       |
+| `rounded-node-rail`| `--aw-radius-node-rail`  | 9999px | Progress rail, status dot, midpoint circles |
+
+`--aw-radius-sm` stays `0`. The node family is additive and scoped by name; using `rounded-node*` outside `components/nodes/` or `components/atoms/flow/` is a doctrine violation. See DESIGN.md §7.
 
 ---
 
@@ -497,9 +550,18 @@ Shadows must be theme-aware (different opacity/multiplier for light vs. dark).
 | `normal` | 300ms    | ease-in-out | Standard transitions: panel expand/collapse, tab switches, theme toggle |
 | `slow`   | 500ms    | ease-in-out | Layout shifts: sidebar collapse, modal enter/exit, slide panels         |
 
-- **All transitions use `ease-in-out`** for consistency.
+- **All chrome transitions use `ease-in-out`** for consistency.
 - **`prefers-reduced-motion` fallback:** when the user has requested reduced motion, ALL nonessential animations are disabled. Essential feedback (focus rings, status changes) remain instant (0ms). No animated skeletons, no pulsing borders, no entrance animations.
-- **Running node pulse** — the `animate-pulse-border` keyframe is considered nonessential and MUST be suppressed under `prefers-reduced-motion`.
+
+#### Node layer motion
+
+The canvas uses the four-step easing/duration set in the Animations table above rather than the three `ease-in-out` steps. Motion there is a state report, not a flourish — see DESIGN.md §7.
+
+- **Only `transform`, `opacity`, and `box-shadow` on a dedicated layer animate.** Never `width`, `height`, `top`, `left`, or `border-color` in a loop.
+- **The running breathe oscillates the opacity of a dedicated glow layer**, never `box-shadow` on the node itself. Animating `box-shadow` forces a repaint per frame on every visible node. The layer is a positioned sibling of the node slab rather than a pseudo-element, because the slab clips its own overflow and would otherwise cut the halo off.
+- **The travelling edge dot is a `<circle>` with `offset-path`** — one GPU-composited element per active edge. Never animate `stroke-dashoffset` across every edge; that repaints the whole SVG layer each frame.
+- **Exits run at ~65% of their enter duration.**
+- **Every looping animation is gated behind `prefers-reduced-motion`.** Under reduced motion the running state is a solid amber border, a static glow, and a static spinner glyph. Every state stays fully legible from color, glyph, and copy — nothing depends on motion to be readable.
 
 ---
 
@@ -517,13 +579,14 @@ Shadows must be theme-aware (different opacity/multiplier for light vs. dark).
 
 ### 9. Status/Method Visualization
 
-- **Multi-channel encoding** — success, error, warning, running, and info states must use a combination of:
+- **Multi-channel encoding** — success, error, warning, running, and info states must be legible without color. Combine:
   1. **Color** (semantic token)
   2. **Icon** (Lucide icon, distinct per status)
   3. **Text label** (where space permits)
   4. **Border/background shift** (subtle tint on container)
-  5. **Elevation change** (raised shadow for active/running)
 - **Never color alone** — a status indicator that relies solely on hue fails WCAG 1.4.1 (Use of Color).
+- **Never motion alone, either** — a state that is only distinguishable while it is animating is not distinguishable in a screenshot, under `prefers-reduced-motion`, or by a user who looked away. This is why `running` is amber and `success` is green: they differ by hue in a still frame.
+- **One fact, one rendering.** Multi-channel means the status survives the loss of any one channel — not that it is drawn three separate times. On the node layer, a status badge *and* a colored dot *and* an icon is redundancy, not accessibility: a node renders one 16px status affordance, plus the border and glow that state implies. Elsewhere, `StatusBadge` remains the single renderer.
 - **HTTP methods** use distinct colors + uppercase text labels:
   - GET: green (`#16a34a`)
   - POST: blue (`#2563eb`)
@@ -552,22 +615,29 @@ Shadows must be theme-aware (different opacity/multiplier for light vs. dark).
 
 ### 11. Selected/Error/Running States
 
-- **Selected state** — multi-channel:
-  - 2px ring using primary color at 50% opacity
-  - Background shift to `surface-overlay`
-  - Elevation bump to Overlay shadow level
-  - Optional: icon color change to primary
-- **Error state** — multi-channel:
-  - 2px ring using `status-error` at 50% opacity
-  - Background tint using `status-error` at 5–10% opacity
-  - Icon change to `XCircle` or `AlertTriangle`
-  - Text label includes error message
-- **Running state** — multi-channel:
-  - Border color cycles via `animate-pulse-border` (yellow-500)
-  - Background tint using `status-running` at 5–10% opacity
-  - Icon shows `Loader2` with `animate-spin`
-  - Text label shows "Running…" or progress indicator
-  - **Pulse animation is disabled under `prefers-reduced-motion`** — border becomes solid yellow, no animation.
+For chrome (panels, cards, list rows, form fields):
+
+- **Selected state** — 2px ring using primary color at 50% opacity; background shift to `surface-overlay`; elevation bump to Overlay shadow level; optional icon color change to primary.
+- **Error state** — 2px ring using `status-error` at 50% opacity; background tint using `status-error` at 5–10% opacity; icon change to `XCircle` or `AlertTriangle`; text label includes the error message.
+- **Running state** — `status-running` border; icon shows `Loader2` with `animate-spin`; text label shows "Running…" or a progress indicator.
+
+#### Node layer state table
+
+The canvas states are defined once, in `BaseNode`'s `statusConfig`. Border alpha and glow are the primary channels; the affordance glyph is the accessible one.
+
+| State                 | Border                     | Glow                                               | Affordance             | Body                        |
+| --------------------- | -------------------------- | -------------------------------------------------- | ---------------------- | --------------------------- |
+| `idle`                | `--aw-border`              | none                                               | hollow ring, muted     | rest line                   |
+| `running`             | `--aw-status-running` @70% | `glow-running` + `animate-node-breathe`            | spinner, amber         | activity + rail + metrics   |
+| `success`             | `--aw-status-success` @40% | `glow-success`, settles to none over 600ms         | check, green           | result summary + metrics    |
+| `error`               | `--aw-status-error` @70%   | `glow-error`, **persists**                         | ✗, red                 | error summary + metrics     |
+| `warning` / retry     | `--aw-status-warning` @70% | `glow-warning`                                     | ⟳, amber               | reason + metrics            |
+| `skipped`             | `--aw-border`              | none                                               | `–` dash, muted        | `skipped`, muted            |
+| `selected` (any)      | + `glow-select` ring       | composes with the state glow                       | unchanged              | unchanged                   |
+
+- **`skipped` never renders a check.** It is a real state with its own affordance, not a success with a caveat.
+- **Success settles, failure persists.** The success glow runs `animate-node-settle` once and is removed; the error glow holds. On a finished canvas the only lit thing is what failed.
+- **An idle node carries no glow, no ring, and no animation** — only `shadow-node-raised`. This bounds glow cost by run concurrency rather than node count.
 
 ---
 
@@ -580,7 +650,7 @@ The following patterns are **explicitly forbidden** in the redesign and in all f
 3. **No manual save buttons** — all state changes trigger the 700ms debounced auto-save via `useAutoSave`. Manual "Save" or "Apply" buttons are forbidden.
 4. **No WorkflowContext bypass** — all canvas state (nodes, edges, variables, settings, extractors) MUST flow through `WorkflowContext`. Direct mutation of ReactFlow internals or local state that shadows workflow state is forbidden.
 5. **No emoji UI icons** — see Icon Rules above. Emojis are not accessible, not scalable, and not theme-aware.
-6. **No color-only status** — status indicators MUST use color + icon + text + border/background (never hue alone).
+6. **No color-only status** — status indicators MUST stay legible without hue, via a distinct glyph and (where space permits) a text label. Equally: **no motion-only status** — a state that reads only while animating is invisible in a still frame and under `prefers-reduced-motion`.
 7. **No raw duplicated styled patterns where atoms/molecules exist** — if a `Button`, `IconButton`, `Panel`, `FormField`, `Card`, `StatusBadge`, or `EmptyState` already exists, you MUST use it. Copy-pasting styled `div` soup is forbidden.
 8. **No landing-page horizontal journey patterns in the app shell** — the app is a dense workspace, not a marketing page. Avoid full-width hero sections, scroll-jacking, or parallax inside the application chrome.
 9. **No arbitrary magic numbers** — spacing, sizing, colors, shadows, and radii MUST use design tokens. Values like `margin: 13px`, `padding: 7px`, or `border-radius: 6px` (when not `radius-md`) are forbidden.

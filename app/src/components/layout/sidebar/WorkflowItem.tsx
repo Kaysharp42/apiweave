@@ -27,7 +27,7 @@ export function WorkflowItem({
   const envName = env ? env.name : null;
   const workflowLabel = getSidebarItemLabel(
     workflow.name,
-    46,
+    32,
     "Untitled workflow",
   );
   const collectionName = workflow.collectionId
@@ -53,7 +53,7 @@ export function WorkflowItem({
     <li>
       <div
         className={[
-          "group flex w-full items-start gap-2 rounded border border-l-2 px-2.5 py-2 text-sm transition-colors duration-150 motion-reduce:transition-none",
+          "group relative flex w-full items-start gap-2 rounded border border-l-2 px-2 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none",
           isActive
             ? "border-y-border border-r-border border-l-primary bg-primary/10 dark:border-y-border-dark dark:border-r-border-dark dark:border-l-primary-light dark:bg-primary-light/10"
             : "border-transparent hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
@@ -72,7 +72,7 @@ export function WorkflowItem({
         >
           <FileText
             className={[
-              "mt-0.5 h-4 w-4 flex-shrink-0",
+              "mt-0.5 h-3.5 w-3.5 flex-shrink-0",
               isActive
                 ? "text-primary dark:text-primary-light"
                 : "text-text-muted dark:text-text-muted-dark",
@@ -92,7 +92,7 @@ export function WorkflowItem({
               {workflowLabel.label}
             </div>
 
-            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-text-secondary dark:text-text-secondary-dark overflow-hidden">
+            <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xxs text-text-secondary dark:text-text-secondary-dark overflow-hidden">
               <Badge variant="ghost" size="xs">
                 {workflow.nodes?.length ?? 0} nodes
               </Badge>
@@ -101,7 +101,7 @@ export function WorkflowItem({
                 <Badge
                   variant="info"
                   size="xs"
-                  className="max-w-[9.5rem] min-w-0 truncate"
+                  className="max-w-[7.5rem] min-w-0 truncate"
                   title={collectionLabel.fullLabel}
                 >
                   {collectionLabel.label}
@@ -112,7 +112,7 @@ export function WorkflowItem({
                 <Badge
                   variant="secondary"
                   size="xs"
-                  className="max-w-[9rem] min-w-0 truncate"
+                  className="max-w-[7.5rem] min-w-0 truncate"
                   title={environmentLabel.fullLabel}
                 >
                   <Globe className="w-2.5 h-2.5 mr-0.5 flex-shrink-0" />
@@ -123,7 +123,16 @@ export function WorkflowItem({
           </div>
         </button>
 
-        <div className="ml-1 flex w-[64px] shrink-0 items-center justify-end gap-1">
+        {/* Overlaid rather than inline so the workflow name gets the full row
+            width; the gradient keeps long names legible underneath. */}
+        <div
+          className={[
+            "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded pl-6",
+            "bg-gradient-to-l from-surface-overlay from-70% to-transparent dark:from-surface-dark-overlay",
+            "opacity-0 transition-opacity duration-150 motion-reduce:transition-none",
+            "group-hover:opacity-100 group-focus-within:opacity-100",
+          ].join(" ")}
+        >
           <SidebarAction
             icon={Download}
             label="Export workflow"

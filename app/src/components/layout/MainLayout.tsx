@@ -75,12 +75,13 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   // "Collapse" only shrinks the icon rail (labels hidden); the list panel stays
   // visible either way. Pane width = rail width + list width.
-  const railCollapsed = AppNavBarStyles.collapsedNavBarWidth!.absolute; // 56
-  const listWidth = 270;
-  const expandedPreferred = 450; // rail 180 + list 270
+  const railCollapsed = AppNavBarStyles.collapsedNavBarWidth!.absolute;
+  const railExpanded = AppNavBarStyles.expandedNavBarWidth!.absolute;
+  const listWidth = 236;
+  const expandedPreferred = railExpanded + listWidth;
   const collapsedPreferred = railCollapsed + listWidth;
   const paneMin = collapsedPreferred;
-  const paneMax = 600;
+  const paneMax = 480;
 
   return (
     <>
@@ -101,8 +102,13 @@ export function MainLayout({ children }: MainLayoutProps) {
       {/* Desktop layout (lg+): Allotment split panes */}
       <div className="hidden md:flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
         {/* key forces re-layout on collapse toggle — Allotment only reads
-            preferredSize on mount, so without this the pane keeps its old width. */}
-        <Allotment key={isNavBarCollapsed ? "collapsed" : "expanded"}>
+            preferredSize on mount, so without this the pane keeps its old width.
+            proportionalLayout={false} keeps the sidebar pane at a fixed width
+            when the window resizes; the canvas pane absorbs the whole delta. */}
+        <Allotment
+          key={isNavBarCollapsed ? "collapsed" : "expanded"}
+          proportionalLayout={false}
+        >
           <Allotment.Pane
             preferredSize={
               isNavBarCollapsed ? collapsedPreferred : expandedPreferred
@@ -146,7 +152,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               aria-hidden="true"
             />
             <aside
-              className="fixed bottom-8 left-14 top-12 z-50 flex w-80 flex-col overflow-hidden border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
+              className="fixed bottom-8 left-11 top-12 z-50 flex w-72 flex-col overflow-hidden border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
               aria-label="Sidebar"
             >
               <Sidebar />

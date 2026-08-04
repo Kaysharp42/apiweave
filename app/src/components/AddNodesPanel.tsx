@@ -23,7 +23,21 @@ import {
 } from "../utils/nodeFilterBehavior";
 import { presetDragTemplate } from "../utils/nodePresets";
 import { NODE_MODAL_TYPE_LABELS } from "../utils/nodeModalMeta";
+import {
+  CanvasActionsBottom,
+  CanvasCornerGutter,
+} from "../constants/CanvasChrome";
 import type { AddNodesPanelProps } from "../types";
+
+/**
+ * Anchored to the canvas rather than the window: the canvas is one pane of a
+ * split, so a viewport-fixed stack drifted over the minimap and, once the
+ * variables panel opened, over the panel too.
+ */
+const actionStackStyle = {
+  bottom: CanvasActionsBottom,
+  right: CanvasCornerGutter,
+};
 
 const methodBadge: Record<string, string> = {
   GET: "text-method-get bg-method-get/10 border-method-get/30",
@@ -290,7 +304,8 @@ export default function AddNodesPanel({
 
   return (
     <div
-      className={`fixed bottom-20 right-5 sm:right-6 z-[9999] flex flex-col gap-2.5 ${
+      style={actionStackStyle}
+      className={`absolute z-30 flex flex-col items-end gap-2 ${
         isModalOpen ? "opacity-0 pointer-events-none" : "opacity-100"
       } transition-opacity duration-200 motion-reduce:transition-none`}
     >
@@ -298,23 +313,23 @@ export default function AddNodesPanel({
         <button
           type="button"
           onClick={() => onShowVariablesPanel(true)}
-          className="flex items-center justify-center w-11 h-11 rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-primary dark:text-primary-light border border-border dark:border-border-dark shadow-node hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
+          className="flex items-center justify-center w-9 h-9 rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-primary dark:text-primary-light border border-border dark:border-border-dark shadow-node hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
           title="Show Side Panel (Variables, Functions, Settings)"
           aria-label="Show panel"
         >
-          <PanelRightOpen className="w-5 h-5" />
+          <PanelRightOpen className="w-4 h-4" />
         </button>
       )}
 
-      <Popover className="relative">
+      <Popover>
         {({ open, close }) => (
           <>
             <Popover.Button
               disabled={isModalOpen}
-              className="flex items-center justify-center w-11 h-11 rounded-sm border border-primary bg-primary dark:bg-primary-light text-surface-raised dark:text-surface-dark-raised shadow-node hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors motion-reduce:transition-none"
+              className="flex items-center justify-center w-9 h-9 rounded-sm border border-primary bg-primary dark:bg-primary-light text-surface-raised dark:text-surface-dark-raised shadow-node hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors motion-reduce:transition-none"
               aria-label={open ? "Close node palette" : "Add nodes"}
             >
-              {open ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+              {open ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             </Popover.Button>
 
             <Transition
@@ -333,7 +348,16 @@ export default function AddNodesPanel({
                 );
               }}
             >
-              <Popover.Panel className="absolute bottom-full mb-2 right-0 w-72 max-h-[60vh] flex flex-col rounded-sm bg-surface-raised dark:bg-surface-dark-raised shadow-node border border-border dark:border-border-dark overflow-hidden">
+              {/* Anchored, so Headless UI portals it and floating-ui caps its
+                  height to the space actually available. Left in flow it grew
+                  upward into the canvas's overflow-hidden edge and clipped.
+                  --anchor-max-height is the ceiling that cap is taken against;
+                  without it the palette fills all the way to the window top and
+                  covers the header. */}
+              <Popover.Panel
+                anchor={{ to: "top end", gap: 8, padding: 12 }}
+                className="z-50 flex w-72 flex-col rounded-sm border border-border bg-surface-raised shadow-node [--anchor-max-height:60vh] dark:border-border-dark dark:bg-surface-dark-raised"
+              >
                 <div className="p-3 border-b border-border dark:border-border-dark">
                   <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2 tracking-[-0.01em]">
                     Add Nodes
@@ -383,7 +407,7 @@ export default function AddNodesPanel({
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 min-h-0 overflow-y-auto">
                   {filteredSections.length === 0 ? (
                     <div className="p-4 text-center text-sm text-text-muted dark:text-text-muted-dark">
                       No nodes match &quot;{searchQuery}&quot;

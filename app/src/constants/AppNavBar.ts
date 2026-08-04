@@ -24,16 +24,16 @@ export const AppNavBarItems: Record<string, AppNavBarItemConfig> = {
 
 export const AppNavBarStyles: Record<string, AppNavBarWidthConfig> = {
   collapsedNavBarWidth: {
-    absolute: 56,
-    pixelInString: "56px",
+    absolute: 44,
+    pixelInString: "44px",
     tailwindValue: {
       default: "w-nav-collapsed",
       min: "min-w-nav-collapsed",
     },
   },
   expandedNavBarWidth: {
-    absolute: 180,
-    pixelInString: "180px",
+    absolute: 146,
+    pixelInString: "146px",
     tailwindValue: {
       default: "w-nav-expanded",
       min: "min-w-nav-expanded",

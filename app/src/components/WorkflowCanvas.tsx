@@ -13,10 +13,10 @@ import ReactFlow, {
   ControlButton,
   Background,
   BackgroundVariant,
+  ConnectionLineType,
   useNodesState,
   useEdgesState,
   addEdge,
-  Panel,
   type Node,
   type Edge,
   type Connection,
@@ -64,6 +64,7 @@ import {
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
+import { CanvasCornerGutter, MiniMapSize } from "../constants/CanvasChrome";
 import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
 import { workflowDetailUrl } from "../utils/apiweaveClient";
 import { autoLayout } from "../utils/autoLayout";
@@ -104,19 +105,34 @@ const reactFlowStyle = { width: "100%", height: "100%" };
 
 const defaultEdgeOptions = { type: "custom" as const, animated: false };
 
+// The connection being dragged is an intent, not a connection yet — dashed, in
+// the "you can touch this" accent.
+const connectionLineStyle = {
+  stroke: "var(--aw-primary)",
+  strokeWidth: 1.5,
+  strokeDasharray: "4 4",
+};
+
 const fitViewOptions = {
   padding: 0.25,
   minZoom: 0.02,
   includeHiddenNodes: true,
 };
 
+// MiniMap is itself a ReactFlow panel, so it takes the corner inset directly.
+// Wrapping it in one nested the two and stacked their 15px default margins,
+// which is how it ended up 27px off the edge instead of the 10px written here.
+// Margin — not bottom/right — is what the panel classes actually position by.
 const miniMapStyle = {
   backgroundColor: "var(--aw-surface-raised)",
   border: "1px solid var(--aw-border)",
   borderRadius: "var(--aw-radius-sm)",
-  width: 220,
-  height: 150,
+  width: MiniMapSize.width,
+  height: MiniMapSize.height,
+  margin: CanvasCornerGutter,
 };
+
+const controlsStyle = { margin: CanvasCornerGutter };
 
 // WeakMap IDs track extractor-config identity by ref so the signature doesn't churn during position-only drag frames.
 const extractorConfigIdMap = new WeakMap<object, number>();
@@ -274,6 +290,7 @@ export function WorkflowCanvas({
     workspaceId: scope.workspaceId,
     workflowId,
     nodes,
+    edges,
     setNodes,
     selectedEnvironment,
     reactFlowInstanceRef,
@@ -558,7 +575,6 @@ export function WorkflowCanvas({
             id: `reactflow__edge-${params.source}${params.sourceHandle || ""}-${params.target}${params.targetHandle || ""}`,
             ...params,
             type: "custom",
-            animated: true,
             label,
             style: { stroke: color, strokeWidth: 2 },
             labelStyle: {
@@ -599,7 +615,14 @@ export function WorkflowCanvas({
                 );
                 return {
                   ...e,
-                  animated: true,
+                  // Not `animated`. ReactFlow's animated flag dashes and
+                  // marches the edge forever, so a canvas with parallel
+                  // branches was in permanent motion whether or not anything
+                  // was running. Motion is reserved for an edge control is
+                  // actually passing through (CustomEdge's travelling dot).
+                  // The reload path in `workflowCanvas.ts` never set it, so
+                  // this also stops branch edges from changing appearance
+                  // between drawing them and reopening the workflow.
                   style: {
                     stroke: branchEdgeColor,
                     strokeWidth: 1,
@@ -624,7 +647,6 @@ export function WorkflowCanvas({
               {
                 ...newEdge,
                 type: "custom",
-                animated: true,
                 style: {
                   stroke: branchEdgeColor,
                   strokeWidth: 1,
@@ -885,6 +907,15 @@ export function WorkflowCanvas({
     requestAnimationFrame(() => rfInstanceRef.current?.fitView(fitViewOptions));
   }, [setNodes]);
 
+  /*
+   * There is deliberately no auto-fit when a run finishes. Moving the camera
+   * out from under someone who is watching a specific node is a worse failure
+   * than an endpoint sitting off-screen: it discards where they chose to look,
+   * and it lands right as the last edges are still filling. The reference
+   * animation's camera never moves. Fitting the view stays a deliberate act —
+   * the auto-layout control and ReactFlow's own fit-view button.
+   */
+
   return (
     <main
       className="w-full h-full min-h-0 relative overflow-hidden bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark transition-colors duration-300"
@@ -921,6 +952,8 @@ export function WorkflowCanvas({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
+        connectionLineType={ConnectionLineType.Bezier}
+        connectionLineStyle={connectionLineStyle}
         fitView
         fitViewOptions={fitViewOptions}
         minZoom={0.02}
@@ -928,15 +961,17 @@ export function WorkflowCanvas({
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Control"
       >
+        {/* The grid should be felt, not read. */}
         <Background
           variant={BackgroundVariant.Dots}
-          gap={16}
-          size={0.8}
-          color="var(--aw-border)"
+          gap={20}
+          size={1}
+          color="color-mix(in srgb, var(--aw-text-muted) 22%, transparent)"
         />
 
         <Controls
           position="bottom-left"
+          style={controlsStyle}
           fitViewOptions={fitViewOptions}
           showInteractive={false}
         >
@@ -945,21 +980,22 @@ export function WorkflowCanvas({
           </ControlButton>
         </Controls>
 
-        <Panel position="bottom-right" style={{ bottom: 10, right: 10 }}>
-          <MiniMap
-            nodeColor={getNodeColor}
-            nodeStrokeColor={getNodeStrokeColor}
-            nodeStrokeWidth={1}
-            maskColor={
-              darkMode
-                ? "color-mix(in srgb, var(--aw-surface) 64%, transparent)"
-                : "color-mix(in srgb, var(--aw-text-primary) 5%, transparent)"
-            }
-            style={miniMapStyle}
-            zoomable
-            pannable
-          />
-        </Panel>
+        {/* The action stack in AddNodesPanel sits directly above this, keyed off
+            the same shared geometry — see constants/CanvasChrome. */}
+        <MiniMap
+          position="bottom-right"
+          nodeColor={getNodeColor}
+          nodeStrokeColor={getNodeStrokeColor}
+          nodeStrokeWidth={1}
+          maskColor={
+            darkMode
+              ? "color-mix(in srgb, var(--aw-surface) 64%, transparent)"
+              : "color-mix(in srgb, var(--aw-text-primary) 5%, transparent)"
+          }
+          style={miniMapStyle}
+          zoomable
+          pannable
+        />
       </ReactFlow>
 
       <CanvasToolbar

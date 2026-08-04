@@ -6,13 +6,13 @@ export default {
     extend: {
       // Semantic width tokens (replacing ad-hoc numeric hacks)
       width: {
-        "nav-collapsed": "56px",
-        "nav-expanded": "180px",
+        "nav-collapsed": "44px",
+        "nav-expanded": "146px",
         "sidebar-default": "380px",
         "node-compact": "200px",
       },
       minWidth: {
-        "nav-collapsed": "56px",
+        "nav-collapsed": "44px",
         "node-compact": "200px",
       },
       maxWidth: {
@@ -93,6 +93,15 @@ export default {
       fontSize: {
         xxs: ["0.625rem", { lineHeight: "0.875rem" }], // 10px
       },
+      // Node layer radius — the canvas only (DESIGN.md §7). The chrome keeps
+      // Tailwind's default scale; this family is additive and scoped by name.
+      borderRadius: {
+        node: "var(--aw-radius-node)", // 14px — the node slab
+        "node-tile": "var(--aw-radius-node-tile)", // 8px — 28px icon tile
+        "node-ctl": "var(--aw-radius-node-ctl)", // 8px — selects, inputs, menu items
+        "node-chip": "var(--aw-radius-node-chip)", // 6px — method pill, badges
+        "node-rail": "var(--aw-radius-node-rail)", // pill — rail, status dot, midpoints
+      },
       boxShadow: {
         // Swiss minimalism: separation via hairline borders, not heavy shadows.
         node: "0 1px 2px rgba(0, 0, 0, 0.04)",
@@ -102,15 +111,36 @@ export default {
         overlay: "0 2px 8px rgba(0, 0, 0, 0.04)",
         modal: "0 8px 24px rgba(0, 0, 0, 0.08)",
         popover: "0 12px 32px rgba(0, 0, 0, 0.10)",
+        // Node layer — theme-aware via the custom properties they read.
+        "node-raised": "var(--aw-shadow-node-raised)",
+        "glow-running": "var(--aw-glow-running)",
+        "glow-error": "var(--aw-glow-error)",
+        "glow-warning": "var(--aw-glow-warning)",
+        "glow-success": "var(--aw-glow-success)",
+        "glow-select": "var(--aw-glow-select)",
       },
+      transitionTimingFunction: {
+        "aw-out": "var(--aw-ease-out)",
+        "aw-in": "var(--aw-ease-in)",
+        "aw-standard": "var(--aw-ease-standard)",
+      },
+      transitionDuration: {
+        instant: "var(--aw-dur-instant)",
+        "aw-fast": "var(--aw-dur-fast)",
+        "aw-normal": "var(--aw-dur-normal)",
+        settle: "var(--aw-dur-settle)",
+      },
+      // Keyframes are defined once in `src/styles/node-motion.css` and
+      // referenced by name here, so each one has a single source. Retired:
+      // `pulse-border`, which animated `border-color` in a loop.
       animation: {
-        "pulse-border": "pulse-border 2s ease-in-out infinite",
-      },
-      keyframes: {
-        "pulse-border": {
-          "0%, 100%": { borderColor: "rgba(234, 179, 8, 0.4)" },
-          "50%": { borderColor: "rgba(234, 179, 8, 1)" },
-        },
+        "node-breathe": "aw-node-breathe 2.4s ease-in-out infinite",
+        "node-settle": "aw-node-settle var(--aw-dur-settle) var(--aw-ease-out) forwards",
+        "rail-sweep": "aw-rail-sweep 1.4s linear infinite",
+        // Same duration and curve as the `.aw-edge-fill` reveal in
+        // `node-motion.css`, so the head never drifts off the colour it leads.
+        "edge-fill": "aw-edge-fill var(--aw-dur-edge-fill) var(--aw-ease-travel) forwards",
+        "strip-enter": "aw-strip-enter var(--aw-dur-normal) var(--aw-ease-out)",
       },
     },
   },

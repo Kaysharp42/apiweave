@@ -158,14 +158,14 @@ The palette is intentionally restrained. One ink-teal accent on a zinc-neutral b
 
 - **Ink** (#09090b / #fafafa dark): Primary text, headings. Full contrast against respective surfaces. Body text passes 4.5:1 minimum.
 - **Mist** (#52525b / #a1a1aa dark): Secondary text — labels, descriptions, metadata. Passes 3:1 minimum against raised surfaces.
-- **Dust** (#a1a1aa / #71717a dark): Placeholder text, hints, disabled content. Passes 4.5:1 against raised surfaces.
+- **Dust** (#a1a1aa / #71717a dark): Placeholder text, hints, disabled content. **2.56:1 on white** — it does not pass 4.5:1, and does not clear the 3:1 non-text floor either. Use it only where the meaning survives not reading it: an input placeholder beside a label, a disabled control. Never for content. The node layer needs muted *content* — the metrics row, the rest line's argument — so it uses `--aw-node-text-muted` (zinc-500, 4.83:1) instead. `src/components/__tests__/node-layer-contrast.test.ts` enforces this.
 
 ### Semantic Status
 
 - **Success** (#15803d): Passed assertions, completed runs, positive confirmation.
 - **Error** (#b91c1c): Failed assertions, error states, destructive actions.
 - **Warning** (#b45309): Caution, rate-limit warnings, degraded status.
-- **Running** (#a16207): In-progress execution, animated pulse border.
+- **Running** (#a16207): In-progress execution. On the node layer it carries the breathing glow and the spinner affordance. Amber deliberately differs from Success green so that running and finished are distinguishable by hue alone, in a still frame, with no motion.
 - **Info** (#1d4ed8): Informational badges, help text indicators.
 
 All status colors are paired with distinct icons and text labels — never encoded by hue alone.
@@ -216,9 +216,16 @@ In dark mode, shadow opacity increases to maintain separation against the near-b
 - **Modal** (`0 8px 24px rgba(0, 0, 0, 0.08)` / dark: `0 8px 24px rgba(0, 0, 0, 0.35)`): Modals, dialogs, slide panels. Full viewport overlay backdrop.
 - **Popover** (`0 12px 32px rgba(0, 0, 0, 0.10)` / dark: `0 12px 32px rgba(0, 0, 0, 0.40)`): Context menus, floating palettes, the highest-priority float layer.
 
+### Node Layer Vocabulary
+
+The node layer adds two tokens the chrome does not use:
+
+- **Node Raised** (`--aw-shadow-node-raised`): an inner 1px top highlight plus a soft drop. What makes a node slab read as a lit object rather than a flat rectangle. Carried by every node, including idle ones.
+- **Glow** (`--aw-glow-running` / `-error` / `-warning` / `-success` / `-select`): a 1px colored ring plus a soft colored halo, each `color-mix`ed from the status token it names. **A state signal, never a decoration.** Only non-idle or selected nodes carry one.
+
 ### Named Rules
 
-**The Flat-By-Default Rule.** Surfaces at rest have no shadow. A card on the page is separated from the page by its 1px border, not by elevation. Shadows appear only on interaction — hover, focus, open state.
+**The Flat-By-Default Rule.** Surfaces at rest have no shadow. A card on the page is separated from the page by its 1px border, not by elevation. Shadows appear only on interaction — hover, focus, open state. **Scope: the app chrome.** The node layer is exempt (see §7) — a node carries `--aw-shadow-node-raised` at rest and a glow when its state warrants one. The rule still binds everything outside the canvas.
 
 ## 5. Components
 
@@ -256,10 +263,22 @@ In dark mode, shadow opacity increases to maintain separation against the near-b
 
 ### Nodes (ReactFlow)
 
-- **Shape:** Compact rectangle (200px default, 320px max width). Hairline border. Near-zero radius (0.125rem).
-- **BaseNode shell** provides consistent header (node type icon + label), body, and footer (connection handles).
-- **Color coding by node type:** HTTP requests get a method-colored top border stripe (green/blue/orange/violet/red). Assertion nodes are tinted by pass/fail state. Start = green, End = red, Delay = amber, Merge = violet.
-- **States:** Default = flat. Selected = 2px ink-teal ring at 50% opacity + overlay background. Running = yellow animated pulse border. Error = red border + tinted background.
+The node layer is governed by its own doctrine — see §7, "The Node Layer: The Living Run." The entries below are that doctrine's component-level form.
+
+- **Shape:** Soft-cornered slab (180px min, 320px max width). Hairline border. `--aw-radius-node` (14px) — the node layer is the one place in the app with a visible corner radius, and it uses a scoped `--aw-radius-node*` family so the chrome's near-zero radius is untouched.
+- **BaseNode shell** provides a header (28px icon tile + title + type chip + one status affordance), an optional run strip, and connection handles.
+- **Rest state is quiet.** A collapsed node shows the icon tile, the title, and one muted rest line identifying it (`POST api.shop.dev/auth/login`, `2 assertions`, `waits 1.5s`). Configuration — method select, URL input, assertion list — lives one chevron away, not on the canvas at rest.
+- **Color coding by node type:** the icon tile carries the type hue as a 12% tint with the icon at full hue. Method/type identity also appears as a chip in the header. Hues come from the existing method and status tokens; the redesign introduces none.
+- **States:** Default = flat, no glow, no animation. Running = amber border + breathing glow layer + run strip. Success = calm green border, glow settles away over 600ms. Error = red border + glow that persists. Skipped = hairline border + dash affordance, never a check. Selected = ink-teal ring, composing with any state glow.
+- **One fact, one rendering.** A node's status is drawn once, as a single 16px affordance (hollow ring / spinner / check / ✗ / ⟳ / dash) plus the border and glow that state implies. Not as a badge *and* a dot *and* an icon.
+
+### Connections (ReactFlow)
+
+- **Path:** bezier curves, not orthogonal steps. Multiple edges leaving one node fan out from a single source point.
+- **State:** an edge takes its state from its source node. Idle = 1px hairline. Active = 1.5px amber with a single bright dot travelling source→target. Traversed = 1.5px green at 55%. Failed = 1.5px red. Skipped = dashed hairline. Assertion pass/fail branches keep their semantic colors.
+- **Handles:** 8px neutral sockets at rest — a resting handle reads as a socket, not a button. Lit to ink-teal on node hover or while connecting, and to the edge's state color when a live edge is attached. The visual size is never the hit area; a transparent 20px box is.
+- **Midpoint affordance:** an insert `+` and a delete `×`, revealed on edge hover **or keyboard focus**, and reachable by tab.
+- **Backdrop:** the dot grid stays. It is felt, not read — `--aw-text-muted` at 22%, 20px gap.
 
 ## 6. Do's and Don'ts
 
@@ -269,7 +288,7 @@ In dark mode, shadow opacity increases to maintain separation against the near-b
 - **Do** separate surfaces with hairline borders (1px) before considering shadows.
 - **Do** keep all proportional text in Inter regardless of role or weight. One family.
 - **Do** use JetBrains Mono exclusively for code, JSON, URLs, monospace expressions.
-- **Do** use multi-channel status encoding — always combine color + icon + text label.
+- **Do** use multi-channel status encoding — never hue alone. Pair color with a distinct glyph, and with a text label wherever space permits. Multi-channel means *legible without color*, not the same fact drawn three times: on the node layer one status affordance plus the border and glow is the complete rendering.
 - **Do** use Lucide icons from `lucide-react` exclusively. Never emoji.
 - **Do** use existing atoms and molecules (Button, IconButton, Panel, FormField, Card, StatusBadge, EmptyState) instead of raw styled divs.
 - **Do** use the tight spacing scale (4px base, 8px/12px/16px/24px/32px steps) for consistency.
@@ -278,7 +297,7 @@ In dark mode, shadow opacity increases to maintain separation against the near-b
 
 ### Don't:
 
-- **Don't** use the ink-teal accent decoratively — no gradient text, no glassmorphism, no side-stripe accents.
+- **Don't** use the ink-teal accent decoratively — no gradient text, no glassmorphism, no side-stripe accents. On the canvas the accent means "you can touch this": selection, handles, and the insert affordance. It never means "this is executing."
 - **Don't** use fully saturated colors except for semantic status and HTTP methods. No decorative reds, greens, or blues.
 - **Don't** use display fonts or serif fonts anywhere in the UI. Inter covers everything proportional.
 - **Don't** use border-left or border-right greater than 1px as a colored accent stripe on cards, list items, or callouts.
@@ -291,5 +310,26 @@ In dark mode, shadow opacity increases to maintain separation against the near-b
 - **Don't** use `any` types — TypeScript strict mode is enforced project-wide.
 - **Don't** hardcode hex/rgb values in components — reference design tokens only.
 - **Don't** use emoji as UI icons — Lucide SVG icons only.
-- **Don't** show orchestrated page-load animations or choreographed entrance sequences. Users are in flow.
+- **Don't** show orchestrated page-load animations or choreographed entrance sequences. Users are in flow. Motion that *reports state* is not decoration and is not covered by this ban: a node breathes because a request is in flight, an edge carries a dot because control is passing through it. Nothing on the canvas animates that isn't reporting state, and nothing loops under `prefers-reduced-motion`.
+- **Don't** apply glow, colored halos, or looping animation to the app chrome, or to a canvas node that is idle. Glow is a state signal on the node layer only (§4, §7).
 - **Don't** use modals as the first interaction pattern — exhaust inline and progressive alternatives first.
+
+## 7. The Node Layer: The Living Run
+
+The workflow canvas is the one place in APIWeave where the Swiss doctrine above is deliberately relaxed. This section records the exception, its boundaries, and why it exists.
+
+**The problem.** The chrome's job is to disappear. The canvas's job is the opposite: it is the only surface in the app that shows something *happening over time*. Rendered under pure chrome doctrine — 0-radius rectangles, hairline borders, flat at rest, no motion — a canvas mid-run looks exactly like a canvas at rest. The information is all present and all inert. Status becomes something you read rather than something you notice.
+
+**The doctrine.** On the node layer only:
+
+1. **Light means life.** Glow, saturation, and motion belong to nodes that are executing or just finished. An idle node is flat and cheap to render. This is the aesthetic rule and the performance rule at once — glow count is bounded by run concurrency, not by node count.
+2. **Quiet at rest, informative in motion.** The node body is a stage, not a form. At rest it shows identity. During and after a run it shows what happened. Configuration lives one chevron away.
+3. **Motion explains causality.** Nothing animates that isn't reporting state.
+
+**Success settles, failure persists.** When a node succeeds its glow fades away over 600ms and the node returns to calm. When a node fails its glow holds indefinitely. On a finished canvas the only lit thing is what went wrong.
+
+**Where the exception stops.** It covers `components/nodes/`, `components/atoms/flow/`, `CustomEdge`, and the canvas backdrop's dot color. It does **not** cover the title bar, nav rail, header, sidebar, footer, tab bar, the node modal, or any atom or molecule outside the node tree. Those keep chrome doctrine in full. The radius tokens are scoped (`--aw-radius-node*`) precisely so this boundary is enforced by the token names rather than by discipline.
+
+**Accepted consequence.** The canvas reads softer than the chrome around it. That is the point: the canvas is the stage. Whether to escalate the radius scale app-wide is a separate question, deliberately left open.
+
+**Non-negotiables.** Only `transform`, `opacity`, and `box-shadow` on a dedicated layer animate — never `width`, `height`, `top`, `left`, or `border-color` in a loop. Every looping animation is gated behind `prefers-reduced-motion`, and under reduced motion every state remains fully legible from color, glyph, and copy alone.

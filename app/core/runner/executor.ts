@@ -155,6 +155,9 @@ class StopBranch extends Error {
 
 // -------------------- Executor --------------------
 
+/** The traversal path into an entry node: nothing above it. */
+const EMPTY_PATH: ReadonlySet<string> = new Set<string>()
+
 export class WorkflowExecutor {
   private readonly results = new Map<string, NodeResult>()
   private readonly workflowVariables: Record<string, unknown> = {}
@@ -166,6 +169,12 @@ export class WorkflowExecutor {
   private readonly branchResults = new Map<string, ReadonlyArray<readonly [string, NodeResult]>>()
   private currentBranchContext: ReadonlyArray<readonly [string, NodeResult]> = []
   private readonly mergeCompleted = new Set<string>()
+  /**
+   * One traversal per node per run, keyed by node id. The handle resolves with
+   * that traversal's outcome (never rejects) so a second path into the node can
+   * join it. See `executeFromNode`.
+   */
+  private readonly nodeRuns = new Map<string, Promise<unknown>>()
   private workflowNodes = new Map<string, WorkflowNode>()
   private activeRunId = "harness"
   private stepCount = 0
@@ -213,6 +222,9 @@ export class WorkflowExecutor {
     // Upgrade path: real cycle/topological validation before execution if false trips appear.
     this.stepCount = 0
     this.maxSteps = Math.max(10000, (nodes.size + edges.length) * 100)
+    // Per-run, like the step budget above it: a handle left over from a previous
+    // run would make every node on that path look already-executed.
+    this.nodeRuns.clear()
 
     let entryNodeIds: string[] = []
     if (options.startNodeIds && options.startNodeIds.length > 0) {
@@ -263,16 +275,113 @@ export class WorkflowExecutor {
 
   // -------------------- Node execution --------------------
 
+  /**
+   * Record that `nodeId` failed and decide whether the branch keeps going.
+   *
+   * Shared by every call site that catches a node's own error and a
+   * downstream one propagating through it, so the bookkeeping — first error
+   * message, failed-node set, continue-on-fail — stays in one place. Always
+   * rethrows `StopBranch` (a signal, not a failure) and rethrows the original
+   * `error` when the branch isn't allowed to continue past it.
+   */
+  private recordNodeFailure(nodeId: string, error: unknown, continueOnFail: boolean): void {
+    if (error instanceof StopBranch) throw error
+    this.hasFailures = true
+    this.failedNodes.add(nodeId)
+    if (!this.firstErrorMessage) {
+      this.firstErrorMessage = String(error)
+    }
+    if (!continueOnFail) throw error
+  }
+
+  /**
+   * Wait for a traversal already in flight for `nodeId`, if one exists.
+   *
+   * Resolves `true` once the caller should stop (someone else is already
+   * handling this node); `false` means no traversal is running and the caller
+   * must start one.
+   */
+  private async joinInFlightRun(nodeId: string): Promise<boolean> {
+    const inFlight = this.nodeRuns.get(nodeId)
+    if (!inFlight) return false
+    const outcome = await inFlight
+    if (outcome instanceof StopBranch) throw outcome
+    return true
+  }
+
+  /**
+   * Enter a node from one incoming path, running it at most once per run.
+   *
+   * Traversal walks every edge, so a node that two paths converge on used to be
+   * executed once per path — for an http-request node that means the request is
+   * genuinely sent twice, and the canvas shows the node go running → failed →
+   * running → failed (`video/apiweave 4.mp4`, t=13.7–14.4s). `merge` was the
+   * only node type immune, because it carries its own `mergeCompleted` guard.
+   *
+   * The second arrival joins the first instead of starting a second one: it
+   * waits for that subtree to finish and returns without traversing further,
+   * which is also what stops the *downstream* being walked twice. `StopBranch`
+   * propagates, because a stopped branch is stopped for whoever is standing in
+   * it; any other failure is already recorded on `failedNodes` by the first
+   * arrival and is not re-reported here.
+   *
+   * `merge` keeps its own guard rather than this one — it has to be entered by
+   * each branch in order to know its predecessors have landed.
+   *
+   * `ancestors` is what separates a join from a cycle. Both re-enter a node
+   * that is still in flight, but a cycle re-enters one the current path is
+   * *standing inside*, and waiting for that is waiting for yourself. On a cycle
+   * the guard steps aside and lets the step budget below trip, which is the
+   * behaviour that was there before and the one `cycle protection` asserts.
+   */
   private async executeFromNode(
     nodeId: string,
     nodes: Map<string, WorkflowNode>,
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
     continueOnFail: boolean,
+    ancestors: ReadonlySet<string> = EMPTY_PATH,
   ): Promise<void> {
     const node = nodes.get(nodeId)
     if (!node) return
     if (cancelSignal?.aborted) return
+
+    if (node.type === "merge" || node.type === "start" || ancestors.has(nodeId)) {
+      return this.traverseFromNode(node, nodes, edges, cancelSignal, continueOnFail, ancestors)
+    }
+
+    if (await this.joinInFlightRun(nodeId)) return
+
+    // Resolved with the outcome rather than rejected: nothing is guaranteed to
+    // await this handle, and a rejected promise nobody awaits is an unhandled
+    // rejection.
+    let settle!: (outcome: unknown) => void
+    this.nodeRuns.set(nodeId, new Promise<unknown>((resolve) => { settle = resolve }))
+
+    let outcome: unknown = null
+    try {
+      await this.traverseFromNode(node, nodes, edges, cancelSignal, continueOnFail, ancestors)
+    } catch (error) {
+      outcome = error
+      throw error
+    } finally {
+      // In `finally` because the traversal returns early on several paths, and
+      // a handle left pending would hang every other path into this node.
+      settle(outcome)
+    }
+  }
+
+  // fallow-ignore-next-line complexity -- this is the pre-existing single-node traversal body (node exec, assertion routing, branch fan-out/fan-in), lifted out of the old executeFromNode by the run-dedup guard above it rather than newly written; splitting the traversal engine itself is a separate effort from that guard
+  private async traverseFromNode(
+    node: WorkflowNode,
+    nodes: Map<string, WorkflowNode>,
+    edges: readonly WorkflowEdge[],
+    cancelSignal: AbortSignal | undefined,
+    continueOnFail: boolean,
+    ancestors: ReadonlySet<string>,
+  ): Promise<void> {
+    const nodeId = node.nodeId
+    const path = new Set(ancestors).add(nodeId)
 
     if (++this.stepCount > this.maxSteps) {
       const message = `Workflow graph cycle detected at node ${nodeId}`
@@ -309,13 +418,7 @@ export class WorkflowExecutor {
           return
         }
       } catch (error) {
-        if (error instanceof StopBranch) throw error
-        this.hasFailures = true
-        this.failedNodes.add(nodeId)
-        if (!this.firstErrorMessage) {
-          this.firstErrorMessage = String(error)
-        }
-        if (!continueOnFail) throw error
+        this.recordNodeFailure(nodeId, error, continueOnFail)
       }
     } else {
       this.updateNodeStatus(nodeId, "passed")
@@ -375,7 +478,7 @@ export class WorkflowExecutor {
           if (nextNode.type === "end") {
             this.updateNodeStatus(nextNodeId, "passed")
           } else {
-            tasks.push(this.executeBranch(nextNodeId, nodes, edges, cancelSignal, continueOnFail))
+            tasks.push(this.executeBranch(nextNodeId, nodes, edges, cancelSignal, continueOnFail, path))
           }
         }
       }
@@ -413,15 +516,9 @@ export class WorkflowExecutor {
           this.updateNodeStatus(nextNodeId, "passed")
         } else {
           try {
-            await this.executeFromNode(nextNodeId, nodes, edges, cancelSignal, continueOnFail)
+            await this.executeFromNode(nextNodeId, nodes, edges, cancelSignal, continueOnFail, path)
           } catch (error) {
-            if (error instanceof StopBranch) throw error
-            this.hasFailures = true
-            this.failedNodes.add(nextNodeId)
-            if (!this.firstErrorMessage) {
-              this.firstErrorMessage = String(error)
-            }
-            if (!continueOnFail) throw error
+            this.recordNodeFailure(nextNodeId, error, continueOnFail)
           }
         }
       }
@@ -434,8 +531,9 @@ export class WorkflowExecutor {
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
     continueOnFail: boolean,
+    ancestors: ReadonlySet<string>,
   ): Promise<void> {
-    await this.executeFromNode(nodeId, nodes, edges, cancelSignal, continueOnFail)
+    await this.executeFromNode(nodeId, nodes, edges, cancelSignal, continueOnFail, ancestors)
   }
 
   private async executeNode(
