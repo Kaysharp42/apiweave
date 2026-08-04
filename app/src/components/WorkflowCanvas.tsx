@@ -17,7 +17,6 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   addEdge,
-  Panel,
   type Node,
   type Edge,
   type Connection,
@@ -65,6 +64,7 @@ import {
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
+import { CanvasCornerGutter, MiniMapSize } from "../constants/CanvasChrome";
 import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
 import { workflowDetailUrl } from "../utils/apiweaveClient";
 import { autoLayout } from "../utils/autoLayout";
@@ -119,13 +119,20 @@ const fitViewOptions = {
   includeHiddenNodes: true,
 };
 
+// MiniMap is itself a ReactFlow panel, so it takes the corner inset directly.
+// Wrapping it in one nested the two and stacked their 15px default margins,
+// which is how it ended up 27px off the edge instead of the 10px written here.
+// Margin — not bottom/right — is what the panel classes actually position by.
 const miniMapStyle = {
   backgroundColor: "var(--aw-surface-raised)",
   border: "1px solid var(--aw-border)",
   borderRadius: "var(--aw-radius-sm)",
-  width: 220,
-  height: 150,
+  width: MiniMapSize.width,
+  height: MiniMapSize.height,
+  margin: CanvasCornerGutter,
 };
+
+const controlsStyle = { margin: CanvasCornerGutter };
 
 // WeakMap IDs track extractor-config identity by ref so the signature doesn't churn during position-only drag frames.
 const extractorConfigIdMap = new WeakMap<object, number>();
@@ -964,6 +971,7 @@ export function WorkflowCanvas({
 
         <Controls
           position="bottom-left"
+          style={controlsStyle}
           fitViewOptions={fitViewOptions}
           showInteractive={false}
         >
@@ -972,21 +980,22 @@ export function WorkflowCanvas({
           </ControlButton>
         </Controls>
 
-        <Panel position="bottom-right" style={{ bottom: 10, right: 10 }}>
-          <MiniMap
-            nodeColor={getNodeColor}
-            nodeStrokeColor={getNodeStrokeColor}
-            nodeStrokeWidth={1}
-            maskColor={
-              darkMode
-                ? "color-mix(in srgb, var(--aw-surface) 64%, transparent)"
-                : "color-mix(in srgb, var(--aw-text-primary) 5%, transparent)"
-            }
-            style={miniMapStyle}
-            zoomable
-            pannable
-          />
-        </Panel>
+        {/* The action stack in AddNodesPanel sits directly above this, keyed off
+            the same shared geometry — see constants/CanvasChrome. */}
+        <MiniMap
+          position="bottom-right"
+          nodeColor={getNodeColor}
+          nodeStrokeColor={getNodeStrokeColor}
+          nodeStrokeWidth={1}
+          maskColor={
+            darkMode
+              ? "color-mix(in srgb, var(--aw-surface) 64%, transparent)"
+              : "color-mix(in srgb, var(--aw-text-primary) 5%, transparent)"
+          }
+          style={miniMapStyle}
+          zoomable
+          pannable
+        />
       </ReactFlow>
 
       <CanvasToolbar
