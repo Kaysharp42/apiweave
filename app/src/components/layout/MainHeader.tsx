@@ -17,7 +17,6 @@ import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import type { AppContextType } from "../../types/AppContextType";
 import { AccountMenu } from "./AccountMenu";
-import { OrgWorkspaceSwitcher } from "../organisms/OrgWorkspaceSwitcher";
 import useNavigationStore from "../../stores/NavigationStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
@@ -86,13 +85,6 @@ export function MainHeader() {
         <h1 className="font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark">
           APIWeave
         </h1>
-
-        <div
-          className="mx-2 h-5 w-px bg-border/50 dark:bg-border-dark/50"
-          aria-hidden="true"
-        />
-
-        <OrgWorkspaceSwitcher />
       </div>
 
       <div className="navbar-center min-w-0 flex-1" />

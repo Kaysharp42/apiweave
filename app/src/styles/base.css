@@ -67,8 +67,8 @@
   /* Spacing / sizing */
   --aw-header-height: 48px;
   --aw-footer-height: 32px;
-  --aw-nav-collapsed: 56px;
-  --aw-nav-expanded: 180px;
+  --aw-nav-collapsed: 44px;
+  --aw-nav-expanded: 146px;
   --aw-sidebar-width: 380px;
 
   /* Transitions */

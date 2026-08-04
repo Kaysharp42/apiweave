@@ -1,9 +1,9 @@
 import {
-  useEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import { ChevronDown, HardDrive, UserRound, Users, Plus, ListTree } from "lucide-react";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useAuth } from "../../auth/useAuth";
@@ -14,6 +14,15 @@ import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
 import type { Workspace } from "../../types";
 import { useCloudSync } from "../../hooks/useCloudSync";
 
+/**
+ * Workspace scope selector. Lives at the top of the sidebar panel — directly
+ * above the list it scopes — so the current workspace reads as the heading for
+ * everything below it.
+ *
+ * The panel is anchored, which makes Headless UI portal it. That matters: the
+ * sidebar sits inside Allotment's overflow-hidden panes, so an absolutely
+ * positioned dropdown would be clipped at the pane edge.
+ */
 export function OrgWorkspaceSwitcher() {
   const {
     availableWorkspaces,
@@ -24,71 +33,12 @@ export function OrgWorkspaceSwitcher() {
   } = useWorkspace();
   const { isSingleUser } = useAuth();
   const cloud = useCloudSync();
-  const [open, setOpen] = useState(false);
   const [createWsOpen, setCreateWsOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
-      if (
-        wrapperRef.current &&
-        !wrapperRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-
-    const handleEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-
-    document.addEventListener("mousedown", handleOutsideClick);
-    document.addEventListener(
-      "touchstart",
-      handleOutsideClick as EventListener,
-      { passive: true },
-    );
-    document.addEventListener("keydown", handleEscape);
-
-    return () => {
-      document.removeEventListener("mousedown", handleOutsideClick);
-      document.removeEventListener(
-        "touchstart",
-        handleOutsideClick as EventListener,
-      );
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [open]);
-
-  const handleTriggerKeyDown = (
-    event: ReactKeyboardEvent<HTMLButtonElement>,
-  ) => {
-    if (
-      event.key === "Enter" ||
-      event.key === " " ||
-      event.key === "ArrowDown"
-    ) {
-      event.preventDefault();
-      setOpen(true);
-      requestAnimationFrame(() => menuItemRefs.current[0]?.focus());
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setOpen(false);
-    }
-  };
-
-  const handleSelect = (entry: WorkspaceEntry) => {
+  const handleSelect = (entry: WorkspaceEntry, close: () => void) => {
     switchTo(entry.workspace.slug);
-    setOpen(false);
-    triggerRef.current?.focus();
+    close();
   };
 
   const handleWorkspaceCreated = async (
@@ -104,25 +54,19 @@ export function OrgWorkspaceSwitcher() {
   ) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      const next = menuItemRefs.current[index + 1];
-      next?.focus();
+      menuItemRefs.current[index + 1]?.focus();
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      const prev = menuItemRefs.current[index - 1];
-      prev?.focus();
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setOpen(false);
-      triggerRef.current?.focus();
+      menuItemRefs.current[index - 1]?.focus();
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted dark:text-text-muted-dark animate-pulse">
-        <div className="h-3.5 w-20 rounded bg-border/40 dark:bg-border-dark/40" />
+      <div className="flex w-full items-center gap-2 rounded border border-border px-2 py-1.5 dark:border-border-dark">
+        <div className="h-6 w-6 flex-shrink-0 animate-pulse rounded bg-border/40 dark:bg-border-dark/40" />
+        <div className="h-3 w-24 animate-pulse rounded bg-border/40 dark:bg-border-dark/40" />
       </div>
     );
   }
@@ -143,131 +87,134 @@ export function OrgWorkspaceSwitcher() {
   const displaySource = currentEntry ? workspaceSource(currentEntry, cloud.status) : "Personal workspace";
 
   return (
-    <div className="relative" ref={wrapperRef}>
-      <Button
-        ref={triggerRef}
-        variant="ghost"
-        size="sm"
-        onClick={() => setOpen((prev) => !prev)}
-        onKeyDown={handleTriggerKeyDown}
-        className="max-w-[18rem] text-xs font-medium"
-        aria-label="Switch workspace"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        icon={<ChevronDown className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />}
-      >
-        <span className="truncate">{displayLabel}</span>
-        <span className="truncate text-[10px] font-normal text-text-muted dark:text-text-muted-dark">
-          {displaySource}
-        </span>
-      </Button>
-
-      {open && (
-        <div
-          className="absolute left-0 mt-1.5 w-72 overflow-hidden rounded border border-border bg-surface-raised z-50 dark:border-border-dark dark:bg-surface-dark-raised"
-          role="listbox"
-          aria-label="Workspaces"
-        >
-          <div className="border-b border-border/80 px-3 py-2 dark:border-border-dark/80">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
-              Switch workspace
-            </span>
-          </div>
-
-          <div className="max-h-80 overflow-y-auto py-1">
-            {personalWorkspace && (
-              <WorkspaceItem
-                entry={personalWorkspace}
-                index={0}
-                isActive={
-                  currentWorkspace?.workspaceId ===
-                  personalWorkspace.workspace.workspaceId
-                }
-                icon={<UserRound className="w-4 h-4 flex-shrink-0" />}
-                source={workspaceSource(personalWorkspace, cloud.status)}
-                onSelect={handleSelect}
-                onKeyDown={handleItemKeyDown}
-                itemRef={(el) => {
-                  menuItemRefs.current[0] = el;
-                }}
-              />
-            )}
-
-            {otherWorkspaces.map((entry, index) => {
-              const flatIndex = personalWorkspace ? index + 1 : index;
-              const source = workspaceSource(entry, cloud.status);
-              return (
-                <WorkspaceItem
-                  key={entry.workspace.workspaceId}
-                  entry={entry}
-                  index={flatIndex}
-                  isActive={
-                    currentWorkspace?.workspaceId ===
-                    entry.workspace.workspaceId
-                  }
-                  icon={source.startsWith("Team ·")
-                    ? <Users className="w-4 h-4 flex-shrink-0" />
-                    : source === "On this device"
-                      ? <HardDrive className="w-4 h-4 flex-shrink-0" />
-                      : <UserRound className="w-4 h-4 flex-shrink-0" />}
-                  source={source}
-                  onSelect={handleSelect}
-                  onKeyDown={handleItemKeyDown}
-                  itemRef={(el) => {
-                    menuItemRefs.current[flatIndex] = el;
-                  }}
-                />
-              );
-            })}
-
-            {flatList.length === 0 && (
-              <div className="px-3 py-6 text-center text-xs text-text-muted dark:text-text-muted-dark">
-                No workspaces available
-              </div>
-            )}
-          </div>
-
-          {(isDesktopShell() || !isSingleUser) && (
-            <div className="space-y-1 border-t border-border/80 p-2 dark:border-border-dark/80">
-              <Button
-                variant="ghost"
-                size="sm"
-                fullWidth
-                className="justify-start text-xs"
-                icon={<Plus className="h-4 w-4" aria-hidden="true" />}
-                onClick={() => {
-                  setOpen(false);
-                  setCreateWsOpen(true);
-                }}
+    <>
+      <Popover>
+        {({ open, close }) => (
+          <>
+            <PopoverButton
+              className={[
+                "group flex w-full items-center gap-2 rounded border px-2 py-1.5 text-left",
+                "transition-colors duration-150 motion-reduce:transition-none cursor-pointer",
+                "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+                open
+                  ? "border-primary/40 bg-primary/5 dark:border-primary-light/40 dark:bg-primary-light/5"
+                  : "border-border bg-surface hover:border-border hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark dark:hover:bg-surface-dark-overlay",
+              ].join(" ")}
+              aria-label="Switch workspace"
+              aria-haspopup="listbox"
+            >
+              <span
+                className={[
+                  "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded",
+                  "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light",
+                ].join(" ")}
               >
-                New workspace
-              </Button>
-              {/* "Manage workspaces" is a web/team-only surface. */}
-              {!isSingleUser && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  fullWidth
-                  className="justify-start text-xs"
-                  icon={<ListTree className="h-4 w-4" aria-hidden="true" />}
-                  onClick={() => {
-                    setOpen(false);
-                  }}
-                >
-                  Manage workspaces
-                </Button>
+                {sourceIcon(displaySource, "h-3.5 w-3.5")}
+              </span>
+
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-text-primary dark:text-text-primary-dark">
+                  {displayLabel}
+                </span>
+                <span className="block truncate text-xxs text-text-muted dark:text-text-muted-dark">
+                  {displaySource}
+                </span>
+              </span>
+
+              <ChevronDown
+                className={[
+                  "h-3.5 w-3.5 flex-shrink-0 text-text-muted transition-transform duration-150 motion-reduce:transition-none dark:text-text-muted-dark",
+                  open ? "rotate-180" : "",
+                ].join(" ")}
+                aria-hidden="true"
+              />
+            </PopoverButton>
+
+            <PopoverPanel
+              anchor={{ to: "bottom start", gap: 4, padding: 8 }}
+              className="z-50 w-64 min-w-[var(--button-width)] overflow-hidden rounded border border-border bg-surface-raised shadow-overlay focus:outline-none dark:border-border-dark dark:bg-surface-dark-raised"
+            >
+              <div className="border-b border-border/80 px-3 py-2 dark:border-border-dark/80">
+                <span className="text-xxs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+                  Switch workspace
+                </span>
+              </div>
+
+              <div
+                className="max-h-72 overflow-y-auto py-1"
+                role="listbox"
+                aria-label="Workspaces"
+              >
+                {flatList.map((entry, index) => {
+                  const source = workspaceSource(entry, cloud.status);
+                  return (
+                    <WorkspaceItem
+                      key={entry.workspace.workspaceId}
+                      entry={entry}
+                      index={index}
+                      isActive={
+                        currentWorkspace?.workspaceId ===
+                        entry.workspace.workspaceId
+                      }
+                      icon={sourceIcon(source, "h-4 w-4")}
+                      source={source}
+                      onSelect={(selected) => handleSelect(selected, close)}
+                      onKeyDown={handleItemKeyDown}
+                      itemRef={(el) => {
+                        menuItemRefs.current[index] = el;
+                      }}
+                    />
+                  );
+                })}
+
+                {flatList.length === 0 && (
+                  <div className="px-3 py-6 text-center text-xs text-text-muted dark:text-text-muted-dark">
+                    No workspaces available
+                  </div>
+                )}
+              </div>
+
+              {(isDesktopShell() || !isSingleUser) && (
+                <div className="space-y-1 border-t border-border/80 p-2 dark:border-border-dark/80">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    fullWidth
+                    className="justify-start text-xs"
+                    icon={<Plus className="h-4 w-4" aria-hidden="true" />}
+                    onClick={() => {
+                      close();
+                      setCreateWsOpen(true);
+                    }}
+                  >
+                    New workspace
+                  </Button>
+                  {/* "Manage workspaces" is a web/team-only surface. */}
+                  {!isSingleUser && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      fullWidth
+                      className="justify-start text-xs"
+                      icon={<ListTree className="h-4 w-4" aria-hidden="true" />}
+                      onClick={() => close()}
+                    >
+                      Manage workspaces
+                    </Button>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-        </div>
-      )}
+            </PopoverPanel>
+          </>
+        )}
+      </Popover>
 
       <CreateWorkspaceModal
         isOpen={createWsOpen}
         onClose={() => setCreateWsOpen(false)}
         onCreated={handleWorkspaceCreated}
       />
-    </div>
+    </>
   );
 }
 
@@ -303,7 +250,7 @@ function WorkspaceItem({
       aria-selected={isActive}
       onClick={() => onSelect(entry)}
       onKeyDown={(e) => onKeyDown(e, index)}
-      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus:outline-none ${
+      className={`flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus:outline-none ${
         isActive
           ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
           : "text-text-primary hover:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay"
@@ -331,6 +278,15 @@ function WorkspaceItem({
       )}
     </button>
   );
+}
+
+/** One icon vocabulary for the trigger and the list, so they read as the same thing. */
+function sourceIcon(source: string, className: string): React.ReactNode {
+  if (source.startsWith("Team ·"))
+    return <Users className={`${className} flex-shrink-0`} />;
+  if (source === "On this device")
+    return <HardDrive className={`${className} flex-shrink-0`} />;
+  return <UserRound className={`${className} flex-shrink-0`} />;
 }
 
 function workspaceSource(

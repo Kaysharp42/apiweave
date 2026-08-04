@@ -6,13 +6,13 @@ export default {
     extend: {
       // Semantic width tokens (replacing ad-hoc numeric hacks)
       width: {
-        "nav-collapsed": "56px",
-        "nav-expanded": "180px",
+        "nav-collapsed": "44px",
+        "nav-expanded": "146px",
         "sidebar-default": "380px",
         "node-compact": "200px",
       },
       minWidth: {
-        "nav-collapsed": "56px",
+        "nav-collapsed": "44px",
         "node-compact": "200px",
       },
       maxWidth: {
