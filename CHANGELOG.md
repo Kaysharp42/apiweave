@@ -73,7 +73,9 @@ no separate backend, worker, or database server, and no Docker stack to run.
   `WorkflowExecutor` walks the node graph, `safe_http` makes outbound HTTP
   calls with SSRF guards, and `dynamic_functions` evaluates placeholder
   functions. Progress streams to the renderer over IPC; no polling. Large
-  response payloads live in a separate blob table.
+  response payloads live in a separate blob table. A node that two paths
+  converge on is entered once: the second arrival joins the first instead of
+  re-sending the request and re-walking the subtree behind it.
 - **Resume and lineage.** A failed run can be resumed from a node; the resume
   walk is bounded by the `resumeFromRunId` link so it cannot loop forever.
 - **Local MCP bridge.** An opt-in loopback HTTP server at `127.0.0.1:<port>`
@@ -111,6 +113,23 @@ no separate backend, worker, or database server, and no Docker stack to run.
   destructive, idempotent, open-world) plus output schemas and structured
   content, and run projections redact bodies, headers, cookies, URLs, variable
   values, raw errors, and assertion actual values.
+- **Run playback on the canvas.** The canvas plays a run back rather than
+  mirroring it. Status events queue in the runner's order and release under two
+  rules: a node cannot light up until the traversal into it has landed, and a
+  node that lights up holds that state for a minimum dwell. Playback trails the
+  run and compresses its tempo as the backlog builds, so a workflow of fast
+  responses reads as a sequence instead of arriving in one frame. The toolbar
+  and the end-of-run hydration wait for playback to settle, hydration ignores a
+  result that a newer run has superseded, and the camera never moves on its own.
+- **Node and edge visual language.** All seven node types share one shell that
+  carries idle, running, passed, failed, and skipped state. Edges are bezier
+  paths that take their state from the node they leave, with a single
+  GPU-composited dot travelling an active edge instead of a marching dash across
+  the SVG layer; nothing on the canvas animates while no run is executing.
+  Connection handles are 8px sockets inside a 20px hit area, and deleting an
+  edge is keyboard-reachable. Both themes are held to WCAG contrast floors by
+  test: light mode expresses state as a tighter coloured ring plus a body tint
+  where dark mode uses luminance.
 - **Keyboard shortcuts and dark mode.** `Ctrl+N`, `Ctrl+S` (flush to disk now;
   auto-save still runs), `Ctrl+R`/`F5` (run), `Ctrl+J` (JSON editor), plus
   context-aware copy and paste.
