@@ -134,6 +134,15 @@ no separate backend, worker, or database server, and no Docker stack to run.
   auto-save still runs), `Ctrl+R`/`F5` (run), `Ctrl+J` (JSON editor), plus
   context-aware copy and paste.
 
+### Fixed
+
+- **Arch (`.pacman`) install.** The pacman package's dependency list carried a
+  Debian-only package name (`http-parser`) that has no Arch equivalent,
+  which made `pacman -U` refuse the install with an unresolvable-dependency
+  error. The pacman target now declares its own `depends` (`gtk3`, `nss`,
+  `libxss`, `libxtst`, `at-spi2-core`) instead of inheriting electron-builder's
+  Debian-oriented default list.
+
 ### Security
 
 - Secrets are write-only at every layer. Plaintext secret values are never

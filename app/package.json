@@ -1,6 +1,6 @@
 {
   "name": "apiweave",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "type": "module",
   "description": "APIWeave local-first API testing desktop app",
@@ -132,6 +132,15 @@
         "pacman"
       ],
       "category": "Development"
+    },
+    "pacman": {
+      "depends": [
+        "gtk3",
+        "nss",
+        "libxss",
+        "libxtst",
+        "at-spi2-core"
+      ]
     },
     "mac": {
       "target": [
