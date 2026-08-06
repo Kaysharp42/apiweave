@@ -2,6 +2,11 @@ import { app, shell } from "electron"
 import { z } from "zod"
 import { autoUpdater } from "electron-updater"
 import type { ProgressInfo, UpdateInfo } from "electron-updater"
+// Not re-exported from the package root, and the events map is what makes
+// track() below type-safe. Type-only, so nothing is imported at runtime, and
+// electron-updater is pinned to ~6.3.9 (see package.json) — a deep path is safe
+// against a range it cannot cross.
+import type { AppUpdaterEvents } from "electron-updater/out/AppUpdater"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { DEFAULT_UPDATE_POLICY } from "@shared/types/UpdateStatus"
 import { updaterLog } from "./logging"
@@ -137,6 +142,7 @@ function parseVersion(version: string): ParsedVersion {
  * numerically and rank below alphanumeric ones, and when every shared
  * identifier ties the longer list wins.
  */
+// fallow-ignore-next-line complexity -- every branch here is a clause of SemVer §11 precedence; splitting them apart would hide the spec rather than simplify it, and the CRAP score is inflated because coverage is estimated from export references while this helper is exercised indirectly through isNewerVersion's tests
 function comparePrerelease(a: readonly string[], b: readonly string[]): number {
   if (a.length === 0 && b.length === 0) return 0
   if (a.length === 0) return 1
@@ -318,21 +324,23 @@ export class UpdateManager {
         this.patch({ state: "error", error: error.message, downloadProgressPercent: null })
       }
 
-      autoUpdater.on("checking-for-update", onChecking)
-      autoUpdater.on("update-available", onAvailable)
-      autoUpdater.on("update-not-available", onNotAvailable)
-      autoUpdater.on("download-progress", onProgress)
-      autoUpdater.on("update-downloaded", onDownloaded)
-      autoUpdater.on("error", onError)
-      this.disposers.push(() => {
-        autoUpdater.off("checking-for-update", onChecking)
-        autoUpdater.off("update-available", onAvailable)
-        autoUpdater.off("update-not-available", onNotAvailable)
-        autoUpdater.off("download-progress", onProgress)
-        autoUpdater.off("update-downloaded", onDownloaded)
-        autoUpdater.off("error", onError)
-      })
+      this.track("checking-for-update", onChecking)
+      this.track("update-available", onAvailable)
+      this.track("update-not-available", onNotAvailable)
+      this.track("download-progress", onProgress)
+      this.track("update-downloaded", onDownloaded)
+      this.track("error", onError)
     }
+  }
+
+  /**
+   * Registers one electron-updater listener and records how to remove it, so
+   * `on` and `off` are named once instead of in two lists that have to agree.
+   * Two lists is how a handler ends up registered but never removed.
+   */
+  private track<E extends keyof AppUpdaterEvents>(event: E, handler: AppUpdaterEvents[E]): void {
+    autoUpdater.on(event, handler)
+    this.disposers.push(() => autoUpdater.off(event, handler))
   }
 
   /**
@@ -443,13 +451,21 @@ export class UpdateManager {
     }
   }
 
+  /**
+   * A check that failed. Silent ones only reach the log — see
+   * {@link backgroundCheck} for why. Both check paths end here so that choice
+   * is made in exactly one place.
+   */
+  private reportCheckFailure(silent: boolean, message: string): void {
+    if (silent) updaterLog.warn(`background check failed: ${message}`)
+    else this.patch({ state: "error", error: message, lastCheckedAt: Date.now() })
+  }
+
   private async checkViaAutoUpdater(silent: boolean): Promise<UpdateStatus> {
     try {
       await autoUpdater.checkForUpdates()
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (silent) updaterLog.warn(`background check failed: ${message}`)
-      else this.patch({ state: "error", error: message, lastCheckedAt: Date.now() })
+      this.reportCheckFailure(silent, error instanceof Error ? error.message : String(error))
     }
     return this.status
   }
@@ -497,8 +513,7 @@ export class UpdateManager {
           : error instanceof Error
             ? error.message
             : String(error)
-      if (silent) updaterLog.warn(`background check failed: ${message}`)
-      else this.patch({ state: "error", error: message, lastCheckedAt: Date.now() })
+      this.reportCheckFailure(silent, message)
     }
     return this.status
   }

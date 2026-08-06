@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { BootGate } from "./components/BootGate";
+import { UpdateStatusProvider } from "./contexts/UpdateStatusContext";
 import { TitleBar } from "./components/layout/TitleBar";
 // @ts-expect-error - CSS module type declaration handled by Vite
 import "./index.css";
@@ -15,9 +16,15 @@ import { isDesktopShell } from "./utils/isDesktopShell";
 const isDesktop = isDesktopShell();
 if (isDesktop) document.documentElement.classList.add("desktop-shell");
 
+// UpdateStatusProvider sits above the router and outside App so the one IPC
+// subscription survives navigation — the nav-bar dot, the ready-to-install
+// banner and the Updates panel all read from it. Inside BootGate, so it does
+// not start talking to main before the app is ready to.
 const tree = (
   <BootGate>
-    <App />
+    <UpdateStatusProvider>
+      <App />
+    </UpdateStatusProvider>
   </BootGate>
 );
 

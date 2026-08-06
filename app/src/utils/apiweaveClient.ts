@@ -9,7 +9,11 @@ import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
 import type { McpTestResult } from "@shared/types/McpTestResult";
-import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus";
+import type {
+  UpdatePolicy,
+  UpdatesBridge,
+  UpdateStatus,
+} from "@shared/types/UpdateStatus";
 import { DEFAULT_UPDATE_POLICY } from "@shared/types/UpdateStatus";
 import type { AssertionApplyResult } from "@shared/types/AssertionApplyResult";
 import type { AssertionItem } from "@shared/types/AssertionItem";
@@ -77,19 +81,6 @@ type McpBridge = {
   readonly listPrompts: () => Promise<readonly MCPPrompt[]>;
   readonly listResources: () => Promise<readonly MCPResource[]>;
   readonly testConnection: () => Promise<McpTestResult>;
-};
-
-type UpdatesBridge = {
-  readonly getStatus: () => Promise<UpdateStatus>;
-  readonly check: () => Promise<UpdateStatus>;
-  readonly download: () => Promise<UpdateStatus>;
-  readonly setPolicy: (policy: UpdatePolicy) => Promise<UpdateStatus>;
-  readonly restartAndInstall: () => Promise<void>;
-  readonly openReleasePage: () => Promise<void>;
-  readonly openLogFile: () => Promise<void>;
-  readonly onStatusChanged: (
-    callback: (status: UpdateStatus) => void,
-  ) => () => void;
 };
 
 declare global {

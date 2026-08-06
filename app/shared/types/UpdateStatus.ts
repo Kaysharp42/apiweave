@@ -55,3 +55,20 @@ export interface UpdateStatus {
   readonly lastCheckedAt: number | null
   readonly error: string | null
 }
+
+/**
+ * The `window.__APIWEAVE_UPDATES__` contract, declared once because both ends
+ * of it are real code: preload builds the object, and the renderer's client
+ * reads it. Declaring it twice let the two drift — which is what the defensive
+ * `?.` on the newer methods in apiweaveClient.ts is compensating for.
+ */
+export interface UpdatesBridge {
+  readonly getStatus: () => Promise<UpdateStatus>
+  readonly check: () => Promise<UpdateStatus>
+  readonly download: () => Promise<UpdateStatus>
+  readonly setPolicy: (policy: UpdatePolicy) => Promise<UpdateStatus>
+  readonly restartAndInstall: () => Promise<void>
+  readonly openReleasePage: () => Promise<void>
+  readonly openLogFile: () => Promise<void>
+  readonly onStatusChanged: (callback: (status: UpdateStatus) => void) => () => void
+}
