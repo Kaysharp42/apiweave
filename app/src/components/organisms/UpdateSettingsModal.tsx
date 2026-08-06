@@ -216,7 +216,7 @@ function ActionRow({
         </Button>
       )}
 
-      {state !== "downloaded" && (
+      {state !== "downloaded" && state !== "downloading" && (
         <Button
           variant="secondary"
           onClick={onCheck}

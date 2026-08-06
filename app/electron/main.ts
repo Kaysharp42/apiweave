@@ -480,6 +480,11 @@ if (!hasSingleInstanceLock) {
       readPolicy: readUpdatePolicy,
       writePolicy: writeUpdatePolicy,
     })
+    // Deliberately off the `core/ipc/handlers/` registry, matching the mcp:*
+    // handlers above: the registry is also the MCP bridge's handler list
+    // (AGENTS.md — "MCP bridge uses the same handlers"), and a local agent
+    // being able to trigger a restart-and-install is not something to expose
+    // there. Direct ipcMain.handle keeps it reachable only from the renderer.
     ipcMain.handle("updates:getStatus", requireTrustedSender((): UpdateStatus => updates.getStatus()))
     ipcMain.handle("updates:check", requireTrustedSender((): Promise<UpdateStatus> => updates.check()))
     ipcMain.handle(

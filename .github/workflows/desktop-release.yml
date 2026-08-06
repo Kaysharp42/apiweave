@@ -65,7 +65,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "A release already exists for $GITHUB_REF_NAME; the build jobs will reuse it."
+            # A draft means a previous attempt at this same tag failed partway
+            # through — reusing it is exactly what the build jobs are for.
+            # Anything else means the release is already live: rerunning the
+            # build jobs against it would republish fresh latest.yml /
+            # latest-linux.yml from scratch, silently resetting any
+            # stagingPercentage the "Update rollout" workflow set for this tag
+            # back to "everyone". That's the same class of "manifest changed
+            # behind the release's back" this workflow guards against
+            # elsewhere (the SHA256SUMS exclusion, --clobber), so refuse
+            # instead of doing it quietly. Ship a new tag to rebuild.
+            is_draft="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "::error::$GITHUB_REF_NAME is already published. Re-running this workflow would reset its rollout percentage to everyone. Ship a new tag instead." >&2
+              exit 1
+            fi
+            echo "A draft release already exists for $GITHUB_REF_NAME; the build jobs will reuse it."
             exit 0
           fi
 
@@ -272,6 +287,12 @@ jobs:
           # `|| true` so a missing field returns empty rather than tripping
           # `set -e` here — the explicit check below says which field is gone,
           # which is the whole value of failing at this step.
+          #
+          # `tr -d " '\""` strips spaces and quotes from the value, which only
+          # works because `path` (the artifact filename) never contains a
+          # space today, e.g. `APIWeave-0.7.0-win-x64.exe`. If that ever
+          # changes, this silently truncates the filename and the
+          # path-exists check below starts failing every build.
           top_scalar() {
             { grep -m1 "^$2:" "$1" || true; } | cut -d: -f2- | tr -d " '\""
           }

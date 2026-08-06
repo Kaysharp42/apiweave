@@ -297,16 +297,28 @@ export class UpdateManager {
         if (this.silentCheck) return
         this.patch({ state: "checking", error: null })
       }
-      const onAvailable = (info: UpdateInfo): void =>
+      const onAvailable = (info: UpdateInfo): void => {
+        const downloading = this.status.policy === "automatic"
+        if (downloading) {
+          // Under "automatic" the download starts now, chained inside
+          // electron-updater's own checkForUpdates() promise — which may or
+          // may not have resolved yet depending on version. Past this point a
+          // failure is a failed download, not a failed check, and the user
+          // opted into unattended updates: it must never be swallowed as a
+          // "background check failed" log line just because the check that
+          // triggered it happened to still be silent.
+          this.silentCheck = false
+        }
         this.patch({
           // Under "automatic" electron-updater has already started fetching;
           // otherwise this is a notice and `download()` is the user's next step.
-          state: this.status.policy === "automatic" ? "downloading" : "available",
+          state: downloading ? "downloading" : "available",
           latestVersion: info.version,
           releaseUrl: releaseUrl(info.version),
-          downloadProgressPercent: this.status.policy === "automatic" ? 0 : null,
+          downloadProgressPercent: downloading ? 0 : null,
           lastCheckedAt: Date.now(),
         })
+      }
       const onNotAvailable = (info: UpdateInfo): void =>
         this.patch({ state: "not-available", latestVersion: info.version, lastCheckedAt: Date.now() })
       const onProgress = (progress: ProgressInfo): void =>
@@ -317,11 +329,19 @@ export class UpdateManager {
         if (this.silentCheck) {
           // A check the user never asked for must not paint an error they
           // cannot act on. A closed lid or a captive-portal wifi is not a
-          // problem report; the log is where this belongs.
+          // problem report; the log is where this belongs. `lastCheckedAt`
+          // still moves, though — otherwise a run of failed background checks
+          // leaves the panel claiming nothing ever ran.
           updaterLog.warn(`background check failed: ${error.message}`)
+          this.patch({ lastCheckedAt: Date.now() })
           return
         }
-        this.patch({ state: "error", error: error.message, downloadProgressPercent: null })
+        this.patch({
+          state: "error",
+          error: error.message,
+          downloadProgressPercent: null,
+          lastCheckedAt: Date.now(),
+        })
       }
 
       this.track("checking-for-update", onChecking)
@@ -429,6 +449,12 @@ export class UpdateManager {
   /** Explicit user-triggered check. Reports whatever it finds, including
    * failures — the user is looking at the panel and waiting for an answer. */
   async check(): Promise<UpdateStatus> {
+    // Mid-download, or already staged for restart, is a strictly better place
+    // to be than anything a fresh check could tell us — same reasoning as
+    // {@link backgroundCheck}. Without this, clicking "Check for updates"
+    // while the progress bar is showing repaints "downloading" to "available"
+    // mid-download and the progress bar vanishes out from under the user.
+    if (this.status.state === "downloading" || this.status.state === "downloaded") return this.status
     return this.runCheck(false)
   }
 
@@ -447,6 +473,9 @@ export class UpdateManager {
     } finally {
       // Cleared as soon as the check resolves, not when a download it may have
       // kicked off finishes: a download failure is always worth surfacing.
+      // Belt-and-braces alongside `onAvailable`'s own clear — that one covers
+      // electron-updater versions where the download is chained ahead of the
+      // checkForUpdates() promise settling, this one covers everything else.
       this.silentCheck = false
     }
   }
@@ -457,8 +486,14 @@ export class UpdateManager {
    * is made in exactly one place.
    */
   private reportCheckFailure(silent: boolean, message: string): void {
-    if (silent) updaterLog.warn(`background check failed: ${message}`)
-    else this.patch({ state: "error", error: message, lastCheckedAt: Date.now() })
+    if (silent) {
+      updaterLog.warn(`background check failed: ${message}`)
+      // Not shown, but still worth recording — otherwise a run of failed
+      // background checks leaves the panel claiming nothing ever ran.
+      this.patch({ lastCheckedAt: Date.now() })
+    } else {
+      this.patch({ state: "error", error: message, lastCheckedAt: Date.now() })
+    }
   }
 
   private async checkViaAutoUpdater(silent: boolean): Promise<UpdateStatus> {
