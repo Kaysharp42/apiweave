@@ -21,6 +21,21 @@ function copyMigrations() {
   fs.cpSync(src, dest, { recursive: true, force: true })
 }
 
+// BrowserWindow's `icon` option is read at runtime (see electron/main.ts) so the
+// taskbar/dock icon is correct even in dev and on Linux, where the packaged
+// executable's embedded icon resource doesn't cover it. Ship it next to
+// main.cjs the same way migrations are shipped above.
+function copyIcon() {
+  const src = path.join(__dirname, "build", "icon.png")
+  const dest = path.join(__dirname, "dist", "desktop", "icon.png")
+  try {
+    fs.copyFileSync(src, dest)
+  } catch {
+    // Windows file locking: dest may be held open by a running dev instance.
+    console.log("[copyIcon] dest locked, skipping copy")
+  }
+}
+
 const common = {
   bundle: true,
   tsconfig: "tsconfig.desktop.json",
@@ -58,6 +73,7 @@ Promise.all([
   }),
 ])
   .then(copyMigrations)
+  .then(copyIcon)
   .catch((error) => {
     console.error(error)
     process.exit(1)

@@ -100,6 +100,11 @@ async function createWindow(): Promise<void> {
     minHeight: 600,
     frame: false,
     backgroundColor: "#0b0b0f",
+    // Packaged Windows/macOS builds get the taskbar/dock icon from the exe's
+    // embedded resource (electron-builder's build.win/mac.icon), but this is
+    // still needed for dev (`npm start`) and for Linux, where windows are
+    // identified by this option rather than an embedded icon.
+    icon: path.join(__dirname, "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

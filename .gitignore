@@ -150,6 +150,10 @@ yarn-error.log*
 dist/
 .vite/
 
+# electron-builder icon resources — not the Python build/ dir ignored above
+!app/build/
+!app/build/**
+
 # IDEs
 .vscode/
 .idea/
