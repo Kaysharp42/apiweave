@@ -6,7 +6,35 @@ import type { MCPTool } from "@shared/types/MCPTool"
 import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
-import { CLOUD_STATUS_CHANGED_CHANNEL, INVOKE_CHANNEL, runProgressChannel } from "../core/ipc/channels"
+import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
+import {
+  CLOUD_STATUS_CHANGED_CHANNEL,
+  INVOKE_CHANNEL,
+  runProgressChannel,
+  UPDATE_STATUS_CHANGED_CHANNEL,
+} from "../core/ipc/channels"
+
+/**
+ * Registers an ipcRenderer listener and returns its unsubscribe. Every event
+ * bridge below needs the same three steps — wrap the handler, register it,
+ * hand back a remover that closes over *that* handler — and a remover built
+ * against a different function silently leaks a listener per renderer reload.
+ * One implementation means that can only be right or wrong once.
+ */
+function subscribe<T>(channel: string, callback: (value: T) => void): () => void {
+  const handler = (_event: Electron.IpcRendererEvent, value: T): void => callback(value)
+  ipcRenderer.on(channel, handler)
+  return () => ipcRenderer.removeListener(channel, handler)
+}
+
+/**
+ * A no-argument `ipcRenderer.invoke` for one channel, typed. Every request-style
+ * bridge method below is this same line, and writing it out per method means the
+ * channel name and the return type are asserted in n places instead of one.
+ */
+function call<T>(channel: string): () => Promise<T> {
+  return () => ipcRenderer.invoke(channel) as Promise<T>
+}
 
 /**
  * The untyped data-channel primitive. The renderer (Task 17) wraps `invoke` with
@@ -22,19 +50,10 @@ type IpcBridge = {
 const ipcBridge: IpcBridge = {
   invoke: (domain, action, payload) =>
     ipcRenderer.invoke(INVOKE_CHANNEL, { domain, action, payload }) as Promise<ContractResult<unknown>>,
-  onRunProgress: (runId, callback) => {
-    const channel = runProgressChannel(runId)
-    const handler = (_event: Electron.IpcRendererEvent, value: RunProgressEvent): void => {
-      callback(value)
-    }
-    ipcRenderer.on(channel, handler)
-    return () => ipcRenderer.removeListener(channel, handler)
-  },
-  onCloudStatusChanged: (callback) => {
-    const handler = (): void => callback()
-    ipcRenderer.on(CLOUD_STATUS_CHANGED_CHANNEL, handler)
-    return () => ipcRenderer.removeListener(CLOUD_STATUS_CHANGED_CHANNEL, handler)
-  },
+  onRunProgress: (runId, callback) =>
+    subscribe<RunProgressEvent>(runProgressChannel(runId), callback),
+  onCloudStatusChanged: (callback) =>
+    subscribe<void>(CLOUD_STATUS_CHANGED_CHANNEL, () => callback()),
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_IPC__", ipcBridge)
@@ -74,13 +93,29 @@ type McpBridge = {
 }
 
 const mcpBridge: McpBridge = {
-  getStatus: () => ipcRenderer.invoke("mcp:getStatus") as Promise<McpStatus>,
-  enable: () => ipcRenderer.invoke("mcp:enable") as Promise<McpStatus>,
-  disable: () => ipcRenderer.invoke("mcp:disable") as Promise<McpStatus>,
-  listTools: () => ipcRenderer.invoke("mcp:listTools") as Promise<readonly MCPTool[]>,
-  listPrompts: () => ipcRenderer.invoke("mcp:listPrompts") as Promise<readonly MCPPrompt[]>,
-  listResources: () => ipcRenderer.invoke("mcp:listResources") as Promise<readonly MCPResource[]>,
-  testConnection: () => ipcRenderer.invoke("mcp:testConnection") as Promise<McpTestResult>,
+  getStatus: call<McpStatus>("mcp:getStatus"),
+  enable: call<McpStatus>("mcp:enable"),
+  disable: call<McpStatus>("mcp:disable"),
+  listTools: call<readonly MCPTool[]>("mcp:listTools"),
+  listPrompts: call<readonly MCPPrompt[]>("mcp:listPrompts"),
+  listResources: call<readonly MCPResource[]>("mcp:listResources"),
+  testConnection: call<McpTestResult>("mcp:testConnection"),
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_MCP__", mcpBridge)
+
+// Update checks for the Settings > Updates panel. The shape lives in
+// @shared/types/UpdateStatus because the renderer's client consumes the same
+// contract — see UpdatesBridge there.
+const updatesBridge: UpdatesBridge = {
+  getStatus: call<UpdateStatus>("updates:getStatus"),
+  check: call<UpdateStatus>("updates:check"),
+  download: call<UpdateStatus>("updates:download"),
+  setPolicy: (policy) => ipcRenderer.invoke("updates:setPolicy", policy) as Promise<UpdateStatus>,
+  restartAndInstall: call<void>("updates:restartAndInstall"),
+  openReleasePage: call<void>("updates:openReleasePage"),
+  openLogFile: call<void>("updates:openLogFile"),
+  onStatusChanged: (callback) => subscribe<UpdateStatus>(UPDATE_STATUS_CHANGED_CHANNEL, callback),
+}
+
+contextBridge.exposeInMainWorld("__APIWEAVE_UPDATES__", updatesBridge)

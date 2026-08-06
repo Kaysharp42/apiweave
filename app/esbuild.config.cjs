@@ -27,7 +27,17 @@ const common = {
   // ponytail: zod v4 ships ESM-first + crypto/WASM deps that break under cjs
   // bundling — desktop already declares it as a runtime dep, so externalize.
   // libsodium-wrappers is prebuilt WASM; same story.
-  external: ["better-sqlite3", "electron", "zod", "libsodium-wrappers"],
+  // electron-updater is externalized so it runs as the plain CommonJS package
+  // electron-builder expects, sharing the one hoisted builder-util-runtime
+  // that wrote latest.yml at build time. It does bundle cleanly today, but
+  // that's the unsupported path and nothing would catch it silently drifting.
+  external: [
+    "better-sqlite3",
+    "electron",
+    "electron-updater",
+    "zod",
+    "libsodium-wrappers",
+  ],
   format: "cjs",
   logLevel: "info",
   platform: "node",

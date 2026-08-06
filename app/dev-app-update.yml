@@ -1,0 +1,15 @@
+# Update config for a DEV run only. Read when APIWEAVE_DEV_UPDATES=1 sets
+# electron-updater's forceDevUpdateConfig, which makes it look here instead of
+# at the app-update.yml electron-builder writes into a packaged build. A
+# packaged build never reads this file.
+#
+# Keep this in sync with the FIRST entry of `build.publish` in package.json —
+# electron-updater only ever uses the first provider in that list, so the first
+# entry is what a real install resolves against and therefore what a dev run
+# needs to mirror to be a fair test.
+#
+# To rehearse a release train without publishing to the real repo, point `url`
+# at a throwaway repo instead. See docs/reference/release-and-updates.md.
+provider: generic
+url: https://github.com/Kaysharp42/apiweave/releases/latest/download
+useMultipleRangeRequest: false

@@ -46,7 +46,11 @@ import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
-import { CLOUD_STATUS_CHANGED_CHANNEL } from "../core/ipc/channels"
+import { CLOUD_STATUS_CHANGED_CHANNEL, UPDATE_STATUS_CHANGED_CHANNEL } from "../core/ipc/channels"
+import { UpdateManager } from "./updater"
+import { revealLogFile } from "./logging"
+import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
+import { isUpdatePolicy } from "@shared/types/UpdateStatus"
 
 // The single request channel. The composition root (whenReady) constructs the
 // services and calls registerAllHandlers onto it before attaching; the MCP host
@@ -441,6 +445,82 @@ if (!hasSingleInstanceLock) {
           mcpHost = null
         })
     }
+
+    // Update checks. One manager instance owns both the auto-installing path
+    // (Windows NSIS / Linux AppImage, via electron-updater) and the
+    // notice-only fallback (macOS, deb/rpm/pacman) — see electron/updater.ts.
+    // A silent check runs shortly after launch so "new version available"
+    // surfaces without the user asking; the Settings > Updates panel also
+    // lets them check on demand.
+    // How much the updater may do unattended is the user's call, persisted in
+    // app_settings alongside mcp.enabled. The default is "notify" rather than
+    // "automatic": the Windows build is unsigned, so electron-updater has no
+    // Authenticode publisher to check the downloaded installer against, and the
+    // user approving a specific version is the only verification there is.
+    const readUpdatePolicy = (): UpdatePolicy | null => {
+      if (database === null) return null
+      const row = database.kvStore.get<{ value: string }>(
+        "SELECT value FROM app_settings WHERE key = 'updates.policy'",
+      )
+      return isUpdatePolicy(row?.value) ? row.value : null
+    }
+    const writeUpdatePolicy = (policy: UpdatePolicy): void => {
+      if (database === null) return
+      database.kvStore.set(
+        "INSERT INTO app_settings (key, value) VALUES ('updates.policy', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [policy],
+      )
+    }
+    const updates = new UpdateManager({
+      onChange: (status) => {
+        if (mainWindow !== null && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(UPDATE_STATUS_CHANGED_CHANNEL, status)
+        }
+      },
+      readPolicy: readUpdatePolicy,
+      writePolicy: writeUpdatePolicy,
+    })
+    // Deliberately off the `core/ipc/handlers/` registry, matching the mcp:*
+    // handlers above: the registry is also the MCP bridge's handler list
+    // (AGENTS.md — "MCP bridge uses the same handlers"), and a local agent
+    // being able to trigger a restart-and-install is not something to expose
+    // there. Direct ipcMain.handle keeps it reachable only from the renderer.
+    ipcMain.handle("updates:getStatus", requireTrustedSender((): UpdateStatus => updates.getStatus()))
+    ipcMain.handle("updates:check", requireTrustedSender((): Promise<UpdateStatus> => updates.check()))
+    ipcMain.handle(
+      "updates:download",
+      requireTrustedSender((): Promise<UpdateStatus> => updates.download()),
+    )
+    ipcMain.handle(
+      "updates:setPolicy",
+      requireTrustedSender(
+        (policy: UpdatePolicy): Promise<UpdateStatus> =>
+          isUpdatePolicy(policy)
+            ? updates.setPolicy(policy)
+            : Promise.reject(new Error(`unknown update policy: ${String(policy)}`)),
+      ),
+    )
+    ipcMain.handle(
+      "updates:restartAndInstall",
+      requireTrustedSender((): void => updates.restartAndInstall()),
+    )
+    ipcMain.handle(
+      "updates:openReleasePage",
+      requireTrustedSender((): void => updates.openReleasePage()),
+    )
+    ipcMain.handle(
+      "updates:openLogFile",
+      requireTrustedSender((): void => revealLogFile()),
+    )
+    // Owns its own timers: one check just after launch, then one every few
+    // hours so a window left open for days still notices a release.
+    //
+    // Deliberately never paired with updates.dispose() here. The manager lives
+    // as long as the process, and calling it on a quit event would remove the
+    // "error" listener while electron-updater's install-on-quit hook is still
+    // able to emit — an EventEmitter with no error listener throws. Teardown
+    // exists for callers that build more than one manager; see its docblock.
+    updates.start()
 
     protocol.handle("app", async (request) => {
       let pathname: string

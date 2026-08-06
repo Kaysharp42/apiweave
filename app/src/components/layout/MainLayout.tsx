@@ -12,6 +12,7 @@ import useSidebarStore from "../../stores/SidebarStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import { AppNavBarStyles } from "../../constants/AppNavBar";
 import { HorizontalDivider } from "../atoms/HorizontalDivider";
+import { UpdateReadyBanner } from "../organisms/UpdateReadyBanner";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
 
@@ -98,6 +99,9 @@ export function MainLayout({ children }: MainLayoutProps) {
       </header>
 
       <HorizontalDivider />
+
+      {/* Renders nothing unless an update is downloaded and waiting on a restart. */}
+      <UpdateReadyBanner />
 
       {/* Desktop layout (lg+): Allotment split panes */}
       <div className="hidden md:flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
