@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { autoUpdater } from "electron-updater"
-import { isNewerVersion, platformSupportsAutoInstall, UpdateManager } from "../updater"
+import { isNewerVersion, platformSupportsAutoInstall, summarizeUpdaterError, UpdateManager } from "../updater"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 
 const CURRENT_VERSION = "0.6.3"
@@ -182,6 +182,38 @@ describe("isNewerVersion", () => {
   it("ignores build metadata", () => {
     expect(isNewerVersion("0.6.3+build.9", "0.6.3")).toBe(false)
     expect(isNewerVersion("0.7.0+build.1", "0.6.3+build.99")).toBe(true)
+  })
+})
+
+describe("summarizeUpdaterError", () => {
+  it("collapses an HttpError dump to the status code and a pointer to the log", () => {
+    // The shape electron-updater's GenericProvider actually throws: status,
+    // request line, and every response header flattened into one string.
+    const dump =
+      'Cannot find channel "beta.yml" update info: HttpError: 404 "method: GET url: ' +
+      "https://github.com/Kaysharp42/apiweave/releases/download/v0.6.3/beta.yml\\n\\n" +
+      'Please double check that your authentication token is correct. Due to security ' +
+      'reasons, actual status maybe not reported, but 404.\\n" ' +
+      "Headers: { ... } at createHttpError (...) at ElectronHttpExecutor.handleResponse (...)"
+    expect(summarizeUpdaterError(dump)).toBe(
+      "Couldn't reach the update server (HTTP 404). See the update log for details.",
+    )
+  })
+
+  it("passes short, already-human messages through unchanged", () => {
+    expect(summarizeUpdaterError("net::ERR_CONNECTION_RESET")).toBe("net::ERR_CONNECTION_RESET")
+    expect(summarizeUpdaterError("GitHub returned 500")).toBe("GitHub returned 500")
+  })
+
+  it("takes only the first line of a multi-line message with no HTTP status", () => {
+    expect(summarizeUpdaterError("first line\nsecond line\nthird line")).toBe("first line")
+  })
+
+  it("caps an unexpectedly long single-line message rather than dumping it whole", () => {
+    const long = "x".repeat(200)
+    const result = summarizeUpdaterError(long)
+    expect(result).toBe(`${"x".repeat(160)}…`)
+    expect(result.length).toBe(161)
   })
 })
 
@@ -391,6 +423,23 @@ describe("UpdateManager on the auto-installing path", () => {
       error: "net::ERR_CONNECTION_RESET",
       downloadProgressPercent: null,
     })
+  })
+
+  it("shows a plain sentence instead of electron-updater's raw HttpError dump", () => {
+    const { manager } = createManager("win32", "notify")
+
+    emit(
+      "error",
+      new Error(
+        'Cannot find channel "beta.yml" update info: HttpError: 404 "method: GET url: ' +
+          "https://github.com/Kaysharp42/apiweave/releases/download/v0.6.3/beta.yml\\n\\n" +
+          'Please double check..." Headers: { ... } at createHttpError (...)',
+      ),
+    )
+
+    expect(manager.getStatus().error).toBe(
+      "Couldn't reach the update server (HTTP 404). See the update log for details.",
+    )
   })
 })
 

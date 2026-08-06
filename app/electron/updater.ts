@@ -48,6 +48,18 @@ import { updaterLog } from "./logging"
 //     while someone is mid-download shifts the bytes underneath them. The
 //     sha512 in the manifest catches it, the download fails, and the next check
 //     picks up the newer version. Rare and self-healing, but not impossible.
+//
+// `"channel": "latest"` on the generic entry in package.json's `build.publish`
+// is not decorative. electron-builder derives a default channel from the
+// *version being packaged*: any SemVer prerelease id (the "beta" in
+// 0.7.0-beta.1) becomes the channel name, written into the built app's own
+// app-update.yml. Left unset, a prerelease build then asks the generic
+// provider for `beta.yml` — which this project has never published, since
+// desktop-release.yml always writes `latest.yml` / `latest-linux.yml`
+// regardless of whether the tag has a prerelease suffix. That 404s every
+// check a prerelease build ever makes. Pinning the channel to "latest" at
+// publish time makes every build, prerelease or not, ask for the one manifest
+// this project actually writes.
 // ---------------------------------------------------------------------------
 
 const REPO = "Kaysharp42/apiweave"
@@ -224,6 +236,26 @@ export async function fetchLatestReleaseVersion(): Promise<string | null> {
   return parsed.data.version
 }
 
+/**
+ * electron-updater surfaces every failure as one Error whose `message` is a
+ * raw HttpError dump — status line, the full request URL, every response
+ * header, and a multi-frame stack, all flattened into a single string (see
+ * GenericProvider's `Cannot find channel "…" update info: …` wrapping).
+ * Nothing is lost by shortening it for the modal: AppUpdater's own
+ * constructor registers an unconditional `error` listener that logs the full
+ * message via {@link updaterLog} — set as `autoUpdater.logger` below —
+ * before any listener of ours runs, so the raw text is always one click away
+ * behind "Show update log".
+ */
+export function summarizeUpdaterError(message: string): string {
+  const httpStatus = /HttpError: (\d{3})/.exec(message)?.[1]
+  if (httpStatus !== undefined) {
+    return `Couldn't reach the update server (HTTP ${httpStatus}). See the update log for details.`
+  }
+  const firstLine = (message.split("\n")[0] ?? message).trim()
+  return firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine
+}
+
 export interface UpdateManagerOptions {
   readonly onChange: (status: UpdateStatus) => void
   /** Persisted policy, or null to fall back to {@link DEFAULT_UPDATE_POLICY}. */
@@ -338,7 +370,7 @@ export class UpdateManager {
         }
         this.patch({
           state: "error",
-          error: error.message,
+          error: summarizeUpdaterError(error.message),
           downloadProgressPercent: null,
           lastCheckedAt: Date.now(),
         })
@@ -487,12 +519,16 @@ export class UpdateManager {
    */
   private reportCheckFailure(silent: boolean, message: string): void {
     if (silent) {
+      // Full detail, unshortened — nothing reads this but the log file.
       updaterLog.warn(`background check failed: ${message}`)
       // Not shown, but still worth recording — otherwise a run of failed
       // background checks leaves the panel claiming nothing ever ran.
       this.patch({ lastCheckedAt: Date.now() })
     } else {
-      this.patch({ state: "error", error: message, lastCheckedAt: Date.now() })
+      // checkLatestRelease's own messages are already short sentences, so
+      // summarizing is a no-op for them; this only ever shortens the
+      // electron-updater path's raw HttpError dumps.
+      this.patch({ state: "error", error: summarizeUpdaterError(message), lastCheckedAt: Date.now() })
     }
   }
 
@@ -518,7 +554,7 @@ export class UpdateManager {
     } catch (error) {
       this.patch({
         state: "error",
-        error: error instanceof Error ? error.message : String(error),
+        error: summarizeUpdaterError(error instanceof Error ? error.message : String(error)),
         downloadProgressPercent: null,
       })
     }
