@@ -113,7 +113,8 @@
       {
         "provider": "generic",
         "url": "https://github.com/Kaysharp42/apiweave/releases/latest/download",
-        "useMultipleRangeRequest": false
+        "useMultipleRangeRequest": false,
+        "channel": "latest"
       },
       {
         "provider": "github",
