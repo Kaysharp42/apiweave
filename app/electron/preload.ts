@@ -6,7 +6,13 @@ import type { MCPTool } from "@shared/types/MCPTool"
 import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
-import { CLOUD_STATUS_CHANGED_CHANNEL, INVOKE_CHANNEL, runProgressChannel } from "../core/ipc/channels"
+import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
+import {
+  CLOUD_STATUS_CHANGED_CHANNEL,
+  INVOKE_CHANNEL,
+  runProgressChannel,
+  UPDATE_STATUS_CHANGED_CHANNEL,
+} from "../core/ipc/channels"
 
 /**
  * The untyped data-channel primitive. The renderer (Task 17) wraps `invoke` with
@@ -84,3 +90,32 @@ const mcpBridge: McpBridge = {
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_MCP__", mcpBridge)
+
+/** Update checks for the Settings > Updates panel. */
+type UpdatesBridge = {
+  readonly getStatus: () => Promise<UpdateStatus>
+  readonly check: () => Promise<UpdateStatus>
+  readonly download: () => Promise<UpdateStatus>
+  readonly setPolicy: (policy: UpdatePolicy) => Promise<UpdateStatus>
+  readonly restartAndInstall: () => Promise<void>
+  readonly openReleasePage: () => Promise<void>
+  readonly openLogFile: () => Promise<void>
+  readonly onStatusChanged: (callback: (status: UpdateStatus) => void) => () => void
+}
+
+const updatesBridge: UpdatesBridge = {
+  getStatus: () => ipcRenderer.invoke("updates:getStatus") as Promise<UpdateStatus>,
+  check: () => ipcRenderer.invoke("updates:check") as Promise<UpdateStatus>,
+  download: () => ipcRenderer.invoke("updates:download") as Promise<UpdateStatus>,
+  setPolicy: (policy) => ipcRenderer.invoke("updates:setPolicy", policy) as Promise<UpdateStatus>,
+  restartAndInstall: () => ipcRenderer.invoke("updates:restartAndInstall") as Promise<void>,
+  openReleasePage: () => ipcRenderer.invoke("updates:openReleasePage") as Promise<void>,
+  openLogFile: () => ipcRenderer.invoke("updates:openLogFile") as Promise<void>,
+  onStatusChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: UpdateStatus): void => callback(value)
+    ipcRenderer.on(UPDATE_STATUS_CHANGED_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(UPDATE_STATUS_CHANGED_CHANNEL, handler)
+  },
+}
+
+contextBridge.exposeInMainWorld("__APIWEAVE_UPDATES__", updatesBridge)

@@ -24,6 +24,7 @@ import { ConflictsPage } from "./pages/cloud/ConflictsPage";
 import { CloudSyncPage } from "./pages/cloud/CloudSyncPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PaletteProvider } from "./contexts/PaletteContext";
+import { UpdateStatusProvider } from "./contexts/UpdateStatusContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import { Toast } from "./components/atoms/Toast";
 import { AuthProvider } from "./auth/AuthProvider";
@@ -113,8 +114,7 @@ function DefaultWorkspaceRedirect() {
         if (cancelled) return;
 
         const workspace =
-          workspaces.find((entry) => entry.isPersonal) ??
-          workspaces[0];
+          workspaces.find((entry) => entry.isPersonal) ?? workspaces[0];
         if (!workspace) {
           if (isDesktopShell()) {
             await apiweave.workspaces.create({
@@ -295,159 +295,164 @@ function App() {
   return (
     <AppContext.Provider value={appContextValue}>
       <PaletteProvider>
-        <AuthProvider>
-          <RouterComponent>
-            <Routes>
-              {/* Desktop skips the marketing landing page — no login needed
+        {/* Above the router so the one IPC subscription outlives navigation —
+            the nav-bar dot, the ready-to-install banner and the Updates panel
+            all read from it. */}
+        <UpdateStatusProvider>
+          <AuthProvider>
+            <RouterComponent>
+              <Routes>
+                {/* Desktop skips the marketing landing page — no login needed
                   (single-user backend), so go straight to the workspace. */}
-              <Route
-                path="/"
-                element={
-                  isDesktopShell() ? (
-                    <Navigate to="/app" replace />
-                  ) : (
-                    <LandingPage />
-                  )
-                }
-              />
-              <Route
-                path="/app"
-                element={
-                  <ProtectedRoute>
-                    <DefaultWorkspaceRedirect />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/login" element={<Navigate to="/app" replace />} />
-              <Route path="/setup" element={<SetupEntry />} />
-              <Route
-                path="/cloud/conflicts/:conflictId"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <ConflictDetailPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/cloud/conflicts"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <ConflictsPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/cloud/sync"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <CloudSyncPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:workspaceSlug/workflows/:workflowId"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Home />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:workspaceSlug/workflows"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Home />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/settings/secrets"
-                element={
-                  <WorkspacePageShell>
-                    <WorkspaceSecretsPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/settings/environments"
-                element={
-                  <WorkspacePageShell>
-                    <WorkspaceEnvironmentsPage />
-                  </WorkspacePageShell>
-                }
-              />
-              {/* Slug-based workspace routes */}
-              <Route
-                path="/:orgSlug/personal"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Navigate to="workflows" replace />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Navigate to="workflows" replace />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/projects/:projectId"
-                element={
-                  <WorkspacePageShell navState="projects">
-                    <WorkspaceProjectPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/workflows/:workflowId"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Home />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/workflows"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Home />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/*"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <NotFoundPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-            </Routes>
-          </RouterComponent>
-        </AuthProvider>
+                <Route
+                  path="/"
+                  element={
+                    isDesktopShell() ? (
+                      <Navigate to="/app" replace />
+                    ) : (
+                      <LandingPage />
+                    )
+                  }
+                />
+                <Route
+                  path="/app"
+                  element={
+                    <ProtectedRoute>
+                      <DefaultWorkspaceRedirect />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/login" element={<Navigate to="/app" replace />} />
+                <Route path="/setup" element={<SetupEntry />} />
+                <Route
+                  path="/cloud/conflicts/:conflictId"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <ConflictDetailPage />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cloud/conflicts"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <ConflictsPage />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cloud/sync"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <CloudSyncPage />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/:workspaceSlug/workflows/:workflowId"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <Home />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/:workspaceSlug/workflows"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <Home />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/settings/secrets"
+                  element={
+                    <WorkspacePageShell>
+                      <WorkspaceSecretsPage />
+                    </WorkspacePageShell>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/settings/environments"
+                  element={
+                    <WorkspacePageShell>
+                      <WorkspaceEnvironmentsPage />
+                    </WorkspacePageShell>
+                  }
+                />
+                {/* Slug-based workspace routes */}
+                <Route
+                  path="/:orgSlug/personal"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <Navigate to="workflows" replace />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <Navigate to="workflows" replace />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/projects/:projectId"
+                  element={
+                    <WorkspacePageShell navState="projects">
+                      <WorkspaceProjectPage />
+                    </WorkspacePageShell>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/workflows/:workflowId"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <Home />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/workflows"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <Home />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/*"
+                  element={
+                    <ProtectedRoute>
+                      <WorkspaceProvider>
+                        <NotFoundPage />
+                      </WorkspaceProvider>
+                    </ProtectedRoute>
+                  }
+                />
+              </Routes>
+            </RouterComponent>
+          </AuthProvider>
+        </UpdateStatusProvider>
         <Toast />
       </PaletteProvider>
     </AppContext.Provider>

@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsContent } from "./SettingsContent";
+import { UpdateStatusProvider } from "../../../contexts/UpdateStatusContext";
 
 const workspaceContext = vi.hoisted(() => ({
   currentOrg: null as { slug?: string } | null,
@@ -27,19 +28,25 @@ describe("SettingsContent workspace routes", () => {
     const onSwitchNav = vi.fn();
 
     render(
-      <MemoryRouter initialEntries={["/personal/personal/settings/environments"]}>
-        <Routes>
-          <Route
-            path="/:orgSlug/:workspaceSlug/settings/environments"
-            element={
-              <SettingsContent
-                onNavigate={onNavigate}
-                onSwitchNav={onSwitchNav}
-              />
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
+      // The panel shows the update marker, so it reads the shared context that
+      // owns the one IPC subscription.
+      <UpdateStatusProvider>
+        <MemoryRouter
+          initialEntries={["/personal/personal/settings/environments"]}
+        >
+          <Routes>
+            <Route
+              path="/:orgSlug/:workspaceSlug/settings/environments"
+              element={
+                <SettingsContent
+                  onNavigate={onNavigate}
+                  onSwitchNav={onSwitchNav}
+                />
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </UpdateStatusProvider>,
     );
 
     await user.click(screen.getByRole("button", { name: /Projects/i }));

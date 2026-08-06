@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { FolderKanban, Key, Globe, Plug } from "lucide-react";
+import { FolderKanban, Key, Globe, Plug, RefreshCw } from "lucide-react";
 import { useParams } from "react-router-dom";
 import type { SettingsContentProps } from "../../../types";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { McpSetupModal } from "../../organisms/McpSetupModal";
+import { UpdateSettingsModal } from "../../organisms/UpdateSettingsModal";
+import { useUpdateStatus } from "../../../contexts/UpdateStatusContext";
 
 /**
  * Renders the settings section of the sidebar.
@@ -16,6 +18,8 @@ export function SettingsContent({
   const { currentOrg, currentWorkspace } = useWorkspace();
   const params = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
+  const { pending: updatePending, status: updateStatus } = useUpdateStatus();
 
   const orgSlug = currentOrg?.slug ?? params.orgSlug ?? "personal";
   const workspaceSlug = currentWorkspace?.slug ?? params.workspaceSlug ?? "personal";
@@ -132,9 +136,37 @@ export function SettingsContent({
             </div>
           </button>
         </li>
+        <li>
+          <button
+            type="button"
+            className={settingItemClass}
+            onClick={() => setUpdatesOpen(true)}
+          >
+            <RefreshCw className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+            <div className="min-w-0 text-left">
+              <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
+                Updates
+              </div>
+              <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                {updatePending
+                  ? updateStatus?.state === "downloaded"
+                    ? `v${updateStatus.latestVersion} is ready — restart to install`
+                    : `v${updateStatus?.latestVersion} is available`
+                  : "Check for and install new versions"}
+              </div>
+            </div>
+            {updatePending && (
+              <span className="ml-auto h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />
+            )}
+          </button>
+        </li>
       </ul>
 
       <McpSetupModal isOpen={mcpOpen} onClose={() => setMcpOpen(false)} />
+      <UpdateSettingsModal
+        isOpen={updatesOpen}
+        onClose={() => setUpdatesOpen(false)}
+      />
     </div>
   );
 }

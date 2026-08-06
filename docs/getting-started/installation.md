@@ -98,6 +98,31 @@ The local MCP bridge is opt-in. To enable it for a local AI agent:
 
 If you do not enable the MCP bridge, nothing is listening on any port. The desktop app has no exposed network surface by default.
 
+## Updates
+
+APIWeave checks GitHub Releases for a newer version shortly after launch, then every six hours for as long as the window stays open, and any time you open **Settings → Updates** and click **Check for updates**.
+
+**Settings → Updates** controls what happens when it finds one:
+
+| Setting | Behaviour |
+| --- | --- |
+| **Notify me** (default) | Checks on launch and periodically, and tells you a version exists. Nothing downloads until you ask. |
+| **Automatic** | Downloads in the background and installs the next time you quit. |
+| **Manual only** | Never checks on its own. Only the **Check for updates** button reaches the network. |
+
+Checks the app makes on its own stay quiet unless they find something: no spinner appears in a panel you did not open, and a check that fails because the machine was briefly offline is written to the log rather than shown as an error. A check *you* start always reports what happened.
+
+The default is **Notify me** rather than **Automatic** on purpose. The Windows and macOS builds are not code-signed yet, so the updater has no publisher certificate to verify a downloaded installer against — you approving each version is the strongest check available. Once signing lands, **Automatic** becomes a reasonable default.
+
+Which of those the app can actually carry out depends on the platform:
+
+- **Windows** and **Linux (AppImage)**: can download and stage an update themselves, applied on restart.
+- **macOS, and the `.deb`/`.rpm`/`.pacman` Linux packages**: the app cannot self-update (macOS Gatekeeper blocks it on an unsigned build, and the `.deb`/`.rpm`/`.pacman` formats are owned by the OS package manager, not the app). These platforms only ever show a **new version available** notice with a link to the release page, so **Automatic** is not offered.
+
+When there is something to act on — a release to download, or a downloaded update waiting on a restart — a dot appears on the **Settings** icon in the left navigation bar. A downloaded update also raises a banner across the top of the window with **Restart now** and **Later**.
+
+If an update does not behave, **Settings → Updates → Show update log** opens the file manager with `main.log` selected — every check, download and error the updater recorded. Attach it to a bug report.
+
 ## Build from Source (Contributors)
 
 If you are working on APIWeave itself, build the desktop installer from source.
@@ -130,7 +155,7 @@ A quick checklist after first launch:
 
 1. The window opens at the workflows list. No login screen.
 2. The data directory was created and contains `apiweave.db` and `keyfile`.
-3. **Settings → About** shows the version you installed.
+3. **Settings → Updates** shows the version you installed.
 4. (Optional) Toggle the MCP bridge in **Settings** and confirm the **MCP** panel shows a `127.0.0.1` URL and a token.
 
 ## Where Things Live
@@ -141,13 +166,20 @@ A quick checklist after first launch:
 | Secret keyfile | `<userData>/keyfile` |
 | MCP token (when enabled) | `<userData>/mcp-token` |
 | Run artifacts (JUnit, HTML) | `<userData>/artifacts/` |
-| App logs (renderer + main) | The terminal that launched Electron, or the OS console |
+| Main-process log (incl. updates) | `<logs>/main.log`, rotating into `main.old.log` at 1 MB |
+| Renderer log | The terminal that launched Electron, or the OS console |
 
 `<userData>` is the OS-standard user data path for the app:
 
 - **Windows**: `%APPDATA%\APIWeave`
 - **macOS**: `~/Library/Application Support/APIWeave`
 - **Linux**: `~/.config/APIWeave`
+
+`<logs>` is the OS-standard log path:
+
+- **Windows**: `%APPDATA%\APIWeave\logs`
+- **macOS**: `~/Library/Logs/APIWeave`
+- **Linux**: `~/.config/APIWeave/logs`
 
 ## Next Steps
 

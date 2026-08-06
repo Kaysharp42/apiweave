@@ -16,6 +16,7 @@ import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { AppNavBarItems } from "../../constants/AppNavBar";
 import type { NavSection } from "../../types/NavSection";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
+import { useUpdateStatus } from "../../contexts/UpdateStatusContext";
 
 type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
@@ -74,6 +75,10 @@ export function AppNavBar() {
     currentWorkspace?.slug ?? workspaceSlug ?? "personal";
   const wsSettingsPath = `/${resolvedOrgSlug}/${resolvedWorkspaceSlug}/settings/environments`;
   const settingsPath = wsSettingsPath;
+  // Settings > Updates is the only place the update flow lives, so without a
+  // marker here nobody on the platforms that can't self-install would ever
+  // learn a release exists.
+  const { pending: updatePending } = useUpdateStatus();
 
   return (
     <nav
@@ -91,6 +96,12 @@ export function AppNavBar() {
       <div className="flex-1 space-y-0.5 p-1">
         {navItems.map(({ id, label, icon: Icon, disabled }) => {
           const isSelected = navigationSelectedValue === id;
+          const showUpdateDot = id === "settings" && updatePending;
+          const accessibleLabel = disabled
+            ? `${label} (coming soon)`
+            : showUpdateDot
+              ? `${label} (update available)`
+              : label;
 
           const content = (
             <button
@@ -112,10 +123,16 @@ export function AppNavBar() {
               }}
               disabled={disabled}
               aria-current={isSelected ? "page" : undefined}
-              aria-label={disabled ? `${label} (coming soon)` : label}
+              aria-label={accessibleLabel}
             >
               {isSelected && (
                 <span className="absolute left-0 top-0.5 bottom-0.5 w-0.5 rounded-r-sm bg-primary dark:bg-primary-light" />
+              )}
+              {showUpdateDot && (
+                <span
+                  className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary dark:bg-primary-light"
+                  aria-hidden="true"
+                />
               )}
               <div
                 className={[
@@ -154,7 +171,7 @@ export function AppNavBar() {
           return isNavBarCollapsed ? (
             <Tippy
               key={id}
-              content={disabled ? `${label} (coming soon)` : label}
+              content={accessibleLabel}
               placement="right"
             >
               {content}

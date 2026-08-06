@@ -1,0 +1,110 @@
+name: Update rollout
+
+# Controls how many installs a published release is allowed to update to, by
+# rewriting `stagingPercentage` in that release's electron-updater manifests.
+#
+# This is the fast lever for a bad release. Setting 0 stops every further
+# automatic update within one check interval without unpublishing anything,
+# deleting anything, or breaking the download links people already have.
+#
+# It only governs the platforms that install updates themselves (Windows NSIS,
+# Linux AppImage) — the manifests are the only thing it touches. macOS and
+# deb/rpm/pacman read version.json and are shown a notice they act on by hand,
+# so a bad release costs those users a notice rather than a broken install. To
+# pull a release back on *every* platform, mark it as a prerelease instead; see
+# docs/reference/release-and-updates.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to adjust, e.g. v0.7.0"
+        required: true
+        type: string
+      percentage:
+        description: "Percent of installs allowed to update. 0 halts the rollout, 100 releases it to everyone."
+        required: true
+        default: "100"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two runs racing would each upload a manifest built from a different
+  # starting state, and the loser's percentage would win silently.
+  group: update-rollout-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    name: Set rollout to ${{ inputs.percentage }}%
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Rewrite stagingPercentage
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          PERCENTAGE: ${{ inputs.percentage }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$PERCENTAGE" =~ ^[0-9]+$ ]] || (( PERCENTAGE > 100 )); then
+            echo "::error::percentage must be a whole number from 0 to 100, got '$PERCENTAGE'" >&2
+            exit 1
+          fi
+
+          state="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          if [[ "$state" == "true" ]]; then
+            echo "::error::$TAG is still a draft; nothing is rolling out yet" >&2
+            exit 1
+          fi
+
+          mkdir manifests
+          cd manifests
+
+          # Only the two manifests, not the whole release — the installers are
+          # hundreds of megabytes and nothing here touches them.
+          for manifest in latest.yml latest-linux.yml; do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$manifest" || {
+              echo "::error::$TAG has no $manifest — is it a release built before the generic provider switch?" >&2
+              exit 1
+            }
+          done
+
+          for manifest in latest.yml latest-linux.yml; do
+            # Drop any percentage already set, then re-add unless this is a
+            # full rollout. Absent means "everyone", which is what
+            # electron-updater assumes when the field is missing, so 100 is
+            # expressed by removing the line rather than writing 100.
+            grep -v '^stagingPercentage:' "$manifest" > next.yml
+            if (( PERCENTAGE < 100 )); then
+              printf 'stagingPercentage: %s\n' "$PERCENTAGE" >> next.yml
+            fi
+            mv next.yml "$manifest"
+
+            # Nothing above may touch version, path or sha512 — those are what
+            # the client trusts the download against, and CI already verified
+            # them at release time.
+            echo "--- $manifest ---"
+            grep -E '^(version|path|sha512|stagingPercentage):' "$manifest"
+          done
+
+          gh release upload "$TAG" latest.yml latest-linux.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+          if (( PERCENTAGE == 0 )); then
+            echo "::warning::Rollout of $TAG halted. Installs stop offering it within one check interval (~6h, or next launch)."
+          else
+            echo "Rollout of $TAG set to ${PERCENTAGE}%."
+          fi
+
+          # Buckets are stable: electron-updater hashes a GUID it persists per
+          # install, so raising the percentage only ever adds installs. Lowering
+          # it stops new ones without rolling back anyone who already updated —
+          # for that, ship a higher version.
+          echo "Staging buckets are stable per install, so raising this only adds installs."

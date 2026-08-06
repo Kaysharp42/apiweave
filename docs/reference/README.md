@@ -19,6 +19,10 @@ None. Reference docs assume you already know what you are looking for. If you ar
 
 - [Environment Variables](environment-variables.md): every variable the renderer reads, grouped by feature, with defaults and what each one controls.
 
+## Releasing
+
+- [Releases and the Update Channel](release-and-updates.md): how a published release reaches installed clients, how to rehearse the update path before users run it, and the two levers for pulling a bad release back.
+
 ## IPC Surface
 
 - [IPC API](api.md): the typed IPC handler registry the renderer and the local MCP bridge call.

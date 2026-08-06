@@ -9,6 +9,8 @@ import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
 import type { McpTestResult } from "@shared/types/McpTestResult";
+import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus";
+import { DEFAULT_UPDATE_POLICY } from "@shared/types/UpdateStatus";
 import type { AssertionApplyResult } from "@shared/types/AssertionApplyResult";
 import type { AssertionItem } from "@shared/types/AssertionItem";
 import type { AssertionSuggestionResult } from "@shared/types/AssertionSuggestionResult";
@@ -77,11 +79,25 @@ type McpBridge = {
   readonly testConnection: () => Promise<McpTestResult>;
 };
 
+type UpdatesBridge = {
+  readonly getStatus: () => Promise<UpdateStatus>;
+  readonly check: () => Promise<UpdateStatus>;
+  readonly download: () => Promise<UpdateStatus>;
+  readonly setPolicy: (policy: UpdatePolicy) => Promise<UpdateStatus>;
+  readonly restartAndInstall: () => Promise<void>;
+  readonly openReleasePage: () => Promise<void>;
+  readonly openLogFile: () => Promise<void>;
+  readonly onStatusChanged: (
+    callback: (status: UpdateStatus) => void,
+  ) => () => void;
+};
+
 declare global {
   interface Window {
     __APIWEAVE_IPC__?: IpcBridge;
     __APIWEAVE_DESKTOP__?: DesktopBridge;
     __APIWEAVE_MCP__?: McpBridge;
+    __APIWEAVE_UPDATES__?: UpdatesBridge;
     __APIWEAVE_RUNTIME__?: {
       readonly apiUrl?: string;
       readonly uiToken?: string;
@@ -101,6 +117,7 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_IPC__?: IpcBridge;
   __APIWEAVE_DESKTOP__?: DesktopBridge;
   __APIWEAVE_MCP__?: McpBridge;
+  __APIWEAVE_UPDATES__?: UpdatesBridge;
 };
 
 type ListResult<T> = { readonly items: readonly T[]; readonly total: number };
@@ -618,6 +635,49 @@ export const mcp = {
   testConnection: (): Promise<McpTestResult> =>
     getMcpBridge()?.testConnection() ??
     Promise.resolve({ ok: false, status: null }),
+} as const;
+
+function getUpdatesBridge(): UpdatesBridge | undefined {
+  return (
+    globalThis.window?.__APIWEAVE_UPDATES__ ??
+    globalApiweave.__APIWEAVE_UPDATES__
+  );
+}
+
+const idleUpdateStatus: UpdateStatus = {
+  state: "idle",
+  currentVersion: "0.0.0",
+  latestVersion: null,
+  releaseUrl: null,
+  downloadProgressPercent: null,
+  supportsAutoInstall: false,
+  policy: DEFAULT_UPDATE_POLICY,
+  lastCheckedAt: null,
+  error: null,
+};
+
+/** Controls for the Settings > Updates panel. Resolves to an idle status
+ * when the bridge is absent (e.g. web preview outside Electron). The
+ * per-method `?.` on the newer calls keeps a renderer paired with an older
+ * preload from throwing rather than degrading. */
+export const updates = {
+  isAvailable: (): boolean => getUpdatesBridge() !== undefined,
+  getStatus: (): Promise<UpdateStatus> =>
+    getUpdatesBridge()?.getStatus() ?? Promise.resolve(idleUpdateStatus),
+  check: (): Promise<UpdateStatus> =>
+    getUpdatesBridge()?.check() ?? Promise.resolve(idleUpdateStatus),
+  download: (): Promise<UpdateStatus> =>
+    getUpdatesBridge()?.download?.() ?? Promise.resolve(idleUpdateStatus),
+  setPolicy: (policy: UpdatePolicy): Promise<UpdateStatus> =>
+    getUpdatesBridge()?.setPolicy?.(policy) ?? Promise.resolve(idleUpdateStatus),
+  restartAndInstall: (): Promise<void> =>
+    getUpdatesBridge()?.restartAndInstall() ?? Promise.resolve(),
+  openReleasePage: (): Promise<void> =>
+    getUpdatesBridge()?.openReleasePage() ?? Promise.resolve(),
+  openLogFile: (): Promise<void> =>
+    getUpdatesBridge()?.openLogFile?.() ?? Promise.resolve(),
+  onStatusChanged: (callback: (status: UpdateStatus) => void): (() => void) =>
+    getUpdatesBridge()?.onStatusChanged(callback) ?? (() => undefined),
 } as const;
 
 export const API_BASE_URL = "ipc://apiweave";
