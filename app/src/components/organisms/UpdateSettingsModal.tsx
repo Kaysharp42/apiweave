@@ -174,6 +174,13 @@ function PolicyFieldset({
   );
 }
 
+/** Hidden once a download has finished (nothing left to check for) or is in
+ * flight (a fresh check would repaint the progress bar out from under the
+ * user — see UpdateManager.check()'s matching guard). */
+function canCheckManually(state: UpdateState): boolean {
+  return state !== "downloaded" && state !== "downloading";
+}
+
 interface ActionRowProps {
   readonly state: UpdateState;
   readonly latestVersion: string | null;
@@ -216,7 +223,7 @@ function ActionRow({
         </Button>
       )}
 
-      {state !== "downloaded" && state !== "downloading" && (
+      {canCheckManually(state) && (
         <Button
           variant="secondary"
           onClick={onCheck}
