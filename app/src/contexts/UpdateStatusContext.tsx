@@ -10,6 +10,7 @@ import {
 } from "react";
 import { updates } from "../utils/apiweaveClient";
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus";
+import type { UpdateStatusContextValue } from "../types/UpdateStatusContextValue";
 
 /**
  * A check against a warm connection can resolve in ~80ms, which reads as a
@@ -27,22 +28,6 @@ const MIN_CHECK_SPINNER_MS = 400;
  */
 export function hasPendingUpdate(status: UpdateStatus | null): boolean {
   return status?.state === "available" || status?.state === "downloaded";
-}
-
-export interface UpdateStatusContextValue {
-  readonly status: UpdateStatus | null;
-  /** True while an explicit check is in flight, including the spinner floor.
-   * Distinct from `status.state === "checking"`, which main also sets. */
-  readonly checking: boolean;
-  readonly pending: boolean;
-  readonly checkNow: () => Promise<void>;
-  readonly download: () => Promise<void>;
-  readonly setPolicy: (policy: UpdatePolicy) => Promise<void>;
-  readonly restartAndInstall: () => Promise<void>;
-  readonly openReleasePage: () => Promise<void>;
-  readonly openLogFile: () => Promise<void>;
-  /** False outside the desktop shell, where there is no updater to talk to. */
-  readonly isAvailable: boolean;
 }
 
 const UpdateStatusContext = createContext<UpdateStatusContextValue | null>(null);

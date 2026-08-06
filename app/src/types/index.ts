@@ -109,6 +109,7 @@ export type { SettingsContentProps } from "./SettingsContentProps";
 export type { SidebarItemProps } from "./SidebarItemProps";
 export type { SidebarActionProps } from "./SidebarActionProps";
 export type { AppContextType } from "./AppContextType";
+export type { UpdateStatusContextValue } from "./UpdateStatusContextValue";
 export type { OutsideCollaboratorListProps } from "./OutsideCollaboratorListProps";
 export type { ScopeBadgeProps } from "./ScopeBadgeProps";
 export type { ScopedSecretListProps } from "./ScopedSecretListProps";
