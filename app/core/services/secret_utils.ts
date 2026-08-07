@@ -14,6 +14,19 @@ import type { JsonValue } from "@shared/types/JsonValue"
 export const SECRET_PLACEHOLDER = "<SECRET>"
 
 /**
+ * Which consumer a sanitizer pass is serving. Both withhold every credential
+ * value; they differ in what they do to the surrounding structure.
+ *
+ * - `export` — an `.awecollection` bundle or sync payload leaving the machine.
+ *   Fail closed and drop, so nothing downstream can mistake a placeholder for a
+ *   working credential.
+ * - `agent-read` — a read crossing the local MCP bridge. Keep the shape intact
+ *   (redacted values in place, not missing keys) so an agent can diff what it
+ *   wrote against what was stored.
+ */
+export type SanitizeMode = "export" | "agent-read"
+
+/**
  * Key-name patterns deciding whether a dict key *holds* a secret. Ported verbatim
  * from Python `SECRET_KEY_PATTERNS` — the set of keys redacted must match so an
  * exported bundle sanitizes identically across stacks. Scoped to key names (not
@@ -180,27 +193,98 @@ function sanitizeFileUploadsForExport(items: readonly JsonValue[]): JsonValue[] 
 
 /**
  * Redact a `{key, value}` pair array (HTTP headers/cookies/query params/etc.).
- * Entries whose key names a secret are dropped entirely; `redactAllValues`
- * additionally blanks every value regardless of key name (used for cookies,
- * which routinely carry session material under non-secret-looking names).
+ *
+ * `export` drops entries whose key names a secret entirely, so an imported
+ * bundle forces the operator to re-enter the credential rather than sending a
+ * placeholder upstream; `redactAllValues` additionally blanks every remaining
+ * value regardless of key name (used for cookies, which routinely carry session
+ * material under non-secret-looking names).
+ *
+ * `agent-read` never drops an entry. An agent reading back what it just wrote
+ * has to be able to tell "the header is stored, its value is withheld" from
+ * "the header was silently discarded" — dropping makes a read useless as a
+ * write confirmation, and the value is redacted either way.
  */
-function sanitizeKeyValueArrayForExport(items: readonly JsonValue[], redactAllValues: boolean): JsonValue[] {
+function sanitizeKeyValueArray(items: readonly JsonValue[], redactAllValues: boolean, mode: SanitizeMode): JsonValue[] {
   const sanitized: JsonValue[] = []
   for (const item of items) {
-    if (!isRecord(item)) {
-      sanitized.push(item)
-      continue
-    }
-    const key = item["key"]
-    if (typeof key === "string" && isSecretKey(key)) continue
-    const value = item["value"]
-    sanitized.push(
-      typeof value === "string" && redactAllValues
-        ? { ...item, value: SECRET_PLACEHOLDER }
-        : item,
-    )
+    const entry = sanitizeKeyValueEntry(item, redactAllValues, mode)
+    if (entry !== undefined) sanitized.push(entry)
   }
   return sanitized
+}
+
+/** One `{key, value}` entry, or `undefined` when export mode drops it entirely. */
+function sanitizeKeyValueEntry(
+  item: JsonValue,
+  redactAllValues: boolean,
+  mode: SanitizeMode,
+): JsonValue | undefined {
+  if (!isRecord(item)) return item
+  const key = item["key"]
+  const secretKey = typeof key === "string" && isSecretKey(key)
+  if (secretKey && mode === "export") return undefined
+  const value = item["value"]
+  if (typeof value !== "string") return item
+  return withholdsPairValue(value, secretKey, redactAllValues)
+    ? { ...item, value: SECRET_PLACEHOLDER }
+    : item
+}
+
+/**
+ * Whether a `{key, value}` pair's value must be withheld.
+ *
+ * `redactAllValues` (cookies) withholds unconditionally — session material hides
+ * under names that look harmless. Otherwise only a secret-named key withholds,
+ * and even then a `{{secrets.NAME}}` reference survives: it is an indirection,
+ * not the secret, and seeing it is how an agent knows which credential a header
+ * binds to.
+ */
+function withholdsPairValue(value: string, secretKey: boolean, redactAllValues: boolean): boolean {
+  if (redactAllValues) return true
+  return secretKey && extractSecretRefsFromString(value).length === 0
+}
+
+/**
+ * Redact an HTTP request body for an agent read. A body is workflow *config*,
+ * not run evidence: blanket-replacing it with `<SECRET>` tells the agent nothing
+ * about whether its write landed, and — because `<SECRET>` is a valid string for
+ * `HTTPNodeDataSchema.body` — poisons any read/modify/write round trip.
+ *
+ * So redact structurally instead: parse the body as JSON and blank only the
+ * leaves whose key names a secret or whose value looks like a credential,
+ * keeping `{{secrets.NAME}}` references intact. A body that isn't JSON gets the
+ * value-level heuristic applied to the whole string. When nothing needed
+ * redacting the original string is returned verbatim, so re-formatting never
+ * shows up as a spurious diff.
+ */
+function sanitizeBodyForAgentRead(body: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return looksLikeSecretValue(body) && extractSecretRefsFromString(body).length === 0
+      ? SECRET_PLACEHOLDER
+      : body
+  }
+  let redacted = false
+  const walk = (value: unknown, keyName: string | null): unknown => {
+    if (Array.isArray(value)) return value.map((item) => walk(item, keyName))
+    if (isRecord(value)) {
+      const out: Record<string, JsonValue> = {}
+      for (const [key, child] of Object.entries(value)) out[key] = walk(child, key) as JsonValue
+      return out
+    }
+    if (typeof value !== "string") return value
+    if (extractSecretRefsFromString(value).length > 0) return value
+    if ((keyName !== null && isSecretKey(keyName)) || looksLikeSecretValue(value)) {
+      redacted = true
+      return SECRET_PLACEHOLDER
+    }
+    return value
+  }
+  const sanitized = walk(parsed, null)
+  return redacted ? JSON.stringify(sanitized, null, 2) : body
 }
 
 /**
@@ -237,33 +321,93 @@ function sanitizeUrlForExport(value: string): string {
  * doesn't look secret out of context.
  */
 export function sanitizeExportValue(data: JsonValue): JsonValue {
+  return sanitizeValue(data, "export")
+}
+
+/**
+ * The read sanitizer for the MCP bridge. Same secret-safety floor as
+ * {@link sanitizeExportValue} — no credential value ever crosses the wire — but
+ * structure-preserving, because an agent's only way to confirm a write landed is
+ * to read it back. Where the export mode drops a secret-named header entry and
+ * flattens every body to `<SECRET>`, this mode keeps the entry with a redacted
+ * value and redacts bodies leaf-by-leaf. See {@link sanitizeKeyValueArray} and
+ * {@link sanitizeBodyForAgentRead}.
+ */
+export function sanitizeAgentReadValue(data: JsonValue): JsonValue {
+  return sanitizeValue(data, "agent-read")
+}
+
+/**
+ * Per-field rules, keyed by the field name they claim. A rule returns
+ * `undefined` for "not my shape" so the caller falls through to the generic
+ * walk — table lookup rather than an if/else ladder, so adding a structural
+ * field is one entry instead of another branch.
+ */
+const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: SanitizeMode) => JsonValue | undefined>> = {
+  auth: (value) => (isRecord(value) ? sanitizeAuthConfigForExport(value) : undefined),
+  fileUploads: (value) => (Array.isArray(value) ? sanitizeFileUploadsForExport(value) : undefined),
+  cookies: (value, mode) => (Array.isArray(value) ? sanitizeKeyValueArray(value, true, mode) : undefined),
+  url: (value) => (typeof value === "string" ? sanitizeUrlForExport(value) : undefined),
+  body: (value, mode) => {
+    if (typeof value !== "string" || value.trim().length === 0) return undefined
+    return mode === "export" ? SECRET_PLACEHOLDER : sanitizeBodyForAgentRead(value)
+  },
+}
+
+/** The redacted form of one field, or `undefined` when no structural rule applies. */
+function sanitizeField(key: string, value: JsonValue, mode: SanitizeMode): JsonValue | undefined {
+  const byName = FIELD_SANITIZERS[key]?.(value, mode)
+  if (byName !== undefined) return byName
+  if (KEY_VALUE_EXPORT_FIELDS.has(key) && Array.isArray(value)) {
+    return sanitizeKeyValueArray(value, false, mode)
+  }
+  if (typeof value === "string" && isSecretKey(key)) {
+    return keepAsReference(value, mode) ? value : SECRET_PLACEHOLDER
+  }
+  return undefined
+}
+
+/** An agent read keeps `{{secrets.NAME}}` verbatim: a reference is an indirection, not the secret. */
+function keepAsReference(value: string, mode: SanitizeMode): boolean {
+  return mode === "agent-read" && extractSecretRefsFromString(value).length > 0
+}
+
+function sanitizeValue(data: JsonValue, mode: SanitizeMode): JsonValue {
   if (Array.isArray(data)) {
-    return data.map((item) => sanitizeExportValue(item))
+    return data.map((item) => sanitizeValue(item, mode))
   }
   if (!isRecord(data)) {
     return data
   }
   const sanitized: Record<string, JsonValue> = {}
   for (const [key, value] of Object.entries(data)) {
-    if (key === "auth" && isRecord(value)) {
-      sanitized[key] = sanitizeAuthConfigForExport(value)
-    } else if (key === "fileUploads" && Array.isArray(value)) {
-      sanitized[key] = sanitizeFileUploadsForExport(value)
-    } else if (key === "cookies" && Array.isArray(value)) {
-      sanitized[key] = sanitizeKeyValueArrayForExport(value, true)
-    } else if (KEY_VALUE_EXPORT_FIELDS.has(key) && Array.isArray(value)) {
-      sanitized[key] = sanitizeKeyValueArrayForExport(value, false)
-    } else if (key === "body" && typeof value === "string" && value.trim().length > 0) {
-      sanitized[key] = SECRET_PLACEHOLDER
-    } else if (key === "url" && typeof value === "string") {
-      sanitized[key] = sanitizeUrlForExport(value)
-    } else if (typeof value === "string" && isSecretKey(key)) {
-      sanitized[key] = SECRET_PLACEHOLDER
-    } else {
-      sanitized[key] = sanitizeExportValue(value)
-    }
+    sanitized[key] = sanitizeField(key, value, mode) ?? sanitizeValue(value, mode)
   }
   return sanitized
+}
+
+/**
+ * Find where a caller is writing back a value it read through a redacting
+ * surface. `<SECRET>` is never a legitimate stored value — it is what a read
+ * substituted for one — so persisting it silently replaces a working credential
+ * with a literal that will be sent upstream verbatim on the next run.
+ *
+ * Returns the dotted paths of every offending leaf (empty when clean) so the
+ * caller can name them instead of failing with "invalid input".
+ */
+export function findRedactedPlaceholders(data: JsonValue, basePath = ""): string[] {
+  if (typeof data === "string") {
+    return data.includes(SECRET_PLACEHOLDER) ? [basePath === "" ? "(root)" : basePath] : []
+  }
+  if (Array.isArray(data)) {
+    return data.flatMap((item, index) => findRedactedPlaceholders(item, `${basePath}[${index}]`))
+  }
+  if (isRecord(data)) {
+    return Object.entries(data).flatMap(([key, value]) =>
+      findRedactedPlaceholders(value, basePath === "" ? key : `${basePath}.${key}`),
+    )
+  }
+  return []
 }
 
 /** A secret reference recorded in an export bundle (name + which scope owns it). */

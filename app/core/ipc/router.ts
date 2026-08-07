@@ -2,7 +2,7 @@ import { ZodError, type z } from "zod"
 import type { ContractResult } from "@shared/contract/errors"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { AppError } from "./errors"
-import { sanitizeExportValue } from "../services/secret_utils"
+import { findRedactedPlaceholders, sanitizeAgentReadValue, SECRET_PLACEHOLDER } from "../services/secret_utils"
 
 /** The untrusted envelope every renderer call sends over the single channel. */
 export type InvokeRequest = {
@@ -104,10 +104,22 @@ export class IpcRouter {
   /**
    * `redactSecrets` is set by the MCP transport (see `mcp/bridge.ts`): any local
    * MCP client is a less-trusted caller than the app's own renderer, so its reads
-   * get a second, blanket secret-redaction pass over the full response — headers,
-   * cookies, auth config, URLs, bodies — on top of whatever a given handler
-   * already does. Renderer IPC calls (`ipc/register.ts`) never set this, since
-   * the renderer needs literal values to render its own editors.
+   * get a second secret-redaction pass over the full response — headers, cookies,
+   * auth config, URLs, bodies — on top of whatever a given handler already does.
+   * Renderer IPC calls (`ipc/register.ts`) never set this, since the renderer
+   * needs literal values to render its own editors.
+   *
+   * The pass is structure-preserving (`sanitizeAgentReadValue`): values are
+   * withheld, keys and array entries are not, so an agent can read back what it
+   * wrote and see it. Export bundles use the stricter drop-and-flatten mode.
+   *
+   * The flag is symmetric: a caller whose reads are redacted also has its writes
+   * checked for the `<SECRET>` placeholder those reads produce, so a
+   * read-modify-write round trip fails loudly instead of persisting a
+   * placeholder that the next run would send upstream as the credential. The
+   * check belongs here rather than in the services because only a redacted
+   * caller can fall into it — the renderer reads literal values, and an imported
+   * bundle legitimately carries `<SECRET>` that the operator refills in the UI.
    */
   async dispatch(request: InvokeRequest, opts?: { readonly redactSecrets?: boolean }): Promise<ContractResult<unknown>> {
     const handler = this.handlers.get(key(request.domain, request.action))
@@ -115,6 +127,23 @@ export class IpcRouter {
       return {
         ok: false,
         error: { code: "not_found", message: `no IPC handler: ${key(request.domain, request.action)}` },
+      }
+    }
+
+    if (opts?.redactSecrets === true) {
+      const placeholders = findRedactedPlaceholders(request.payload as JsonValue)
+      if (placeholders.length > 0) {
+        return {
+          ok: false,
+          error: {
+            code: "validation",
+            message:
+              `refusing to store the redacted placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}. `
+              + "This value came from a redacted read, which withholds credential values. "
+              + "Send the real value, or a {{secrets.NAME}} reference, or omit the field to leave it unchanged.",
+            details: { paths: placeholders },
+          },
+        }
       }
     }
 
@@ -139,7 +168,7 @@ export class IpcRouter {
     const validated = handler.output.parse(output)
     return {
       ok: true,
-      data: opts?.redactSecrets === true ? sanitizeExportValue(validated as JsonValue) : validated,
+      data: opts?.redactSecrets === true ? sanitizeAgentReadValue(validated as JsonValue) : validated,
     }
   }
 }

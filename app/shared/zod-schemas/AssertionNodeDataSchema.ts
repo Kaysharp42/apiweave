@@ -11,8 +11,14 @@ import { AssertionItemSchema } from "./AssertionItemSchema"
  */
 export const AssertionNodeDataSchema = z
   .object({
-    assertions: z.array(AssertionItemSchema).optional(),
-    continueOnFail: z.boolean().optional(),
-    failureMode: z.enum(["first", "all"]).optional(),
+    assertions: z
+      .array(AssertionItemSchema)
+      .optional()
+      .describe('The rules this node checks. The node takes the "pass" branch only when every rule passes, otherwise the "fail" branch.'),
+    continueOnFail: z.boolean().optional().describe("When true, a failing assertion does not stop the run."),
+    failureMode: z
+      .enum(["first", "all"])
+      .optional()
+      .describe('"first" stops evaluating at the first failing rule; "all" evaluates every rule and reports each outcome.'),
   })
   .strict()

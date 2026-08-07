@@ -27,6 +27,14 @@ export interface McpToolSpec {
   readonly openWorld?: boolean
   /** Apply the metadata-only run projection after the shared IPC response sanitizer. */
   readonly resultProjection?: "run"
+  /**
+   * Run `workflows.diagnose` on the written workflow and return the report
+   * alongside the result. Set on every tool that writes a graph: a graph with a
+   * missing edge handle or an unaddressable assertion path saves cleanly and
+   * only misbehaves at run time, so without this the cheapest way for an agent
+   * to discover the mistake is to fire real HTTP requests at someone's API.
+   */
+  readonly diagnoseAfterWrite?: boolean
   /** One-line description surfaced to the LLM via `tools/list` — the one thing the IPC registry lacks. */
   readonly description: string
 }
@@ -51,13 +59,14 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
 
   // Workflows
   tool("workflows", "list", "read", "List workflows in a workspace."),
-  tool("workflows", "get", "read", "Get a workflow's full graph (secret values redacted to references)."),
-  tool("workflows", "diagnose", "read", "Diagnose workflow graph and optional stored-run failures without exposing response or secret values.", { name: "workflow_diagnose" }),
-  tool("assertions", "suggest", "read", "Suggest deterministic assertions from one stored HTTP result without changing the workflow.", { name: "assertion_suggest" }),
-  tool("assertions", "validate", "read", "Validate and preview canonical assertion rules without changing the workflow.", { name: "assertion_validate" }),
-  tool("assertions", "apply", "write", "Apply validated rules to one assertion node when the workflow revision still matches.", { name: "assertion_apply" }),
-  tool("workflows", "create", "write", "Create a workflow from nodes, edges and variables. A `workflow` node runs another workflow in the same workspace as one step."),
-  tool("workflows", "update", "write", "Update a workflow's graph, variables or metadata.", { idempotent: true }),
+  tool("workflows", "get", "read", "Get a workflow's full graph. Credential values are withheld (`<SECRET>`) but the structure is intact; `{{secrets.NAME}}` references come back verbatim. Reading an existing workflow is the fastest way to learn this workspace's conventions before authoring a new one."),
+  tool("workflows", "diagnose", "read", "Statically check a stored workflow — topology, assertion paths and edge handles, variable provenance — and, with a `runId`, correlate a past run's failures. Side-effect-free and sends no HTTP: use it to find graph mistakes instead of discovering them with a live run. Read `apiweave://guide/diagnostics` for what each code means.", { name: "workflow_diagnose" }),
+  tool("assertions", "suggest", "read", "Propose verified assertion rules from one stored HTTP result — the reliable way to get paths right, since the rules are derived from a response that actually happened. Requires a completed run of that node; before one exists, author rules from the schema and check them with assertion_validate.", { name: "assertion_suggest" }),
+  tool("assertions", "validate", "read", "Check assertion rules and return a human-readable preview plus per-rule issues, without changing the workflow. Canonicalizes what it accepts (a `prev` path gains its `response.` prefix), so the returned `rules` are what assertion_apply should receive.", { name: "assertion_validate" }),
+  tool("assertions", "apply", "write", "Apply validated rules to one assertion node when the workflow revision still matches. Pass `expectedRevision` from the workflow's current `rev`.", { name: "assertion_apply" }),
+  tool("workflows", "create", "write", "Create a workflow from nodes, edges and variables, and return it with a `diagnosis` report — check that report before running anything. A `workflow` node runs another workflow in the same workspace as one step. Read `apiweave://guide/workflow-authoring` first if you have not built a graph here before.", { diagnoseAfterWrite: true }),
+  tool("workflows", "update", "write", "Replace a workflow's graph, variables or metadata, and return it with a `diagnosis` report. `nodes` and `edges` are REPLACED wholesale, so send the complete lists; use workflows_patch to change a subset.", { idempotent: true, diagnoseAfterWrite: true }),
+  tool("workflows", "patch", "write", "Change part of a workflow without resending the whole graph: upsert or remove nodes and edges by id, and merge workflow variables. Returns the updated workflow with a `diagnosis` report. Pass `expectedRevision` to make it a compare-and-swap against the revision you last read.", { idempotent: true, diagnoseAfterWrite: true }),
   tool("workflows", "delete", "write", "Delete a workflow.", { destructive: true, idempotent: true }),
   tool("workflows", "attachToCollection", "write", "Attach or detach a workflow to a collection.", { idempotent: true }),
   tool("workflows", "setEnvironment", "write", "Set or clear the selected environment for a workflow.", { idempotent: true }),
@@ -112,7 +121,8 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
 
 export const MCP_SERVER_INFO_TOOL = {
   name: "server_info",
-  description: "Return APIWeave MCP server name, version and transport.",
+  description:
+    "Return APIWeave MCP server name, version, transport, and the URIs of the authoring guides. Read `apiweave://guide/start-here` before building a workflow — it covers the node/edge conventions and path syntax that the tool schemas alone do not.",
   intent: "read",
 } as const
 

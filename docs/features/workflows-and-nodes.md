@@ -68,7 +68,7 @@ APIWeave ships seven node types. Each does one job. Two of them (Start, End) mar
 
 ### End
 
-**Purpose:** Marks the terminal point of a path. A workflow can have more than one End node for different success or cleanup paths.
+**Purpose:** Marks the terminal point of a path. A workflow has exactly one End node — converge success and cleanup paths on it rather than adding a second, which `workflow_diagnose` reports as `duplicate_end_node`.
 
 | Config | What it does |
 | --- | --- |
@@ -100,11 +100,24 @@ APIWeave ships seven node types. Each does one job. Two of them (Start, End) mar
 
 | Field | What it does |
 | --- | --- |
-| `source` | Where the value comes from: `status`, `response.body`, `response.headers`, `response.cookies`, or `variables` |
-| `path` | JSONPath inside the source (for example `response.body.user.id` or `response.statusCode`) |
-| `operator` | Comparison: `equals`, `not equals`, `contains`, `not contains`, `greater than`, `less than`, `exists`, `not exists`, `matches regex`, `is empty` |
-| `expected` | Value to compare against (skipped for `exists`, `not exists`, `is empty`) |
+| `source` | Where the value comes from: `prev` (the upstream response object), `status`, `headers`, `cookies`, or `variables` |
+| `path` | What it means depends on `source` — see the table below |
+| `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists` |
+| `expectedValue` | Value to compare against (omitted for `exists` and `notExists`) |
 | `rules` | Multiple assertion rules on the same node. All rules must pass for the node to pass |
+
+`path` is source-dependent:
+
+| `source` | `path` |
+| --- | --- |
+| `status` | must be empty — compare the code with `expectedValue` |
+| `prev` | a path into the response object: `response.body.<field>` (dot notation, `[0]` for array indexes), `response.headers.<name>`, `response.statusCode`, `response.duration` |
+| `headers` / `cookies` / `variables` | just the name (`content-type`, `session`, `token`) — no `response.` prefix |
+
+A bare field name is not a path: the value at the top of a JSON body is
+`response.body.id`, not `id`. `count` takes a non-negative integer and compares
+the length of an array or string; `status` accepts only the numeric comparison
+operators.
 
 **Handles:** one input, two outputs. `pass` fires when every rule passes; `fail` fires when at least one rule fails.
 

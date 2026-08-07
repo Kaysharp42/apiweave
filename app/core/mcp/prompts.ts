@@ -75,9 +75,11 @@ Each rule is \`{ source, path, operator, expectedValue? }\`:
 - **operator** — one of: ${OPERATORS}. \`exists\`/\`notExists\` take no \`expectedValue\`; every other operator requires one.
 - **path** rules:
   - \`status\`: path MUST be empty; use a numeric operator (equals, notEquals, gt, gte, lt, lte). Example: \`{ "source": "status", "path": "", "operator": "equals", "expectedValue": 200 }\`.
-  - \`prev\` (the upstream HTTP response): path MUST start with \`response.body\` or equal \`response.duration\`. Examples: \`response.body.token\` exists, \`response.body.items\` count 3, \`response.duration\` lte 500.
-  - \`variables\`, \`headers\`, \`cookies\`: path is the name and is required. Example header: \`{ "source": "headers", "path": "content-type", "operator": "contains", "expectedValue": "application/json" }\`.
+  - \`prev\` (the upstream HTTP response): the path addresses the response object — \`response.body.<field>\` (dot notation, \`[0]\` for array indexes), \`response.headers.<name>\`, \`response.statusCode\` or \`response.duration\`. A bare field name like \`id\` is NOT a path; write \`response.body.id\`. Examples: \`response.body.token\` exists, \`response.body.items\` count 3, \`response.duration\` lte 500.
+  - \`variables\`, \`headers\`, \`cookies\`: path is the name and is required, with no \`response.\` prefix. Example header: \`{ "source": "headers", "path": "content-type", "operator": "contains", "expectedValue": "application/json" }\`.
 - \`count\` requires a non-negative integer \`expectedValue\`.
+
+The full reference is the \`apiweave://guide/assertions\` resource.
 
 ## Safety rules
 
