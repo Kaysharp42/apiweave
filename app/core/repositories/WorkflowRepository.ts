@@ -144,6 +144,20 @@ export class WorkflowRepository {
     return this.getById(workflowId)
   }
 
+  /**
+   * Compare-and-swap a whole update against the current revision. Callers that
+   * compute a patch from a graph they read earlier (`WorkflowService.patch`)
+   * use this so a concurrent edit between the read and the write is reported as
+   * a conflict rather than silently overwritten.
+   */
+  public updateAtRevision(workflowId: string, expectedRevision: number, patch: WorkflowUpdate): Workflow | undefined {
+    return this.store.transaction(() => {
+      const existing = this.getById(workflowId)
+      if (existing === undefined || existing.rev !== expectedRevision) return undefined
+      return this.update(workflowId, patch)
+    })
+  }
+
   /** Compare-and-swap only one assertion node's rules against the current graph revision. */
   public updateAssertionRules(
     workflowId: string,

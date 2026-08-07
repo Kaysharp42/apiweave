@@ -177,7 +177,19 @@ function pathTargetsResponseBody(path: string): boolean {
   return normalized === "body" || normalized.startsWith("body.") || normalized.startsWith("body[")
 }
 
-function isValidRuntimePath(path: string, includeDuration: boolean): boolean {
+/**
+ * The one predicate deciding whether a runtime path can address a value in an
+ * HTTP node's stored result. Exported because the analyzer (`workflow_diagnose`)
+ * and the authoring service (`assertion_validate`/`assertion_apply`) must agree:
+ * a path one accepts and the other rejects is a trap an agent can only discover
+ * by running the workflow.
+ *
+ * Mirrors `WorkflowExecutor.evaluateAssertion`, which strips a leading
+ * `response.` and reads the rest off the node result — so `body.id`,
+ * `response.body.id`, `response.headers.content-type`, `statusCode` and
+ * `duration` all address something real, and anything else does not.
+ */
+export function isValidRuntimePath(path: string, includeDuration: boolean): boolean {
   if (typeof path !== "string") return false
   const normalized = path.startsWith("response.") ? path.slice("response.".length) : path
   const parts = normalized.split(".")

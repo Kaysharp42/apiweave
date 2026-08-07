@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { sanitizeExportValue, sanitizeVariablesForExport } from "../secret_utils"
+import {
+  findRedactedPlaceholders,
+  sanitizeAgentReadValue,
+  sanitizeExportValue,
+  sanitizeVariablesForExport,
+} from "../secret_utils"
 
 describe("sanitizeExportValue", () => {
   it("redacts auth sub-config leaves by structural path, not key-name heuristic", () => {
@@ -66,6 +71,72 @@ describe("sanitizeExportValue", () => {
     expect(sanitized["fileUploads"]?.[1]?.["value"]).toBe("<SECRET>")
     expect(sanitized["fileUploads"]?.[2]?.["value"]).toBe("myFileVar")
   })
+})
+
+describe("sanitizeAgentReadValue — same floor as export, structure kept", () => {
+  it("keeps a secret-named header entry with the value withheld, where export drops it", () => {
+    const config = {
+      headers: [
+        { key: "Authorization", value: "Bearer real-credential" },
+        { key: "Accept", value: "application/json" },
+      ],
+    }
+    // An agent's only write confirmation is a read: a dropped entry is
+    // indistinguishable from a header that never saved.
+    expect(sanitizeAgentReadValue(config)).toEqual({
+      headers: [
+        { key: "Authorization", value: "<SECRET>" },
+        { key: "Accept", value: "application/json" },
+      ],
+    })
+    expect(sanitizeExportValue(config)).toEqual({ headers: [{ key: "Accept", value: "application/json" }] })
+  })
+
+  it("preserves a {{secrets.NAME}} reference — an indirection is not a secret", () => {
+    const config = { headers: [{ key: "X-Api-Key", value: "{{secrets.API_KEY}}" }] }
+    expect(sanitizeAgentReadValue(config)).toEqual({
+      headers: [{ key: "X-Api-Key", value: "{{secrets.API_KEY}}" }],
+    })
+  })
+
+  it("redacts a body leaf by leaf instead of flattening it", () => {
+    const config = { body: '{"name":"Rex","password":"hunter2","note":"{{secrets.NOTE}}"}' }
+    const body = JSON.parse((sanitizeAgentReadValue(config) as { body: string }).body) as Record<string, unknown>
+    expect(body).toEqual({ name: "Rex", password: "<SECRET>", note: "{{secrets.NOTE}}" })
+    // Export still flattens: a bundle leaves the machine, so it fails closed.
+    expect(sanitizeExportValue(config)).toEqual({ body: "<SECRET>" })
+  })
+
+  it("returns a body with nothing to redact byte-for-byte, so a read is a usable diff", () => {
+    const body = '{ "name": "Rex",\n  "tag": "{{variables.tag}}" }'
+    expect(sanitizeAgentReadValue({ body })).toEqual({ body })
+  })
+
+  it("still redacts a non-JSON body that carries a credential", () => {
+    expect(sanitizeAgentReadValue({ body: "password=hunter2" })).toEqual({ body: "<SECRET>" })
+    expect(sanitizeAgentReadValue({ body: "plain text payload" })).toEqual({ body: "plain text payload" })
+  })
+
+  it("withholds every cookie value regardless of name", () => {
+    const config = { cookies: [{ key: "theme", value: "dark" }, { key: "session", value: "opaque" }] }
+    expect(sanitizeAgentReadValue(config)).toEqual({
+      cookies: [{ key: "theme", value: "<SECRET>" }, { key: "session", value: "<SECRET>" }],
+    })
+  })
+})
+
+describe("findRedactedPlaceholders — catches a redacted read written back", () => {
+  it("names every path holding the placeholder", () => {
+    const paths = findRedactedPlaceholders({
+      nodes: [{ config: { headers: [{ key: "Authorization", value: "<SECRET>" }], body: "ok" } }],
+    })
+    expect(paths).toEqual(["nodes[0].config.headers[0].value"])
+  })
+
+  it("reports nothing for a clean payload, including secret references", () => {
+    expect(findRedactedPlaceholders({ headers: [{ key: "X-Api-Key", value: "{{secrets.API_KEY}}" }] })).toEqual([])
+  })
+
 })
 
 describe("sanitizeVariablesForExport", () => {

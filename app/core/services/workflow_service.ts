@@ -1,5 +1,6 @@
 import type { Workflow } from "@shared/types/Workflow"
 import type { AssertionItem } from "@shared/types/AssertionItem"
+import type { JsonValue } from "@shared/types/JsonValue"
 import type {
   CollectionRepository,
   EnvironmentRepository,
@@ -15,6 +16,38 @@ import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
+
+/** A subset change to a stored graph — see {@link WorkflowService.patch}. */
+export interface WorkflowGraphPatch {
+  readonly expectedRevision?: number
+  readonly name?: string
+  readonly description?: string | null
+  readonly upsertNodes?: readonly Workflow["nodes"][number][]
+  readonly removeNodeIds?: readonly string[]
+  readonly upsertEdges?: readonly Workflow["edges"][number][]
+  readonly removeEdgeIds?: readonly string[]
+  readonly setVariables?: Readonly<Record<string, JsonValue>>
+  readonly unsetVariables?: readonly string[]
+}
+
+/** Replace-by-id then append, after dropping `removeIds`. Order of surviving entries is preserved. */
+function mergeById<T>(
+  existing: readonly T[],
+  upserts: readonly T[] | undefined,
+  removeIds: readonly string[] | undefined,
+  idOf: (item: T) => string,
+): T[] {
+  const removed = new Set(removeIds ?? [])
+  const byId = new Map((upserts ?? []).map((item) => [idOf(item), item]))
+  const merged: T[] = []
+  for (const item of existing) {
+    const id = idOf(item)
+    if (removed.has(id)) continue
+    merged.push(byId.get(id) ?? item)
+    byId.delete(id)
+  }
+  return [...merged, ...byId.values()]
+}
 
 /** Workspace-scoped workflow CRUD. Collapses Python `workflow_service` + `scoped_workflow_service`. */
 export class WorkflowService {
@@ -63,6 +96,64 @@ export class WorkflowService {
     }
     const updated = this.workflows.update(workflowId, patch)
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+    recordWorkflowUpsert(this.syncProvider, updated)
+    await this.syncProvider.push()
+    return updated
+  }
+
+  /**
+   * Change part of a graph without resending it. `update` replaces the whole
+   * `nodes`/`edges`/`variables` arrays, which makes a two-field fix a full
+   * re-transmission of the graph — and every re-transmission is a chance to
+   * drop a node by accident. Here the caller names only what changes:
+   * `upsertNodes`/`upsertEdges` replace matching entries by id and append the
+   * rest, the `remove*` lists delete by id, and the variable maps merge.
+   *
+   * Removals apply before upserts, so removing and re-adding the same id in one
+   * call ends with the upserted version. `expectedRevision` makes the write a
+   * compare-and-swap against the revision the caller last read.
+   */
+  async patch(workspaceId: string, workflowId: string, patch: WorkflowGraphPatch): Promise<Workflow> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    const existing = this.mustGet(workspaceId, workflowId)
+    if (patch.expectedRevision !== undefined && existing.rev !== patch.expectedRevision) {
+      throw new ConflictError("workflow revision is stale", {
+        expectedRevision: patch.expectedRevision,
+        currentRevision: existing.rev,
+      })
+    }
+
+    const nodes = mergeById(existing.nodes, patch.upsertNodes, patch.removeNodeIds, (node) => node.nodeId)
+    const edges = mergeById(existing.edges, patch.upsertEdges, patch.removeEdgeIds, (edge) => edge.edgeId)
+    const variables = { ...existing.variables, ...patch.setVariables }
+    for (const name of patch.unsetVariables ?? []) delete variables[name]
+
+    // A removed node leaves its edges pointing at nothing, which the analyzer
+    // reports as `dangling_edge`. Dropping them here keeps a node removal from
+    // needing a second call to stay consistent.
+    const nodeIds = new Set(nodes.map((node) => node.nodeId))
+    const connectedEdges = edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+
+    this.assertCallWorkflowTargetsInWorkspace(nodes, workspaceId, workflowId)
+    const next: WorkflowUpdate = {
+      nodes,
+      edges: connectedEdges,
+      variables,
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+    }
+
+    const updated = patch.expectedRevision === undefined
+      ? this.workflows.update(workflowId, next)
+      : this.workflows.updateAtRevision(workflowId, patch.expectedRevision, next)
+    if (updated === undefined) {
+      const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
+      if (current === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+      throw new ConflictError("workflow revision changed before the patch could be applied", {
+        expectedRevision: patch.expectedRevision,
+        currentRevision: current.rev,
+      })
+    }
     recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated

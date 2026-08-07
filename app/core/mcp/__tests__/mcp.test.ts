@@ -35,6 +35,7 @@ import { IpcRouter } from "../../ipc/router"
 import { registerAllHandlers, type HandlerDeps } from "../../ipc/handlers"
 import { MCP_TOOLS, toolName } from "../tools"
 import { MCP_PROMPTS, AUTHOR_ASSERTIONS_PROMPT } from "../prompts"
+import { MCP_GUIDES, guideUri } from "../guide"
 import { createMcpServer } from "../server"
 import { McpHost } from "../host"
 
@@ -151,6 +152,12 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 }
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20))
+
+/** Budget for the tests that poll for an async delivery (SSE notification,
+ *  session teardown). The poll loops exit as soon as the condition holds, so
+ *  this bounds a hang; it must exceed the loop's own ceiling or the default 5s
+ *  timeout fires first and reports a timeout instead of the real assertion. */
+const POLL_TEST_TIMEOUT_MS = 20_000
 
 describe("MCP whitelist — derived from the IPC registry, drops the right surface", () => {
   it("every whitelisted tool maps to a real IPC handler (no dangling entry)", () => {
@@ -514,6 +521,492 @@ describe("MCP bridge — second transport, parity by construction", () => {
   })
 })
 
+describe("MCP guides — the conventions are discoverable without reverse-engineering", () => {
+  it("lists every guide as a concrete resource, not a template only", async () => {
+    const client = await connectClient()
+    const { resources } = await client.listResources()
+    const uris = resources.map((resource) => resource.uri)
+
+    // The complaint this fixes: resources/list answered [] because the only
+    // resource was a template, so an agent saw an undocumented server.
+    expect(resources.length).toBeGreaterThan(0)
+    for (const guide of MCP_GUIDES) expect(uris).toContain(guideUri(guide.slug))
+    await client.close()
+  })
+
+  it("serves each guide as readable markdown", async () => {
+    const client = await connectClient()
+    for (const guide of MCP_GUIDES) {
+      const read = await client.readResource({ uri: guideUri(guide.slug) })
+      const contents = read.contents[0] as { mimeType?: string; text?: string }
+      expect(contents.mimeType).toBe("text/markdown")
+      expect(contents.text).toBe(guide.text)
+    }
+    await client.close()
+  })
+
+  it("documents the two conventions that are invisible in the JSON schemas", async () => {
+    const client = await connectClient()
+    const authoring = (await client.readResource({ uri: guideUri("workflow-authoring") }))
+      .contents[0] as { text: string }
+    const assertions = (await client.readResource({ uri: guideUri("assertions") }))
+      .contents[0] as { text: string }
+
+    expect(authoring.text).toContain("sourceHandle")
+    expect(authoring.text).toContain('"pass"')
+    expect(authoring.text).toContain('"fail"')
+    expect(assertions.text).toContain("response.body.id")
+    await client.close()
+  })
+
+  it("points at the guides from server_info, for clients that never read resources", async () => {
+    const client = await connectClient()
+    const info = JSON.parse(
+      textOf((await client.callTool({ name: "server_info", arguments: {} })) as {
+        content: Array<{ type: string; text?: string }>
+      }),
+    ) as { guides: Array<{ uri: string; title: string }> }
+    expect(info.guides.map((guide) => guide.uri)).toEqual(MCP_GUIDES.map((guide) => guideUri(guide.slug)))
+    await client.close()
+  })
+
+  it("carries the edge-handle and assertion-path rules in the tool input schemas", async () => {
+    const client = await connectClient()
+    const tools = (await client.listTools()).tools
+    const createSchema = JSON.stringify(tools.find((tool) => tool.name === "workflows_create")?.inputSchema)
+
+    // Field descriptions are the only prose that reaches a client rendering the
+    // schema, so the two costly conventions have to survive into it.
+    expect(createSchema).toContain("pass")
+    expect(createSchema).toContain("fail")
+    expect(createSchema).toContain("response.body")
+    await client.close()
+  })
+})
+
+describe("MCP graph writes — mistakes surface statically, before any live request", () => {
+  const brokenGraph = {
+    name: "unhandled assertion",
+    nodes: [
+      { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+      { nodeId: "request", type: "http-request", position: { x: 100, y: 0 }, config: {} },
+      {
+        nodeId: "assert",
+        type: "assertion",
+        position: { x: 200, y: 0 },
+        // `id` is the bare-field-name mistake: the value lives at response.body.id.
+        config: { assertions: [{ source: "prev", path: "id", operator: "exists" }] },
+      },
+      { nodeId: "end", type: "end", position: { x: 300, y: 0 } },
+    ],
+    edges: [
+      { edgeId: "e1", source: "start", target: "request" },
+      { edgeId: "e2", source: "request", target: "assert" },
+      // No sourceHandle: the branch would stop silently mid-run.
+      { edgeId: "e3", source: "assert", target: "end" },
+    ],
+  }
+
+  it("returns a diagnosis with the write, so a bad graph never needs a run to be found", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+
+    const created = await client.callTool({
+      name: "workflows_create",
+      arguments: { workspaceId: workspace.workspaceId, ...brokenGraph },
+    })
+    const body = JSON.parse(textOf(created as { content: Array<{ type: string; text?: string }> })) as {
+      result: { workflowId: string }
+      diagnosis: { summary: { errors: number }; diagnostics: Array<{ code: string }> }
+    }
+
+    const codes = body.diagnosis.diagnostics.map((diagnostic) => diagnostic.code)
+    expect(codes).toContain("assertion_branch_handle_invalid")
+    expect(codes).toContain("assertion_source_path_invalid")
+    expect(body.diagnosis.summary.errors).toBeGreaterThan(0)
+    // The write still succeeded — the diagnosis reports, it does not reject.
+    expect(body.result.workflowId).toBeTruthy()
+    await client.close()
+  })
+
+  it("reports a clean graph with no errors", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    const created = await client.callTool({
+      name: "workflows_create",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        name: "clean",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          { nodeId: "request", type: "http-request", position: { x: 100, y: 0 }, config: {} },
+          {
+            nodeId: "assert",
+            type: "assertion",
+            position: { x: 200, y: 0 },
+            config: { assertions: [{ source: "prev", path: "response.body.id", operator: "exists" }] },
+          },
+          { nodeId: "cleanup", type: "http-request", position: { x: 300, y: 100 }, config: {} },
+          // One end node: the analyzer reports a second as `duplicate_end_node`,
+          // so both branches converge rather than each getting their own.
+          { nodeId: "done", type: "end", position: { x: 400, y: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "request" },
+          { edgeId: "e2", source: "request", target: "assert" },
+          { edgeId: "e3", source: "assert", target: "done", sourceHandle: "pass" },
+          { edgeId: "e4", source: "assert", target: "cleanup", sourceHandle: "fail" },
+          { edgeId: "e5", source: "cleanup", target: "done" },
+        ],
+      },
+    })
+    const body = JSON.parse(textOf(created as { content: Array<{ type: string; text?: string }> })) as {
+      diagnosis: { summary: { errors: number } }
+    }
+    expect(body.diagnosis.summary.errors).toBe(0)
+    await client.close()
+  })
+
+  it("fixes an edge handle through workflows_patch without resending the graph", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    const created = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_create",
+          arguments: { workspaceId: workspace.workspaceId, ...brokenGraph },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { workflowId: string; rev: number } }
+
+    const patched = await client.callTool({
+      name: "workflows_patch",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: created.result.workflowId,
+        expectedRevision: created.result.rev,
+        // Only the two broken pieces travel — not the four nodes and three edges.
+        upsertEdges: [{ edgeId: "e3", source: "assert", target: "end", sourceHandle: "pass" }],
+        upsertNodes: [
+          {
+            nodeId: "assert",
+            type: "assertion",
+            position: { x: 200, y: 0 },
+            config: { assertions: [{ source: "prev", path: "response.body.id", operator: "exists" }] },
+          },
+        ],
+      },
+    })
+    const body = JSON.parse(textOf(patched as { content: Array<{ type: string; text?: string }> })) as {
+      result: { nodes: Array<{ nodeId: string }>; edges: Array<{ edgeId: string; sourceHandle?: string | null }> }
+      diagnosis: { diagnostics: Array<{ code: string }> }
+    }
+
+    expect(body.result.nodes.map((node) => node.nodeId)).toEqual(["start", "request", "assert", "end"])
+    expect(body.result.edges.find((edge) => edge.edgeId === "e3")?.sourceHandle).toBe("pass")
+    const codes = body.diagnosis.diagnostics.map((diagnostic) => diagnostic.code)
+    expect(codes).not.toContain("assertion_branch_handle_invalid")
+    expect(codes).not.toContain("assertion_source_path_invalid")
+    await client.close()
+  })
+
+  it("rejects a patch computed against a stale revision instead of clobbering", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "concurrent",
+    })
+    await dispatchOk("workflows", "update", {
+      workspaceId: workspace.workspaceId,
+      workflowId: workflow.workflowId,
+      name: "edited elsewhere",
+    })
+
+    const client = await connectClient()
+    const stale = await client.callTool({
+      name: "workflows_patch",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: workflow.workflowId,
+        expectedRevision: workflow.rev,
+        setVariables: { petId: "1" },
+      },
+    })
+    expect((stale as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(stale as { content: Array<{ type: string; text?: string }> })).toContain("conflict")
+    await client.close()
+  })
+
+  it("drops the edges of a removed node and merges variables in place", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "prunable",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "doomed", type: "http-request", position: { x: 100, y: 0 }, config: {} },
+        { nodeId: "end", type: "end", position: { x: 200, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "doomed" },
+        { edgeId: "e2", source: "doomed", target: "end" },
+      ],
+      variables: { keep: "yes", drop: "no" },
+    })
+
+    const client = await connectClient()
+    const patched = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_patch",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            workflowId: workflow.workflowId,
+            removeNodeIds: ["doomed"],
+            upsertEdges: [{ edgeId: "e3", source: "start", target: "end" }],
+            setVariables: { added: "1" },
+            unsetVariables: ["drop"],
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { nodes: Array<{ nodeId: string }>; edges: Array<{ edgeId: string }>; variables: Record<string, unknown> } }
+
+    expect(patched.result.nodes.map((node) => node.nodeId)).toEqual(["start", "end"])
+    expect(patched.result.edges.map((edge) => edge.edgeId)).toEqual(["e3"])
+    expect(patched.result.variables).toEqual({ keep: "yes", added: "1" })
+    await client.close()
+  })
+})
+
+describe("MCP reads — redacted values, intact structure", () => {
+  const httpNode = {
+    nodeId: "request",
+    type: "http-request",
+    position: { x: 0, y: 0 },
+    config: {
+      method: "POST",
+      url: "https://api.example.com/pets",
+      headers: [
+        { key: "Authorization", value: "Bearer literal-credential" },
+        { key: "X-Tenant", value: "acme" },
+        { key: "X-Api-Key", value: "{{secrets.API_KEY}}" },
+      ],
+      body: '{"name":"Rex","password":"hunter2"}',
+      bodyType: "json",
+    },
+  }
+
+  async function readBackConfig(): Promise<Record<string, unknown>> {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "redaction",
+      nodes: [httpNode],
+    })
+    const client = await connectClient()
+    const read = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_get",
+          arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { nodes: Array<{ nodeId: string; config: Record<string, unknown> }> }
+    await client.close()
+    return read.nodes[0]!.config
+  }
+
+  it("keeps a secret-named header as an entry with a withheld value, instead of dropping it", async () => {
+    const config = await readBackConfig()
+    const headers = config["headers"] as Array<{ key: string; value: string }>
+
+    // Dropping the entry made a read useless as a write confirmation: the agent
+    // could not tell a stored-but-withheld header from one that never saved.
+    expect(headers.map((header) => header.key)).toEqual(["Authorization", "X-Tenant", "X-Api-Key"])
+    expect(headers[0]?.value).toBe("<SECRET>")
+    expect(headers[1]?.value).toBe("acme")
+    // A reference is an indirection, not a secret — it survives so the agent can
+    // see which credential the request binds to.
+    expect(headers[2]?.value).toBe("{{secrets.API_KEY}}")
+  })
+
+  it("redacts a body leaf by leaf rather than flattening the whole body", async () => {
+    const config = await readBackConfig()
+    const body = JSON.parse(config["body"] as string) as Record<string, unknown>
+
+    expect(body["name"]).toBe("Rex")
+    expect(body["password"]).toBe("<SECRET>")
+  })
+
+  it("returns a body with nothing to redact byte-for-byte, so a read is a usable diff", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const body = '{"name":"Rex","tag":"{{variables.tag}}"}'
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "plain body",
+      nodes: [{ ...httpNode, config: { method: "POST", body, bodyType: "json" } }],
+    })
+    const client = await connectClient()
+    const read = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_get",
+          arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { nodes: Array<{ config: Record<string, unknown> }> }
+    expect(read.nodes[0]?.config["body"]).toBe(body)
+    await client.close()
+  })
+
+  it("still lets no credential value cross the bridge", async () => {
+    const config = await readBackConfig()
+    expect(JSON.stringify(config)).not.toContain("literal-credential")
+    expect(JSON.stringify(config)).not.toContain("hunter2")
+  })
+
+  it("refuses to store a value read back as <SECRET>, naming where it is", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    const rejected = (await client.callTool({
+      name: "workflows_create",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        name: "round trip",
+        nodes: [
+          {
+            ...httpNode,
+            config: { method: "POST", headers: [{ key: "Authorization", value: "<SECRET>" }] },
+          },
+        ],
+      },
+    })) as { isError?: boolean; content: Array<{ type: string; text?: string }> }
+
+    // Without this the placeholder persists and the next run sends the literal
+    // string `<SECRET>` upstream as the credential.
+    expect(rejected.isError).toBe(true)
+    const message = textOf(rejected)
+    expect(message).toContain("<SECRET>")
+    expect(message).toContain("{{secrets.NAME}}")
+    await client.close()
+  })
+
+  it("leaves the unredacted renderer path free to store <SECRET>, so an imported bundle stays editable", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    // Export flattens a body to the placeholder, so a workflow imported from a
+    // bundle legitimately holds one. The renderer autosaves the whole graph on
+    // every edit; rejecting it there would make that workflow uneditable.
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "imported",
+      nodes: [{ ...httpNode, config: { method: "POST", body: "<SECRET>" } }],
+    })
+    await expect(
+      dispatchOk("workflows", "update", {
+        workspaceId: workspace.workspaceId,
+        workflowId: workflow.workflowId,
+        name: "imported, renamed",
+      }),
+    ).resolves.toBeTruthy()
+  })
+})
+
+describe("MCP assertions — one path rule, agreed on by validate and diagnose", () => {
+  async function fixture(): Promise<{ workspaceId: string; workflowId: string }> {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "paths",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "request", type: "http-request", position: { x: 100, y: 0 }, config: {} },
+        { nodeId: "assert", type: "assertion", position: { x: 200, y: 0 }, config: { assertions: [] } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "request" },
+        { edgeId: "e2", source: "request", target: "assert" },
+      ],
+    })
+    return { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId }
+  }
+
+  it("canonicalizes a bare response path instead of rejecting it", async () => {
+    const { workspaceId, workflowId } = await fixture()
+    const validated = await dispatchOk<{ valid: boolean; rules: Array<{ path: string }> }>(
+      "assertions",
+      "validate",
+      {
+        workspaceId,
+        workflowId,
+        sourceNodeId: "request",
+        rules: [
+          { source: "prev", path: "body.id", operator: "exists" },
+          { source: "prev", path: "statusCode", operator: "equals", expectedValue: 200 },
+        ],
+      },
+    )
+    expect(validated.valid).toBe(true)
+    expect(validated.rules.map((rule) => rule.path)).toEqual(["response.body.id", "response.statusCode"])
+  })
+
+  it("explains what a valid path looks like when one cannot address a value", async () => {
+    const { workspaceId, workflowId } = await fixture()
+    const validated = await dispatchOk<{ valid: boolean; issues: Array<{ code: string; message: string }> }>(
+      "assertions",
+      "validate",
+      {
+        workspaceId,
+        workflowId,
+        sourceNodeId: "request",
+        rules: [{ source: "prev", path: "id", operator: "exists" }],
+      },
+    )
+    expect(validated.valid).toBe(false)
+    const issue = validated.issues.find((candidate) => candidate.code === "invalid_path")
+    expect(issue?.message).toContain("response.body.id")
+  })
+
+  it("accepts through validate exactly what diagnose accepts (no path that passes one and trips the other)", async () => {
+    const { workspaceId, workflowId } = await fixture()
+    const rules = [
+      { source: "prev", path: "response.headers.content-type", operator: "exists" },
+      { source: "prev", path: "response.duration", operator: "lte", expectedValue: 500 },
+      { source: "headers", path: "content-type", operator: "exists" },
+    ]
+    const validated = await dispatchOk<{ valid: boolean; rules: unknown[] }>("assertions", "validate", {
+      workspaceId,
+      workflowId,
+      sourceNodeId: "request",
+      rules,
+    })
+    expect(validated.valid).toBe(true)
+
+    await dispatchOk("workflows", "update", {
+      workspaceId,
+      workflowId,
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "request", type: "http-request", position: { x: 100, y: 0 }, config: {} },
+        {
+          nodeId: "assert",
+          type: "assertion",
+          position: { x: 200, y: 0 },
+          config: { assertions: validated.rules },
+        },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "request" },
+        { edgeId: "e2", source: "request", target: "assert" },
+      ],
+    })
+    const diagnosis = await dispatchOk<{ diagnostics: Array<{ code: string }> }>("workflows", "diagnose", {
+      workspaceId,
+      workflowId,
+    })
+    expect(diagnosis.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("assertion_source_path_invalid")
+  })
+})
+
 describe("MCP resources — read-only safe run snapshot", () => {
   const runUri = (workspaceId: string, runId: string): string =>
     `apiweave://workspaces/${workspaceId}/runs/${runId}`
@@ -855,7 +1348,8 @@ describe("MCP bridge — reuse primitives reach agents (presets, sub-workflows, 
       },
     ]
 
-    const created = JSON.parse(
+    // A graph write answers `{ result, diagnosis }` — see the fail-fast suite.
+    const { result: created } = JSON.parse(
       textOf(
         (await client.callTool({
           name: "workflows_create",
@@ -1223,8 +1717,11 @@ describe("McpHost — stateful sessions and live run subscriptions over HTTP", (
     broker.publish(runId, { kind: "run.started", runId })
     broker.publish(runId, { kind: "run.finished", runId, status: "completed" })
 
-    // The notification rides the GET SSE stream — allow it to arrive.
-    for (let i = 0; i < 50 && notified.length < 1; i++) {
+    // The notification rides the GET SSE stream — allow it to arrive. The budget
+    // is generous because the loop exits on arrival: it bounds a hang, it does
+    // not assert a latency, and a tight bound only makes the suite flaky as more
+    // tests share the machine.
+    for (let i = 0; i < 250 && notified.length < 1; i++) {
       await new Promise((resolve) => setTimeout(resolve, 20))
     }
     expect(notified).toContain(uri)
@@ -1232,7 +1729,7 @@ describe("McpHost — stateful sessions and live run subscriptions over HTTP", (
     const read = await client.readResource({ uri })
     const snapshot = JSON.parse((read.contents[0] as { text: string }).text) as { latestSequence: number }
     expect(snapshot.latestSequence).toBe(broker.getLatestSequence(runId))
-  })
+  }, POLL_TEST_TIMEOUT_MS)
 
   it("removes a session on DELETE (terminateSession) with no leaked listener", async () => {
     host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, broker })
@@ -1244,14 +1741,14 @@ describe("McpHost — stateful sessions and live run subscriptions over HTTP", (
     expect(host.getSessionCount()).toBe(1)
 
     await (client.transport as StreamableHTTPClientTransport).terminateSession()
-    for (let i = 0; i < 50 && host.getSessionCount() > 0; i++) {
+    for (let i = 0; i < 250 && host.getSessionCount() > 0; i++) {
       await new Promise((resolve) => setTimeout(resolve, 20))
     }
     expect(host.getSessionCount()).toBe(0)
     // Broker fan-out stays clean after the subscribing session is gone (its
     // resource-subscription listener was detached on session close).
     expect(() => broker.publish(runId, { kind: "run.finished", runId, status: "completed" })).not.toThrow()
-  })
+  }, POLL_TEST_TIMEOUT_MS)
 
   it("evicts an idle session after the idle timeout", async () => {
     host = new McpHost({
@@ -1266,11 +1763,11 @@ describe("McpHost — stateful sessions and live run subscriptions over HTTP", (
     await connectHttp(port, token)
     expect(host.getSessionCount()).toBe(1)
 
-    for (let i = 0; i < 50 && host.getSessionCount() > 0; i++) {
+    for (let i = 0; i < 250 && host.getSessionCount() > 0; i++) {
       await new Promise((resolve) => setTimeout(resolve, 20))
     }
     expect(host.getSessionCount()).toBe(0)
-  })
+  }, POLL_TEST_TIMEOUT_MS)
 
   it("rejects a new session past the max-sessions limit", async () => {
     host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, broker, maxSessions: 1 })

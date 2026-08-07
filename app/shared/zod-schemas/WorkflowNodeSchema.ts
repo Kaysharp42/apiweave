@@ -18,9 +18,9 @@ import { WorkflowCallNodeDataSchema } from "./WorkflowCallNodeDataSchema"
  * `optional()` accepting `undefined`-but-present.
  */
 const baseNode = z.object({
-  nodeId: z.string().min(1),
-  label: z.string().nullable().optional(),
-  position: PositionSchema.default({ x: 0, y: 0 }),
+  nodeId: z.string().min(1).describe("Unique id for this node within the workflow; edges reference it by this id."),
+  label: z.string().nullable().optional().describe("Display name shown on the canvas."),
+  position: PositionSchema.default({ x: 0, y: 0 }).describe("Canvas coordinates. Layout only — it does not affect execution order, which comes from the edges."),
 })
 
 /**
@@ -44,41 +44,50 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
       type: z.literal("http-request"),
       config: HTTPNodeDataSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .describe("Sends one HTTP request and optionally extracts values from the response into workflow variables. One input, one output."),
   baseNode
     .extend({
       type: z.literal("assertion"),
       config: AssertionNodeDataSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .describe(
+      'Checks values from the single upstream http-request node and branches on the result. TWO outputs: every outgoing edge MUST set sourceHandle to "pass" or "fail". Exactly one http-request node must be reachable upstream — zero or two makes the source ambiguous and the node fails.',
+    ),
   baseNode
     .extend({
       type: z.literal("delay"),
       config: DelayNodeDataSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .describe("Waits a fixed duration before continuing. One input, one output."),
   baseNode
     .extend({
       type: z.literal("merge"),
       config: MergeNodeDataSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .describe('Joins parallel branches back into one path using a strategy ("all", "any", "first" or "conditional"). Downstream nodes address a specific branch as "{{prev[0]...}}", "{{prev[1]...}}". Many inputs, one output.'),
   baseNode
     .extend({
       type: z.literal("start"),
       config: StartNodeDataSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .describe("Entry point. Exactly one per workflow; the run begins here. Output only."),
   baseNode
     .extend({
       type: z.literal("end"),
       config: EndNodeDataSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .describe("Terminal point of a path. At least one per workflow; several are allowed for separate success and failure paths. Input only."),
   baseNode
     .extend({
       type: z.literal("workflow"),
       config: WorkflowCallNodeDataSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .describe("Runs another workflow in the same workspace inline, as one step, with input/output variable mappings. One input, one output."),
 ])

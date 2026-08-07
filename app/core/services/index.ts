@@ -28,9 +28,11 @@ export {
   extractSecretRefsFromString,
   collectSecretRefs,
   assertNoSecretValues,
+  findRedactedPlaceholders,
+  sanitizeAgentReadValue,
   SECRET_PLACEHOLDER,
 } from "./secret_utils"
-export type { SecretReference } from "./secret_utils"
+export type { SecretReference, SanitizeMode } from "./secret_utils"
 export { ImportService } from "./import_service"
 export type {
   WorkflowBundle,

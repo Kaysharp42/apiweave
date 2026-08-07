@@ -59,6 +59,27 @@ The token is generated on first enable and stored with the selected port in the
 app's user-data directory as `mcp-token`. Re-enabling the bridge reuses that
 token. Automatic and in-app token rotation are not currently implemented.
 
+## Authoring Guides
+
+The conventions an agent needs to build a working graph — node and edge shapes,
+the `pass`/`fail` handles an assertion's outgoing edges require, placeholder
+syntax, assertion path rules per source, and the diagnostic codes — are served as
+readable resources. A plain `resources/list` returns all of them, and
+`server_info` repeats their URIs for clients that do not read resources:
+
+| URI | Covers |
+| --- | --- |
+| `apiweave://guide/start-here` | The order of operations that finds mistakes statically instead of with live requests, and a minimal working graph |
+| `apiweave://guide/workflow-authoring` | Every node type with its config shape, edge handles, and changing a graph without resending it |
+| `apiweave://guide/placeholders` | `{{env.x}}`, `{{variables.x}}`, `{{prev.x}}`, `{{secrets.x}}`, and extractor paths |
+| `apiweave://guide/assertions` | What `path` means for each source, operator rules, and the suggest/validate/apply flow |
+| `apiweave://guide/diagnostics` | Every `workflow_diagnose` code and how to fix it |
+| `apiweave://guide/redaction` | What reads withhold, and why `<SECRET>` must never be written back |
+
+These ship inside the desktop bundle rather than being read from `docs/`, which
+is not packaged. This page stays the human-facing reference; the guides are the
+agent-facing one.
+
 ## Tool Discovery
 
 Use MCP's standard `tools/list` request as the authoritative inventory. Every
@@ -93,9 +114,26 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 - `workflow_diagnose`
 - `workflows_create`
 - `workflows_update`
+- `workflows_patch`
 - `workflows_delete`
 - `workflows_attachToCollection`
 - `workflows_setEnvironment`
+
+`workflows_update` replaces the `nodes`, `edges` and `variables` lists wholesale.
+`workflows_patch` changes a subset instead: `upsertNodes` and `upsertEdges`
+replace matching entries by id and append the rest, `removeNodeIds` and
+`removeEdgeIds` delete by id (edges attached to a removed node go with it), and
+`setVariables`/`unsetVariables` merge into the stored map. Passing
+`expectedRevision` makes the write a compare-and-swap against the revision the
+caller last read, so a concurrent desktop edit produces a conflict rather than
+being overwritten.
+
+`workflows_create`, `workflows_update` and `workflows_patch` each return
+`{ result, diagnosis }`, where `diagnosis` is the same report `workflow_diagnose`
+produces for the workflow just written. The analysis is static and sends no HTTP,
+so a graph mistake — a missing assertion edge handle, an assertion path that
+cannot address a value — is visible in the write's own response instead of
+requiring a live run to discover.
 
 ### Projects
 
@@ -195,7 +233,10 @@ works on key names anywhere in a config, so a mapping entry whose *variable
 name* looks secret-ish — `token`, `apiKey`, `password`, `secret` — comes back as
 `<SECRET>` from `workflows_get` even though the mapping itself is not a secret.
 The stored workflow is unaffected; only the MCP read is redacted. Write the
-mapping you intend rather than round-tripping one you read.
+mapping you intend rather than round-tripping one you read: the write tools
+reject a stored `<SECRET>` outright, naming the offending paths, so a
+read-modify-write cycle fails loudly instead of replacing a working credential
+with a literal placeholder.
 
 **`workflow_diagnose` does not analyze these nodes.** It reports topology,
 reachability, cycles, assertion and extractor findings for HTTP and assertion
@@ -217,13 +258,13 @@ most 8 levels deep. See [Environment Inheritance](environments-and-secrets.md#en
 ### Node presets
 
 `nodePresets_*` manages the workspace's library of saved node configurations.
-Reads pass through the same blanket redaction every MCP read gets, so a preset's
-name, node type, and ids come back intact while its request body, URL, and
-header values report `<SECRET>`. An agent can therefore catalogue the library,
-create presets from configuration it wrote itself, and rename or delete them —
-but it cannot faithfully copy an existing preset's config into a workflow,
-because it never receives the literal values. Applying a preset to a canvas
-stays a desktop action. See [Node Presets](node-presets.md).
+Reads pass through the same redaction every MCP read gets: a preset's name, node
+type, ids and structure come back intact, with credential values reported as
+`<SECRET>`. An agent can therefore catalogue the library, create presets from
+configuration it wrote itself, and rename or delete them — but it cannot
+faithfully copy a preset whose values were withheld, because it never receives
+those literals. Applying a preset to a canvas stays a desktop action. See
+[Node Presets](node-presets.md).
 
 ## Workflow Diagnosis
 
@@ -266,10 +307,14 @@ polling moderate; the bridge is local but does not apply a transport rate limit.
 
 ## Resources
 
-The bridge ships one MCP resource template, discoverable via the standard
-`resources/templates/list` request and readable via `resources/read`:
+The bridge ships two kinds of resource, both readable via `resources/read`:
 
-- `run-snapshot` — `apiweave://workspaces/{workspaceId}/runs/{runId}`
+- The authoring guides at `apiweave://guide/<topic>`, registered as concrete
+  resources so a plain `resources/list` enumerates them. See
+  [Authoring Guides](#authoring-guides).
+- `run-snapshot` — `apiweave://workspaces/{workspaceId}/runs/{runId}`, a
+  template discoverable via `resources/templates/list` (every run cannot be
+  enumerated without a workspace, so it is not listed as a concrete resource).
 
 A read returns the same safe, metadata-only run snapshot the run tools return
 (status, terminal flag, `latestSequence`, timings, and a per-node map of status,
@@ -447,9 +492,13 @@ Checked-in templates are available under `mcp-configs/`.
   `workflow_run` and `run_get_status` belonged to the removed backend.
 - **No raw response body:** This is intentional. MCP run tools expose safe
   metadata; inspect the body in the desktop UI.
-- **A preset's config comes back as `<SECRET>`:** Also intentional, and it is
-  why an agent cannot re-apply an existing preset. Drag the preset onto the
-  canvas in the desktop app instead.
+- **A config value comes back as `<SECRET>`:** Intentional — the structure is
+  intact, the credential value is withheld. It is why an agent cannot re-apply
+  an existing preset; drag it onto the canvas in the desktop app instead.
+- **A write is rejected for containing `<SECRET>`:** The payload carries a value
+  from a redacted read. Send the real value, a `{{secrets.NAME}}` reference, or
+  omit the field — with `workflows_patch` you can usually omit it, since a patch
+  only touches the nodes it names.
 - **A Call Workflow node is missing from `workflow_diagnose`:** The analyzer
   covers HTTP and assertion nodes. Check `targetWorkflowId` on the node config
   from `workflows_get`.

@@ -6,6 +6,7 @@ import { SubscribeRequestSchema, UnsubscribeRequestSchema } from "@modelcontextp
 type Variables = Record<string, string | string[]>
 import type { IpcRouter } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
+import { MCP_GUIDES, guideUri } from "./guide"
 import { projectRunSnapshot } from "./run-projection"
 
 /**
@@ -31,9 +32,38 @@ const RUN_RESOURCE_DESCRIPTION =
 /** Inventory for the setup control plane / MCPManager. Mirrors MCP_TOOLS/MCP_PROMPTS. */
 export const MCP_RESOURCES: readonly { name: string; uriTemplate: string; description: string }[] = [
   { name: RUN_RESOURCE_NAME, uriTemplate: RUN_RESOURCE_URI_TEMPLATE, description: RUN_RESOURCE_DESCRIPTION },
+  ...MCP_GUIDES.map((guide) => ({
+    name: guide.slug,
+    uriTemplate: guideUri(guide.slug),
+    description: guide.description,
+  })),
 ]
 
+/**
+ * Register the authoring guides as CONCRETE resources, not a template.
+ *
+ * A template is only discoverable through `resources/templates/list`, which many
+ * clients never call — so a server whose only resource was the run template
+ * answered `resources/list` with an empty array and looked undocumented. Each
+ * guide is registered under its own URI so a plain `resources/list` returns the
+ * whole documentation surface.
+ */
+function registerGuides(server: McpServer): void {
+  for (const guide of MCP_GUIDES) {
+    server.registerResource(
+      guide.slug,
+      guideUri(guide.slug),
+      { title: guide.title, description: guide.description, mimeType: "text/markdown" },
+      (uri): ReadResourceResult => ({
+        contents: [{ uri: uri.href, mimeType: "text/markdown", text: guide.text }],
+      }),
+    )
+  }
+}
+
 export function registerResources(server: McpServer, router: IpcRouter, broker?: RunEventBroker): void {
+  registerGuides(server)
+
   server.registerResource(
     RUN_RESOURCE_NAME,
     // `list: undefined` → discoverable via resources/templates/list, not enumerated

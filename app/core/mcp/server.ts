@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { IpcRouter } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
 import { registerBridgeTools } from "./bridge"
+import { MCP_GUIDES, guideUri } from "./guide"
 import { registerResources } from "./resources"
 import { MCP_PROMPTS } from "./prompts"
 import { MCP_SERVER_INFO_TOOL, toolAnnotations } from "./tools"
@@ -29,12 +30,30 @@ export function createMcpServer(router: IpcRouter, version: string, broker?: Run
     {
       description: MCP_SERVER_INFO_TOOL.description,
       outputSchema: z.object({
-        result: z.object({ name: z.string(), version: z.string(), transport: z.string() }),
+        result: z.object({
+          name: z.string(),
+          version: z.string(),
+          transport: z.string(),
+          guides: z.array(z.object({ uri: z.string(), title: z.string(), description: z.string() })),
+        }),
       }),
       annotations: toolAnnotations(MCP_SERVER_INFO_TOOL),
     },
     () => {
-      const result = { name: MCP_SERVER_NAME, version, transport: "loopback-http" }
+      // The guides are registered resources, but a client that never calls
+      // resources/list would otherwise have no way to learn they exist — and
+      // "the conventions are undiscoverable" is the failure this server info is
+      // now expected to prevent.
+      const result = {
+        name: MCP_SERVER_NAME,
+        version,
+        transport: "loopback-http",
+        guides: MCP_GUIDES.map((guide) => ({
+          uri: guideUri(guide.slug),
+          title: guide.title,
+          description: guide.description,
+        })),
+      }
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],
         structuredContent: { result },
