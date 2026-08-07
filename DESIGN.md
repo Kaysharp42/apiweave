@@ -261,6 +261,13 @@ The node layer adds two tokens the chrome does not use:
 - **MainHeader:** 48px height. Contains logo/branding, environment selector, theme toggle. Spans full width above workspace.
 - **MainFooter:** 32px height. Status bar with execution state, connection status. Minimal.
 
+### Side Panels
+
+- **Structure:** one column — a header that stays put (title, search, panel-level affordances), then a single scroll region that takes the remaining height. A panel's own `h-full` only works when its parent gives it a `min-h-0 flex-1` slot; a panel dropped next to a tab bar inside a plain `overflow-hidden` box will silently push its own last rows out of reach.
+- **Reference content is on demand, not chrome.** A 320px panel has no vertical space to spend on a permanent tips or cheat-sheet footer — it steals height from the content the user came for, and it sits below the fold where nobody reads it. Put it behind a `PanelTipsButton` in the header and render it as a `PanelTipsSheet` over the panel body: full height, its own scroll, Esc to close.
+- **Discoverability:** the tips trigger carries a single accent dot until the user opens it once (persisted per panel in localStorage). One nudge, never a recurring one.
+- **Never** stack two scroll regions in a side panel, and never let a static footer own more than one line of it.
+
 ### Nodes (ReactFlow)
 
 The node layer is governed by its own doctrine — see §7, "The Node Layer: The Living Run." The entries below are that doctrine's component-level form.
