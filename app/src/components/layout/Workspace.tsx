@@ -271,22 +271,33 @@ export function Workspace(_props: WorkspaceProps) {
                         </IconButton>
                       }
                     >
-                      <PanelTabs
-                        tabs={panelTabs}
-                        activeTab={state.activePanelTab}
-                        onTabChange={(value) =>
-                          dispatch({ type: "set-active-panel-tab", value })
-                        }
-                      />
-                      {state.activePanelTab === "variables" && (
-                        <VariablesPanel />
-                      )}
-                      {state.activePanelTab === "dynamic" && (
-                        <DynamicFunctionsHelper />
-                      )}
-                      {state.activePanelTab === "settings" && (
-                        <WorkflowSettingsPanel />
-                      )}
+                      {/* Column: the tab bar keeps its intrinsic height and the
+                          active panel takes the rest. Without this the panel's
+                          own `h-full` stacked below the tab bar and its footer
+                          was clipped out of reach by the shell's overflow. */}
+                      <div className="flex h-full min-h-0 flex-col">
+                        <div className="flex-shrink-0">
+                          <PanelTabs
+                            tabs={panelTabs}
+                            activeTab={state.activePanelTab}
+                            onTabChange={(value) =>
+                              dispatch({ type: "set-active-panel-tab", value })
+                            }
+                          />
+                        </div>
+
+                        <div className="min-h-0 flex-1">
+                          {state.activePanelTab === "variables" && (
+                            <VariablesPanel />
+                          )}
+                          {state.activePanelTab === "dynamic" && (
+                            <DynamicFunctionsHelper />
+                          )}
+                          {state.activePanelTab === "settings" && (
+                            <WorkflowSettingsPanel />
+                          )}
+                        </div>
+                      </div>
                     </Panel>
                   </Allotment.Pane>
                 )}

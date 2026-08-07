@@ -1,12 +1,26 @@
 import { useReducer, useState } from "react";
 import { useWorkflow } from "../contexts/WorkflowContext";
-import { GitBranch, GitMerge, Pencil, Search, Trash2 } from "lucide-react";
+import {
+  GitBranch,
+  GitMerge,
+  Package,
+  Pencil,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { EmptyState } from "./molecules/EmptyState";
+import {
+  PanelTipsButton,
+  PanelTipsCode,
+  PanelTipsSection,
+  PanelTipsSheet,
+} from "./molecules/PanelTips";
 import { VariableProvenanceModal } from "./molecules/VariableProvenanceModal";
+import { usePanelTips } from "../hooks/usePanelTips";
 import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
 
 export default function VariablesPanel() {
@@ -14,6 +28,7 @@ export default function VariablesPanel() {
     useWorkflow();
   const provenanceMap = useVariableProvenanceStore((s) => s.provenance);
   const [tracingVar, setTracingVar] = useState<string | null>(null);
+  const tips = usePanelTips("variables");
 
   type VariablesPanelState = {
     showForm: boolean;
@@ -115,20 +130,29 @@ export default function VariablesPanel() {
   };
 
   return (
-    <div className="w-full min-w-0 h-full flex flex-col bg-surface-raised dark:bg-surface-dark-raised">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-10 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark p-3 space-y-2">
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted dark:text-text-muted-dark pointer-events-none" />
-          <Input
-            type="text"
-            value={state.searchTerm}
-            onChange={(event) =>
-              dispatch({ type: "set-search-term", value: event.target.value })
-            }
-            placeholder="Search variables"
-            className="pl-8 py-1.5 text-xs"
-            aria-label="Search variables"
+    <div className="relative w-full min-w-0 h-full flex flex-col overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
+      {/* Header — stays put; the list below it is what scrolls */}
+      <div className="flex-shrink-0 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark p-3 space-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="relative min-w-0 flex-1">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted dark:text-text-muted-dark pointer-events-none" />
+            <Input
+              type="text"
+              value={state.searchTerm}
+              onChange={(event) =>
+                dispatch({ type: "set-search-term", value: event.target.value })
+              }
+              placeholder="Search variables"
+              className="pl-8 py-1.5 text-xs"
+              aria-label="Search variables"
+            />
+          </div>
+
+          <PanelTipsButton
+            isOpen={tips.isOpen}
+            hasUnseen={tips.hasUnseen}
+            onClick={tips.toggle}
+            label="Variable syntax tips"
           />
         </div>
 
@@ -143,7 +167,7 @@ export default function VariablesPanel() {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-2">
+      <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-2">
         {state.showForm && (
           <div className="p-2 bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 border border-[var(--aw-primary)]/20 dark:border-[var(--aw-primary)]/30 rounded space-y-2">
             <Input
@@ -309,38 +333,44 @@ export default function VariablesPanel() {
         )}
       </div>
 
-      {/* Tips footer */}
-      <div className="min-w-0 border-t border-border dark:border-border-dark p-3 text-[10px] text-text-muted dark:text-text-muted-dark bg-surface-overlay dark:bg-surface-dark-overlay space-y-1.5 overflow-x-hidden">
-        <div className="font-semibold text-text-secondary dark:text-text-secondary-dark">
-          Tips
-        </div>
-        <ul className="list-disc list-inside space-y-0.5 pl-1">
-          <li>
-            Extract values from API responses using &quot;Store Response
-            Fields&quot;
-          </li>
-          <li>
-            Reference variables anywhere:{" "}
-            <code className="bg-surface dark:bg-surface-dark-raised px-1 break-all">{`{{variables.name}}`}</code>
-          </li>
-          <li>Variables persist throughout workflow execution</li>
-        </ul>
+      {/* Tips — on demand, so the list keeps the full panel height */}
+      <PanelTipsSheet
+        isOpen={tips.isOpen}
+        onClose={tips.close}
+        title="Variables & branch syntax"
+      >
+        <PanelTipsSection title="Workflow variables" icon={Package}>
+          <ul className="min-w-0 list-disc list-outside space-y-1.5 pl-4 marker:text-text-muted dark:marker:text-text-muted-dark">
+            <li className="break-words">
+              Extract values from API responses using{" "}
+              <span className="font-medium text-text-primary dark:text-text-primary-dark">
+                Store Response Fields
+              </span>
+              .
+            </li>
+            <li className="break-words">
+              Reference a variable in any field:{" "}
+              <PanelTipsCode>{`{{variables.name}}`}</PanelTipsCode>
+            </li>
+            <li className="break-words">
+              Values persist for the whole workflow run.
+            </li>
+          </ul>
+        </PanelTipsSection>
 
-        <div className="mt-2 pt-2 border-t border-border dark:border-border-dark flex items-center gap-1.5 text-text-secondary dark:text-text-secondary-dark">
-          <GitMerge className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="font-semibold">Parallel Branches</span>
-        </div>
-        <ul className="list-disc list-inside space-y-0.5 pl-1">
-          <li>
-            Access branches:{" "}
-            <code className="bg-surface dark:bg-surface-dark-raised px-1 break-all">{`{{prev[0].response}}`}</code>
-          </li>
-          <li>
-            Single predecessor:{" "}
-            <code className="bg-surface dark:bg-surface-dark-raised px-1 break-all">{`{{prev.response}}`}</code>
-          </li>
-        </ul>
-      </div>
+        <PanelTipsSection title="Parallel branches" icon={GitMerge}>
+          <ul className="min-w-0 list-disc list-outside space-y-1.5 pl-4 marker:text-text-muted dark:marker:text-text-muted-dark">
+            <li className="break-words">
+              Access a specific branch:{" "}
+              <PanelTipsCode>{`{{prev[0].response}}`}</PanelTipsCode>
+            </li>
+            <li className="break-words">
+              Single predecessor:{" "}
+              <PanelTipsCode>{`{{prev.response}}`}</PanelTipsCode>
+            </li>
+          </ul>
+        </PanelTipsSection>
+      </PanelTipsSheet>
 
       <VariableProvenanceModal
         isOpen={tracingVar !== null}

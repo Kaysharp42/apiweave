@@ -15,6 +15,13 @@ import {
 import { toast } from "sonner";
 import { Button } from "./atoms/Button";
 import { EmptyState } from "./molecules/EmptyState";
+import {
+  PanelTipsButton,
+  PanelTipsCode,
+  PanelTipsSection,
+  PanelTipsSheet,
+} from "./molecules/PanelTips";
+import { usePanelTips } from "../hooks/usePanelTips";
 
 interface DynamicFunction {
   name: string;
@@ -165,6 +172,7 @@ export default function DynamicFunctionsHelper() {
     useState<FunctionCategory | null>("string");
   const [copiedFunc, setCopiedFunc] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const tips = usePanelTips("functions");
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(`{{${text}}}`);
@@ -199,18 +207,29 @@ export default function DynamicFunctionsHelper() {
   ][];
 
   return (
-    <div className="w-full h-full flex flex-col bg-surface-raised dark:bg-surface-dark-raised overflow-hidden">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-10 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark p-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <Sparkles className="w-5 h-5 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" />
-          <h2 className="font-bold text-sm text-text-primary dark:text-text-primary-dark min-w-0 truncate">
-            Dynamic Functions
-          </h2>
+    <div className="relative w-full h-full flex flex-col bg-surface-raised dark:bg-surface-dark-raised overflow-hidden">
+      {/* Header — stays put; the function list below it is what scrolls */}
+      <div className="flex-shrink-0 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark p-3">
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <Sparkles className="w-5 h-5 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" />
+              <h2 className="font-bold text-sm text-text-primary dark:text-text-primary-dark min-w-0 truncate">
+                Dynamic Functions
+              </h2>
+            </div>
+            <p className="text-[10px] text-text-muted dark:text-text-muted-dark mt-1">
+              Generate random data, dates, IDs on every run
+            </p>
+          </div>
+
+          <PanelTipsButton
+            isOpen={tips.isOpen}
+            hasUnseen={tips.hasUnseen}
+            onClick={tips.toggle}
+            label="Dynamic function tips"
+          />
         </div>
-        <p className="text-[10px] text-text-muted dark:text-text-muted-dark mt-1">
-          Generate random data, dates, IDs on every run
-        </p>
         <div className="relative mt-2">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted dark:text-text-muted-dark pointer-events-none" />
           <input
@@ -225,7 +244,7 @@ export default function DynamicFunctionsHelper() {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-2">
+      <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-2">
         {visibleCategories.map(([category, funcs]) => {
           const Icon = categoryIcons[category];
           const isOpen = expandedCategory === category;
@@ -341,81 +360,71 @@ export default function DynamicFunctionsHelper() {
         )}
       </div>
 
-      {/* Tips footer */}
-      <div className="border-t border-border dark:border-border-dark p-3 text-[10px] text-text-muted dark:text-text-muted-dark bg-surface-overlay dark:bg-surface-dark-overlay space-y-1.5 overflow-x-hidden flex-shrink-0">
-        <div className="font-semibold text-text-secondary dark:text-text-secondary-dark flex items-center gap-1">
-          <Sparkles className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
-          Quick Tips
-        </div>
+      {/* Tips — on demand, so the function list keeps the full panel height */}
+      <PanelTipsSheet
+        isOpen={tips.isOpen}
+        onClose={tips.close}
+        title="Dynamic function tips"
+      >
+        <PanelTipsSection title="Where they work" icon={Sparkles}>
+          <ul className="min-w-0 space-y-1.5">
+            {[
+              "Any field: URL, headers, body, assertions",
+              "A fresh value is generated on every workflow run",
+              "Workflow variables accept them too",
+            ].map((tip) => (
+              <li key={tip} className="flex items-start gap-1.5 min-w-0">
+                <CheckCircle
+                  className="w-3 h-3 flex-shrink-0 mt-0.5 text-status-success dark:text-[var(--aw-status-success)]"
+                  aria-hidden="true"
+                />
+                <span className="break-words">{tip}</span>
+              </li>
+            ))}
+            <li className="flex items-start gap-1.5 min-w-0">
+              <CheckCircle
+                className="w-3 h-3 flex-shrink-0 mt-0.5 text-status-success dark:text-[var(--aw-status-success)]"
+                aria-hidden="true"
+              />
+              <span className="break-words">
+                Combine with static text:{" "}
+                <PanelTipsCode>{`user_{{randomNumber(4)}}@test.com`}</PanelTipsCode>
+              </span>
+            </li>
+          </ul>
+        </PanelTipsSection>
 
-        <ul className="space-y-1 pl-4">
-          <li className="flex items-start gap-1">
-            <CheckCircle
-              className="w-3 h-3 flex-shrink-0 mt-0.5"
-              aria-hidden="true"
-            />
-            <span className="break-words">
-              Use in any field: URL, Headers, Body, Assertions
-            </span>
-          </li>
-          <li className="flex items-start gap-1">
-            <CheckCircle
-              className="w-3 h-3 flex-shrink-0 mt-0.5"
-              aria-hidden="true"
-            />
-            <span className="break-words">
-              Fresh value generated per workflow run
-            </span>
-          </li>
-          <li className="flex items-start gap-1">
-            <CheckCircle
-              className="w-3 h-3 flex-shrink-0 mt-0.5"
-              aria-hidden="true"
-            />
-            <span className="break-words">
-              Combine:{" "}
-              <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 rounded break-all">{`user_{{randomNumber(4)}}@test.com`}</code>
-            </span>
-          </li>
-          <li className="flex items-start gap-1">
-            <CheckCircle
-              className="w-3 h-3 flex-shrink-0 mt-0.5"
-              aria-hidden="true"
-            />
-            <span className="break-words">Works in Workflow Variables too</span>
-          </li>
-        </ul>
+        <PanelTipsSection title="Date format codes" icon={Calendar}>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 min-w-0">
+            {[
+              ["%Y", "Year (2025)"],
+              ["%m", "Month (10)"],
+              ["%d", "Day (30)"],
+              ["%H", "Hour (14)"],
+              ["%M", "Minute (30)"],
+              ["%S", "Second (45)"],
+            ].map(([code, meaning]) => (
+              <div key={code} className="contents">
+                <dt>
+                  <PanelTipsCode>{code}</PanelTipsCode>
+                </dt>
+                <dd className="min-w-0 break-words">{meaning}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="break-words">
+            Example: <PanelTipsCode>{`date("%d/%m/%Y")`}</PanelTipsCode> →
+            30/10/2025
+          </p>
+        </PanelTipsSection>
 
-        <div className="pt-1.5 border-t border-border dark:border-border-dark flex items-center gap-1">
-          <Calendar className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
-          <span className="font-semibold text-text-secondary dark:text-text-secondary-dark">
-            Date Format Codes
-          </span>
-        </div>
-        <ul className="space-y-0.5 pl-4 text-[9px]">
-          <li className="break-words">
-            %Y = Year (2025) | %m = Month (10) | %d = Day (30)
-          </li>
-          <li className="break-words">
-            %H = Hour (14) | %M = Minute (30) | %S = Second (45)
-          </li>
-          <li className="break-words">
-            Example:{" "}
-            <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 break-all">{`date("%d/%m/%Y")`}</code>{" "}
-            → 30/10/2025
-          </li>
-        </ul>
-
-        <div className="pt-1.5 border-t border-border dark:border-border-dark flex items-center gap-1">
-          <span className="font-semibold text-text-secondary dark:text-text-secondary-dark">
-            In Assertions
-          </span>
-        </div>
-        <p className="text-[9px] pl-4 break-words">
-          Compare with dynamic values:{" "}
-          <code className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-1 break-all">{`Expected: {{futureDate(1)}}`}</code>
-        </p>
-      </div>
+        <PanelTipsSection title="In assertions" icon={CheckCircle}>
+          <p className="break-words">
+            Compare against a dynamic value:{" "}
+            <PanelTipsCode>{`Expected: {{futureDate(1)}}`}</PanelTipsCode>
+          </p>
+        </PanelTipsSection>
+      </PanelTipsSheet>
     </div>
   );
 }
