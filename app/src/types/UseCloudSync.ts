@@ -1,5 +1,6 @@
 import type { CloudBindWorkspaceInput } from "./CloudBindWorkspaceInput";
 import type { CloudSyncStatus } from "./CloudSyncStatus";
+import type { CloudUnlinkOptions } from "./CloudUnlinkOptions";
 
 export interface UseCloudSync {
   readonly status: CloudSyncStatus | null;
@@ -9,7 +10,7 @@ export interface UseCloudSync {
   readonly refresh: () => Promise<void>;
   readonly link: (deviceLabel?: string) => Promise<CloudSyncStatus>;
   readonly cancelLink: () => Promise<CloudSyncStatus>;
-  readonly unlink: (localOnly?: boolean) => Promise<CloudSyncStatus>;
+  readonly unlink: (options?: CloudUnlinkOptions) => Promise<CloudSyncStatus>;
   readonly bindWorkspace: (
     input: CloudBindWorkspaceInput,
   ) => Promise<CloudSyncStatus>;

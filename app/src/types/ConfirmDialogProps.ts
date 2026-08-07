@@ -7,4 +7,6 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   intent?: "error" | "warning" | "info";
+  /** Extra controls rendered under the message, e.g. an opt-in checkbox. */
+  children?: React.ReactNode;
 }

@@ -11,10 +11,19 @@
  *   | local-only, non-personal      | provision cloud (personal team) → bind → push |
  *   | cloud-only                    | create local row keyed by cloud id → pull     |
  *   | already bound                 | leave (normal incremental sync)               |
+ *   | owned by another account      | leave local and untouched (never pushed)      |
  *
  * The reconciler is idempotent: already-bound pairs are skipped, provisioning
  * is idempotent server-side, and cloud-only rows are created with
  * `localId == cloudId` so a re-run finds them already bound.
+ *
+ * Ownership: a workspace that previously synced carries the account id it
+ * synced with, and that stamp survives Disconnect. Only unstamped workspaces
+ * (never synced) and workspaces stamped with the linking account are claimable.
+ * Without this, a kept local Personal workspace would match the next account's
+ * cloud Personal on the isPersonal flag alone and push the previous account's
+ * workflows into it. The other account's cloud Personal is still downloaded —
+ * it just arrives as its own local workspace instead of taking over this one.
  */
 
 export interface ReconcilerLocalWorkspace {
@@ -22,6 +31,8 @@ export interface ReconcilerLocalWorkspace {
   readonly name: string
   readonly slug: string
   readonly isPersonal: boolean
+  /** Account this workspace last synced with; undefined when it never has. */
+  readonly ownerAccountId?: string
 }
 
 export interface ReconcilerCatalogEntry {
@@ -44,6 +55,8 @@ export interface ReconcilerBindInput {
 }
 
 export interface ReconcilerDeps {
+  /** The cloud account currently linked — the only account allowed to claim. */
+  readonly accountId: string
   listLocalWorkspaces(): readonly ReconcilerLocalWorkspace[]
   listBoundPairs(): readonly { readonly workspaceId: string; readonly cloudWorkspaceId: string }[]
   catalog(): readonly ReconcilerCatalogEntry[]
@@ -84,10 +97,25 @@ export async function reconcileWorkspaces(deps: ReconcilerDeps): Promise<void> {
   const catalog = deps.catalog()
   const toInitialize: string[] = []
 
+  // A workspace is claimable when it has never synced, or last synced with the
+  // account linking now. Anything else belongs to a different account: leave it
+  // local, never bind it, never push it.
+  const isClaimable = (workspace: ReconcilerLocalWorkspace): boolean => {
+    if (workspace.ownerAccountId === undefined || workspace.ownerAccountId === deps.accountId) {
+      return true
+    }
+    deps.log("reconcile skipped workspace owned by another account", {
+      workspaceId: workspace.workspaceId,
+    })
+    return false
+  }
+
   // 1. Personal: pair the local personal workspace with the cloud one (ids
   //    differ — cloud minted its own at signup). If the cloud has no personal
   //    entry, provision one keyed to the local id.
-  const localPersonal = locals.find((workspace) => workspace.isPersonal)
+  const localPersonal = locals.find(
+    (workspace) => workspace.isPersonal && isClaimable(workspace),
+  )
   if (localPersonal !== undefined && !boundLocal.has(localPersonal.workspaceId)) {
     const cloudPersonal = catalog.find(
       (entry) => entry.isPersonal && !boundCloud.has(entry.workspaceId),
@@ -125,7 +153,7 @@ export async function reconcileWorkspaces(deps: ReconcilerDeps): Promise<void> {
 
   // 2. Local-only, non-personal: provision into the personal team, then push.
   for (const local of locals) {
-    if (local.isPersonal || boundLocal.has(local.workspaceId)) {
+    if (local.isPersonal || boundLocal.has(local.workspaceId) || !isClaimable(local)) {
       continue
     }
     try {

@@ -28,6 +28,7 @@ describe("database migrations", () => {
         "cloud_devices",
         "cloud_outbox",
         "cloud_record_state",
+        "cloud_workspace_accounts",
         "cloud_workspace_bindings",
         "collections",
         "environments",

@@ -913,6 +913,52 @@ export class CloudSyncRepository {
       .map(rowToWorkspaceBinding)
   }
 
+  /**
+   * Record which cloud account a workspace is bound to. Outlives Disconnect
+   * (unlike the binding itself) so a different account can never re-pair or
+   * push a previous account's workspace. Re-stamping is idempotent.
+   */
+  public stampWorkspaceAccount(workspaceId: string, accountId: string): void {
+    this.store.set(
+      `INSERT INTO cloud_workspace_accounts (workspace_id, account_id) VALUES (?, ?)
+       ON CONFLICT(workspace_id) DO UPDATE SET
+         account_id = excluded.account_id,
+         stampedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+      [workspaceId, accountId],
+    )
+  }
+
+  /** The account that owns a workspace, or undefined when it has never synced. */
+  public getWorkspaceAccountId(workspaceId: string): string | undefined {
+    return this.store.get<{ account_id: string } & SqliteRow>(
+      "SELECT account_id FROM cloud_workspace_accounts WHERE workspace_id = ?",
+      [workspaceId],
+    )?.account_id
+  }
+
+  /** Owner stamps for every workspace that has one, keyed by local workspace id. */
+  public listWorkspaceAccounts(): ReadonlyMap<string, string> {
+    const rows = this.store.query<{ workspace_id: string; account_id: string } & SqliteRow>(
+      "SELECT workspace_id, account_id FROM cloud_workspace_accounts",
+    )
+    return new Map(rows.map((row) => [row.workspace_id, row.account_id]))
+  }
+
+  /**
+   * Delete every workspace stamped with this account, whatever its origin.
+   * Only for an explicit, user-confirmed "remove this account's local data"
+   * disconnect — the default disconnect keeps locally-authored workspaces.
+   * Workflows, runs, secrets and stamps cascade with the workspace row.
+   */
+  public purgeAccountWorkspaces(accountId: string): number {
+    return this.store.delete(
+      `DELETE FROM workspaces WHERE id IN (
+         SELECT workspace_id FROM cloud_workspace_accounts WHERE account_id = ?
+       )`,
+      [accountId],
+    ).changes
+  }
+
   public getWorkspaceName(workspaceId: string): string | undefined {
     return this.getRecordName("workspace", workspaceId)
   }

@@ -15,10 +15,14 @@ interface Recorder {
   reactivateCount: number
 }
 
+const ACCOUNT_A = "account-a"
+const ACCOUNT_B = "account-b"
+
 function makeDeps(
   locals: ReconcilerLocalWorkspace[],
   bound: { workspaceId: string; cloudWorkspaceId: string }[],
   catalog: ReconcilerCatalogEntry[],
+  accountId = ACCOUNT_A,
 ): { deps: ReconcilerDeps; rec: Recorder } {
   const rec: Recorder = {
     ensured: [],
@@ -28,6 +32,7 @@ function makeDeps(
     reactivateCount: 0,
   }
   const deps: ReconcilerDeps = {
+    accountId,
     listLocalWorkspaces: () => locals,
     listBoundPairs: () => bound,
     catalog: () => catalog,
@@ -161,6 +166,102 @@ describe("reconcileWorkspaces", () => {
     expect(rec.created).toHaveLength(0)
     expect(rec.initialized).toHaveLength(0)
     expect(rec.reactivateCount).toBe(0)
+  })
+
+  it("never re-pairs a Personal workspace owned by another account", async () => {
+    // The account-switch leak: Disconnect keeps the local Personal workspace,
+    // so the next account to link used to match it on isPersonal alone and
+    // push the previous account's workflows into its cloud.
+    const ownedByA: ReconcilerLocalWorkspace = { ...localPersonal, ownerAccountId: ACCOUNT_A }
+    const { deps, rec } = makeDeps([ownedByA], [], [cloudPersonal], ACCOUNT_B)
+
+    await reconcileWorkspaces(deps)
+
+    expect(rec.bound.map((binding) => binding.workspaceId)).not.toContain("local-personal")
+    expect(rec.ensured).toHaveLength(0)
+    expect(rec.initialized).not.toContain("local-personal")
+    // Account B still gets its own Personal — downloaded as its own local
+    // workspace, pull-only, leaving account A's copy untouched.
+    expect(rec.created).toEqual([{ id: "cloud-personal", origin: "cloud" }])
+    expect(rec.bound).toEqual([
+      expect.objectContaining({ workspaceId: "cloud-personal", recordBaseline: false }),
+    ])
+  })
+
+  it("never provisions or pushes a non-personal workspace owned by another account", async () => {
+    const ownedByA: ReconcilerLocalWorkspace = {
+      workspaceId: "local-proj",
+      name: "Project",
+      slug: "project",
+      isPersonal: false,
+      ownerAccountId: ACCOUNT_A,
+    }
+    const { deps, rec } = makeDeps([ownedByA], [], [], ACCOUNT_B)
+
+    await reconcileWorkspaces(deps)
+
+    expect(rec.ensured).toHaveLength(0)
+    expect(rec.bound).toHaveLength(0)
+    expect(rec.initialized).toHaveLength(0)
+    expect(rec.reactivateCount).toBe(0)
+  })
+
+  it("claims workspaces the linking account already owns", async () => {
+    const ownedByA: ReconcilerLocalWorkspace = { ...localPersonal, ownerAccountId: ACCOUNT_A }
+    const { deps, rec } = makeDeps([ownedByA], [], [cloudPersonal], ACCOUNT_A)
+
+    await reconcileWorkspaces(deps)
+
+    expect(rec.bound).toEqual([
+      expect.objectContaining({
+        workspaceId: "local-personal",
+        cloudWorkspaceId: "cloud-personal",
+        recordBaseline: true,
+      }),
+    ])
+    expect(rec.created).toHaveLength(0)
+  })
+
+  it("claims unstamped workspaces, which have never synced with anyone", async () => {
+    const { deps, rec } = makeDeps([localPersonal], [], [cloudPersonal], ACCOUNT_B)
+
+    await reconcileWorkspaces(deps)
+
+    expect(rec.bound).toEqual([
+      expect.objectContaining({ workspaceId: "local-personal", recordBaseline: true }),
+    ])
+  })
+
+  it("picks the claimable Personal workspace when a foreign one is also present", async () => {
+    const foreignPersonal: ReconcilerLocalWorkspace = {
+      workspaceId: "personal-of-a",
+      name: "Personal",
+      slug: "personal",
+      isPersonal: true,
+      ownerAccountId: ACCOUNT_A,
+    }
+    const ownPersonal: ReconcilerLocalWorkspace = {
+      workspaceId: "personal-of-b",
+      name: "Personal",
+      slug: "personal-2",
+      isPersonal: true,
+      ownerAccountId: ACCOUNT_B,
+    }
+    const { deps, rec } = makeDeps(
+      [foreignPersonal, ownPersonal],
+      [],
+      [cloudPersonal],
+      ACCOUNT_B,
+    )
+
+    await reconcileWorkspaces(deps)
+
+    expect(rec.bound).toEqual([
+      expect.objectContaining({
+        workspaceId: "personal-of-b",
+        cloudWorkspaceId: "cloud-personal",
+      }),
+    ])
   })
 
   it("handles all four cases together in one pass", async () => {

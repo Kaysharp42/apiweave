@@ -15,6 +15,7 @@ import {
   CloudUnlinkRequiresConfirmationError,
   CloudAccountIdentityRequiredError,
   CloudAccountMismatchError,
+  CloudWorkspaceOwnedByAnotherAccountError,
   type CloudAccountIdentity,
   type CloudBindWorkspaceInput,
   type CloudCreateTeamWorkspaceInput,
@@ -263,8 +264,20 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       }
     }
 
+    // Opt-in only, and never the default: the local database is the source of
+    // truth for locally-authored workspaces, so a routine disconnect must not
+    // destroy them. When the user explicitly asks, every workspace stamped with
+    // this account goes — workflows, runs and secrets cascade with it.
+    const purgeAccountId = input.purgeLocalData === true
+      ? this.loadAccountIdentity()?.accountId
+      : undefined
+
     this.repository.transaction((repository) => {
       this.tokenStore.clearTokens()
+      if (purgeAccountId !== undefined) {
+        const removed = repository.purgeAccountWorkspaces(purgeAccountId)
+        console.info(`[cloud-sync] purged ${removed} workspace(s) on disconnect`)
+      }
       repository.clearCloudDeviceState()
       repository.deleteSetting(KEY_WORKSPACE_CATALOG)
       repository.deleteSetting(KEY_TEAM_CATALOG)
@@ -295,6 +308,16 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     if (input.teamId !== undefined && input.teamId !== null && input.teamId !== target.teamId) {
       throw new Error("Cloud workspace team metadata does not match the authorized catalog")
     }
+    const account = this.loadAccountIdentity()
+    if (account === undefined) {
+      throw new CloudAccountIdentityRequiredError()
+    }
+    // Same ownership rule the reconciler enforces, applied to the manual path:
+    // a workspace holding another account's data is never pushed to this one.
+    const owner = this.repository.getWorkspaceAccountId(input.workspaceId)
+    if (owner !== undefined && owner !== account.accountId) {
+      throw new CloudWorkspaceOwnedByAnotherAccountError()
+    }
     const binding = this.firstSyncService.bindAndSnapshot({
       workspaceId: input.workspaceId,
       cloudWorkspaceId: input.cloudWorkspaceId,
@@ -303,6 +326,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       ...(target.teamName !== undefined ? { teamName: target.teamName } : {}),
       syncMode: input.syncMode ?? "bi-directional",
       deviceId,
+      accountId: account.accountId,
     })
     this.activateIfReady(false, true)
     const provider = this.requireActiveProvider()
@@ -317,6 +341,10 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     const deviceId = this.tokenStore.getDeviceId()
     if (deviceId === undefined || !this.tokenStore.hasTokens() || this.activeConfig === null) {
       throw new Error("Connect APIWeave Cloud before creating a Team workspace")
+    }
+    const account = this.loadAccountIdentity()
+    if (account === undefined) {
+      throw new CloudAccountIdentityRequiredError()
     }
 
     const client = this.createClient(this.activeConfig)
@@ -370,6 +398,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       teamName: team.teamName,
       syncMode: "bi-directional",
       deviceId,
+      accountId: account.accountId,
     })
     this.workspaceCatalog = [
       ...this.workspaceCatalog.filter((entry) => entry.workspaceId !== catalogEntry.workspaceId),
@@ -558,18 +587,33 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     if (deviceId === undefined || !this.tokenStore.hasTokens() || this.activeConfig === null) {
       return
     }
+    // Binding stamps the owning account, so reconciling without a known
+    // identity would leave workspaces unowned — and therefore claimable by
+    // whichever account links next. Bail instead.
+    const account = this.loadAccountIdentity()
+    if (account === undefined) {
+      console.warn("[cloud-reconcile] skipped: cloud account identity is unavailable")
+      return
+    }
     const client = this.createClient(this.activeConfig)
     await reconcileWorkspaces({
-      listLocalWorkspaces: () =>
-        new WorkspaceRepository(this.options.store)
+      accountId: account.accountId,
+      listLocalWorkspaces: () => {
+        const owners = this.repository.listWorkspaceAccounts()
+        return new WorkspaceRepository(this.options.store)
           .listAll()
           .filter((workspace) => workspace.deletedAt === null)
-          .map((workspace) => ({
-            workspaceId: workspace.workspaceId,
-            name: workspace.name,
-            slug: workspace.slug,
-            isPersonal: workspace.isPersonal,
-          })),
+          .map((workspace) => {
+            const ownerAccountId = owners.get(workspace.workspaceId)
+            return {
+              workspaceId: workspace.workspaceId,
+              name: workspace.name,
+              slug: workspace.slug,
+              isPersonal: workspace.isPersonal,
+              ...(ownerAccountId !== undefined ? { ownerAccountId } : {}),
+            }
+          })
+      },
       listBoundPairs: () =>
         this.repository.listWorkspaceBindings().map((binding) => ({
           workspaceId: binding.workspaceId,
@@ -595,6 +639,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
           ...(input.teamName !== undefined ? { teamName: input.teamName } : {}),
           syncMode: "bi-directional",
           deviceId,
+          accountId: account.accountId,
           recordBaseline: input.recordBaseline,
         })
       },

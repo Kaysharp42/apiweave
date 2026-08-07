@@ -95,7 +95,7 @@ export function useCloudSync(): UseCloudSync {
     refresh,
     link: (deviceLabel) => run(() => apiweave.cloud.link(deviceLabel)),
     cancelLink: () => run(() => apiweave.cloud.cancelLink()),
-    unlink: (localOnly) => run(() => apiweave.cloud.unlink(localOnly)),
+    unlink: (options) => run(() => apiweave.cloud.unlink(options)),
     bindWorkspace: (input) => run(() => apiweave.cloud.bindWorkspace(input)),
     unbindWorkspace: (workspaceId) =>
       run(() => apiweave.cloud.unbindWorkspace(workspaceId)),
