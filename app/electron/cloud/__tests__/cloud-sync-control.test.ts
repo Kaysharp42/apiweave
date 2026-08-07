@@ -48,6 +48,49 @@ describe("DesktopCloudSyncControl", () => {
     rmSync(tempDir, { recursive: true, force: true })
   })
 
+  /** A device already linked to `accountId`, with WORKSPACE_ID bound locally. */
+  function linkedControlFixture(
+    repository: CloudSyncRepository,
+    accountId: string,
+  ): DesktopCloudSyncControl {
+    new DeviceTokenStore(repository, keyfilePath).setTokens("device-1", "access-token", "refresh-token")
+    repository.upsertDevice({
+      deviceId: "device-1",
+      label: "Test Device",
+      clientVersion: "1.0.0",
+      publicKey: new Uint8Array(32),
+      createdAt: new Date().toISOString(),
+    })
+    repository.upsertWorkspaceBinding({
+      workspaceId: WORKSPACE_ID,
+      cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+      cloudWorkspaceName: "Cloud Workspace",
+      syncMode: "bi-directional",
+      deviceId: "device-1",
+      initializationState: "initialized",
+    })
+    repository.setSetting("cloud.public_config", JSON.stringify({
+      version: 1,
+      webBaseUrl: "https://cloud.test",
+      apiBaseUrl: "https://api.test",
+      oidcIssuer: "https://auth.test",
+      desktopClientId: "desktop-test",
+      minimumDesktopVersion: "0.1.0",
+      syncProtocolVersions: [1],
+    }))
+    repository.setSetting("cloud.account_identity", JSON.stringify({ accountId }))
+    return new DesktopCloudSyncControl({
+      store,
+      keyfilePath,
+      defaults: {
+        cloudEntryUrl: "https://cloud.test",
+        clientVersion: "1.0.0",
+        deviceLabel: "Test Device",
+      },
+      setSyncProviderTarget: () => undefined,
+    })
+  }
+
   it("revokes the device before removing account-scoped local state on unlink", async () => {
     const repository = new CloudSyncRepository(store)
     const tokenStore = new DeviceTokenStore(repository, keyfilePath)
@@ -178,6 +221,55 @@ describe("DesktopCloudSyncControl", () => {
     expect(store.get("SELECT 1 FROM workspaces WHERE id = ?", ["downloaded-team"]))
       .toBeUndefined()
     expect(nock.isDone()).toBe(true)
+  })
+
+  it("keeps the ownership stamp on a kept workspace so the next account cannot claim it", async () => {
+    const repository = new CloudSyncRepository(store)
+    const control = linkedControlFixture(repository, "account-a")
+    repository.stampWorkspaceAccount(WORKSPACE_ID, "account-a")
+    nock("https://auth.test").post("/oauth/v2/token").reply(200, { id_token: "unlink-id-token" })
+    nock("https://api.test")
+      .post("/desktop/auth/session", { idToken: "unlink-id-token" })
+      .reply(200, { sessionToken: "unlink-session", expiresAt: "2026-07-17T00:00:00Z" })
+    nock("https://api.test")
+      .post("/apiweave.v1.DeviceService/RevokeDevice", { deviceId: "device-1" })
+      .reply(200, {})
+
+    await control.unlink({})
+
+    // The workspace survives (it was authored locally) and still remembers who
+    // it belongs to — that stamp is what blocks the next account's reconcile.
+    expect(store.get("SELECT 1 FROM workspaces WHERE id = ?", [WORKSPACE_ID])).toBeDefined()
+    expect(repository.getWorkspaceAccountId(WORKSPACE_ID)).toBe("account-a")
+  })
+
+  it("deletes the account's local workspaces only when the user opts into purging", async () => {
+    const repository = new CloudSyncRepository(store)
+    const control = linkedControlFixture(repository, "account-a")
+    repository.stampWorkspaceAccount(WORKSPACE_ID, "account-a")
+    store.set(
+      "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
+      ["untouched-local", "Never Synced", "never-synced", "local", "none", "{}"],
+    )
+    store.set(
+      "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json) VALUES (?, ?, ?, ?, ?, ?)",
+      ["wf-purged", WORKSPACE_ID, WORKSPACE_ID, "Doomed", "doomed", "{}"],
+    )
+    nock("https://auth.test").post("/oauth/v2/token").reply(200, { id_token: "unlink-id-token" })
+    nock("https://api.test")
+      .post("/desktop/auth/session", { idToken: "unlink-id-token" })
+      .reply(200, { sessionToken: "unlink-session", expiresAt: "2026-07-17T00:00:00Z" })
+    nock("https://api.test")
+      .post("/apiweave.v1.DeviceService/RevokeDevice", { deviceId: "device-1" })
+      .reply(200, {})
+
+    await control.unlink({ purgeLocalData: true })
+
+    expect(store.get("SELECT 1 FROM workspaces WHERE id = ?", [WORKSPACE_ID])).toBeUndefined()
+    expect(store.get("SELECT 1 FROM workflows WHERE id = ?", ["wf-purged"])).toBeUndefined()
+    expect(repository.getWorkspaceAccountId(WORKSPACE_ID)).toBeUndefined()
+    // A workspace that never synced belongs to no account and is never purged.
+    expect(store.get("SELECT 1 FROM workspaces WHERE id = ?", ["untouched-local"])).toBeDefined()
   })
 
   it("re-queues dead-lettered outbox rows as pending on retry without deleting them", () => {
@@ -554,6 +646,9 @@ describe("DesktopCloudSyncControl", () => {
       canPush: true,
       canResolveConflicts: true,
     }]))
+    // A linked device always has a persisted identity; binding stamps the
+    // workspace with it so another account can never adopt this workspace.
+    repository.setSetting("cloud.account_identity", JSON.stringify({ accountId: "account-bind" }))
     nock("https://auth.test")
       .post("/oauth/v2/token")
       .reply(200, { id_token: "bind-id-token" })

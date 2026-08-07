@@ -15,6 +15,7 @@ import {
   CloudUnlinkRequiresConfirmationError,
   CloudAccountIdentityRequiredError,
   CloudAccountMismatchError,
+  CloudWorkspaceOwnedByAnotherAccountError,
   type CloudAccountIdentity,
   type CloudBindWorkspaceInput,
   type CloudCreateTeamWorkspaceInput,
@@ -263,8 +264,20 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       }
     }
 
+    // Opt-in only, and never the default: the local database is the source of
+    // truth for locally-authored workspaces, so a routine disconnect must not
+    // destroy them. When the user explicitly asks, every workspace stamped with
+    // this account goes — workflows, runs and secrets cascade with it.
+    const purgeAccountId = input.purgeLocalData === true
+      ? this.loadAccountIdentity()?.accountId
+      : undefined
+
     this.repository.transaction((repository) => {
       this.tokenStore.clearTokens()
+      if (purgeAccountId !== undefined) {
+        const removed = repository.purgeAccountWorkspaces(purgeAccountId)
+        console.info(`[cloud-sync] purged ${removed} workspace(s) on disconnect`)
+      }
       repository.clearCloudDeviceState()
       repository.deleteSetting(KEY_WORKSPACE_CATALOG)
       repository.deleteSetting(KEY_TEAM_CATALOG)
@@ -295,6 +308,16 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     if (input.teamId !== undefined && input.teamId !== null && input.teamId !== target.teamId) {
       throw new Error("Cloud workspace team metadata does not match the authorized catalog")
     }
+    const account = this.loadAccountIdentity()
+    if (account === undefined) {
+      throw new CloudAccountIdentityRequiredError()
+    }
+    // Same ownership rule the reconciler enforces, applied to the manual path:
+    // a workspace holding another account's data is never pushed to this one.
+    const owner = this.repository.getWorkspaceAccountId(input.workspaceId)
+    if (owner !== undefined && owner !== account.accountId) {
+      throw new CloudWorkspaceOwnedByAnotherAccountError()
+    }
     const binding = this.firstSyncService.bindAndSnapshot({
       workspaceId: input.workspaceId,
       cloudWorkspaceId: input.cloudWorkspaceId,
@@ -303,6 +326,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       ...(target.teamName !== undefined ? { teamName: target.teamName } : {}),
       syncMode: input.syncMode ?? "bi-directional",
       deviceId,
+      accountId: account.accountId,
     })
     this.activateIfReady(false, true)
     const provider = this.requireActiveProvider()
@@ -318,32 +342,13 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     if (deviceId === undefined || !this.tokenStore.hasTokens() || this.activeConfig === null) {
       throw new Error("Connect APIWeave Cloud before creating a Team workspace")
     }
+    const account = this.loadAccountIdentity()
+    if (account === undefined) {
+      throw new CloudAccountIdentityRequiredError()
+    }
 
     const client = this.createClient(this.activeConfig)
-    let team: CloudTeamCatalogEntry
-    if (input.newTeamName !== undefined) {
-      const createdTeam = await client.createTeam(
-        input.newTeamName,
-        `${slugify(input.newTeamName)}-${generateId().slice(-8).toLowerCase()}`,
-      )
-      team = {
-        teamId: createdTeam.id,
-        teamName: createdTeam.name,
-        isPersonal: false,
-        canCreateWorkspaces: true,
-      }
-      this.teamCatalog = [...this.teamCatalog, team]
-      this.repository.setSetting(KEY_TEAM_CATALOG, JSON.stringify(this.teamCatalog))
-    } else {
-      const selectedTeam = this.teamCatalog.find((candidate) => candidate.teamId === input.teamId)
-      if (selectedTeam === undefined) {
-        throw new Error("The selected Team is no longer available")
-      }
-      team = selectedTeam
-      if (team.isPersonal || !team.canCreateWorkspaces) {
-        throw new Error("You do not have permission to create Workspaces in this Team")
-      }
-    }
+    const team = await this.resolveTeamForCreation(input, client)
 
     const localSlug = this.uniqueLocalSlug(input.slug)
     const provisioned = await client.createSyncWorkspace({
@@ -370,6 +375,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       teamName: team.teamName,
       syncMode: "bi-directional",
       deviceId,
+      accountId: account.accountId,
     })
     this.workspaceCatalog = [
       ...this.workspaceCatalog.filter((entry) => entry.workspaceId !== catalogEntry.workspaceId),
@@ -558,18 +564,33 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     if (deviceId === undefined || !this.tokenStore.hasTokens() || this.activeConfig === null) {
       return
     }
+    // Binding stamps the owning account, so reconciling without a known
+    // identity would leave workspaces unowned — and therefore claimable by
+    // whichever account links next. Bail instead.
+    const account = this.loadAccountIdentity()
+    if (account === undefined) {
+      console.warn("[cloud-reconcile] skipped: cloud account identity is unavailable")
+      return
+    }
     const client = this.createClient(this.activeConfig)
     await reconcileWorkspaces({
-      listLocalWorkspaces: () =>
-        new WorkspaceRepository(this.options.store)
+      accountId: account.accountId,
+      listLocalWorkspaces: () => {
+        const owners = this.repository.listWorkspaceAccounts()
+        return new WorkspaceRepository(this.options.store)
           .listAll()
           .filter((workspace) => workspace.deletedAt === null)
-          .map((workspace) => ({
-            workspaceId: workspace.workspaceId,
-            name: workspace.name,
-            slug: workspace.slug,
-            isPersonal: workspace.isPersonal,
-          })),
+          .map((workspace) => {
+            const ownerAccountId = owners.get(workspace.workspaceId)
+            return {
+              workspaceId: workspace.workspaceId,
+              name: workspace.name,
+              slug: workspace.slug,
+              isPersonal: workspace.isPersonal,
+              ...(ownerAccountId !== undefined ? { ownerAccountId } : {}),
+            }
+          })
+      },
       listBoundPairs: () =>
         this.repository.listWorkspaceBindings().map((binding) => ({
           workspaceId: binding.workspaceId,
@@ -595,6 +616,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
           ...(input.teamName !== undefined ? { teamName: input.teamName } : {}),
           syncMode: "bi-directional",
           deviceId,
+          accountId: account.accountId,
           recordBaseline: input.recordBaseline,
         })
       },
@@ -696,6 +718,36 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     } catch {
       return []
     }
+  }
+
+  /** Resolve createTeamWorkspace's target team: create a new one, or validate the selected one. */
+  private async resolveTeamForCreation(
+    input: CloudCreateTeamWorkspaceInput,
+    client: CloudClient,
+  ): Promise<CloudTeamCatalogEntry> {
+    if (input.newTeamName !== undefined) {
+      const createdTeam = await client.createTeam(
+        input.newTeamName,
+        `${slugify(input.newTeamName)}-${generateId().slice(-8).toLowerCase()}`,
+      )
+      const team: CloudTeamCatalogEntry = {
+        teamId: createdTeam.id,
+        teamName: createdTeam.name,
+        isPersonal: false,
+        canCreateWorkspaces: true,
+      }
+      this.teamCatalog = [...this.teamCatalog, team]
+      this.repository.setSetting(KEY_TEAM_CATALOG, JSON.stringify(this.teamCatalog))
+      return team
+    }
+    const selectedTeam = this.teamCatalog.find((candidate) => candidate.teamId === input.teamId)
+    if (selectedTeam === undefined) {
+      throw new Error("The selected Team is no longer available")
+    }
+    if (selectedTeam.isPersonal || !selectedTeam.canCreateWorkspaces) {
+      throw new Error("You do not have permission to create Workspaces in this Team")
+    }
+    return selectedTeam
   }
 
   private uniqueLocalSlug(source: string): string {

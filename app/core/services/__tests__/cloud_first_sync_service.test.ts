@@ -48,6 +48,7 @@ describe("CloudFirstSyncService", () => {
       cloudWorkspaceName: "Cloud Personal",
       syncMode: "bi-directional" as const,
       deviceId: "device-1",
+      accountId: "account-a",
     }
 
     const binding = service.bindAndSnapshot(input)
@@ -75,6 +76,43 @@ describe("CloudFirstSyncService", () => {
     expect(persisted).not.toContain("must-not-persist-in-baseline")
   })
 
+  it("stamps the owning account so another account cannot adopt the workspace", () => {
+    const workspace = new WorkspaceRepository(store).create({ name: "Personal", slug: "personal" })
+    const repository = new CloudSyncRepository(store)
+    repository.upsertDevice({
+      deviceId: "device-1",
+      label: "Test Device",
+      clientVersion: "1.0.0",
+      publicKey: new Uint8Array(32),
+      createdAt: new Date().toISOString(),
+    })
+
+    new CloudFirstSyncService(store).bindAndSnapshot({
+      workspaceId: workspace.workspaceId,
+      cloudWorkspaceId: "cloud-personal-id",
+      cloudWorkspaceName: "Cloud Personal",
+      syncMode: "bi-directional",
+      deviceId: "device-1",
+      accountId: "account-a",
+    })
+
+    expect(repository.getWorkspaceAccountId(workspace.workspaceId)).toBe("account-a")
+    expect(repository.listWorkspaceAccounts().get(workspace.workspaceId)).toBe("account-a")
+  })
+
+  it("rolls back the ownership stamp with the rest of a failed bind", () => {
+    expect(() => new CloudFirstSyncService(store).bindAndSnapshot({
+      workspaceId: "missing-local",
+      cloudWorkspaceId: "cloud-workspace",
+      cloudWorkspaceName: "Cloud",
+      syncMode: "bi-directional",
+      deviceId: "device-1",
+      accountId: "account-a",
+    })).toThrow("Local workspace does not exist")
+
+    expect(store.get("SELECT 1 FROM cloud_workspace_accounts LIMIT 1")).toBeUndefined()
+  })
+
   it("rolls back without partial binding or baseline rows when local validation fails", () => {
     const service = new CloudFirstSyncService(store)
 
@@ -84,6 +122,7 @@ describe("CloudFirstSyncService", () => {
       cloudWorkspaceName: "Cloud",
       syncMode: "bi-directional",
       deviceId: "device-1",
+      accountId: "account-a",
     })).toThrow("Local workspace does not exist")
 
     expect(store.get("SELECT 1 FROM cloud_workspace_bindings LIMIT 1")).toBeUndefined()
@@ -108,6 +147,7 @@ describe("CloudFirstSyncService", () => {
       cloudWorkspaceName: "Cloud",
       syncMode: "bi-directional",
       deviceId: "device-1",
+      accountId: "account-a",
     })
 
     expect(() => service.bindAndSnapshot({
@@ -116,6 +156,7 @@ describe("CloudFirstSyncService", () => {
       cloudWorkspaceName: "Cloud",
       syncMode: "bi-directional",
       deviceId: "device-1",
+      accountId: "account-a",
     })).toThrow("already bound")
   })
 })

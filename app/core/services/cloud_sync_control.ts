@@ -17,6 +17,12 @@ export interface CloudBindWorkspaceInput {
 
 export interface CloudUnlinkInput {
   readonly localOnly?: boolean
+  /**
+   * Also delete every local workspace stamped with the account being
+   * disconnected. Destructive and irreversible, so it is opt-in per
+   * disconnect: omitted or false keeps locally-authored workspaces.
+   */
+  readonly purgeLocalData?: boolean
 }
 
 export interface CloudUnbindWorkspaceInput {
@@ -44,6 +50,19 @@ export class CloudAccountMismatchError extends Error {
   public constructor() {
     super("This desktop is linked to a different cloud account. Disconnect it before linking another account.")
     this.name = "CloudAccountMismatchError"
+  }
+}
+
+// This class necessarily repeats the one-error-per-case shape used by every
+// sibling in this file and in cloud-link.ts's ErrLinkXxx family — that
+// boilerplate is the established idiom here, not something to abstract away.
+// fallow-ignore-next-line code-duplication
+export class CloudWorkspaceOwnedByAnotherAccountError extends Error {
+  public constructor() {
+    super(
+      "This workspace holds data from a different cloud account. Remove it from this device, or link the account that owns it.",
+    )
+    this.name = "CloudWorkspaceOwnedByAnotherAccountError"
   }
 }
 

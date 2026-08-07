@@ -8,6 +8,7 @@ import {
   CloudAccountIdentityRequiredError,
   CloudAccountMismatchError,
   CloudUnlinkRequiresConfirmationError,
+  CloudWorkspaceOwnedByAnotherAccountError,
 } from "../../services/cloud_sync_control"
 
 const linkStateSchema = z.enum(["unlinked", "linking", "linked", "authenticationRequired"])
@@ -115,6 +116,7 @@ const createTeamWorkspaceInput = z.object({
 const unlinkInput = z
   .object({
     localOnly: z.boolean().optional(),
+    purgeLocalData: z.boolean().optional(),
   })
   .strict()
 
@@ -170,10 +172,23 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
     },
   })
 
+  // Every domain action in this router follows the same
+  // router.register(domain, action, { input, output, handle }) shape; this
+  // one additionally maps a domain error the way `link`/`unlink` above do.
+  // fallow-ignore-next-line code-duplication
   router.register("cloud", "bindWorkspace", {
     input: bindWorkspaceInput,
     output: statusSchema,
-    handle: (input) => required(control).bindWorkspace(input),
+    handle: async (input) => {
+      try {
+        return await required(control).bindWorkspace(input)
+      } catch (error) {
+        if (error instanceof CloudWorkspaceOwnedByAnotherAccountError) {
+          throw new ConflictError(error.message, { workspaceOwnedByAnotherAccount: true })
+        }
+        throw error
+      }
+    },
   })
 
   router.register("cloud", "createTeamWorkspace", {

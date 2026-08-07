@@ -17,6 +17,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   intent = "error",
+  children,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmIntent = resolveConfirmDialogIntent(intent);
@@ -91,6 +92,7 @@ export function ConfirmDialog({
                       {message}
                     </Dialog.Description>
                   )}
+                  {children && <div className="mt-3">{children}</div>}
                 </div>
               </div>
 

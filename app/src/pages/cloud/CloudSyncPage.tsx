@@ -71,6 +71,9 @@ export function CloudSyncPage() {
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [confirmLocalOnly, setConfirmLocalOnly] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
+  // Opt-in per disconnect, and deliberately reset every time the dialog opens:
+  // deleting local workspaces is never something the user drifts into.
+  const [purgeLocalData, setPurgeLocalData] = useState(false);
 
   const wrap = useCallback(
     (action: () => Promise<CloudSyncStatus>, successMsg?: string) =>
@@ -85,12 +88,22 @@ export function CloudSyncPage() {
     [],
   );
 
+  const openUnlinkDialog = (): void => {
+    setPurgeLocalData(false);
+    setConfirmUnlink(true);
+  };
+
   const doUnlink = async (localOnly: boolean): Promise<void> => {
     try {
-      await cloud.unlink(localOnly);
+      await cloud.unlink({ localOnly, purgeLocalData });
       setConfirmUnlink(false);
       setConfirmLocalOnly(false);
-      toast.success("Cloud account disconnected");
+      setPurgeLocalData(false);
+      toast.success(
+        purgeLocalData
+          ? "Cloud account disconnected and its local workspaces removed"
+          : "Cloud account disconnected",
+      );
     } catch (error) {
       if (!localOnly && isLocalOnlyConfirmation(error)) {
         setConfirmUnlink(false);
@@ -275,7 +288,7 @@ export function CloudSyncPage() {
                   intent="error"
                   size="sm"
                   icon={<Unlink className="h-4 w-4" />}
-                  onClick={() => setConfirmUnlink(true)}
+                  onClick={openUnlinkDialog}
                 >
                   Disconnect
                 </Button>
@@ -336,15 +349,36 @@ export function CloudSyncPage() {
         onConfirm={() => void doUnlink(false)}
         title="Disconnect cloud account?"
         message="Sync stops and cloud credentials are removed from this device. Workspaces created locally are kept, including their workflows and secrets. Workspaces downloaded from Cloud or a shared Team are removed from this device. The device will be revoked in the cloud."
-        confirmLabel="Disconnect"
+        confirmLabel={purgeLocalData ? "Disconnect and delete" : "Disconnect"}
         intent="error"
-      />
+      >
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg bg-status-error/5 px-2.5 py-2">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[var(--aw-status-error)]"
+            checked={purgeLocalData}
+            onChange={(event) => setPurgeLocalData(event.target.checked)}
+          />
+          <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            Also delete this account&rsquo;s workspaces from this device,
+            including locally created ones.
+            <span className="block text-text-muted dark:text-text-muted-dark">
+              Removes their workflows, run history and secrets. This cannot be
+              undone.
+            </span>
+          </span>
+        </label>
+      </ConfirmDialog>
       <ConfirmDialog
         open={confirmLocalOnly}
         onClose={() => setConfirmLocalOnly(false)}
         onConfirm={() => void doUnlink(true)}
         title="Disconnect locally anyway?"
-        message="The cloud device could not be revoked (you may be offline). Cloud access may remain active until you revoke this device from another session. Disconnect locally now?"
+        message={
+          purgeLocalData
+            ? "The cloud device could not be revoked (you may be offline). Cloud access may remain active until you revoke this device from another session. Disconnecting now still deletes this account's local workspaces from this device."
+            : "The cloud device could not be revoked (you may be offline). Cloud access may remain active until you revoke this device from another session. Disconnect locally now?"
+        }
         confirmLabel="Disconnect locally"
         intent="warning"
       />

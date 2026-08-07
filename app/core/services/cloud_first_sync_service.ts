@@ -26,6 +26,13 @@ export interface CloudFirstSyncBindingInput {
   readonly syncMode: "push" | "bi-directional"
   readonly deviceId: string
   /**
+   * The cloud account this workspace now belongs to. Stamped in the same
+   * transaction as the binding so a workspace can never be bound without a
+   * recorded owner — that stamp is what stops the next account to link from
+   * re-pairing this workspace and pushing its contents.
+   */
+  readonly accountId: string
+  /**
    * When false, the binding is created and the workspace is marked for pull
    * without a baseline snapshot — used for cloud-only workspaces that are
    * downloaded (pull-only): we must not push a fresh, empty local copy over
@@ -46,6 +53,9 @@ export class CloudFirstSyncService {
         if (existingLocal.cloudWorkspaceId !== input.cloudWorkspaceId) {
           throw new Error("Local workspace is already bound to a different cloud workspace")
         }
+        // Already bound: re-stamp so a binding that predates ownership
+        // tracking picks up its owner instead of reading as unclaimed.
+        cloud.stampWorkspaceAccount(input.workspaceId, input.accountId)
         return existingLocal
       }
       if (cloud.getWorkspaceBindingByCloudId(input.cloudWorkspaceId) !== undefined) {
@@ -77,6 +87,7 @@ export class CloudFirstSyncService {
         deviceId: input.deviceId,
         initializationState: "pulling",
       })
+      cloud.stampWorkspaceAccount(input.workspaceId, input.accountId)
 
       if (input.recordBaseline !== false) {
         const recorder = new BaselineRecorder(cloud)

@@ -95,7 +95,10 @@ export function useCloudSync(): UseCloudSync {
     refresh,
     link: (deviceLabel) => run(() => apiweave.cloud.link(deviceLabel)),
     cancelLink: () => run(() => apiweave.cloud.cancelLink()),
-    unlink: (localOnly) => run(() => apiweave.cloud.unlink(localOnly)),
+    // Every action below follows the same run(() => apiweave.cloud.X(...))
+    // wrapper shape — the hook's established idiom, not new repetition.
+    // fallow-ignore-next-line code-duplication
+    unlink: (options) => run(() => apiweave.cloud.unlink(options)),
     bindWorkspace: (input) => run(() => apiweave.cloud.bindWorkspace(input)),
     unbindWorkspace: (workspaceId) =>
       run(() => apiweave.cloud.unbindWorkspace(workspaceId)),

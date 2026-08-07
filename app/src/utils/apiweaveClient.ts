@@ -33,6 +33,7 @@ import type {
   CloudBindWorkspaceInput,
   CloudCreateTeamWorkspaceInput,
   CloudSyncStatus,
+  CloudUnlinkOptions,
 } from "../types/cloud";
 
 type Environment = ScopedEnvironment;
@@ -546,8 +547,11 @@ export const apiweave = {
     link: (deviceLabel?: string) =>
       invoke<CloudSyncStatus>("cloud", "link", deviceLabel ? { deviceLabel } : {}),
     cancelLink: () => invoke<CloudSyncStatus>("cloud", "cancelLink", {}),
-    unlink: (localOnly?: boolean) =>
-      invoke<CloudSyncStatus>("cloud", "unlink", localOnly ? { localOnly } : {}),
+    unlink: (options: CloudUnlinkOptions = {}) =>
+      invoke<CloudSyncStatus>("cloud", "unlink", {
+        ...(options.localOnly === true ? { localOnly: true } : {}),
+        ...(options.purgeLocalData === true ? { purgeLocalData: true } : {}),
+      }),
     bindWorkspace: (input: CloudBindWorkspaceInput) =>
       invoke<CloudSyncStatus>("cloud", "bindWorkspace", input),
     createTeamWorkspace: (input: CloudCreateTeamWorkspaceInput) =>

@@ -30,6 +30,7 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { useAuth } from "./auth/useAuth";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
+import { useAccountSessionReset } from "./hooks/useAccountSessionReset";
 import { apiweave } from "./utils/apiweaveClient";
 import { isDesktopShell } from "./utils/isDesktopShell";
 import type { WorkspacePageShellProps } from "./types/WorkspacePageShellProps";
@@ -201,6 +202,12 @@ function WorkspacePageShell({
 // App
 // ---------------------------------------------------------------------------
 
+/** Drops session-scoped UI state when the linked cloud account changes. */
+function AccountSessionReset() {
+  useAccountSessionReset();
+  return null;
+}
+
 function SetupEntry() {
   const { status, isSingleUser, isAuthenticated, modeLoaded, error } =
     useAuth();
@@ -297,6 +304,7 @@ function App() {
       <PaletteProvider>
         <AuthProvider>
           <RouterComponent>
+            <AccountSessionReset />
             <Routes>
               {/* Desktop skips the marketing landing page — no login needed
                   (single-user backend), so go straight to the workspace. */}
