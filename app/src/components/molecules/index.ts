@@ -2,6 +2,12 @@
 export { BeautifyButton } from "./BeautifyButton";
 export { Panel } from "./Panel";
 export { PanelTabs } from "./PanelTabs";
+export {
+  PanelTipsButton,
+  PanelTipsSheet,
+  PanelTipsSection,
+  PanelTipsCode,
+} from "./PanelTips";
 export { FormField } from "./FormField";
 export { Card } from "./Card";
 export { ConfirmDialog } from "./ConfirmDialog";

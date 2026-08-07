@@ -15,6 +15,7 @@ import { KeyValueEditor } from "./KeyValueEditor";
 import { Modal } from "./Modal";
 import { Panel } from "./Panel";
 import { PanelTabs } from "./PanelTabs";
+import { PanelTipsButton, PanelTipsSheet } from "./PanelTips";
 import { PromptDialog } from "./PromptDialog";
 import { SearchInput } from "./SearchInput";
 import { SlidePanel } from "./SlidePanel";
@@ -659,5 +660,65 @@ describe("StatusBadge", () => {
       expect(screen.getByRole("status")).toHaveAttribute("aria-label", label);
       unmount();
     }
+  });
+});
+
+describe("PanelTipsButton", () => {
+  it("exposes its open state and fires onClick", async () => {
+    const onClick = vi.fn();
+    render(
+      <PanelTipsButton
+        isOpen={false}
+        onClick={onClick}
+        label="Variable tips"
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Variable tips" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks itself expanded while the sheet is open", () => {
+    render(<PanelTipsButton isOpen onClick={() => {}} />);
+    expect(
+      screen.getByRole("button", { name: "Tips & syntax" }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+});
+
+describe("PanelTipsSheet", () => {
+  it("renders nothing when closed", () => {
+    render(
+      <PanelTipsSheet isOpen={false} onClose={() => {}}>
+        tip body
+      </PanelTipsSheet>,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("renders its tips in a labelled dialog when open", () => {
+    render(
+      <PanelTipsSheet isOpen onClose={() => {}} title="Variables & syntax">
+        tip body
+      </PanelTipsSheet>,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Variables & syntax" });
+    expect(within(dialog).getByText("tip body")).toBeInTheDocument();
+  });
+
+  it("closes from the close button", async () => {
+    const onClose = vi.fn();
+    render(
+      <PanelTipsSheet isOpen onClose={onClose}>
+        tip body
+      </PanelTipsSheet>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Close tips" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
