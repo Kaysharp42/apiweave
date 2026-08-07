@@ -290,44 +290,69 @@ function canonicalDraft(value: unknown): unknown {
   }
 }
 
-function validateRule(rule: AssertionItem, ruleIndex: number): ValidationIssue[] {
-  const issues: ValidationIssue[] = []
-  const needsExpected = rule.operator !== "exists" && rule.operator !== "notExists"
-  if (needsExpected && rule.expectedValue === undefined) {
-    issues.push({ ruleIndex, code: "expected_required", severity: "error", message: "This operator requires an expected value." })
-  }
+const NUMERIC_OPERATORS: readonly string[] = ["equals", "notEquals", "gt", "gte", "lt", "lte"]
+const NAMED_PATH_SOURCES: readonly string[] = ["variables", "headers", "cookies"]
+const NAMED_PATH_EXAMPLES: Readonly<Record<string, string>> = {
+  variables: 'the workflow variable name, with no response. prefix (for example "token")',
+  headers: 'the header name, with no response. prefix (for example "content-type")',
+  cookies: 'the cookie name, with no response. prefix (for example "session")',
+}
+
+/** Each check answers "what is wrong with this rule", or undefined when nothing is. */
+const RULE_CHECKS: readonly ((rule: AssertionItem) => Omit<ValidationIssue, "ruleIndex"> | undefined)[] = [
+  (rule) =>
+    rule.operator !== "exists" && rule.operator !== "notExists" && rule.expectedValue === undefined
+      ? { code: "expected_required", severity: "error", message: "This operator requires an expected value." }
+      : undefined,
   // Same predicate `workflow_diagnose` uses, so a rule this accepts never trips
   // `assertion_source_path_invalid` later (and vice versa).
-  if (rule.source === "prev" && !isValidRuntimePath(rule.path, true)) {
-    issues.push({ ruleIndex, code: "invalid_path", severity: "error", message: PREV_PATH_MESSAGE })
-  }
-  if (["variables", "headers", "cookies"].includes(rule.source) && rule.path.length === 0) {
-    issues.push({
-      ruleIndex,
-      code: "path_required",
-      severity: "error",
-      message: `Source ${rule.source} requires a path: the ${rule.source === "variables" ? "workflow variable" : rule.source.replace(/s$/, "")} name, with no response. prefix (for example "${rule.source === "headers" ? "content-type" : rule.source === "cookies" ? "session" : "token"}").`,
-    })
-  }
-  if (rule.source === "status" && !["equals", "notEquals", "gt", "gte", "lt", "lte"].includes(rule.operator)) {
-    issues.push({ ruleIndex, code: "invalid_operator", severity: "error", message: "Status assertions require a numeric comparison operator: equals, notEquals, gt, gte, lt or lte." })
-  }
-  if (rule.operator === "count" && (!Number.isInteger(rule.expectedValue) || Number(rule.expectedValue) < 0)) {
-    issues.push({ ruleIndex, code: "invalid_count", severity: "error", message: "Count assertions require a non-negative integer." })
-  }
+  (rule) =>
+    rule.source === "prev" && !isValidRuntimePath(rule.path, true)
+      ? { code: "invalid_path", severity: "error", message: PREV_PATH_MESSAGE }
+      : undefined,
+  (rule) =>
+    NAMED_PATH_SOURCES.includes(rule.source) && rule.path.length === 0
+      ? {
+          code: "path_required",
+          severity: "error",
+          message: `Source ${rule.source} requires a path: ${NAMED_PATH_EXAMPLES[rule.source] ?? "the name"}.`,
+        }
+      : undefined,
+  (rule) =>
+    rule.source === "status" && !NUMERIC_OPERATORS.includes(rule.operator)
+      ? {
+          code: "invalid_operator",
+          severity: "error",
+          message: "Status assertions require a numeric comparison operator: equals, notEquals, gt, gte, lt or lte.",
+        }
+      : undefined,
+  (rule) =>
+    rule.operator === "count" && (!Number.isInteger(rule.expectedValue) || Number(rule.expectedValue) < 0)
+      ? { code: "invalid_count", severity: "error", message: "Count assertions require a non-negative integer." }
+      : undefined,
+  (rule) =>
+    isUnsafeLiteral(rule)
+      ? {
+          code: "unsafe_literal",
+          severity: "error",
+          message: "Secret-looking literals are not accepted; use a {{secrets.NAME}} reference.",
+        }
+      : undefined,
+]
 
+/** A credential pasted into `expectedValue` — either the leaf name or the value itself gives it away. */
+function isUnsafeLiteral(rule: AssertionItem): boolean {
   const expected = rule.expectedValue
+  if (typeof expected !== "string" || isSecretReference(expected)) return false
   const leaf = rule.path.split(".").at(-1) ?? ""
-  if (typeof expected === "string" && !isSecretReference(expected)
-    && (isSecretKey(leaf) || looksLikeSecretValue(expected))) {
-    issues.push({
-      ruleIndex,
-      code: "unsafe_literal",
-      severity: "error",
-      message: "Secret-looking literals are not accepted; use a {{secrets.NAME}} reference.",
-    })
-  }
-  return issues
+  return isSecretKey(leaf) || looksLikeSecretValue(expected)
+}
+
+function validateRule(rule: AssertionItem, ruleIndex: number): ValidationIssue[] {
+  return RULE_CHECKS.flatMap((check) => {
+    const issue = check(rule)
+    return issue === undefined ? [] : [{ ruleIndex, ...issue }]
+  })
 }
 
 function validateEvidencePath(rule: AssertionItem, ruleIndex: number, result: RunResult): ValidationIssue | undefined {

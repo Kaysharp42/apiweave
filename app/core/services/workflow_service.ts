@@ -30,6 +30,26 @@ export interface WorkflowGraphPatch {
   readonly unsetVariables?: readonly string[]
 }
 
+/** Fold a {@link WorkflowGraphPatch} into the stored graph, producing the full update to persist. */
+function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): WorkflowUpdate & { nodes: Workflow["nodes"] } {
+  const nodes = mergeById(existing.nodes, patch.upsertNodes, patch.removeNodeIds, (node) => node.nodeId)
+  const edges = mergeById(existing.edges, patch.upsertEdges, patch.removeEdgeIds, (edge) => edge.edgeId)
+  const variables = { ...existing.variables, ...patch.setVariables }
+  for (const name of patch.unsetVariables ?? []) delete variables[name]
+
+  // A removed node leaves its edges pointing at nothing, which the analyzer
+  // reports as `dangling_edge`. Dropping them here keeps a node removal from
+  // needing a second call to stay consistent.
+  const nodeIds = new Set(nodes.map((node) => node.nodeId))
+  return {
+    nodes,
+    edges: edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
+    variables,
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.description !== undefined ? { description: patch.description } : {}),
+  }
+}
+
 /** Replace-by-id then append, after dropping `removeIds`. Order of surviving entries is preserved. */
 function mergeById<T>(
   existing: readonly T[],
@@ -123,25 +143,8 @@ export class WorkflowService {
       })
     }
 
-    const nodes = mergeById(existing.nodes, patch.upsertNodes, patch.removeNodeIds, (node) => node.nodeId)
-    const edges = mergeById(existing.edges, patch.upsertEdges, patch.removeEdgeIds, (edge) => edge.edgeId)
-    const variables = { ...existing.variables, ...patch.setVariables }
-    for (const name of patch.unsetVariables ?? []) delete variables[name]
-
-    // A removed node leaves its edges pointing at nothing, which the analyzer
-    // reports as `dangling_edge`. Dropping them here keeps a node removal from
-    // needing a second call to stay consistent.
-    const nodeIds = new Set(nodes.map((node) => node.nodeId))
-    const connectedEdges = edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
-
-    this.assertCallWorkflowTargetsInWorkspace(nodes, workspaceId, workflowId)
-    const next: WorkflowUpdate = {
-      nodes,
-      edges: connectedEdges,
-      variables,
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.description !== undefined ? { description: patch.description } : {}),
-    }
+    const next = mergeGraphPatch(existing, patch)
+    this.assertCallWorkflowTargetsInWorkspace(next.nodes, workspaceId, workflowId)
 
     const updated = patch.expectedRevision === undefined
       ? this.workflows.update(workflowId, next)

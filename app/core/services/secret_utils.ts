@@ -208,26 +208,41 @@ function sanitizeFileUploadsForExport(items: readonly JsonValue[]): JsonValue[] 
 function sanitizeKeyValueArray(items: readonly JsonValue[], redactAllValues: boolean, mode: SanitizeMode): JsonValue[] {
   const sanitized: JsonValue[] = []
   for (const item of items) {
-    if (!isRecord(item)) {
-      sanitized.push(item)
-      continue
-    }
-    const key = item["key"]
-    const secretKey = typeof key === "string" && isSecretKey(key)
-    if (secretKey && mode === "export") continue
-    const value = item["value"]
-    if (typeof value !== "string") {
-      sanitized.push(item)
-      continue
-    }
-    // A `{{secrets.NAME}}` reference is an indirection, not the secret — it has
-    // to survive so the agent can see which secret a header binds to.
-    const keep = extractSecretRefsFromString(value).length > 0 && !redactAllValues
-    sanitized.push(
-      !keep && (redactAllValues || secretKey) ? { ...item, value: SECRET_PLACEHOLDER } : item,
-    )
+    const entry = sanitizeKeyValueEntry(item, redactAllValues, mode)
+    if (entry !== undefined) sanitized.push(entry)
   }
   return sanitized
+}
+
+/** One `{key, value}` entry, or `undefined` when export mode drops it entirely. */
+function sanitizeKeyValueEntry(
+  item: JsonValue,
+  redactAllValues: boolean,
+  mode: SanitizeMode,
+): JsonValue | undefined {
+  if (!isRecord(item)) return item
+  const key = item["key"]
+  const secretKey = typeof key === "string" && isSecretKey(key)
+  if (secretKey && mode === "export") return undefined
+  const value = item["value"]
+  if (typeof value !== "string") return item
+  return withholdsPairValue(value, secretKey, redactAllValues)
+    ? { ...item, value: SECRET_PLACEHOLDER }
+    : item
+}
+
+/**
+ * Whether a `{key, value}` pair's value must be withheld.
+ *
+ * `redactAllValues` (cookies) withholds unconditionally — session material hides
+ * under names that look harmless. Otherwise only a secret-named key withholds,
+ * and even then a `{{secrets.NAME}}` reference survives: it is an indirection,
+ * not the secret, and seeing it is how an agent knows which credential a header
+ * binds to.
+ */
+function withholdsPairValue(value: string, secretKey: boolean, redactAllValues: boolean): boolean {
+  if (redactAllValues) return true
+  return secretKey && extractSecretRefsFromString(value).length === 0
 }
 
 /**
@@ -322,6 +337,41 @@ export function sanitizeAgentReadValue(data: JsonValue): JsonValue {
   return sanitizeValue(data, "agent-read")
 }
 
+/**
+ * Per-field rules, keyed by the field name they claim. A rule returns
+ * `undefined` for "not my shape" so the caller falls through to the generic
+ * walk — table lookup rather than an if/else ladder, so adding a structural
+ * field is one entry instead of another branch.
+ */
+const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: SanitizeMode) => JsonValue | undefined>> = {
+  auth: (value) => (isRecord(value) ? sanitizeAuthConfigForExport(value) : undefined),
+  fileUploads: (value) => (Array.isArray(value) ? sanitizeFileUploadsForExport(value) : undefined),
+  cookies: (value, mode) => (Array.isArray(value) ? sanitizeKeyValueArray(value, true, mode) : undefined),
+  url: (value) => (typeof value === "string" ? sanitizeUrlForExport(value) : undefined),
+  body: (value, mode) => {
+    if (typeof value !== "string" || value.trim().length === 0) return undefined
+    return mode === "export" ? SECRET_PLACEHOLDER : sanitizeBodyForAgentRead(value)
+  },
+}
+
+/** The redacted form of one field, or `undefined` when no structural rule applies. */
+function sanitizeField(key: string, value: JsonValue, mode: SanitizeMode): JsonValue | undefined {
+  const byName = FIELD_SANITIZERS[key]?.(value, mode)
+  if (byName !== undefined) return byName
+  if (KEY_VALUE_EXPORT_FIELDS.has(key) && Array.isArray(value)) {
+    return sanitizeKeyValueArray(value, false, mode)
+  }
+  if (typeof value === "string" && isSecretKey(key)) {
+    return keepAsReference(value, mode) ? value : SECRET_PLACEHOLDER
+  }
+  return undefined
+}
+
+/** An agent read keeps `{{secrets.NAME}}` verbatim: a reference is an indirection, not the secret. */
+function keepAsReference(value: string, mode: SanitizeMode): boolean {
+  return mode === "agent-read" && extractSecretRefsFromString(value).length > 0
+}
+
 function sanitizeValue(data: JsonValue, mode: SanitizeMode): JsonValue {
   if (Array.isArray(data)) {
     return data.map((item) => sanitizeValue(item, mode))
@@ -331,25 +381,7 @@ function sanitizeValue(data: JsonValue, mode: SanitizeMode): JsonValue {
   }
   const sanitized: Record<string, JsonValue> = {}
   for (const [key, value] of Object.entries(data)) {
-    if (key === "auth" && isRecord(value)) {
-      sanitized[key] = sanitizeAuthConfigForExport(value)
-    } else if (key === "fileUploads" && Array.isArray(value)) {
-      sanitized[key] = sanitizeFileUploadsForExport(value)
-    } else if (key === "cookies" && Array.isArray(value)) {
-      sanitized[key] = sanitizeKeyValueArray(value, true, mode)
-    } else if (KEY_VALUE_EXPORT_FIELDS.has(key) && Array.isArray(value)) {
-      sanitized[key] = sanitizeKeyValueArray(value, false, mode)
-    } else if (key === "body" && typeof value === "string" && value.trim().length > 0) {
-      sanitized[key] = mode === "export" ? SECRET_PLACEHOLDER : sanitizeBodyForAgentRead(value)
-    } else if (key === "url" && typeof value === "string") {
-      sanitized[key] = sanitizeUrlForExport(value)
-    } else if (typeof value === "string" && isSecretKey(key)) {
-      sanitized[key] = extractSecretRefsFromString(value).length > 0 && mode === "agent-read"
-        ? value
-        : SECRET_PLACEHOLDER
-    } else {
-      sanitized[key] = sanitizeValue(value, mode)
-    }
+    sanitized[key] = sanitizeField(key, value, mode) ?? sanitizeValue(value, mode)
   }
   return sanitized
 }
