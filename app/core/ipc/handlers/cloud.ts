@@ -172,6 +172,10 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
     },
   })
 
+  // Every domain action in this router follows the same
+  // router.register(domain, action, { input, output, handle }) shape; this
+  // one additionally maps a domain error the way `link`/`unlink` above do.
+  // fallow-ignore-next-line code-duplication
   router.register("cloud", "bindWorkspace", {
     input: bindWorkspaceInput,
     output: statusSchema,

@@ -26,6 +26,7 @@
  * it just arrives as its own local workspace instead of taking over this one.
  */
 
+// fallow-ignore-next-line code-duplication
 export interface ReconcilerLocalWorkspace {
   readonly workspaceId: string
   readonly name: string
@@ -54,6 +55,7 @@ export interface ReconcilerBindInput {
   readonly recordBaseline: boolean
 }
 
+// fallow-ignore-next-line code-duplication
 export interface ReconcilerDeps {
   /** The cloud account currently linked — the only account allowed to claim. */
   readonly accountId: string

@@ -53,6 +53,10 @@ export class CloudAccountMismatchError extends Error {
   }
 }
 
+// This class necessarily repeats the one-error-per-case shape used by every
+// sibling in this file and in cloud-link.ts's ErrLinkXxx family — that
+// boilerplate is the established idiom here, not something to abstract away.
+// fallow-ignore-next-line code-duplication
 export class CloudWorkspaceOwnedByAnotherAccountError extends Error {
   public constructor() {
     super(

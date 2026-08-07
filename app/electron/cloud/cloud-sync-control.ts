@@ -348,30 +348,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     }
 
     const client = this.createClient(this.activeConfig)
-    let team: CloudTeamCatalogEntry
-    if (input.newTeamName !== undefined) {
-      const createdTeam = await client.createTeam(
-        input.newTeamName,
-        `${slugify(input.newTeamName)}-${generateId().slice(-8).toLowerCase()}`,
-      )
-      team = {
-        teamId: createdTeam.id,
-        teamName: createdTeam.name,
-        isPersonal: false,
-        canCreateWorkspaces: true,
-      }
-      this.teamCatalog = [...this.teamCatalog, team]
-      this.repository.setSetting(KEY_TEAM_CATALOG, JSON.stringify(this.teamCatalog))
-    } else {
-      const selectedTeam = this.teamCatalog.find((candidate) => candidate.teamId === input.teamId)
-      if (selectedTeam === undefined) {
-        throw new Error("The selected Team is no longer available")
-      }
-      team = selectedTeam
-      if (team.isPersonal || !team.canCreateWorkspaces) {
-        throw new Error("You do not have permission to create Workspaces in this Team")
-      }
-    }
+    const team = await this.resolveTeamForCreation(input, client)
 
     const localSlug = this.uniqueLocalSlug(input.slug)
     const provisioned = await client.createSyncWorkspace({
@@ -741,6 +718,36 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     } catch {
       return []
     }
+  }
+
+  /** Resolve createTeamWorkspace's target team: create a new one, or validate the selected one. */
+  private async resolveTeamForCreation(
+    input: CloudCreateTeamWorkspaceInput,
+    client: CloudClient,
+  ): Promise<CloudTeamCatalogEntry> {
+    if (input.newTeamName !== undefined) {
+      const createdTeam = await client.createTeam(
+        input.newTeamName,
+        `${slugify(input.newTeamName)}-${generateId().slice(-8).toLowerCase()}`,
+      )
+      const team: CloudTeamCatalogEntry = {
+        teamId: createdTeam.id,
+        teamName: createdTeam.name,
+        isPersonal: false,
+        canCreateWorkspaces: true,
+      }
+      this.teamCatalog = [...this.teamCatalog, team]
+      this.repository.setSetting(KEY_TEAM_CATALOG, JSON.stringify(this.teamCatalog))
+      return team
+    }
+    const selectedTeam = this.teamCatalog.find((candidate) => candidate.teamId === input.teamId)
+    if (selectedTeam === undefined) {
+      throw new Error("The selected Team is no longer available")
+    }
+    if (selectedTeam.isPersonal || !selectedTeam.canCreateWorkspaces) {
+      throw new Error("You do not have permission to create Workspaces in this Team")
+    }
+    return selectedTeam
   }
 
   private uniqueLocalSlug(source: string): string {
