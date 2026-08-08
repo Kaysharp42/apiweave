@@ -13,6 +13,8 @@ import type { AssertionEvaluation } from "@shared/types/AssertionEvaluation"
 import type { AssertionOperator } from "@shared/types/AssertionOperator"
 import type { AssertionSource } from "@shared/types/AssertionSource"
 import type { ExtractorOutcome } from "@shared/types/ExtractorOutcome"
+import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
+import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import type { JsonValueType } from "@shared/types/JsonValueType"
 
 /**
@@ -1505,37 +1507,8 @@ export class WorkflowExecutor {
     return outcomes
   }
 
-  private resolveExtractorValue(
-    obj: unknown,
-    path: string,
-  ): { readonly value: unknown; readonly failureReason: "path-missing" | "type-mismatch" | null } {
-    if (obj === null || obj === undefined || !path) return { value: undefined, failureReason: "path-missing" }
-    const parts = path.split(".")
-    let value: unknown = obj
-    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
-      const part = parts[partIndex]!
-      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
-      if (typeof value !== "object" || value === null) {
-        return { value: undefined, failureReason: "type-mismatch" }
-      }
-      if (arrayMatch) {
-        const key = arrayMatch[1]!
-        if (!(key in value)) return { value: undefined, failureReason: "path-missing" }
-        const candidate = (value as Record<string, unknown>)[key]
-        if (!Array.isArray(candidate)) return { value: undefined, failureReason: "type-mismatch" }
-        const arrayIndex = Number.parseInt(arrayMatch[2]!, 10)
-        if (arrayIndex >= candidate.length) return { value: undefined, failureReason: "path-missing" }
-        value = candidate[arrayIndex]
-      } else {
-        if (!(part in value)) return { value: undefined, failureReason: "path-missing" }
-        value = (value as Record<string, unknown>)[part]
-      }
-      if (value === undefined) return { value: undefined, failureReason: "path-missing" }
-      if (value === null && partIndex < parts.length - 1) {
-        return { value: undefined, failureReason: "type-mismatch" }
-      }
-    }
-    return { value, failureReason: null }
+  private resolveExtractorValue(obj: unknown, path: string): ExtractorResolution {
+    return resolveExtractorPath(obj, path)
   }
 
   private getNestedValue(obj: unknown, path: string): unknown {

@@ -44,6 +44,18 @@ export function PanelTabs({ tabs, activeTab, onTabChange }: PanelTabsProps) {
               <Icon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
             )}
             <span className="min-w-0 truncate">{tab.label}</span>
+            {tab.badge !== undefined && tab.badge > 0 && (
+              <span
+                className={[
+                  "flex-shrink-0 rounded-sm px-1 font-mono text-[10px] leading-4",
+                  isActive
+                    ? "bg-primary/15 text-primary dark:bg-primary-light/20 dark:text-primary-light"
+                    : "bg-surface-raised text-text-secondary dark:bg-surface-dark-raised dark:text-text-secondary-dark",
+                ].join(" ")}
+              >
+                {tab.badge}
+              </span>
+            )}
           </button>
         );
       })}

@@ -167,6 +167,18 @@ export function NodeModal({
     updateHttpConfig({ ...httpConfig, ...patch });
   };
 
+  const addExtractor = (variableName: string, responsePath: string) => {
+    patchHttpConfig({
+      extractors: { ...(httpConfig.extractors ?? {}), [variableName]: responsePath },
+    });
+  };
+
+  const removeExtractor = (variableName: string) => {
+    const extractors = { ...(httpConfig.extractors ?? {}) };
+    delete extractors[variableName];
+    patchHttpConfig({ extractors });
+  };
+
   const renderHttpRequestBar = () => (
     <div className="flex w-full min-w-0 items-center gap-2">
       <ButtonSelect
@@ -255,6 +267,10 @@ export function NodeModal({
           activeTab={activeTab}
           config={httpConfig}
           onConfigChange={updateHttpConfig}
+          lastResult={
+            (node.data?.executionResult as Record<string, unknown> | null) ||
+            null
+          }
         />
       );
     }
@@ -327,6 +343,9 @@ export function NodeModal({
         output={
           (node.data?.executionResult as Record<string, unknown> | null) || null
         }
+        extractors={httpConfig.extractors ?? {}}
+        onAddExtractor={addExtractor}
+        onRemoveExtractor={removeExtractor}
       />
     ) : (
       <NodeOutputPanel
@@ -335,9 +354,17 @@ export function NodeModal({
       />
     );
 
+  const extractorCount = Object.keys(httpConfig.extractors ?? {}).length;
+  const httpTabs =
+    extractorCount > 0
+      ? HTTP_TABS.map((tab) =>
+          tab.key === "settings" ? { ...tab, badge: extractorCount } : tab,
+        )
+      : HTTP_TABS;
+
   const shellTabs =
     node.type === "http-request"
-      ? HTTP_TABS
+      ? httpTabs
       : node.type === "assertion"
         ? ASSERTION_TABS
         : node.type === "delay"

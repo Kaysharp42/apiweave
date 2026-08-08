@@ -16,6 +16,7 @@ export { KeyValueEditor } from "./KeyValueEditor";
 export { Modal } from "./Modal";
 export { PromptDialog } from "./PromptDialog";
 export { ResponseInspector } from "./ResponseInspector";
+export { SaveVariablePopover } from "./SaveVariablePopover";
 export { SearchInput } from "./SearchInput";
 export { SlidePanel } from "./SlidePanel";
 export { StatusBadge } from "./StatusBadge";
