@@ -2,6 +2,10 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
+import {
+  INVALID_VARIABLE_NAME_MESSAGE,
+  isValidVariableName,
+} from "../../utils/extractorVariableName";
 import type { ExtractorFormProps } from "../../types";
 
 const RESPONSE_PATH_PREFIX = "response.body.";
@@ -13,13 +17,20 @@ export function normalizeExtractorPath(path: string): string {
     : `${RESPONSE_PATH_PREFIX}${trimmed}`;
 }
 
-export function ExtractorForm({ onAdd }: ExtractorFormProps) {
+export function ExtractorForm({ onAdd, existingNames = [] }: ExtractorFormProps) {
   const [variableName, setVariableName] = useState("");
   const [responsePath, setResponsePath] = useState("");
 
+  const trimmedName = variableName.trim();
+  const nameError =
+    trimmedName === "" || isValidVariableName(trimmedName)
+      ? undefined
+      : INVALID_VARIABLE_NAME_MESSAGE;
+  const canAdd = !nameError && trimmedName !== "" && responsePath.trim() !== "";
+
   const handleAdd = () => {
-    if (!variableName.trim() || !responsePath.trim()) return;
-    onAdd(variableName.trim(), normalizeExtractorPath(responsePath));
+    if (!canAdd) return;
+    onAdd(trimmedName, normalizeExtractorPath(responsePath));
     setVariableName("");
     setResponsePath("");
   };
@@ -32,6 +43,10 @@ export function ExtractorForm({ onAdd }: ExtractorFormProps) {
         placeholder="Variable name (e.g., token)"
         aria-label="Extractor variable name"
         className="font-mono"
+        {...(nameError ? { error: nameError } : {})}
+        {...(!nameError && existingNames.includes(trimmedName)
+          ? { helperText: `Replaces the existing "${trimmedName}".` }
+          : {})}
       />
       <div className="flex items-center rounded-sm border border-border bg-surface-raised focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised">
         <span className="select-none pl-3 font-mono text-xs text-text-muted dark:text-text-muted-dark">
@@ -45,7 +60,13 @@ export function ExtractorForm({ onAdd }: ExtractorFormProps) {
           className="h-10 min-w-0 flex-1 rounded-sm bg-transparent px-1 font-mono text-sm text-text-primary placeholder:text-text-muted focus:outline-none dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
         />
       </div>
-      <Button type="button" size="sm" fullWidth onClick={handleAdd}>
+      <Button
+        type="button"
+        size="sm"
+        fullWidth
+        onClick={handleAdd}
+        disabled={!canAdd}
+      >
         <Plus className="h-4 w-4" />
         Add extractor
       </Button>

@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   AlertTriangle,
+  Copy,
   Eye,
   EyeOff,
   File,
@@ -19,8 +20,11 @@ import {
   Puzzle,
   Trash2,
   Type,
+  Variable,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
+import { resolveExtractorPath } from "@shared/extractors/extractorPath";
 import ButtonSelect from "../ButtonSelect";
 import FileUploadSection from "../FileUploadSection";
 import { Button } from "../atoms/Button";
@@ -35,6 +39,8 @@ import { EmptyState } from "../molecules/EmptyState";
 import { ExtractorForm } from "../molecules/ExtractorForm";
 import { FormField } from "../molecules/FormField";
 import { KeyValueEditor } from "../molecules/KeyValueEditor";
+import { useDarkMode } from "../../hooks/useDarkMode";
+import { previewValue } from "../../utils/previewValue";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import type {
   AuthConfig,
@@ -84,22 +90,6 @@ const Link2CardIcon = createCardIcon(Link2);
 const PuzzleCardIcon = createCardIcon(Puzzle);
 const TypeCardIcon = createCardIcon(Type);
 
-function useDarkMode(): boolean {
-  const [isDarkMode, setIsDarkMode] = useState(() =>
-    document.documentElement.classList.contains("dark"),
-  );
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const syncDarkMode = () => setIsDarkMode(root.classList.contains("dark"));
-    const observer = new MutationObserver(syncDarkMode);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
-
-  return isDarkMode;
-}
-
 function buildPreviewUrl(url: string, pairs: KeyValuePair[]): string {
   const activePairs = pairs.filter((pair) => pair.key.trim());
   if (activePairs.length === 0)
@@ -134,6 +124,85 @@ function HighlightedTemplateText({ value }: { value: string }) {
   );
 }
 
+const EXTRACTOR_PREVIEW_LIMIT = 40;
+
+/**
+ * One stored variable. Resolving the path against the node's last result turns
+ * the row into a live check -- a path that no longer matches the API says so
+ * here instead of failing silently on the next run.
+ */
+function ExtractorRow({
+  variableName,
+  responsePath,
+  lastResult,
+  onRemove,
+}: {
+  variableName: string;
+  responsePath: string;
+  lastResult?: Record<string, unknown>;
+  onRemove: () => void;
+}) {
+  const resolution =
+    typeof lastResult === "object" &&
+    lastResult !== null &&
+    "response" in lastResult
+      ? resolveExtractorPath(lastResult, responsePath)
+      : undefined;
+
+  const copyReference = async () => {
+    await navigator.clipboard.writeText(`{{variables.${variableName}}}`);
+    toast.success(`Copied {{variables.${variableName}}}`);
+  };
+
+  return (
+    <div className="rounded-sm border border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.4fr)_auto_auto] items-center gap-2">
+        <code className="truncate text-xs text-status-success dark:text-status-success-dark">
+          {variableName}
+        </code>
+        <span className="text-text-muted dark:text-text-muted-dark">
+          &larr;
+        </span>
+        <code className="truncate text-xs text-status-info dark:text-status-info-dark">
+          {responsePath}
+        </code>
+        <IconButton
+          tooltip={`Copy {{variables.${variableName}}}`}
+          size="xs"
+          variant="ghost"
+          onClick={() => void copyReference()}
+        >
+          <Copy className="h-4 w-4" />
+        </IconButton>
+        <IconButton
+          tooltip={`Remove ${variableName}`}
+          size="xs"
+          variant="error"
+          onClick={onRemove}
+        >
+          <Trash2 className="h-4 w-4" />
+        </IconButton>
+      </div>
+      {resolution && (
+        <p className="mt-1 truncate font-mono text-[11px]">
+          {resolution.failureReason === null ? (
+            <span className="text-status-success dark:text-status-success-dark">
+              Last response:{" "}
+              {previewValue(resolution.value, EXTRACTOR_PREVIEW_LIMIT)}
+            </span>
+          ) : (
+            <span className="text-status-warning dark:text-status-warning-dark">
+              {resolution.failureReason === "path-missing"
+                ? "Not found in the last response"
+                : "The last response had a different shape at this path"}
+            </span>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function validateJson(value: string): string | undefined {
   if (!value.trim()) return undefined;
   try {
@@ -150,6 +219,7 @@ export function HTTPRequestConfigPanel({
   activeTab,
   config,
   onConfigChange,
+  lastResult,
 }: HTTPRequestConfigPanelProps) {
   const isDarkMode = useDarkMode();
   const [draftConfig, setDraftConfig] = useState<NodeModalHTTPRequestConfig>(
@@ -157,6 +227,9 @@ export function HTTPRequestConfigPanel({
   );
   const [showBearerToken, setShowBearerToken] = useState(false);
   const [showBasicPassword, setShowBasicPassword] = useState(false);
+  const [showManualExtractorForm, setShowManualExtractorForm] = useState(
+    () => Object.keys((config ?? initialConfig).extractors ?? {}).length === 0,
+  );
 
   useEffect(() => {
     setDraftConfig(normalizeHttpRequestConfig(config ?? initialConfig));
@@ -168,6 +241,10 @@ export function HTTPRequestConfigPanel({
         ? validateJson(draftConfig.body ?? "")
         : undefined,
     [draftConfig.body, draftConfig.bodyType],
+  );
+  const extractorEntries = useMemo(
+    () => Object.entries(draftConfig.extractors || {}),
+    [draftConfig.extractors],
   );
   const previewUrl = useMemo(
     () =>
@@ -545,52 +622,60 @@ export function HTTPRequestConfigPanel({
 
       <Card title="Store response as variables" icon={PuzzleCardIcon}>
         <div className="mb-3 space-y-2">
-          {Object.entries(draftConfig.extractors || {}).map(
-            ([variableName, responsePath]) => (
-              <div
-                key={variableName}
-                className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-sm border border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay"
-              >
-                <code className="truncate text-xs text-status-success dark:text-status-success-dark">
-                  {variableName}
-                </code>
-                <span className="text-text-muted dark:text-text-muted-dark">
-                  &larr;
-                </span>
-                <code className="truncate text-xs text-status-info dark:text-status-info-dark">
-                  {responsePath}
-                </code>
-                <IconButton
-                  tooltip={`Remove ${variableName}`}
-                  size="xs"
-                  variant="error"
-                  onClick={() => {
-                    const extractors = { ...(draftConfig.extractors || {}) };
-                    delete extractors[variableName];
-                    updateConfig({ extractors });
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </IconButton>
-              </div>
-            ),
-          )}
-          {Object.keys(draftConfig.extractors || {}).length === 0 && (
-            <p className="text-sm text-text-muted dark:text-text-muted-dark">
-              No response variables configured.
-            </p>
+          {extractorEntries.map(([variableName, responsePath]) => (
+            <ExtractorRow
+              key={variableName}
+              variableName={variableName}
+              responsePath={responsePath}
+              {...(lastResult ? { lastResult } : {})}
+              onRemove={() => {
+                const extractors = { ...(draftConfig.extractors || {}) };
+                delete extractors[variableName];
+                updateConfig({ extractors });
+              }}
+            />
+          ))}
+          {extractorEntries.length === 0 && (
+            <div className="rounded-sm border border-dashed border-border bg-surface-overlay px-3 py-4 dark:border-border-dark dark:bg-surface-dark-overlay">
+              <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+                No response variables yet.
+              </p>
+              <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-text-muted dark:text-text-muted-dark">
+                Run the request, then hover a value in the response tree and
+                click
+                <Variable
+                  className="inline h-3.5 w-3.5 text-primary dark:text-primary-light"
+                  aria-hidden="true"
+                />
+                to store it.
+              </p>
+            </div>
           )}
         </div>
-        <ExtractorForm
-          onAdd={(variableName, responsePath) =>
-            updateConfig({
-              extractors: {
-                ...(draftConfig.extractors || {}),
-                [variableName]: responsePath,
-              },
-            })
-          }
-        />
+
+        {showManualExtractorForm ? (
+          <ExtractorForm
+            existingNames={Object.keys(draftConfig.extractors || {})}
+            onAdd={(variableName, responsePath) =>
+              updateConfig({
+                extractors: {
+                  ...(draftConfig.extractors || {}),
+                  [variableName]: responsePath,
+                },
+              })
+            }
+          />
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            fullWidth
+            onClick={() => setShowManualExtractorForm(true)}
+          >
+            <Plus className="h-4 w-4" />
+            Add manually
+          </Button>
+        )}
       </Card>
     </div>
   );

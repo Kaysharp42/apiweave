@@ -38,6 +38,9 @@ export function HttpRequestOutputPanel({
   node,
   initialConfig,
   output,
+  extractors,
+  onAddExtractor,
+  onRemoveExtractor,
 }: HttpRequestOutputPanelProps) {
   const [filterQuery, setFilterQuery] = useState("");
   const [copyLabel, setCopyLabel] = useState<string | null>(null);
@@ -161,6 +164,9 @@ export function HttpRequestOutputPanel({
           filterQuery={filterQuery}
           {...(metadata ? { metadata } : {})}
           {...(rawBody !== undefined ? { rawBody } : {})}
+          {...(extractors ? { extractors } : {})}
+          {...(onAddExtractor ? { onAddExtractor } : {})}
+          {...(onRemoveExtractor ? { onRemoveExtractor } : {})}
         />
       </div>
     </div>
