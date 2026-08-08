@@ -137,7 +137,7 @@ const workflow: Workflow = {
 };
 
 describe("workflow canvas adapters", () => {
-  it("hydrates canonical nodes, handles, and assertion edge presentation", () => {
+  it("hydrates canonical nodes and handles without inventing edge appearance", () => {
     const canvas = workflowToCanvas(workflow);
 
     expect(canvas.nodes.map((node) => [node.id, node.type])).toEqual([
@@ -156,12 +156,16 @@ describe("workflow canvas adapters", () => {
       id: "edge-assertion-delay",
       sourceHandle: "pass",
       targetHandle: null,
-      style: { stroke: "var(--aw-status-success)", strokeWidth: 2 },
+      label: "Pass",
     });
-    // Pass/fail is carried by colour and label, never by perpetual motion.
-    // ReactFlow's `animated` flag dashes and marches an edge forever, which put
-    // the canvas in motion whether or not a run was happening.
+    // Hydration hands the canvas plumbing, never appearance. Both properties
+    // this used to set claimed something about a workflow nobody had run:
+    // `animated` marched the edge forever, and `style.stroke` painted the pass
+    // branch in the success token — the same green a *traversed* edge uses, so
+    // reopening a workflow showed branches already lit. `CustomEdge` derives
+    // both from live run status.
     expect(canvas.edges[2]?.animated).toBeUndefined();
+    expect(canvas.edges[2]?.style).toBeUndefined();
     expect(canvas.variables).toEqual(workflow.variables);
     expect(canvas.selectedEnvironmentId).toBe("environment-1");
   });

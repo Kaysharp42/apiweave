@@ -44,6 +44,16 @@ function findSourceFiles(dir: string): string[] {
 /** `animated: true` on an object literal, ignoring comment lines. */
 const ANIMATED_FLAG = /^\s*animated:\s*true\b/;
 
+/** A `style` literal that pins a stroke, one line or several. */
+const PINNED_STROKE = /style:\s*\{[^}]*stroke/;
+
+/**
+ * `CustomEdge` is where an edge's stroke is decided, from the source node's
+ * live status. Everywhere else, a stroke written onto an edge is a colour the
+ * canvas has not earned.
+ */
+const STROKE_OWNER = join("src", "components", "CustomEdge.tsx");
+
 describe("connection layer motion", () => {
   it("never marks an edge permanently animated", () => {
     const violations: string[] = [];
@@ -67,6 +77,35 @@ describe("connection layer motion", () => {
       "ReactFlow's `animated` flag dashes an edge forever, whether or not a run " +
         "is happening. Use CustomEdge's one-shot fill, which is driven by the " +
         "source node's live status:\n" +
+        violations.join("\n"),
+    ).toEqual([]);
+  });
+
+  it("never pins an edge's stroke outside the run-state table", () => {
+    // The sibling defect to the `animated` flag above, and the same shape: an
+    // appearance stored on the edge rather than derived from the run. Two
+    // paths painted assertion branches in the pass/fail status tokens — the
+    // hydration in `workflowCanvas.ts` and `onConnect` in `WorkflowCanvas.tsx`
+    // — so a workflow that had never been run opened with its pass branches in
+    // the same green a traversed edge uses. Colour on an edge means one thing:
+    // control went through here. A branch is named, not coloured.
+    const violations: string[] = [];
+
+    for (const dir of SCAN_DIRS) {
+      for (const file of findSourceFiles(dir)) {
+        if (file === STROKE_OWNER) continue;
+        if (PINNED_STROKE.test(readFileSync(file, "utf-8"))) {
+          violations.push(file);
+        }
+      }
+    }
+
+    expect(
+      violations,
+      "An edge's stroke comes from `presentationFor(sourceStatus)` in " +
+        "CustomEdge.tsx. A stroke written onto the edge here shows before any " +
+        "run has reached it, and CustomEdge treats it as the edge's own colour " +
+        "so run state can never overwrite it:\n" +
         violations.join("\n"),
     ).toEqual([]);
   });

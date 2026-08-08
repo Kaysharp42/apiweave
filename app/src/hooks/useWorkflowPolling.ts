@@ -99,6 +99,31 @@ function applyRunResults(
   }
 }
 
+/** Read a finished run's per-node statuses into `statuses`, in place.
+ *
+ * `nodeStatuses` is the wider of the two records a run carries: every node the
+ * runner touched appears in it, including the ones that execute nothing and so
+ * never produce a `RunResult` — `start` and `end`. Reading only `results` is
+ * what used to leave the terminal nodes grey on a run that plainly reached
+ * them. `applyRunResults` runs after this and overwrites with the detail. */
+function applyRunNodeStatuses(
+  statuses: NodeStatuses,
+  nodeStatuses: Readonly<Record<string, unknown>> | undefined,
+): void {
+  for (const [nodeId, entry] of Object.entries(nodeStatuses ?? {})) {
+    if (typeof entry === "string") {
+      statuses[nodeId] = { status: entry };
+      continue;
+    }
+    if (typeof entry === "object" && entry !== null) {
+      const status = (entry as Record<string, unknown>).status;
+      if (typeof status === "string") {
+        statuses[nodeId] = { status, result: resultFromStatusEntry(entry) };
+      }
+    }
+  }
+}
+
 function selectiveNodeUpdate(
   currentNodes: Node[],
   nodeStatuses: NodeStatuses,
@@ -222,6 +247,12 @@ export default function useWorkflowPolling({
     runId: string | null;
     failedNodes: FailedNodeOption[];
   } | null>(null);
+  /**
+   * The nodes this canvas released itself when the run started — see
+   * `executeWorkflow`. Held so the stream's own copy of the same fact, if it
+   * ever does arrive, is recognised as a duplicate rather than replayed.
+   */
+  const entryNodeIdsRef = useRef<ReadonlySet<string>>(new Set());
 
   const resumeOptions = useMemo(
     () => latestFailedRun?.failedNodes ?? [],
@@ -286,21 +317,7 @@ export default function useWorkflowPolling({
         if (currentRunIdRef.current !== runId) return;
         const resolvedSecrets = run.resolvedSecrets;
         const statuses: NodeStatuses = {};
-        for (const [nodeId, entry] of Object.entries(run.nodeStatuses ?? {})) {
-          if (typeof entry === "string") {
-            statuses[nodeId] = { status: entry };
-            continue;
-          }
-          if (typeof entry === "object" && entry !== null) {
-            const status = (entry as Record<string, unknown>).status;
-            if (typeof status === "string") {
-              statuses[nodeId] = {
-                status,
-                result: resultFromStatusEntry(entry),
-              };
-            }
-          }
-        }
+        applyRunNodeStatuses(statuses, run.nodeStatuses);
         applyRunResults(statuses, run.results ?? [], resolvedSecrets);
         setNodes((nds) => selectiveNodeUpdate(nds, statuses));
       } catch {
@@ -333,6 +350,11 @@ export default function useWorkflowPolling({
   const handleEvent = useCallback(
     (event: RunProgressEvent) => {
       if (event.kind === "node.status") {
+        // The entry point was released locally when the run started, because
+        // its real event predates this subscription. On a machine where it does
+        // land, it is that same fact arriving late; releasing it a second time
+        // would restart the clock on the traversals leaving Start.
+        if (entryNodeIdsRef.current.has(event.nodeId)) return;
         // Queued, not applied. The runner reports a 200ms node as running and
         // done inside one frame; the canvas spaces those out so the edge
         // leading into it has somewhere to happen.
@@ -468,6 +490,11 @@ export default function useWorkflowPolling({
         // context for this one.
         choreography.reset();
         runFinishedRef.current = false;
+        // Recomputed per run, and before the subscription exists, so the filter
+        // in `handleEvent` is already in place for the first event that lands.
+        entryNodeIdsRef.current = new Set(
+          nodes.filter((node) => node.type === "start").map((node) => node.id),
+        );
         setNodes((nds) =>
           nds.map((node) => ({
             ...node,
@@ -505,6 +532,22 @@ export default function useWorkflowPolling({
         currentRunIdRef.current = run.runId;
         setIsRunning(true);
         unsubscribeRef.current = onRunProgress(run.runId, handleEvent);
+
+        // The entry point's result is the one event this subscription can never
+        // receive. The progress channel is keyed by runId, so it cannot be
+        // opened until `runs.create` has replied — and the runner, which starts
+        // the run inside that same call, has already stamped the start node as
+        // passed by the time the reply crosses back. Its status therefore only
+        // arrived with the end-of-run hydration, which left every edge out of
+        // Start grey for the whole run while the rest of the canvas lit up.
+        //
+        // Nothing has to be told to the canvas here: a run beginning *is* the
+        // entry point passing, and this side knows the moment it began. The
+        // node goes through the same playback as any other, so the traversal
+        // out of Start is drawn rather than snapped.
+        for (const nodeId of entryNodeIdsRef.current) {
+          choreography.enqueue({ nodeId, status: "success" });
+        }
       } catch (error) {
         const detail =
           error instanceof IpcError
@@ -625,6 +668,7 @@ export default function useWorkflowPolling({
         const fullRun = await apiweave.runs.get(workspaceId, run.runId);
         const resolvedSecrets = fullRun.resolvedSecrets;
         const statuses: NodeStatuses = {};
+        applyRunNodeStatuses(statuses, fullRun.nodeStatuses);
         applyRunResults(statuses, fullRun.results ?? [], resolvedSecrets);
         // Not paced: opening a finished run is reading a record, not watching
         // it happen. Dropping the queue first stops a still-draining playback

@@ -35,14 +35,18 @@ export const TERMINAL_NODE_PRESETS = {
 /**
  * The shell shared by `start` and `end`.
  *
- * Both are the same node: an identity tile, a one-line rest label, a single
- * handle, and a sentence of prose behind the chevron. They carry no config and
- * never run, so they never grow a run strip. Everything that differs between
- * them is a prop.
+ * Both are the same node: an identity tile, a one-line label, a single handle,
+ * and a sentence of prose behind the chevron. They carry no config and execute
+ * nothing, but the run still passes through them, and a node the run reached
+ * reports it the same way every other node does — the check, the border, the
+ * settling glow, and the socket colour the outgoing edge agrees with.
+ *
+ * Everything that differs between them is a prop.
  */
 export function TerminalNode({
   nodeId,
   selected,
+  status = "idle",
   title,
   icon,
   tileHue,
@@ -51,19 +55,27 @@ export function TerminalNode({
   handleLeft = false,
   handleRight = false,
 }: TerminalNodeProps) {
+  // The only line this node ever shows, in every state. A terminal node has no
+  // result to report beyond having been reached, so it is handed over as the
+  // resting identity *and* as both run-strip lines — otherwise `BaseNode` drops
+  // the rest line the moment the node has a status and leaves the slab blank.
+  const line = { operation: restLine };
+
   return (
     <BaseNode
       title={title}
       icon={icon}
       tileHue={tileHue}
-      status="idle"
+      status={status}
       selected={selected}
       nodeId={nodeId}
       handleLeft={handleLeft}
       handleRight={handleRight}
       collapsible={true}
       defaultExpanded={false}
-      restLine={{ operation: restLine }}
+      restLine={line}
+      activityLine={line}
+      resultSummary={line}
       className="min-w-[160px]"
     >
       {({ isExpanded }) =>

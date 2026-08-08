@@ -225,6 +225,74 @@ describe("Task 20: run progress streams over IPC events", () => {
     });
   });
 
+  /**
+   * The entry point's result is the one event this subscription can never
+   * receive: the progress channel is keyed by runId, so it cannot be opened
+   * until `runs.create` has replied — and the runner, which starts the run
+   * inside that same call, has already stamped the start node as passed by then.
+   * Its status used to arrive only with the end-of-run hydration, which left
+   * every edge out of Start grey for the whole run while the rest of the canvas
+   * lit up. A run beginning *is* the entry point passing, and this side knows
+   * the moment it began.
+   */
+  it("(b3) paints the entry point when the run starts, not when it ends", async () => {
+    nodesBox.nodes = [
+      { id: "start_1", type: "start", position: { x: 0, y: 0 }, data: {} },
+      ...nodesBox.nodes,
+    ];
+
+    const { result } = mount([{ source: "start_1", target: "http_1" }]);
+    await act(async () => {
+      await result.current.runWorkflow();
+    });
+
+    // Nothing has come down the stream — `captured.cb` has not been called.
+    const start = nodesBox.nodes.find((n) => n.id === "start_1");
+    expect(start?.data?.["executionStatus"]).toBe("success");
+  });
+
+  /**
+   * `results` only covers nodes that produced one, and `start`/`end` execute
+   * nothing — so reading a run through `results` alone left the terminal nodes
+   * grey on a run that plainly reached them. `nodeStatuses` is the wider record
+   * and covers both.
+   */
+  it("(b4) a historical run paints the terminal nodes it reached", async () => {
+    nodesBox.nodes = [
+      ...nodesBox.nodes,
+      { id: "end_1", type: "end", position: { x: 0, y: 0 }, data: {} },
+    ];
+    invoke = vi.fn(
+      async (_domain: string, action: string): Promise<ContractResult> => {
+        if (action === "get")
+          return {
+            ok: true,
+            data: { ...runResult, nodeStatuses: { end_1: "passed" } },
+          };
+        if (action === "getLatestFailed") return { ok: true, data: null };
+        return { ok: true, data: {} };
+      },
+    );
+    (window as unknown as Record<string, unknown>).__APIWEAVE_IPC__ = {
+      invoke,
+      onRunProgress: (_runId: string, cb: (e: RunProgressEvent) => void) => {
+        captured.cb = cb;
+        return unsubscribe;
+      },
+    };
+
+    const { result } = mount();
+    await act(async () => {
+      await result.current.loadHistoricalRun({ runId: "run-1" });
+    });
+
+    const end = nodesBox.nodes.find((n) => n.id === "end_1");
+    expect(end?.data?.["executionStatus"]).toBe("success");
+    // The detail path still wins where there is detail to paint.
+    const http = nodesBox.nodes.find((n) => n.id === "http_1");
+    expect(http?.data?.["executionResult"]).toMatchObject({ statusCode: 200 });
+  });
+
   it("(c) the terminal run.finished event stops the stream and clears isRunning", async () => {
     const { result } = mount();
     await act(async () => {
