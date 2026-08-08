@@ -55,12 +55,7 @@ import useCanvasDrop from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import { useClipboardActions } from "../hooks/useClipboardActions";
 import { useHydration } from "../hooks/useHydration";
-import {
-  assertionEdgeColor,
-  canvasToWorkflow,
-  edgeLabelBackground,
-  workflowToCanvas,
-} from "../adapters/workflowCanvas";
+import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
@@ -79,9 +74,6 @@ import { authenticatedFetch } from "../utils/apiweaveClient";
 import useEnvironmentStore, {
   getSelectedEnvironment,
 } from "../stores/EnvironmentStore";
-
-const branchEdgeColor = "var(--aw-branch-edge)";
-const branchLabelColor = "var(--aw-branch-label)";
 
 const NOISE_DATA_URI =
   "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
@@ -567,27 +559,16 @@ export function WorkflowCanvas({
         const isAssertionSource = sourceNode?.type === "assertion";
 
         if (isAssertionSource && params.sourceHandle) {
-          const isPass = params.sourceHandle === "pass";
-          const label = isPass ? "Pass" : "Fail";
-          const color = assertionEdgeColor(params.sourceHandle);
-
+          // No `style`: `CustomEdge` reserves colour for run state, and the
+          // pass/fail socket already identifies the branch. Styling it here
+          // never survived a reload either — `canvasToWorkflow` strips
+          // `style` — so the edge changed appearance between drawing it and
+          // reopening the workflow. Only the label persists.
           const newEdge = {
             id: `reactflow__edge-${params.source}${params.sourceHandle || ""}-${params.target}${params.targetHandle || ""}`,
             ...params,
             type: "custom",
-            label,
-            style: { stroke: color, strokeWidth: 2 },
-            labelStyle: {
-              fill: color,
-              fontWeight: 700,
-              fontSize: 11,
-            },
-            labelBgStyle: {
-              fill: edgeLabelBackground,
-              fillOpacity: 0.95,
-            },
-            labelBgPadding: [6, 4] as [number, number],
-            labelBgBorderRadius: 4,
+            label: params.sourceHandle === "pass" ? "Pass" : "Fail",
           } as Edge<WorkflowCanvasEdgeData>;
           return [...eds, newEdge];
         }
@@ -615,30 +596,16 @@ export function WorkflowCanvas({
                 );
                 return {
                   ...e,
-                  // Not `animated`. ReactFlow's animated flag dashes and
-                  // marches the edge forever, so a canvas with parallel
+                  // Neither `animated` nor `style`. The animated flag dashed
+                  // and marched the edge forever, so a canvas with parallel
                   // branches was in permanent motion whether or not anything
-                  // was running. Motion is reserved for an edge control is
-                  // actually passing through (CustomEdge's travelling dot).
-                  // The reload path in `workflowCanvas.ts` never set it, so
-                  // this also stops branch edges from changing appearance
-                  // between drawing them and reopening the workflow.
-                  style: {
-                    stroke: branchEdgeColor,
-                    strokeWidth: 1,
-                  },
+                  // was running; `style` painted it a fixed colour, which
+                  // `CustomEdge` then treated as the edge's own and never let
+                  // run state overwrite. Neither survived a reload — the paths
+                  // in `workflowCanvas.ts` set neither — so a branch edge also
+                  // changed appearance between drawing it and reopening the
+                  // workflow. The label is the part worth keeping: it persists.
                   label: `Branch ${branchIndex}`,
-                  labelStyle: {
-                    fill: branchLabelColor,
-                    fontWeight: 600,
-                    fontSize: 11,
-                  },
-                  labelBgStyle: {
-                    fill: edgeLabelBackground,
-                    fillOpacity: 0.95,
-                  },
-                  labelBgPadding: [6, 4] as [number, number],
-                  labelBgBorderRadius: 4,
                 } as Edge<WorkflowCanvasEdgeData>;
               }
               return e;
@@ -647,22 +614,7 @@ export function WorkflowCanvas({
               {
                 ...newEdge,
                 type: "custom",
-                style: {
-                  stroke: branchEdgeColor,
-                  strokeWidth: 1,
-                },
                 label: `Branch ${parallelEdges.length}`,
-                labelStyle: {
-                  fill: branchLabelColor,
-                  fontWeight: 600,
-                  fontSize: 11,
-                },
-                labelBgStyle: {
-                  fill: edgeLabelBackground,
-                  fillOpacity: 0.95,
-                },
-                labelBgPadding: [6, 4] as [number, number],
-                labelBgBorderRadius: 4,
               } as Edge<WorkflowCanvasEdgeData>,
             ]);
           return updatedEdges as Edge<WorkflowCanvasEdgeData>[];

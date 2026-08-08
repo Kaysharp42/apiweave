@@ -61,6 +61,16 @@ describe("edge presentation by source status", () => {
     expect(presentationFor("error").stroke).not.toContain("color-mix");
   });
 
+  it("takes its colour from run status alone, never from the branch it is", () => {
+    // The defect this guards: a `pass` edge was painted `--aw-status-success`
+    // at 35% at rest and 55% once traversed. At canvas zoom those are the same
+    // green, so opening a workflow nobody had run showed every pass branch
+    // already lit. The status table is now the only source of edge colour, so
+    // there is no appearance a branch can have before a run reaches it.
+    expect(presentationFor("idle").stroke).toBe("var(--aw-border)");
+    expect(presentationFor("idle").stroke).not.toContain("--aw-status");
+  });
+
   it("never puts a status the run reached behind an unfilled edge", () => {
     // The guard against the defect this table replaced: an edge that reports a
     // terminal status but leaves the overlay hidden would show the source's

@@ -7,15 +7,6 @@ import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 
-export const assertionEdgeColor = (
-  sourceHandle: string | null | undefined,
-): string =>
-  sourceHandle === "pass"
-    ? "var(--aw-status-success)"
-    : "var(--aw-status-error)";
-
-export const edgeLabelBackground = "var(--aw-surface-raised)";
-
 export function workflowToCanvas(workflow: Workflow): CanvasWorkflowState {
   const nodes: Node<WorkflowCanvasNodeData>[] = workflow.nodes.map((node) => ({
     id: node.nodeId,
@@ -35,29 +26,12 @@ export function workflowToCanvas(workflow: Workflow): CanvasWorkflowState {
     targetHandle: edge.targetHandle ?? null,
     label: edge.label,
     type: "custom",
-    ...(edge.sourceHandle === "pass" || edge.sourceHandle === "fail"
-      ? {
-          // Not `animated`. ReactFlow's animated flag dashes and marches the
-          // edge forever, which put the canvas in permanent motion whether or
-          // not anything was running. Pass/fail is carried by colour and label;
-          // motion is reserved for an edge control is actually passing through.
-          style: {
-            stroke: assertionEdgeColor(edge.sourceHandle),
-            strokeWidth: 2,
-          },
-          labelStyle: {
-            fill: assertionEdgeColor(edge.sourceHandle),
-            fontWeight: 700,
-            fontSize: 11,
-          },
-          labelBgStyle: {
-            fill: edgeLabelBackground,
-            fillOpacity: 0.95,
-          },
-          labelBgPadding: [6, 4] as [number, number],
-          labelBgBorderRadius: 4,
-        }
-      : {}),
+    // Deliberately no `style`, and no `animated`. Both are appearance the
+    // canvas has to *earn*: `animated` marched every branch edge forever on a
+    // workflow that had never run, and `style.stroke` painted pass branches in
+    // the success token, which reads as "this path ran and passed" before
+    // anything has run at all. `CustomEdge` takes colour from live run state
+    // only; the branch is identified by the socket the edge leaves.
   }));
 
   return {

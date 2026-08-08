@@ -42,6 +42,22 @@ const ARM_FRACTION = 0.12;
 const IDLE_WIDTH = 1;
 
 /**
+ * Nothing is written on an edge.
+ *
+ * A `pass` branch used to be painted in the success token, which put run
+ * colour on a canvas that had never been run — a resting pass branch was
+ * `--aw-status-success` at 35%, a traversed one the same token at 55%, and
+ * nobody can tell those apart. Colour on an edge now means one thing: control
+ * went through here.
+ *
+ * The branch is identified where it starts, by the pass/fail socket it leaves
+ * (`AssertionNode.tsx` pins those green and red, with a name on hover). A chip
+ * repeating that mid-path was tried and dropped: bezier midpoints sit nowhere
+ * near the edge on a fanned-out graph, so the labels read as free-floating
+ * badges rather than as anything attached to a branch.
+ */
+
+/**
  * An edge takes its state from the node it leaves. Idle plumbing is a
  * hairline; a live edge is the path the run is taking (DESIGN.md §7).
  */
@@ -228,19 +244,13 @@ function CustomEdge({
 
   const presentation = presentationFor(sourceStatus);
 
-  // The assertion pass/fail branches carry their own semantic colour, set by
-  // `workflowCanvas.ts`. That colour labels the *branch*, not the run, so it
-  // shows at rest too — dimmed underneath, full strength once traversed.
-  const semanticStroke = style.stroke;
-  const stroke = semanticStroke ?? presentation.stroke;
+  // Run state is the *only* input to an edge's colour: not the handle it
+  // leaves, and nothing carried on `style` — see the note above the table.
+  const stroke = presentation.stroke;
 
   const { filling, trail, stopFilling } = useEdgeFill(presentation.phase, stroke);
 
-  const restStroke =
-    trail ??
-    (semanticStroke
-      ? `color-mix(in srgb, ${semanticStroke} 35%, transparent)`
-      : "var(--aw-border)");
+  const restStroke = trail ?? "var(--aw-border)";
 
   const onEdgeDelete = (event: React.MouseEvent) => {
     event.stopPropagation();
