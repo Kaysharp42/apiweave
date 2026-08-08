@@ -113,4 +113,20 @@ describe("ResponseInspector save-as-variable", () => {
     render(<ResponseInspector response={response} />);
     expect(screen.queryByTitle("Save as variable")).toBeNull();
   });
+
+  test("marks the root row when the whole body is stored, without hiding its children", async () => {
+    const onRemoveExtractor = vi.fn();
+    renderTree({
+      extractors: { body: "response.body" },
+      onRemoveExtractor,
+    });
+
+    expect(await screen.findByTitle("Remove {{variables.body}}")).toHaveTextContent(
+      "{{body}}",
+    );
+    // The chip wraps the collection's own rendered children rather than
+    // replacing them.
+    expect(screen.getByText("breed")).toBeInTheDocument();
+    expect(screen.getByText('"Labrador"')).toBeInTheDocument();
+  });
 });

@@ -13,7 +13,6 @@ import type { ExtractorResolution } from "../types/ExtractorResolution"
  * resolves at run time.
  */
 export const EXTRACTOR_ROOT = "response"
-export const EXTRACTOR_BODY_ROOT = "response.body"
 
 const ARRAY_SEGMENT_RE = /^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/
 const IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/

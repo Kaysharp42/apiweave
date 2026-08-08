@@ -2,7 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
-import { isValidVariableName } from "../../utils/extractorVariableName";
+import {
+  INVALID_VARIABLE_NAME_MESSAGE,
+  isValidVariableName,
+} from "../../utils/extractorVariableName";
 import type { SaveVariablePopoverProps } from "../../types";
 
 const POPOVER_WIDTH = 288;
@@ -25,11 +28,11 @@ function computePopoverPosition(
   );
   const fitsBelow =
     anchorRect.bottom + 6 + height <= window.innerHeight - VIEWPORT_MARGIN;
+  const top = fitsBelow
+    ? anchorRect.bottom + 6
+    : Math.max(VIEWPORT_MARGIN, anchorRect.top - height - 6);
 
-  return {
-    top: fitsBelow ? anchorRect.bottom + 6 : anchorRect.top - height - 6,
-    left,
-  };
+  return { top, left };
 }
 
 interface NameValidation {
@@ -45,10 +48,7 @@ function validateVariableName(
     return { error: "Give the variable a name.", overwrites: false };
   }
   if (!isValidVariableName(trimmedName)) {
-    return {
-      error: "Use letters, digits and underscores, starting with a letter.",
-      overwrites: false,
-    };
+    return { error: INVALID_VARIABLE_NAME_MESSAGE, overwrites: false };
   }
   return { error: undefined, overwrites: existingNames.includes(trimmedName) };
 }

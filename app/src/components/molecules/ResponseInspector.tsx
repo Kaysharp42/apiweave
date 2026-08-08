@@ -6,7 +6,6 @@ import {
 } from "react";
 import {
   JsonEditor,
-  isCollection,
   type CustomNodeDefinition,
   type CustomNodeProps,
   type JsonEditorProps,
@@ -244,10 +243,15 @@ function SaveVariableButton({ nodeData }: { nodeData: NodeData }) {
  * Marks a value that is already stored, so the mapping stays visible in the
  * response itself rather than only in the settings tab. The chip removes the
  * variable it names.
+ *
+ * json-edit-react hands value nodes their rendered row via `originalNode` and
+ * collection nodes their rendered children via `children` -- never both --
+ * so this has to fall back between them to cover the whole-body save too.
  */
 function ExtractedValueNode({
   nodeData,
   originalNode,
+  children,
   customNodeProps,
 }: CustomNodeProps<ExtractedChipNodeProps>) {
   const build = buildBodyExtractorPath(nodeData.path);
@@ -257,7 +261,7 @@ function ExtractedValueNode({
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      {originalNode}
+      {originalNode ?? children}
       {variableNames.map((variableName) => (
         <button
           key={variableName}
@@ -537,7 +541,6 @@ export function ResponseInspector({
     return [
       {
         condition: (nodeData) => {
-          if (isCollection(nodeData.value)) return false;
           const build = buildBodyExtractorPath(nodeData.path);
           return build.supported && extractorNamesByPath.has(build.path);
         },

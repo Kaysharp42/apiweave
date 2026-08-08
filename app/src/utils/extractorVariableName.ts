@@ -4,6 +4,10 @@
  */
 const VARIABLE_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** Shown wherever {@link isValidVariableName} rejects a non-empty name. */
+export const INVALID_VARIABLE_NAME_MESSAGE =
+  "Use letters, digits and underscores, starting with a letter.";
+
 export function isValidVariableName(name: string): boolean {
   return VARIABLE_NAME_RE.test(name);
 }

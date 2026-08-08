@@ -2,7 +2,10 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
-import { isValidVariableName } from "../../utils/extractorVariableName";
+import {
+  INVALID_VARIABLE_NAME_MESSAGE,
+  isValidVariableName,
+} from "../../utils/extractorVariableName";
 import type { ExtractorFormProps } from "../../types";
 
 const RESPONSE_PATH_PREFIX = "response.body.";
@@ -22,7 +25,7 @@ export function ExtractorForm({ onAdd, existingNames = [] }: ExtractorFormProps)
   const nameError =
     trimmedName === "" || isValidVariableName(trimmedName)
       ? undefined
-      : "Use letters, digits and underscores, starting with a letter.";
+      : INVALID_VARIABLE_NAME_MESSAGE;
   const canAdd = !nameError && trimmedName !== "" && responsePath.trim() !== "";
 
   const handleAdd = () => {

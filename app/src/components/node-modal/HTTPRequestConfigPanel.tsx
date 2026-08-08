@@ -143,7 +143,9 @@ function ExtractorRow({
   onRemove: () => void;
 }) {
   const resolution =
-    lastResult && "response" in lastResult
+    typeof lastResult === "object" &&
+    lastResult !== null &&
+    "response" in lastResult
       ? resolveExtractorPath(lastResult, responsePath)
       : undefined;
 
