@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState,
   type ComponentType,
@@ -36,7 +35,10 @@ import type {
   TabItem,
   ResponseInspectorProps,
 } from "../../types";
+import { useDarkMode } from "../../hooks/useDarkMode";
+import { useJsonEditorDarkTheme } from "../../hooks/useJsonEditorDarkTheme";
 import { suggestVariableName } from "../../utils/extractorVariableName";
+import { previewValue } from "../../utils/previewValue";
 import { Badge } from "../atoms/Badge";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
@@ -205,18 +207,6 @@ function stringifyBody(body: unknown, rawBody?: string): string {
 }
 
 const VALUE_PREVIEW_LIMIT = 48;
-
-function previewExtractorValue(value: unknown): string {
-  let text: string;
-  try {
-    text = JSON.stringify(value) ?? String(value);
-  } catch {
-    text = String(value);
-  }
-  return text.length > VALUE_PREVIEW_LIMIT
-    ? `${text.slice(0, VALUE_PREVIEW_LIMIT - 1)}…`
-    : text;
-}
 
 type ExtractedChipNodeProps = {
   readonly namesByPath: ReadonlyMap<string, readonly string[]>;
@@ -481,13 +471,7 @@ export function ResponseInspector({
   const [copied, setCopied] = useState(false);
   const [pendingExtraction, setPendingExtraction] =
     useState<PendingExtraction | null>(null);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    try {
-      return document.documentElement.classList.contains("dark");
-    } catch {
-      return false;
-    }
-  });
+  const isDarkMode = useDarkMode();
 
   const effectiveMetadata = getEffectiveMetadata(response, metadata);
   const contentType = getContentType(response, metadata);
@@ -588,7 +572,7 @@ export function ResponseInspector({
           setPendingExtraction({
             segments: [...nodeData.path],
             path: build.path,
-            valuePreview: previewExtractorValue(nodeData.value),
+            valuePreview: previewValue(nodeData.value, VALUE_PREVIEW_LIMIT),
             anchorRect: event.currentTarget.getBoundingClientRect(),
           });
         },
@@ -614,46 +598,7 @@ export function ResponseInspector({
     });
   };
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const syncDarkMode = () => {
-      setIsDarkMode(root.classList.contains("dark"));
-    };
-
-    const observer = new MutationObserver(syncDarkMode);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-
-    return () => observer.disconnect();
-  }, []);
-
-  const jsonEditorTheme = useMemo(() => {
-    if (!isDarkMode) return undefined;
-
-    return {
-      container: {
-        backgroundColor: "var(--color-surface-dark-raised)",
-        color: "var(--color-text-primary-dark)",
-      },
-      collection: { backgroundColor: "transparent" },
-      collectionInner: { backgroundColor: "transparent" },
-      collectionElement: { backgroundColor: "transparent" },
-      property: { color: "var(--color-text-primary-dark)" },
-      bracket: { color: "var(--color-text-secondary-dark)" },
-      itemCount: { color: "var(--color-text-muted-dark)" },
-      iconCollection: { color: "var(--aw-primary)" },
-      string: { color: "var(--color-success)" },
-      number: { color: "var(--color-info)" },
-      boolean: { color: "var(--color-primary-dark)" },
-      null: { color: "var(--color-warning)" },
-      input: {
-        backgroundColor: "var(--color-surface-dark-overlay)",
-        color: "var(--color-text-primary-dark)",
-        border: "1px solid var(--color-border-dark)",
-      },
-      inputHighlight: { backgroundColor: "var(--color-surface-dark-overlay)" },
-      error: { color: "var(--color-error)" },
-    } as const;
-  }, [isDarkMode]);
+  const jsonEditorTheme = useJsonEditorDarkTheme(isDarkMode);
 
   if (!response) {
     return (

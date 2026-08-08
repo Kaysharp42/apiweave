@@ -39,6 +39,8 @@ import { EmptyState } from "../molecules/EmptyState";
 import { ExtractorForm } from "../molecules/ExtractorForm";
 import { FormField } from "../molecules/FormField";
 import { KeyValueEditor } from "../molecules/KeyValueEditor";
+import { useDarkMode } from "../../hooks/useDarkMode";
+import { previewValue } from "../../utils/previewValue";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import type {
   AuthConfig,
@@ -88,22 +90,6 @@ const Link2CardIcon = createCardIcon(Link2);
 const PuzzleCardIcon = createCardIcon(Puzzle);
 const TypeCardIcon = createCardIcon(Type);
 
-function useDarkMode(): boolean {
-  const [isDarkMode, setIsDarkMode] = useState(() =>
-    document.documentElement.classList.contains("dark"),
-  );
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const syncDarkMode = () => setIsDarkMode(root.classList.contains("dark"));
-    const observer = new MutationObserver(syncDarkMode);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
-
-  return isDarkMode;
-}
-
 function buildPreviewUrl(url: string, pairs: KeyValuePair[]): string {
   const activePairs = pairs.filter((pair) => pair.key.trim());
   if (activePairs.length === 0)
@@ -139,18 +125,6 @@ function HighlightedTemplateText({ value }: { value: string }) {
 }
 
 const EXTRACTOR_PREVIEW_LIMIT = 40;
-
-function previewExtractedValue(value: unknown): string {
-  let text: string;
-  try {
-    text = JSON.stringify(value) ?? String(value);
-  } catch {
-    text = String(value);
-  }
-  return text.length > EXTRACTOR_PREVIEW_LIMIT
-    ? `${text.slice(0, EXTRACTOR_PREVIEW_LIMIT - 1)}…`
-    : text;
-}
 
 /**
  * One stored variable. Resolving the path against the node's last result turns
@@ -211,7 +185,8 @@ function ExtractorRow({
         <p className="mt-1 truncate font-mono text-[11px]">
           {resolution.failureReason === null ? (
             <span className="text-status-success dark:text-status-success-dark">
-              Last response: {previewExtractedValue(resolution.value)}
+              Last response:{" "}
+              {previewValue(resolution.value, EXTRACTOR_PREVIEW_LIMIT)}
             </span>
           ) : (
             <span className="text-status-warning dark:text-status-warning-dark">

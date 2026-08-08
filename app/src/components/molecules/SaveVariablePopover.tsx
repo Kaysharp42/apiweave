@@ -8,6 +8,51 @@ import type { SaveVariablePopoverProps } from "../../types";
 const POPOVER_WIDTH = 288;
 const VIEWPORT_MARGIN = 8;
 
+interface PopoverPosition {
+  readonly top: number;
+  readonly left: number;
+}
+
+/** Anchors the popover under the clicked row, flipping above it and clamping
+ * horizontally so it never renders past the viewport edge. */
+function computePopoverPosition(
+  anchorRect: DOMRect,
+  height: number,
+): PopoverPosition {
+  const left = Math.min(
+    Math.max(VIEWPORT_MARGIN, anchorRect.left - POPOVER_WIDTH / 2),
+    window.innerWidth - POPOVER_WIDTH - VIEWPORT_MARGIN,
+  );
+  const fitsBelow =
+    anchorRect.bottom + 6 + height <= window.innerHeight - VIEWPORT_MARGIN;
+
+  return {
+    top: fitsBelow ? anchorRect.bottom + 6 : anchorRect.top - height - 6,
+    left,
+  };
+}
+
+interface NameValidation {
+  readonly error: string | undefined;
+  readonly overwrites: boolean;
+}
+
+function validateVariableName(
+  trimmedName: string,
+  existingNames: readonly string[],
+): NameValidation {
+  if (trimmedName === "") {
+    return { error: "Give the variable a name.", overwrites: false };
+  }
+  if (!isValidVariableName(trimmedName)) {
+    return {
+      error: "Use letters, digits and underscores, starting with a letter.",
+      overwrites: false,
+    };
+  }
+  return { error: undefined, overwrites: existingNames.includes(trimmedName) };
+}
+
 /**
  * Names the variable for a value picked out of the response tree.
  *
@@ -33,16 +78,7 @@ export function SaveVariablePopover({
 
   useLayoutEffect(() => {
     const height = containerRef.current?.offsetHeight ?? 0;
-    const left = Math.min(
-      Math.max(VIEWPORT_MARGIN, anchorRect.left - POPOVER_WIDTH / 2),
-      window.innerWidth - POPOVER_WIDTH - VIEWPORT_MARGIN,
-    );
-    const fitsBelow =
-      anchorRect.bottom + 6 + height <= window.innerHeight - VIEWPORT_MARGIN;
-    setPosition({
-      top: fitsBelow ? anchorRect.bottom + 6 : anchorRect.top - height - 6,
-      left,
-    });
+    setPosition(computePopoverPosition(anchorRect, height));
   }, [anchorRect]);
 
   useEffect(() => {
@@ -70,13 +106,10 @@ export function SaveVariablePopover({
   }, [onCancel]);
 
   const trimmedName = name.trim();
-  const error =
-    trimmedName === ""
-      ? "Give the variable a name."
-      : isValidVariableName(trimmedName)
-        ? undefined
-        : "Use letters, digits and underscores, starting with a letter.";
-  const overwrites = !error && existingNames.includes(trimmedName);
+  const { error, overwrites } = validateVariableName(
+    trimmedName,
+    existingNames,
+  );
 
   const submit = () => {
     if (error) return;
@@ -109,7 +142,7 @@ export function SaveVariablePopover({
         aria-label="Variable name"
         className="font-mono"
         {...(error ? { error } : {})}
-        {...(!error && overwrites
+        {...(overwrites
           ? { helperText: `Replaces the existing "${trimmedName}".` }
           : {})}
       />

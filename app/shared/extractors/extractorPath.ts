@@ -18,6 +18,45 @@ export const EXTRACTOR_BODY_ROOT = "response.body"
 const ARRAY_SEGMENT_RE = /^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/
 const IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 
+/** The result of resolving a single path segment against a container value. */
+type SegmentStep =
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly failureReason: NonNullable<ExtractorResolution["failureReason"]> }
+
+/** Resolves an `key[index]` segment against a container already known to be an object. */
+function resolveArraySegment(
+  container: Record<string, unknown>,
+  match: RegExpMatchArray,
+): SegmentStep {
+  const key = match[1]!
+  if (!(key in container)) return { ok: false, failureReason: "path-missing" }
+
+  const candidate = container[key]
+  if (!Array.isArray(candidate)) return { ok: false, failureReason: "type-mismatch" }
+
+  const arrayIndex = Number.parseInt(match[2]!, 10)
+  if (arrayIndex >= candidate.length) return { ok: false, failureReason: "path-missing" }
+
+  return { ok: true, value: candidate[arrayIndex] }
+}
+
+/** Resolves a plain key segment against a container already known to be an object. */
+function resolvePlainSegment(container: Record<string, unknown>, key: string): SegmentStep {
+  if (!(key in container)) return { ok: false, failureReason: "path-missing" }
+  return { ok: true, value: container[key] }
+}
+
+/** Resolves one dot-separated segment of an extractor path against the current value. */
+function resolvePathSegment(value: unknown, part: string): SegmentStep {
+  if (typeof value !== "object" || value === null) {
+    return { ok: false, failureReason: "type-mismatch" }
+  }
+
+  const container = value as Record<string, unknown>
+  const arrayMatch = part.match(ARRAY_SEGMENT_RE)
+  return arrayMatch ? resolveArraySegment(container, arrayMatch) : resolvePlainSegment(container, part)
+}
+
 /**
  * Walks `path` over `data`. Shared by the runner (which extracts the real value
  * after a request) and the renderer (which previews what an extractor would
@@ -32,26 +71,10 @@ export function resolveExtractorPath(data: unknown, path: string): ExtractorReso
   let value: unknown = data
 
   for (let partIndex = 0; partIndex < parts.length; partIndex++) {
-    const part = parts[partIndex]!
-    const arrayMatch = part.match(ARRAY_SEGMENT_RE)
+    const step = resolvePathSegment(value, parts[partIndex]!)
+    if (!step.ok) return { value: undefined, failureReason: step.failureReason }
 
-    if (typeof value !== "object" || value === null) {
-      return { value: undefined, failureReason: "type-mismatch" }
-    }
-
-    if (arrayMatch) {
-      const key = arrayMatch[1]!
-      if (!(key in value)) return { value: undefined, failureReason: "path-missing" }
-      const candidate = (value as Record<string, unknown>)[key]
-      if (!Array.isArray(candidate)) return { value: undefined, failureReason: "type-mismatch" }
-      const arrayIndex = Number.parseInt(arrayMatch[2]!, 10)
-      if (arrayIndex >= candidate.length) return { value: undefined, failureReason: "path-missing" }
-      value = candidate[arrayIndex]
-    } else {
-      if (!(part in value)) return { value: undefined, failureReason: "path-missing" }
-      value = (value as Record<string, unknown>)[part]
-    }
-
+    value = step.value
     if (value === undefined) return { value: undefined, failureReason: "path-missing" }
     if (value === null && partIndex < parts.length - 1) {
       return { value: undefined, failureReason: "type-mismatch" }
