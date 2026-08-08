@@ -1,5 +1,18 @@
-import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { JsonEditor } from "json-edit-react";
+import {
+  useMemo,
+  useState,
+  type ComponentType,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import {
+  JsonEditor,
+  isCollection,
+  type CustomNodeDefinition,
+  type CustomNodeProps,
+  type JsonEditorProps,
+  type NodeData,
+} from "json-edit-react";
+import { toast } from "sonner";
 import {
   Braces,
   Clock,
@@ -12,14 +25,20 @@ import {
   ListFilter,
   Network,
   TableProperties,
+  Variable,
   type LucideIcon,
 } from "lucide-react";
+import { buildBodyExtractorPath } from "@shared/extractors/extractorPath";
 import type {
   ApiResponse,
   NodeResultMetadata,
   TabItem,
   ResponseInspectorProps,
 } from "../../types";
+import { useDarkMode } from "../../hooks/useDarkMode";
+import { useJsonEditorDarkTheme } from "../../hooks/useJsonEditorDarkTheme";
+import { suggestVariableName } from "../../utils/extractorVariableName";
+import { previewValue } from "../../utils/previewValue";
 import { Badge } from "../atoms/Badge";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
@@ -27,6 +46,7 @@ import { Input } from "../atoms/Input";
 import { Card } from "./Card";
 import { EmptyState } from "./EmptyState";
 import { PanelTabs } from "./PanelTabs";
+import { SaveVariablePopover } from "./SaveVariablePopover";
 
 type ResponseInspectorTab =
   | "tree"
@@ -186,53 +206,78 @@ function stringifyBody(body: unknown, rawBody?: string): string {
   }
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+const VALUE_PREVIEW_LIMIT = 48;
+
+type ExtractedChipNodeProps = {
+  readonly namesByPath: ReadonlyMap<string, readonly string[]>;
+  readonly onRemove: ((variableName: string) => void) | undefined;
+};
+
+/**
+ * The icon that opens the naming popover, rendered by json-edit-react into the
+ * same hover row as its built-in copy button.
+ */
+function SaveVariableButton({ nodeData }: { nodeData: NodeData }) {
+  const supported = buildBodyExtractorPath(nodeData.path).supported;
+  return (
+    <span
+      title={
+        supported
+          ? "Save as variable"
+          : "This value cannot be addressed by an extractor path"
+      }
+      className="jer-icon flex items-center"
+    >
+      <Variable
+        className={`h-3.5 w-3.5 ${
+          supported
+            ? "text-primary dark:text-primary-light"
+            : "text-text-muted dark:text-text-muted-dark"
+        }`}
+        aria-hidden="true"
+      />
+    </span>
+  );
 }
 
-function matchesFilter(value: unknown, filterQuery: string): boolean {
-  if (!filterQuery) return true;
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return String(value).toLowerCase().includes(filterQuery);
-  }
-  if (value === null) return "null".includes(filterQuery);
-  return false;
+/**
+ * Marks a value that is already stored, so the mapping stays visible in the
+ * response itself rather than only in the settings tab. The chip removes the
+ * variable it names.
+ */
+function ExtractedValueNode({
+  nodeData,
+  originalNode,
+  customNodeProps,
+}: CustomNodeProps<ExtractedChipNodeProps>) {
+  const build = buildBodyExtractorPath(nodeData.path);
+  const variableNames = build.supported
+    ? (customNodeProps?.namesByPath.get(build.path) ?? [])
+    : [];
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      {originalNode}
+      {variableNames.map((variableName) => (
+        <button
+          key={variableName}
+          type="button"
+          title={`Remove {{variables.${variableName}}}`}
+          onClick={() => customNodeProps?.onRemove?.(variableName)}
+          className="rounded-sm border border-primary/40 bg-primary/10 px-1.5 py-px font-mono text-[10px] leading-4 text-primary transition-colors duration-[var(--aw-transition-fast)] hover:border-status-error hover:text-status-error dark:border-primary-light/40 dark:bg-primary-light/10 dark:text-primary-light dark:hover:border-[var(--aw-status-error)] dark:hover:text-[var(--aw-status-error)]"
+        >
+          {`{{${variableName}}}`}
+        </button>
+      ))}
+    </span>
+  );
 }
 
-function filterJsonValue(value: unknown, filterQuery: string): unknown {
-  const normalizedFilter = filterQuery.trim().toLowerCase();
-  if (!normalizedFilter) return value;
-
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => filterJsonValue(entry, normalizedFilter))
-      .filter((entry) => entry !== undefined);
-  }
-
-  if (isPlainRecord(value)) {
-    const entries = Object.entries(value).reduce<Record<string, unknown>>(
-      (filtered, [key, entryValue]) => {
-        const filteredValue = filterJsonValue(entryValue, normalizedFilter);
-        if (
-          key.toLowerCase().includes(normalizedFilter) ||
-          filteredValue !== undefined ||
-          matchesFilter(entryValue, normalizedFilter)
-        ) {
-          filtered[key] =
-            filteredValue === undefined ? entryValue : filteredValue;
-        }
-        return filtered;
-      },
-      {},
-    );
-    return Object.keys(entries).length > 0 ? entries : undefined;
-  }
-
-  return matchesFilter(value, normalizedFilter) ? value : undefined;
+interface PendingExtraction {
+  readonly segments: ReadonlyArray<string | number>;
+  readonly path: string;
+  readonly valuePreview: string;
+  readonly anchorRect: DOMRect;
 }
 
 function formatBytes(bytes: number | undefined): string {
@@ -415,19 +460,18 @@ export function ResponseInspector({
   metadata,
   rawBody,
   filterQuery = "",
+  extractors,
+  onAddExtractor,
+  onRemoveExtractor,
 }: ResponseInspectorProps) {
   const [activeTab, setActiveTab] = useState<ResponseInspectorTab>(() =>
     getDefaultTab(response, metadata),
   );
   const [headerFilter, setHeaderFilter] = useState("");
   const [copied, setCopied] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    try {
-      return document.documentElement.classList.contains("dark");
-    } catch {
-      return false;
-    }
-  });
+  const [pendingExtraction, setPendingExtraction] =
+    useState<PendingExtraction | null>(null);
+  const isDarkMode = useDarkMode();
 
   const effectiveMetadata = getEffectiveMetadata(response, metadata);
   const contentType = getContentType(response, metadata);
@@ -449,46 +493,112 @@ export function ResponseInspector({
     });
   }, [headerFilter, response]);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const syncDarkMode = () => {
-      setIsDarkMode(root.classList.contains("dark"));
+  const extractorNamesByPath = useMemo(() => {
+    const namesByPath = new Map<string, string[]>();
+    Object.entries(extractors ?? {}).forEach(([variableName, path]) => {
+      const names = namesByPath.get(path);
+      if (names) names.push(variableName);
+      else namesByPath.set(path, [variableName]);
+    });
+    return namesByPath;
+  }, [extractors]);
+
+  const removeExtractor = useMemo(
+    () =>
+      onRemoveExtractor
+        ? (variableName: string) => {
+            const previousPath = extractors?.[variableName];
+            onRemoveExtractor(variableName);
+            toast(`Removed {{variables.${variableName}}}`, {
+              ...(previousPath && onAddExtractor
+                ? {
+                    action: {
+                      label: "Undo",
+                      onClick: () => onAddExtractor(variableName, previousPath),
+                    },
+                  }
+                : {}),
+            });
+          }
+        : undefined,
+    [extractors, onAddExtractor, onRemoveExtractor],
+  );
+
+  const treeCustomNodes = useMemo<
+    CustomNodeDefinition<ExtractedChipNodeProps>[]
+  >(() => {
+    if (extractorNamesByPath.size === 0) return [];
+
+    const chipProps: ExtractedChipNodeProps = {
+      namesByPath: extractorNamesByPath,
+      onRemove: removeExtractor,
     };
 
-    const observer = new MutationObserver(syncDarkMode);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-
-    return () => observer.disconnect();
-  }, []);
-
-  const jsonEditorTheme = useMemo(() => {
-    if (!isDarkMode) return undefined;
-
-    return {
-      container: {
-        backgroundColor: "var(--color-surface-dark-raised)",
-        color: "var(--color-text-primary-dark)",
+    return [
+      {
+        condition: (nodeData) => {
+          if (isCollection(nodeData.value)) return false;
+          const build = buildBodyExtractorPath(nodeData.path);
+          return build.supported && extractorNamesByPath.has(build.path);
+        },
+        element: ExtractedValueNode,
+        customNodeProps: chipProps,
+        passOriginalNode: true,
+        showOnView: true,
+        showOnEdit: false,
+        showEditTools: true,
+        showInTypesSelector: false,
       },
-      collection: { backgroundColor: "transparent" },
-      collectionInner: { backgroundColor: "transparent" },
-      collectionElement: { backgroundColor: "transparent" },
-      property: { color: "var(--color-text-primary-dark)" },
-      bracket: { color: "var(--color-text-secondary-dark)" },
-      itemCount: { color: "var(--color-text-muted-dark)" },
-      iconCollection: { color: "var(--aw-primary)" },
-      string: { color: "var(--color-success)" },
-      number: { color: "var(--color-info)" },
-      boolean: { color: "var(--color-primary-dark)" },
-      null: { color: "var(--color-warning)" },
-      input: {
-        backgroundColor: "var(--color-surface-dark-overlay)",
-        color: "var(--color-text-primary-dark)",
-        border: "1px solid var(--color-border-dark)",
+    ];
+  }, [extractorNamesByPath, removeExtractor]);
+
+  const treeCustomButtons = useMemo<
+    NonNullable<JsonEditorProps["customButtons"]>
+  >(() => {
+    if (!onAddExtractor) return [];
+
+    return [
+      {
+        Element: SaveVariableButton,
+        onClick: (nodeData: NodeData, event: ReactMouseEvent) => {
+          const build = buildBodyExtractorPath(nodeData.path);
+          if (!build.supported) {
+            toast.error("Cannot save this value", {
+              description: build.reason,
+            });
+            return;
+          }
+
+          setPendingExtraction({
+            segments: [...nodeData.path],
+            path: build.path,
+            valuePreview: previewValue(nodeData.value, VALUE_PREVIEW_LIMIT),
+            anchorRect: event.currentTarget.getBoundingClientRect(),
+          });
+        },
       },
-      inputHighlight: { backgroundColor: "var(--color-surface-dark-overlay)" },
-      error: { color: "var(--color-error)" },
-    } as const;
-  }, [isDarkMode]);
+    ];
+  }, [onAddExtractor]);
+
+  const saveVariable = (variableName: string) => {
+    if (!pendingExtraction || !onAddExtractor) return;
+
+    const replacedPath = extractors?.[variableName];
+    onAddExtractor(variableName, pendingExtraction.path);
+    setPendingExtraction(null);
+    toast.success(`Saved {{variables.${variableName}}}`, {
+      description: pendingExtraction.path,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          if (replacedPath) onAddExtractor(variableName, replacedPath);
+          else onRemoveExtractor?.(variableName);
+        },
+      },
+    });
+  };
+
+  const jsonEditorTheme = useJsonEditorDarkTheme(isDarkMode);
 
   if (!response) {
     return (
@@ -511,7 +621,15 @@ export function ResponseInspector({
   }
 
   const bodyFormat = effectiveMetadata?.bodyFormat;
-  const treeData = filterJsonValue(response.body ?? null, filterQuery) ?? null;
+  // The tree is fed the unfiltered body and json-edit-react hides the
+  // non-matching rows itself, so every node keeps its real path -- filtering the
+  // data first would renumber array elements under the user's feet and produce
+  // extractor paths pointing at the wrong item.
+  const treeData = (response.body ?? null) as JsonEditorProps["data"];
+  const searchProps = {
+    searchText: filterQuery,
+    searchFilter: "all",
+  } as const;
   const metricRows = getMetricRows(response, effectiveMetadata, bodyText);
   const showJsonPreview = isJsonContent(contentType, response.body, bodyFormat);
   const showHtmlPreview = isHtmlContent(contentType, bodyFormat);
@@ -662,6 +780,7 @@ export function ResponseInspector({
               restrictAdd={true}
               restrictDelete={true}
               rootName="body"
+              {...searchProps}
               {...(jsonEditorTheme ? { theme: jsonEditorTheme } : {})}
             />
           </div>
@@ -777,6 +896,19 @@ export function ResponseInspector({
           <Card
             title="Response body tree"
             icon={BracesCardIcon}
+            {...(onAddExtractor
+              ? {
+                  headerActions: (
+                    <span className="flex items-center gap-1.5 text-[11px] text-text-muted dark:text-text-muted-dark">
+                      <Variable
+                        className="h-3.5 w-3.5 text-primary dark:text-primary-light"
+                        aria-hidden="true"
+                      />
+                      Hover a value to store it as a variable
+                    </span>
+                  ),
+                }
+              : {})}
             className="flex min-h-0 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1"
           >
             <div className="h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
@@ -786,6 +918,15 @@ export function ResponseInspector({
                 restrictAdd={true}
                 restrictDelete={true}
                 rootName="body"
+                {...searchProps}
+                customButtons={treeCustomButtons}
+                customNodeDefinitions={
+                  // The library's prop widens every definition to
+                  // `Record<string, any>` custom props; ours are typed.
+                  treeCustomNodes as unknown as NonNullable<
+                    JsonEditorProps["customNodeDefinitions"]
+                  >
+                }
                 {...(jsonEditorTheme ? { theme: jsonEditorTheme } : {})}
               />
             </div>
@@ -831,6 +972,21 @@ export function ResponseInspector({
           </div>
         )}
       </div>
+
+      {pendingExtraction && onAddExtractor && (
+        <SaveVariablePopover
+          anchorRect={pendingExtraction.anchorRect}
+          path={pendingExtraction.path}
+          valuePreview={pendingExtraction.valuePreview}
+          initialName={suggestVariableName(
+            pendingExtraction.segments,
+            Object.keys(extractors ?? {}),
+          )}
+          existingNames={Object.keys(extractors ?? {})}
+          onSave={saveVariable}
+          onCancel={() => setPendingExtraction(null)}
+        />
+      )}
     </div>
   );
 }

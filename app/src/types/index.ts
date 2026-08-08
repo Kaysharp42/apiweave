@@ -31,6 +31,7 @@ export type { KeyValuePair } from "@shared/types/KeyValuePair";
 export type { WorkspaceEmptyStateProps } from "./WorkspaceEmptyStateProps";
 export type { SlidePanelProps } from "./SlidePanelProps";
 export type { ResponseInspectorProps } from "./ResponseInspectorProps";
+export type { SaveVariablePopoverProps } from "./SaveVariablePopoverProps";
 export type { BeautifyButtonProps } from "./BeautifyButtonProps";
 export type { ExtractorFormProps } from "./ExtractorFormProps";
 export type { SecretsPanelProps } from "./SecretsPanelProps";

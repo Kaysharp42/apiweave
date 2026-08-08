@@ -92,15 +92,20 @@ There is no runtime secret prompt. The value must exist in the scope before the 
 
 An extractor pulls a value out of an HTTP response and stores it as a workflow variable. After the node runs, the value is reachable as `{{variables.name}}` in any later node.
 
-Step by step:
+The quickest way is to pick the value straight out of a response you already have:
 
-1. Open or add an HTTP Request node on the canvas.
-2. Double-click the node to open the full editor, or use the inline extractor section in the node body.
-3. Scroll to the **Extractors** section and click **Add extractor**.
-4. Enter a variable name (for example `token`).
-5. Enter the JSONPath that points at the value to capture (for example `response.body.access_token`).
-6. Save the node. Auto-save persists the change to the workflow.
-7. Run the workflow. The value appears in the Variables panel and is available to downstream nodes as `{{variables.token}}`.
+1. Open the HTTP Request node and run it, so the **Response** pane holds a body.
+2. On the **Tree** tab, hover the row you want and click the variable icon next to the copy icon.
+3. Accept or edit the suggested name and press Enter.
+
+The value is now stored. The row keeps a `{{name}}` chip so the mapping stays visible in the response, and clicking that chip removes the variable again. The **Settings** tab counts what the node stores and lists each entry with what it captured from the last response.
+
+To write a path by hand — for a field the current response does not contain, for instance — use **Settings -> Store response as variables -> Add manually**:
+
+1. Enter a variable name (for example `token`).
+2. Enter the path that points at the value to capture (for example `response.body.access_token`).
+3. Save the node. Auto-save persists the change to the workflow.
+4. Run the workflow. The value appears in the Variables panel and is available to downstream nodes as `{{variables.token}}`.
 
 A typical login-then-call flow looks like this:
 

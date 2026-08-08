@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { JsonEditor } from "json-edit-react";
 import { Braces, FileCode, FileText, type LucideIcon } from "lucide-react";
 import { Button } from "../atoms/Button";
@@ -7,6 +7,8 @@ import { EmptyState } from "../molecules/EmptyState";
 import { StatusBadge } from "../molecules/StatusBadge";
 import type { StatusBadgeProps } from "../../types";
 import type { NodeOutputPanelProps } from "../../types/NodeOutputPanelProps";
+import { useDarkMode } from "../../hooks/useDarkMode";
+import { useJsonEditorDarkTheme } from "../../hooks/useJsonEditorDarkTheme";
 
 type NodeOutputTab = "tree" | "raw";
 
@@ -50,49 +52,8 @@ export function NodeOutputPanel({
   executionStatus = "idle",
 }: NodeOutputPanelProps) {
   const [activeTab, setActiveTab] = useState<NodeOutputTab>("tree");
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    try {
-      return document.documentElement.classList.contains("dark");
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const syncDarkMode = () => setIsDarkMode(root.classList.contains("dark"));
-    const observer = new MutationObserver(syncDarkMode);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
-
-  const jsonEditorTheme = useMemo(() => {
-    if (!isDarkMode) return undefined;
-    return {
-      container: {
-        backgroundColor: "var(--color-surface-dark-raised)",
-        color: "var(--color-text-primary-dark)",
-      },
-      collection: { backgroundColor: "transparent" },
-      collectionInner: { backgroundColor: "transparent" },
-      collectionElement: { backgroundColor: "transparent" },
-      property: { color: "var(--color-text-primary-dark)" },
-      bracket: { color: "var(--color-text-secondary-dark)" },
-      itemCount: { color: "var(--color-text-muted-dark)" },
-      iconCollection: { color: "var(--aw-primary)" },
-      string: { color: "var(--color-success)" },
-      number: { color: "var(--color-info)" },
-      boolean: { color: "var(--color-primary-dark)" },
-      null: { color: "var(--color-warning)" },
-      input: {
-        backgroundColor: "var(--color-surface-dark-overlay)",
-        color: "var(--color-text-primary-dark)",
-        border: "1px solid var(--color-border-dark)",
-      },
-      inputHighlight: { backgroundColor: "var(--color-surface-dark-overlay)" },
-      error: { color: "var(--color-error)" },
-    } as const;
-  }, [isDarkMode]);
+  const isDarkMode = useDarkMode();
+  const jsonEditorTheme = useJsonEditorDarkTheme(isDarkMode);
 
   const showTree =
     activeTab === "tree" && !isEmptyOutput(output) && isTreeOutput(output);
