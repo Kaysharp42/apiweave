@@ -128,7 +128,7 @@ export function AccountMenu() {
         size="sm"
         onClick={() => setOpen((prev) => !prev)}
         onKeyDown={handleTriggerKeyDown}
-        className="h-9 w-9 overflow-hidden !rounded-full border border-border bg-surface-raised p-0 hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
+        className="h-9 w-9 overflow-hidden !rounded-full border border-border bg-surface-raised !p-0 hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
         aria-label={`Account menu for ${name}`}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -136,7 +136,7 @@ export function AccountMenu() {
       >
         {avatarVisible ? (
           <img
-            src={user.avatar_url ?? undefined}
+            src={avatarUrl ?? undefined}
             alt={name}
             className="h-full w-full object-cover"
             onError={() => {
