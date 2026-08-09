@@ -20,6 +20,8 @@ import { AccountMenu } from "./AccountMenu";
 import useNavigationStore from "../../stores/NavigationStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
+import { useOwnWindowChrome } from "../../stores/WindowChromeStore";
+import { WindowControls, dragStyle, noDragStyle } from "./WindowControls";
 
 export function MainHeader() {
   const { darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled } =
@@ -32,6 +34,9 @@ export function MainHeader() {
   );
   const environments = useEnvironmentStore((state) => state.environments);
   const { currentOrg, currentWorkspace } = useWorkspace();
+  // On desktop this header *is* the window chrome: it carries the drag region
+  // and the min/max/close buttons, and TitleBar stands down. One bar, not two.
+  const ownsChrome = useOwnWindowChrome();
   const { orgSlug, workspaceSlug } = useParams<{
     orgSlug?: string;
     workspaceSlug?: string;
@@ -65,7 +70,17 @@ export function MainHeader() {
   };
 
   return (
-    <header className="navbar h-header min-h-0 w-full gap-3 border-b border-border bg-surface-raised px-4 text-text-primary transition-colors dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark">
+    <header
+      style={ownsChrome ? dragStyle : undefined}
+      className={`navbar h-header min-h-0 w-full gap-3 border-b border-border bg-surface-raised pl-4 text-text-primary transition-colors dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark ${
+        ownsChrome ? "select-none pr-0" : "pr-4"
+      }`}
+    >
+      {/* The whole bar is the window's drag handle on desktop; each interactive
+          control below opts back out with noDragStyle. Marking only the brand
+          would leave most of the bar dead: daisyUI sizes .navbar-start and
+          .navbar-end at 50% each and never grows .navbar-center, so the wide
+          gap in the middle belongs to those halves, not to a centre spacer. */}
       <div className="navbar-start min-w-0 flex-shrink-0 gap-3">
         <IconButton
           tooltip="Toggle sidebar"
@@ -73,6 +88,7 @@ export function MainHeader() {
           onClick={toggleMobileSidebar}
           className="md:hidden flex-shrink-0"
           aria-label="Toggle sidebar"
+          style={noDragStyle}
         >
           <Menu className="w-4 h-4" />
         </IconButton>
@@ -87,10 +103,10 @@ export function MainHeader() {
         </h1>
       </div>
 
-      <div className="navbar-center min-w-0 flex-1" />
+      <div className="navbar-center min-w-0 flex-1 self-stretch" />
 
       <div className="navbar-end min-w-0 flex-shrink gap-2">
-        <Popover className="relative flex-shrink min-w-0">
+        <Popover className="relative flex-shrink min-w-0" style={noDragStyle}>
           {({ open, close }) => (
             <>
               <Popover.Button
@@ -195,6 +211,7 @@ export function MainHeader() {
           <button
             type="button"
             onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
+            style={noDragStyle}
             aria-label={
               autoSaveEnabled ? "Disable auto-save" : "Enable auto-save"
             }
@@ -215,6 +232,7 @@ export function MainHeader() {
           <button
             type="button"
             onClick={() => setDarkMode(!darkMode)}
+            style={noDragStyle}
             aria-label={
               darkMode ? "Switch to light mode" : "Switch to dark mode"
             }
@@ -228,8 +246,18 @@ export function MainHeader() {
           </button>
         </Tippy>
 
-        <AccountMenu />
+        <div className="flex items-center" style={noDragStyle}>
+          <AccountMenu />
+        </div>
       </div>
+
+      {/* Flush to the window's top-right corner (the header drops its right
+          padding for this), the way native window buttons sit. */}
+      {ownsChrome && (
+        <div className="ml-2 self-stretch">
+          <WindowControls />
+        </div>
+      )}
     </header>
   );
 }
