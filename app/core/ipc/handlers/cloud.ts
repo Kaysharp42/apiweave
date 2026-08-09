@@ -36,6 +36,7 @@ const accountSchema = z.object({
   accountId: z.string().min(1),
   email: z.string().min(1).optional(),
   displayName: z.string().min(1).optional(),
+  avatarUrl: z.string().min(1).optional(),
 }).strict()
 const deviceSchema = z.object({
   deviceId: z.string().min(1),
