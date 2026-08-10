@@ -120,8 +120,11 @@ export function AccountMenu() {
     }
   };
 
+  // flex, not block: the trigger is inline-flex, so a block wrapper would put
+  // it on a text baseline and add descender space beneath it, leaving the
+  // avatar sitting ~3px above the other header controls.
   return (
-    <div className="relative" ref={wrapperRef}>
+    <div className="relative flex items-center" ref={wrapperRef}>
       <Button
         ref={triggerRef}
         variant="ghost"
@@ -153,7 +156,11 @@ export function AccountMenu() {
 
       {open && (
         <div
-          className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
+          // top-full anchors the panel below the trigger explicitly. Without it
+          // the panel falls back to its static position, which a flex wrapper
+          // resolves through align-items — dropping it over the header instead
+          // of under the avatar.
+          className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
           role="menu"
           aria-label="Account actions"
         >
