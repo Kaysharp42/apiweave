@@ -197,7 +197,7 @@ wrong).
 
 ### merge
 
-\`config.strategy\` is \`all\` (wait for every branch), \`any\` (first to finish),
+\`config.mergeStrategy\` is \`all\` (wait for every branch), \`any\` (first to finish),
 \`first\` (first to start), or \`conditional\`. Downstream of a merge, address a
 specific branch by index: \`{{prev[0].response.body.id}}\`.
 
