@@ -219,6 +219,44 @@ describe("workflow graph analyzer", () => {
     ]))
   })
 
+  it("flags a continueOnFail http-request paired with a downstream status-pinning assertion, recommending expectedStatus", () => {
+    const workflow = healthyWorkflow()
+    const migratable = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => {
+        if (node.nodeId === "login") return { ...node, config: { ...node.config, continueOnFail: true } }
+        if (node.nodeId === "assert-login") {
+          return { ...node, config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 409 }] } }
+        }
+        return node
+      }),
+    } as unknown as Workflow
+
+    const diagnosis = analyzeWorkflowGraph(migratable)
+    expect(diagnosis.diagnostics.find((item) => item.code === "continue_on_fail_status_check_migratable")).toMatchObject({
+      severity: "notice",
+      nodeIds: ["assert-login", "login"],
+      evidence: { httpNodeId: "login", assertionNodeId: "assert-login", expectedStatusCode: 409 },
+    })
+  })
+
+  it("does not flag the continueOnFail migration hint once expectedStatus is already set", () => {
+    const workflow = healthyWorkflow()
+    const migrated = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => {
+        if (node.nodeId === "login") return { ...node, config: { ...node.config, continueOnFail: true, expectedStatus: 409 } }
+        if (node.nodeId === "assert-login") {
+          return { ...node, config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 409 }] } }
+        }
+        return node
+      }),
+    } as unknown as Workflow
+
+    const codes = analyzeWorkflowGraph(migrated).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("continue_on_fail_status_check_migratable")
+  })
+
   it("correlates stored failures without copying response, assertion, or secret values", () => {
     const sentinel = "secret-value-that-must-not-appear"
     const workflow = healthyWorkflow()

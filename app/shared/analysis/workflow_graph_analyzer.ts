@@ -487,6 +487,49 @@ function addAssertionAndBranchDiagnostics(workflow: Workflow, diagnostics: Workf
   }
 }
 
+/** True when an assertion rule reads the upstream response's status code. */
+function targetsStatusCode(rule: { readonly source: string; readonly path: string }): boolean {
+  if (rule.source === "status") return true
+  return rule.source === "prev" && (rule.path === "statusCode" || rule.path === "response.statusCode")
+}
+
+/**
+ * Migration hint for item 9: an `http-request` using `continueOnFail` purely to
+ * survive an expected non-2xx, paired with a downstream assertion pinning that
+ * exact status, is exactly the graph shape `expectedStatus` replaces — same
+ * negative test, but the node (and the run) goes green on a match instead of
+ * staying permanently red.
+ */
+function addExpectedStatusMigrationDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnostic[]): void {
+  const { nodesById, predecessors } = buildGraph(workflow.nodes, workflow.edges)
+  for (const node of workflow.nodes) {
+    if (node.type !== "http-request") continue
+    if (node.config?.continueOnFail !== true) continue
+    if (node.config?.expectedStatus !== undefined) continue // already migrated
+
+    for (const assertion of workflow.nodes) {
+      if (assertion.type !== "assertion") continue
+      if (!upstreamHttpSources(assertion.nodeId, nodesById, predecessors).includes(node.nodeId)) continue
+
+      for (const rule of assertion.config?.assertions ?? []) {
+        if (rule.operator !== "equals" || !targetsStatusCode(rule)) continue
+        const expectedStatusCode = Number(rule.expectedValue)
+        if (!Number.isFinite(expectedStatusCode) || (expectedStatusCode >= 200 && expectedStatusCode < 300)) continue
+        diagnostics.push(diagnostic(
+          "continue_on_fail_status_check_migratable",
+          "notice",
+          "assertion",
+          [node.nodeId, assertion.nodeId],
+          "This http-request uses continueOnFail with a downstream assertion pinning a specific non-2xx status — expectedStatus expresses the same negative test directly and lets the run go green on a match.",
+          { httpNodeId: node.nodeId, assertionNodeId: assertion.nodeId, expectedStatusCode },
+          { kind: "use_expected_status", nodeId: node.nodeId },
+          "medium",
+        ))
+      }
+    }
+  }
+}
+
 function addDataflowDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnostic[]): void {
   const { successors } = buildGraph(workflow.nodes, workflow.edges)
   const provenance = analyzeVariableProvenance(workflow.nodes)
@@ -780,6 +823,7 @@ export function analyzeWorkflowGraph(workflow: Workflow, run?: Run): WorkflowDia
   const diagnostics: WorkflowDiagnostic[] = []
   addTopologyDiagnostics(workflow, diagnostics)
   addAssertionAndBranchDiagnostics(workflow, diagnostics)
+  addExpectedStatusMigrationDiagnostics(workflow, diagnostics)
   addDataflowDiagnostics(workflow, diagnostics)
   if (run !== undefined) addRunDiagnostics(workflow, run, diagnostics)
 

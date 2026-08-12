@@ -934,4 +934,164 @@ describe("WorkflowExecutor", () => {
       expect(output.failedNodes).toContain("call1")
     })
   })
+
+  describe("continueOnFail on http-request (item 9)", () => {
+    it("a per-node continueOnFail lets a non-2xx response continue down the outgoing edge", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => {
+        response.statusCode = 404
+        response.end(JSON.stringify({ code: "NOT_FOUND" }))
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "req", type: "http-request", config: { url: `http://127.0.0.1:${port}/x`, continueOnFail: true } },
+            { nodeId: "after", type: "delay", config: { duration: 0 } },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "req" },
+            { edgeId: "e2", source: "req", target: "after" },
+            { edgeId: "e3", source: "after", target: "end" },
+          ],
+        }
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+        // Previously the traversal only consulted the workflow-level
+        // `settings.continueOnFail` (unset here), so `after`/`end` never ran.
+        expect(output.nodeStatuses["req"]).toBe("failed")
+        expect(output.nodeStatuses["after"]).toBe("passed")
+        expect(output.nodeStatuses["end"]).toBe("passed")
+      } finally {
+        server.close()
+      }
+    })
+
+    it("without continueOnFail, a non-2xx still stops the branch", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => {
+        response.statusCode = 404
+        response.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "req", type: "http-request", config: { url: `http://127.0.0.1:${port}/x` } },
+            { nodeId: "after", type: "delay", config: { duration: 0 } },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "req" },
+            { edgeId: "e2", source: "req", target: "after" },
+            { edgeId: "e3", source: "after", target: "end" },
+          ],
+        }
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+        expect(output.nodeStatuses["req"]).toBe("failed")
+        expect(output.nodeStatuses["after"]).toBeUndefined()
+      } finally {
+        server.close()
+      }
+    })
+  })
+
+  describe("expectedStatus on http-request (item 9)", () => {
+    it("passes and reports the match when the response matches a single expectedStatus", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => {
+        response.statusCode = 409
+        response.end(JSON.stringify({ code: "NOT_ACTIVE_DOUBTFUL_STATE" }))
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "req", type: "http-request", config: { url: `http://127.0.0.1:${port}/x`, expectedStatus: 409 } },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "req" },
+            { edgeId: "e2", source: "req", target: "end" },
+          ],
+        }
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+        expect(output.status).toBe("passed")
+        expect(output.nodeStatuses["req"]).toBe("passed")
+        const result = output.results.find((r) => r.nodeId === "req")
+        expect(result).toMatchObject({ expectedStatus: 409, response: { statusCode: 409 } })
+      } finally {
+        server.close()
+      }
+    })
+
+    it("fails when the response does not match any of an expectedStatus array, even a 2xx", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => {
+        response.statusCode = 200
+        response.end(JSON.stringify({ ok: true }))
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "req", type: "http-request", config: { url: `http://127.0.0.1:${port}/x`, expectedStatus: [409, 422] } },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "req" },
+            { edgeId: "e2", source: "req", target: "end" },
+          ],
+        }
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+        expect(output.status).toBe("failed")
+        expect(output.nodeStatuses["req"]).toBe("failed")
+      } finally {
+        server.close()
+      }
+    })
+
+    it("is orthogonal to continueOnFail: an unmatched expectedStatus still fails the node, and continueOnFail decides whether the branch continues", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => {
+        response.statusCode = 200
+        response.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            {
+              nodeId: "req",
+              type: "http-request",
+              config: { url: `http://127.0.0.1:${port}/x`, expectedStatus: 409, continueOnFail: true },
+            },
+            { nodeId: "after", type: "delay", config: { duration: 0 } },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "req" },
+            { edgeId: "e2", source: "req", target: "after" },
+            { edgeId: "e3", source: "after", target: "end" },
+          ],
+        }
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+        expect(output.status).toBe("failed")
+        expect(output.nodeStatuses["req"]).toBe("failed")
+        expect(output.nodeStatuses["after"]).toBe("passed")
+      } finally {
+        server.close()
+      }
+    })
+  })
 })

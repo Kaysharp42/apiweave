@@ -91,6 +91,9 @@ function projectResult(result: RunResult): JsonValue {
       ...(typeof statusCode === "number" ? { statusCode } : {}),
       ...(typeof truncated === "boolean" ? { truncated } : {}),
     },
+    // Configured expectedStatus (http-request), so a matched negative test
+    // (e.g. a passed node showing a 409) is legible without re-reading the config.
+    ...(result.expectedStatus !== undefined ? { expectedStatus: result.expectedStatus } : {}),
     assertions: (result.assertions ?? []).map((assertion) => ({
       ruleIndex: assertion.ruleIndex,
       source: assertion.source,
@@ -153,7 +156,7 @@ export function projectRunSnapshot(value: unknown, latestSequence = 0): Record<s
 
 /** Merge per-node status/statusCode (nodeStatuses) with durationMs (results). */
 function projectSnapshotNodes(run: Run): Record<string, JsonValue> {
-  const nodes: Record<string, { status?: string; statusCode?: number; durationMs?: number }> = {}
+  const nodes: Record<string, { status?: string; statusCode?: number; expectedStatus?: number | number[]; durationMs?: number }> = {}
   for (const [nodeId, entry] of Object.entries(run.nodeStatuses)) {
     if (typeof entry === "string") {
       nodes[nodeId] = { status: entry }
@@ -171,6 +174,9 @@ function projectSnapshotNodes(run: Run): Record<string, JsonValue> {
     node.durationMs = result.duration
     const response = isRecord(result.response) ? result.response : null
     if (typeof response?.["statusCode"] === "number") node.statusCode = response["statusCode"]
+    // Configured expectedStatus, so a matched negative test (a passed node
+    // showing e.g. a 409) is legible directly from the snapshot.
+    if (result.expectedStatus !== undefined) node.expectedStatus = result.expectedStatus
   }
   return nodes as Record<string, JsonValue>
 }

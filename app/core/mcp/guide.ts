@@ -159,6 +159,13 @@ or array order.
   later nodes read \`{{variables.token}}\`. Paths start at the response object:
   \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\`.
 - \`continueOnFail: true\` lets the run continue past a failed request.
+- \`expectedStatus\` — the status code(s) this request is expected to return (a number
+  or an array of numbers, 100-599). The node passes when the response matches and
+  **fails when it does not, including when it returns 2xx**. Omit for the default,
+  where any 2xx passes. Use this for negative tests: a request that is supposed to
+  be rejected, e.g. \`"expectedStatus": 409\` for a state-transition guard. It is
+  orthogonal to \`continueOnFail\`: \`expectedStatus\` decides whether the node
+  failed, \`continueOnFail\` decides whether a failure stops the branch.
 
 ### assertion
 
