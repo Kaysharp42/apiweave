@@ -219,7 +219,7 @@ describe("workflow graph analyzer", () => {
     ]))
   })
 
-  it("flags an assertion fail handle wired straight to an end node as redundant", () => {
+  it("emits one aggregated notice when every wired fail handle lands on an end node", () => {
     const workflow = healthyWorkflow()
     const withRedundantFailEdge = {
       ...workflow,
@@ -233,7 +233,7 @@ describe("workflow graph analyzer", () => {
     expect(diagnosis.diagnostics.find((item) => item.code === "assertion_fail_wired_on_all")).toMatchObject({
       severity: "notice",
       nodeIds: ["assert-login", "end"],
-      evidence: { edgeId: "fail-to-end", endNodeId: "end" },
+      evidence: { edgeIds: ["fail-to-end"], endNodeIds: ["end"] },
     })
   })
 
@@ -254,6 +254,26 @@ describe("workflow graph analyzer", () => {
 
     const codes = analyzeWorkflowGraph(withDistinctFailPath).diagnostics.map((item) => item.code)
     expect(codes).not.toContain("assertion_fail_wired_on_all")
+  })
+
+  it("does not flood when only some wired fail handles land on an end node", () => {
+    const workflow = healthyWorkflow()
+    const partial = {
+      ...workflow,
+      nodes: [
+        ...workflow.nodes,
+        { nodeId: "notify", type: "http-request", position: { x: 200, y: 200 }, config: { url: "https://example.test/notify" } },
+      ],
+      edges: [
+        ...workflow.edges,
+        { edgeId: "fail-to-end", source: "assert-login", target: "end", sourceHandle: "fail" },
+        { edgeId: "fail-to-notify", source: "assert-login", target: "notify", sourceHandle: "fail" },
+      ],
+    } as unknown as Workflow
+
+    const diagnosis = analyzeWorkflowGraph(partial)
+    const wired = diagnosis.diagnostics.filter((item) => item.code === "assertion_fail_wired_on_all")
+    expect(wired).toHaveLength(0)
   })
 
   it("flags a continueOnFail http-request paired with a downstream status-pinning assertion, recommending expectedStatus", () => {
