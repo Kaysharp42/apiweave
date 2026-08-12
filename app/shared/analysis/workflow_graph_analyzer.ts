@@ -520,7 +520,6 @@ function targetsStatusCode(rule: { readonly source: string; readonly path: strin
  * negative test, but the node (and the run) goes green on a match instead of
  * staying permanently red.
  */
-/** True for an http-request that still relies on continueOnFail and hasn't adopted expectedStatus yet. */
 function isUnmigratedContinueOnFailRequest(node: WorkflowNode): boolean {
   return node.type === "http-request" && node.config?.continueOnFail === true && node.config?.expectedStatus === undefined
 }
@@ -534,7 +533,7 @@ function addMigrationDiagnosticsForPair(
   for (const rule of assertion.config?.assertions ?? []) {
     if (rule.operator !== "equals" || !targetsStatusCode(rule)) continue
     const expectedStatusCode = Number(rule.expectedValue)
-    if (!Number.isFinite(expectedStatusCode) || (expectedStatusCode >= 200 && expectedStatusCode < 300)) continue
+    if (!Number.isInteger(expectedStatusCode) || expectedStatusCode < 100 || expectedStatusCode > 599 || (expectedStatusCode >= 200 && expectedStatusCode < 300)) continue
     diagnostics.push(diagnostic(
       "continue_on_fail_status_check_migratable",
       "notice",
@@ -545,6 +544,7 @@ function addMigrationDiagnosticsForPair(
       { kind: "use_expected_status", nodeId: node.nodeId },
       "medium",
     ))
+    break
   }
 }
 

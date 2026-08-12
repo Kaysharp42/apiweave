@@ -314,6 +314,49 @@ describe("workflow graph analyzer", () => {
     expect(codes).not.toContain("continue_on_fail_status_check_migratable")
   })
 
+  it("does not flag the migration hint when the status assertion is non-numeric or out of range", () => {
+    const workflow = healthyWorkflow()
+    const migratable = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => {
+        if (node.nodeId === "login") return { ...node, config: { ...node.config, continueOnFail: true } }
+        if (node.nodeId === "assert-login") {
+          return { ...node, config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: "" }] } }
+        }
+        return node
+      }),
+    } as unknown as Workflow
+
+    const codes = analyzeWorkflowGraph(migratable).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("continue_on_fail_status_check_migratable")
+  })
+
+  it("emits one migration hint per pair even when multiple status rules pin the same status", () => {
+    const workflow = healthyWorkflow()
+    const migratable = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => {
+        if (node.nodeId === "login") return { ...node, config: { ...node.config, continueOnFail: true } }
+        if (node.nodeId === "assert-login") {
+          return {
+            ...node,
+            config: {
+              assertions: [
+                { source: "status", path: "", operator: "equals", expectedValue: 409 },
+                { source: "status", path: "", operator: "equals", expectedValue: 409 },
+              ],
+            },
+          }
+        }
+        return node
+      }),
+    } as unknown as Workflow
+
+    const diagnosis = analyzeWorkflowGraph(migratable)
+    const hints = diagnosis.diagnostics.filter((item) => item.code === "continue_on_fail_status_check_migratable")
+    expect(hints).toHaveLength(1)
+  })
+
   it("does not emit http_request_failed when expectedStatus matches a 4xx response", () => {
     const workflow = WorkflowSchema.parse({
       workflowId: "workflow-neg",
