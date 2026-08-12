@@ -651,7 +651,7 @@ function addRunDiagnostics(workflow: Workflow, run: Run, diagnostics: WorkflowDi
     if (node.type === "http-request") {
       const statusCode = statusCodeOf(result)
       const response = responseMetadata(result)
-      if ((statusCode !== undefined && statusCode >= 400) || (result.status === "failed" && statusCode === undefined)) {
+      if (result.status === "failed") {
         const descendants = traverse([node.nodeId], successors)
         descendants.delete(node.nodeId)
         const blockedNodeIds = [...descendants].filter((nodeId) => {

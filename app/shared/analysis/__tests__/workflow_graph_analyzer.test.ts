@@ -294,6 +294,63 @@ describe("workflow graph analyzer", () => {
     expect(codes).not.toContain("continue_on_fail_status_check_migratable")
   })
 
+  it("does not emit http_request_failed when expectedStatus matches a 4xx response", () => {
+    const workflow = WorkflowSchema.parse({
+      workflowId: "workflow-neg",
+      workspaceId: "workspace-neg",
+      name: "negative test",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        {
+          nodeId: "neg",
+          type: "http-request",
+          label: "neg",
+          position: { x: 100, y: 0 },
+          config: { method: "POST", url: "https://example.test/neg", expectedStatus: 409, continueOnFail: true },
+        },
+        { nodeId: "end", type: "end", position: { x: 200, y: 0 }, config: {} },
+      ],
+      edges: [
+        { edgeId: "e2", source: "neg", target: "end" },
+      ],
+      variables: {},
+      tags: [],
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }) as unknown as Workflow
+
+    const run = RunSchema.parse({
+      runId: "run-neg",
+      workspaceId: workflow.workspaceId,
+      workflowId: workflow.workflowId,
+      status: "completed",
+      trigger: "manual",
+      variables: {},
+      results: [
+        { nodeId: "start", status: "passed", duration: 1 },
+        {
+          nodeId: "neg",
+          status: "passed",
+          duration: 10,
+          response: { statusCode: 409, body: { error: "conflict" } },
+          expectedStatus: 409,
+        },
+        { nodeId: "end", status: "passed", duration: 1 },
+      ],
+      nodeStatuses: {},
+      failedNodes: [],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+
+    const diagnosis = analyzeWorkflowGraph(workflow, run)
+    expect(diagnosis.summary.errors).toBe(0)
+    expect(diagnosis.diagnostics.map((item) => item.code)).not.toContain("http_request_failed")
+  })
+
   it("correlates stored failures without copying response, assertion, or secret values", () => {
     const sentinel = "secret-value-that-must-not-appear"
     const workflow = healthyWorkflow()
