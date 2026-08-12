@@ -187,4 +187,26 @@ describe("AssertionAuthoringService", () => {
       target?.config?.assertions,
     )
   })
+
+  // Regression: `expectedValue: false` (and `0`, `""`) was accepted here but
+  // blocked at the canvas run gate via a truthiness check. The authoring
+  // service always used a *presence* check (`=== undefined`); lock that in so
+  // falsy-but-present `expectedValue` survives validate without an
+  // `expected_required` issue.
+  it.each([
+    ["boolean false", { source: "prev", path: "body.flag", operator: "equals", expectedValue: false }],
+    ["number zero", { source: "prev", path: "body.count", operator: "equals", expectedValue: 0 }],
+    ["empty string", { source: "prev", path: "body.error", operator: "equals", expectedValue: "" }],
+    ["notEquals true", { source: "prev", path: "body.flag", operator: "notEquals", expectedValue: true }],
+  ] as const)("validates a falsy-but-present expectedValue (%s) as valid", async (_label, rule) => {
+    const { workspaceId, workflow } = await seedWorkflow()
+    const validated = await authoring.validate(
+      workspaceId,
+      workflow.workflowId,
+      "request",
+      [rule],
+    )
+    expect(validated.valid).toBe(true)
+    expect(validated.issues.map((issue) => issue.code)).not.toContain("expected_required")
+  })
 })

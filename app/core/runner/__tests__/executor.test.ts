@@ -65,6 +65,53 @@ describe("WorkflowExecutor", () => {
       const output = await executor.executeWorkflow(workflow)
       expect(output.status).toBe("passed")
     })
+
+    // Regression: an unresolved `{{env.*}}`/`{{variables.*}}` placeholder is left
+    // in the request verbatim — commonly surfacing as a 401 that reads like bad
+    // credentials. It must be reported per node so the run result names which
+    // reference never resolved (env not selected, variable never produced).
+    it("reports unresolved placeholder references per HTTP request node", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => {
+        response.statusCode = 401
+        response.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            {
+              nodeId: "http_1",
+              type: "http-request",
+              config: {
+                method: "POST",
+                url: `http://127.0.0.1:${port}/login`,
+                headers: [
+                  { key: "Authorization", value: "Bearer {{variables.token}}" },
+                  { key: "X-Tenant", value: "acme" },
+                ],
+                body: '{"email":"{{env.EMAIL}}","password":"{{env.PASSWORD}}"}',
+                bodyType: "json",
+              },
+            },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "http_1" },
+            { edgeId: "e2", source: "http_1", target: "end" },
+          ],
+        }
+
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+        const result = output.results.find((r) => r.nodeId === "http_1")
+        expect((result?.response as { statusCode?: number } | undefined)?.statusCode).toBe(401)
+        expect(result?.unresolvedPlaceholders).toEqual(["variables.token", "env.EMAIL", "env.PASSWORD"])
+      } finally {
+        server.close()
+      }
+    })
   })
 
   describe("assertion nodes", () => {

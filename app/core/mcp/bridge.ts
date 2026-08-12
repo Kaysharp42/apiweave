@@ -68,8 +68,18 @@ async function dispatchAsTool(
     const data = spec.resultProjection === "run" ? projectRunToolResult(result.data) : result.data
     const diagnosis = spec.diagnoseAfterWrite === true ? await diagnoseWritten(router, result.data) : undefined
     if (diagnosis === undefined) {
+      // Graph-writing tools whose `result` does not carry a `workspaceId` (the
+      // compact summary/diagnosis projections, or any write whose re-diagnosis
+      // failed) cannot be re-diagnosed here — but they still ride inside the
+      // same `{ result }` envelope the wrapped case uses, so every write tool's
+      // text content is shape-stable across response sizes. Non-write tools
+      // keep the bare-handler text they always had (`structuredContent` still
+      // carries the `result` key).
+      const text = spec.diagnoseAfterWrite === true
+        ? JSON.stringify({ result: data }, null, 2)
+        : JSON.stringify(data, null, 2)
       return {
-        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+        content: [{ type: "text", text }],
         structuredContent: { result: data },
       }
     }

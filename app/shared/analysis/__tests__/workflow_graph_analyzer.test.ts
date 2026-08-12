@@ -219,6 +219,108 @@ describe("workflow graph analyzer", () => {
     ]))
   })
 
+  // A real run was blocked on the canvas for `expectedValue: false` while
+  // `assertion_validate` accepted it: the canvas gate used a truthiness check
+  // rather than a presence check. `false`, `0` and `""` are all legitimate
+  // `equals` targets — `expectedValue === undefined` is the only "missing"
+  // signal, and `analyzeWorkflowGraph` is the shared validator the canvas gate
+  // now uses.
+  for (const expectedValue of [false, 0, ""] as const) {
+    it(`accepts a falsy expectedValue (${JSON.stringify(expectedValue)}, ${typeof expectedValue}) without flagging it missing`, () => {
+      const workflow = healthyWorkflow()
+      const assertionNode = workflow.nodes.find((node) => node.nodeId === "assert-login")!
+      const withFalsy = {
+        ...workflow,
+        nodes: workflow.nodes.map((node) => node.nodeId === assertionNode.nodeId
+          ? {
+              ...node,
+              config: {
+                assertions: [
+                  { source: "prev", path: "body.blacklisted", operator: "equals", expectedValue },
+                  { source: "status", path: "", operator: "notEquals", expectedValue: true },
+                ],
+              },
+            }
+          : node),
+      } as unknown as Workflow
+
+      const diagnosis = analyzeWorkflowGraph(withFalsy)
+      expect(diagnosis.diagnostics.map((item) => item.code)).not.toContain("assertion_expected_missing")
+      expect(diagnosis.summary.errors).toBe(0)
+    })
+  }
+
+  it("still flags assertion_expected_missing when expectedValue is truly absent", () => {
+    const workflow = healthyWorkflow()
+    const assertionNode = workflow.nodes.find((node) => node.nodeId === "assert-login")!
+    const withMissing = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === assertionNode.nodeId
+        ? { ...node, config: { assertions: [{ source: "prev", path: "body.ok", operator: "equals" }] } }
+        : node),
+    } as unknown as Workflow
+
+    expect(analyzeWorkflowGraph(withMissing).diagnostics.map((item) => item.code))
+      .toContain("assertion_expected_missing")
+  })
+
+  // Regression: parallel fan-out from one assertion outcome IS supported by
+  // the runtime (`matching` edges branch in parallel via Promise.allSettled),
+  // so routing three "pass" edges off an assertion is a legitimate shape.
+  // `assertion_branch_duplicate` used to warn — a warning reads as "fix this",
+  // and authors reported adding dummy delay nodes solely to silence it. It is
+  // now a notice: verbose, not wrong.
+  it("rates an assertion fan-out as a notice, not a warning (parallel branches run)", () => {
+    const workflow = healthyWorkflow()
+    const fanOut = {
+      ...workflow,
+      nodes: [
+        ...workflow.nodes.filter((node) => node.nodeId !== "profile"),
+        { nodeId: "branch-a", type: "http-request", position: { x: 300, y: -50 }, config: { method: "GET", url: "https://example.test/a" } },
+        { nodeId: "branch-b", type: "http-request", position: { x: 300, y: 0 }, config: { method: "GET", url: "https://example.test/b" } },
+        { nodeId: "branch-c", type: "http-request", position: { x: 300, y: 50 }, config: { method: "GET", url: "https://example.test/c" } },
+      ],
+      edges: [
+        ...workflow.edges.filter((edge) => edge.edgeId !== "e3"),
+        { edgeId: "fa", source: "assert-login", target: "branch-a", sourceHandle: "pass" },
+        { edgeId: "fb", source: "assert-login", target: "branch-b", sourceHandle: "pass" },
+        { edgeId: "fc", source: "assert-login", target: "branch-c", sourceHandle: "pass" },
+      ],
+    } as unknown as Workflow
+
+    const dup = analyzeWorkflowGraph(fanOut).diagnostics.find((item) => item.code === "assertion_branch_duplicate")
+    expect(dup).toBeDefined()
+    expect(dup?.severity).toBe("notice")
+    expect(dup?.evidence).toMatchObject({ sourceHandle: "pass", count: 3 })
+  })
+
+  // Regression: an author wired every assertion's `fail` handle to a single
+  // `end` because the guides could be read as `fail` being mandatory. It is
+  // verbose, not wrong — diagnose it as a notice (never as an error).
+  it("notices (never warns) when every assertion wires its fail handle", () => {
+    const workflow = healthyWorkflow()
+    const bothWired = {
+      ...workflow,
+      edges: [
+        ...workflow.edges,
+        { edgeId: "fail-wired", source: "assert-login", target: "end", sourceHandle: "fail" },
+      ],
+    } as unknown as Workflow
+
+    const notice = analyzeWorkflowGraph(bothWired).diagnostics.find((item) => item.code === "assertion_fail_wired_on_all")
+    expect(notice).toBeDefined()
+    expect(notice?.severity).toBe("notice")
+    expect(notice?.nodeIds).toContain("assert-login")
+  })
+
+  it("does not raise assertion_fail_wired_on_all when at least one assertion leaves its fail unwired", () => {
+    const workflow = healthyWorkflow()
+    // healthyWorkflow only wires the `pass` handle from assert-login; `fail`
+    // is deliberately unconnected.
+    expect(analyzeWorkflowGraph(workflow).diagnostics.map((item) => item.code))
+      .not.toContain("assertion_fail_wired_on_all")
+  })
+
   it("correlates stored failures without copying response, assertion, or secret values", () => {
     const sentinel = "secret-value-that-must-not-appear"
     const workflow = healthyWorkflow()

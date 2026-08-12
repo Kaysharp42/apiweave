@@ -120,6 +120,7 @@ export interface NodeResult {
   readonly startedAt?: string
   readonly completedAt?: string
   readonly secretRefs?: readonly string[]
+  readonly unresolvedPlaceholders?: readonly string[]
   readonly assertionEvaluations?: readonly AssertionEvaluation[]
   readonly extractorOutcomes?: readonly ExtractorOutcome[]
   /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
@@ -684,14 +685,27 @@ export class WorkflowExecutor {
       url = `${base}?${params.toString()}`
     }
 
-    const startTime = Date.now()
-
     let fetchBody: string | Buffer | UndiciFormData | undefined
     try {
       fetchBody = await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
     } catch (bodyError) {
       return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url, duration: 0 })
     }
+
+    // A placeholder `substituteVariables` could not resolve is left in the
+    // request verbatim, so the assembled end state tells us what went out
+    // unresolved. Reported per node so a `{{env.*}}`/`{{variables.*}}` that
+    // stayed literal — commonly a 401 from the target that reads as bad
+    // credentials — surfaces on the run result instead of looking like a
+    // service error.
+    const unresolvedPlaceholders = collectUnresolvedPlaceholders([
+      url,
+      ...Object.values(headers),
+      ...Object.values(queryParams),
+      ...(typeof fetchBody === "string" ? [fetchBody] : []),
+    ])
+
+    const startTime = Date.now()
 
     try {
       this.deps.http.validateUrl(url)
@@ -747,6 +761,7 @@ export class WorkflowExecutor {
           statusCode,
           ...(truncated ? { truncated: true } : {}),
         },
+        ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }
 
       return withExtractorOutcomes(result)
@@ -1739,6 +1754,9 @@ export class WorkflowExecutor {
         ...(typeof result.startedAt === "string" ? { startedAt: result.startedAt } : {}),
         ...(typeof result.completedAt === "string" ? { completedAt: result.completedAt } : {}),
         ...(result.secretRefs && result.secretRefs.length > 0 ? { secretRefs: [...result.secretRefs] } : {}),
+        ...(result.unresolvedPlaceholders && result.unresolvedPlaceholders.length > 0
+          ? { unresolvedPlaceholders: [...result.unresolvedPlaceholders] }
+          : {}),
         request: {
           ...(typeof result["method"] === "string" ? { method: result["method"] } : {}),
           ...(typeof result["url"] === "string" ? { url: result["url"] } : {}),
@@ -1842,4 +1860,24 @@ function collectSecretRefs(config: Record<string, unknown> | undefined): readonl
   }
   visit(config)
   return [...names]
+}
+
+/**
+ * Reference-shaped placeholders (`{{env.*}}`, `{{variables.*}}`, `{{prev...}}`,
+ * `{{secrets.*}}`) still present in a built HTTP request. `substituteVariables`
+ * leaves an unresolved placeholder verbatim, so the assembled URL/headers/query
+ * values tell us which references never resolved. Names only (never values).
+ */
+const UNRESOLVED_REF_RE = /\{\{\s*(env\.|variables\.|prev\b|secrets\.)([^}]*)\}\}/g
+
+function collectUnresolvedPlaceholders(values: readonly string[]): string[] {
+  const found = new Set<string>()
+  for (const value of values) {
+    for (const match of value.matchAll(UNRESOLVED_REF_RE)) {
+      const prefix = match[1]!
+      const rest = (match[2] ?? "").replace(/^\./, "")
+      found.add(rest.length > 0 ? `${prefix}${rest}` : prefix)
+    }
+  }
+  return [...found]
 }

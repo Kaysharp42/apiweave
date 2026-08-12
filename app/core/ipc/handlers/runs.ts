@@ -4,6 +4,7 @@ import { RunSchema, JsonValueSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { listResult } from "./common"
+import { NotFoundError } from "../errors"
 import { readReportArtifacts, resolveArtifactPath } from "../../runner/reporters"
 
 const ws = z.string().min(1)
@@ -23,6 +24,18 @@ const createInput = z
 const runIdInput = z.object({ workspaceId: ws, runId: z.string().min(1) }).strict()
 const workflowIdInput = z.object({ workspaceId: ws, workflowId: z.string().min(1) }).strict()
 
+// Single-node request/response fetch. The metadata-only `runs.get` projection
+// keeps the body and headers off the wire because most reads don't need them —
+// but when a single node fails, the body is where the target explains the
+// failure, and stripping it sends the user grepping Java source and Postgres
+// for an answer the response already contained. Opt-in by node: only the
+// one node an agent asks about travels, and the same redaction pass every
+// other MCP read applies (Authorization headers, secret-looking values, URL
+// query strings) still runs on the MCP transport.
+const nodeResultInput = z
+  .object({ workspaceId: ws, runId: z.string().min(1), nodeId: z.string().min(1) })
+  .strict()
+
 export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { runs } = deps
 
@@ -36,6 +49,33 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     input: runIdInput,
     output: RunSchema,
     handle: (i) => runs.get(i.workspaceId, i.runId),
+  })
+
+  router.register("runs", "getNodeResult", {
+    input: nodeResultInput,
+    output: z.unknown(),
+    handle: async ({ workspaceId, runId, nodeId }) => {
+      const run = await runs.get(workspaceId, runId)
+      const result = run.results.find((r) => r.nodeId === nodeId)
+      if (result === undefined) {
+        throw new NotFoundError(`node ${nodeId} not found in run ${runId}`)
+      }
+      return {
+        runId: run.runId,
+        workflowId: run.workflowId,
+        nodeId,
+        status: result.status,
+        duration: result.duration,
+        startedAt: result.startedAt ?? null,
+        completedAt: result.completedAt ?? null,
+        request: result.request ?? null,
+        response: result.response ?? null,
+        error: result.error ?? null,
+        extractorOutcomes: result.extractorOutcomes ?? [],
+        unresolvedPlaceholders: result.unresolvedPlaceholders ?? [],
+        assertions: result.assertions ?? [],
+      }
+    },
   })
 
   router.register("runs", "listByWorkflow", {

@@ -85,6 +85,51 @@ describe("RunScheduler", () => {
       expect(scheduler.getActiveCount()).toBe(0)
     })
 
+    // Regression: `runs_create` echoed `selectedEnvironmentId: null` even when
+    // the workflow had one set, so an MCP agent triggering a run without an
+    // explicit env left `{{env.*}}` placeholders as literal text and got a
+    // 401 indistinguishable from bad credentials. enqueue() now inherits the
+    // workflow's stored env when the caller omits it, so the run row carries
+    // what will actually run.
+    it("inherits the workflow's selectedEnvironmentId when enqueue omits it", async () => {
+      const ws = seedWorkspace()
+      const env = environments.create({ workspaceId: ws, name: "dev", variables: {} })
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "env-default-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "end" }],
+        selectedEnvironmentId: env.environmentId,
+      }).workflowId
+      const scheduler = makeScheduler()
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      const run = runs.getById(runId)
+      expect(run?.selectedEnvironmentId).toBe(env.environmentId)
+    })
+
+    it("honours an explicit null selectedEnvironmentId (does not silently inherit)", async () => {
+      const ws = seedWorkspace()
+      const env = environments.create({ workspaceId: ws, name: "dev", variables: {} })
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "explicit-null-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "end" }],
+        selectedEnvironmentId: env.environmentId,
+      }).workflowId
+      const scheduler = makeScheduler()
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId, selectedEnvironmentId: null })
+      expect(runs.getById(runId)?.selectedEnvironmentId).toBeNull()
+    })
+
     it("substitutes selected environment variables in HTTP request URLs", async () => {
       const ws = seedWorkspace()
       const env = environments.create({
@@ -506,6 +551,52 @@ describe("RunScheduler", () => {
           failureReason: null,
         },
       ])
+    })
+
+    // Regression: a run with no (or an incomplete) environment sends `{{env.*}}`
+    // placeholders as literal text — a 401 from the target that reads as bad
+    // credentials. The per-node `unresolvedPlaceholders` list is what collapses
+    // that detour: the run result names the references that never resolved.
+    it("reports {{env.*}} placeholders left literal on the run result", async () => {
+      const ws = seedWorkspace()
+      const { createServer } = await import("node:http")
+      const server = createServer((_req, res) => {
+        res.statusCode = 401
+        res.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "unresolved-env-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: {
+              method: "POST",
+              url: `http://127.0.0.1:${port}/auth`,
+              body: '{"email":"{{env.EMAIL}}","password":"{{env.PASSWORD}}"}',
+              bodyType: "json",
+            } as never,
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }).workflowId
+
+      const scheduler = makeScheduler()
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      server.close()
+
+      const persisted = runs.getById(runId)
+      expect(persisted?.status).toBe("failed")
+      const result = persisted?.results.find((r) => r.nodeId === "http_1")
+      expect((result?.response as { statusCode?: number } | undefined)?.statusCode).toBe(401)
+      expect(result?.unresolvedPlaceholders).toEqual(["env.EMAIL", "env.PASSWORD"])
     })
 
     it("persists structured assertion evaluations and final failure evidence", async () => {

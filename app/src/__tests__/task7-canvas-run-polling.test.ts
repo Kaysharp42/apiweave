@@ -102,7 +102,14 @@ describe("Task 20: run progress streams over IPC events", () => {
     vi.clearAllMocks();
   });
 
-  function mount(edges: { source: string; target: string }[] = []) {
+  function mount(
+    edges: ReadonlyArray<{
+      source: string;
+      target: string;
+      id?: string;
+      sourceHandle?: string | null;
+    }> = [],
+  ) {
     return renderHook(() =>
       useWorkflowPolling({
         workspaceId: "ws-1",
@@ -403,6 +410,50 @@ describe("Task 20: run progress streams over IPC events", () => {
       workspaceId: "ws-1",
       runId: "run-1",
     });
+  });
+
+  // Regression: the canvas run gate used a truthiness check on `expectedValue`,
+  // so `false`, `0` and `""` blocked the run while `assertion_validate`
+  // accepted them. The gate now shares `analyzeWorkflowGraph`, which uses a
+  // presence check — so falsy-but-present `expectedValue` sails through.
+  it("(d2) does not block the run on a falsy-but-present assertion expectedValue (false/0/empty-string)", async () => {
+    nodesBox.nodes = [
+      { id: "start_1", type: "start", position: { x: 0, y: 0 }, data: {} },
+      {
+        id: "http_1",
+        type: "http-request",
+        position: { x: 100, y: 0 },
+        data: { config: { method: "GET", url: "https://example.test" } },
+      },
+      {
+        id: "assert_1",
+        type: "assertion",
+        position: { x: 200, y: 0 },
+        data: {
+          config: {
+            assertions: [
+              { source: "prev", path: "body.blacklisted", operator: "equals", expectedValue: false },
+              { source: "prev", path: "body.count", operator: "equals", expectedValue: 0 },
+              { source: "prev", path: "body.error", operator: "equals", expectedValue: "" },
+              { source: "prev", path: "body.flag", operator: "notEquals", expectedValue: true },
+            ],
+          },
+        },
+      },
+      { id: "end_1", type: "end", position: { x: 300, y: 0 }, data: {} },
+    ];
+
+    const { result } = mount([
+      { id: "e1", source: "start_1", target: "http_1" },
+      { id: "e2", source: "http_1", target: "assert_1" },
+      { id: "e3", source: "assert_1", target: "end_1", sourceHandle: "pass" },
+    ]);
+
+    await act(async () => {
+      await result.current.runWorkflow();
+    });
+
+    expect(invoke.mock.calls.find((c) => c[1] === "create")).toBeDefined();
   });
 });
 

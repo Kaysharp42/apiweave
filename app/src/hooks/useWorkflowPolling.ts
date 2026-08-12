@@ -10,6 +10,10 @@ import { toast } from "sonner";
 import type { Node } from "reactflow";
 import { apiweave, onRunProgress, IpcError } from "../utils/apiweaveClient";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
+import { analyzeWorkflowGraph } from "@shared/analysis/workflow_graph_analyzer";
+import type { WorkflowGraphInput } from "@shared/types/WorkflowGraphInput";
+import type { WorkflowEdge } from "@shared/types/WorkflowEdge";
+import type { WorkflowNode } from "@shared/types/WorkflowNode";
 import useRunChoreography from "./useRunChoreography";
 import type { PacedEvent } from "../utils/runChoreography";
 import type { RunResult } from "../types/RunResult";
@@ -155,6 +159,54 @@ function selectiveNodeUpdate(
   });
 }
 
+/**
+ * Build the analyzer's input shape from the live canvas nodes/edges, so the
+ * run gate runs the *same* diagnosis as `workflow_diagnose` rather than a
+ * reimplementation that drifts. The analyzer only reads `nodeId`, `type`,
+ * `label` and `config` from a node, and `edgeId`/`source`/`target`/
+ * `sourceHandle` from an edge — the ReactFlow values map directly without a
+ * Zod parse, so a malformed node is what the analyzer reports (not what
+ * throws here).
+ */
+function buildAnalyzerGraphInput(
+  workflowId: string | undefined,
+  canvasNodes: readonly Node[],
+  canvasEdges: readonly {
+    id?: string;
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  }[],
+): WorkflowGraphInput {
+  const nodes = canvasNodes.map((node) => {
+    const data = (node.data ?? {}) as Record<string, unknown>;
+    const built: WorkflowNode = {
+      nodeId: node.id,
+      type: (node.type ?? "http-request") as WorkflowNode["type"],
+      position: node.position ?? { x: 0, y: 0 },
+      ...(node.data && typeof data.label === "string"
+        ? { label: data.label }
+        : {}),
+      ...(data.config !== undefined ? { config: data.config } : {}),
+    } as WorkflowNode;
+    return built;
+  });
+
+  const edges = canvasEdges.map((edge) => {
+    const built: WorkflowEdge = {
+      edgeId: edge.id ?? `${edge.source}->${edge.target}`,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: (edge.sourceHandle ?? null) as WorkflowEdge["sourceHandle"],
+      targetHandle: (edge.targetHandle ?? null) as WorkflowEdge["targetHandle"],
+    } as WorkflowEdge;
+    return built;
+  });
+
+  return { workflowId, nodes, edges };
+}
+
 interface FailedNodeOption {
   nodeId: string;
   label: string;
@@ -174,8 +226,16 @@ interface UseWorkflowPollingParams {
   workflowId: string | undefined;
   nodes: Node[];
   // Topology only, for the playback: which node's traversal has to land before
-  // the next one is allowed to light up. Never read for anything else.
-  edges: readonly { source: string; target: string }[];
+  // the next one is allowed to light up. Read for the run gate too (the shared
+  // analyzer needs `sourceHandle`/`edgeId` to flag missing/invalid branch
+  // handles), so this is the full ReactFlow edge subset the gate reads.
+  edges: readonly {
+    id?: string;
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  }[];
   setNodes: (updater: (nds: Node[]) => Node[]) => void;
   selectedEnvironment: string | null | undefined;
   reactFlowInstanceRef: MutableRefObject<{
@@ -388,43 +448,31 @@ export default function useWorkflowPolling({
     async (_runOptions: RunOptions = {}) => {
       if (!workspaceId || !workflowId) return;
 
-      const invalidSummary: { nodeId: string; missing: string[] }[] = [];
-      nodes.forEach((n) => {
-        if (n.type === "assertion") {
-          const assertions = (
-            (n.data as Record<string, unknown>)?.config as
-              | Record<string, unknown>
-              | undefined
-          )?.assertions as
-            | {
-                source?: string;
-                operator?: string;
-                path?: string;
-                expectedValue?: string;
-              }[]
-            | undefined;
-          const assertionList = assertions ?? [];
-          const missing: string[] = [];
-          assertionList.forEach((a, idx) => {
-            if (a.source === "status") return;
-            if (["exists", "notExists"].includes(a.operator ?? "")) {
-              if (!a.path || !a.path.trim())
-                missing.push(`assertion[${idx}].path`);
-            } else {
-              if (!a.path || !a.path.trim())
-                missing.push(`assertion[${idx}].path`);
-              if (!a.expectedValue || !String(a.expectedValue).trim())
-                missing.push(`assertion[${idx}].expectedValue`);
-            }
-          });
-          if (missing.length > 0) {
-            invalidSummary.push({ nodeId: n.id, missing });
-          }
-        }
-      });
+      // One validator: the same `analyzeWorkflowGraph` that powers
+      // `workflow_diagnose`, `assertion_validate` and `assertion_apply`. The
+      // previous inline gate ran a *truthiness* check on `expectedValue`, which
+      // rejected `false`, `0` and `""` — perfectly valid `equals` targets —
+      // while the MCP `assertion_validate` accepted them, so a valid workflow
+      // was unrunnable from the canvas and the two paths disagreed.
+      //
+      // Scope the run-block to `assertion`-category errors — the per-rule
+      // validity that `assertion_validate` covers. Topology errors (missing
+      // start/end, unreachable nodes, etc.) are not a reason to block a
+      // half-edited graph from a Run: the executor reports them as a failed
+      // run, and the canvas is a workspace where graphs live mid-edit.
+      const diagnosis = analyzeWorkflowGraph(
+        buildAnalyzerGraphInput(workflowId, nodes, edges),
+      );
+      const blocking = diagnosis.diagnostics.filter(
+        (d) => d.severity === "error" && d.category === "assertion",
+      );
 
-      if (invalidSummary.length > 0) {
-        const invalidIds = new Set(invalidSummary.map((s) => s.nodeId));
+      if (blocking.length > 0) {
+        const invalidIds = new Set(
+          blocking
+            .map((d) => d.nodeIds[0])
+            .filter((id): id is string => typeof id === "string"),
+        );
         setNodes((nds) =>
           nds.map((node) =>
             invalidIds.has(node.id)
@@ -440,8 +488,8 @@ export default function useWorkflowPolling({
         );
 
         const instance = reactFlowInstanceRef?.current;
-        if (instance && invalidSummary[0]) {
-          const firstId = invalidSummary[0].nodeId;
+        const firstId = invalidIds.values().next().value;
+        if (instance && firstId) {
           const target = nodes.find((n) => n.id === firstId);
           if (target) {
             try {
@@ -454,11 +502,14 @@ export default function useWorkflowPolling({
           }
         }
 
-        const details = invalidSummary
-          .map((s) => `${s.nodeId}: ${s.missing.join(", ")}`)
+        const details = blocking
+          .map((d) => {
+            const id = d.nodeIds[0] ?? "?";
+            return `${id}: ${d.message}`;
+          })
           .join(" | ");
 
-        toast.error(`Run blocked: invalid node config — ${details}`, {
+        toast.error(`Run blocked: invalid workflow — ${details}`, {
           duration: 8000,
         });
 

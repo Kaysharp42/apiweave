@@ -107,6 +107,24 @@ const FORBIDDEN_EXPORT_KEYS: ReadonlySet<string> = new Set([
 
 const SECRET_REF_RE = /\{\{secrets\.([A-Za-z_][A-Za-z0-9_]*)\}\}/g
 
+/**
+ * Any `{{...}}` placeholder a runtime interpolates against `env`/`variables`/
+ * `prev`/`secrets` — a reference, not a literal. Round-trip redaction by value
+ * (not key name) keys off this: a value that is one of these references holds
+ * no secret and must survive a read verbatim, so `workflows_get` →
+ * `workflows_update` does not silently clobber `bearer.token: "{{variables.token}}"`,
+ * `extractors.token: "response.body.token"`, or `body.password: "{{env.PASSWORD}}"`
+ * with the `<SECRET>` literal. `{{funcName(...)}}` is intentionally out of scope: a function call only ever
+ * yields a literal value, never the credential shape itself, and including it
+ * risked false-positive preservation of opaque strings that happen to wrap in
+ * braces.
+ */
+const INDIR_REF_RE = /\{\{\s*(?:env\.|variables\.|prev\b|secrets\.)/i
+
+function containsIndirectionRef(value: string): boolean {
+  return INDIR_REF_RE.test(value)
+}
+
 function isRecord(value: unknown): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -166,14 +184,25 @@ const KEY_VALUE_EXPORT_FIELDS: ReadonlySet<string> = new Set([
  * Redact an HTTP auth config's secret leaf (`bearer.token`, `basic.password`,
  * `apiKey.value`) by field path rather than by key-name heuristic — those leaves
  * are named generically (`value`, `token`) and would otherwise pass key-based
- * redaction unnoticed.
+ * redaction unnoticed. In `agent-read` mode a leaf that is an `{{env.*}}` /
+ * `{{variables.*}}` / `{{prev...}}` / `{{secrets.*}}` reference survives: an
+ * agent's read-modify-write has to be able to tell "this slot is wired to a
+ * reference" from "this slot holds a literal I must not clobber", or every
+ * round trip overwrites the credential indirection with `<SECRET>`.
  */
-function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<string, JsonValue> {
+function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>, mode: SanitizeMode): Record<string, JsonValue> {
   const sanitized: Record<string, JsonValue> = { ...auth }
   const { bearer, basic, apiKey } = sanitized
-  if (isRecord(bearer)) sanitized["bearer"] = { ...bearer, token: SECRET_PLACEHOLDER }
-  if (isRecord(basic)) sanitized["basic"] = { ...basic, password: SECRET_PLACEHOLDER }
-  if (isRecord(apiKey)) sanitized["apiKey"] = { ...apiKey, value: SECRET_PLACEHOLDER }
+  const leaf = (value: string): JsonValue => (keepAsReference(value, mode) ? value : SECRET_PLACEHOLDER)
+  if (isRecord(bearer) && typeof bearer["token"] === "string") {
+    sanitized["bearer"] = { ...bearer, token: leaf(bearer["token"]) }
+  }
+  if (isRecord(basic) && typeof basic["password"] === "string") {
+    sanitized["basic"] = { ...basic, password: leaf(basic["password"]) }
+  }
+  if (isRecord(apiKey) && typeof apiKey["value"] === "string") {
+    sanitized["apiKey"] = { ...apiKey, value: leaf(apiKey["value"]) }
+  }
   return sanitized
 }
 
@@ -236,13 +265,14 @@ function sanitizeKeyValueEntry(
  *
  * `redactAllValues` (cookies) withholds unconditionally — session material hides
  * under names that look harmless. Otherwise only a secret-named key withholds,
- * and even then a `{{secrets.NAME}}` reference survives: it is an indirection,
- * not the secret, and seeing it is how an agent knows which credential a header
- * binds to.
+ * and even then a `{{...}}` indirection reference in any namespace (env,
+ * variables, prev, secrets) survives: it is a reference, not the secret, and
+ * seeing it is how an agent knows which slot a credential binds to.
  */
 function withholdsPairValue(value: string, secretKey: boolean, redactAllValues: boolean): boolean {
+  if (containsIndirectionRef(value)) return false
   if (redactAllValues) return true
-  return secretKey && extractSecretRefsFromString(value).length === 0
+  return secretKey
 }
 
 /**
@@ -253,19 +283,17 @@ function withholdsPairValue(value: string, secretKey: boolean, redactAllValues: 
  *
  * So redact structurally instead: parse the body as JSON and blank only the
  * leaves whose key names a secret or whose value looks like a credential,
- * keeping `{{secrets.NAME}}` references intact. A body that isn't JSON gets the
- * value-level heuristic applied to the whole string. When nothing needed
- * redacting the original string is returned verbatim, so re-formatting never
- * shows up as a spurious diff.
+ * keeping `{{...}}` references in any namespace (env, variables, prev, secrets)
+ * intact. A body that isn't JSON gets the value-level heuristic applied to the
+ * whole string. When nothing needed redacting the original string is returned
+ * verbatim, so re-formatting never shows up as a spurious diff.
  */
 function sanitizeBodyForAgentRead(body: string): string {
   let parsed: unknown
   try {
     parsed = JSON.parse(body)
   } catch {
-    return looksLikeSecretValue(body) && extractSecretRefsFromString(body).length === 0
-      ? SECRET_PLACEHOLDER
-      : body
+    return looksLikeSecretValue(body) && !containsIndirectionRef(body) ? SECRET_PLACEHOLDER : body
   }
   let redacted = false
   const walk = (value: unknown, keyName: string | null): unknown => {
@@ -276,7 +304,7 @@ function sanitizeBodyForAgentRead(body: string): string {
       return out
     }
     if (typeof value !== "string") return value
-    if (extractSecretRefsFromString(value).length > 0) return value
+    if (containsIndirectionRef(value)) return value
     if ((keyName !== null && isSecretKey(keyName)) || looksLikeSecretValue(value)) {
       redacted = true
       return SECRET_PLACEHOLDER
@@ -344,9 +372,13 @@ export function sanitizeAgentReadValue(data: JsonValue): JsonValue {
  * field is one entry instead of another branch.
  */
 const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: SanitizeMode) => JsonValue | undefined>> = {
-  auth: (value) => (isRecord(value) ? sanitizeAuthConfigForExport(value) : undefined),
+  auth: (value, mode) => (isRecord(value) ? sanitizeAuthConfigForExport(value, mode) : undefined),
   fileUploads: (value) => (Array.isArray(value) ? sanitizeFileUploadsForExport(value) : undefined),
   cookies: (value, mode) => (Array.isArray(value) ? sanitizeKeyValueArray(value, true, mode) : undefined),
+  // Extractor values are response paths ("response.body.data.access_token") by
+  // schema definition — never credentials — and the `token`-ish variable names
+  // they map from would otherwise be redacted by the key-name heuristic below.
+  extractors: (value) => (isRecord(value) ? { ...value } : undefined),
   url: (value) => (typeof value === "string" ? sanitizeUrlForExport(value) : undefined),
   body: (value, mode) => {
     if (typeof value !== "string" || value.trim().length === 0) return undefined
@@ -367,9 +399,12 @@ function sanitizeField(key: string, value: JsonValue, mode: SanitizeMode): JsonV
   return undefined
 }
 
-/** An agent read keeps `{{secrets.NAME}}` verbatim: a reference is an indirection, not the secret. */
+/**
+ * An agent read keeps a `{{...}}` indirection reference — in any namespace
+ * (env, variables, prev, secrets) — verbatim: it is a reference, not the secret.
+ */
 function keepAsReference(value: string, mode: SanitizeMode): boolean {
-  return mode === "agent-read" && extractSecretRefsFromString(value).length > 0
+  return mode === "agent-read" && containsIndirectionRef(value)
 }
 
 function sanitizeValue(data: JsonValue, mode: SanitizeMode): JsonValue {
