@@ -184,6 +184,20 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
   return authConfig;
 }
 
+function isStatusCode(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599;
+}
+
+/** Drops out-of-range/non-integer entries rather than replacing the whole field with a fallback — a partially valid list is still useful. */
+export function normalizeExpectedStatus(value: unknown): number | number[] | undefined {
+  if (isStatusCode(value)) return value;
+  if (Array.isArray(value)) {
+    const codes = value.filter(isStatusCode);
+    return codes.length > 0 ? codes : undefined;
+  }
+  return undefined;
+}
+
 function normalizeBodyType(value: unknown): HTTPRequestBodyType {
   if (
     value === "none" ||
@@ -217,6 +231,7 @@ export function normalizeHttpRequestConfig(
     followRedirects: getBoolean(config.followRedirects, true),
     sslVerify: getBoolean(config.sslVerify, true),
     continueOnFail: getBoolean(config.continueOnFail, false),
+    expectedStatus: normalizeExpectedStatus(config.expectedStatus),
     formDataEntries: normalizeFormDataEntries(config.formDataEntries),
     urlEncodedEntries: normalizeUrlEncodedEntries(config.urlEncodedEntries),
   };

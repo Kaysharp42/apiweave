@@ -469,6 +469,22 @@ function addAssertionAndBranchDiagnostics(workflow: Workflow, diagnostics: Workf
         ))
       } else {
         handleCounts.set(handle, (handleCounts.get(handle) ?? 0) + 1)
+        // A `fail` edge that lands directly on an `end` node does exactly what
+        // leaving `fail` unconnected already does — the run records the
+        // failure and the branch stops there — just with an extra edge to
+        // maintain. Notice, not warning: it is verbose, not wrong.
+        if (handle === "fail" && nodesById.get(edge.target)?.type === "end") {
+          diagnostics.push(diagnostic(
+            "assertion_fail_wired_on_all",
+            "notice",
+            "branch",
+            [node.nodeId, edge.target],
+            "The fail handle is wired straight to an end node, which is the same as leaving it unconnected.",
+            { edgeId: edge.edgeId, endNodeId: edge.target },
+            { kind: "remove_redundant_fail_edge", edgeId: edge.edgeId },
+            "high",
+          ))
+        }
       }
     }
     for (const [handle, count] of handleCounts) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAuthConfig } from "./httpRequestConfigCompat";
+import { normalizeAuthConfig, normalizeExpectedStatus } from "./httpRequestConfigCompat";
 
 describe("normalizeAuthConfig", () => {
   it("drops stale sub-configs from other auth types", () => {
@@ -30,5 +30,26 @@ describe("normalizeAuthConfig", () => {
       type: "apiKey",
       apiKey: { key: "X-Api-Key", value: "current-secret", addTo: "query" },
     });
+  });
+});
+
+describe("normalizeExpectedStatus", () => {
+  it("keeps a single in-range status code", () => {
+    expect(normalizeExpectedStatus(409)).toBe(409);
+  });
+
+  it("keeps an array of in-range status codes", () => {
+    expect(normalizeExpectedStatus([409, 422])).toEqual([409, 422]);
+  });
+
+  it("drops out-of-range or non-integer entries from an array instead of discarding the whole field", () => {
+    expect(normalizeExpectedStatus([409, 42, 200.5, 900])).toEqual([409]);
+  });
+
+  it("returns undefined for an out-of-range single value, an empty array, or a non-numeric value", () => {
+    expect(normalizeExpectedStatus(42)).toBeUndefined();
+    expect(normalizeExpectedStatus([])).toBeUndefined();
+    expect(normalizeExpectedStatus("409")).toBeUndefined();
+    expect(normalizeExpectedStatus(undefined)).toBeUndefined();
   });
 });

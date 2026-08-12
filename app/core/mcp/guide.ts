@@ -87,15 +87,12 @@ node and follows edges. Nothing runs unless an edge leads to it.
         ]
       }
     },
-    { "nodeId": "report_failure", "type": "http-request", "config": { "method": "POST", "url": "{{env.BASE_URL}}/report" } },
     { "nodeId": "done", "type": "end" }
   ],
   "edges": [
     { "edgeId": "e1", "source": "start", "target": "get_pet" },
     { "edgeId": "e2", "source": "get_pet", "target": "check" },
-    { "edgeId": "e3", "source": "check", "target": "done", "sourceHandle": "pass" },
-    { "edgeId": "e4", "source": "check", "target": "report_failure", "sourceHandle": "fail" },
-    { "edgeId": "e5", "source": "report_failure", "target": "done" }
+    { "edgeId": "e3", "source": "check", "target": "done", "sourceHandle": "pass" }
   ],
   "variables": { "petId": "1" }
 }
@@ -108,6 +105,19 @@ Three things to copy from this:
 - There is **exactly one \`start\` and exactly one \`end\`**. Branches converge on
   the same \`end\` rather than each getting their own — a second \`end\` node is
   reported as \`duplicate_end_node\`.
+
+\`check\`'s \`fail\` handle is left unconnected above, and that is the common case:
+the run still records the failed assertion and the branch stops there. Wire
+\`fail\` only when failure needs a *distinct* action, e.g. reporting it elsewhere:
+
+\`\`\`json
+{ "nodeId": "report_failure", "type": "http-request", "config": { "method": "POST", "url": "{{env.BASE_URL}}/report" } }
+\`\`\`
+
+\`\`\`json
+{ "edgeId": "e4", "source": "check", "target": "report_failure", "sourceHandle": "fail" },
+{ "edgeId": "e5", "source": "report_failure", "target": "done" }
+\`\`\`
 
 ## Related
 
@@ -176,6 +186,15 @@ node fails — \`workflow_diagnose\` reports this as \`assertion_source_missing\
 
 Rules live at \`config.assertions\`. See \`apiweave://guide/assertions\`.
 
+An assertion's \`fail\` handle may be left unconnected — that is the common case,
+not a mistake. The run still records the failed assertion and that branch
+terminates there either way. Wire \`fail\` only when failure needs a *distinct*
+action: a cleanup request, a notification, a compensating call. Wiring every
+\`fail\` handle straight to the shared \`end\` node does exactly what leaving it
+unconnected already does, just with more edges — \`workflow_diagnose\` flags that
+shape as \`assertion_fail_wired_on_all\` (notice, not warning: it is verbose, not
+wrong).
+
 ### merge
 
 \`config.strategy\` is \`all\` (wait for every branch), \`any\` (first to finish),
@@ -217,6 +236,10 @@ branch; an edge without a handle is never followed, so the branch stops silently
 mid-run. This is the single most common authoring mistake, and
 \`workflow_diagnose\` reports it as \`assertion_branch_handle_invalid\` — an error
 you can see before running anything.
+
+That rule constrains which handle an edge that *exists* must use — it does not
+require an edge on *every* handle. Leaving \`fail\` unconnected is normal: the run
+still records the failed assertion and stops that branch there.
 
 Nodes of every other type have one output; leave \`sourceHandle\` unset for them.
 
