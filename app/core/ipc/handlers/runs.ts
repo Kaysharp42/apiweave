@@ -1,11 +1,32 @@
 import fs from "node:fs"
 import { z } from "zod"
 import { RunSchema, JsonValueSchema } from "@shared/zod-schemas"
+import type { Run, RunResult } from "@shared/types"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { listResult } from "./common"
 import { NotFoundError } from "../errors"
 import { readReportArtifacts, resolveArtifactPath } from "../../runner/reporters"
+
+// The full request/response for one node, redacted for nothing (this is the
+// desktop IPC path, not MCP): everything the runner recorded for that node.
+function buildNodeResultProjection(run: Run, result: RunResult, nodeId: string) {
+  return {
+    runId: run.runId,
+    workflowId: run.workflowId,
+    nodeId,
+    status: result.status,
+    duration: result.duration,
+    startedAt: result.startedAt ?? null,
+    completedAt: result.completedAt ?? null,
+    request: result.request ?? null,
+    response: result.response ?? null,
+    error: result.error ?? null,
+    extractorOutcomes: result.extractorOutcomes ?? [],
+    unresolvedPlaceholders: result.unresolvedPlaceholders ?? [],
+    assertions: result.assertions ?? [],
+  }
+}
 
 const ws = z.string().min(1)
 
@@ -60,21 +81,7 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
       if (result === undefined) {
         throw new NotFoundError(`node ${nodeId} not found in run ${runId}`)
       }
-      return {
-        runId: run.runId,
-        workflowId: run.workflowId,
-        nodeId,
-        status: result.status,
-        duration: result.duration,
-        startedAt: result.startedAt ?? null,
-        completedAt: result.completedAt ?? null,
-        request: result.request ?? null,
-        response: result.response ?? null,
-        error: result.error ?? null,
-        extractorOutcomes: result.extractorOutcomes ?? [],
-        unresolvedPlaceholders: result.unresolvedPlaceholders ?? [],
-        assertions: result.assertions ?? [],
-      }
+      return buildNodeResultProjection(run, result, nodeId)
     },
   })
 
