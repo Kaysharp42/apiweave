@@ -6,8 +6,15 @@ import {
   JsonValueSchema,
   WorkflowDiagnosisSchema,
   RevisionSchema,
+  WorkflowWriteResultSchema,
 } from "@shared/zod-schemas"
 import { canonicalizeNodeConfig } from "../../repositories/helpers"
+import type { Workflow } from "@shared/types/Workflow"
+import type { WorkflowDiagnosis } from "@shared/types/WorkflowDiagnosis"
+import type { WorkflowNode } from "@shared/types/WorkflowNode"
+import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
+import type { WorkflowWriteResult } from "@shared/types/WorkflowWriteResult"
+import type { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { listResult } from "./common"
@@ -91,13 +98,33 @@ const patchInput = z
 const idInput = z.object({ workspaceId: ws, workflowId: z.string().min(1) }).strict()
 const diagnoseInput = idInput.extend({ runId: z.string().min(1).optional() }).strict()
 
+// Echo shape toggle for graph-writing tools. The full graph echo blows MCP
+// token budgets on large workflows (a single-rule patch returned all 130 nodes
+// and 194 edges). Defaulting `workflows_patch` to "summary" returns just the
+// `workflowId`, `rev`, counts, the ids the write touched, and the diagnosis —
+// everything the documented "patch then read the diagnosis" loop needs.
+const returnShape = z
+  .enum(["diagnosis", "summary", "full"])
+  .optional()
+  .describe(
+    "Shape of the response. \"summary\" (the default for workflows_patch) returns workflowId, rev, node/edge counts, the ids the write touched, and the diagnosis. \"diagnosis\" returns workflowId, rev and the diagnosis only. \"full\" echoes the whole persisted workflow (the default for workflows_create / workflows_update, and what the in-app renderer reads).",
+  )
+
 export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { workflows, workflowAnalysis } = deps
 
   router.register("workflows", "create", {
-    input: createInput,
-    output: WorkflowSchema,
-    handle: ({ workspaceId, ...input }) => workflows.create(workspaceId, input),
+    input: createInput.extend({ return: returnShape }).strict(),
+    output: WorkflowWriteResultSchema,
+    handle: ({ workspaceId, return: shape, ...input }) =>
+      projectWriteResult(
+        shape ?? "full",
+        () => workflows.create(workspaceId, input),
+        // The whole graph was written on create, so no "touched" set is meaningful.
+        () => ({ touchedNodeIds: [] as string[], touchedEdgeIds: [] as string[] }),
+        workflowAnalysis,
+        workspaceId,
+      ),
   })
 
   router.register("workflows", "get", {
@@ -119,16 +146,36 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
   })
 
   router.register("workflows", "update", {
-    input: updateInput,
-    output: WorkflowSchema,
-    handle: ({ workspaceId, workflowId, ...patch }) =>
-      workflows.update(workspaceId, workflowId, patch),
+    input: updateInput.extend({ return: returnShape }).strict(),
+    output: WorkflowWriteResultSchema,
+    handle: ({ workspaceId, workflowId, return: shape, ...patch }) =>
+      projectWriteResult(
+        shape ?? "full",
+        () => workflows.update(workspaceId, workflowId, patch),
+        // A whole-graph replace: no "touched" set is meaningful.
+        () => ({ touchedNodeIds: [] as string[], touchedEdgeIds: [] as string[] }),
+        workflowAnalysis,
+        workspaceId,
+      ),
   })
 
   router.register("workflows", "patch", {
-    input: patchInput,
-    output: WorkflowSchema,
-    handle: ({ workspaceId, workflowId, ...patch }) => workflows.patch(workspaceId, workflowId, patch),
+    input: patchInput.extend({ return: returnShape }).strict(),
+    output: WorkflowWriteResultSchema,
+    handle: ({ workspaceId, workflowId, return: shape, ...patch }) => {
+      const upsertNodeIds = ((patch.upsertNodes as readonly WorkflowNode[] | undefined) ?? []).map((n) => n.nodeId)
+      const upsertEdgeIds = ((patch.upsertEdges as readonly WorkflowEdge[] | undefined) ?? []).map((e) => e.edgeId)
+      return projectWriteResult(
+        shape ?? "summary",
+        () => workflows.patch(workspaceId, workflowId, patch),
+        () => ({
+          touchedNodeIds: [...upsertNodeIds, ...(patch.removeNodeIds ?? [])],
+          touchedEdgeIds: [...upsertEdgeIds, ...(patch.removeEdgeIds ?? [])],
+        }),
+        workflowAnalysis,
+        workspaceId,
+      )
+    },
   })
 
   router.register("workflows", "delete", {
@@ -155,4 +202,65 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
     output: WorkflowSchema,
     handle: (i) => workflows.setEnvironment(i.workspaceId, i.workflowId, i.environmentId),
   })
+}
+
+type WriteShape = "diagnosis" | "summary" | "full"
+
+/**
+ * Project a graph-write's result to the requested echo shape. "full" returns the
+ * persisted {@link Workflow} unchanged — what the in-app renderer reads. "summary"
+ * returns `workflowId`, `rev`, counts, the ids the write actually touched, and
+ * the full diagnosis — the documented "patch then read the diagnosis" loop needs
+ * only that. "diagnosis" returns `workflowId`, `rev` and the diagnosis.
+ *
+ * Returning the full graph echo from `workflows_patch` blew MCP token budgets on
+ * a 130-node graph when the patch changed a single rule. Defaulting patch to
+ * "summary" cuts the response to the part the author must act on.
+ */
+async function projectWriteResult(
+  shape: WriteShape,
+  write: () => Promise<Workflow>,
+  touched: () => { touchedNodeIds: readonly string[]; touchedEdgeIds: readonly string[] },
+  analysis: WorkflowAnalysisService,
+  workspaceId: string,
+): Promise<WorkflowWriteResult> {
+  const workflow = await write()
+  if (shape === "full") return workflow
+  const diagnosis = await safeDiagnose(analysis, workspaceId, workflow.workflowId)
+  if (shape === "diagnosis") {
+    return {
+      kind: "diagnosis" as const,
+      workflowId: workflow.workflowId,
+      rev: workflow.rev,
+      diagnosis,
+    }
+  }
+  const { touchedNodeIds, touchedEdgeIds } = touched()
+  return {
+    kind: "summary" as const,
+    workflowId: workflow.workflowId,
+    rev: workflow.rev,
+    nodeCount: workflow.nodes.length,
+    edgeCount: workflow.edges.length,
+    touchedNodeIds: [...touchedNodeIds].sort() as string[],
+    touchedEdgeIds: [...touchedEdgeIds].sort() as string[],
+    diagnosis,
+  }
+}
+
+/** Best-effort: the write already committed, so a failed diagnosis becomes an empty one. */
+async function safeDiagnose(
+  analysis: WorkflowAnalysisService,
+  workspaceId: string,
+  workflowId: string,
+): Promise<WorkflowDiagnosis> {
+  try {
+    return await analysis.diagnose(workspaceId, workflowId)
+  } catch {
+    return {
+      workflowId,
+      summary: { errors: 0, warnings: 0, notices: 0 },
+      diagnostics: [],
+    }
+  }
 }

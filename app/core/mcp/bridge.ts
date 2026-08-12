@@ -66,11 +66,21 @@ async function dispatchAsTool(
 
   if (result.ok) {
     const data = spec.resultProjection === "run" ? projectRunToolResult(result.data) : result.data
-    const diagnosis = spec.diagnoseAfterWrite === true ? await diagnoseWritten(router, result.data) : undefined
+    const { result: envelopeResult, diagnosis } = await splitDiagnosis(router, spec, data)
     if (diagnosis === undefined) {
+      // Graph-writing tools whose `result` does not carry a `workspaceId` (the
+      // compact summary/diagnosis projections, or any write whose re-diagnosis
+      // failed) cannot be re-diagnosed here — but they still ride inside the
+      // same `{ result }` envelope the wrapped case uses, so every write tool's
+      // text content is shape-stable across response sizes. Non-write tools
+      // keep the bare-handler text they always had (`structuredContent` still
+      // carries the `result` key).
+      const text = spec.diagnoseAfterWrite === true
+        ? JSON.stringify({ result: envelopeResult }, null, 2)
+        : JSON.stringify(envelopeResult, null, 2)
       return {
-        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
-        structuredContent: { result: data },
+        content: [{ type: "text", text }],
+        structuredContent: { result: envelopeResult },
       }
     }
     // Only the graph-writing tools take this branch, and only they carry the
@@ -78,14 +88,41 @@ async function dispatchAsTool(
     // structuredContent still has to see the diagnosis, or attaching it would
     // achieve nothing. Every other tool's text stays the bare handler response.
     return {
-      content: [{ type: "text", text: JSON.stringify({ result: data, diagnosis }, null, 2) }],
-      structuredContent: { result: data, diagnosis },
+      content: [{ type: "text", text: JSON.stringify({ result: envelopeResult, diagnosis }, null, 2) }],
+      structuredContent: { result: envelopeResult, diagnosis },
     }
   }
   return {
     content: [{ type: "text", text: `Error [${result.error.code}]: ${result.error.message}` }],
     isError: true,
   }
+}
+
+/**
+ * Derive the sibling `diagnosis` for a graph-write's projected result, so the
+ * one field every write tool's guide tells an agent to read after a write is
+ * reliably at that top-level key regardless of `return` shape. The two
+ * write-echo shapes disagree on where they already have it:
+ *
+ * - `"full"` is the bare persisted `Workflow`, which carries no `diagnosis` of
+ *   its own but does carry `workspaceId` — {@link diagnoseWritten} fetches it.
+ * - `"summary"`/`"diagnosis"` already compute their diagnosis inline (see
+ *   `projectWriteResult`), because they carry no `workspaceId` for
+ *   {@link diagnoseWritten} to re-fetch with. Reuse that embedded value as the
+ *   sibling rather than re-deriving it — `result` keeps its own copy too, both
+ *   `reg.output`'s `.strict()` schema and existing IPC/renderer callers expect
+ *   it there.
+ */
+async function splitDiagnosis(
+  router: IpcRouter,
+  spec: McpToolSpec,
+  data: unknown,
+): Promise<{ result: unknown; diagnosis: unknown }> {
+  if (spec.diagnoseAfterWrite !== true) return { result: data, diagnosis: undefined }
+  if (typeof data === "object" && data !== null && "diagnosis" in data) {
+    return { result: data, diagnosis: (data as { diagnosis: unknown }).diagnosis }
+  }
+  return { result: data, diagnosis: await diagnoseWritten(router, data) }
 }
 
 /**

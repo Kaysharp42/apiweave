@@ -120,6 +120,7 @@ export interface NodeResult {
   readonly startedAt?: string
   readonly completedAt?: string
   readonly secretRefs?: readonly string[]
+  readonly unresolvedPlaceholders?: readonly string[]
   readonly assertionEvaluations?: readonly AssertionEvaluation[]
   readonly extractorOutcomes?: readonly ExtractorOutcome[]
   /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
@@ -684,14 +685,27 @@ export class WorkflowExecutor {
       url = `${base}?${params.toString()}`
     }
 
-    const startTime = Date.now()
-
     let fetchBody: string | Buffer | UndiciFormData | undefined
     try {
       fetchBody = await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
     } catch (bodyError) {
       return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url, duration: 0 })
     }
+
+    // A placeholder `substituteVariables` could not resolve is left in the
+    // request verbatim, so the assembled end state tells us what went out
+    // unresolved. Reported per node so a `{{env.*}}`/`{{variables.*}}` that
+    // stayed literal — commonly a 401 from the target that reads as bad
+    // credentials — surfaces on the run result instead of looking like a
+    // service error.
+    const unresolvedPlaceholders = collectUnresolvedPlaceholders([
+      url,
+      ...Object.values(headers),
+      ...Object.values(queryParams),
+      ...(typeof fetchBody === "string" ? [fetchBody] : []),
+    ])
+
+    const startTime = Date.now()
 
     try {
       this.deps.http.validateUrl(url)
@@ -747,14 +761,29 @@ export class WorkflowExecutor {
           statusCode,
           ...(truncated ? { truncated: true } : {}),
         },
+        ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }
 
       return withExtractorOutcomes(result)
     } catch (error) {
       if (error instanceof SafeUrlError) {
-        return withExtractorOutcomes({ status: "error", error: `SSRF blocked: ${error.message}`, method, url, duration: 0 })
+        return withExtractorOutcomes({
+          status: "error",
+          error: `SSRF blocked: ${error.message}`,
+          method,
+          url,
+          duration: 0,
+          ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+        })
       }
-      return withExtractorOutcomes({ status: "error", error: String(error), method, url, duration: Date.now() - startTime })
+      return withExtractorOutcomes({
+        status: "error",
+        error: String(error),
+        method,
+        url,
+        duration: Date.now() - startTime,
+        ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+      })
     }
   }
 
@@ -1732,29 +1761,7 @@ export class WorkflowExecutor {
     const results: RunResult[] = []
     for (const [nodeId, result] of this.results.entries()) {
       const status = this.nodeStatuses.get(nodeId) ?? (result.status === "success" ? "passed" : "failed")
-      results.push({
-        nodeId,
-        status,
-        duration: Math.max(0, Math.round(typeof result.duration === "number" ? result.duration : 0)),
-        ...(typeof result.startedAt === "string" ? { startedAt: result.startedAt } : {}),
-        ...(typeof result.completedAt === "string" ? { completedAt: result.completedAt } : {}),
-        ...(result.secretRefs && result.secretRefs.length > 0 ? { secretRefs: [...result.secretRefs] } : {}),
-        request: {
-          ...(typeof result["method"] === "string" ? { method: result["method"] } : {}),
-          ...(typeof result["url"] === "string" ? { url: result["url"] } : {}),
-        },
-        response: toJsonValue(result.response ?? {
-          ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
-          ...(result.headers !== undefined ? { headers: result.headers } : {}),
-          ...(result.body !== undefined ? { body: result.body } : {}),
-        }),
-        error: typeof result.error === "string" ? result.error : null,
-        assertions: result.type === "assertion" ? [...(result.assertionEvaluations ?? [])] : null,
-        ...(result.extractorOutcomes ? { extractorOutcomes: [...result.extractorOutcomes] } : {}),
-        ...(result.subWorkflow
-          ? { subWorkflow: { ...result.subWorkflow, outputVariableNames: [...result.subWorkflow.outputVariableNames] } }
-          : {}),
-      })
+      results.push(buildRunResult(nodeId, status, result))
     }
     return results
   }
@@ -1780,6 +1787,53 @@ export class WorkflowExecutor {
 function toJsonValue(value: unknown): JsonValue {
   if (value === undefined) return null
   return JSON.parse(JSON.stringify(value)) as JsonValue
+}
+
+function buildRunResultRequest(result: NodeResult): { method?: string; url?: string } {
+  return {
+    ...(typeof result["method"] === "string" ? { method: result["method"] } : {}),
+    ...(typeof result["url"] === "string" ? { url: result["url"] } : {}),
+  }
+}
+
+function buildRunResultResponse(result: NodeResult): JsonValue {
+  return toJsonValue(result.response ?? {
+    ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
+    ...(result.headers !== undefined ? { headers: result.headers } : {}),
+    ...(result.body !== undefined ? { body: result.body } : {}),
+  })
+}
+
+type RunResultDiagnostics = Partial<
+  Pick<RunResult, "secretRefs" | "unresolvedPlaceholders" | "extractorOutcomes" | "subWorkflow">
+>
+
+function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
+  return {
+    ...(result.secretRefs && result.secretRefs.length > 0 ? { secretRefs: [...result.secretRefs] } : {}),
+    ...(result.unresolvedPlaceholders && result.unresolvedPlaceholders.length > 0
+      ? { unresolvedPlaceholders: [...result.unresolvedPlaceholders] }
+      : {}),
+    ...(result.extractorOutcomes ? { extractorOutcomes: [...result.extractorOutcomes] } : {}),
+    ...(result.subWorkflow
+      ? { subWorkflow: { ...result.subWorkflow, outputVariableNames: [...result.subWorkflow.outputVariableNames] } }
+      : {}),
+  }
+}
+
+function buildRunResult(nodeId: string, status: RunResult["status"], result: NodeResult): RunResult {
+  return {
+    nodeId,
+    status,
+    duration: Math.max(0, Math.round(typeof result.duration === "number" ? result.duration : 0)),
+    ...(typeof result.startedAt === "string" ? { startedAt: result.startedAt } : {}),
+    ...(typeof result.completedAt === "string" ? { completedAt: result.completedAt } : {}),
+    ...buildRunResultDiagnostics(result),
+    request: buildRunResultRequest(result),
+    response: buildRunResultResponse(result),
+    error: typeof result.error === "string" ? result.error : null,
+    assertions: result.type === "assertion" ? [...(result.assertionEvaluations ?? [])] : null,
+  }
 }
 
 function toAssertionSource(value: string | undefined): AssertionSource {
@@ -1842,4 +1896,28 @@ function collectSecretRefs(config: Record<string, unknown> | undefined): readonl
   }
   visit(config)
   return [...names]
+}
+
+/**
+ * Reference-shaped placeholders (`{{env.*}}`, `{{variables.*}}`, `{{prev...}}`,
+ * `{{secrets.*}}`) still present in a built HTTP request. `substituteVariables`
+ * leaves an unresolved placeholder verbatim, so the assembled URL/headers/query
+ * values tell us which references never resolved. Names only (never values).
+ */
+const UNRESOLVED_REF_RE = /\{\{\s*(env\.|variables\.|prev\b|secrets\.)([^}]*)\}\}/g
+
+function collectUnresolvedPlaceholders(values: readonly string[]): string[] {
+  const found = new Set<string>()
+  for (const value of values) {
+    for (const match of value.matchAll(UNRESOLVED_REF_RE)) {
+      const prefix = match[1]!
+      // `env./variables./secrets.` swallow their dot into the prefix, so `rest` never
+      // starts with one — but `prev` (bare word-boundary, no dot) needs its `.` kept as
+      // the join separator. Trimming (not stripping a leading dot) also drops the
+      // trailing whitespace `{{ env.EMAIL }}` leaves in `rest` before the closing `}}`.
+      const rest = (match[2] ?? "").trim()
+      found.add(rest.length > 0 ? `${prefix}${rest}` : prefix)
+    }
+  }
+  return [...found]
 }

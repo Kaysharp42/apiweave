@@ -336,6 +336,75 @@ describe("MCP bridge — second transport, parity by construction", () => {
     await client.close()
   })
 
+  it("runs_getNodeResult returns the stored body for one node, with secret-looking values redacted", async () => {
+    const responseSecret = "Bearer sensitive-token-that-must-leave-redacted"
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "node-result",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      results: [
+        {
+          nodeId: "mc-create",
+          status: "failed",
+          duration: 4,
+          request: { method: "POST", url: "https://example.test/policies", body: "{\"name\":\"whatever\"}" },
+          response: {
+            statusCode: 404,
+            headers: { "content-type": "application/json", authorization: responseSecret },
+            body: { error: "LEGAL_CATEGORY_NOT_FOUND", ref: "ROLE_NOT_FOUND" },
+          },
+          error: "Request configuration invalid",
+        },
+      ],
+    })
+
+    const client = await connectClient()
+    const toolResult = await client.callTool({
+      name: "runs_getNodeResult",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeId: "mc-create" },
+    })
+    const text = textOf(toolResult as { content: Array<{ type: string; text?: string }> })
+    const parsed = JSON.parse(text) as {
+      nodeId: string
+      status: string
+      request: { url: string; body?: string }
+      response: { statusCode: number; headers: Record<string, string>; body: { error: string; ref: string } }
+    }
+
+    // Body is exposed — the failure detail the target service returned is what
+    // makes this tool worth having, instead of the bare 404 the metadata-only
+    // `runs.get` returns:
+    expect(parsed.response.body).toEqual({ error: "LEGAL_CATEGORY_NOT_FOUND", ref: "ROLE_NOT_FOUND" })
+    expect(parsed.response.statusCode).toBe(404)
+    expect(parsed.nodeId).toBe("mc-create")
+    expect(parsed.status).toBe("failed")
+    // The same secret-redaction pass every MCP read applies still runs (the
+    // transport redacts Authorization headers and secret-looking strings):
+    expect(text).not.toContain(responseSecret)
+    await client.close()
+  })
+
+  it("runs_getNodeResult hides whether a nodeId is unknown with not_found (existence parity)", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "missing-node",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "runs_getNodeResult",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeId: "nope" },
+    })
+    expect((result as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(result as { content: Array<{ type: string; text?: string }> })).toContain("not_found")
+    await client.close()
+  })
+
   it("maps an unknown workspace to an isError result carrying not_found (existence-hiding)", async () => {
     const client = await connectClient()
     const result = await client.callTool({
@@ -685,6 +754,7 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
         workspaceId: workspace.workspaceId,
         workflowId: created.result.workflowId,
         expectedRevision: created.result.rev,
+        return: "full",
         // Only the two broken pieces travel — not the four nodes and three edges.
         upsertEdges: [{ edgeId: "e3", source: "assert", target: "end", sourceHandle: "pass" }],
         upsertNodes: [
@@ -762,6 +832,7 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
           arguments: {
             workspaceId: workspace.workspaceId,
             workflowId: workflow.workflowId,
+            return: "full",
             removeNodeIds: ["doomed"],
             upsertEdges: [{ edgeId: "e3", source: "start", target: "end" }],
             setVariables: { added: "1" },
@@ -774,6 +845,117 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
     expect(patched.result.nodes.map((node) => node.nodeId)).toEqual(["start", "end"])
     expect(patched.result.edges.map((edge) => edge.edgeId)).toEqual(["e3"])
     expect(patched.result.variables).toEqual({ keep: "yes", added: "1" })
+    await client.close()
+  })
+
+  it("workflows_patch defaults to a compact summary projection, not the full graph echo (item 7)", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "summary-default",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "http",
+          type: "http-request",
+          position: { x: 100, y: 0 },
+          config: { method: "GET", url: "https://example.test" },
+        },
+        {
+          nodeId: "assert",
+          type: "assertion",
+          position: { x: 200, y: 0 },
+          config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }] },
+        },
+        { nodeId: "end", type: "end", position: { x: 300, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "http" },
+        { edgeId: "e2", source: "http", target: "assert" },
+        { edgeId: "e3", source: "assert", target: "end", sourceHandle: "pass" },
+      ],
+    })
+
+    const client = await connectClient()
+    const patched = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_patch",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            workflowId: created.workflowId,
+            // Intentionally no `return`: the default for workflows_patch is "summary".
+            setVariables: { marker: "x" },
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as {
+      result: {
+        kind: string
+        workflowId: string
+        rev: number
+        nodeCount: number
+        edgeCount: number
+        touchedNodeIds: string[]
+        touchedEdgeIds: string[]
+        diagnosis: { diagnostics: unknown[] }
+      }
+      diagnosis: { diagnostics: unknown[] }
+    }
+
+    // Default patches return a small summary projection — NOT the full node/edge echo.
+    expect(patched.result.kind).toBe("summary")
+    expect(patched.result.workflowId).toBe(created.workflowId)
+    expect(patched.result.rev).toBe(created.rev + 1)
+    expect(patched.result.nodeCount).toBe(4)
+    expect(patched.result.edgeCount).toBe(3)
+    // No nodes/edges were touched by this patch.
+    expect(patched.result.touchedNodeIds).toEqual([])
+    expect(patched.result.touchedEdgeIds).toEqual([])
+    // Diagnosis always rides along, nested in result (the "summary" shape's own field, for
+    // IPC/renderer callers)...
+    expect(Array.isArray(patched.result.diagnosis.diagnostics)).toBe(true)
+    // ...and — regression (item 7) — also at the top-level sibling every write tool's guide
+    // says to read, the same place `return: "full"` puts it. It must not only live nested
+    // for this shape while `"full"` only has it as a sibling.
+    expect(patched.diagnosis).toEqual(patched.result.diagnosis)
+    await client.close()
+  })
+
+  it("workflows_patch reports touched ids when nodes/edges are upserted or removed", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "touched",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "doomed", type: "delay", position: { x: 100, y: 0 }, config: { duration: 1 } },
+        { nodeId: "end", type: "end", position: { x: 300, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "doomed" },
+        { edgeId: "e2", source: "doomed", target: "end" },
+      ],
+    })
+
+    const client = await connectClient()
+    const patched = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_patch",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            workflowId: created.workflowId,
+            removeNodeIds: ["doomed"],
+            upsertEdges: [{ edgeId: "e3", source: "start", target: "end" }],
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { touchedNodeIds: string[]; touchedEdgeIds: string[] } }
+
+    expect(patched.result.touchedNodeIds).toEqual(["doomed"])
+    // e3 was upserted; e2 was implicitly dropped as the incoming/outgoing edge of the removed node, but is not named here.
+    expect(patched.result.touchedEdgeIds).toEqual(["e3"])
     await client.close()
   })
 })
@@ -863,6 +1045,67 @@ describe("MCP reads — redacted values, intact structure", () => {
     const config = await readBackConfig()
     expect(JSON.stringify(config)).not.toContain("literal-credential")
     expect(JSON.stringify(config)).not.toContain("hunter2")
+  })
+
+  it("round-trips placeholder-valued auth, body and extractors byte-for-byte", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const node = {
+      nodeId: "login",
+      type: "http-request",
+      position: { x: 0, y: 0 },
+      config: {
+        method: "POST",
+        url: "https://example.test/login",
+        headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }],
+        auth: { type: "bearer", bearer: { token: "{{variables.token}}" } },
+        body: '{\n  "email": "{{env.EMAIL}}",\n  "password": "{{env.PASSWORD}}",\n  "application": "BO"\n}',
+        bodyType: "json",
+        extractors: { token: "response.body.data.access_token" },
+      },
+    }
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "round trip",
+      nodes: [node],
+    })
+    const client = await connectClient()
+    const getConfig = async (): Promise<Record<string, unknown>> => {
+      const read = JSON.parse(
+        textOf(
+          (await client.callTool({
+            name: "workflows_get",
+            arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+          })) as { content: Array<{ type: string; text?: string }> },
+        ),
+      ) as { nodes: Array<{ nodeId: string; config: Record<string, unknown> }> }
+      return read.nodes[0]!.config
+    }
+
+    // The read must show every reference verbatim, or the author cannot tell a
+    // wired slot from a redacted literal — the whole point of item 6.
+    expect(await getConfig()).toEqual(node.config)
+
+    // Read-modify-write: writing the graph back unchanged must neither be
+    // rejected (no <SECRET> placeholder smuggled in) nor alter the stored graph.
+    const updated = (await client.callTool({
+      name: "workflows_update",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: workflow.workflowId,
+        nodes: (JSON.parse(
+          textOf(
+            (await client.callTool({
+              name: "workflows_get",
+              arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+            })) as { content: Array<{ type: string; text?: string }> },
+          ),
+        ) as { nodes: Array<unknown> }).nodes,
+      },
+    })) as { isError?: boolean; content: Array<{ type: string; text?: string }> }
+    expect(updated.isError).toBeUndefined()
+
+    expect(await getConfig()).toEqual(node.config)
+    await client.close()
   })
 
   it("refuses to store a value read back as <SECRET>, naming where it is", async () => {

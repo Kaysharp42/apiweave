@@ -86,6 +86,7 @@ function projectResult(result: RunResult): JsonValue {
     startedAt: result.startedAt ?? null,
     completedAt: result.completedAt ?? null,
     secretRefs: result.secretRefs ? [...result.secretRefs] : [],
+    unresolvedPlaceholders: result.unresolvedPlaceholders ? [...result.unresolvedPlaceholders] : [],
     hasError: typeof result.error === "string" && result.error.length > 0,
     response: {
       ...(typeof statusCode === "number" ? { statusCode } : {}),

@@ -99,6 +99,16 @@ describe("sanitizeAgentReadValue — same floor as export, structure kept", () =
     })
   })
 
+  it("does not treat a wrong-case {{ENV.NAME}} as a reference — the runtime resolves case-sensitively", () => {
+    // substituteVariables only ever matches a lowercase "env."/"variables."/"secrets."
+    // prefix, so `{{ENV.PASSWORD}}` is sent to the target as literal text, not resolved.
+    // Redaction must agree, or a secret-named field carrying this typo survives verbatim.
+    const config = { headers: [{ key: "X-Api-Key", value: "{{ENV.PASSWORD}}" }] }
+    expect(sanitizeAgentReadValue(config)).toEqual({
+      headers: [{ key: "X-Api-Key", value: "<SECRET>" }],
+    })
+  })
+
   it("redacts a body leaf by leaf instead of flattening it", () => {
     const config = { body: '{"name":"Rex","password":"hunter2","note":"{{secrets.NOTE}}"}' }
     const body = JSON.parse((sanitizeAgentReadValue(config) as { body: string }).body) as Record<string, unknown>
@@ -121,6 +131,15 @@ describe("sanitizeAgentReadValue — same floor as export, structure kept", () =
     const config = { cookies: [{ key: "theme", value: "dark" }, { key: "session", value: "opaque" }] }
     expect(sanitizeAgentReadValue(config)).toEqual({
       cookies: [{ key: "theme", value: "<SECRET>" }, { key: "session", value: "<SECRET>" }],
+    })
+  })
+
+  it("withholds a cookie even when its value also carries a {{...}} reference", () => {
+    // redactAllValues (cookies) is unconditional — an indirection ref elsewhere in the
+    // string must not smuggle the literal session material past it.
+    const config = { cookies: [{ key: "session", value: "REAL_SESSION_abc123{{env.SUFFIX}}" }] }
+    expect(sanitizeAgentReadValue(config)).toEqual({
+      cookies: [{ key: "session", value: "<SECRET>" }],
     })
   })
 })
