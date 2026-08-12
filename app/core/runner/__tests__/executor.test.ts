@@ -112,6 +112,67 @@ describe("WorkflowExecutor", () => {
         server.close()
       }
     })
+
+    // An unresolved `{{env.BASE_URL}}` in the URL never reaches the network — it
+    // fails `validateUrl`'s parse and throws before a response exists, landing in
+    // the catch branch rather than the 401 case above. That branch must report
+    // the same unresolvedPlaceholders, or this failure mode reads as a bare,
+    // unexplained "URL blocked" instead of naming the unresolved reference.
+    it("reports unresolved placeholder references when they cause the request to error out", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            config: { method: "GET", url: "{{env.BASE_URL}}/login" },
+          },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "http_1" },
+          { edgeId: "e2", source: "http_1", target: "end" },
+        ],
+      }
+
+      const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+      const result = output.results.find((r) => r.nodeId === "http_1")
+      expect(result?.status).toBe("failed")
+      expect(result?.unresolvedPlaceholders).toEqual(["env.BASE_URL"])
+    })
+
+    // `prev` (unlike env./variables./secrets.) has no trailing dot of its own — the
+    // dot lives in the reference body, e.g. `{{prev.response.body.id}}`. It must be
+    // kept as the join separator, not stripped as if it belonged to `env.`/etc.
+    // Surrounding whitespace, e.g. `{{ env.EMAIL }}`, must not leak into the name either.
+    it("reports a well-formed prev.* name and trims surrounding whitespace", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            config: {
+              method: "GET",
+              url: "{{env.BASE_URL}}/x",
+              headers: [
+                { key: "X-Prev", value: "{{prev.response.body.id}}" },
+                { key: "X-Env", value: "{{ env.EMAIL }}" },
+              ],
+            },
+          },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "http_1" },
+          { edgeId: "e2", source: "http_1", target: "end" },
+        ],
+      }
+
+      const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+      const result = output.results.find((r) => r.nodeId === "http_1")
+      expect(result?.unresolvedPlaceholders).toEqual(["env.BASE_URL", "prev.response.body.id", "env.EMAIL"])
+    })
   })
 
   describe("assertion nodes", () => {

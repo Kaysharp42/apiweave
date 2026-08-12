@@ -460,11 +460,21 @@ export default function useWorkflowPolling({
       // start/end, unreachable nodes, etc.) are not a reason to block a
       // half-edited graph from a Run: the executor reports them as a failed
       // run, and the canvas is a workspace where graphs live mid-edit.
+      //
+      // `assertion_source_missing`/`assertion_source_ambiguous` share the
+      // `assertion` category but are topology, not rule validity — an assertion
+      // with zero or two upstream `http-request` nodes is the same "mid-edit"
+      // state as a dangling edge, most commonly hit mid-drag while wiring a new
+      // connection. Excluded so that state doesn't block a Run either.
       const diagnosis = analyzeWorkflowGraph(
         buildAnalyzerGraphInput(workflowId, nodes, edges),
       );
       const blocking = diagnosis.diagnostics.filter(
-        (d) => d.severity === "error" && d.category === "assertion",
+        (d) =>
+          d.severity === "error" &&
+          d.category === "assertion" &&
+          d.code !== "assertion_source_missing" &&
+          d.code !== "assertion_source_ambiguous",
       );
 
       if (blocking.length > 0) {
@@ -615,6 +625,7 @@ export default function useWorkflowPolling({
       setNodes,
       selectedEnvironment,
       nodes,
+      edges,
       reactFlowInstanceRef,
       stopStream,
       handleEvent,

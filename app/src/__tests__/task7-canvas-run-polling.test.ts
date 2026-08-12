@@ -455,6 +455,40 @@ describe("Task 20: run progress streams over IPC events", () => {
 
     expect(invoke.mock.calls.find((c) => c[1] === "create")).toBeDefined();
   });
+
+  // Regression: `assertion_source_missing`/`assertion_source_ambiguous` share the
+  // `assertion` diagnostic category with real rule errors, but they describe a
+  // half-wired graph (zero upstream http-request), not an invalid rule — the same
+  // mid-drag state a dangling edge leaves. Connecting an edge into an assertion
+  // without touching a node (see finding #2: `edges` missing from the run gate's
+  // deps) is exactly how this gets hit, so it must not block the run either.
+  it("(d3) does not block the run on an assertion with zero upstream http-request nodes", async () => {
+    nodesBox.nodes = [
+      { id: "start_1", type: "start", position: { x: 0, y: 0 }, data: {} },
+      {
+        id: "assert_1",
+        type: "assertion",
+        position: { x: 200, y: 0 },
+        data: {
+          config: {
+            assertions: [{ source: "prev", path: "body.id", operator: "exists" }],
+          },
+        },
+      },
+      { id: "end_1", type: "end", position: { x: 300, y: 0 }, data: {} },
+    ];
+
+    const { result } = mount([
+      { id: "e1", source: "start_1", target: "assert_1" },
+      { id: "e2", source: "assert_1", target: "end_1", sourceHandle: "pass" },
+    ]);
+
+    await act(async () => {
+      await result.current.runWorkflow();
+    });
+
+    expect(invoke.mock.calls.find((c) => c[1] === "create")).toBeDefined();
+  });
 });
 
 // ─── (e) Static guards: no polling / no SSE ─────────────────────────────────

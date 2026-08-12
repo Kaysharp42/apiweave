@@ -87,15 +87,12 @@ node and follows edges. Nothing runs unless an edge leads to it.
         ]
       }
     },
-    { "nodeId": "report_failure", "type": "http-request", "config": { "method": "POST", "url": "{{env.BASE_URL}}/report" } },
     { "nodeId": "done", "type": "end" }
   ],
   "edges": [
     { "edgeId": "e1", "source": "start", "target": "get_pet" },
     { "edgeId": "e2", "source": "get_pet", "target": "check" },
-    { "edgeId": "e3", "source": "check", "target": "done", "sourceHandle": "pass" },
-    { "edgeId": "e4", "source": "check", "target": "report_failure", "sourceHandle": "fail" },
-    { "edgeId": "e5", "source": "report_failure", "target": "done" }
+    { "edgeId": "e3", "source": "check", "target": "done", "sourceHandle": "pass" }
   ],
   "variables": { "petId": "1" }
 }
@@ -109,11 +106,18 @@ Three things to copy from this:
   the same \`end\` rather than each getting their own — a second \`end\` node is
   reported as \`duplicate_end_node\`.
 
-The example wires the assertion's \`fail\` handle to \`report_failure\` so it can
-show the \`fail\` edge. That is the elaborate case, not the baseline: an
-unwired \`fail\` handle is the normal, expected shape, and the run still records
-the failed assertion and terminates that branch. Wire \`fail\` only when you want
-a distinct failure path (a cleanup request, a notification, a compensating call).
+This graph leaves \`check\`'s \`fail\` handle unwired — the normal, expected shape:
+the run still records the failed assertion and terminates that branch. Wire
+\`fail\` only when you want a distinct failure path (a cleanup request, a
+notification, a compensating call), by adding a node and an edge with
+\`"sourceHandle": "fail"\`:
+
+\`\`\`json
+{ "nodeId": "report_failure", "type": "http-request", "config": { "method": "POST", "url": "{{env.BASE_URL}}/report" } }
+\`\`\`
+\`\`\`json
+{ "edgeId": "e4", "source": "check", "target": "report_failure", "sourceHandle": "fail" }
+\`\`\`
 
 ## Related
 
@@ -168,10 +172,11 @@ or array order.
 
 ### assertion
 
-An assertion node checks values from **the single \`http-request\` node reachable
-upstream**. Zero upstream HTTP nodes, or two, makes the source ambiguous and
-the node fails — \`workflow_diagnose\` reports this as \`assertion_source_missing\` or
-\`assertion_source_ambiguous\` before you ever run it.
+An assertion node checks values from **the nearest \`http-request\` node
+upstream** — in a chain of several, that is the closest one, not the first.
+Zero \`http-request\` nodes upstream, or two at the same distance, makes the
+source ambiguous and the node fails — \`workflow_diagnose\` reports this as
+\`assertion_source_missing\` or \`assertion_source_ambiguous\` before you ever run it.
 
 Rules live at \`config.assertions\`. See \`apiweave://guide/assertions\`.
 

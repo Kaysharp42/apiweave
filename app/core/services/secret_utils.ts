@@ -119,7 +119,10 @@ const SECRET_REF_RE = /\{\{secrets\.([A-Za-z_][A-Za-z0-9_]*)\}\}/g
  * risked false-positive preservation of opaque strings that happen to wrap in
  * braces.
  */
-const INDIR_REF_RE = /\{\{\s*(?:env\.|variables\.|prev\b|secrets\.)/i
+// Case-sensitive to match `substituteVariables`, which resolves `varPath.startsWith("env.")`
+// etc. literally — `{{ENV.PASSWORD}}` is not a reference to the runtime, so redaction must
+// not treat it as one either.
+const INDIR_REF_RE = /\{\{\s*(?:env\.|variables\.|prev\b|secrets\.)/
 
 function containsIndirectionRef(value: string): boolean {
   return INDIR_REF_RE.test(value)
@@ -270,8 +273,8 @@ function sanitizeKeyValueEntry(
  * seeing it is how an agent knows which slot a credential binds to.
  */
 function withholdsPairValue(value: string, secretKey: boolean, redactAllValues: boolean): boolean {
-  if (containsIndirectionRef(value)) return false
   if (redactAllValues) return true
+  if (containsIndirectionRef(value)) return false
   return secretKey
 }
 

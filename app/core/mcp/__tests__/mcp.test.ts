@@ -900,6 +900,7 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
         touchedEdgeIds: string[]
         diagnosis: { diagnostics: unknown[] }
       }
+      diagnosis: { diagnostics: unknown[] }
     }
 
     // Default patches return a small summary projection — NOT the full node/edge echo.
@@ -911,8 +912,13 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
     // No nodes/edges were touched by this patch.
     expect(patched.result.touchedNodeIds).toEqual([])
     expect(patched.result.touchedEdgeIds).toEqual([])
-    // Diagnosis always rides along.
+    // Diagnosis always rides along, nested in result (the "summary" shape's own field, for
+    // IPC/renderer callers)...
     expect(Array.isArray(patched.result.diagnosis.diagnostics)).toBe(true)
+    // ...and — regression (item 7) — also at the top-level sibling every write tool's guide
+    // says to read, the same place `return: "full"` puts it. It must not only live nested
+    // for this shape while `"full"` only has it as a sibling.
+    expect(patched.diagnosis).toEqual(patched.result.diagnosis)
     await client.close()
   })
 

@@ -767,9 +767,23 @@ export class WorkflowExecutor {
       return withExtractorOutcomes(result)
     } catch (error) {
       if (error instanceof SafeUrlError) {
-        return withExtractorOutcomes({ status: "error", error: `SSRF blocked: ${error.message}`, method, url, duration: 0 })
+        return withExtractorOutcomes({
+          status: "error",
+          error: `SSRF blocked: ${error.message}`,
+          method,
+          url,
+          duration: 0,
+          ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+        })
       }
-      return withExtractorOutcomes({ status: "error", error: String(error), method, url, duration: Date.now() - startTime })
+      return withExtractorOutcomes({
+        status: "error",
+        error: String(error),
+        method,
+        url,
+        duration: Date.now() - startTime,
+        ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+      })
     }
   }
 
@@ -1875,7 +1889,11 @@ function collectUnresolvedPlaceholders(values: readonly string[]): string[] {
   for (const value of values) {
     for (const match of value.matchAll(UNRESOLVED_REF_RE)) {
       const prefix = match[1]!
-      const rest = (match[2] ?? "").replace(/^\./, "")
+      // `env./variables./secrets.` swallow their dot into the prefix, so `rest` never
+      // starts with one — but `prev` (bare word-boundary, no dot) needs its `.` kept as
+      // the join separator. Trimming (not stripping a leading dot) also drops the
+      // trailing whitespace `{{ env.EMAIL }}` leaves in `rest` before the closing `}}`.
+      const rest = (match[2] ?? "").trim()
       found.add(rest.length > 0 ? `${prefix}${rest}` : prefix)
     }
   }
