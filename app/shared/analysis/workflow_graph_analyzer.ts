@@ -516,32 +516,45 @@ function targetsStatusCode(rule: { readonly source: string; readonly path: strin
  * negative test, but the node (and the run) goes green on a match instead of
  * staying permanently red.
  */
+/** True for an http-request that still relies on continueOnFail and hasn't adopted expectedStatus yet. */
+function isUnmigratedContinueOnFailRequest(node: WorkflowNode): boolean {
+  return node.type === "http-request" && node.config?.continueOnFail === true && node.config?.expectedStatus === undefined
+}
+
+/** Pushes a migration diagnostic for each downstream assertion rule that pins a non-2xx status from `node`. */
+function addMigrationDiagnosticsForPair(
+  node: WorkflowNode,
+  assertion: Extract<WorkflowNode, { type: "assertion" }>,
+  diagnostics: WorkflowDiagnostic[],
+): void {
+  for (const rule of assertion.config?.assertions ?? []) {
+    if (rule.operator !== "equals" || !targetsStatusCode(rule)) continue
+    const expectedStatusCode = Number(rule.expectedValue)
+    if (!Number.isFinite(expectedStatusCode) || (expectedStatusCode >= 200 && expectedStatusCode < 300)) continue
+    diagnostics.push(diagnostic(
+      "continue_on_fail_status_check_migratable",
+      "notice",
+      "assertion",
+      [node.nodeId, assertion.nodeId],
+      "This http-request uses continueOnFail with a downstream assertion pinning a specific non-2xx status — expectedStatus expresses the same negative test directly and lets the run go green on a match.",
+      { httpNodeId: node.nodeId, assertionNodeId: assertion.nodeId, expectedStatusCode },
+      { kind: "use_expected_status", nodeId: node.nodeId },
+      "medium",
+    ))
+  }
+}
+
 function addExpectedStatusMigrationDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnostic[]): void {
   const { nodesById, predecessors } = buildGraph(workflow.nodes, workflow.edges)
-  for (const node of workflow.nodes) {
-    if (node.type !== "http-request") continue
-    if (node.config?.continueOnFail !== true) continue
-    if (node.config?.expectedStatus !== undefined) continue // already migrated
+  const candidateRequests = workflow.nodes.filter(isUnmigratedContinueOnFailRequest)
+  const assertions = workflow.nodes.filter(
+    (node): node is Extract<WorkflowNode, { type: "assertion" }> => node.type === "assertion",
+  )
 
-    for (const assertion of workflow.nodes) {
-      if (assertion.type !== "assertion") continue
+  for (const node of candidateRequests) {
+    for (const assertion of assertions) {
       if (!upstreamHttpSources(assertion.nodeId, nodesById, predecessors).includes(node.nodeId)) continue
-
-      for (const rule of assertion.config?.assertions ?? []) {
-        if (rule.operator !== "equals" || !targetsStatusCode(rule)) continue
-        const expectedStatusCode = Number(rule.expectedValue)
-        if (!Number.isFinite(expectedStatusCode) || (expectedStatusCode >= 200 && expectedStatusCode < 300)) continue
-        diagnostics.push(diagnostic(
-          "continue_on_fail_status_check_migratable",
-          "notice",
-          "assertion",
-          [node.nodeId, assertion.nodeId],
-          "This http-request uses continueOnFail with a downstream assertion pinning a specific non-2xx status — expectedStatus expresses the same negative test directly and lets the run go green on a match.",
-          { httpNodeId: node.nodeId, assertionNodeId: assertion.nodeId, expectedStatusCode },
-          { kind: "use_expected_status", nodeId: node.nodeId },
-          "medium",
-        ))
-      }
+      addMigrationDiagnosticsForPair(node, assertion, diagnostics)
     }
   }
 }

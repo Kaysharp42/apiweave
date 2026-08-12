@@ -1756,27 +1756,12 @@ export class WorkflowExecutor {
         nodeId,
         status,
         duration: Math.max(0, Math.round(typeof result.duration === "number" ? result.duration : 0)),
-        ...(typeof result.startedAt === "string" ? { startedAt: result.startedAt } : {}),
-        ...(typeof result.completedAt === "string" ? { completedAt: result.completedAt } : {}),
-        ...(result.secretRefs && result.secretRefs.length > 0 ? { secretRefs: [...result.secretRefs] } : {}),
-        request: {
-          ...(typeof result["method"] === "string" ? { method: result["method"] } : {}),
-          ...(typeof result["url"] === "string" ? { url: result["url"] } : {}),
-        },
-        response: toJsonValue(result.response ?? {
-          ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
-          ...(result.headers !== undefined ? { headers: result.headers } : {}),
-          ...(result.body !== undefined ? { body: result.body } : {}),
-        }),
+        ...buildRunResultTimingAndProvenance(result),
+        request: buildRunResultRequest(result),
+        response: buildRunResultResponse(result),
         error: typeof result.error === "string" ? result.error : null,
-        ...(result.expectedStatus !== undefined
-          ? { expectedStatus: (Array.isArray(result.expectedStatus) ? [...result.expectedStatus] : result.expectedStatus) as number | number[] }
-          : {}),
         assertions: result.type === "assertion" ? [...(result.assertionEvaluations ?? [])] : null,
-        ...(result.extractorOutcomes ? { extractorOutcomes: [...result.extractorOutcomes] } : {}),
-        ...(result.subWorkflow
-          ? { subWorkflow: { ...result.subWorkflow, outputVariableNames: [...result.subWorkflow.outputVariableNames] } }
-          : {}),
+        ...buildRunResultExtras(result),
       })
     }
     return results
@@ -1803,6 +1788,45 @@ export class WorkflowExecutor {
 function toJsonValue(value: unknown): JsonValue {
   if (value === undefined) return null
   return JSON.parse(JSON.stringify(value)) as JsonValue
+}
+
+/** RunResult.request: only the fields that are actually present on the node result. */
+function buildRunResultRequest(result: NodeResult): RunResult["request"] {
+  return {
+    ...(typeof result["method"] === "string" ? { method: result["method"] } : {}),
+    ...(typeof result["url"] === "string" ? { url: result["url"] } : {}),
+  }
+}
+
+/** RunResult.response: the raw response if captured, else a synthesized one from the loose statusCode/headers/body fields. */
+function buildRunResultResponse(result: NodeResult): JsonValue {
+  return toJsonValue(result.response ?? {
+    ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
+    ...(result.headers !== undefined ? { headers: result.headers } : {}),
+    ...(result.body !== undefined ? { body: result.body } : {}),
+  })
+}
+
+/** startedAt/completedAt/secretRefs — carried through only when present on the node result. */
+function buildRunResultTimingAndProvenance(result: NodeResult): Partial<RunResult> {
+  return {
+    ...(typeof result.startedAt === "string" ? { startedAt: result.startedAt } : {}),
+    ...(typeof result.completedAt === "string" ? { completedAt: result.completedAt } : {}),
+    ...(result.secretRefs && result.secretRefs.length > 0 ? { secretRefs: [...result.secretRefs] } : {}),
+  }
+}
+
+/** expectedStatus/extractorOutcomes/subWorkflow — carried through only when present on the node result. */
+function buildRunResultExtras(result: NodeResult): Partial<RunResult> {
+  return {
+    ...(result.expectedStatus !== undefined
+      ? { expectedStatus: (Array.isArray(result.expectedStatus) ? [...result.expectedStatus] : result.expectedStatus) as number | number[] }
+      : {}),
+    ...(result.extractorOutcomes ? { extractorOutcomes: [...result.extractorOutcomes] } : {}),
+    ...(result.subWorkflow
+      ? { subWorkflow: { ...result.subWorkflow, outputVariableNames: [...result.subWorkflow.outputVariableNames] } }
+      : {}),
+  }
 }
 
 function toAssertionSource(value: string | undefined): AssertionSource {
