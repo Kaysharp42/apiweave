@@ -772,9 +772,9 @@ export class WorkflowExecutor {
       return withExtractorOutcomes(result)
     } catch (error) {
       if (error instanceof SafeUrlError) {
-        return withExtractorOutcomes({ status: "error", error: `SSRF blocked: ${error.message}`, method, url, duration: 0 })
+        return withExtractorOutcomes({ status: "error", error: `SSRF blocked: ${error.message}`, method, url, duration: 0, ...(expectedStatus !== undefined ? { expectedStatus } : {}) })
       }
-      return withExtractorOutcomes({ status: "error", error: String(error), method, url, duration: Date.now() - startTime })
+      return withExtractorOutcomes({ status: "error", error: String(error), method, url, duration: Date.now() - startTime, ...(expectedStatus !== undefined ? { expectedStatus } : {}) })
     }
   }
 

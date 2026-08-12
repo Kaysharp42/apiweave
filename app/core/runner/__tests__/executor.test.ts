@@ -1093,5 +1093,25 @@ describe("WorkflowExecutor", () => {
         server.close()
       }
     })
+
+    it("echoes expectedStatus on a transport error so a negative test stays legible", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "req", type: "http-request", config: { url: `http://127.0.0.1:${1}`, expectedStatus: 409, continueOnFail: true } },
+          { nodeId: "after", type: "delay", config: { duration: 0 } },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "req" },
+          { edgeId: "e2", source: "req", target: "after" },
+          { edgeId: "e3", source: "after", target: "end" },
+        ],
+      }
+      const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+      const result = output.results.find((r) => r.nodeId === "req")
+      expect(result?.status).toBe("failed")
+      expect(result).toMatchObject({ expectedStatus: 409 })
+    })
   })
 })

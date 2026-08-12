@@ -227,7 +227,9 @@ function formatExpectedStatus(value: number | number[] | undefined): string {
 function parseExpectedStatusInput(text: string): number | number[] | undefined | null {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
-  const codes = trimmed.split(/[\s,]+/).filter(Boolean).map(Number);
+  const tokens = trimmed.split(/[\s,]+/).filter(Boolean);
+  if (tokens.some((token) => !/^\d+$/.test(token))) return null;
+  const codes = tokens.map(Number);
   if (codes.some((code) => !Number.isInteger(code) || code < 100 || code > 599)) return null;
   return codes.length === 1 ? codes[0]! : codes;
 }
