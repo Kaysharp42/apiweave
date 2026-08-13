@@ -100,9 +100,10 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("nodePresets", "update", "write", "Update a saved node preset's name, node type or config.", { idempotent: true }),
   tool("nodePresets", "delete", "write", "Delete a saved node preset.", { destructive: true, idempotent: true }),
 
-  // Runs
+// Runs
   tool("runs", "create", "write", "Trigger a workflow run and return a metadata-only run snapshot.", { openWorld: true, resultProjection: "run" }),
   tool("runs", "get", "read", "Get a metadata-only run snapshot with per-node status.", { resultProjection: "run" }),
+  tool("runs", "getNodeResult", "read", "Get the full stored request/response for one node of a run, body included, plus extractorOutcomes, assertions and unresolvedPlaceholders. Use this when runs_get shows a failed node and the status code alone is not enough — the body is usually where the target service explains the failure (e.g. LEGAL_CATEGORY_NOT_FOUND), and unresolvedPlaceholders names any {{env.*}}/{{variables.*}} references that went out as literal text (a 401 with placeholders present is a missing value, not bad credentials). The same secret-redaction pass every other MCP read applies runs over the body, headers, URL and request — secrets never leave the keystore.", { name: "runs_getNodeResult" }),
   tool("runs", "listByWorkflow", "read", "List metadata-only run snapshots for a workflow.", { resultProjection: "run" }),
   tool("runs", "listByWorkspace", "read", "List metadata-only run snapshots across a workspace.", { resultProjection: "run" }),
   tool("runs", "getLatest", "read", "Get the most recent metadata-only run snapshot for a workflow.", { resultProjection: "run" }),

@@ -28,7 +28,9 @@
       "**/__generated__/**",
       "**/generated/**",
       "**/*.css",
-      "src/types/**"
+      "src/types/**",
+      "core/ipc/handlers/**",
+      "core/mcp/tools.ts"
     ]
   },
   "health": {

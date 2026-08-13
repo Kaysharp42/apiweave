@@ -74,15 +74,31 @@ export class RunScheduler {
     // RunService authorizes the workspaceId but passes workflowId through untouched,
     // so without this a caller could execute another workspace's graph under their
     // run. Existence-hiding 404 mirrors WorkflowService's scoped reads.
-    if (!this.deps.workflows.getByIdInWorkspace(request.workflowId, request.workspaceId)) {
+    const workflow = this.deps.workflows.getByIdInWorkspace(request.workflowId, request.workspaceId)
+    if (!workflow) {
       throw new NotFoundError(`workflow ${request.workflowId} not found`)
     }
+    // Inherit the workflow's stored `selectedEnvironmentId` when the caller
+    // omits it (an MCP agent running a workflow without a UI dropdown, or the
+    // canvas's Run button before the environment picker has a value). Without
+    // this, `runs_create` echoes `selectedEnvironmentId: null` even when the
+    // workflow has one set, the run row stays null, and any `{{env.*}}`
+    // placeholder goes out as literal text — a 401 from the target that is
+    // indistinguishable from wrong credentials. `undefined` means "use the
+    // workflow's default"; an explicit `null` means "run with no environment".
+    // The execute-time fallback (`run.selectedEnvironmentId ?? workflow.selectedEnvironmentId`)
+    // is kept as defense-in-depth, but the run row now reflects what will
+    // actually run, so the echo and the run agree.
+    const inheritedEnvironmentId =
+      request.selectedEnvironmentId === undefined
+        ? workflow.selectedEnvironmentId ?? null
+        : request.selectedEnvironmentId
     const run = this.deps.runs.create({
       workspaceId: request.workspaceId,
       workflowId: request.workflowId,
       status: "pending",
       ...(request.variables ? { variables: request.variables as Record<string, JsonValue> } : {}),
-      ...(request.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: request.selectedEnvironmentId } : {}),
+      selectedEnvironmentId: inheritedEnvironmentId,
     })
     this.queue.push(run.runId)
     void this.drain()

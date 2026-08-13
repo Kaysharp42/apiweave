@@ -106,9 +106,11 @@ Three things to copy from this:
   the same \`end\` rather than each getting their own — a second \`end\` node is
   reported as \`duplicate_end_node\`.
 
-\`check\`'s \`fail\` handle is left unconnected above, and that is the common case:
-the run still records the failed assertion and the branch stops there. Wire
-\`fail\` only when failure needs a *distinct* action, e.g. reporting it elsewhere:
+This graph leaves \`check\`'s \`fail\` handle unwired — the normal, expected shape:
+the run still records the failed assertion and terminates that branch. Wire
+\`fail\` only when you want a distinct failure path (a cleanup request, a
+notification, a compensating call), by adding a node and edges with
+\`"sourceHandle": "fail"\`:
 
 \`\`\`json
 { "nodeId": "report_failure", "type": "http-request", "config": { "method": "POST", "url": "{{env.BASE_URL}}/report" } }
@@ -179,21 +181,28 @@ or array order.
 
 ### assertion
 
-An assertion node checks values from **the single \`http-request\` node reachable
-upstream**. Zero upstream HTTP nodes, or two, makes the source ambiguous and the
-node fails — \`workflow_diagnose\` reports this as \`assertion_source_missing\` or
-\`assertion_source_ambiguous\` before you ever run it.
+An assertion node checks values from **the nearest \`http-request\` node
+upstream** — in a chain of several, that is the closest one, not the first.
+Zero \`http-request\` nodes upstream, or two at the same distance, makes the
+source ambiguous and the node fails — \`workflow_diagnose\` reports this as
+\`assertion_source_missing\` or \`assertion_source_ambiguous\` before you ever run it.
 
 Rules live at \`config.assertions\`. See \`apiweave://guide/assertions\`.
 
-An assertion's \`fail\` handle may be left unconnected — that is the common case,
-not a mistake. The run still records the failed assertion and that branch
-terminates there either way. Wire \`fail\` only when failure needs a *distinct*
-action: a cleanup request, a notification, a compensating call. Wiring every
-\`fail\` handle straight to the shared \`end\` node does exactly what leaving it
-unconnected already does, just with more edges — \`workflow_diagnose\` flags that
-shape as \`assertion_fail_wired_on_all\` (notice, not warning: it is verbose, not
-wrong).
+\`pass\` and \`fail\` are the two output handles. Both are optional wires: an
+unwired \`fail\` handle is the normal, expected shape — the run records the
+failed assertion and terminates that branch. Wire \`fail\` only when you want a
+distinct failure path (a cleanup request, a notification, a compensating call).
+Wiring every \`fail\` handle straight to the shared \`end\` node does exactly what
+leaving it unconnected already does, just with more edges — \`workflow_diagnose\`
+flags that shape as \`assertion_fail_wired_on_all\` (notice, not warning: it is
+verbose, not wrong).
+
+Both handles also fan out in parallel: more than one edge leaving \`pass\` (or
+\`fail\`) starts all the target branches concurrently — \`workflow_diagnose\` notes
+this as \`assertion_branch_duplicate\` (a notice, not a warning; it is verbose,
+not wrong). To rejoin parallel branches downstream, route them into a single
+\`merge\` node.
 
 ### merge
 
@@ -329,6 +338,13 @@ It is left in the request as literal text rather than failing. If a request goes
 out with \`{{env.BASE_URL}}\` in the URL, the environment is not selected or the
 key does not exist — check \`workflows_get\` for \`selectedEnvironmentId\` and
 \`environments_get\` for the key.
+
+Every run-relevant node result carries an \`unresolvedPlaceholders\` list naming
+the references that stayed literal (e.g. \`["env.EMAIL", "variables.token"]\`);
+\`runs_get\` and \`runs_getNodeResult\` surface it per node. A failed run whose
+node lists placeholders means the request went out with literal text — fix the
+missing value, not the target. A 401 from an auth endpoint with
+\`unresolvedPlaceholders\` present is a misconfiguration, not bad credentials.
 `
 
 const ASSERTIONS = `# Assertions
@@ -431,12 +447,14 @@ Clear every \`error\` before running.
 | code | meaning |
 | --- | --- |
 | \`assertion_branch_handle_invalid\` | an edge leaving an assertion has no \`sourceHandle\`, or one that is not \`pass\`/\`fail\`. The branch stops silently at run time. |
-| \`assertion_branch_duplicate\` | two edges share a handle |
+| \`assertion_branch_duplicate\` | more than one edge leaves one assertion handle — the branches run in parallel (notice, not warning) |
+| \`assertion_fail_wired_on_all\` | a \`fail\` handle is wired straight to \`end\`, which does what leaving it unconnected already does — an unwired \`fail\` is the normal expected shape (notice) |
 | \`assertion_source_missing\` / \`assertion_source_ambiguous\` | zero, or more than one, \`http-request\` node reachable upstream |
 | \`assertion_source_path_invalid\` | the path cannot address a value for that source — see \`apiweave://guide/assertions\` |
 | \`assertion_source_unknown\` / \`assertion_operator_unknown\` | not a member of the enum |
-| \`assertion_expected_missing\` | the operator needs an \`expectedValue\` |
+| \`assertion_expected_missing\` | the operator needs an \`expectedValue\` (present, not truthy; \`false\`, \`0\` and \`""\` are valid) |
 | \`assertion_rules_missing\` | the node has no rules and always passes |
+| \`continue_on_fail_status_check_migratable\` | a \`continueOnFail\` request with a downstream assertion pinning a non-2xx status — \`expectedStatus\` says the same thing and lets the run go green (notice) |
 
 ## Dataflow
 

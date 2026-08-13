@@ -18,6 +18,11 @@ export const RunResultSchema = z
     // Names of {{secrets.NAME}} placeholders referenced by this node's config.
     // Safe metadata only (names); never values. Drives masked-secret confidence.
     secretRefs: z.array(z.string()).optional(),
+    // Reference-shaped placeholders ({{env.*}}, {{variables.*}}, {{prev...}},
+    // {{secrets.*}}) that went out as literal text because they could not be
+    // resolved. Names only, per node — a request leaving with a literal
+    // {{env.EMAIL}} commonly surfaces as a 401 that looks like bad credentials.
+    unresolvedPlaceholders: z.array(z.string()).optional(),
     request: JsonValueSchema.nullable().optional(),
     response: JsonValueSchema.nullable().optional(),
     error: z.string().nullable().optional(),

@@ -4,8 +4,8 @@ import type { RunResult } from "../types/RunResult"
 import type { VariableProvenance } from "../types/VariableProvenance"
 import type { VariableProvenanceMap } from "../types/VariableProvenanceMap"
 import type { VariableProvenanceNode } from "../types/VariableProvenanceNode"
-import type { Workflow } from "../types/Workflow"
 import type { WorkflowDiagnostic } from "../types/WorkflowDiagnostic"
+import type { WorkflowGraphInput } from "../types/WorkflowGraphInput"
 import type { WorkflowDiagnosis } from "../types/WorkflowDiagnosis"
 import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
@@ -232,7 +232,7 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-function addTopologyDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnostic[]): void {
+function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   const nodeCounts = new Map<string, number>()
   for (const node of workflow.nodes) nodeCounts.set(node.nodeId, (nodeCounts.get(node.nodeId) ?? 0) + 1)
   for (const [nodeId, count] of nodeCounts) {
@@ -357,7 +357,7 @@ function addTopologyDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnos
   }
 }
 
-function addAssertionAndBranchDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnostic[]): void {
+function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   const { nodesById, predecessors } = buildGraph(workflow.nodes, workflow.edges)
   for (const node of workflow.nodes) {
     if (node.type !== "assertion") continue
@@ -495,12 +495,13 @@ function addAssertionAndBranchDiagnostics(workflow: Workflow, diagnostics: Workf
       if (count > 1) {
         diagnostics.push(diagnostic(
           "assertion_branch_duplicate",
-          "warning",
+          "notice",
           "branch",
           [node.nodeId],
-          "An assertion outcome branches to more than one edge.",
+          "An assertion outcome fans out to more than one edge. The runtime supports this — the branches run in parallel after the gate. Wire them this way deliberately; introduce a merge node only if a downstream node needs all branches settled before it runs.",
           { sourceHandle: handle, count },
           { kind: "keep_single_assertion_branch", nodeId: node.nodeId },
+          "high",
         ))
       }
     }
@@ -548,7 +549,7 @@ function addMigrationDiagnosticsForPair(
   }
 }
 
-function addExpectedStatusMigrationDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnostic[]): void {
+function addExpectedStatusMigrationDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   const { nodesById, predecessors } = buildGraph(workflow.nodes, workflow.edges)
   const candidateRequests = workflow.nodes.filter(isUnmigratedContinueOnFailRequest)
   const assertions = workflow.nodes.filter(
@@ -563,9 +564,10 @@ function addExpectedStatusMigrationDiagnostics(workflow: Workflow, diagnostics: 
   }
 }
 
-function addDataflowDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnostic[]): void {
+function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   const { successors } = buildGraph(workflow.nodes, workflow.edges)
   const provenance = analyzeVariableProvenance(workflow.nodes)
+  const variables = workflow.variables ?? {}
   for (const node of workflow.nodes) {
     if (node.type !== "http-request") continue
     for (const [variableName, path] of Object.entries(node.config?.extractors ?? {})) {
@@ -587,7 +589,7 @@ function addDataflowDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnos
   }
 
   for (const [variableName, entry] of Object.entries(provenance)) {
-    const hasManualValue = Object.prototype.hasOwnProperty.call(workflow.variables, variableName)
+    const hasManualValue = Object.prototype.hasOwnProperty.call(variables, variableName)
     if (!hasManualValue && entry.producers.length === 0 && entry.consumers.length > 0) {
       diagnostics.push(diagnostic(
         "variable_source_missing",
@@ -633,7 +635,7 @@ function addDataflowDiagnostics(workflow: Workflow, diagnostics: WorkflowDiagnos
   }
 }
 
-function addRunDiagnostics(workflow: Workflow, run: Run, diagnostics: WorkflowDiagnostic[]): void {
+function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: WorkflowDiagnostic[]): void {
   const { nodesById, predecessors, successors } = buildGraph(workflow.nodes, workflow.edges)
   const resultsByNode = new Map(run.results.map((result) => [result.nodeId, result]))
   for (const result of run.results) {
@@ -851,8 +853,16 @@ function addRunDiagnostics(workflow: Workflow, run: Run, diagnostics: WorkflowDi
   }
 }
 
-/** Deterministic, value-free diagnosis over a persisted workflow and optional stored run. */
-export function analyzeWorkflowGraph(workflow: Workflow, run?: Run): WorkflowDiagnosis {
+/**
+ * Deterministic, value-free diagnosis over a persisted workflow and optional stored run.
+ *
+ * Accepts the lightweight {@link WorkflowGraphInput} shape so the renderer canvas run
+ * gate can reuse the *same* validator `workflow_diagnose`, `assertion_validate` and
+ * `assertion_apply` honour — there is now one diagnosis path instead of two that can
+ * disagree (a real run was blocked for `expectedValue: false` while `assertion_validate`
+ * accepted it, because the gate ran a truthiness check rather than a presence check).
+ */
+export function analyzeWorkflowGraph(workflow: WorkflowGraphInput, run?: Run): WorkflowDiagnosis {
   const diagnostics: WorkflowDiagnostic[] = []
   addTopologyDiagnostics(workflow, diagnostics)
   addAssertionAndBranchDiagnostics(workflow, diagnostics)
@@ -866,7 +876,7 @@ export function analyzeWorkflowGraph(workflow: Workflow, run?: Run): WorkflowDia
       || compareText(left.nodeIds.join("\u0000"), right.nodeIds.join("\u0000")),
   )
   return {
-    workflowId: workflow.workflowId,
+    workflowId: workflow.workflowId ?? "",
     ...(run === undefined ? {} : { runId: run.runId }),
     summary: {
       errors: diagnostics.filter((item) => item.severity === "error").length,

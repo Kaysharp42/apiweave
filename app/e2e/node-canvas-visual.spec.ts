@@ -64,7 +64,7 @@ const WORKFLOW = {
       config: {
         assertions: [
           { source: "status", operator: "equals", path: "", expectedValue: "200" },
-          { source: "prev", operator: "exists", path: "data.accessToken", expectedValue: "" },
+          { source: "prev", operator: "exists", path: "body.accessToken", expectedValue: "" },
         ],
       },
     },

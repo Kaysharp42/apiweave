@@ -19,7 +19,7 @@ export const WorkflowEdgeSchema = z
       .nullable()
       .optional()
       .describe(
-        'Which output port of the source node this edge leaves from. REQUIRED on every edge leaving an assertion node, where it must be exactly "pass" or "fail" — an assertion routes its result down the matching branch, and an edge with no handle is never followed. This constrains which handle an edge that exists must use; it does not require an edge on every handle — a "fail" handle left unwired is the common case, not a mistake, and simply ends that branch when the assertion fails. Omit (or null) for every other node type, which has a single output.',
+        'Which output port of the source node this edge leaves from. REQUIRED on every edge leaving an assertion node, where it must be exactly "pass" or "fail" — an assertion routes its result down the matching branch, and an edge with no handle is never followed. This constrains which handle an edge that exists must use; it does not require an edge per handle. An assertion\'s `fail` handle may be left unconnected: the run records the failed assertion and that branch terminates. Wire `fail` only when you want a distinct failure path. Omit (or null) sourceHandle for every other node type, which has a single output.',
       ),
     targetHandle: z.string().nullable().optional().describe("Which input port of the target node this edge arrives at. Leave unset unless the target documents named inputs."),
     label: z.string().nullable().optional().describe("Optional display label shown on the canvas."),
