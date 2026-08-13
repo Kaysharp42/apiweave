@@ -525,6 +525,12 @@ function isUnmigratedContinueOnFailRequest(node: WorkflowNode): boolean {
   return node.type === "http-request" && node.config?.continueOnFail === true && node.config?.expectedStatus === undefined
 }
 
+/** True for a schema-valid, non-2xx HTTP status code — the range `expectedStatus` migration targets. */
+function isMigratableStatusCode(value: number): boolean {
+  if (!Number.isInteger(value) || value < 100 || value > 599) return false
+  return value < 200 || value >= 300
+}
+
 /** Pushes a migration diagnostic for each downstream assertion rule that pins a non-2xx status from `node`. */
 function addMigrationDiagnosticsForPair(
   node: WorkflowNode,
@@ -534,7 +540,7 @@ function addMigrationDiagnosticsForPair(
   for (const rule of assertion.config?.assertions ?? []) {
     if (rule.operator !== "equals" || !targetsStatusCode(rule)) continue
     const expectedStatusCode = Number(rule.expectedValue)
-    if (!Number.isInteger(expectedStatusCode) || expectedStatusCode < 100 || expectedStatusCode > 599 || (expectedStatusCode >= 200 && expectedStatusCode < 300)) continue
+    if (!isMigratableStatusCode(expectedStatusCode)) continue
     diagnostics.push(diagnostic(
       "continue_on_fail_status_check_migratable",
       "notice",
