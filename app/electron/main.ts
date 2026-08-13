@@ -242,7 +242,17 @@ if (!hasSingleInstanceLock) {
     // Runner: in-process scheduler drives the executor.
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
-    const http = new SafeHttp({ allowLoopback: true })
+    // SSRF policy: loopback always on (local dev services); private-network
+    // (RFC1918/ULA) targets are an opt-in persisted in app_settings and
+    // flipped live on the shared instance below.
+    const readAllowPrivateNetworks = (): boolean => {
+      if (database === null) return false
+      const row = database.kvStore.get<{ value: string }>(
+        "SELECT value FROM app_settings WHERE key = 'http.allow_private_networks'",
+      )
+      return row?.value === "true"
+    }
+    const http = new SafeHttp({ allowLoopback: true, allowPrivateNetworks: readAllowPrivateNetworks() })
     const functions = new DynamicFunctions(clock, rng)
     // Single run-event broker: the scheduler publishes raw transitions; the
     // broker stamps seq/ts and fans out to the renderer (IPC) and MCP sessions.
@@ -294,7 +304,20 @@ if (!hasSingleInstanceLock) {
         secretStore,
         () => clock.isoNow(),
       ),
-      imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver),
+      imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver, http),
+      httpSafety: {
+        get allowPrivateNetworks(): boolean {
+          return http.allowPrivateNetworks
+        },
+        setAllowPrivateNetworks: (enabled) => {
+          http.setAllowPrivateNetworks(enabled)
+          if (database === null) return
+          database.kvStore.set(
+            "INSERT INTO app_settings (key, value) VALUES ('http.allow_private_networks', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [enabled ? "true" : "false"],
+          )
+        },
+      },
       cloud,
     }
     registerAllHandlers(ipcRouter, deps)

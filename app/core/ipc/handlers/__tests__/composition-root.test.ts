@@ -89,6 +89,10 @@ beforeEach(() => {
       secretStore,
       () => clock.isoNow(),
     ),
+    httpSafety: {
+      allowPrivateNetworks: http.allowPrivateNetworks,
+      setAllowPrivateNetworks: (enabled) => http.setAllowPrivateNetworks(enabled),
+    },
   }
   router = new IpcRouter()
   registerAllHandlers(router, deps)

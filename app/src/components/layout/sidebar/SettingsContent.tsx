@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { FolderKanban, Key, Globe, Plug, RefreshCw } from "lucide-react";
+import { FolderKanban, Key, Globe, Plug, RefreshCw, Shield } from "lucide-react";
 import { useParams } from "react-router-dom";
 import type { SettingsContentProps } from "../../../types";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { McpSetupModal } from "../../organisms/McpSetupModal";
 import { UpdateSettingsModal } from "../../organisms/UpdateSettingsModal";
+import { PrivateNetworksModal } from "../../organisms/PrivateNetworksModal";
 import { useUpdateStatus } from "../../../contexts/UpdateStatusContext";
 
 /**
@@ -19,6 +20,7 @@ export function SettingsContent({
   const params = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
   const [mcpOpen, setMcpOpen] = useState(false);
   const [updatesOpen, setUpdatesOpen] = useState(false);
+  const [privateNetworksOpen, setPrivateNetworksOpen] = useState(false);
   const { pending: updatePending, status: updateStatus } = useUpdateStatus();
 
   const orgSlug = currentOrg?.slug ?? params.orgSlug ?? "personal";
@@ -123,6 +125,23 @@ export function SettingsContent({
           <button
             type="button"
             className={settingItemClass}
+            onClick={() => setPrivateNetworksOpen(true)}
+          >
+            <Shield className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+            <div className="min-w-0 text-left">
+              <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
+                Private networks
+              </div>
+              <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                Allow requests to LAN devices (e.g. 192.168.x.x)
+              </div>
+            </div>
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            className={settingItemClass}
             onClick={() => setMcpOpen(true)}
           >
             <Plug className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
@@ -166,6 +185,10 @@ export function SettingsContent({
       <UpdateSettingsModal
         isOpen={updatesOpen}
         onClose={() => setUpdatesOpen(false)}
+      />
+      <PrivateNetworksModal
+        isOpen={privateNetworksOpen}
+        onClose={() => setPrivateNetworksOpen(false)}
       />
     </div>
   );

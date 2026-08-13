@@ -71,6 +71,62 @@ describe("SafeHttp.isSafeUrl / validateUrl (pure)", () => {
   })
 })
 
+describe("SafeHttp allowPrivateNetworks (opt-in RFC1918/ULA carve-out)", () => {
+  const privateOk = new SafeHttp({ allowLoopback: true, allowPrivateNetworks: true })
+
+  it("defaults to off: private targets stay blocked", () => {
+    expect(allowLoopback.allowPrivateNetworks).toBe(false)
+    expect(allowLoopback.isSafeUrl("http://192.168.0.231:8800/api/v1")).toBe(false)
+  })
+
+  it.each([
+    "http://10.0.0.1",
+    "http://172.16.0.1",
+    "http://172.31.255.255",
+    "http://192.168.0.231:8800/api/v1",
+    "http://[fc00::1]",
+    "http://[::ffff:192.168.0.5]", // IPv4-mapped RFC1918 (BlockList normalizes to the IPv4 subnets)
+  ])("allows private target when opted in: %s", (url) => {
+    expect(privateOk.isSafeUrl(url)).toBe(true)
+  })
+
+  it.each([
+    "http://169.254.169.254/latest/meta-data", // AWS metadata — link-local stays blocked
+    "http://[fe80::1]", // IPv6 link-local
+    "http://224.0.0.1", // multicast
+    "http://[ff00::1]",
+    "http://0.0.0.0",
+    "http://[::]",
+  ])("still blocks non-private blocked target when opted in: %s", (url) => {
+    expect(privateOk.isSafeUrl(url)).toBe(false)
+  })
+
+  it("setAllowPrivateNetworks flips the carve-out at runtime", () => {
+    const http = new SafeHttp({ allowLoopback: true })
+    expect(http.isSafeUrl("http://192.168.0.231")).toBe(false)
+    http.setAllowPrivateNetworks(true)
+    expect(http.allowPrivateNetworks).toBe(true)
+    expect(http.isSafeUrl("http://192.168.0.231")).toBe(true)
+    http.setAllowPrivateNetworks(false)
+    expect(http.isSafeUrl("http://192.168.0.231")).toBe(false)
+  })
+
+  it("resolveAndPinIp accepts private addresses when opted in", async () => {
+    const dnsLookup = async (): Promise<LookupAddress[]> => [{ address: "192.168.0.231", family: 4 }]
+    const http = new SafeHttp({ allowLoopback: true, allowPrivateNetworks: true, dnsLookup })
+    await expect(http.resolveAndPinIp("lan-box")).resolves.toBe("192.168.0.231")
+  })
+
+  it("resolveAndPinIp still rejects a mixed private + metadata answer when opted in", async () => {
+    const dnsLookup = async (): Promise<LookupAddress[]> => [
+      { address: "192.168.0.231", family: 4 },
+      { address: "169.254.169.254", family: 4 },
+    ]
+    const http = new SafeHttp({ allowLoopback: true, allowPrivateNetworks: true, dnsLookup })
+    await expect(http.resolveAndPinIp("rebind.test")).rejects.toBeInstanceOf(SafeUrlError)
+  })
+})
+
 describe("SafeHttp.checkRedirectAllowed", () => {
   it("absolute next URL re-validated against pure rules", () => {
     expect(allowLoopback.checkRedirectAllowed("http://example.com/a", "http://example.com/b")).toBe(true)

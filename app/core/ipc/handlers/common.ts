@@ -30,11 +30,22 @@ export interface HandlerDeps {
   readonly secrets: SecretService
   readonly projects: ProjectExportService
   readonly imports: ImportService
+  readonly httpSafety: HttpSafetyControl
   readonly cloud?: CloudSyncControl
 }
 
 /** A method taking no payload — the renderer sends `undefined`, so accept it. */
 export const NoInput = z.object({}).strict().optional()
+
+/**
+ * Live controls over the shared `SafeHttp` instance. The composition root
+ * backs these with the persisted app setting and mutates the runner/import
+ * http client in place, so a toggle takes effect without a restart.
+ */
+export interface HttpSafetyControl {
+  readonly allowPrivateNetworks: boolean
+  setAllowPrivateNetworks(enabled: boolean): void
+}
 
 /** `{ items, total }` — the shared list envelope every `list*` service returns. */
 export function listResult<T extends z.ZodType>(item: T) {

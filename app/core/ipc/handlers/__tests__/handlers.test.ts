@@ -26,6 +26,7 @@ import { ImportService } from "../../../services/import_service"
 import type { SecretMetadata, SecretScopeType } from "../../../secrets/scoped_secret_resolver"
 import { IpcRouter } from "../../router"
 import { registerAllHandlers, type HandlerDeps } from ".."
+import { SafeHttp } from "../../../runner/safe_http"
 
 /** In-memory write-only secret store: keeps sealed bytes private, returns metadata only. */
 class FakeSecretStore implements SecretWriteStore {
@@ -62,10 +63,18 @@ let db: InitializedDatabase
 let router: IpcRouter
 let secretStore: FakeSecretStore
 let workspaces: WorkspaceRepository
+let httpSafetyControl: { readonly allowPrivateNetworks: boolean; setAllowPrivateNetworks: (enabled: boolean) => void }
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
   workspaces = new WorkspaceRepository(db.kvStore)
+  const http = new SafeHttp({ allowLoopback: true })
+  httpSafetyControl = {
+    get allowPrivateNetworks(): boolean {
+      return http.allowPrivateNetworks
+    },
+    setAllowPrivateNetworks: (enabled) => http.setAllowPrivateNetworks(enabled),
+  }
   const workflows = new WorkflowRepository(db.kvStore)
   const runs = new RunRepository(db.kvStore)
   const environments = new EnvironmentRepository(db.kvStore)
@@ -103,6 +112,7 @@ beforeEach(() => {
       () => "2026-01-01T00:00:00.000Z",
     ),
     imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver),
+    httpSafety: httpSafetyControl,
   }
   router = new IpcRouter()
   registerAllHandlers(router, deps)
@@ -353,5 +363,14 @@ describe("IPC handlers — no secret plaintext in read responses (QA: task-13-ha
       workspaceId: workspace.workspaceId,
     })
     expect(listed.items.every((item) => Object.keys(item.secrets).length === 0)).toBe(true)
+  })
+})
+
+describe("settings handlers", () => {
+  it("get defaults allowPrivateNetworks off; setPrivateNetworks flips it live", async () => {
+    expect(await ok<{ allowPrivateNetworks: boolean }>("settings", "get", {})).toEqual({ allowPrivateNetworks: false })
+    expect(await ok<{ allowPrivateNetworks: boolean }>("settings", "setPrivateNetworks", { enabled: true })).toEqual({ allowPrivateNetworks: true })
+    expect(await ok<{ allowPrivateNetworks: boolean }>("settings", "get", {})).toEqual({ allowPrivateNetworks: true })
+    expect(await ok<{ allowPrivateNetworks: boolean }>("settings", "setPrivateNetworks", { enabled: false })).toEqual({ allowPrivateNetworks: false })
   })
 })

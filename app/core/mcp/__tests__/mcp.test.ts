@@ -113,6 +113,10 @@ beforeEach(() => {
       secretStore,
       () => "2026-01-01T00:00:00.000Z",
     ),
+    httpSafety: {
+      allowPrivateNetworks: false,
+      setAllowPrivateNetworks: () => undefined,
+    },
   }
   router = new IpcRouter()
   registerAllHandlers(router, deps)
