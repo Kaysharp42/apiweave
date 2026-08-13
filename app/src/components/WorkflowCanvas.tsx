@@ -14,6 +14,9 @@ import ReactFlow, {
   Background,
   BackgroundVariant,
   ConnectionLineType,
+  // Aliased: `molecules` exports a Panel of its own, and one of the two names
+  // has to say which layer it belongs to.
+  Panel as FlowPanel,
   useNodesState,
   useEdgesState,
   addEdge,
@@ -40,6 +43,7 @@ import HistoryModal from "./HistoryModal";
 import ImportToNodesPanel from "./ImportToNodesPanel";
 import WorkflowJsonEditor from "./WorkflowJsonEditor";
 import { PromptDialog } from "./molecules/PromptDialog";
+import { RunFollowPill } from "./molecules/RunFollowPill";
 import { RunTimelinePanel } from "./organisms/RunTimelinePanel";
 import { AppContext } from "../App";
 import { useWorkflow } from "../contexts/WorkflowContext";
@@ -53,8 +57,13 @@ import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasDrop from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
+import useRunCamera from "../hooks/useRunCamera";
 import { useClipboardActions } from "../hooks/useClipboardActions";
-import { useHydration } from "../hooks/useHydration";
+import { useCanvasKeyboardShortcuts } from "../hooks/useCanvasKeyboardShortcuts";
+import {
+  preserveCanvasRuntimeState,
+  useHydration,
+} from "../hooks/useHydration";
 import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
@@ -211,6 +220,27 @@ export function WorkflowCanvas({
   const saveWorkflowRef = useRef<((silent: boolean) => Promise<void>) | null>(
     null,
   );
+
+  // ── Run camera ──────────────────────────────────────────────────────
+  //
+  // Declared up here, ahead of the run hook, because the run hook is what tells
+  // it about the run. The instance ref above is the same object `onInit` fills
+  // in, so the camera has a handle on ReactFlow long before the canvas mounts.
+
+  const canvasRef = useRef<HTMLElement | null>(null);
+
+  const {
+    camera: runCamera,
+    isFollowing: isFollowingRun,
+    isSuspended: isFollowSuspended,
+    suspend: suspendFollow,
+    resume: resumeFollow,
+    onViewportInteraction,
+  } = useRunCamera({
+    instanceRef: reactFlowInstanceRef,
+    nodesRef,
+    containerRef: canvasRef,
+  });
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -246,7 +276,7 @@ export function WorkflowCanvas({
     isEditorOverlayOpen,
   });
 
-  const { isHydrated, hydratedBaselineRef } = useHydration({
+  const { isHydrated, hydratedBaselineRef, noteSavedWorkflow } = useHydration({
     workflow,
     setNodes,
     setEdges,
@@ -287,6 +317,7 @@ export function WorkflowCanvas({
     selectedEnvironment,
     reactFlowInstanceRef,
     saveWorkflowRef,
+    camera: runCamera,
   });
 
   // ── Extractors effect ───────────────────────────────────────────────
@@ -398,7 +429,9 @@ export function WorkflowCanvas({
       if (response.ok) {
         const reloadedWorkflow = WorkflowSchema.parse(await response.json());
         const canvasState = workflowToCanvas(reloadedWorkflow);
-        setNodes(canvasState.nodes);
+        setNodes((previousNodes) =>
+          preserveCanvasRuntimeState(canvasState.nodes, previousNodes),
+        );
         setEdges(canvasState.edges);
         updateVariables(canvasState.variables);
         useTabStore
@@ -500,8 +533,11 @@ export function WorkflowCanvas({
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node<WorkflowCanvasNodeData>) => {
       selectedNodeRef.current = node;
+      // Choosing a node to look at mid-run is a choice about where to look, so
+      // the camera stops moving until it is asked back.
+      suspendFollow();
     },
-    [],
+    [suspendFollow],
   );
 
   const onPaneClick = useCallback(() => {
@@ -510,7 +546,9 @@ export function WorkflowCanvas({
 
   const onNodeDragStart = useCallback(() => {
     // isDraggingNodeRef removed — auto-save skips during drag via isSwaggerRefreshing guard
-  }, []);
+    // Dragging a node under a moving camera is unusable; the camera yields.
+    suspendFollow();
+  }, [suspendFollow]);
 
   const onNodeDragStop = useCallback(() => {
     // Drag stop handler — no-op, auto-save resumes naturally
@@ -682,6 +720,10 @@ export function WorkflowCanvas({
         if (response.ok) {
           const savedWorkflow = WorkflowSchema.parse(await response.json());
           hydratedBaselineRef.current = { nodeCount, edgeCount };
+          // This echo is our own graph coming back. Claim it before the tab
+          // store hands it to `useHydration`, or the canvas re-hydrates from
+          // its own save and drops the run it is displaying.
+          noteSavedWorkflow(savedWorkflow);
           useTabStore.getState().markClean(workflowId ?? "");
           useTabStore
             .getState()
@@ -699,11 +741,31 @@ export function WorkflowCanvas({
         });
       }
     },
-    [workflowId, scope.workspaceId, selectedEnvironment, workflow],
+    [
+      workflowId,
+      scope.workspaceId,
+      selectedEnvironment,
+      workflow,
+      noteSavedWorkflow,
+    ],
   );
 
   // Keep the run hook's flush pointer at the latest saveWorkflow closure.
   saveWorkflowRef.current = saveWorkflow;
+
+  useCanvasKeyboardShortcuts({
+    isEditorOverlayOpen,
+    isRunning,
+    onSave: () => saveWorkflow(false),
+    onRun: runWorkflow,
+    onToggleJsonEditor: () => {
+      if (!isHydrated) {
+        toast.info("Workflow is still loading. Try JSON again in a moment.");
+        return;
+      }
+      setShowJsonEditor(true);
+    },
+  });
 
   // ── JSON editor ──────────────────────────────────────────────────────
 
@@ -758,7 +820,10 @@ export function WorkflowCanvas({
             nodeCount: canvasState.nodes.length,
             edgeCount: canvasState.edges.length,
           };
-          setNodes(canvasState.nodes);
+          noteSavedWorkflow(savedWorkflow);
+          setNodes((previousNodes) =>
+            preserveCanvasRuntimeState(canvasState.nodes, previousNodes),
+          );
           setEdges(canvasState.edges);
           updateVariables(canvasState.variables);
           useTabStore
@@ -801,6 +866,7 @@ export function WorkflowCanvas({
       workflow,
       workflowVariables,
       updateVariables,
+      noteSavedWorkflow,
     ],
   );
 
@@ -855,21 +921,35 @@ export function WorkflowCanvas({
 
   // Position changes flow through onNodesChange, so the 700ms autosave persists them.
   const handleAutoLayout = useCallback(() => {
+    // Re-laying out the graph and then fitting it is a camera act of its own; a
+    // run camera still following would take the view straight back off it.
+    suspendFollow();
     setNodes((nds) => autoLayout(nds, edgesRef.current));
     requestAnimationFrame(() => rfInstanceRef.current?.fitView(fitViewOptions));
-  }, [setNodes]);
+  }, [setNodes, suspendFollow]);
 
   /*
-   * There is deliberately no auto-fit when a run finishes. Moving the camera
-   * out from under someone who is watching a specific node is a worse failure
-   * than an endpoint sitting off-screen: it discards where they chose to look,
-   * and it lands right as the last edges are still filling. The reference
-   * animation's camera never moves. Fitting the view stays a deliberate act —
-   * the auto-layout control and ReactFlow's own fit-view button.
+   * The camera moves during a run, and only during a run — see `useRunCamera`.
+   *
+   * The rule this replaced was "the camera never moves", on the grounds that
+   * moving it out from under someone watching a specific node discards where
+   * they chose to look. That reasoning was right and still holds; what was wrong
+   * was the conclusion. On a 130-node workflow, fit-view renders every node a
+   * few pixels wide, so "where they chose to look" was nowhere: the run played
+   * out too small to read and the choice was theoretical.
+   *
+   * So the camera follows the run, and the original objection becomes the
+   * constraint rather than the verdict: the first pan, zoom, node click or drag
+   * hands it straight back and nothing takes it again except the pill. Outside a
+   * run nothing here moves the camera — fitting the view is a deliberate act,
+   * via the auto-layout control and ReactFlow's own fit-view button, and that
+   * includes the end of a run: the camera stays where the last node was rather
+   * than pulling back out to the overview it was called in to escape.
    */
 
   return (
     <main
+      ref={canvasRef}
       className="w-full h-full min-h-0 relative overflow-hidden bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark transition-colors duration-300"
       aria-label="Workflow canvas"
     >
@@ -898,6 +978,10 @@ export function WorkflowCanvas({
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
+        // ReactFlow passes the d3 source event through, and its own transitions
+        // have none — so this fires with an event only when a hand is actually
+        // on the canvas, including one that grabs it mid-glide.
+        onMoveStart={onViewportInteraction}
         onInit={handleInit}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -926,11 +1010,27 @@ export function WorkflowCanvas({
           style={controlsStyle}
           fitViewOptions={fitViewOptions}
           showInteractive={false}
+          // These move the camera through ReactFlow's own transitions, which
+          // carry no source event — so `onMoveStart` cannot tell them apart from
+          // the run camera's moves. They are the most deliberate camera acts
+          // there are, so they are reported here instead.
+          onZoomIn={suspendFollow}
+          onZoomOut={suspendFollow}
+          onFitView={suspendFollow}
         >
           <ControlButton onClick={handleAutoLayout} title="Auto-layout">
             <Wand2 />
           </ControlButton>
         </Controls>
+
+        {/* Only while a run is still going and the user has taken the camera:
+            the way back has to be one click, or looking at something mid-run
+            costs you the rest of the run. */}
+        {isFollowingRun && isFollowSuspended && (
+          <FlowPanel position="bottom-center">
+            <RunFollowPill onResume={resumeFollow} />
+          </FlowPanel>
+        )}
 
         {/* The action stack in AddNodesPanel sits directly above this, keyed off
             the same shared geometry — see constants/CanvasChrome. */}

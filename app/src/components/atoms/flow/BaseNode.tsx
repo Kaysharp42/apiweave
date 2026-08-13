@@ -256,6 +256,10 @@ export function BaseNode({
           the selection ring, which composes with the state glow rather than
           replacing it. */}
       <div
+        // Stable contract for index.css: an expanded node grows down across its
+        // neighbours, and ReactFlow's wrapper is what decides who paints on top.
+        // The attribute is the hook that lifts it; see the `:has()` rule there.
+        {...(isExpanded && { "data-node-expanded": "true" })}
         className={[
           "relative rounded-node",
           selected ? "shadow-glow-select" : "",

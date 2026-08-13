@@ -154,3 +154,31 @@ test("getCanvasClipboardShortcutAction handles canvas copy/paste intent", () => 
   });
   assert.equal(pasteAction, "paste");
 });
+
+test("getCanvasClipboardShortcutAction handles duplicate intent", () => {
+  const duplicateAction = getCanvasClipboardShortcutAction({
+    event: asKeyboardEvent({
+      key: "d",
+      ctrlKey: true,
+      target: {
+        ownerDocument: createSelectionDoc({ text: "", isCollapsed: true }),
+      },
+    }),
+    hasSelectedNode: true,
+    isEditorOverlayOpen: false,
+  });
+  assert.equal(duplicateAction, "duplicate");
+
+  const duplicateWithoutSelection = getCanvasClipboardShortcutAction({
+    event: asKeyboardEvent({
+      key: "d",
+      ctrlKey: true,
+      target: {
+        ownerDocument: createSelectionDoc({ text: "", isCollapsed: true }),
+      },
+    }),
+    hasSelectedNode: false,
+    isEditorOverlayOpen: false,
+  });
+  assert.equal(duplicateWithoutSelection, null);
+});

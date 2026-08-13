@@ -3,36 +3,27 @@ import Mousetrap from "mousetrap";
 
 interface UseKeyboardShortcutsParams {
   onNewWorkflow?: () => void;
-  onSave?: () => void;
-  onRun?: () => void;
   onCloseTab?: () => void;
   onNextTab?: () => void;
   onPrevTab?: () => void;
-  onToggleJsonEditor?: () => void;
   onToggleSidebar?: () => void;
   onShowShortcutsHelp?: () => void;
 }
 
 interface ShortcutCallbacks {
   onNewWorkflow?: (() => void) | undefined;
-  onSave?: (() => void) | undefined;
-  onRun?: (() => void) | undefined;
   onCloseTab?: (() => void) | undefined;
   onNextTab?: (() => void) | undefined;
   onPrevTab?: (() => void) | undefined;
-  onToggleJsonEditor?: (() => void) | undefined;
   onToggleSidebar?: (() => void) | undefined;
   onShowShortcutsHelp?: (() => void) | undefined;
 }
 
 export default function useKeyboardShortcuts({
   onNewWorkflow,
-  onSave,
-  onRun,
   onCloseTab,
   onNextTab,
   onPrevTab,
-  onToggleJsonEditor,
   onToggleSidebar,
   onShowShortcutsHelp,
 }: UseKeyboardShortcutsParams = {}) {
@@ -41,12 +32,9 @@ export default function useKeyboardShortcuts({
   useEffect(() => {
     callbacks.current = {
       onNewWorkflow,
-      onSave,
-      onRun,
       onCloseTab,
       onNextTab,
       onPrevTab,
-      onToggleJsonEditor,
       onToggleSidebar,
       onShowShortcutsHelp,
     };
@@ -61,10 +49,9 @@ export default function useKeyboardShortcuts({
       };
 
     Mousetrap.bind("ctrl+n", call("onNewWorkflow"));
-    Mousetrap.bind("ctrl+s", call("onSave"));
-    Mousetrap.bind(["ctrl+r", "f5"], call("onRun"));
     Mousetrap.bind("ctrl+w", call("onCloseTab"));
-    Mousetrap.bind("ctrl+j", call("onToggleJsonEditor"));
+    Mousetrap.bind("ctrl+tab", call("onNextTab"));
+    Mousetrap.bind("ctrl+shift+tab", call("onPrevTab"));
     Mousetrap.bind("ctrl+b", call("onToggleSidebar"));
     Mousetrap.bind("?", (e: Mousetrap.ExtendedKeyboardEvent) => {
       const tag = e.target
@@ -77,10 +64,9 @@ export default function useKeyboardShortcuts({
 
     return () => {
       Mousetrap.unbind("ctrl+n");
-      Mousetrap.unbind("ctrl+s");
-      Mousetrap.unbind(["ctrl+r", "f5"]);
       Mousetrap.unbind("ctrl+w");
-      Mousetrap.unbind("ctrl+j");
+      Mousetrap.unbind("ctrl+tab");
+      Mousetrap.unbind("ctrl+shift+tab");
       Mousetrap.unbind("ctrl+b");
       Mousetrap.unbind("?");
     };

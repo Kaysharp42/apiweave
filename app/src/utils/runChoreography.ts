@@ -33,6 +33,14 @@ import type { DrainResult } from "../types/DrainResult";
 
 export type { PacedEvent, ChoreographyState, DrainResult };
 
+/**
+ * The custom property the current tempo is published on.
+ *
+ * It is a CSS variable rather than state because `CustomEdge` is the reader and
+ * neither side should re-render just because the tempo changed.
+ */
+export const EDGE_FILL_CSS_VAR = "--aw-dur-edge-fill";
+
 /** Full-tempo traversal, and the default of `--aw-dur-edge-fill`. */
 export const EDGE_FILL_BASE_MS = 700;
 
