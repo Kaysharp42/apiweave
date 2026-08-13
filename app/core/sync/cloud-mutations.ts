@@ -238,19 +238,39 @@ function sanitizeConfig(config: Record<string, unknown>): JsonValue {
 
 // The config fields with structural handling, shared by the live-config and
 // snapshot passes so the two cannot drift on what a body or a cookie means.
-// They differ only in how they treat everything else, hence `fallback`.
+// A handler returns `undefined` when the field is not the shape it handles, and
+// the caller's `fallback` decides everything else — that is the only way the two
+// passes differ.
+type ConfigFieldSanitizer = (value: unknown) => JsonValue | undefined
+
+// Cookies carry session material under innocuous names, so every cookie value
+// is withheld; the other key/value arrays are judged per entry.
+const sanitizeCookieField: ConfigFieldSanitizer = (value) =>
+  Array.isArray(value) ? sanitizeKeyValueItems(value, true) : undefined
+const sanitizeKeyValueField: ConfigFieldSanitizer = (value) =>
+  Array.isArray(value) ? sanitizeKeyValueItems(value, false) : undefined
+
+const CONFIG_FIELD_SANITIZERS: Readonly<Record<string, ConfigFieldSanitizer>> = {
+  body: (value) => (typeof value === "string" ? sanitizeBodyText(value) : undefined),
+  url: (value) => (typeof value === "string" ? sanitizeUrl(value) : undefined),
+  auth: (value) => (isRecord(value) ? sanitizeAuthConfig(value) : undefined),
+  fileUploads: (value) => (Array.isArray(value) ? sanitizeFileUploads(value) : undefined),
+  cookies: sanitizeCookieField,
+  headers: sanitizeKeyValueField,
+  queryParams: sanitizeKeyValueField,
+  pathVariables: sanitizeKeyValueField,
+  formDataEntries: sanitizeKeyValueField,
+  urlEncodedEntries: sanitizeKeyValueField,
+}
+
 function sanitizeConfigField(
   key: string,
   value: unknown,
   fallback: (value: unknown) => JsonValue,
 ): JsonValue {
-  if (key === "body" && typeof value === "string") return sanitizeBodyText(value)
-  if (key === "url" && typeof value === "string") return sanitizeUrl(value)
-  if (key === "cookies" && Array.isArray(value)) return sanitizeKeyValueItems(value, true)
-  if (isKeyValueConfigField(key) && Array.isArray(value)) return sanitizeKeyValueItems(value, false)
-  if (key === "auth" && isRecord(value)) return sanitizeAuthConfig(value)
-  if (key === "fileUploads" && Array.isArray(value)) return sanitizeFileUploads(value)
-  return fallback(value)
+  const handler = CONFIG_FIELD_SANITIZERS[key]
+  const sanitized = handler === undefined ? undefined : handler(value)
+  return sanitized === undefined ? fallback(value) : sanitized
 }
 
 // A `variable` reference just names a workflow variable, not file content, so
@@ -321,10 +341,7 @@ function sanitizeValue(value: unknown, inspectStringValues = false): JsonValue {
   if (typeof value === "string") {
     return inspectStringValues && containsCredentialMaterial(value) ? "" : value
   }
-  if (typeof value === "number" || typeof value === "boolean" || value === null) {
-    return value
-  }
-  return null
+  return jsonScalarOrNull(value)
 }
 
 function sanitizeSnapshotValue(value: unknown): JsonValue {
@@ -346,6 +363,12 @@ function sanitizeSnapshotValue(value: unknown): JsonValue {
   if (typeof value === "string") {
     return containsCredentialMaterial(value) ? "" : value
   }
+  return jsonScalarOrNull(value)
+}
+
+// Anything left that JSON can carry as-is; anything it cannot (a function, a
+// Date, undefined) becomes null rather than travelling as a surprise.
+function jsonScalarOrNull(value: unknown): JsonValue {
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
     return value
   }
@@ -368,28 +391,26 @@ function sanitizeKeyValueItems(values: readonly unknown[], redactAllValues: bool
       continue
     }
     const item = sanitizeValue(value)
-    const key = value["key"]
-    const sensitiveKey = typeof key === "string" && isSyncSensitiveKey(key)
-    if (isRecord(item)) {
-      const itemValue = item["value"]
-      const withheld = redactAllValues || sensitiveKey
-        ? !isCredentialFreeReference(itemValue)
-        : typeof itemValue === "string" && containsCredentialMaterial(itemValue)
-      if (withheld && !isEmptySyncValue(itemValue)) {
-        item["value"] = ""
-      }
+    if (isRecord(item) && isWithheldPairValue(item["value"], value["key"], redactAllValues)) {
+      item["value"] = ""
     }
     sanitized.push(item)
   }
   return sanitized
 }
 
-function isKeyValueConfigField(key: string): boolean {
-  return key === "headers"
-    || key === "queryParams"
-    || key === "pathVariables"
-    || key === "formDataEntries"
-    || key === "urlEncodedEntries"
+// A pair's value is judged by its sibling `key`: under a sensitive name (or in
+// a cookie array, where every value counts) only a credential-free reference
+// survives; elsewhere only credential material is withheld.
+function isWithheldPairValue(value: unknown, key: unknown, redactAllValues: boolean): boolean {
+  if (isEmptySyncValue(value)) {
+    return false
+  }
+  const sensitive = redactAllValues || (typeof key === "string" && isSyncSensitiveKey(key))
+  if (sensitive) {
+    return !isCredentialFreeReference(value)
+  }
+  return typeof value === "string" && containsCredentialMaterial(value)
 }
 
 function blankUnlessReference(value: unknown): JsonValue {
