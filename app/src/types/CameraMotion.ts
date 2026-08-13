@@ -1,3 +1,5 @@
+import type { CameraCrossing } from "./CameraCrossing";
+
 /**
  * The camera's own state, integrated frame by frame.
  *
@@ -20,22 +22,33 @@ export interface CameraMotion {
   /** Zoom velocity, octaves per second — the rate the eye actually judges. */
   readonly vZoom: number;
   /**
-   * The camera is currently correcting. Latched: it is set when the focus leaves
-   * the deadzone and cleared only once the focus is near centre again, so a
-   * correction cannot cancel itself the moment it starts working.
+   * The camera is correcting, per axis. Latched: set when the action leaves the
+   * deadzone and cleared only once it is near the mark again, so a correction
+   * cannot cancel itself the moment it starts working.
+   *
+   * Per axis because a run that walks left to right leaves X engaged more or less
+   * permanently, and a single shared latch made that hold Y engaged too — so the
+   * vertical deadzone never applied and the picture was shoved up and down at the
+   * event rate. An axis that is not engaged holds its position.
    */
-  readonly engaged: boolean;
+  readonly engagedX: boolean;
+  readonly engagedY: boolean;
   /**
-   * The zoom being approached. Never rises during a run, which is what makes
-   * the zoom cycling this replaced impossible rather than merely unlikely.
+   * The zoom the run is being watched at. Never rises within a run, which is what
+   * makes the zoom cycling this replaced impossible rather than merely unlikely.
+   *
+   * A crossing overrides the zoom for its duration without touching this, so a
+   * handoff cannot ratchet the run's framing either.
    */
-  readonly zoomTarget: number;
-  /** How long the focus has not fitted, so a momentary spread does not commit
+  readonly workZoom: number;
+  /** A handoff to another branch, while one is in flight. */
+  readonly crossing: CameraCrossing | null;
+  /** How long the subject has not fitted, so a momentary spread does not commit
    * the whole run to a wider view. */
   readonly crampedMs: number;
   /**
    * Where in the frame, in screen pixels from its centre, the current correction
-   * is trying to put the focus. Negative x means left of centre.
+   * is trying to put the subject. Negative x means left of centre.
    *
    * Chosen when the correction starts and held for its duration: the camera aims
    * *past* the action, against the direction it left the frame in, so the move

@@ -9,35 +9,40 @@ import type { CameraViewport } from "../types/CameraViewport";
  * The camera that follows a run: a physical model, integrated per frame.
  *
  * Everything here is pure. `useRunCamera` owns the clock, the event stream and
- * the ReactFlow instance; this owns the motion, which is the part that has to be
- * right and the part worth testing.
+ * the ReactFlow instance, and `runFronts` decides *which branch* is being
+ * watched; this owns the motion, which is the part that has to be right and the
+ * part worth testing.
  *
- * The previous camera decided each move separately — pick a target, animate to
- * it, rest, repeat — and on a large workflow that produced roughly one zoom
- * round trip every two and a half seconds and pans that crossed the whole graph.
- * Three things were wrong with the model, and all three are structural rather
- * than a matter of tuning:
+ * Two earlier models failed here, and the lessons from both are load-bearing:
  *
- *  1. **Its aim was a bounding box.** A box is defined by its two most extreme
- *     members, so a node arriving or finishing redefined it in a single frame,
- *     and a box around two distant branches centres on the empty space between
- *     them. Here the aim is an *attention-weighted mean* (`attentionFocus`): it
- *     moves only as fast as the weights decay, and it never points at a gap.
- *  2. **Its zoom could oscillate.** Zoom was re-derived per move from whatever
- *     was lit, and — worse — the floor it was allowed to choose sat *below* the
- *     threshold at which it considered a zoom readable, so the camera routinely
- *     picked a zoom it would reject on the next hop and bounced between the two.
- *     Here zoom is monotone within a run (`stepZoomTarget`): it steps outward,
- *     in quantised rungs, and never back. Cycling is not damped, it is
- *     unrepresentable.
- *  3. **Its motion was a sequence of animations.** Each was smooth alone, but
- *     consecutive ones fused into unbroken drift or fought each other, and a
- *     retarget mid-flight restarts from zero velocity — a visible stutter. Here
- *     there is one critically damped spring per axis, integrated continuously,
- *     so velocity is continuous *through* a change of target and the camera
- *     always eases to a stop instead of arriving at one.
+ *  1. **The aim must not be able to teleport.** A bounding box is defined by its
+ *     two most extreme members, so a node arriving or finishing redefines it in a
+ *     single frame. An average over everything lit is worse on a workflow with
+ *     concurrent branches: any locality rule re-picks a winner each time a
+ *     different branch reports, which measured out as 2.8 hard cuts per second
+ *     for a whole minute. So the subject is *one branch* — chosen in `runFronts`,
+ *     held for as long as it has something to show — and within it the aim is an
+ *     attention-weighted mean that moves only as fast as its weights decay.
+ *  2. **Zoom must not be able to cycle.** Zoom used to be re-derived per move,
+ *     and the floor it could choose sat *below* the threshold at which it judged
+ *     a zoom readable, so it picked zooms it would reject on the next hop. Here
+ *     `workZoom` steps outward in quantised rungs and never back; a crossing may
+ *     borrow a wider zoom for the length of one handoff, but it restores the exact
+ *     value it found. Cycling is not damped, it is unrepresentable.
+ *  3. **Motion must be continuous through a change of target.** A sequence of
+ *     animations fuses into drift or fights itself, and a retarget mid-flight
+ *     restarts from zero velocity. Here there is one critically damped spring per
+ *     axis, integrated continuously, so the camera always eases to a stop instead
+ *     of arriving at one.
+ *  4. **There are no cuts.** The previous model cut past a distance threshold as a
+ *     safety valve, and once the aim started teleporting nearly every correction
+ *     tripped it — a cut also zeroes velocity, so the springs never ran. Distance
+ *     is now handled by moving the camera *back* far enough that any trip is one
+ *     glance (`planCrossing`), which is what a camera operator does and is smooth
+ *     at any distance. The only remaining jump is the one a reduced-motion
+ *     preference asks for.
  *
- * What is left of the old model is the part that was right: stillness is the
+ * What is left of the first model is the part that was right: stillness is the
  * default, the user always wins, and a pan is a glance while a zoom is the room
  * changing size.
  */
@@ -74,18 +79,32 @@ export const FOLLOW_PADDING_PX = 96;
 export const ATTENTION_HALFLIFE_MS = 900;
 
 /**
- * How far from the newest activity other activity still counts, as a fraction of
+ * How far from where the camera is looking a node still counts, as a fraction of
  * the viewport width.
  *
- * Attention is local because a viewer's is: two branches a screen and a half
- * apart cannot both be watched, and the honest answer is to watch one. This is
- * what stops a fan-out from being framed as the gap between its ends.
+ * Measured from the camera's own centre rather than from whichever node reported
+ * last. That is the difference between a gate that moves as smoothly as the camera
+ * does and one that re-centres itself on every event — the latter was the defect
+ * that made the aim teleport, and moving the anchor is the whole of the fix.
+ *
+ * The value is inherited from the previous model, where it was tuned against a real
+ * run, and it is worth keeping for a reason that has nothing to do with locality:
+ * a branch advancing every couple of hundred milliseconds leaves a trail whose
+ * age-weighted spread is several screens wide, and this is what bounds it. Widen it
+ * much and the zoom bottoms out; tighten it much and the camera stops seeing where
+ * the run came from.
  */
 export const ATTENTION_RADIUS_SCREENS = 0.75;
 
 /** Past this, a finished node is forgotten outright — it has a millionth of the
  * weight of live work, and keeping it only costs arithmetic. */
 export const ATTENTION_WINDOW_MS = 4000;
+
+/** How many of a branch's nodes the aim is computed from, newest first. A branch
+ * can be a hundred nodes long by the end of a run and the tail of it has no
+ * measurable weight; this keeps the per-frame cost flat instead of growing with
+ * how long the run has been going. */
+export const ATTENTION_POINTS_MAX = 24;
 
 /**
  * How much of the focus's spread the zoom has to accommodate, in standard
@@ -113,6 +132,18 @@ export const EXTENT_SIGMAS = 1.5;
  */
 export const DEADZONE = 0.72;
 export const DEADZONE_RELEASE = 0.2;
+
+/**
+ * The deadzone a subject that fills the screen still gets, as a fraction of the
+ * viewport.
+ *
+ * Without this the deadzone is "the room left before it clips", which reaches zero
+ * exactly when the subject is as large as the viewport — so on the big graphs where
+ * stillness matters most the camera owed a correction for every pixel of drift.
+ * A subject that cannot be framed perfectly is better framed approximately and
+ * held than framed exactly and chased.
+ */
+export const DEADZONE_FLOOR = 0.18;
 
 /**
  * How far past the action the camera aims, as a fraction of the deadzone.
@@ -146,18 +177,66 @@ export const ZOOM_OMEGA = 3;
  * second, both being what the eye actually judges rather than what the
  * coordinate system happens to use. */
 export const MAX_PAN_SCREENS_PER_S = 0.42;
-export const MAX_ZOOM_OCTAVES_PER_S = 2;
+export const MAX_ZOOM_OCTAVES_PER_S = 3.5;
 
 /**
- * Past this much travel the camera cuts instead of panning.
+ * The crossing: how the camera travels between branches.
  *
- * Film grammar, and it holds here: you pan within a place and cut between
- * places. Sliding across a screen and a half of empty canvas conveys nothing
- * except that the canvas is being slid, costs a second of motion, and leaves
- * the viewer nothing to track on the way. A cut costs one frame and is followed
- * by stillness.
+ * Film grammar says you pan within a place and cut between places, and the second
+ * half of that is what the previous model acted on — with the result that it cut
+ * two or three times a second and the run became unwatchable. The grammar is not
+ * wrong; the premise is. There is a third move, and it is the one a camera operator
+ * on a crane actually makes: pull back until both places are one place, cross, push
+ * back in. It reads as a single deliberate gesture, it shows the viewer how the two
+ * branches relate — which on a workflow graph is genuinely informative — and its
+ * cost barely grows with distance, because the whole point is that the distance is
+ * measured at a zoom where it is small.
+ *
+ * `MIN_TRAVEL` is where it starts being worth it: below a screen the destination is
+ * nearly in frame already and a plain pan is both shorter and more legible. `SPAN`
+ * is how much of the screen the trip is allowed to occupy at the crossing zoom, so
+ * the far end is comfortably in view before the camera sets off. `ARRIVE` is how
+ * close it has to get before the push back in begins, **in screens at the zoom it is
+ * returning to** — generous, because the push-in overlapping the last of the pan is
+ * exactly what makes it one move instead of two.
+ *
+ * `SPAN` is also what makes the move's cost logarithmic in its distance rather than
+ * linear: holding the trip at a fixed fraction of the frame fixes the pan at about
+ * nine tenths of a second whatever the distance, and only the pull-back grows — by
+ * one octave per doubling. A trip ten times as long costs about three more octaves,
+ * which at `MAX_ZOOM_OCTAVES_PER_S` is under a second. Note that the zoom this
+ * formula asks for is close to fit-view over the trip by construction, so nodes
+ * being unreadable at the midpoint is not a side effect to be floored away — it is
+ * the move working.
+ *
+ * `MIN_ZOOM` is therefore a hard limit rather than a taste one: **it must stay above
+ * the `minZoom` ReactFlow is mounted with** (0.02, in `WorkflowCanvas`). A zoom
+ * below that would be clamped on the way in, so the camera would read back a
+ * viewport it did not write, conclude that the user had taken over, and suspend
+ * itself in the middle of the crossing. Past the floor a trip goes back to paying
+ * for its distance in seconds rather than in octaves, which for graphs this feature
+ * will meet is well past the far end of plausible.
  */
-export const CUT_SCREENS = 1.5;
+export const CROSS_MIN_TRAVEL_SCREENS = 0.9;
+export const CROSS_SPAN_SCREENS = 0.75;
+export const CROSS_ARRIVE_SCREENS = 0.6;
+export const CROSS_MIN_ZOOM = 0.03;
+
+/**
+ * Pan speed while crossing, in viewport diagonals per second.
+ *
+ * Brisker than a following pan, and it should be: a following pan is the viewer
+ * reading the canvas as it moves, while a crossing is the viewer waiting to be
+ * somewhere else.
+ *
+ * The zoom is *not* given a separate limit for crossings. It was, briefly, with the
+ * push back in left slower on the theory that arriving more gently than you leave is
+ * the grammar — and it cost a second of dead time at the far end, where the camera
+ * was already in place and only the zoom was still creeping. `MAX_ZOOM_OCTAVES_PER_S`
+ * serves both halves; it never binds on an ordinary ⅓-octave step-out, where the
+ * spring is the governor, so its value only shows up in the deliberate moves.
+ */
+export const CROSS_PAN_SCREENS_PER_S = 0.9;
 
 /** Zoom changes land on rungs a third of an octave apart, and only after the
  * focus has failed to fit for this long. Quantising stops a slow drift in the
@@ -228,9 +307,9 @@ export function fitZoomFor(
   );
 }
 
-/** How far from the newest activity other activity still counts, in flow units.
- * Screen-relative, so zooming out genuinely widens what the camera is willing to
- * treat as one scene. */
+/** How far from where the camera is looking a finished node still counts, in flow
+ * units. Screen-relative, so zooming out genuinely widens what the camera is
+ * willing to treat as one scene. */
 export function attentionRadius(
   viewport: CameraViewport,
   zoom: number,
@@ -242,35 +321,66 @@ export function attentionRadius(
 }
 
 /**
- * Where the run's attention is, as a weighted mean over what the camera has
- * been shown.
+ * Where the subject branch's attention is, as a weighted mean over what the
+ * camera has been shown of it.
  *
- * Two weights multiply:
+ * `points` are one branch's nodes — the choice of branch is `runFronts`' job, and
+ * it is what makes this function's answer a place rather than an average of
+ * places. Within the branch, two weights apply:
  *
  * - **age**, halving every `ATTENTION_HALFLIFE_MS`, except that anything still
  *   running counts as brand new however long it has been working. So a slow node
  *   holds the camera and a finished one releases it gradually.
- * - **distance from the newest activity**, a Gaussian at `radius`. Measured from
- *   the newest point rather than from the camera, which is the difference between
- *   "what else is part of this scene" and "what else is nearby" — only the former
- *   is a reason to widen the shot, and only the former refuses to aim at the gap
- *   between two distant branches.
+ * - **distance from `anchor`**, a Gaussian at `radius`. `anchor` is the camera's
+ *   own centre, and that single change from the previous model — which anchored at
+ *   whichever node had reported last — is what stops the aim teleporting: the gate
+ *   now moves as smoothly as the camera does instead of re-centring itself on
+ *   every event. What the gate earns is a bounded shot. It sheds the tail a join
+ *   folds in from forty columns away, and it keeps a long branch's trailing
+ *   history from asking the zoom to cover everything the run has touched in the
+ *   last four seconds — without it, a fast branch demands about a third of the
+ *   zoom it should and the run bottoms out at `MIN_READABLE_ZOOM` for good.
  *
- * `points` must arrive newest-first; `points[0]` is the anchor and is always
- * part of the answer. The returned size is a spread, not an extent: see
- * `EXTENT_SIGMAS`.
+ * The two weights multiply, and neither of them branches on whether a node is
+ * running: `running` only feeds the *age*, as an age of zero. So a node's weight
+ * does not change in the frame it finishes — at that instant its age is genuinely
+ * zero — and the aim is continuous through the one event that used to move it
+ * discontinuously. That property is worth more than any refinement of the gate,
+ * and it is why the gate must not be conditioned on `running`.
+ *
+ * A camera further from the branch than the radius — which is every frame of a
+ * crossing — gets an aim dominated by whichever of its nodes is closest, and so
+ * flies to the end of the branch it will reach first and tracks along it from
+ * there. That is a consequence of the gate rather than a rule of its own, and it is
+ * the composition you would choose anyway.
+ *
+ * `points` must arrive newest-first; `points[0]` is always part of the answer, so
+ * a branch whose every node has faded still resolves to somewhere. The returned
+ * size is a spread, not an extent: see `EXTENT_SIGMAS`.
  */
 export function attentionFocus(
   points: readonly AttentionPoint[],
   now: number,
   radius: number,
+  anchor: { x: number; y: number },
 ): CameraFocus | null {
-  const anchor = points[0];
-  if (!anchor) return null;
+  const newest = points[0];
+  if (!newest) return null;
 
-  const anchorX = anchor.x + anchor.width / 2;
-  const anchorY = anchor.y + anchor.height / 2;
   const spread = Math.max(1, radius * radius);
+
+  // Every squared distance is measured against the closest one, which is a common
+  // factor on every weight and therefore cancels exactly out of the weighted mean
+  // and the variance below. What it buys is that the nearest point's exponent is
+  // always zero, so a camera a long way from the branch it is flying to gets the
+  // same answer as one right next to it instead of underflowing every weight to
+  // zero at some threshold distance and changing rule.
+  let closest = Infinity;
+  for (const point of points) {
+    const dx = point.x + point.width / 2 - anchor.x;
+    const dy = point.y + point.height / 2 - anchor.y;
+    closest = Math.min(closest, dx * dx + dy * dy);
+  }
 
   const weighted: { x: number; y: number; weight: number }[] = [];
   let total = 0;
@@ -285,9 +395,9 @@ export function attentionFocus(
     const age = point.running ? 0 : Math.max(0, now - point.since);
     const byAge = Math.pow(2, -age / ATTENTION_HALFLIFE_MS);
     const away =
-      (centreX - anchorX) * (centreX - anchorX) +
-      (centreY - anchorY) * (centreY - anchorY);
-    const weight = byAge * Math.exp(-away / spread);
+      (centreX - anchor.x) * (centreX - anchor.x) +
+      (centreY - anchor.y) * (centreY - anchor.y);
+    const weight = byAge * Math.exp(-(away - closest) / spread);
 
     weighted.push({ x: centreX, y: centreY, weight });
     total += weight;
@@ -297,14 +407,15 @@ export function attentionFocus(
     sumHalfHeight += (weight * point.height) / 2;
   }
 
-  // Everything underflowed: the anchor is old and the rest are older, so it is
-  // the only thing left to say.
+  // Everything underflowed: the branch has finished and faded, or the camera is
+  // still a long way from it. Its newest node is the only thing left to say, and
+  // it is also exactly where a camera on its way here should be heading.
   if (total <= 0) {
     return {
-      x: anchorX,
-      y: anchorY,
-      width: anchor.width,
-      height: anchor.height,
+      x: newest.x + newest.width / 2,
+      y: newest.y + newest.height / 2,
+      width: newest.width,
+      height: newest.height,
     };
   }
 
@@ -341,6 +452,25 @@ export function framingFor(
     x: focus.x,
     y: focus.y - centreShiftPx(viewport) / Math.max(zoom, 1e-6),
     zoom,
+  };
+}
+
+/**
+ * The flow point the camera is actually looking at.
+ *
+ * `motion.x`/`y` are the centre of the *container*, but the toolbar and minimap
+ * cover bands of it, so the middle of what the viewer sees sits elsewhere. This is
+ * the inverse of the shift `framingFor` applies, and it is what a distance from
+ * "where the camera is pointed" has to be measured from for the answer to match
+ * what it looks like.
+ */
+export function lookingAt(
+  motion: CameraMotion,
+  viewport: CameraViewport,
+): { x: number; y: number } {
+  return {
+    x: motion.x,
+    y: motion.y + centreShiftPx(viewport) / Math.max(motion.zoom, 1e-6),
   };
 }
 
@@ -390,8 +520,10 @@ export function adoptCamera(
     vx: 0,
     vy: 0,
     vZoom: 0,
-    engaged,
-    zoomTarget: centre.zoom >= MIN_READABLE_ZOOM ? centre.zoom : COMFORT_ZOOM,
+    engagedX: engaged,
+    engagedY: engaged,
+    workZoom: centre.zoom >= MIN_READABLE_ZOOM ? centre.zoom : COMFORT_ZOOM,
+    crossing: null,
     crampedMs: 0,
     aimBiasX: 0,
     aimBiasY: 0,
@@ -454,11 +586,73 @@ export function stepZoomTarget(current: number, required: number): number {
  * owes it a move.
  *
  * The smaller of "the deadzone" and "the room left before it clips", so a focus
- * that nearly fills the screen is held centred while a small one roams.
+ * that nearly fills the screen is held centred while a small one roams — but never
+ * less than `DEADZONE_FLOOR`, because the clipping term reaches zero exactly when
+ * the focus is as large as the viewport, and a deadzone of zero is a camera that
+ * corrects on every frame.
  */
 function deadzoneHalfPx(usablePx: number, contentPx: number): number {
   const beforeClipping = Math.max(0, (usablePx - contentPx) / 2);
-  return Math.min(beforeClipping, (usablePx * DEADZONE) / 2);
+  return Math.max(
+    Math.min(beforeClipping, (usablePx * DEADZONE) / 2),
+    (usablePx * DEADZONE_FLOOR) / 2,
+  );
+}
+
+/**
+ * Set up a handoff to a subject somewhere else entirely.
+ *
+ * Called by the caller when the branch being followed changes — and on the opening
+ * move of a run, which is the same problem: the camera is one place and the thing
+ * to watch is another. Returns the motion unchanged when the trip is short enough
+ * to simply pan, which is the common case and includes every re-run of a workflow
+ * the user is already looking at.
+ *
+ * The zoom is chosen so the trip spans `CROSS_SPAN_SCREENS` of the frame, which
+ * makes the move's duration nearly independent of its distance: forty columns and
+ * four look the same from far enough back. `workZoom` is deliberately untouched, so
+ * the push-in at the far end lands on the framing the run was being watched at.
+ */
+export function planCrossing(
+  motion: CameraMotion,
+  focus: CameraFocus | null,
+  viewport: CameraViewport,
+): CameraMotion {
+  if (!focus) return motion;
+
+  const target = framingFor(focus, viewport, motion.workZoom);
+  const travel = Math.hypot(target.x - motion.x, target.y - motion.y);
+  const screen = screenDiagonalPx(viewport);
+
+  // Near enough that a pan is the shorter and more legible move: the destination
+  // is already at the edge of frame, and there is content to track all the way.
+  if (travel * motion.workZoom <= CROSS_MIN_TRAVEL_SCREENS * screen) {
+    return motion;
+  }
+
+  const zoom = Math.max(
+    CROSS_MIN_ZOOM,
+    Math.min(motion.workZoom, (CROSS_SPAN_SCREENS * screen) / travel),
+  );
+
+  return {
+    ...motion,
+    crossing: {
+      zoom,
+      // In working-zoom terms, not crossing-zoom terms. Measuring it out at the
+      // wide zoom is a trap: a third of a screen there is several screens once the
+      // camera is back in, so the push-in would start miles short and the rest of
+      // the trip would crawl at following speed. That mistake was worth four
+      // seconds of dead time on a long handoff.
+      settleWithin: (CROSS_ARRIVE_SCREENS * screen) / motion.workZoom,
+    },
+    // A crossing is one move with one mark, so it starts from a clean aim: the
+    // lead that composes a following pan would only fight it.
+    engagedX: true,
+    engagedY: true,
+    aimBiasX: 0,
+    aimBiasY: 0,
+  };
 }
 
 /** One frame of camera. Pure: the same state and input always produce the same
@@ -472,17 +666,20 @@ export function stepCamera(
 ): CameraMotion {
   const stepMs = Math.min(MAX_FRAME_MS, Math.max(0, dtMs));
   const dt = stepMs / 1000;
+  const usable = usableSize(viewport);
+  const screen = screenDiagonalPx(viewport);
 
-  // The zoom it wants, which it may only lower, and only after the focus has
-  // genuinely failed to fit for a while.
-  let zoomTarget = motion.zoomTarget;
+  // The zoom the run is watched at, which may only be lowered, and only after the
+  // subject has genuinely failed to fit for a while. Frozen mid-crossing, where
+  // what is on screen is the trip rather than the subject.
+  let workZoom = motion.workZoom;
   let crampedMs = motion.crampedMs;
-  if (focus) {
+  if (focus && !motion.crossing) {
     const required = fitZoomFor(focus, viewport);
-    if (required * ZOOM_OUT_SLACK < zoomTarget) {
+    if (required * ZOOM_OUT_SLACK < workZoom) {
       crampedMs += stepMs;
       if (crampedMs >= ZOOM_OUT_DWELL_MS) {
-        zoomTarget = stepZoomTarget(zoomTarget, required);
+        workZoom = stepZoomTarget(workZoom, required);
         crampedMs = 0;
       }
     } else {
@@ -490,92 +687,133 @@ export function stepCamera(
     }
   }
 
-  // Whether it is correcting, and if so where to. Latched, so a correction runs
-  // to completion rather than stopping the instant it has done enough.
-  const usable = usableSize(viewport);
-  let engaged = motion.engaged;
+  // A crossing ends on arrival rather than on a clock, and arrival is measured at
+  // the crossing's own zoom: the push back in overlaps the last of the pan, which
+  // is what fuses the three phases into one gesture.
+  //
+  // The mark is the framing at the *working* zoom throughout, not at the crossing
+  // zoom. The two differ by the inset shift, which in flow units is large while
+  // zoomed out, so aiming at the wide framing would land the camera somewhere it
+  // then had to correct away from once the zoom came back. This way the crossing
+  // converges on the exact position the run will be watched from, and the push-in
+  // has nothing to do but zoom.
+  let crossing = motion.crossing;
+  const mark = focus ? framingFor(focus, viewport, workZoom) : null;
+  if (crossing) {
+    if (!mark) {
+      crossing = null;
+    } else if (
+      Math.hypot(mark.x - motion.x, mark.y - motion.y) <= crossing.settleWithin
+    ) {
+      crossing = null;
+    }
+  }
+
+  const zoomTarget = crossing ? crossing.zoom : workZoom;
+
+  // Whether it is correcting, and if so where to. Latched per axis, so a
+  // correction runs to completion rather than stopping the instant it has done
+  // enough, and so following the run sideways does not also drive the picture up
+  // and down.
+  let engagedX = motion.engagedX;
+  let engagedY = motion.engagedY;
   let aimBiasX = motion.aimBiasX;
   let aimBiasY = motion.aimBiasY;
+  // Not correcting means aiming at where it already is, which is not the same as
+  // freezing: the spring keeps its momentum and eases the last of it away.
+  let aimX = motion.x;
+  let aimY = motion.y;
 
-  if (focus) {
+  if (mark && crossing) {
+    // One move, one mark, both axes: the deadzone is about staying still where you
+    // are, and this is the case where staying is not on offer.
+    engagedX = true;
+    engagedY = true;
+    aimBiasX = 0;
+    aimBiasY = 0;
+    aimX = mark.x;
+    aimY = mark.y;
+  } else if (focus) {
+    const centred = framingFor(focus, viewport, zoomTarget);
     const offX = (focus.x - motion.x) * motion.zoom;
     const offY = (focus.y - motion.y) * motion.zoom - centreShiftPx(viewport);
     const dzX = deadzoneHalfPx(usable.width, focus.width * motion.zoom);
     const dzY = deadzoneHalfPx(usable.height, focus.height * motion.zoom);
-    const outX = Math.abs(offX) > dzX;
-    const outY = Math.abs(offY) > dzY;
 
-    if (outX || outY) {
-      // A fresh correction picks its mark: past the action on whichever axis
-      // lost it, and dead centre on the axis that is still fine, so following
-      // sideways does not also shove the picture up and down.
-      if (!engaged) {
-        aimBiasX = outX ? -Math.sign(offX) * AIM_LEAD * dzX : 0;
-        aimBiasY = outY ? -Math.sign(offY) * AIM_LEAD * dzY : 0;
-      }
-      engaged = true;
+    if (Math.abs(offX) > dzX) {
+      // A fresh correction picks its mark: past the action, against the direction
+      // it left in.
+      if (!engagedX) aimBiasX = -Math.sign(offX) * AIM_LEAD * dzX;
+      engagedX = true;
     } else if (
-      engaged &&
-      Math.abs(offX - aimBiasX) <= dzX * DEADZONE_RELEASE &&
+      engagedX &&
+      Math.abs(offX - aimBiasX) <= dzX * DEADZONE_RELEASE
+    ) {
+      engagedX = false;
+      aimBiasX = 0;
+    }
+
+    if (Math.abs(offY) > dzY) {
+      if (!engagedY) aimBiasY = -Math.sign(offY) * AIM_LEAD * dzY;
+      engagedY = true;
+    } else if (
+      engagedY &&
       Math.abs(offY - aimBiasY) <= dzY * DEADZONE_RELEASE
     ) {
-      engaged = false;
-      aimBiasX = 0;
+      engagedY = false;
       aimBiasY = 0;
     }
+
+    if (engagedX) aimX = centred.x - aimBiasX / zoomTarget;
+    if (engagedY) aimY = centred.y - aimBiasY / zoomTarget;
   } else {
-    engaged = false;
+    engagedX = false;
+    engagedY = false;
     aimBiasX = 0;
     aimBiasY = 0;
   }
 
-  // Not correcting means aiming at where it already is, which is not the same as
-  // freezing: the spring keeps its momentum and eases the last of it away.
-  const centred = focus ? framingFor(focus, viewport, zoomTarget) : null;
-  const aim =
-    centred && engaged
-      ? {
-          x: centred.x - aimBiasX / zoomTarget,
-          y: centred.y - aimBiasY / zoomTarget,
-        }
-      : { x: motion.x, y: motion.y };
+  // Motion is not wanted at all: arrive, and be still. The only jump left in the
+  // model, and the only one anybody asked for — so it goes straight to the framing
+  // the run is watched at, and a crossing it interrupts is simply over.
+  if (reducedMotion) {
+    const landed =
+      focus && (engagedX || engagedY)
+        ? framingFor(focus, viewport, workZoom)
+        : { x: motion.x, y: motion.y };
 
-  const screen = screenDiagonalPx(viewport);
-  // Measured to the action rather than to the mark, so how far the lead happens
-  // to reach past it cannot be what decides between a pan and a cut.
-  const travelPx = centred
-    ? Math.hypot(centred.x - motion.x, centred.y - motion.y) * motion.zoom
-    : 0;
-
-  // Too far to pan, or motion is not wanted at all: arrive, and be still.
-  if (reducedMotion || (engaged && travelPx > CUT_SCREENS * screen)) {
     return {
-      x: aim.x,
-      y: aim.y,
-      zoom: zoomTarget,
+      x: landed.x,
+      y: landed.y,
+      zoom: workZoom,
       vx: 0,
       vy: 0,
       vZoom: 0,
-      engaged: false,
-      zoomTarget,
+      engagedX: false,
+      engagedY: false,
+      workZoom,
+      crossing: null,
       crampedMs,
       aimBiasX: 0,
       aimBiasY: 0,
     };
   }
 
-  const nextX = criticallyDamped(motion.x, motion.vx, aim.x, PAN_OMEGA, dt);
-  const nextY = criticallyDamped(motion.y, motion.vy, aim.y, PAN_OMEGA, dt);
+  const nextX = criticallyDamped(motion.x, motion.vx, aimX, PAN_OMEGA, dt);
+  const nextY = criticallyDamped(motion.y, motion.vy, aimY, PAN_OMEGA, dt);
 
   // Pan speed is capped in screen terms, so the limit means the same thing at
   // every zoom; the step and the velocity are scaled together so the spring
-  // stays consistent with itself on the frame after.
+  // stays consistent with itself on the frame after. A crossing is allowed to be
+  // brisker than a following pan, because nobody is reading the canvas during one.
   let x = nextX.position;
   let y = nextY.position;
   let vx = nextX.velocity;
   let vy = nextY.velocity;
-  const maxSpeed =
-    (MAX_PAN_SCREENS_PER_S * screen) / Math.max(motion.zoom, 1e-6);
+  const maxScreensPerS = crossing
+    ? CROSS_PAN_SCREENS_PER_S
+    : MAX_PAN_SCREENS_PER_S;
+  const maxSpeed = (maxScreensPerS * screen) / Math.max(motion.zoom, 1e-6);
   const stepped = Math.hypot(x - motion.x, y - motion.y);
   if (stepped > maxSpeed * dt && stepped > 0) {
     const scale = (maxSpeed * dt) / stepped;
@@ -614,8 +852,10 @@ export function stepCamera(
     vx,
     vy,
     vZoom,
-    engaged,
-    zoomTarget,
+    engagedX,
+    engagedY,
+    workZoom,
+    crossing,
     crampedMs,
     aimBiasX,
     aimBiasY,
@@ -625,14 +865,15 @@ export function stepCamera(
 /** Nothing is moving and nothing is owed: the caller can stop asking for frames
  * until something happens. */
 export function isAtRest(motion: CameraMotion): boolean {
-  if (motion.engaged) return false;
+  if (motion.engagedX || motion.engagedY) return false;
+  if (motion.crossing) return false;
   if (Math.hypot(motion.vx, motion.vy) * motion.zoom > REST_SPEED_PX_PER_S) {
     return false;
   }
   if (Math.abs(motion.vZoom) > REST_ZOOM_OCTAVES_PER_S) return false;
 
   return (
-    Math.abs(Math.log2(motion.zoom / motion.zoomTarget)) <=
+    Math.abs(Math.log2(motion.zoom / motion.workZoom)) <=
     REST_ZOOM_OCTAVES_PER_S
   );
 }

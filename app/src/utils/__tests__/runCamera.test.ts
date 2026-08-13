@@ -8,15 +8,21 @@ import {
   fitZoomFor,
   framingFor,
   isAtRest,
+  lookingAt,
+  planCrossing,
   screenDiagonalPx,
   stepCamera,
   stepZoomTarget,
   transformOf,
   ATTENTION_HALFLIFE_MS,
   COMFORT_ZOOM,
-  CUT_SCREENS,
+  CROSS_MIN_TRAVEL_SCREENS,
+  CROSS_MIN_ZOOM,
+  CROSS_PAN_SCREENS_PER_S,
+  DEADZONE_FLOOR,
   MAX_FRAME_MS,
   MAX_PAN_SCREENS_PER_S,
+  MAX_ZOOM_OCTAVES_PER_S,
   MIN_READABLE_ZOOM,
   ZOOM_OUT_DWELL_MS,
   ZOOM_STEP_OCTAVES,
@@ -36,6 +42,7 @@ const box: CameraViewport = {
 
 const NODE = { width: 280, height: 120 };
 const FRAME = 16;
+const RADIUS = attentionRadius(box, 0.7);
 
 function point(
   x: number,
@@ -49,6 +56,21 @@ function focusOf(x: number, y = 0, width = 280, height = 120): CameraFocus {
   return { x, y, width, height };
 }
 
+/** The aim, with the camera looking at wherever the newest point is — which is
+ * where a camera following this branch would be. */
+function aimAt(
+  points: readonly AttentionPoint[],
+  now = 0,
+  anchor?: { x: number; y: number },
+): CameraFocus | null {
+  const head = points[0];
+  const at = anchor ?? {
+    x: head ? head.x + head.width / 2 : 0,
+    y: head ? head.y + head.height / 2 : 0,
+  };
+  return attentionFocus(points, now, RADIUS, at);
+}
+
 /** A camera sitting exactly where it wants to be, with nothing left to do. */
 function settled(focus: CameraFocus, zoom: number): CameraMotion {
   const framing = framingFor(focus, box, zoom);
@@ -59,8 +81,10 @@ function settled(focus: CameraFocus, zoom: number): CameraMotion {
     vx: 0,
     vy: 0,
     vZoom: 0,
-    engaged: false,
-    zoomTarget: zoom,
+    engagedX: false,
+    engagedY: false,
+    workZoom: zoom,
+    crossing: null,
     crampedMs: 0,
     aimBiasX: 0,
     aimBiasY: 0,
@@ -78,7 +102,7 @@ function offsetPx(motion: CameraMotion, focus: CameraFocus): number {
 function toRest(
   motion: CameraMotion,
   focus: CameraFocus | null,
-  limit = 600,
+  limit = 900,
 ): { motion: CameraMotion; frames: number; peakSpeedPx: number } {
   let peakSpeedPx = 0;
   for (let frames = 1; frames <= limit; frames += 1) {
@@ -137,14 +161,12 @@ describe("criticallyDamped", () => {
 });
 
 describe("attentionFocus", () => {
-  const radius = attentionRadius(box, 0.7);
-
   it("has nothing to report with nothing to look at", () => {
-    expect(attentionFocus([], 0, radius)).toBeNull();
+    expect(aimAt([])).toBeNull();
   });
 
   it("is the node itself when that is all there is", () => {
-    const focus = attentionFocus([point(500, 300)], 0, radius)!;
+    const focus = aimAt([point(500, 300)])!;
     expect(focus.x).toBeCloseTo(640, 6);
     expect(focus.y).toBeCloseTo(360, 6);
     expect(focus.width).toBeCloseTo(280, 6);
@@ -156,72 +178,109 @@ describe("attentionFocus", () => {
     // step change here, and nothing downstream can smooth that away.
     const running = [point(0), point(600)];
     const justDone = [point(0), { ...point(600), running: false, since: 1000 }];
-    const before = attentionFocus(running, 1000, radius)!;
-    const after = attentionFocus(justDone, 1000, radius)!;
+    const before = aimAt(running, 1000)!;
+    const after = aimAt(justDone, 1000)!;
     expect(after.x).toBeCloseTo(before.x, 9);
     expect(after.y).toBeCloseTo(before.y, 9);
+  });
+
+  it("does not move in that frame wherever the node is", () => {
+    // The invariant, and the reason neither weight may branch on `running`:
+    // finishing sets the node's age to zero, so at that instant nothing about it
+    // has changed. It holds at any distance, which is what makes the distance gate
+    // safe to have at all.
+    for (const at of [200, box.width / 2 / 0.7, 40000]) {
+      const running = [point(0), point(at)];
+      const justDone = [
+        point(0),
+        { ...point(at), running: false, since: 1000 },
+      ];
+      expect(aimAt(justDone, 1000)!.x).toBeCloseTo(aimAt(running, 1000)!.x, 9);
+    }
+  });
+
+  it("aims along a branch it has not reached, from the end it gets to first", () => {
+    // Every frame of a crossing is this case: the whole branch is far outside the
+    // gate. Measuring distances against the closest one keeps the answer meaningful
+    // instead of underflowing to zero and changing rule partway across, and the
+    // answer is the near end of the branch — which is where you would aim anyway.
+    const far = [point(40000), point(39000, 0, { running: false, since: 0 })];
+    const focus = aimAt(far, 0, { x: 0, y: 0 })!;
+    expect(focus.x).toBeCloseTo(39140, 6);
+
+    // And it stays meaningful at a distance where a plain Gaussian is exactly zero.
+    const absurd = aimAt([point(4_000_000), point(3_900_000)], 0, {
+      x: 0,
+      y: 0,
+    })!;
+    expect(Number.isFinite(absurd.x)).toBe(true);
+    expect(absurd.x).toBeCloseTo(3_900_140, 6);
+  });
+
+  it("lets a distant tail fade out of the aim rather than dragging it back", () => {
+    // What the gate is actually for: a join folds another branch's last few nodes
+    // into this one from forty columns away, and they should leave the shot as
+    // they age rather than pulling the camera back across the graph.
+    const near = aimAt([
+      point(0),
+      point(2000, 0, { running: false, since: -ATTENTION_HALFLIFE_MS }),
+    ])!;
+    const far = aimAt([
+      point(0),
+      point(40000, 0, { running: false, since: -ATTENTION_HALFLIFE_MS }),
+    ])!;
+
+    const pulledNear = (near.x - 140) / 2000;
+    const pulledFar = (far.x - 140) / 40000;
+    expect(pulledFar).toBeLessThan(pulledNear / 4);
   });
 
   it("slides off a finished node over about a second", () => {
     // Live work holds its full claim while a result loses half of its own every
     // half-life, so the aim creeps towards what is still going — and creeps,
-    // rather than jumps. (Two *results* keep their ratio to each other for ever,
-    // which is right: with nothing running there is no news to move towards.)
+    // rather than jumps.
     const points = [point(600), point(0, 0, { running: false, since: 0 })];
-    const start = attentionFocus(points, 0, radius)!;
-    const later = attentionFocus(points, ATTENTION_HALFLIFE_MS * 3, radius)!;
+    const anchor = { x: 740, y: 60 };
+    const start = aimAt(points, 0, anchor)!;
+    const later = aimAt(points, ATTENTION_HALFLIFE_MS * 3, anchor)!;
 
-    // Three half-lives in, most of the way onto the live node (centre 740) and
-    // still approaching it rather than having snapped there.
-    expect(later.x).toBeGreaterThan(start.x + 200);
+    expect(later.x).toBeGreaterThan(start.x + 100);
     expect(later.x).toBeLessThan(740);
 
     let previous = start.x;
     for (let t = FRAME; t <= ATTENTION_HALFLIFE_MS * 3; t += FRAME) {
-      const step = attentionFocus(points, t, radius)!;
+      const step = aimAt(points, t, anchor)!;
       expect(step.x - previous).toBeGreaterThanOrEqual(0);
       expect(step.x - previous).toBeLessThan(3);
       previous = step.x;
     }
   });
 
-  it("ignores a branch too far away to be the same scene", () => {
-    // This is what stops the camera framing the empty gap between two ends of a
-    // wide graph, which is what a bounding box does by construction.
-    const focus = attentionFocus([point(0), point(20000)], 0, radius)!;
-    expect(focus.x).toBeCloseTo(140, 6);
-    expect(focus.width).toBeCloseTo(280, 6);
-  });
-
-  it("takes in a companion that is part of the same scene", () => {
-    const focus = attentionFocus([point(0), point(800)], 0, radius)!;
-    // Between the two, and biased towards the newest — which is the anchor, and
-    // the only one guaranteed to be on screen.
-    expect(focus.x).toBeGreaterThan(140);
-    expect(focus.x).toBeLessThan((140 + 940) / 2);
-    expect(focus.width).toBeGreaterThan(280);
-  });
-
   it("lets live work outweigh a finished neighbour", () => {
-    const stale = attentionFocus(
+    const stale = aimAt(
       [point(0), point(800, 0, { running: false, since: -3000 })],
       0,
-      radius,
     )!;
-    const both = attentionFocus([point(0), point(800)], 0, radius)!;
+    const both = aimAt([point(0), point(800)], 0)!;
     expect(stale.x).toBeLessThan(both.x);
   });
 
   it("holds full attention on a node however long it takes", () => {
-    const quick = attentionFocus([point(0, 0, { since: 0 })], 0, radius)!;
-    const slow = attentionFocus([point(0, 0, { since: -60000 })], 0, radius)!;
+    const quick = aimAt([point(0, 0, { since: 0 })])!;
+    const slow = aimAt([point(0, 0, { since: -60000 })])!;
     expect(slow).toEqual(quick);
   });
 
-  it("is a spread, so one outlier nudges the zoom instead of setting it", () => {
-    const points = [point(0), point(300), point(1200)];
-    const tight = attentionFocus([point(0), point(300)], 0, radius)!;
-    const lopsided = attentionFocus(points, 0, radius)!;
+  it("is a spread, so a straggler nudges the zoom instead of setting it", () => {
+    // Live nodes on the subject branch are all equally the scene, so the case
+    // where this matters is a straggler that has finished and is on its way out.
+    const straggler = point(1200, 0, {
+      running: false,
+      since: -ATTENTION_HALFLIFE_MS,
+    });
+    const points = [point(0), point(300), straggler];
+    const tight = aimAt([point(0), point(300)])!;
+    const lopsided = aimAt(points)!;
 
     // What a bounding box would demand of the zoom: enough to reach the furthest
     // member from the aim. The spread asks for less, so the outlier moves the
@@ -276,19 +335,21 @@ describe("stepZoomTarget", () => {
 
 describe("adoptCamera", () => {
   it("keeps a zoom that can be read, whoever chose it", () => {
-    const motion = adoptCamera({ x: 0, y: 0, zoom: 0.72 }, box, true);
-    expect(motion.zoomTarget).toBe(0.72);
+    expect(adoptCamera({ x: 0, y: 0, zoom: 0.72 }, box, true).workZoom).toBe(
+      0.72,
+    );
   });
 
   it("keeps one past the comfortable band too", () => {
-    expect(adoptCamera({ x: 0, y: 0, zoom: 1.8 }, box, true).zoomTarget).toBe(
+    expect(adoptCamera({ x: 0, y: 0, zoom: 1.8 }, box, true).workZoom).toBe(
       1.8,
     );
   });
 
   it("overrides a view too far out to read", () => {
-    const motion = adoptCamera({ x: 0, y: 0, zoom: 0.08 }, box, true);
-    expect(motion.zoomTarget).toBe(COMFORT_ZOOM);
+    expect(adoptCamera({ x: 0, y: 0, zoom: 0.08 }, box, true).workZoom).toBe(
+      COMFORT_ZOOM,
+    );
   });
 
   it("starts from where the viewport actually is", () => {
@@ -301,6 +362,16 @@ describe("adoptCamera", () => {
   });
 });
 
+describe("lookingAt", () => {
+  it("is the middle of what the viewer can see, not of the container", () => {
+    const focus = focusOf(4000, 2000);
+    const motion = settled(focus, 0.7);
+    const at = lookingAt(motion, box);
+    expect(at.x).toBeCloseTo(focus.x, 6);
+    expect(at.y).toBeCloseTo(focus.y, 6);
+  });
+});
+
 describe("stepCamera", () => {
   it("holds absolutely still for action already on screen", () => {
     const focus = focusOf(500, 300);
@@ -310,7 +381,8 @@ describe("stepCamera", () => {
     const next = stepCamera(motion, nudged, box, FRAME, false);
     expect(next.x).toBe(motion.x);
     expect(next.y).toBe(motion.y);
-    expect(next.engaged).toBe(false);
+    expect(next.engagedX).toBe(false);
+    expect(next.engagedY).toBe(false);
   });
 
   it("follows once the action leaves the deadzone", () => {
@@ -319,7 +391,7 @@ describe("stepCamera", () => {
     const gone = { ...focus, x: focus.x + 2000 };
 
     const next = stepCamera(motion, gone, box, FRAME, false);
-    expect(next.engaged).toBe(true);
+    expect(next.engagedX).toBe(true);
     expect(next.x).toBeGreaterThan(motion.x);
   });
 
@@ -370,29 +442,46 @@ describe("stepCamera", () => {
     expect(Math.abs(motion.vx - before)).toBeLessThan(Math.abs(before) * 0.15);
   });
 
-  it("cuts rather than sliding across the whole graph", () => {
-    const motion = settled(focusOf(0, 0), 0.7);
-    const elsewhere = focusOf(
-      ((CUT_SCREENS + 1) * screenDiagonalPx(box)) / 0.7,
-      0,
-    );
+  it("follows sideways without driving the picture up and down", () => {
+    // The latch is per axis. With one shared latch, a run walking left to right
+    // kept X engaged for ever, which kept Y engaged too — so every wobble in the
+    // vertical spread of the branch was chased. Measured on a real run, that was
+    // 133 vertical direction reversals in 63 seconds.
+    let motion = settled(focusOf(0, 0), 0.7);
+    let reversals = 0;
+    let previous = 0;
 
-    const next = stepCamera(motion, elsewhere, box, FRAME, false);
-    // There in one frame, and then perfectly still — the two things a slide
-    // across two screens of empty canvas is not.
-    expect(offsetPx(next, elsewhere)).toBeLessThan(0);
-    expect(next.vx).toBe(0);
-    expect(isAtRest(next)).toBe(true);
+    for (let step = 1; step < 400; step += 1) {
+      // Walking right, with the branch's vertical spread jittering as nodes come
+      // and go — the shape of a real event stream.
+      const focus = focusOf(step * 30, Math.sin(step) * 90);
+      const before = motion.y;
+      motion = stepCamera(motion, focus, box, FRAME, false);
+      const direction = Math.sign(motion.y - before);
+      if (direction !== 0 && previous !== 0 && direction !== previous) {
+        reversals += 1;
+      }
+      if (direction !== 0) previous = direction;
+    }
+
+    expect(motion.x).toBeGreaterThan(0);
+    expect(reversals).toBeLessThan(6);
   });
 
-  it("cuts instead of gliding under reduced motion", () => {
-    const motion = settled(focusOf(0, 0), 0.7);
-    const gone = focusOf(2400, 0);
+  it("gives a subject the size of the viewport a deadzone anyway", () => {
+    // The clipping term reaches zero exactly when the subject is as large as the
+    // frame — which on a big graph is most of the run — and a deadzone of zero is
+    // a camera that corrects every frame.
+    const huge = focusOf(0, 0, 1600 / 0.7, 1000 / 0.7);
+    const motion = settled(huge, 0.7);
+    const drifted = {
+      ...huge,
+      x: huge.x + (0.4 * DEADZONE_FLOOR * 1600) / 0.7,
+    };
 
-    const next = stepCamera(motion, gone, box, FRAME, true);
-    expect(next.x).toBeGreaterThan(framingFor(gone, box, 0.7).x);
-    expect(next.vx).toBe(0);
-    expect(isAtRest(next)).toBe(true);
+    const next = stepCamera(motion, drifted, box, FRAME, false);
+    expect(next.engagedX).toBe(false);
+    expect(next.x).toBe(motion.x);
   });
 
   it("never exceeds the pan speed limit", () => {
@@ -413,6 +502,28 @@ describe("stepCamera", () => {
     expect(movedPx).toBeLessThanOrEqual(
       (MAX_PAN_SCREENS_PER_S * screenDiagonalPx(box) * MAX_FRAME_MS) / 1000 + 1,
     );
+  });
+
+  it("cuts instead of gliding under reduced motion", () => {
+    const motion = settled(focusOf(0, 0), 0.7);
+    const gone = focusOf(2400, 0);
+
+    const next = stepCamera(motion, gone, box, FRAME, true);
+    expect(next.x).toBeCloseTo(framingFor(gone, box, 0.7).x, 6);
+    expect(next.vx).toBe(0);
+    expect(isAtRest(next)).toBe(true);
+  });
+
+  it("abandons a crossing under reduced motion rather than flying it", () => {
+    const start = settled(focusOf(0, 0), 0.7);
+    const elsewhere = focusOf(60000, 0);
+    const planned = planCrossing(start, elsewhere, box);
+    expect(planned.crossing).not.toBeNull();
+
+    const next = stepCamera(planned, elsewhere, box, FRAME, true);
+    expect(next.crossing).toBeNull();
+    expect(next.zoom).toBe(0.7);
+    expect(next.x).toBeCloseTo(framingFor(elsewhere, box, 0.7).x, 6);
   });
 
   describe("zoom", () => {
@@ -436,10 +547,10 @@ describe("stepCamera", () => {
         elapsed += FRAME
       ) {
         motion = stepCamera(motion, wide, box, FRAME, false);
-        expect(motion.zoomTarget).toBe(0.7);
+        expect(motion.workZoom).toBe(0.7);
       }
       motion = stepCamera(motion, wide, box, FRAME * 2, false);
-      expect(motion.zoomTarget).toBeLessThan(0.7);
+      expect(motion.workZoom).toBeLessThan(0.7);
     });
 
     it("forgets a spread that did not last", () => {
@@ -453,7 +564,7 @@ describe("stepCamera", () => {
       expect(motion.crampedMs).toBeGreaterThan(0);
       motion = stepCamera(motion, tight, box, FRAME, false);
       expect(motion.crampedMs).toBe(0);
-      expect(motion.zoomTarget).toBe(0.7);
+      expect(motion.workZoom).toBe(0.7);
     });
 
     it("cannot cycle, because it cannot come back in", () => {
@@ -468,15 +579,32 @@ describe("stepCamera", () => {
             ? focusOf(beat * 300, 0, 3600, 120)
             : focusOf(beat * 300);
         for (let elapsed = 0; elapsed < 800; elapsed += FRAME) {
-          const before = motion.zoomTarget;
+          const before = motion.workZoom;
           motion = stepCamera(motion, focus, box, FRAME, false);
-          expect(motion.zoomTarget).toBeLessThanOrEqual(before);
+          expect(motion.workZoom).toBeLessThanOrEqual(before);
         }
-        zooms.push(motion.zoomTarget);
+        zooms.push(motion.workZoom);
       }
 
       expect(zooms[zooms.length - 1]).toBe(MIN_READABLE_ZOOM);
       expect(new Set(zooms).size).toBeLessThanOrEqual(4);
+    });
+
+    it("does not re-frame the run for what is on screen mid-crossing", () => {
+      // Mid-crossing the whole graph is in frame, which would read as a subject
+      // far too wide to fit. Committing the rest of the run to that would let
+      // every handoff ratchet the framing outward.
+      const start = settled(focusOf(0, 0), 0.7);
+      const elsewhere = focusOf(40000, 0, 20000, 4000);
+      let motion = planCrossing(start, elsewhere, box);
+      expect(motion.crossing).not.toBeNull();
+
+      for (let step = 0; step < 40; step += 1) {
+        motion = stepCamera(motion, elsewhere, box, FRAME, false);
+        if (!motion.crossing) break;
+        expect(motion.workZoom).toBe(0.7);
+        expect(motion.crampedMs).toBe(0);
+      }
     });
   });
 
@@ -485,18 +613,215 @@ describe("stepCamera", () => {
     const next = stepCamera(motion, null, box, FRAME, false);
     expect(next.x).toBe(motion.x);
     expect(next.y).toBe(motion.y);
-    expect(next.engaged).toBe(false);
+    expect(next.engagedX).toBe(false);
+    expect(next.engagedY).toBe(false);
+  });
+});
+
+describe("planCrossing", () => {
+  const start = settled(focusOf(0, 0), 0.7);
+  const screen = screenDiagonalPx(box);
+
+  it("leaves a trip the springs can just pan", () => {
+    const near = focusOf((CROSS_MIN_TRAVEL_SCREENS * screen * 0.8) / 0.7, 0);
+    expect(planCrossing(start, near, box)).toBe(start);
+  });
+
+  it("has nothing to plan without a destination", () => {
+    expect(planCrossing(start, null, box)).toBe(start);
+  });
+
+  it("pulls back far enough to make a long trip one glance", () => {
+    const far = focusOf(30000, 0);
+    const planned = planCrossing(start, far, box);
+    const travel = Math.abs(framingFor(far, box, 0.7).x - start.x);
+
+    expect(planned.crossing).not.toBeNull();
+    // The trip spans well under a screen at the zoom it is flown at, so the
+    // destination is in view before the camera sets off.
+    expect(travel * planned.crossing!.zoom).toBeLessThan(screen);
+  });
+
+  it("goes wider the further it has to go", () => {
+    const near = planCrossing(start, focusOf(8000, 0), box).crossing!;
+    const far = planCrossing(start, focusOf(60000, 0), box).crossing!;
+    expect(far.zoom).toBeLessThan(near.zoom);
+  });
+
+  it("does not touch the zoom the run is being watched at", () => {
+    const planned = planCrossing(start, focusOf(30000, 0), box);
+    expect(planned.workZoom).toBe(start.workZoom);
+  });
+
+  it("has a floor, so no graph is too wide to cross", () => {
+    const planned = planCrossing(start, focusOf(4_000_000, 0), box);
+    expect(planned.crossing!.zoom).toBe(CROSS_MIN_ZOOM);
+  });
+
+  it("never chooses a zoom closer in than the one it is leaving", () => {
+    const tight = settled(focusOf(0, 0), MIN_READABLE_ZOOM);
+    const planned = planCrossing(tight, focusOf(30000, 0), box);
+    expect(planned.crossing!.zoom).toBeLessThanOrEqual(MIN_READABLE_ZOOM);
+  });
+});
+
+describe("crossing to another branch", () => {
+  const screen = screenDiagonalPx(box);
+
+  /** Fly a whole handoff and report what it looked like. */
+  function fly(fromZoom: number, toX: number) {
+    const start = settled(focusOf(0, 0), fromZoom);
+    const destination = focusOf(toX, 600);
+    let motion = planCrossing(start, destination, box);
+
+    let peakStepPx = 0;
+    let peakOctavesPerS = 0;
+    let frames = 0;
+    let crossingFrames = 0;
+    let onScreenAt = -1;
+
+    for (; frames < 1200; frames += 1) {
+      const before = motion;
+      motion = stepCamera(motion, destination, box, FRAME, false);
+      if (before.crossing) crossingFrames += 1;
+      if (
+        onScreenAt < 0 &&
+        Math.abs(offsetPx(motion, destination)) < box.width / 2
+      ) {
+        onScreenAt = frames;
+      }
+      peakStepPx = Math.max(
+        peakStepPx,
+        Math.hypot(motion.x - before.x, motion.y - before.y) * motion.zoom,
+      );
+      peakOctavesPerS = Math.max(
+        peakOctavesPerS,
+        Math.abs(Math.log2(motion.zoom / before.zoom)) / (FRAME / 1000),
+      );
+      if (isAtRest(motion)) break;
+    }
+
+    return {
+      motion,
+      destination,
+      seconds: (frames * FRAME) / 1000,
+      crossingSeconds: (crossingFrames * FRAME) / 1000,
+      onScreenSeconds: (onScreenAt * FRAME) / 1000,
+      peakStepPx,
+      peakOctavesPerS,
+    };
+  }
+
+  it("crosses the graph without a single jump", () => {
+    // The whole point. The model this replaced covered this distance in one
+    // frame, 174 times in 63 seconds.
+    const flight = fly(0.7, 30000);
+    expect(flight.peakStepPx).toBeLessThanOrEqual(
+      (CROSS_PAN_SCREENS_PER_S * screen * FRAME) / 1000 + 1,
+    );
+    expect(flight.peakOctavesPerS).toBeLessThanOrEqual(
+      MAX_ZOOM_OCTAVES_PER_S + 1e-6,
+    );
+  });
+
+  it("arrives, and at the framing the run was being watched at", () => {
+    const flight = fly(0.7, 30000);
+    expect(isAtRest(flight.motion)).toBe(true);
+    expect(flight.motion.crossing).toBeNull();
+    expect(flight.motion.zoom / 0.7).toBeCloseTo(1, 2);
+    // On screen, and composed rather than dead centre.
+    expect(Math.abs(offsetPx(flight.motion, flight.destination))).toBeLessThan(
+      box.width / 2,
+    );
+  });
+
+  it("shows the viewer where it is going almost at once, however far that is", () => {
+    // The number that decides whether a handoff reads as a camera move or as a
+    // wait. The pull-back brings the destination into frame long before the camera
+    // has finished settling on it, so most of the move is spent already looking at
+    // the right place.
+    for (const travel of [9000, 30000, 90000]) {
+      expect(fly(0.7, travel).onScreenSeconds).toBeLessThan(2.5);
+    }
+  });
+
+  it("costs far less than proportionally more for a far longer trip", () => {
+    // Distance is paid for in octaves rather than in seconds — one octave per
+    // doubling — which is the whole reason a handoff between distant branches is
+    // affordable at all.
+    const near = fly(0.7, 9000);
+    const far = fly(0.7, 90000);
+
+    expect(far.seconds).toBeLessThan(near.seconds * 2);
+    expect(far.seconds).toBeLessThan(9);
+  });
+
+  it("is one continuous move, not three animations", () => {
+    // The push back in overlaps the last of the pan: the camera is still
+    // travelling when the zoom starts coming back.
+    const start = settled(focusOf(0, 0), 0.7);
+    const destination = focusOf(30000, 600);
+    let motion = planCrossing(start, destination, box);
+
+    let overlapped = false;
+    let panning = false;
+    for (let step = 0; step < 1200; step += 1) {
+      const before = motion;
+      motion = stepCamera(motion, destination, box, FRAME, false);
+      const moved = Math.hypot(motion.x - before.x, motion.y - before.y);
+      const zoomedIn = motion.zoom > before.zoom * 1.000001;
+      panning = moved * motion.zoom > 1;
+      if (zoomedIn && panning) overlapped = true;
+      if (isAtRest(motion)) break;
+    }
+
+    expect(overlapped).toBe(true);
+  });
+
+  it("keeps up with a branch that is still moving while it flies there", () => {
+    // The destination is a live branch, so it advances while the camera is on its
+    // way; it has to land on where the branch is rather than where it was.
+    const start = settled(focusOf(0, 0), 0.7);
+    let destination = focusOf(30000, 0);
+    let motion = planCrossing(start, destination, box);
+    let advanced = 0;
+
+    for (let step = 0; step < 1200; step += 1) {
+      // The branch keeps working until the camera has arrived, then holds.
+      if (motion.crossing) {
+        advanced += 12;
+        destination = focusOf(30000 + advanced, 0);
+      }
+      motion = stepCamera(motion, destination, box, FRAME, false);
+      if (isAtRest(motion)) break;
+    }
+
+    expect(advanced).toBeGreaterThan(0);
+    expect(isAtRest(motion)).toBe(true);
+    expect(Math.abs(offsetPx(motion, destination))).toBeLessThan(box.width / 2);
   });
 });
 
 describe("isAtRest", () => {
   it("is not resting while it is still correcting", () => {
-    const motion = { ...settled(focusOf(0, 0), 0.7), engaged: true };
+    expect(isAtRest({ ...settled(focusOf(0, 0), 0.7), engagedX: true })).toBe(
+      false,
+    );
+    expect(isAtRest({ ...settled(focusOf(0, 0), 0.7), engagedY: true })).toBe(
+      false,
+    );
+  });
+
+  it("is not resting mid-crossing", () => {
+    const motion = {
+      ...settled(focusOf(0, 0), 0.7),
+      crossing: { zoom: 0.1, settleWithin: 1000 },
+    };
     expect(isAtRest(motion)).toBe(false);
   });
 
   it("is not resting while the zoom has somewhere to be", () => {
-    const motion = { ...settled(focusOf(0, 0), 0.7), zoomTarget: 0.5 };
+    const motion = { ...settled(focusOf(0, 0), 0.7), workZoom: 0.5 };
     expect(isAtRest(motion)).toBe(false);
   });
 

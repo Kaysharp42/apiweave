@@ -239,6 +239,7 @@ export function WorkflowCanvas({
   } = useRunCamera({
     instanceRef: reactFlowInstanceRef,
     nodesRef,
+    edgesRef,
     containerRef: canvasRef,
   });
   const [modalNode, setModalNode] =
