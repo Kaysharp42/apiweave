@@ -5,7 +5,7 @@ import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { Workspace } from "@shared/types/Workspace"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
-import { assertNoSecretValues, detectSecretsInValue, isSecretKey } from "../services/secret_utils"
+import { assertNoSecretValues, isSecretKey } from "../services/secret_utils"
 import type { SyncProvider } from "./SyncProvider"
 
 const textEncoder = new TextEncoder()
@@ -196,8 +196,8 @@ function sanitizeConfig(config: Record<string, unknown>): JsonValue {
     if (isSyncSecretKey(key)) {
       continue
     }
-    if (key === "body" && typeof value === "string" && value.trim().length > 0) {
-      sanitized[key] = ""
+    if (key === "body" && typeof value === "string") {
+      sanitized[key] = sanitizeBodyText(value)
       continue
     }
     if (key === "url" && typeof value === "string") {
@@ -238,13 +238,14 @@ function sanitizeFileUploads(items: readonly unknown[]): JsonValue[] {
 // Auth secrets live under generic leaf names (`token`, `password`, `value`) that
 // only make sense as secrets given their parent (`bearer`, `basic`, `apiKey`).
 // Key-name/value-heuristic redaction elsewhere in this file can't see that
-// context, so these three paths are redacted unconditionally, by structure.
+// context, so these three paths are redacted unconditionally, by structure —
+// except `{{...}}` references, which name a slot rather than carry a credential.
 function sanitizeAuthConfig(auth: Record<string, unknown>): JsonValue {
   const sanitized = sanitizeValue(auth, true) as Record<string, JsonValue>
   const { bearer, basic, apiKey } = sanitized
-  if (isRecord(bearer)) sanitized["bearer"] = { ...bearer, token: "" }
-  if (isRecord(basic)) sanitized["basic"] = { ...basic, password: "" }
-  if (isRecord(apiKey)) sanitized["apiKey"] = { ...apiKey, value: "" }
+  if (isRecord(bearer)) sanitized["bearer"] = { ...bearer, token: blankUnlessReference(bearer["token"]) }
+  if (isRecord(basic)) sanitized["basic"] = { ...basic, password: blankUnlessReference(basic["password"]) }
+  if (isRecord(apiKey)) sanitized["apiKey"] = { ...apiKey, value: blankUnlessReference(apiKey["value"]) }
   return sanitized
 }
 
@@ -279,6 +280,9 @@ function sanitizeValue(value: unknown, inspectStringValues = false): JsonValue {
     return sanitized
   }
   if (typeof value === "string") {
+    if (inspectStringValues && isIndirectionReference(value)) {
+      return value
+    }
     return inspectStringValues && containsSecretValue(value) ? "" : value
   }
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
@@ -287,7 +291,7 @@ function sanitizeValue(value: unknown, inspectStringValues = false): JsonValue {
   return null
 }
 
-function sanitizeSnapshotValue(value: unknown, key = ""): JsonValue {
+function sanitizeSnapshotValue(value: unknown): JsonValue {
   if (Array.isArray(value)) {
     return value
       .filter((item) => !isSecretKeyValueItem(item))
@@ -299,8 +303,8 @@ function sanitizeSnapshotValue(value: unknown, key = ""): JsonValue {
       if (isSyncSecretKey(nestedKey)) {
         continue
       }
-      if (nestedKey === "body" && typeof nestedValue === "string" && nestedValue.trim().length > 0) {
-        sanitized[nestedKey] = ""
+      if (nestedKey === "body" && typeof nestedValue === "string") {
+        sanitized[nestedKey] = sanitizeBodyText(nestedValue)
       } else if (nestedKey === "url" && typeof nestedValue === "string") {
         sanitized[nestedKey] = sanitizeUrl(nestedValue)
       } else if (nestedKey === "cookies" && Array.isArray(nestedValue)) {
@@ -312,13 +316,13 @@ function sanitizeSnapshotValue(value: unknown, key = ""): JsonValue {
       } else if (nestedKey === "fileUploads" && Array.isArray(nestedValue)) {
         sanitized[nestedKey] = sanitizeFileUploads(nestedValue)
       } else {
-        sanitized[nestedKey] = sanitizeSnapshotValue(nestedValue, nestedKey)
+        sanitized[nestedKey] = sanitizeSnapshotValue(nestedValue)
       }
     }
     return sanitized
   }
   if (typeof value === "string") {
-    return key === "body" || containsSecretValue(value) ? "" : value
+    return containsSecretValue(value) && !isIndirectionReference(value) ? "" : value
   }
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
     return value
@@ -341,15 +345,19 @@ function sanitizeKeyValueItems(values: readonly unknown[], redactAllValues: bool
       sanitized.push(sanitizeValue(value))
       continue
     }
-    const key = value["key"]
-    if (typeof key === "string" && isSyncSecretKey(key)) {
-      continue
-    }
     const item = sanitizeValue(value)
-    if (isRecord(item) && typeof item["value"] === "string") {
-      item["value"] = redactAllValues || containsSecretValue(item["value"])
-        ? ""
-        : item["value"]
+    const key = value["key"]
+    const secretKey = typeof key === "string" && isSyncSecretKey(key)
+    if (isRecord(item)) {
+      const itemValue = item["value"]
+      if (typeof itemValue === "string") {
+        if (!isIndirectionReference(itemValue)
+            && (redactAllValues || secretKey || containsSecretValue(itemValue))) {
+          item["value"] = ""
+        }
+      } else if (secretKey) {
+        item["value"] = ""
+      }
     }
     sanitized.push(item)
   }
@@ -369,7 +377,88 @@ function isKeyValueConfigField(key: string): boolean {
 }
 
 function containsSecretValue(value: string): boolean {
-  return detectSecretsInValue(value) || /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/.test(value)
+  return BEARER_CREDENTIAL_PATTERN.test(value)
+    || JWT_CREDENTIAL_PATTERN.test(value)
+    || STRIPE_LIVE_KEY_PATTERN.test(value)
+}
+
+// Credential shapes the sanitizer must never let leave the machine. These mirror
+// the value-level patterns the cloud server and the pull-side validator enforce,
+// so a sanitized payload always passes those floors. `Bearer` prose without
+// token material (no digit/dot/underscore/hyphen run after the scheme) is NOT a
+// credential and survives, as does any `{{...}}` indirection reference.
+const BEARER_CREDENTIAL_PATTERN = /\bbearer\s+[a-zA-Z0-9_.-]*[0-9_.-][a-zA-Z0-9_.-]*/i
+const JWT_CREDENTIAL_PATTERN = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/
+const STRIPE_LIVE_KEY_PATTERN = /\b(?:sk|pk)_live_[A-Za-z0-9_-]+\b/i
+const INDIRECTION_REF_PATTERN = /\{\{\s*(?:env\.|variables\.|prev\b|secrets\.)/
+
+// Any `{{...}}` placeholder a runtime interpolates against `env`/`variables`/
+// `prev`/`secrets` — a reference, not a literal credential, so it must survive
+// the sync round trip verbatim.
+function isIndirectionReference(value: string): boolean {
+  return INDIRECTION_REF_PATTERN.test(value)
+}
+
+function blankUnlessReference(value: JsonValue | undefined): JsonValue {
+  return typeof value === "string" && isIndirectionReference(value) ? value : ""
+}
+
+// Redact a request body leaf-by-leaf instead of blanking it wholesale: the body
+// is workflow config and must round-trip, but no credential-shaped leaf may
+// leave the machine. JSON bodies are walked structurally (secret-named keys and
+// credential-shaped values become ""); a non-JSON body is blanked whole only
+// when it is itself credential-shaped. `{{...}}` references survive, and when
+// nothing was redacted the original string returns verbatim so the sanitizer
+// never introduces spurious diffs.
+function sanitizeBodyText(body: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return containsSecretValue(body) && !isIndirectionReference(body) ? "" : body
+  }
+  let redacted = false
+  const walk = (value: unknown, keyName: string | null): JsonValue => {
+    if (Array.isArray(value)) {
+      return value.map((item) => walk(item, keyName))
+    }
+    if (isRecord(value)) {
+      const out: Record<string, JsonValue> = {}
+      // Mirror the server's `{key, value}` pair semantics: a secret-named key
+      // with a non-empty, non-reference value is withheld, keeping the shape.
+      const pairKey = value["key"]
+      const pairValue = value["value"]
+      const blankedPair = typeof pairKey === "string" && isSyncSecretKey(pairKey)
+        && pairValue !== undefined && pairValue !== null && pairValue !== ""
+        && !(typeof pairValue === "string" && isIndirectionReference(pairValue))
+      for (const [key, child] of Object.entries(value)) {
+        if (blankedPair && key === "value") {
+          redacted = true
+          out[key] = ""
+        } else {
+          out[key] = walk(child, key)
+        }
+      }
+      return out
+    }
+    if (typeof value === "string") {
+      if (isIndirectionReference(value)) {
+        return value
+      }
+      if ((keyName !== null && isSyncSecretKey(keyName)) || containsSecretValue(value)) {
+        redacted = true
+        return ""
+      }
+      return value
+    }
+    if (keyName !== null && isSyncSecretKey(keyName)) {
+      redacted = true
+      return ""
+    }
+    return value as JsonValue
+  }
+  const sanitized = walk(parsed, null)
+  return redacted ? JSON.stringify(sanitized, null, 2) : body
 }
 
 function sanitizeUrl(value: string | null): string | null {

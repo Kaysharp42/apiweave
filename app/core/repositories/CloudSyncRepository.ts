@@ -1499,23 +1499,48 @@ function findForbiddenPayloadField(value: unknown, path = ""): string | undefine
   }
   const record = value as Record<string, unknown>
   const itemKey = record["key"]
-  if (typeof itemKey === "string" && isForbiddenSyncKey(itemKey) && !isEmptyPayloadValue(record["value"])) {
+  if (typeof itemKey === "string" && isForbiddenSyncKey(itemKey)
+      && !isEmptyPayloadValue(record["value"]) && !isIndirectionRefValue(record["value"])) {
     return path.length === 0 ? itemKey : `${path}.${itemKey}`
   }
   const forbiddenKeys = /^(ciphertext|encryptedPrivateKey|privateKey|accessToken|refreshToken|sessionToken|masterKek|wrappedDek|authorization|set-cookie|session|sessionid|sid|jwt|otp|cvv)$/i
   for (const [key, nestedValue] of Object.entries(record)) {
     const nestedPath = path.length === 0 ? key : `${path}.${key}`
     if (key === "secrets") continue
-    if ((forbiddenKeys.test(key) || isForbiddenSyncKey(key) || key === "body") && !isEmptyPayloadValue(nestedValue)) {
+    if ((forbiddenKeys.test(key) || isForbiddenSyncKey(key))
+        && !isEmptyPayloadValue(nestedValue) && !isIndirectionRefValue(nestedValue)) {
       return nestedPath
     }
-    if (key === "value" && path.toLowerCase().includes("cookies") && !isEmptyPayloadValue(nestedValue)) {
+    if (key === "value" && path.toLowerCase().includes("cookies")
+        && !isEmptyPayloadValue(nestedValue) && !isIndirectionRefValue(nestedValue)) {
       return nestedPath
+    }
+    // A JSON body string is config, not a credential: scan inside it so a
+    // serialized secret leaf is caught the same way the push-side leaf-level
+    // redactor would have withheld it.
+    if (key === "body" && typeof nestedValue === "string") {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(nestedValue)
+      } catch {
+        parsed = undefined
+      }
+      if (parsed !== undefined) {
+        const nested = findForbiddenPayloadField(parsed, nestedPath)
+        if (nested !== undefined) return nested
+      }
     }
     const nested = findForbiddenPayloadField(nestedValue, nestedPath)
     if (nested !== undefined) return nested
   }
   return undefined
+}
+
+// A `{{...}}` indirection reference names a slot on the receiving machine; it
+// carries no credential and is the one non-empty shape allowed under a
+// secret-named key.
+function isIndirectionRefValue(value: unknown): boolean {
+  return typeof value === "string" && /\{\{\s*(?:env\.|variables\.|prev\b|secrets\.)/.test(value)
 }
 
 function isForbiddenSyncKey(key: string): boolean {
