@@ -3,6 +3,7 @@ import type { KVStore, SqliteRow } from "../db"
 import { generateId } from "../id"
 import { slugify } from "./helpers"
 import { sanitizeCloudSnapshotPayload } from "../sync/cloud-mutations"
+import { containsCredentialMaterial, isSyncSensitiveKey, isWithheldSyncValue } from "../services/secret_utils"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import type { WorkspaceOrigin } from "@shared/types/WorkspaceOrigin"
 import { canonicalizeSyncPayload } from "@shared/conflict-diff"
@@ -1462,10 +1463,20 @@ function validatePayload(payload: Record<string, unknown>): void {
   if (Array.isArray(runs) && runs.length > 0) {
     throw new ErrForbiddenCloudPayload("runs")
   }
-  const forbidden = findForbiddenPayloadField(payload)
+  const forbidden = forbiddenCloudPayloadField(payload)
   if (forbidden !== undefined) {
     throw new ErrForbiddenCloudPayload(forbidden)
   }
+}
+
+/**
+ * The pull-side floor: the field path a cloud payload may not carry, or
+ * `undefined` if the payload is storable. Exported so the push sanitizer can be
+ * tested against the exact rule that guards the receiving device — see
+ * `core/sync/__tests__/sync-redaction-contract.test.ts`.
+ */
+export function forbiddenCloudPayloadField(payload: Record<string, unknown>): string | undefined {
+  return findForbiddenPayloadField(payload)
 }
 
 function isSecretReferenceMap(value: unknown): boolean {
@@ -1481,6 +1492,10 @@ function isSecretReferenceMap(value: unknown): boolean {
   })
 }
 
+// The predicates below come from `services/secret_utils`, which the push
+// sanitizer and the cloud server share: a rule only this side knows about
+// strands the sending device's records here forever, because a throw mid-pull
+// leaves the cursor unadvanced and the same change is re-fetched every sync.
 function findForbiddenPayloadField(value: unknown, path = ""): string | undefined {
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -1490,29 +1505,23 @@ function findForbiddenPayloadField(value: unknown, path = ""): string | undefine
     return undefined
   }
   if (value === null || typeof value !== "object") {
-    if (typeof value === "string" && (/\bbearer\s+[a-zA-Z0-9_.-]*[0-9_.-][a-zA-Z0-9_.-]*/i.test(value)
-        || /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/.test(value)
-        || /\b(?:sk|pk)_live_[A-Za-z0-9_-]+\b/i.test(value))) {
+    if (typeof value === "string" && containsCredentialMaterial(value)) {
       return path
     }
     return undefined
   }
   const record = value as Record<string, unknown>
   const itemKey = record["key"]
-  if (typeof itemKey === "string" && isForbiddenSyncKey(itemKey)
-      && !isEmptyPayloadValue(record["value"]) && !isIndirectionRefValue(record["value"])) {
+  if (typeof itemKey === "string" && isSyncSensitiveKey(itemKey) && isWithheldSyncValue(record["value"])) {
     return path.length === 0 ? itemKey : `${path}.${itemKey}`
   }
-  const forbiddenKeys = /^(ciphertext|encryptedPrivateKey|privateKey|accessToken|refreshToken|sessionToken|masterKek|wrappedDek|authorization|set-cookie|session|sessionid|sid|jwt|otp|cvv)$/i
   for (const [key, nestedValue] of Object.entries(record)) {
     const nestedPath = path.length === 0 ? key : `${path}.${key}`
     if (key === "secrets") continue
-    if ((forbiddenKeys.test(key) || isForbiddenSyncKey(key))
-        && !isEmptyPayloadValue(nestedValue) && !isIndirectionRefValue(nestedValue)) {
+    if (isSyncSensitiveKey(key) && isWithheldSyncValue(nestedValue)) {
       return nestedPath
     }
-    if (key === "value" && path.toLowerCase().includes("cookies")
-        && !isEmptyPayloadValue(nestedValue) && !isIndirectionRefValue(nestedValue)) {
+    if (key === "value" && path.toLowerCase().includes("cookies") && isWithheldSyncValue(nestedValue)) {
       return nestedPath
     }
     // A JSON body string is config, not a credential: scan inside it so a
@@ -1534,25 +1543,6 @@ function findForbiddenPayloadField(value: unknown, path = ""): string | undefine
     if (nested !== undefined) return nested
   }
   return undefined
-}
-
-// A `{{...}}` indirection reference names a slot on the receiving machine; it
-// carries no credential and is the one non-empty shape allowed under a
-// secret-named key.
-function isIndirectionRefValue(value: unknown): boolean {
-  return typeof value === "string" && /\{\{\s*(?:env\.|variables\.|prev\b|secrets\.)/.test(value)
-}
-
-function isForbiddenSyncKey(key: string): boolean {
-  const normalized = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()
-  return /(?:^|[_-])(token|password|secret|api[_-]?key|private[_-]?key|client[_-]?secret|credential)s?$/.test(normalized)
-    || /^(authorization|cookie|set-cookie|session|sessionid|sid|jwt|otp|cvv)$/.test(normalized)
-}
-
-function isEmptyPayloadValue(value: unknown): boolean {
-  return value === undefined || value === null || value === ""
-    || (Array.isArray(value) && value.length === 0)
-    || (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0)
 }
 
 function objectProperty(value: Record<string, unknown>, key: string): Record<string, unknown> {

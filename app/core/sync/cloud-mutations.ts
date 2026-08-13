@@ -5,7 +5,13 @@ import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { Workspace } from "@shared/types/Workspace"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
-import { assertNoSecretValues, isSecretKey } from "../services/secret_utils"
+import {
+  assertNoSecretValues,
+  containsCredentialMaterial,
+  isCredentialFreeReference,
+  isEmptySyncValue,
+  isSyncSensitiveKey,
+} from "../services/secret_utils"
 import type { SyncProvider } from "./SyncProvider"
 
 const textEncoder = new TextEncoder()
@@ -149,15 +155,40 @@ function recordUpsert(
     readonly payload: Record<string, unknown>
   },
 ): void {
-  assertNoSecretValues(input.payload as JsonValue)
+  const payload = withheldCredentialStrings(input.payload) as Record<string, unknown>
+  assertNoSecretValues(payload as JsonValue)
   syncProvider.recordMutation({
     workspaceId: input.workspaceId,
     kind: input.kind,
     recordId: input.recordId,
     expectedRev: input.expectedRev,
     op: ChangeOp.UPSERT,
-    payload: textEncoder.encode(JSON.stringify(input.payload)),
+    payload: textEncoder.encode(JSON.stringify(payload)),
   })
+}
+
+// A last pass over every string in the payload, whatever record kind it is.
+// The fields above get structural treatment (bodies, headers, auth, urls), but
+// the pull-side validator scans EVERY string it receives — so a node label, a
+// workflow description, or an edge label holding a pasted `Authorization:
+// Bearer ...` example would push fine, be stored by the server (which inspects
+// only node configs, variables and templates), and then throw on every other
+// device's pull, which stops advancing its cursor and stops syncing at all.
+function withheldCredentialStrings(value: unknown): unknown {
+  if (typeof value === "string") {
+    return containsCredentialMaterial(value) ? "" : value
+  }
+  if (Array.isArray(value)) {
+    return value.map(withheldCredentialStrings)
+  }
+  if (isRecord(value)) {
+    const scanned: Record<string, unknown> = {}
+    for (const [key, nested] of Object.entries(value)) {
+      scanned[key] = withheldCredentialStrings(nested)
+    }
+    return scanned
+  }
+  return value
 }
 
 function recordTombstone(
@@ -193,7 +224,7 @@ function sanitizeWorkflowNode(node: WorkflowNode): JsonValue {
 function sanitizeConfig(config: Record<string, unknown>): JsonValue {
   const sanitized: Record<string, JsonValue> = {}
   for (const [key, value] of Object.entries(config)) {
-    if (isSyncSecretKey(key)) {
+    if (isSyncSensitiveKey(key)) {
       continue
     }
     if (key === "body" && typeof value === "string") {
@@ -220,7 +251,11 @@ function sanitizeConfig(config: Record<string, unknown>): JsonValue {
       sanitized[key] = sanitizeFileUploads(value)
       continue
     }
-    sanitized[key] = sanitizeValue(value)
+    // Every remaining string is inspected too (`inspectStringValues`): the
+    // server scans *all* config strings for credential material, so a field
+    // this sanitizer skips — an assertion's expected value, a script, a
+    // GraphQL document — is a field whose workflow silently stops syncing.
+    sanitized[key] = sanitizeValue(value, true)
   }
   return sanitized
 }
@@ -240,19 +275,30 @@ function sanitizeFileUploads(items: readonly unknown[]): JsonValue[] {
 // Key-name/value-heuristic redaction elsewhere in this file can't see that
 // context, so these three paths are redacted unconditionally, by structure —
 // except `{{...}}` references, which name a slot rather than carry a credential.
+//
+// Each leaf is read from the RAW `auth`, not from the sanitized copy: generic
+// `sanitizeValue` drops sensitive key names outright, and `bearer.token`,
+// `basic.password` and `apiKey` itself are all sensitive names. Reading the
+// copy would mean every leaf was already gone — a reference could never be
+// preserved, and the whole `apiKey` block (its header name and location, not
+// just its value) would vanish from the payload.
 function sanitizeAuthConfig(auth: Record<string, unknown>): JsonValue {
   const sanitized = sanitizeValue(auth, true) as Record<string, JsonValue>
-  const { bearer, basic, apiKey } = sanitized
-  if (isRecord(bearer)) sanitized["bearer"] = { ...bearer, token: blankUnlessReference(bearer["token"]) }
-  if (isRecord(basic)) sanitized["basic"] = { ...basic, password: blankUnlessReference(basic["password"]) }
-  if (isRecord(apiKey)) sanitized["apiKey"] = { ...apiKey, value: blankUnlessReference(apiKey["value"]) }
+  for (const [parent, leaf] of [["bearer", "token"], ["basic", "password"], ["apiKey", "value"]] as const) {
+    const raw = auth[parent]
+    if (!isRecord(raw)) continue
+    const withoutLeaf = { ...raw }
+    delete withoutLeaf[leaf]
+    const rest = sanitizeValue(withoutLeaf, true) as Record<string, JsonValue>
+    sanitized[parent] = { ...rest, [leaf]: blankUnlessReference(raw[leaf]) }
+  }
   return sanitized
 }
 
 function sanitizeVariables(variables: Record<string, JsonValue>): Record<string, JsonValue> {
   const sanitized: Record<string, JsonValue> = {}
   for (const [key, value] of Object.entries(variables)) {
-    if (!isSyncSecretKey(key)) {
+    if (!isSyncSensitiveKey(key)) {
       sanitized[key] = sanitizeValue(value, true)
     }
   }
@@ -273,17 +319,14 @@ function sanitizeValue(value: unknown, inspectStringValues = false): JsonValue {
   if (isRecord(value)) {
     const sanitized: Record<string, JsonValue> = {}
     for (const [key, nested] of Object.entries(value)) {
-      if (!isSyncSecretKey(key)) {
+      if (!isSyncSensitiveKey(key)) {
         sanitized[key] = sanitizeValue(nested, inspectStringValues)
       }
     }
     return sanitized
   }
   if (typeof value === "string") {
-    if (inspectStringValues && isIndirectionReference(value)) {
-      return value
-    }
-    return inspectStringValues && containsSecretValue(value) ? "" : value
+    return inspectStringValues && containsCredentialMaterial(value) ? "" : value
   }
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
     return value
@@ -300,7 +343,7 @@ function sanitizeSnapshotValue(value: unknown): JsonValue {
   if (isRecord(value)) {
     const sanitized: Record<string, JsonValue> = {}
     for (const [nestedKey, nestedValue] of Object.entries(value)) {
-      if (isSyncSecretKey(nestedKey)) {
+      if (isSyncSensitiveKey(nestedKey)) {
         continue
       }
       if (nestedKey === "body" && typeof nestedValue === "string") {
@@ -322,7 +365,7 @@ function sanitizeSnapshotValue(value: unknown): JsonValue {
     return sanitized
   }
   if (typeof value === "string") {
-    return containsSecretValue(value) && !isIndirectionReference(value) ? "" : value
+    return containsCredentialMaterial(value) ? "" : value
   }
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
     return value
@@ -335,7 +378,7 @@ function isSecretKeyValueItem(value: unknown): boolean {
     return false
   }
   const key = value["key"]
-  return typeof key === "string" && isSyncSecretKey(key)
+  return typeof key === "string" && isSyncSensitiveKey(key)
 }
 
 function sanitizeKeyValueItems(values: readonly unknown[], redactAllValues: boolean): JsonValue[] {
@@ -347,25 +390,19 @@ function sanitizeKeyValueItems(values: readonly unknown[], redactAllValues: bool
     }
     const item = sanitizeValue(value)
     const key = value["key"]
-    const secretKey = typeof key === "string" && isSyncSecretKey(key)
+    const sensitiveKey = typeof key === "string" && isSyncSensitiveKey(key)
     if (isRecord(item)) {
       const itemValue = item["value"]
-      if (typeof itemValue === "string") {
-        if (!isIndirectionReference(itemValue)
-            && (redactAllValues || secretKey || containsSecretValue(itemValue))) {
-          item["value"] = ""
-        }
-      } else if (secretKey) {
+      const withheld = redactAllValues || sensitiveKey
+        ? !isCredentialFreeReference(itemValue)
+        : typeof itemValue === "string" && containsCredentialMaterial(itemValue)
+      if (withheld && !isEmptySyncValue(itemValue)) {
         item["value"] = ""
       }
     }
     sanitized.push(item)
   }
   return sanitized
-}
-
-function isSyncSecretKey(key: string): boolean {
-  return isSecretKey(key) || /^(cookie|set-cookie|session|sessionid|sid|jwt|otp|cvv)$/i.test(key)
 }
 
 function isKeyValueConfigField(key: string): boolean {
@@ -376,84 +413,57 @@ function isKeyValueConfigField(key: string): boolean {
     || key === "urlEncodedEntries"
 }
 
-function containsSecretValue(value: string): boolean {
-  return BEARER_CREDENTIAL_PATTERN.test(value)
-    || JWT_CREDENTIAL_PATTERN.test(value)
-    || STRIPE_LIVE_KEY_PATTERN.test(value)
-}
-
-// Credential shapes the sanitizer must never let leave the machine. These mirror
-// the value-level patterns the cloud server and the pull-side validator enforce,
-// so a sanitized payload always passes those floors. `Bearer` prose without
-// token material (no digit/dot/underscore/hyphen run after the scheme) is NOT a
-// credential and survives, as does any `{{...}}` indirection reference.
-const BEARER_CREDENTIAL_PATTERN = /\bbearer\s+[a-zA-Z0-9_.-]*[0-9_.-][a-zA-Z0-9_.-]*/i
-const JWT_CREDENTIAL_PATTERN = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/
-const STRIPE_LIVE_KEY_PATTERN = /\b(?:sk|pk)_live_[A-Za-z0-9_-]+\b/i
-const INDIRECTION_REF_PATTERN = /\{\{\s*(?:env\.|variables\.|prev\b|secrets\.)/
-
-// Any `{{...}}` placeholder a runtime interpolates against `env`/`variables`/
-// `prev`/`secrets` — a reference, not a literal credential, so it must survive
-// the sync round trip verbatim.
-function isIndirectionReference(value: string): boolean {
-  return INDIRECTION_REF_PATTERN.test(value)
-}
-
-function blankUnlessReference(value: JsonValue | undefined): JsonValue {
-  return typeof value === "string" && isIndirectionReference(value) ? value : ""
+function blankUnlessReference(value: unknown): JsonValue {
+  return isCredentialFreeReference(value) ? value as string : ""
 }
 
 // Redact a request body leaf-by-leaf instead of blanking it wholesale: the body
 // is workflow config and must round-trip, but no credential-shaped leaf may
-// leave the machine. JSON bodies are walked structurally (secret-named keys and
-// credential-shaped values become ""); a non-JSON body is blanked whole only
-// when it is itself credential-shaped. `{{...}}` references survive, and when
-// nothing was redacted the original string returns verbatim so the sanitizer
-// never introduces spurious diffs.
+// leave the machine. JSON bodies are walked structurally; a non-JSON body is
+// blanked whole only when it carries credential material. Credential-free
+// `{{...}}` references survive, and when nothing was redacted the original
+// string returns verbatim so the sanitizer never introduces spurious diffs.
 function sanitizeBodyText(body: string): string {
   let parsed: unknown
   try {
     parsed = JSON.parse(body)
   } catch {
-    return containsSecretValue(body) && !isIndirectionReference(body) ? "" : body
+    return containsCredentialMaterial(body) ? "" : body
   }
   let redacted = false
+  const blank = (): JsonValue => {
+    redacted = true
+    return ""
+  }
+  // In a body, a sensitive key name withholds its WHOLE value rather than its
+  // string leaves. The validators are content to walk a container and judge its
+  // leaves by name, which is what lets `auth.apiKey` sync; but inside a request
+  // body there is no schema to lean on, so an opaque credential one level down
+  // (`{"apiKey":{"v":"..."}}`) would have no leaf name to catch it.
   const walk = (value: unknown, keyName: string | null): JsonValue => {
+    const sensitive = keyName !== null && isSyncSensitiveKey(keyName)
+    if (sensitive) {
+      if (isEmptySyncValue(value)) return value as JsonValue
+      return isCredentialFreeReference(value) ? value as string : blank()
+    }
     if (Array.isArray(value)) {
-      return value.map((item) => walk(item, keyName))
+      return value.map((item) => walk(item, null))
     }
     if (isRecord(value)) {
       const out: Record<string, JsonValue> = {}
-      // Mirror the server's `{key, value}` pair semantics: a secret-named key
-      // with a non-empty, non-reference value is withheld, keeping the shape.
+      // Mirror the validators' `{key, value}` pair semantics: the sensitivity
+      // of a pair lives in its sibling `key`, not in the literal name `value`.
       const pairKey = value["key"]
-      const pairValue = value["value"]
-      const blankedPair = typeof pairKey === "string" && isSyncSecretKey(pairKey)
-        && pairValue !== undefined && pairValue !== null && pairValue !== ""
-        && !(typeof pairValue === "string" && isIndirectionReference(pairValue))
+      const pairSensitive = typeof pairKey === "string" && isSyncSensitiveKey(pairKey)
       for (const [key, child] of Object.entries(value)) {
-        if (blankedPair && key === "value") {
-          redacted = true
-          out[key] = ""
-        } else {
-          out[key] = walk(child, key)
-        }
+        out[key] = pairSensitive && key === "value"
+          ? (isEmptySyncValue(child) || isCredentialFreeReference(child) ? child as JsonValue : blank())
+          : walk(child, key)
       }
       return out
     }
     if (typeof value === "string") {
-      if (isIndirectionReference(value)) {
-        return value
-      }
-      if ((keyName !== null && isSyncSecretKey(keyName)) || containsSecretValue(value)) {
-        redacted = true
-        return ""
-      }
-      return value
-    }
-    if (keyName !== null && isSyncSecretKey(keyName)) {
-      redacted = true
-      return ""
+      return containsCredentialMaterial(value) ? blank() : value
     }
     return value as JsonValue
   }
@@ -470,7 +480,7 @@ function sanitizeUrl(value: string | null): string | null {
     url.username = ""
     url.password = ""
     for (const [key, queryValue] of url.searchParams) {
-      if (isSyncSecretKey(key) || containsSecretValue(queryValue)) {
+      if (isSyncSensitiveKey(key) || containsCredentialMaterial(queryValue)) {
         url.searchParams.set(key, "")
       }
     }
@@ -480,11 +490,11 @@ function sanitizeUrl(value: string | null): string | null {
     if (url.hash) url.hash = ""
     url.pathname = url.pathname
       .split("/")
-      .map((segment) => (containsSecretValue(segment) ? "" : segment))
+      .map((segment) => (containsCredentialMaterial(segment) ? "" : segment))
       .join("/")
     return url.toString()
   } catch {
-    return containsSecretValue(value) ? "" : value
+    return containsCredentialMaterial(value) ? "" : value
   }
 }
 
