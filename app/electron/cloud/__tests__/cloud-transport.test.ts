@@ -703,7 +703,7 @@ describe("CloudSyncProvider", () => {
         op: "upsert",
         payload: new TextEncoder().encode(JSON.stringify({
           name: "Local",
-          graph: { nodes: [{ config: { body: "local-secret" } }], edges: [] },
+          graph: { nodes: [{ config: { body: "Bearer local-secret.abc123" } }], edges: [] },
           variables: { apiToken: "local-secret" },
         })),
       })
@@ -1636,7 +1636,7 @@ describe("CloudSyncProvider", () => {
         graph?: { nodes?: Array<{ config?: { body?: string } }> }
       }
       expect(localSnapshot.variables).toEqual({})
-      expect(localSnapshot.graph?.nodes?.[0]?.config?.headers).toEqual([])
+      expect(localSnapshot.graph?.nodes?.[0]?.config?.headers).toEqual([{ key: "Authorization", value: "" }])
       expect(cloudSnapshot.variables).toEqual({})
       expect(cloudSnapshot.graph?.nodes?.[0]?.config?.body).toBe("")
       expect(repository.listPendingOutbox(100, Number.MAX_SAFE_INTEGER)).toEqual([])
@@ -1713,6 +1713,77 @@ describe("CloudSyncProvider", () => {
       await expect(provider.pull()).rejects.toThrow("forbidden field")
 
       expect(store.get("SELECT 1 FROM workflows WHERE id = ?", ["workflow-forbidden"])).toBeUndefined()
+    })
+
+    it("rejects a serialized credential leaf inside a server-pushed body", async () => {
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges")
+        .reply(200, {
+          changes: [{
+            cursor: "202",
+            workspaceId: { value: WORKSPACE_ID },
+            kind: RecordKind.WORKFLOW,
+            recordId: "workflow-forbidden-body",
+            rev: "1",
+            op: ChangeOp.UPSERT,
+            payload: Buffer.from(JSON.stringify({
+              name: "Forbidden Body",
+              nodes: [{ config: { body: "{\"password\":\"secret\"}" } }],
+              edges: [],
+              variables: {},
+            })).toString("base64"),
+          }],
+          nextCursor: "202",
+          hasMore: false,
+        })
+
+      await expect(provider.pull()).rejects.toThrow("forbidden field")
+
+      expect(store.get("SELECT 1 FROM workflows WHERE id = ?", ["workflow-forbidden-body"])).toBeUndefined()
+    })
+
+    it("applies a server-pushed plain body with indirection references", async () => {
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges")
+        .reply(200, {
+          changes: [{
+            cursor: "203",
+            workspaceId: { value: WORKSPACE_ID },
+            kind: RecordKind.WORKFLOW,
+            recordId: "workflow-plain-body",
+            rev: "1",
+            op: ChangeOp.UPSERT,
+            payload: Buffer.from(JSON.stringify({
+              name: "Plain Body",
+              nodes: [{
+                config: {
+                  body: "{\"username\":\"admin\",\"password\":\"{{secrets.PW}}\",\"note\":\"hello\"}",
+                  headers: [{ key: "Authorization", value: "Bearer {{secrets.TOKEN}}" }],
+                },
+              }],
+              edges: [],
+              variables: {},
+            })).toString("base64"),
+          }],
+          nextCursor: "203",
+          hasMore: false,
+        })
+
+      await expect(provider.pull()).resolves.toBeUndefined()
+
+      const graph = store.get<{ graph_json: string }>(
+        "SELECT graph_json FROM workflows WHERE id = ?",
+        ["workflow-plain-body"],
+      )
+      expect(graph?.graph_json).toContain("{{secrets.PW}}")
+      expect(graph?.graph_json).toContain("hello")
+      expect(graph?.graph_json).toContain("Bearer {{secrets.TOKEN}}")
     })
   })
 

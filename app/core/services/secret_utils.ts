@@ -128,6 +128,121 @@ function containsIndirectionRef(value: string): boolean {
   return INDIR_REF_RE.test(value)
 }
 
+/* ------------------------------------------------------------------------- *
+ * Cloud-sync redaction contract
+ *
+ * Three components decide what may cross the wire, and they must agree
+ * exactly or a workflow breaks in one of two ways: the push sanitizer emits
+ * something a validator rejects (the record dead-letters after 10 retries and
+ * every later edit to it is blocked behind it), or a validator rejects
+ * something the sanitizer kept (the receiving device throws mid-pull, never
+ * advances its cursor, and stops syncing that workspace entirely).
+ *
+ *   1. push sanitizer   `core/sync/cloud-mutations.ts`
+ *   2. pull validator   `core/repositories/CloudSyncRepository.ts`
+ *   3. server validator `apps/api/internal/sync/workflow_service.go`
+ *      (apiweave-cloud — a hand-mirrored copy of the three predicates below;
+ *      change both sides together, and mirror the fixture table in
+ *      `core/sync/__tests__/sync-redaction-contract.test.ts`)
+ *
+ * The contract, stated once:
+ *
+ *   - Under a sync-sensitive key name, the only non-empty SCALAR allowed is a
+ *     credential-free indirection reference. The sanitizer blanks everything
+ *     else in place, keeping the key so the receiving machine still shows the
+ *     operator which slot to fill.
+ *   - A container under such a key is walked, not judged. Some sensitive names
+ *     hold config rather than a value — `auth.apiKey` is `{key, value, in}` —
+ *     and a validator that rejected the container outright would make that
+ *     block unsyncable. The sanitizer is free to be stricter and blank a whole
+ *     container (it does, for request bodies): push may withhold more than the
+ *     validators demand, never less.
+ *   - Under any other key name, a string is kept unless it carries credential
+ *     material outside of its `{{...}}` references.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Key names whose values are withheld from a sync payload. Matched against a
+ * camelCase-normalized key, so `apiKeys`, `userTokens` and `masterKek` are
+ * caught the same way their snake_case spellings are — the validators
+ * normalize too, and a predicate that misses a spelling one of them catches is
+ * exactly what strands a workflow mid-sync.
+ */
+const SYNC_SENSITIVE_NAME_RE = /(?:^|[_-])(token|password|secret|api[_-]?key|private[_-]?key|client[_-]?secret|credential)s?$/
+
+/**
+ * Exact names that carry credentials without matching the pattern above:
+ * transport auth/session headers, and this app's own vault field names (a
+ * payload naming one of those is either a bug or a hostile server).
+ * Exact-match on purpose — `cookies` is the config array holding cookie
+ * entries, not a credential, and must survive.
+ */
+const SYNC_SENSITIVE_EXACT: ReadonlySet<string> = new Set([
+  "authorization", "cookie", "set-cookie", "session", "sessionid", "sid", "jwt", "otp", "cvv",
+  "ciphertext", "plaintext", "kek", "dek", "master_kek", "wrapped_dek", "hmac_secret",
+  "secret_value", "encrypted_value", "encrypted_private_key",
+])
+
+/** True if a sync payload must not carry a literal value under this key name. */
+export function isSyncSensitiveKey(key: string): boolean {
+  const normalized = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").trim().toLowerCase()
+  return isSecretKey(key) || SYNC_SENSITIVE_NAME_RE.test(normalized) || SYNC_SENSITIVE_EXACT.has(normalized)
+}
+
+// Credential shapes that must never leave the machine. Deliberately narrow:
+// request bodies and header values are workflow config, and a broad heuristic
+// (anything containing "token") empties the config it is meant to protect.
+const BEARER_CREDENTIAL_PATTERN = /\bbearer\s+[a-zA-Z0-9_.-]*[0-9_.-][a-zA-Z0-9_.-]*/i
+const JWT_CREDENTIAL_PATTERN = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/
+const STRIPE_LIVE_KEY_PATTERN = /\b(?:sk|pk)_live_[A-Za-z0-9_-]+\b/i
+const REF_SPAN_RE = /\{\{[^{}]*\}\}/g
+
+/**
+ * True if a string carries credential material once its `{{...}}` references
+ * are removed. Stripping first is what makes `Authorization: Bearer
+ * {{secrets.TOKEN}}` a keeper while `{{env.SCHEME}} eyJhbGci...` is not: a
+ * value is not laundered by having a reference somewhere else in it.
+ */
+export function containsCredentialMaterial(value: string): boolean {
+  const literal = value.replace(REF_SPAN_RE, "")
+  return BEARER_CREDENTIAL_PATTERN.test(literal)
+    || JWT_CREDENTIAL_PATTERN.test(literal)
+    || STRIPE_LIVE_KEY_PATTERN.test(literal)
+}
+
+/**
+ * What all three components count as "already empty", and therefore always
+ * allowed under a sync-sensitive key. Note what is absent: a number or boolean
+ * is not empty, so `{"password": 0}` still has to be withheld.
+ */
+export function isEmptySyncValue(value: unknown): boolean {
+  return value === undefined || value === null || value === ""
+    || (Array.isArray(value) && value.length === 0)
+    || (typeof value === "object" && !Array.isArray(value) && Object.keys(value as object).length === 0)
+}
+
+/**
+ * The one non-empty shape allowed under a sync-sensitive key: a value wired to
+ * an `{{env.*}}`/`{{variables.*}}`/`{{prev...}}`/`{{secrets.*}}` slot on the
+ * receiving machine, carrying no credential material of its own.
+ */
+export function isCredentialFreeReference(value: unknown): boolean {
+  return typeof value === "string" && containsIndirectionRef(value) && !containsCredentialMaterial(value)
+}
+
+/**
+ * True if a value under a sync-sensitive key breaks the contract and must have
+ * been withheld before the payload was pushed. Containers answer `false` — they
+ * are walked instead, so a config block that happens to sit under a sensitive
+ * name (`auth.apiKey`) can still cross the wire.
+ */
+export function isWithheldSyncValue(value: unknown): boolean {
+  if (value !== null && typeof value === "object") {
+    return false
+  }
+  return !isEmptySyncValue(value) && !isCredentialFreeReference(value)
+}
+
 function isRecord(value: unknown): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }

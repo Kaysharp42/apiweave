@@ -7,7 +7,7 @@ import { recordCollectionUpsert, recordWorkflowUpsert } from "../cloud-mutations
 import type { SyncMutation, SyncProvider } from "../SyncProvider"
 
 describe("cloud mutation payloads", () => {
-  it("records workflow upserts without secret-shaped variables or request bodies", () => {
+  it("records workflow upserts with bodies and headers intact, redacting only credential-shaped leaves", () => {
     const provider = new CapturingSyncProvider()
     const workflow: Workflow = {
       workflowId: "workflow-1",
@@ -30,11 +30,26 @@ describe("cloud mutation payloads", () => {
           config: {
             method: "POST",
             url: "https://user:password@example.test/resource?api_key=secret-value&page=2",
-            body: "{\"password\":\"secret\"}",
+            body: "{\"username\":\"admin\",\"password\":\"secret\"}",
             headers: [{ key: "Authorization", value: "Bearer secret" }],
             cookies: [{ key: "theme", value: "eyJhbGciOiJIUzI1NiJ9.payload.signature" }],
             queryParams: [{ key: "filter", value: "sk_live_123456" }],
             formDataEntries: [{ key: "otp", value: "123456", type: "text", active: true }],
+          },
+        },
+        {
+          nodeId: "http-2",
+          type: "http-request",
+          label: "Safe config",
+          position: { x: 200, y: 0 },
+          config: {
+            method: "POST",
+            url: "https://example.test/plain",
+            body: "{\"user\":\"{{variables.user}}\",\"password\":\"{{secrets.PW}}\",\"note\":\"hello\",\"pair\":{\"key\":\"Authorization\",\"value\":\"Bearer x.1\"}}",
+            headers: [
+              { key: "Authorization", value: "Bearer {{secrets.TOKEN}}" },
+              { key: "X-Custom", value: "hello" },
+            ],
           },
         },
       ],
@@ -76,17 +91,30 @@ describe("cloud mutation payloads", () => {
     expect(payload["variables"]).toEqual({ safeName: "visible", innocuousName: "" })
     expect(JSON.stringify(payload)).not.toContain("secret-value")
     expect(JSON.stringify(payload)).not.toContain("Bearer secret")
-    expect(JSON.stringify(payload)).not.toContain("template-secret")
     const nodes = payload["nodes"]
     expect(Array.isArray(nodes)).toBe(true)
-    const httpNode = Array.isArray(nodes) ? nodes.find(isHttpNode) : undefined
+    const httpNode = Array.isArray(nodes) ? nodes.find(isHttpNode("http-1")) : undefined
     expect(httpNode?.config).toMatchObject({
-      body: "",
+      body: "{\n  \"username\": \"admin\",\n  \"password\": \"\"\n}",
       url: "https://example.test/resource?api_key=&page=2",
       cookies: [{ key: "theme", value: "" }],
       queryParams: [{ key: "filter", value: "" }],
-      formDataEntries: [],
+      formDataEntries: [{ key: "otp", value: "", type: "text", active: true }],
     })
+    const safeNode = Array.isArray(nodes) ? nodes.find(isHttpNode("http-2")) : undefined
+    expect(safeNode?.config).toMatchObject({
+      body: "{\n  \"user\": \"{{variables.user}}\",\n  \"password\": \"{{secrets.PW}}\",\n  \"note\": \"hello\",\n  \"pair\": {\n    \"key\": \"Authorization\",\n    \"value\": \"\"\n  }\n}",
+      headers: [
+        { key: "Authorization", value: "Bearer {{secrets.TOKEN}}" },
+        { key: "X-Custom", value: "hello" },
+      ],
+    })
+    expect(payload["nodeTemplates"]).toEqual([{
+      config: {
+        body: "template-secret-body",
+        headers: [{ key: "Authorization", value: "" }],
+      },
+    }])
   })
 
   it("preserves project workflow-order metadata for cloud round trips", () => {
@@ -131,6 +159,7 @@ function decodePayload(payload: Uint8Array | null): Record<string, JsonValue> {
   return JSON.parse(new TextDecoder().decode(payload ?? new Uint8Array())) as Record<string, JsonValue>
 }
 
-function isHttpNode(value: unknown): value is { readonly nodeId: string; readonly config?: Record<string, JsonValue> } {
-  return typeof value === "object" && value !== null && (value as { nodeId?: unknown }).nodeId === "http-1"
+function isHttpNode(nodeId: string): (value: unknown) => boolean {
+  return (value: unknown): boolean =>
+    typeof value === "object" && value !== null && (value as { nodeId?: unknown }).nodeId === nodeId
 }
