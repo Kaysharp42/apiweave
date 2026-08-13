@@ -279,6 +279,32 @@ describe("useRunCamera", () => {
     expect(instance.current).toEqual(before);
   });
 
+  it("reports that it is mid-motion, and only then", () => {
+    const { result } = setup();
+    expect(result.current.isCameraMoving).toBe(false);
+
+    act(() => {
+      result.current.camera.onRunStart(["start"]);
+    });
+    frames(100);
+    expect(result.current.isCameraMoving).toBe(true);
+
+    settle();
+    expect(result.current.isCameraMoving).toBe(false);
+
+    // A hand on the canvas mid-glide stops the motion, not just the following.
+    act(() => {
+      result.current.camera.onNodeShown("far", "running");
+    });
+    frames(50);
+    expect(result.current.isCameraMoving).toBe(true);
+
+    act(() => {
+      result.current.onViewportInteraction(new MouseEvent("mousedown"));
+    });
+    expect(result.current.isCameraMoving).toBe(false);
+  });
+
   it("stops asking for frames once there is nothing left to do", () => {
     const { result, instance } = setup(allNodes, WORKING_ZOOM);
 

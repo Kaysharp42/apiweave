@@ -70,6 +70,16 @@ interface UseRunCameraResult {
   isFollowing: boolean;
   /** The user moved the camera mid-run; following is paused until resumed. */
   isSuspended: boolean;
+  /**
+   * The camera is mid-motion right now, rather than waiting for the run.
+   *
+   * True from the first frame of a correction or crossing to the frame it comes
+   * to rest — so it flips rarely, at the edges of a burst of motion, and is
+   * cheap to render from. It exists for the parts of the canvas that should not
+   * be repainting sixty times a second while the camera is (the minimap): they
+   * freeze on this, and catch up when it goes quiet.
+   */
+  isCameraMoving: boolean;
   suspend: () => void;
   resume: () => void;
   /** For ReactFlow's `onMoveStart`. */
@@ -153,6 +163,7 @@ export default function useRunCamera({
 }: UseRunCameraParams): UseRunCameraResult {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isSuspended, setIsSuspended] = useState(false);
+  const [isCameraMoving, setIsCameraMoving] = useState(false);
 
   // The same two facts as refs. Every decision below is made inside a frame or
   // an event handler, where the state values would be a render behind.
@@ -160,6 +171,8 @@ export default function useRunCamera({
   const suspendedRef = useRef(false);
   /** The run is over; finish the move in flight and then let go. */
   const endingRef = useRef(false);
+  /** Mirror of `isCameraMoving`, read and written on the camera's own frames. */
+  const movingRef = useRef(false);
 
   /**
    * Which branch each node belongs to, which branch is being followed, and every
@@ -287,8 +300,10 @@ export default function useRunCamera({
     writtenRef.current = [];
     frontsRef.current = null;
     subjectRef.current = null;
+    movingRef.current = false;
     setIsFollowing(false);
     setIsSuspended(false);
+    setIsCameraMoving(false);
   }, [cancelFrame]);
 
   const suspend = useCallback(() => {
@@ -297,6 +312,10 @@ export default function useRunCamera({
     cancelFrame();
     suspendedRef.current = true;
     setIsSuspended(true);
+    // The camera stops where it is, mid-glide or not: whatever froze for the
+    // motion can thaw, because the viewport is the user's again.
+    movingRef.current = false;
+    setIsCameraMoving(false);
   }, [cancelFrame]);
 
   const step = useCallback(() => {
@@ -356,6 +375,16 @@ export default function useRunCamera({
 
     motion = stepCamera(motion, focus, box, elapsed, prefersReducedMotion());
     motionRef.current = motion;
+
+    // Moving, as a fact the canvas can render from: true for the whole of a
+    // burst of motion, false while the camera waits. Flipped here, on the
+    // camera's own frames, so it changes at the edges of motion rather than
+    // sixty times a second.
+    const moving = !isAtRest(motion);
+    if (movingRef.current !== moving) {
+      movingRef.current = moving;
+      setIsCameraMoving(moving);
+    }
 
     const next = transformOf(motion, box);
     const [written] = writtenRef.current;
@@ -518,6 +547,7 @@ export default function useRunCamera({
     camera,
     isFollowing,
     isSuspended,
+    isCameraMoving,
     suspend,
     resume,
     onViewportInteraction,

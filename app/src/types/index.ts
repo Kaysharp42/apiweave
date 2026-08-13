@@ -94,6 +94,8 @@ export type { RunFrontOutlook } from "./RunFrontOutlook";
 export type { RunFrontsState } from "./RunFrontsState";
 export type { SeenRunNode } from "./SeenRunNode";
 export type { RunFollowPillProps } from "./RunFollowPillProps";
+export type { RunMiniMapProps } from "./RunMiniMapProps";
+export type { MinimapTransformView } from "./MinimapTransformView";
 export type { KeyboardShortcut } from "./KeyboardShortcut";
 export type { AppNavBarItemConfig } from "./AppNavBarItemConfig";
 export type { AppNavBarWidthConfig } from "./AppNavBarWidthConfig";

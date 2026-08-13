@@ -250,10 +250,22 @@ export const ZOOM_OUT_DWELL_MS = 450;
  * fitting. Padding is generous, so a few percent of overflow is invisible. */
 export const ZOOM_OUT_SLACK = 1.08;
 
-/** Longest frame the integrator will believe. A backgrounded tab produces gaps
- * of seconds; taken literally they become a lurch, and the springs are
- * unconditionally stable so the only cost of clamping is arriving late. */
-export const MAX_FRAME_MS = 50;
+/**
+ * Longest frame the integrator will believe. A backgrounded tab produces gaps of
+ * seconds; taken literally they become a lurch, and the springs are
+ * unconditionally stable so the only cost of clamping is arriving late.
+ *
+ * The clamp must be a *safety valve, not a governor*: it exists for gaps no real
+ * display produces. The springs are exact solutions, stable at any step, so
+ * nothing requires a small value — and clamping a genuinely slow frame costs
+ * more than lateness, because the frame's motion is silently shrunk. At 10 fps
+ * the old value threw away half of every frame, so the camera ran at half its
+ * tuned speed and in coarser steps: the camera did not look slow, it *was* slow.
+ * This is far past the longest frame an interactive tab produces — even 5 fps is
+ * 200 ms — so a real frame is always integrated in full, and only a tab that
+ * stopped painting is treated as a gap.
+ */
+export const MAX_FRAME_MS = 250;
 
 /** Below these the camera is holding still: a few pixels a second is slower than
  * the eye can follow, and continuing to integrate it only burns frames. */

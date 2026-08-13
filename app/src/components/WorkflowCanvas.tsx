@@ -8,7 +8,6 @@ import {
   type MutableRefObject,
 } from "react";
 import ReactFlow, {
-  MiniMap,
   Controls,
   ControlButton,
   Background,
@@ -37,6 +36,7 @@ import EndNode from "./nodes/EndNode";
 import MergeNode from "./nodes/MergeNode";
 import CallWorkflowNode from "./nodes/CallWorkflowNode";
 import CustomEdge from "./CustomEdge";
+import { RunMiniMap } from "./RunMiniMap";
 import AddNodesPanel from "./AddNodesPanel";
 import NodeModal from "./NodeModal";
 import HistoryModal from "./HistoryModal";
@@ -233,6 +233,7 @@ export function WorkflowCanvas({
     camera: runCamera,
     isFollowing: isFollowingRun,
     isSuspended: isFollowSuspended,
+    isCameraMoving,
     suspend: suspendFollow,
     resume: resumeFollow,
     onViewportInteraction,
@@ -997,6 +998,12 @@ export function WorkflowCanvas({
         maxZoom={2.5}
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Control"
+        // While the run camera moves, only the slice of the graph it frames is
+        // mounted — a 130-node workflow keeps about a dozen nodes in the DOM
+        // instead of all of them, and that is the per-frame cost `setViewport`
+        // pays on every write. Off-screen nodes keep their measured dimensions,
+        // so the minimap and the camera keep their positions without them.
+        onlyRenderVisibleElements
       >
         {/* The grid should be felt, not read. */}
         <Background
@@ -1034,8 +1041,12 @@ export function WorkflowCanvas({
         )}
 
         {/* The action stack in AddNodesPanel sits directly above this, keyed off
-            the same shared geometry — see constants/CanvasChrome. */}
-        <MiniMap
+            the same shared geometry — see constants/CanvasChrome. Frozen while
+            the run camera is mid-motion, so following a run costs the minimap
+            no repaints. */}
+        <RunMiniMap
+          nodes={nodes}
+          frozen={isCameraMoving}
           position="bottom-right"
           nodeColor={getNodeColor}
           nodeStrokeColor={getNodeStrokeColor}

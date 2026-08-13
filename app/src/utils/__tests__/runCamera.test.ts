@@ -502,6 +502,22 @@ describe("stepCamera", () => {
     expect(movedPx).toBeLessThanOrEqual(
       (MAX_PAN_SCREENS_PER_S * screenDiagonalPx(box) * MAX_FRAME_MS) / 1000 + 1,
     );
+    // Gaps are all the same gap: past the clamp, longer away is not longer in.
+    expect(stepCamera(motion, gone, box, 9000, false)).toEqual(next);
+  });
+
+  it("integrates a slow but real frame in full", () => {
+    const motion = settled(focusOf(0, 0), 0.7);
+    const gone = focusOf(1500, 0);
+
+    const at100 = stepCamera(motion, gone, box, 100, false);
+    const at200 = stepCamera(motion, gone, box, 200, false);
+
+    // A clamp that bound at real frame rates would flatten both to one step;
+    // integrated in full, twice the time moves strictly farther.
+    expect(Math.abs(at200.x - motion.x)).toBeGreaterThan(
+      Math.abs(at100.x - motion.x),
+    );
   });
 
   it("cuts instead of gliding under reduced motion", () => {
